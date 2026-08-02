@@ -37,8 +37,10 @@
             // loads asynchronously.
             if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
               document.documentElement.classList.add("dark");
+              document.documentElement.setAttribute("data-theme", "dark");
             } else {
               document.documentElement.classList.add("light");
+              document.documentElement.setAttribute("data-theme", "light");
               document.documentElement.style.backgroundColor = "#fff";
             }
             return;
@@ -49,6 +51,7 @@
           // Match the cached light/dark class so themed vars resolve correctly
           // before ThemeProvider mounts.
           document.documentElement.classList.add(parsed.isDark ? "dark" : "light");
+          document.documentElement.setAttribute("data-theme", parsed.themeName === "lcars" ? "lcars" : (parsed.isDark ? "dark" : "light"));
         } catch {
           /* fall back to the black default above */
         }
