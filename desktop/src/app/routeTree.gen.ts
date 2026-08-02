@@ -5,42 +5,22 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/root";
-import { Route as workflowsRouteImport } from "./routes/workflows";
-import { Route as settingsRouteImport } from "./routes/settings";
-import { Route as remindersRouteImport } from "./routes/reminders";
-import { Route as pulseRouteImport } from "./routes/pulse";
-import { Route as projectsRouteImport } from "./routes/projects";
-import { Route as agentsRouteImport } from "./routes/agents";
 import { Route as indexRouteImport } from "./routes/index";
-import { Route as workflowsDotworkflowIdRouteImport } from "./routes/workflows.$workflowId";
-import { Route as projectsDotprojectIdRouteImport } from "./routes/projects.$projectId";
-import { Route as messagesDotnewRouteImport } from "./routes/messages.new";
+import { Route as agentsRouteImport } from "./routes/agents";
+import { Route as projectsRouteImport } from "./routes/projects";
+import { Route as pulseRouteImport } from "./routes/pulse";
+import { Route as remindersRouteImport } from "./routes/reminders";
+import { Route as settingsRouteImport } from "./routes/settings";
+import { Route as workflowsRouteImport } from "./routes/workflows";
 import { Route as channelsDotchannelIdRouteImport } from "./routes/channels.$channelId";
+import { Route as messagesDotnewRouteImport } from "./routes/messages.new";
+import { Route as projectsDotprojectIdRouteImport } from "./routes/projects.$projectId";
+import { Route as workflowsDotworkflowIdRouteImport } from "./routes/workflows.$workflowId";
 import { Route as channelsDotchannelIdDotpostsDotpostIdRouteImport } from "./routes/channels.$channelId.posts.$postId";
 
-const workflowsRoute = workflowsRouteImport.update({
-  id: "/workflows",
-  path: "/workflows",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const settingsRoute = settingsRouteImport.update({
-  id: "/settings",
-  path: "/settings",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const remindersRoute = remindersRouteImport.update({
-  id: "/reminders",
-  path: "/reminders",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const pulseRoute = pulseRouteImport.update({
-  id: "/pulse",
-  path: "/pulse",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const projectsRoute = projectsRouteImport.update({
-  id: "/projects",
-  path: "/projects",
+const indexRoute = indexRouteImport.update({
+  id: "/",
+  path: "/",
   getParentRoute: () => rootRouteImport,
 } as any);
 const agentsRoute = agentsRouteImport.update({
@@ -48,19 +28,34 @@ const agentsRoute = agentsRouteImport.update({
   path: "/agents",
   getParentRoute: () => rootRouteImport,
 } as any);
-const indexRoute = indexRouteImport.update({
-  id: "/",
-  path: "/",
+const projectsRoute = projectsRouteImport.update({
+  id: "/projects",
+  path: "/projects",
   getParentRoute: () => rootRouteImport,
 } as any);
-const workflowsDotworkflowIdRoute = workflowsDotworkflowIdRouteImport.update({
-  id: "/workflows/$workflowId",
-  path: "/workflows/$workflowId",
+const pulseRoute = pulseRouteImport.update({
+  id: "/pulse",
+  path: "/pulse",
   getParentRoute: () => rootRouteImport,
 } as any);
-const projectsDotprojectIdRoute = projectsDotprojectIdRouteImport.update({
-  id: "/projects/$projectId",
-  path: "/projects/$projectId",
+const remindersRoute = remindersRouteImport.update({
+  id: "/reminders",
+  path: "/reminders",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const settingsRoute = settingsRouteImport.update({
+  id: "/settings",
+  path: "/settings",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const workflowsRoute = workflowsRouteImport.update({
+  id: "/workflows",
+  path: "/workflows",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const channelsDotchannelIdRoute = channelsDotchannelIdRouteImport.update({
+  id: "/channels/$channelId",
+  path: "/channels/$channelId",
   getParentRoute: () => rootRouteImport,
 } as any);
 const messagesDotnewRoute = messagesDotnewRouteImport.update({
@@ -68,9 +63,14 @@ const messagesDotnewRoute = messagesDotnewRouteImport.update({
   path: "/messages/new",
   getParentRoute: () => rootRouteImport,
 } as any);
-const channelsDotchannelIdRoute = channelsDotchannelIdRouteImport.update({
-  id: "/channels/$channelId",
-  path: "/channels/$channelId",
+const projectsDotprojectIdRoute = projectsDotprojectIdRouteImport.update({
+  id: "/projects/$projectId",
+  path: "/projects/$projectId",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const workflowsDotworkflowIdRoute = workflowsDotworkflowIdRouteImport.update({
+  id: "/workflows/$workflowId",
+  path: "/workflows/$workflowId",
   getParentRoute: () => rootRouteImport,
 } as any);
 const channelsDotchannelIdDotpostsDotpostIdRoute =
@@ -185,39 +185,11 @@ export interface RootRouteChildren {
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    "/workflows": {
-      id: "/workflows";
-      path: "/workflows";
-      fullPath: "/workflows";
-      preLoaderRoute: typeof workflowsRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/settings": {
-      id: "/settings";
-      path: "/settings";
-      fullPath: "/settings";
-      preLoaderRoute: typeof settingsRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/reminders": {
-      id: "/reminders";
-      path: "/reminders";
-      fullPath: "/reminders";
-      preLoaderRoute: typeof remindersRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/pulse": {
-      id: "/pulse";
-      path: "/pulse";
-      fullPath: "/pulse";
-      preLoaderRoute: typeof pulseRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/projects": {
-      id: "/projects";
-      path: "/projects";
-      fullPath: "/projects";
-      preLoaderRoute: typeof projectsRouteImport;
+    "/": {
+      id: "/";
+      path: "/";
+      fullPath: "/";
+      preLoaderRoute: typeof indexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/agents": {
@@ -227,25 +199,46 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof agentsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/": {
-      id: "/";
-      path: "/";
-      fullPath: "/";
-      preLoaderRoute: typeof indexRouteImport;
+    "/projects": {
+      id: "/projects";
+      path: "/projects";
+      fullPath: "/projects";
+      preLoaderRoute: typeof projectsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/workflows/$workflowId": {
-      id: "/workflows/$workflowId";
-      path: "/workflows/$workflowId";
-      fullPath: "/workflows/$workflowId";
-      preLoaderRoute: typeof workflowsDotworkflowIdRouteImport;
+    "/pulse": {
+      id: "/pulse";
+      path: "/pulse";
+      fullPath: "/pulse";
+      preLoaderRoute: typeof pulseRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/projects/$projectId": {
-      id: "/projects/$projectId";
-      path: "/projects/$projectId";
-      fullPath: "/projects/$projectId";
-      preLoaderRoute: typeof projectsDotprojectIdRouteImport;
+    "/reminders": {
+      id: "/reminders";
+      path: "/reminders";
+      fullPath: "/reminders";
+      preLoaderRoute: typeof remindersRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/settings": {
+      id: "/settings";
+      path: "/settings";
+      fullPath: "/settings";
+      preLoaderRoute: typeof settingsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/workflows": {
+      id: "/workflows";
+      path: "/workflows";
+      fullPath: "/workflows";
+      preLoaderRoute: typeof workflowsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/channels/$channelId": {
+      id: "/channels/$channelId";
+      path: "/channels/$channelId";
+      fullPath: "/channels/$channelId";
+      preLoaderRoute: typeof channelsDotchannelIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/messages/new": {
@@ -255,11 +248,18 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof messagesDotnewRouteImport;
       parentRoute: typeof rootRouteImport;
     };
-    "/channels/$channelId": {
-      id: "/channels/$channelId";
-      path: "/channels/$channelId";
-      fullPath: "/channels/$channelId";
-      preLoaderRoute: typeof channelsDotchannelIdRouteImport;
+    "/projects/$projectId": {
+      id: "/projects/$projectId";
+      path: "/projects/$projectId";
+      fullPath: "/projects/$projectId";
+      preLoaderRoute: typeof projectsDotprojectIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/workflows/$workflowId": {
+      id: "/workflows/$workflowId";
+      path: "/workflows/$workflowId";
+      fullPath: "/workflows/$workflowId";
+      preLoaderRoute: typeof workflowsDotworkflowIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/channels/$channelId/posts/$postId": {
