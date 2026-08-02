@@ -407,6 +407,7 @@ function applyCachedVars(): string | null {
     }
     root.classList.remove("light", "dark");
     root.classList.add(isDark ? "dark" : "light");
+    root.setAttribute("data-theme", themeName === "lcars" ? "lcars" : (isDark ? "dark" : "light"));
     applyBuzzSidebar(themeName);
 
     const accent =
@@ -447,6 +448,7 @@ async function applyTheme(
 
   root.classList.remove("light", "dark");
   root.classList.add(isDark ? "dark" : "light");
+  root.setAttribute("data-theme", name === "lcars" ? "lcars" : (isDark ? "dark" : "light"));
   applyBuzzSidebar(name);
   // The Buzz gradient vars are now installed. If the vibrancy layer already
   // resolved for the current request (the IPC won the race against this theme
