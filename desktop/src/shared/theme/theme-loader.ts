@@ -60,6 +60,7 @@ export function resolveShikiThemeName(name: string): SyntaxThemeName {
 export const SYNTAX_THEMES = [
   "buzz",
   "buzz-dark",
+  "lcars",
   "andromeeda",
   "aurora-x",
   "ayu-dark",
@@ -157,6 +158,8 @@ const themeImports: Record<
   buzz: () => import("shiki/themes/github-light.mjs"),
   // Buzz Dark reuses the github-dark palette; dark gradient applied separately.
   "buzz-dark": () => import("shiki/themes/github-dark.mjs"),
+  // LCARS reuses github-dark palette; custom tokens applied via data-theme
+  lcars: () => import("shiki/themes/github-dark.mjs"),
   andromeeda: () => import("shiki/themes/andromeeda.mjs"),
   "aurora-x": () => import("shiki/themes/aurora-x.mjs"),
   "ayu-dark": () => import("shiki/themes/ayu-dark.mjs"),
