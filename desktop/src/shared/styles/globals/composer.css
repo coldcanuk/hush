@@ -186,8 +186,8 @@
   --buzz-linear-color: #5e6ad2;
 }
 
-.dark .rich-text-composer .tiptap a[href*="linear.app"],
-.dark .message-markdown .linear-link {
+:root[data-theme="dark"] .rich-text-composer .tiptap a[href*="linear.app"],
+:root[data-theme="dark"] .message-markdown .linear-link {
   --buzz-linear-color: #828fff;
 }
 

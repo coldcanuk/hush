@@ -21,7 +21,7 @@
   --buzz-link-preview-icon-color: hsl(var(--foreground));
 }
 
-.dark .message-markdown [data-link-preview] {
+:root[data-theme="dark"] .message-markdown [data-link-preview] {
   --buzz-link-preview-icon-bg: #24292f;
 }
 
@@ -31,9 +31,9 @@
   --buzz-link-preview-icon-color: #24292f;
 }
 
-.dark .message-markdown [data-link-preview="github-issue"],
-.dark .message-markdown [data-link-preview="github-pull-request"],
-.dark .message-markdown [data-link-preview="github-repository"] {
+:root[data-theme="dark"] .message-markdown [data-link-preview="github-issue"],
+:root[data-theme="dark"] .message-markdown [data-link-preview="github-pull-request"],
+:root[data-theme="dark"] .message-markdown [data-link-preview="github-repository"] {
   --buzz-link-preview-icon-color: #fff;
 }
 
@@ -41,7 +41,7 @@
   --buzz-link-preview-icon-color: #5e6ad2;
 }
 
-.dark .message-markdown [data-link-preview="linear-issue"] {
+:root[data-theme="dark"] .message-markdown [data-link-preview="linear-issue"] {
   --buzz-link-preview-icon-color: #828fff;
 }
 
@@ -263,10 +263,10 @@
   background-color: hsl(0 60% 50% / 0.15);
 }
 
-.dark .code-line-diff-add {
+:root[data-theme="dark"] .code-line-diff-add {
   background-color: hsl(120 40% 50% / 0.12);
 }
 
-.dark .code-line-diff-remove {
+:root[data-theme="dark"] .code-line-diff-remove {
   background-color: hsl(0 60% 50% / 0.12);
 }

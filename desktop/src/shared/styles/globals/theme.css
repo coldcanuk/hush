@@ -65,7 +65,7 @@
     --buzz-hosted-community-identity-bg: 255 255 255;
   }
 
-  .dark {
+  :root[data-theme="dark"] {
     /* Catppuccin Macchiato (mauve accent) */
     --radius: 0.625rem;
     --background: 232 23.4% 18.43%;
@@ -146,7 +146,7 @@
     color: inherit;
   }
 
-  html.dark {
+  html:root[data-theme="dark"] {
     color-scheme: dark;
   }
 
@@ -226,10 +226,10 @@
 /*
  * Dark variant (Buzz Dark). Reuses the GitHub Dark base palette; only the
  * Buzz color tokens change, so every downstream rule (gradient fill, hover,
- * search box, muted labels, active pill) adapts automatically. The `.dark`
+ * search box, muted labels, active pill) adapts automatically. The `:root[data-theme="dark"]`
  * class is set on the document root whenever a dark theme is active.
  */
-:root[data-buzz-sidebar].dark {
+:root[data-buzz-sidebar]:root[data-theme="dark"] {
   --buzz-gradient-top: var(--buzz-gradient-dark-top);
   --buzz-gradient-bottom: var(--buzz-gradient-dark-bottom);
   --buzz-muted-foreground: rgb(255 255 255 / 40%);
@@ -268,14 +268,14 @@
 }
 
 /* Keep the subtle content-card lift in Buzz Light only. */
-:root[data-buzz-sidebar]:not(.dark) [data-buzz-content-surface] {
+:root[data-buzz-sidebar]:not(:root[data-theme="dark"]) [data-buzz-content-surface] {
   box-shadow:
     -1px -1px 0 0 hsl(var(--sidebar-border) / 0.45),
     0 0 4px 0 rgb(0 0 0 / 7%);
 }
 
 /* Let the content card's shadow feather into the surrounding gradient. */
-:root[data-buzz-sidebar]:not(.dark) [data-buzz-shadow-viewport] {
+:root[data-buzz-sidebar]:not(:root[data-theme="dark"]) [data-buzz-shadow-viewport] {
   overflow: visible;
 }
 
@@ -284,7 +284,7 @@
  * Override `--background` locally as well as the surface fill so descendant
  * headers and panes using `bg-background` remain visually continuous.
  */
-:root[data-buzz-sidebar].dark [data-buzz-content-surface] {
+:root[data-buzz-sidebar]:root[data-theme="dark"] [data-buzz-content-surface] {
   --background: var(--buzz-content-dark);
   background-color: hsl(var(--background));
 }
@@ -298,7 +298,7 @@
 /*
  * Keep both Buzz gradients painted and switch only which layer is visible.
  * WKWebView can retain the old raster when `background-image` is replaced on
- * a translucent surface. The center content already follows `.dark`, so using
+ * a translucent surface. The center content already follows `:root[data-theme="dark"]`, so using
  * that same state for layer visibility keeps both surfaces in lockstep.
  */
 :root[data-buzz-sidebar] .buzz-theme-gradient-layer-light {
@@ -321,13 +321,13 @@
   background-repeat: no-repeat;
 }
 
-:root[data-buzz-sidebar]:not(.dark) .buzz-theme-gradient-layer-light,
-:root[data-buzz-sidebar].dark .buzz-theme-gradient-layer-dark {
+:root[data-buzz-sidebar]:not(:root[data-theme="dark"]) .buzz-theme-gradient-layer-light,
+:root[data-buzz-sidebar]:root[data-theme="dark"] .buzz-theme-gradient-layer-dark {
   opacity: 1;
 }
 
 /* The mobile sidebar is portaled outside the app surface. */
-:root[data-buzz-sidebar]:not(.dark)
+:root[data-buzz-sidebar]:not(:root[data-theme="dark"])
   [data-sidebar="sidebar"][data-mobile="true"].bg-sidebar {
   background-color: transparent;
   background-image: linear-gradient(
@@ -339,7 +339,7 @@
   background-repeat: no-repeat;
 }
 
-:root[data-buzz-sidebar].dark
+:root[data-buzz-sidebar]:root[data-theme="dark"]
   [data-sidebar="sidebar"][data-mobile="true"].bg-sidebar {
   background-color: transparent;
   background-image: linear-gradient(
@@ -404,8 +404,8 @@
  * Dark variant: keep the active-pill foreground white on the dark gradient.
  * (The pill itself is repainted to a translucent tint by the rule below.)
  */
-:root[data-buzz-sidebar].dark [data-testid="app-sidebar"],
-:root[data-buzz-sidebar].dark [data-testid="settings-sidebar"] {
+:root[data-buzz-sidebar]:root[data-theme="dark"] [data-testid="app-sidebar"],
+:root[data-buzz-sidebar]:root[data-theme="dark"] [data-testid="settings-sidebar"] {
   --sidebar-active: var(--buzz-active-fill);
   --sidebar-active-foreground: var(--buzz-active-foreground);
 }
@@ -675,7 +675,7 @@
   background-repeat: no-repeat, no-repeat;
 }
 
-:root[data-buzz-translucent]:not(.dark)
+:root[data-buzz-translucent]:not(:root[data-theme="dark"])
   [data-sidebar="sidebar"][data-mobile="true"].bg-sidebar {
   background-color: transparent;
   background-image:
@@ -713,7 +713,7 @@
   background-repeat: no-repeat, no-repeat;
 }
 
-:root[data-buzz-translucent].dark
+:root[data-buzz-translucent]:root[data-theme="dark"]
   [data-sidebar="sidebar"][data-mobile="true"].bg-sidebar {
   background-color: transparent;
   background-image:
@@ -805,4 +805,48 @@
 
 :root[data-buzz-translucent] .buzz-huddle-app-surface::after {
   background: transparent;
+}
+
+:root[data-theme="lcars"] {
+  /* LCARS Typography & Shape */
+  --radius: 9999px; /* Pill shapes */
+  font-family: "Antonio", "Arial Narrow", "Helvetica Condensed", sans-serif;
+  text-transform: uppercase;
+
+  /* LCARS Colors (HSL representations) */
+  --background: 0 0% 0%; /* Black */
+  --foreground: 39 100% 50%; /* LCARS Orange (#FF9900) */
+  
+  --card: 0 0% 0%;
+  --card-foreground: 240 100% 80%; /* Pale Blue (#9999FF) */
+  
+  --popover: 0 0% 0%;
+  --popover-foreground: 39 100% 50%;
+  
+  --primary: 330 50% 60%; /* Purple (#CC6699) */
+  --primary-foreground: 0 0% 0%;
+  
+  --secondary: 240 100% 80%; /* Pale Blue */
+  --secondary-foreground: 0 0% 0%;
+  
+  --muted: 0 0% 15%;
+  --muted-foreground: 39 100% 50%;
+  
+  --accent: 60 100% 70%; /* Yellow (#FFFF66) */
+  --accent-foreground: 0 0% 0%;
+  
+  --destructive: 0 100% 40%; /* Red (#CC0000) */
+  --destructive-foreground: 0 0% 0%;
+  
+  --border: 39 100% 50%; /* High contrast borders */
+  --input: 330 50% 60%;
+  --ring: 39 100% 50%;
+  
+  /* Sidebar overrides */
+  --sidebar: 0 0% 0%;
+  --sidebar-background: 0 0% 0%;
+  --sidebar-foreground: 330 50% 60%;
+  --sidebar-primary: 39 100% 50%;
+  --sidebar-primary-foreground: 0 0% 0%;
+  --sidebar-border: 240 100% 80%;
 }

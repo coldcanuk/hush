@@ -461,7 +461,7 @@
   );
 }
 
-.dark .buzz-sidebar-action-card--success {
+:root[data-theme="dark"] .buzz-sidebar-action-card--success {
   background-color: color-mix(
     in srgb,
     var(--status-added) 15%,
@@ -474,7 +474,7 @@
   );
 }
 
-.dark .buzz-sidebar-action-card--success:hover {
+:root[data-theme="dark"] .buzz-sidebar-action-card--success:hover {
   background-color: color-mix(
     in srgb,
     var(--status-added) 19%,
@@ -719,7 +719,7 @@
   position: relative;
 }
 
-.dark .buzz-setup-loading-shell {
+:root[data-theme="dark"] .buzz-setup-loading-shell {
   --buzz-grainient-alpha-strong: 0.68;
   --buzz-grainient-alpha-medium: 0.5;
   --buzz-grainient-alpha-soft: 0.34;

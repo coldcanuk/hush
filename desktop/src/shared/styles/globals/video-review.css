@@ -1,6 +1,6 @@
 /* ── Video review overlay theme (shared/ui/VideoPlayer) ─────────────────
    The review dialog uses the shadcn "neutral" dark palette regardless of
-   the app theme. Applied together with `.dark` on the portal root; this
+   the app theme. Applied together with `:root[data-theme="dark"]` on the portal root; this
    block is intentionally unlayered so it overrides the layered theme vars. */
 .video-review-theme {
   --background: 0 0% 3.9%;

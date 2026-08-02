@@ -16,7 +16,7 @@
   vertical-align: baseline;
 }
 
-.dark .buzz-spoiler {
+:root[data-theme="dark"] .buzz-spoiler {
   --buzz-spoiler-accent: #fff;
 }
 
@@ -54,7 +54,7 @@
   z-index: 1;
 }
 
-.dark .buzz-spoiler__particles {
+:root[data-theme="dark"] .buzz-spoiler__particles {
   --buzz-spoiler-accent: #fff;
 }
 
