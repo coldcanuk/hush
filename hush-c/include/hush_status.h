@@ -13,4 +13,14 @@ typedef enum {
     HUSH_ERR_IO = -6
 } hush_status_t;
 
+/* Propagates any non-OK status to the caller.
+ * Permitted ONLY in functions that acquire no resources.
+ * Sole macro allowed to contain return in this style. */
+#define HUSH_TRY(expr)                          \
+    do {                                        \
+        hush_status_t hush_try_s_ = (expr);     \
+        if (hush_try_s_ != HUSH_OK)             \
+            return hush_try_s_;                 \
+    } while (0)
+
 #endif /* HUSH_STATUS_H */

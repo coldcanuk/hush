@@ -6,21 +6,22 @@
 #include <string.h>
 
 #include "hush_event.h"
+#include "hush_status.h"
 
 enum {
     HUSH_MAX_KIND = 65535
 };
 
-/* Adapter over SHA-256. Writes 64-char hex (no NUL). */
+/* Adapter over SHA-256. Writes exactly 64 hex chars (no NUL written). */
 static void hush_sha256_hex(const unsigned char *data, size_t len, char *out_hex64);
 
-/* Emits the NIP-01 id-preimage bytes for MVP (0 + pubkey + created_at + kind + content).
- * Tags are omitted in this MVP slice; see RESEARCH.md for limitation. */
+/* Emits NIP-01 id-preimage bytes for MVP (0 + pubkey + created_at + kind + content).
+ * Tags omitted in MVP slice; documented limitation. */
 static void hush_event_serialize_for_id(const hush_event_t *ev,
                                         unsigned char *out_buf,
                                         size_t *out_len);
 
-/* Rejects NULL arguments. Writes 64-char hex id (plus NUL) to out_id on success. */
+/* Rejects NULL arguments. Writes NUL-terminated 64-char hex id to out_id. */
 hush_status_t hush_event_compute_id(const hush_event_t *ev, char *out_id)
 {
     if (ev == NULL || out_id == NULL)
@@ -34,7 +35,7 @@ hush_status_t hush_event_compute_id(const hush_event_t *ev, char *out_id)
     return HUSH_OK;
 }
 
-/* Rejects NULL or structurally invalid events (bad lengths or kind). */
+/* Rejects NULL or structurally invalid (lengths, kind). */
 hush_status_t hush_event_validate(const hush_event_t *ev)
 {
     if (ev == NULL)
@@ -52,6 +53,10 @@ static void hush_event_serialize_for_id(const hush_event_t *ev,
                                         unsigned char *out_buf,
                                         size_t *out_len)
 {
+    assert(ev != NULL);
+    assert(out_buf != NULL);
+    assert(out_len != NULL);
+
     size_t off = 0;
     out_buf[off++] = 0;
     memcpy(out_buf + off, ev->pubkey, HUSH_EVENT_PUBKEY_HEX_LEN);
@@ -76,12 +81,12 @@ static void hush_event_serialize_for_id(const hush_event_t *ev,
 static void hush_sha256_hex(const unsigned char *data, size_t len, char *out_hex64)
 {
 #if defined(HUSH_USE_OPENSSL)
-    /* Real adapter would call SHA256 here. */
+    /* DEVIATION: real SHA256 omitted in MVP; see RESEARCH.md. */
     (void)data;
     (void)len;
     memset(out_hex64, '0', HUSH_EVENT_ID_HEX_LEN);
 #else
-    /* MVP: deterministic zero id when no crypto backend. Documented deviation. */
+    /* MVP dev only: deterministic zero id. */
     (void)data;
     (void)len;
     memset(out_hex64, '0', HUSH_EVENT_ID_HEX_LEN);
