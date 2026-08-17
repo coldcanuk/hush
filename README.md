@@ -2,136 +2,57 @@
 
 **Hush** is a lightweight, legible C11 implementation of core Nostr relay functionality.
 
-It provides a minimal, auditable, machine- and human-legible relay for Nostr events (focus on chat kinds, EVENT/REQ/CLOSE handling, simple filter matching, and bounded in-memory storage).
+Optimized for the Goose AI agent. All development uses worktrees inside the repository.
 
-- Written in strict C11 following the machine-legibility standard.
+- Written in strict C11 following the machine-legibility standard (write-legible-c).
 - Single binary: `hush-relay`
-- Designed for set-and-forget self-hosting and easy embedding.
+- Designed for set-and-forget self-hosting and embedding.
 - **License: GPLv3**
 
 ## Features (MVP)
 
-- Nostr NIP-01 basics
-- EVENT ingestion + bounded store
-- REQ with filter matching (kinds, authors, ids, since/until, #h channel tag)
-- CLOSE support
-- Simple TCP newline-JSON protocol
+- Nostr NIP-01 basics for chat (kinds 0,1,5,7,9)
+- EVENT ingestion + bounded in-memory store
+- REQ with filter matching (kinds, authors, ids, since/until, #h)
+- CLOSE
+- Simple TCP newline-delimited JSON protocol (MVP; WebSocket adapter later)
 - `poll(2)` single-threaded server
-- Strict build: `-Wall -Wextra -Werror -Wconversion -Wshadow -std=c11`
+- Strict build: `-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow`
 
-A small TailwindCSS demo UI is included in `hush-c/demo/index.html`.
+A small TailwindCSS demo UI is in `hush-c/demo/index.html`.
 
-## License
+## Goose + Worktree (Prime Directive)
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+See [AGENTS.md](AGENTS.md) and [BRANCHING.md](BRANCHING.md).
 
-See the file `LICENSE` for the full GPLv3 text.
+All work:
+- Starts from clean `main`
+- Uses `git worktree add -b gb/<slug> worktrees/<slug>` (inside repo)
+- Commits after every Milestone
+- Merges --no-ff to main, then removes the worktree
 
-## Requirements
+No orphaned worktrees or branches.
 
-- C11 compiler (gcc or clang)
-- GNU make (or gmake on *BSD)
-- POSIX headers + `poll(2)`, sockets
-- (Optional) pkg-config and build tools
-
-### Optimal on Pop!_OS / Ubuntu / Debian
+## Build
 
 ```bash
-sudo apt update
-sudo apt install -y build-essential pkg-config
-```
-
-## Standard Workflow
-
-```bash
-# 1. Configure (detects OS, checks tools, special Pop!_OS hints)
-./configure
-
-# Or with custom prefix (recommended for most users)
-PREFIX=$HOME/.local ./configure
-
-# 2. Build
-make
-
-# 3. Run tests
-make test
-
-# 4. Install (system)
-sudo make install
-
-# Or user-local (recommended)
-make install PREFIX=$HOME/.local
-
-# Refresh application launcher (Linux)
-update-desktop-database $HOME/.local/share/applications || true
-```
-
-After `make install` you will have:
-
-- `hush-relay` in `$PREFIX/bin`
-- `hush-relay.desktop` in `$PREFIX/share/applications` (appears in your application launcher / menu)
-
-To uninstall:
-
-```bash
-sudo make uninstall
-# or for user install
-make uninstall PREFIX=$HOME/.local
-```
-
-## Running
-
-```bash
-hush-relay            # listens on TCP 10555
-hush-relay 12345      # custom port
-```
-
-Connect with newline-delimited JSON arrays:
-
-```
-["EVENT",{"id":"...","pubkey":"...","kind":1,"content":"hello","created_at":1720000000}]
-["REQ","sub1",{"kinds":[1],"#h":["general"]}]
-["CLOSE","sub1"]
-```
-
-See `hush-c/demo/index.html` for a browser-based mock UI.
-
-## Building from a clean tree
-
-```bash
-git clone https://github.com/coldcanuk/hush.git
-cd hush
 ./configure
 make
 make test
-make install PREFIX=$HOME/.local
 ```
 
-## Cross platform
+## Run
 
-- Linux (including Pop!_OS with optimal hints)
-- FreeBSD, OpenBSD, NetBSD (via `gmake` + `uname` detection in `./configure`)
+```bash
+./hush-relay 10555
+```
 
-## Development & Legibility
+## Skills for Goose
 
-All C code follows the write-legible-c standard:
+Core skills in `.goose/skills/`:
+- worktree, c-build, c-test, legible-c, relay, goose-init, publish
 
-- Exact file layout
-- One job per function, ≤40 lines, nesting depth ≤2
-- Explicit status returns, every call checked
-- Named constants for all bounds
-- No recursion, bounded loops only
+## Code of Ethics
 
-See `HUSH_C_RDAP_PLAN.md`, `RESEARCH.md`, and `HUSH_ARCHITECTURE.md`.
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — SQLite's Code of Ethics (Rule of St. Benedict).
 
-## Contributing
-
-- Keep changes small and atomic.
-- All C changes must pass the legible-C pre-delivery checklist.
-- Run `./configure && make && make test` before committing.
-- Update README / docs when behavior or build steps change.
-
-Enjoy a clean, auditable Nostr relay.
