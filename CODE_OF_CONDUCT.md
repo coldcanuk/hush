@@ -1,133 +1,213 @@
-# Contributor Covenant Code of Conduct
+# Code of Ethics
 
-## Our Pledge
+## 1. History
 
-We as members, contributors, and leaders pledge to make participation in our
-community a harassment-free experience for everyone, regardless of age, body
-size, visible or invisible disability, ethnicity, sex characteristics, gender
-identity and expression, level of experience, education, socio-economic status,
-nationality, personal appearance, race, caste, color, religion, or sexual
-identity and orientation.
+This document was originally called a "Code of Conduct" and
+was created for the purpose of filling in a box on "supplier registration"
+forms submitted to the SQLite developers by some clients.  However,
+we subsequently learned that "Code of Conduct" has a very specific and
+almost sacred meaning to some readers, a meaning to which this
+document does not conform
+[[1]](https://www.theregister.co.uk/2018/10/22/sqlite_code_of_conduct/)
+[[2]](https://pjmedia.com/news-and-politics/paula-bolyard/2018/10/24/tech-community-outraged-after-sqlite-founder-adopts-christian-code-of-conduct-n61746)
+[[3]](https://www.youtube.com/watch?v=S48VzyCwwtk).
+Therefore this document was renamed to "Code of Ethics", as
+we are encouraged to do by rule 71 in particular and also rules 2, 8, 9, 18, 19,
+30, 66, and in the spirit of all the rest.
 
-We pledge to act and interact in ways that contribute to an open, welcoming,
-diverse, inclusive, and healthy community.
+This document continues to be used for its original purpose - providing
+a reference to fill in the "code of conduct" box on supplier registration
+forms.
 
-## Our Standards
+## 2. Purpose
 
-Examples of behavior that contributes to a positive environment for our
-community include:
+The founder of SQLite, and all of the current developers at the time
+when this document was composed, have pledged to govern their
+interactions with each other, with their clients,
+and with the larger SQLite user community in
+accordance with the "instruments of good works" from chapter 4 of
+[The Rule of St. Benedict](https://en.wikipedia.org/wiki/Rule_of_Saint_Benedict)
+(hereafter: "The Rule").
+This code of ethics has proven its mettle in thousands of diverse
+communities for over 1,500 years, and has served as a baseline for many
+civil law codes since the time of Charlemagne.
 
-* Demonstrating empathy and kindness toward other people
-* Being respectful of differing opinions, viewpoints, and experiences
-* Giving and gracefully accepting constructive feedback
-* Accepting responsibility and apologizing to those affected by our mistakes,
-  and learning from the experience
-* Focusing on what is best not just for us as individuals, but for the overall
-  community
+### 2.1. Scope of Application
 
-Examples of unacceptable behavior include:
+No one is required to follow The Rule, to know The Rule, or even
+to think that The Rule is a good idea.  The Founder of SQLite believes
+that anyone who follows The Rule will live a happier and more productive 
+life, but individuals are free to dispute or ignore that advice if
+they wish.
 
-* The use of sexualized language or imagery, and sexual attention or advances of
-  any kind
-* Trolling, insulting or derogatory comments, and personal or political attacks
-* Public or private harassment
-* Publishing others' private information, such as a physical or electronic
-  address, without their explicit permission
-* Other conduct which could reasonably be considered inappropriate in a
-  professional setting
+The founder of SQLite and all
+current developers have pledged to follow the spirit of The Rule
+to the best of their ability. They
+view The Rule as their promise to all SQLite users of how the developers
+are expected to behave.
+This is a one-way promise, or covenant.
+In other words, the developers are saying: "We will treat you this
+way regardless of how you treat us."
 
-## Enforcement Responsibilities
+## 3. The Rule
 
-Community leaders are responsible for clarifying and enforcing our standards of
-acceptable behavior and will take appropriate and fair corrective action in
-response to any behavior that they deem inappropriate, threatening, offensive,
-or harmful.
+1.  First of all, love the Lord God with your whole heart,
+    your whole soul, and your whole strength.
 
-Community leaders have the right and responsibility to remove, edit, or reject
-comments, commits, code, wiki edits, issues, and other contributions that are
-not aligned to this Code of Conduct, and will communicate reasons for moderation
-decisions when appropriate.
+2.  Then, love your neighbor as yourself.
 
-## Scope
+3.  Do not murder.
 
-This Code of Conduct applies within all community spaces, and also applies when
-an individual is officially representing the community in public spaces.
-Examples of representing our community include using an official email address,
-posting via an official social media account, or acting as an appointed
-representative at an online or offline event.
+4.  Do not commit adultery.
 
-## Enforcement
+5.  Do not steal.
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at
-**conduct@buzz-relay.org**.
+6.  Do not covet.
 
-All complaints will be reviewed and investigated promptly and fairly.
+7.  Do not bear false witness.
 
-All community leaders are obligated to respect the privacy and security of the
-reporter of any incident.
+8.  Honor all people.
 
-## Enforcement Guidelines
+9.  Do not do to another what you would not have done to yourself.
 
-Community leaders will follow these Community Impact Guidelines in determining
-the consequences for any action they deem in violation of this Code of Conduct:
+10. Deny oneself in order to follow Christ.
 
-### 1. Correction
+11. Chastise the body.
 
-**Community Impact**: Use of inappropriate language or other behavior deemed
-unprofessional or unwelcome in the community.
+12. Do not become attached to pleasures.
 
-**Consequence**: A private, written warning from community leaders, providing
-clarity around the nature of the violation and an explanation of why the
-behavior was inappropriate. A public apology may be requested.
+13. Love fasting.
 
-### 2. Warning
+14. Relieve the poor.
 
-**Community Impact**: A violation through a single incident or series of
-actions.
+15. Clothe the naked.
 
-**Consequence**: A warning with consequences for continued behavior. No
-interaction with the people involved, including unsolicited interaction with
-those enforcing the Code of Conduct, for a specified period of time. This
-includes avoiding interactions in community spaces as well as external channels
-like social media. Violating these terms may lead to a temporary or permanent
-ban.
+16. Visit the sick.
 
-### 3. Temporary Ban
+17. Bury the dead.
 
-**Community Impact**: A serious violation of community standards, including
-sustained inappropriate behavior.
+18. Be a help in times of trouble.
 
-**Consequence**: A temporary ban from any sort of interaction or public
-communication with the community for a specified period of time. No public or
-private interaction with the people involved, including unsolicited interaction
-with those enforcing the Code of Conduct, is allowed during this period.
-Violating these terms may lead to a permanent ban.
+19. Console the sorrowing.
 
-### 4. Permanent Ban
+20. Be a stranger to the world's ways.
 
-**Community Impact**: Demonstrating a pattern of violation of community
-standards, including sustained inappropriate behavior, harassment of an
-individual, or aggression toward or disparagement of classes of individuals.
+21. Prefer nothing more than the love of Christ.
 
-**Consequence**: A permanent ban from any sort of public interaction within the
-community.
+22. Do not give way to anger.
 
-## Attribution
+23. Do not nurse a grudge.
 
-This Code of Conduct is adapted from the [Contributor Covenant][homepage],
-version 2.1, available at
-[https://www.contributor-covenant.org/version/2/1/code_of_conduct.html][v2.1].
+24. Do not entertain deceit in your heart.
 
-Community Impact Guidelines were inspired by
-[Mozilla's code of conduct enforcement ladder][Mozilla CoC].
+25. Do not give a false peace.
 
-For answers to common questions about this code of conduct, see the FAQ at
-[https://www.contributor-covenant.org/faq][FAQ]. Translations are available at
-[https://www.contributor-covenant.org/translations][translations].
+26. Do not forsake charity.
 
-[homepage]: https://www.contributor-covenant.org
-[v2.1]: https://www.contributor-covenant.org/version/2/1/code_of_conduct.html
-[Mozilla CoC]: https://github.com/mozilla/diversity
-[FAQ]: https://www.contributor-covenant.org/faq
-[translations]: https://www.contributor-covenant.org/translations
+27. Do not swear, for fear of perjuring yourself.
+
+28. Utter only truth from heart and mouth.
+
+29. Do not return evil for evil.
+
+30. Do no wrong to anyone, and bear patiently wrongs done to yourself.
+
+31. Love your enemies.
+
+32. Do not curse those who curse you, but rather bless them.
+
+33. Bear persecution for justice's sake.
+
+34. Be not proud.
+
+35. Be not addicted to wine.
+
+36. Be not a great eater.
+
+37. Be not drowsy.
+
+38. Be not lazy.
+
+39. Be not a grumbler.
+
+40. Be not a detractor.
+
+41. Put your hope in God.
+
+42. Attribute to God, and not to self, whatever good you see in yourself.
+
+43. Recognize always that evil is your own doing,
+    and to impute it to yourself.
+
+44. Fear the Day of Judgment.
+
+45. Be in dread of hell.
+
+46. Desire eternal life with all the passion of the spirit.
+
+47. Keep death daily before your eyes.
+
+48. Keep constant guard over the actions of your life.
+
+49. Know for certain that God sees you everywhere.
+
+50. When wrongful thoughts come into your heart, dash them against
+    Christ immediately.
+
+51. Disclose wrongful thoughts to your spiritual mentor.
+
+52. Guard your tongue against evil and depraved speech.
+
+53. Do not love much talking.
+
+54. Speak no useless words or words that move to laughter.
+
+55. Do not love much or boisterous laughter.
+
+56. Listen willingly to holy reading.
+
+57. Devote yourself frequently to prayer.
+
+58. Daily in your prayers, with tears and sighs, confess your
+    past sins to God, and amend them for the future.
+
+59. Fulfill not the desires of the flesh; hate your own will.
+
+60. Obey in all things the commands of those whom God has placed
+    in authority over you even though they (which God forbid) should 
+    act otherwise, mindful of the Lord's precept, "Do what they say, 
+    but not what they do."
+
+61. Do not wish to be called holy before one is holy; but first to be
+    holy, that you may be truly so called.
+
+62. Fulfill God's commandments daily in your deeds.
+
+63. Love chastity.
+
+64. Hate no one.
+
+65. Be not jealous, nor harbor envy.
+
+66. Do not love quarreling.
+
+67. Shun arrogance.
+
+68. Respect your seniors.
+
+69. Love your juniors.
+
+70. Pray for your enemies in the love of Christ.
+
+71. Make peace with your adversary before the sun sets.
+
+72. Never despair of God's mercy.
+
+---
+
+*This is the Code of Ethics used by the SQLite project.  
+It is based on the "Instruments of Good Works" from Chapter 4 of  
+The Rule of St. Benedict.*
+
+*For historical reference, the source is available at:  
+https://www.sqlite.org/codeofethics.html*

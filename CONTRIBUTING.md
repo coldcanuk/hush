@@ -23,17 +23,16 @@ If you have questions that aren't answered here, [open an issue](https://github.
 11. [How to Add a New API Endpoint](#how-to-add-a-new-api-endpoint)
 12. [License and CLA](#license-and-cla)
 
----
-
 ## Code of Conduct
 
-This project follows the [Contributor Covenant v2.1](CODE_OF_CONDUCT.md).
-By participating you agree to uphold these standards. Please report
-unacceptable behavior to **conduct@buzz-relay.org**.
+This project follows the [Code of Ethics](CODE_OF_CONDUCT.md) used by the SQLite project (based on the "Instruments of Good Works" from Chapter 4 of The Rule of St. Benedict).
+
+The maintainers pledge to govern their interactions with each other, with contributors, and with the larger community in accordance with these principles.
+
+Reports of serious misconduct may be sent to the project maintainers.
 
 ---
 
-## Before You Open a PR
 
 Before starting, search [open PRs](https://github.com/block/buzz/pulls) and [open issues](https://github.com/block/buzz/issues) for duplicates — someone may already be working on the same thing. When you open your PR, link the closest existing one in the description (or say "none found").
 
