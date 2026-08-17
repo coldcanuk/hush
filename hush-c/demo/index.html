@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Hush — Demo UI (Tailwind)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: {} } };
+  </script>
+</head>
+<body class="bg-zinc-950 text-zinc-200">
+  <div class="max-w-4xl mx-auto p-6">
+    <header class="flex items-center justify-between mb-8">
+      <div class="flex items-center gap-3">
+        <div class="size-9 rounded bg-emerald-500"></div>
+        <div>
+          <div class="text-2xl font-semibold tracking-tight">hush</div>
+          <div class="text-xs text-zinc-500 -mt-1">C11 relay • Nostr core</div>
+        </div>
+      </div>
+      <div class="text-xs px-3 py-1 rounded bg-zinc-900 border border-zinc-800">MVP</div>
+    </header>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <nav class="md:col-span-1 bg-zinc-900 border border-zinc-800 rounded-xl p-3">
+        <div class="text-xs uppercase tracking-widest text-zinc-500 px-2 mb-2">Channels</div>
+        <ul class="space-y-1 text-sm">
+          <li class="px-3 py-2 rounded-lg bg-zinc-800 flex items-center gap-2"><span class="text-emerald-400">●</span> general</li>
+          <li class="px-3 py-2 rounded-lg hover:bg-zinc-800 flex items-center gap-2">agents</li>
+          <li class="px-3 py-2 rounded-lg hover:bg-zinc-800 flex items-center gap-2">incidents</li>
+        </ul>
+      </nav>
+
+      <div class="md:col-span-2 bg-zinc-900 border border-zinc-800 rounded-xl flex flex-col min-h-[420px]">
+        <div class="px-4 py-3 border-b border-zinc-800 text-sm flex items-center justify-between">
+          <div>#general <span class="text-emerald-400 text-xs">3 online</span></div>
+          <button onclick="sendDemoMsg()" class="text-xs px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500">Send demo</button>
+        </div>
+        <div id="stream" class="flex-1 p-4 space-y-4 overflow-auto text-sm font-mono">
+          <div class="text-zinc-400">[hush] connected to C relay (MVP)</div>
+        </div>
+        <div class="p-3 border-t border-zinc-800">
+          <input id="msg" onkeyup="if(event.key==='Enter')sendDemoMsg()" class="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm" placeholder="Type a message (demo only)">
+        </div>
+      </div>
+    </div>
+
+    <footer class="mt-8 text-[10px] text-zinc-500">
+      This demo uses Tailwind via CDN + classes following v4 rules (gap, /opacity, no @apply).
+      The actual Hush relay is pure legible C11. See hush-c/ and RESEARCH.md.
+    </footer>
+  </div>
+  <script>
+    function sendDemoMsg() {
+      const i = document.getElementById('msg');
+      const s = document.getElementById('stream');
+      if (!i || !s || !i.value.trim()) return;
+      const d = document.createElement('div');
+      d.className = 'text-emerald-300';
+      d.textContent = '> ' + i.value;
+      s.appendChild(d);
+      s.scrollTop = s.scrollHeight;
+      i.value = '';
+      setTimeout(() => {
+        const e = document.createElement('div');
+        e.className = 'text-zinc-400';
+        e.textContent = '< [hush-relay] echo: ' + d.textContent.slice(2);
+        s.appendChild(e);
+        s.scrollTop = s.scrollHeight;
+      }, 120);
+    }
+    console.log('%c[Hush] Tailwind demo ready (CDN + v4 practices)', 'color:#3f3');
+  </script>
+</body>
+</html>

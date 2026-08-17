@@ -14,6 +14,9 @@ enum {
 /* Very small tokenizer for ["TYPE", ...] lines. No full JSON. */
 static hush_status_t hush_parse_event_object(const char *s, hush_event_t *out);
 static hush_status_t hush_parse_filter_object(const char *s, hush_filter_t *out);
+static void hush_parse_kinds(const char *p, hush_filter_t *f);
+static void hush_parse_authors(const char *p, hush_filter_t *f);
+static void hush_parse_h_tag(const char *p, hush_filter_t *f);
 
 /* Rejects NULL line or out_msg. Parses only the supported minimal Nostr array shapes. */
 hush_status_t hush_proto_parse_line(const char *line, hush_client_msg_t *out_msg)
@@ -37,28 +40,27 @@ hush_status_t hush_proto_parse_line(const char *line, hush_client_msg_t *out_msg
     if (strcmp(typ, "EVENT") == 0) {
         out_msg->type = HUSH_MSG_EVENT;
         const char *obj = strchr(p, '{');
-        if (obj != NULL) {
+        if (obj != NULL)
             return hush_parse_event_object(obj, &out_msg->event);
-        }
         return HUSH_ERR_PARSE;
-    } else if (strcmp(typ, "REQ") == 0) {
+    }
+    if (strcmp(typ, "REQ") == 0) {
         out_msg->type = HUSH_MSG_REQ;
         const char *q = strchr(p, '"');
         if (q != NULL) {
             q++;
             size_t si = 0;
-            while (*q && *q != '"' && si < sizeof(out_msg->sub_id) - 1) {
+            while (*q && *q != '"' && si < sizeof(out_msg->sub_id) - 1)
                 out_msg->sub_id[si++] = *q++;
-            }
         }
         const char *fobj = strchr(p, '{');
         if (fobj != NULL) {
-            hush_status_t st = hush_parse_filter_object(fobj, &out_msg->filters[0]);
-            if (st == HUSH_OK)
+            if (hush_parse_filter_object(fobj, &out_msg->filters[0]) == HUSH_OK)
                 out_msg->nfilters = 1;
         }
         return HUSH_OK;
-    } else if (strcmp(typ, "CLOSE") == 0) {
+    }
+    if (strcmp(typ, "CLOSE") == 0) {
         out_msg->type = HUSH_MSG_CLOSE;
         return HUSH_OK;
     }
@@ -111,7 +113,7 @@ static hush_status_t hush_parse_event_object(const char *s, hush_event_t *out)
     if (cp != NULL)
         sscanf(cp + 11, "%4096[^\"]", out->content);
 
-    out->created_at = 1720000000; /* MVP default */
+    out->created_at = 1720000000;
     return HUSH_OK;
 }
 
@@ -121,41 +123,52 @@ static hush_status_t hush_parse_filter_object(const char *s, hush_filter_t *out)
         return HUSH_ERR_ARG;
 
     memset(out, 0, sizeof(*out));
-
-    const char *kinds = strstr(s, "\"kinds\":[");
-    if (kinds != NULL) {
-        kinds += 9;
-        int k;
-        while (sscanf(kinds, "%u", &k) == 1 && out->kinds_len < HUSH_FILTER_MAX_KINDS) {
-            out->kinds[out->kinds_len++] = (uint32_t)k;
-            while (*kinds && *kinds != ',' && *kinds != ']')
-                ++kinds;
-            if (*kinds == ',')
-                ++kinds;
-        }
-    }
-
-    const char *ap = strstr(s, "\"authors\":[");
-    if (ap != NULL) {
-        ap += 11;
-        char a[65];
-        if (sscanf(ap, "\"%64[^\"]", a) == 1) {
-            strcpy(out->authors[0], a);
-            out->authors_len = 1;
-        }
-    }
-
-    const char *hp = strstr(s, "\"#h\":[");
-    if (hp != NULL) {
-        hp += 6;
-        char v[256];
-        if (sscanf(hp, "\"%255[^\"]", v) == 1) {
-            strcpy(out->tag_keys[0], "h");
-            strcpy(out->tag_vals[0][0], v);
-            out->tag_vals_len[0] = 1;
-            out->tag_count = 1;
-        }
-    }
-
+    hush_parse_kinds(s, out);
+    hush_parse_authors(s, out);
+    hush_parse_h_tag(s, out);
     return HUSH_OK;
+}
+
+static void hush_parse_kinds(const char *p, hush_filter_t *f)
+{
+    const char *kinds = strstr(p, "\"kinds\":[");
+    if (kinds == NULL)
+        return;
+    kinds += 9;
+    int k;
+    while (sscanf(kinds, "%u", &k) == 1 && f->kinds_len < HUSH_FILTER_MAX_KINDS) {
+        f->kinds[f->kinds_len++] = (uint32_t)k;
+        while (*kinds && *kinds != ',' && *kinds != ']')
+            ++kinds;
+        if (*kinds == ',')
+            ++kinds;
+    }
+}
+
+static void hush_parse_authors(const char *p, hush_filter_t *f)
+{
+    const char *ap = strstr(p, "\"authors\":[");
+    if (ap == NULL)
+        return;
+    ap += 11;
+    char a[65];
+    if (sscanf(ap, "\"%64[^\"]", a) == 1) {
+        strcpy(f->authors[0], a);
+        f->authors_len = 1;
+    }
+}
+
+static void hush_parse_h_tag(const char *p, hush_filter_t *f)
+{
+    const char *hp = strstr(p, "\"#h\":[");
+    if (hp == NULL)
+        return;
+    hp += 6;
+    char v[256];
+    if (sscanf(hp, "\"%255[^\"]", v) == 1) {
+        strcpy(f->tag_keys[0], "h");
+        strcpy(f->tag_vals[0][0], v);
+        f->tag_vals_len[0] = 1;
+        f->tag_count = 1;
+    }
 }

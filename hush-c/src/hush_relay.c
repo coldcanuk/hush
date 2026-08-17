@@ -42,6 +42,12 @@ static void hush_accept_new(int ls);
 /* Reads available data for one client; on full line, parses and handles. */
 static void hush_service_client(int idx);
 
+/* Initializes client table (all fds invalid). */
+static void hush_clients_init(void);
+
+/* One iteration of the poll + dispatch loop. Returns non-zero to continue. */
+static int hush_poll_once(int ls);
+
 hush_status_t hush_relay_run(uint16_t port)
 {
     int ls = socket(AF_INET, SOCK_STREAM, 0);
@@ -73,40 +79,53 @@ hush_status_t hush_relay_run(uint16_t port)
         return HUSH_ERR_FULL;
     }
 
-    struct pollfd fds[1 + HUSH_MAX_CLIENTS];
+    hush_clients_init();
 
-    for (;;) {
-        fds[0].fd = ls;
-        fds[0].events = POLLIN;
-        int nf = 1;
-
-        for (int i = 0; i < HUSH_MAX_CLIENTS; ++i) {
-            if (clients[i].fd >= 0) {
-                fds[nf].fd = clients[i].fd;
-                fds[nf].events = POLLIN;
-                nf++;
-            }
-        }
-
-        int pr = poll(fds, (nfds_t)nf, HUSH_POLL_TIMEOUT_MS);
-        if (pr < 0) {
-            if (errno == EINTR)
-                continue;
-            break;
-        }
-
-        if (fds[0].revents & POLLIN)
-            hush_accept_new(ls);
-
-        for (int i = 0; i < HUSH_MAX_CLIENTS; ++i) {
-            if (clients[i].fd >= 0)
-                hush_service_client(i);
-        }
+    while (hush_poll_once(ls)) {
+        /* loop until error or signal */
     }
 
     hush_store_destroy(g_store);
     close(ls);
     return HUSH_OK;
+}
+
+static void hush_clients_init(void)
+{
+    for (int i = 0; i < HUSH_MAX_CLIENTS; ++i)
+        clients[i].fd = -1;
+}
+
+static int hush_poll_once(int ls)
+{
+    struct pollfd fds[1 + HUSH_MAX_CLIENTS];
+    fds[0].fd = ls;
+    fds[0].events = POLLIN;
+    int nf = 1;
+
+    for (int i = 0; i < HUSH_MAX_CLIENTS; ++i) {
+        if (clients[i].fd >= 0) {
+            fds[nf].fd = clients[i].fd;
+            fds[nf].events = POLLIN;
+            nf++;
+        }
+    }
+
+    int pr = poll(fds, (nfds_t)nf, HUSH_POLL_TIMEOUT_MS);
+    if (pr < 0) {
+        if (errno == EINTR)
+            return 1;
+        return 0;
+    }
+
+    if (fds[0].revents & POLLIN)
+        hush_accept_new(ls);
+
+    for (int i = 0; i < HUSH_MAX_CLIENTS; ++i) {
+        if (clients[i].fd >= 0)
+            hush_service_client(i);
+    }
+    return 1;
 }
 
 static void hush_set_nonblock(int fd)
@@ -125,7 +144,6 @@ static hush_status_t hush_handle_msg(int fd, const hush_client_msg_t *msg)
     if (msg->type == HUSH_MSG_EVENT) {
         return hush_store_insert(g_store, &msg->event);
     } else if (msg->type == HUSH_MSG_REQ) {
-        /* MVP: query happens; real impl would format and send frames back */
         hush_event_t results[16];
         (void)hush_store_query(g_store, msg->filters, msg->nfilters, results, 16);
         return HUSH_OK;
@@ -149,7 +167,7 @@ static void hush_accept_new(int ls)
         }
     }
 
-    close(cfd); /* no slots */
+    close(cfd);
 }
 
 static void hush_service_client(int idx)
@@ -175,7 +193,6 @@ static void hush_service_client(int idx)
         if (hush_proto_parse_line(c->buf, &msg) == HUSH_OK) {
             (void)hush_handle_msg(c->fd, &msg);
         }
-        /* shift remaining */
         size_t rest = c->len - (size_t)(nl - c->buf + 1);
         memmove(c->buf, nl + 1, rest);
         c->len = rest;
