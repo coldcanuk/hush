@@ -1,0 +1,29 @@
+name: "hush-relay"
+arch: "amd64"
+platform: "linux"
+version: "0.1.0"
+section: "default"
+priority: "extra"
+maintainer: "Hush Maintainers <maintainers@example.invalid>"
+description: |
+  Hush - legible C11 Nostr relay (core).
+  Minimal auditable relay for Nostr events.
+vendor: "Hush"
+homepage: "https://github.com/coldcanuk/hush"
+license: "GPLv3"
+
+contents:
+  - src: ./hush-c/hush-relay
+    dst: /usr/bin/hush-relay
+  - src: ./README.md
+    dst: /usr/share/doc/hush-relay/README.md
+  - src: ./LICENSE
+    dst: /usr/share/doc/hush-relay/LICENSE
+    type: license
+
+deb:
+  fields:
+    Depends: libc6
+
+rpm:
+  group: "Applications/Internet"
