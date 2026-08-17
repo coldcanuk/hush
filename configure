@@ -1,55 +1,58 @@
 #!/bin/sh
 # configure - Hush build configuration (Linux + *BSD)
-# POSIX sh. Detects OS via uname + /etc/os-release fallback.
-# Checks for C11 compiler (gcc/clang), make/gmake, install.
-# Runs strict C11 probe. Writes config.mk.
-# Prints OS-specific install hints.
-# Respects PREFIX, BINDIR, DATADIR from env or args.
+# POSIX sh.
+# - Detects OS (uname + /etc/os-release)
+# - Checks C11 compiler, make/gmake, install
+# - Strict C11 probe
+# - Writes config.mk
+# - Special good UX for Pop!_OS (and other Debian/Ubuntu)
 #
-# Usage:
+# Invocation:
 #   ./configure
 #   PREFIX=$HOME/.local ./configure
-#   ./configure --prefix=/opt/hush
-#
-# After: cat config.mk && make && make test
+#   ./configure --prefix=$HOME/.local
+#   ./configure --prefix=/opt/hush --bindir=/opt/hush/bin
 
 set -e
 
-# Defaults
+# Start with environment values if present
 PREFIX="${PREFIX:-/usr/local}"
-BINDIR="${BINDIR:-${PREFIX}/bin}"
-DATADIR="${DATADIR:-${PREFIX}/share/hush}"
+BINDIR="${BINDIR:-}"
+DATADIR="${DATADIR:-}"
 CC="${CC:-}"
-MAKE="${MAKE:-}"
+MAKE_CMD="${MAKE:-}"
 
-# Parse simple args (support --prefix=...)
+# Parse command-line options (override env)
 for arg in "$@"; do
     case "$arg" in
-        --prefix=*)
-            PREFIX="${arg#--prefix=}"
-            BINDIR="${BINDIR:-${PREFIX}/bin}"
-            DATADIR="${DATADIR:-${PREFIX}/share/hush}"
-            ;;
-        --bindir=*)
-            BINDIR="${arg#--bindir=}"
-            ;;
-        --datadir=*)
-            DATADIR="${arg#--datadir=}"
-            ;;
-        --cc=*)
-            CC="${arg#--cc=}"
-            ;;
-        --make=*)
-            MAKE="${arg#--make=}"
-            ;;
+        --prefix=*)   PREFIX="${arg#--prefix=}" ;;
+        --bindir=*)   BINDIR="${arg#--bindir=}" ;;
+        --datadir=*)  DATADIR="${arg#--datadir=}" ;;
+        --cc=*)       CC="${arg#--cc=}" ;;
+        --make=*)     MAKE_CMD="${arg#--make=}" ;;
         -h|--help)
-            echo "configure for Hush (hush-c legible C11 relay)"
-            echo "Options: --prefix=PATH --bindir=PATH --datadir=PATH --cc=PATH --make=PATH"
-            echo "Env vars: PREFIX BINDIR DATADIR CC MAKE"
+            echo "configure for Hush (hush-relay - legible C11 Nostr relay)"
+            echo ""
+            echo "Options:"
+            echo "  --prefix=PATH   Installation prefix (default: /usr/local)"
+            echo "  --bindir=PATH   Binary directory   (default: \$PREFIX/bin)"
+            echo "  --datadir=PATH  Data directory     (default: \$PREFIX/share)"
+            echo "  --cc=COMPILER   C compiler"
+            echo "  --make=MAKE     make or gmake"
+            echo ""
+            echo "Environment variables are also honored (PREFIX=... ./configure)"
             exit 0
             ;;
     esac
 done
+
+# Derive BINDIR and DATADIR from PREFIX only if they were not explicitly provided
+if [ -z "$BINDIR" ]; then
+    BINDIR="${PREFIX}/bin"
+fi
+if [ -z "$DATADIR" ]; then
+    DATADIR="${PREFIX}/share"
+fi
 
 echo "=== Hush Configuration ==="
 echo "Target PREFIX:  $PREFIX"
@@ -57,74 +60,60 @@ echo "Binary dir:     $BINDIR"
 echo "Data dir:       $DATADIR"
 echo
 
-# OS detection (Linux and *BSD primary)
+# OS detection
 OS_UNAME="$(uname -s 2>/dev/null || echo unknown)"
 OS_RELEASE_ID=""
 OS_RELEASE_LIKE=""
 if [ -f /etc/os-release ]; then
-    # shellcheck disable=SC1091
     . /etc/os-release
     OS_RELEASE_ID="${ID:-}"
     OS_RELEASE_LIKE="${ID_LIKE:-}"
 fi
 
-echo "Detected: uname=${OS_UNAME} os-release=${OS_RELEASE_ID:-unknown} (like: ${OS_RELEASE_LIKE:-})"
+echo "Detected: uname=${OS_UNAME}  os-release=${OS_RELEASE_ID:-unknown} (like: ${OS_RELEASE_LIKE:-})"
 echo
 
-# Choose compiler if not forced
+# Choose compiler
 if [ -z "$CC" ]; then
     if command -v gcc >/dev/null 2>&1; then
-        CC="gcc"
+        CC=gcc
     elif command -v clang >/dev/null 2>&1; then
-        CC="clang"
+        CC=clang
     else
-        CC="cc"
+        CC=cc
     fi
 fi
 
-# Choose make (prefer gmake on BSD, fall back to make)
-if [ -z "$MAKE" ]; then
+# Choose make (prefer gmake on BSDs)
+if [ -z "$MAKE_CMD" ]; then
     if [ "$OS_UNAME" = "FreeBSD" ] || [ "$OS_UNAME" = "OpenBSD" ] || [ "$OS_UNAME" = "NetBSD" ]; then
-        if command -v gmake >/dev/null 2>&1; then
-            MAKE="gmake"
-        else
-            MAKE="make"
-        fi
+        if command -v gmake >/dev/null 2>&1; then MAKE_CMD=gmake; else MAKE_CMD=make; fi
     else
-        if command -v gmake >/dev/null 2>&1; then
-            MAKE="gmake"
-        elif command -v make >/dev/null 2>&1; then
-            MAKE="make"
-        else
-            MAKE="make"
-        fi
+        if command -v gmake >/dev/null 2>&1; then MAKE_CMD=gmake; else MAKE_CMD=make; fi
     fi
 fi
 
 echo "Using CC:   $CC"
-echo "Using MAKE: $MAKE"
+echo "Using MAKE: $MAKE_CMD"
 echo
 
-# Requirement checks
 MISSING=""
 check_cmd() {
-    cmd="$1"
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        echo "MISSING: $cmd"
-        MISSING="$MISSING $cmd"
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "MISSING: $1"
+        MISSING="$MISSING $1"
     else
-        echo "FOUND:   $cmd ($(command -v "$cmd"))"
+        echo "FOUND:   $1 ($(command -v "$1"))"
     fi
 }
 
 echo "Checking build requirements..."
 check_cmd "$CC"
-check_cmd "$MAKE"
+check_cmd "$MAKE_CMD"
 check_cmd install
 
-# C11 capability probe with strict flags (same as hush-c/Makefile)
 echo
-echo "Testing C11 + strict flags capability..."
+echo "Testing C11 compiler capability (strict flags)..."
 cat > /tmp/hush_c11_probe.c << 'PROBE'
 #include <stdio.h>
 #include <stdint.h>
@@ -135,93 +124,92 @@ int main(void) {
     uint32_t x = 42;
     bool ok = (x == 42);
     (void)ok;
-    printf("C11 probe: OK (poll+socket+stdint)\n");
+    printf("C11 probe: OK\n");
     return 0;
 }
 PROBE
 
-C11_OK=0
 if "$CC" -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -c /tmp/hush_c11_probe.c -o /tmp/hush_c11_probe.o >/dev/null 2>&1; then
     echo "C11 strict probe: PASSED"
-    C11_OK=1
     rm -f /tmp/hush_c11_probe.*
 else
     echo "C11 strict probe: FAILED"
     MISSING="$MISSING c11-strict"
 fi
 
-# OS-specific hints
+# Helpful output, especially for Pop!_OS
 echo
 case "$OS_UNAME" in
     Linux)
-        if [ "$OS_RELEASE_ID" = "pop" ] || echo "$OS_RELEASE_LIKE" | grep -qi "ubuntu\|debian"; then
+        if [ "$OS_RELEASE_ID" = "pop" ] || echo "$OS_RELEASE_LIKE" | grep -qi "pop\|ubuntu\|debian"; then
             echo ">>> Linux (Debian/Ubuntu/Pop!_OS) detected <<<"
-            echo "Recommended:"
+            echo "For the optimal experience on Pop!_OS run:"
             echo "  sudo apt update"
             echo "  sudo apt install -y build-essential pkg-config"
+            echo "This ensures gcc, make, and all required headers are present."
         else
             echo ">>> Linux detected <<<"
-            echo "Install build tools for your distro (gcc/clang + make)."
+            echo "Install build tools for your distribution (gcc/clang + make)."
         fi
         ;;
     FreeBSD)
         echo ">>> FreeBSD detected <<<"
-        echo "Recommended (as root or with doas/pkg):"
+        echo "Recommended:"
         echo "  pkg install -y gmake gcc pkgconf"
-        echo "  # then use gmake after configure if needed"
         ;;
     OpenBSD)
         echo ">>> OpenBSD detected <<<"
-        echo "Recommended (as root):"
+        echo "Recommended:"
         echo "  pkg_add gmake"
-        echo "  # CC=cc is usually clang; configure will pick it"
         ;;
     NetBSD)
         echo ">>> NetBSD detected <<<"
         echo "Recommended:"
         echo "  pkgin install gmake gcc pkgconf"
         ;;
-    Darwin)
-        echo ">>> macOS (Darwin) detected <<<"
-        echo "Use Xcode command line tools or brew install make (gmake)."
-        ;;
     *)
-        echo ">>> Unknown or other POSIX OS: $OS_UNAME <<<"
-        echo "Ensure a C11 compiler and GNU/BSD make are available."
+        echo ">>> $OS_UNAME <<<"
         ;;
 esac
 
-# Write config.mk (consumed by top Makefile and/or hush-c)
+# Write config.mk (used by top-level Makefile and hush-c)
 cat > config.mk << CONF
 # Generated by ./configure on $(date -u +%Y-%m-%dT%H:%M:%SZ)
-# Do not edit by hand. Re-run ./configure to change.
+# Re-run ./configure to change.
 
 PREFIX  := $PREFIX
 BINDIR  := $BINDIR
 DATADIR := $DATADIR
 
 CC      := $CC
-MAKE    := $MAKE
+MAKE    := $MAKE_CMD
 
 OS_UNAME := $OS_UNAME
 OS_ID    := ${OS_RELEASE_ID:-unknown}
 
-# CFLAGS for legible C11 (hush-c)
+# Legible C11 flags (matching hush-c expectations)
 CFLAGS  := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2
 CONF
 
 echo
 echo "Configuration written to config.mk"
-echo "PREFIX=$PREFIX BINDIR=$BINDIR"
+echo "  PREFIX=$PREFIX"
+echo "  BINDIR=$BINDIR"
+echo "  DATADIR=$DATADIR"
 echo
-echo "Next steps:"
-echo "  $MAKE -C hush-c          # or just 'make' if top Makefile present"
-echo "  $MAKE -C hush-c test"
-echo "  $MAKE -C hush-c install PREFIX=\$HOME/.local"
+echo "Standard workflow:"
+echo "  ./configure"
+echo "  make"
+echo "  make test"
+echo "  make install                 # may need sudo for system prefix"
+echo "  make install PREFIX=\$HOME/.local   # recommended for most users"
 echo
+echo "After user-local install, you may want:"
+echo "  update-desktop-database \$HOME/.local/share/applications || true"
+echo
+
 if [ -n "$MISSING" ]; then
-    echo "WARNING: Missing or insufficient:$MISSING"
-    echo "Install the missing items and re-run ./configure"
+    echo "WARNING: Missing or insufficient tools:$MISSING"
     exit 1
 fi
 

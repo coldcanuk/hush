@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Hush Relay
+GenericName=Nostr Relay
+Comment=Lightweight, legible C11 Nostr relay core (hush-relay)
+Exec=hush-relay
+TryExec=hush-relay
+Terminal=true
+Categories=Network;Utility;ConsoleOnly;
+Keywords=nostr;relay;chat;agent;
+StartupNotify=false
