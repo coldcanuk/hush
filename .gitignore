@@ -72,3 +72,12 @@ identity.key
 
 # Helm dependency tarballs — regenerable from Chart.lock via `helm dependency build`
 deploy/charts/*/charts/*.tgz
+# Hush C build artifacts
+config.mk
+hush-relay
+libhush.a
+*.o
+dist/
+packaging/deb/usr/
+packaging/rpm/BUILD*/
+packaging/rpm/SOURCES/
