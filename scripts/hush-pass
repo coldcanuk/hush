@@ -1,0 +1,178 @@
+#!/bin/sh
+# scripts/hush-pass
+# Portable wrapper around the unix password manager `pass` for Hush.
+#
+# Namespace: hush/<category>/<name>/<type>
+#   Examples:
+#     hush/agents/my-brain/nsec
+#     hush/relay/admin-token
+#     hush/tokens/blossom-key
+#
+# Exact UX contract (per requirements):
+#   - When saving keys/tokens/passwords, the application offers:
+#     "Check here to save the {password/key/token/etc} in the local password manager, `pass`"
+#   - Manual copy is ALWAYS offered so user can save elsewhere.
+#   - Opt-out: leave the box UNCHECKED (we do not call pass).
+#
+# This script is the single place Hush code (CLI, desktop sidecar, docs) calls.
+# It is intentionally small and auditable.
+#
+# Requirements: pass(1) in PATH and a initialized store (pass init ...).
+# Graceful: if pass missing or store not ready, we print actionable messages
+#           and still allow manual copy path.
+#
+# Usage:
+#   scripts/hush-pass save "agents/brain/nsec" "nsec1..."
+#   echo "nsec1..." | scripts/hush-pass save "agents/brain/nsec"   # pipe (no argv leak)
+#   scripts/hush-pass get "agents/brain/nsec"
+#   scripts/hush-pass has "agents/brain/nsec" && echo yes || echo no
+#   scripts/hush-pass rm "agents/brain/nsec"
+#   scripts/hush-pass ls
+#
+# In agent creation UI (or CLI prompts):
+#   [ ] Check here to save the nsec in the local password manager, `pass`
+#   [Copy value]  (manual save to any other manager)
+#   If unchecked -> do not invoke this script for storage.
+
+set -e
+
+PASS_BIN="${PASS_BIN:-pass}"
+NS_PREFIX="hush"
+
+die() { echo "hush-pass: $*" >&2; exit 1; }
+warn() { echo "hush-pass: $*" >&2; }
+
+have_pass() {
+    command -v "$PASS_BIN" >/dev/null 2>&1
+}
+
+store_ready() {
+    # `pass ls` exits non-zero or prints nothing useful if no store
+    "$PASS_BIN" ls >/dev/null 2>&1
+}
+
+usage() {
+    cat <<USAGE
+hush-pass - Hush wrapper for the unix password manager 'pass'
+
+Exact checkbox label to use in UIs:
+  Check here to save the {password/key/token/etc} in the local password manager, \`pass\`
+
+Commands:
+  save <path> [value]     Insert (multiline with -m if value contains newlines or via pipe)
+                          Example: hush-pass save "agents/foo/nsec" "nsec1..."
+  get  <path>             Print the secret (stdout). Fails if not present.
+  has  <path>             Exit 0 if present, 1 otherwise (no output).
+  rm   <path>             Remove the secret.
+  ls                      List all secrets under the hush/ namespace.
+  help                    This help.
+
+Manual copy path (ALWAYS offer this to the human):
+  - Display the secret on screen (or in a one-time dialog) and let the user copy it.
+  - Instruct: "Copy the value above and save it in your preferred password manager."
+
+Opt-out:
+  - Do not check the box above.
+  - The secret will not be stored via pass. The application may keep it in memory
+    only for the current session or use the OS keyring fallback if configured.
+
+Examples:
+  # Recommended (pipe to avoid argv):
+  echo "nsec1q9x8..." | hush-pass save "agents/brain/nsec"
+
+  # Or with value (visible in process list on some systems - prefer pipe):
+  hush-pass save "agents/brain/nsec" "nsec1q9x8..."
+
+  hush-pass get "agents/brain/nsec" | head -1
+
+Security:
+  - Never log the secret.
+  - Prefer pipe input for save.
+  - User must have run "pass init <gpg-id>" once.
+USAGE
+}
+
+cmd="$1"
+shift || true
+
+case "$cmd" in
+    save)
+        path="$1"; shift || true
+        [ -n "$path" ] || die "save: path required (e.g. agents/name/nsec)"
+        full="hush/$path"
+
+        if ! have_pass; then
+            warn "'pass' not found in PATH. Install pass (https://www.passwordstore.org/)."
+            warn "You can still manually copy the secret and save it in any manager."
+            # Accept input but do not store
+            if [ -n "$1" ]; then
+                echo "hush-pass: (not stored) value was: $1" >&2
+            else
+                echo "hush-pass: (not stored) read value from stdin" >&2
+                cat >/dev/null || true
+            fi
+            exit 0
+        fi
+
+        if ! store_ready; then
+            warn "pass store not initialized. Run: pass init <your-gpg-id>"
+            warn "Manual copy path is still available."
+        fi
+
+        # If value on argv, use it; else read stdin (supports multiline via pipe or heredoc)
+        if [ -n "$1" ]; then
+            # Note: visible in argv on some platforms; prefer pipe in callers
+            printf '%s\n' "$1" | "$PASS_BIN" insert -m -f "$full" >/dev/null
+        else
+            # Read all of stdin (multiline safe)
+            "$PASS_BIN" insert -m -f "$full" >/dev/null
+        fi
+        echo "Saved to pass: $full"
+        ;;
+
+    get)
+        path="$1"
+        [ -n "$path" ] || die "get: path required"
+        full="hush/$path"
+        if ! have_pass; then die "'pass' not found"; fi
+        "$PASS_BIN" show "$full"
+        ;;
+
+    has)
+        path="$1"
+        [ -n "$path" ] || die "has: path required"
+        full="hush/$path"
+        if ! have_pass; then exit 1; fi
+        # pass show returns non-zero on missing; we suppress output
+        if "$PASS_BIN" show "$full" >/dev/null 2>&1; then
+            exit 0
+        else
+            exit 1
+        fi
+        ;;
+
+    rm|remove|delete)
+        path="$1"
+        [ -n "$path" ] || die "rm: path required"
+        full="hush/$path"
+        if ! have_pass; then die "'pass' not found"; fi
+        "$PASS_BIN" rm -f "$full"
+        echo "Removed: $full"
+        ;;
+
+    ls|list)
+        if ! have_pass; then die "'pass' not found"; fi
+        # Show only hush/ subtree if present
+        "$PASS_BIN" ls "$NS_PREFIX" 2>/dev/null || "$PASS_BIN" ls | grep -i "^$NS_PREFIX" || true
+        ;;
+
+    help|-h|--help)
+        usage
+        ;;
+
+    *)
+        echo "Unknown command: ${cmd:-<none>}" >&2
+        usage >&2
+        exit 2
+        ;;
+esac
