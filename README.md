@@ -140,6 +140,14 @@ To run a relay for your team without managing servers, you can deploy one to Rai
 
 See [here](https://engineering.block.xyz/blog/run-your-own-buzz-relay) for details.
 
+### Migrating agents and channels to Hush (C relay)
+
+Coming from Buzz? See [IMPORT.md](IMPORT.md) for step-by-step instructions on exporting your agents (nsec keys) and channels, saving them with the unix password manager `pass`, and pointing clients/agents at a Hush relay.
+
+The exact checkbox text used when saving secrets is:
+> Check here to save the {password/key/token/etc} in the local password manager, `pass`
+
+
 ### I work at Block
 
 Don't build from source, and don't use the OSS release — use the internal build. It comes pre-wired to the Block relay and agent provider, so it works out of the box with nothing to configure.
