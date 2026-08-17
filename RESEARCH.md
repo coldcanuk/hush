@@ -412,3 +412,52 @@ Commit after every completed Milestone with message: "Milestone X.Y: <concise>"
 - Orphaned wts: forbidden inside Hush. All wts under worktrees/ inside the git repo. External /opt/repo/*-wt* belong to sibling experiments; prune via their owning .git or rm when confirmed loose.
 - Goose prime directive: the AGENTS.md will be replaced by short Goose-specific; .goose/ is the skills/config home.
 
+
+---
+
+## Phase 1 Synthesis Gate (M1.5) — 2026-08-17
+
+### Consolidated Findings
+**Repo identity**: Hush is the C11 + Goose successor experiment. It started as a Buzz fork but the mandate is complete port to legible C11 with Goose as sole agent, worktree-only development, main protected by workflow.
+
+**Current surface (pre-excision)**:
+- C core: hush-c/ (6 .c, 6 .h, tests, demo Tailwind html, Makefile). Builds + 3 tests pass under strict -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow. Uses poll(2) + minimal hand-rolled Nostr array parser over \n-JSON. MVP kinds 0,1,5,7,9 + #h filter. Crypto id stubbed (dev only).
+- Build: top configure (POSIX sh, Linux+*BSD detection, writes config.mk), top Makefile delegates to hush-c. Good.
+- Agent: .goose/ stub + GOOSE.md + 3 skills (worktree, c-build, c-test). Legacy .agents/.claude/.codex present with empty or symlinked skills (to be removed).
+- Docs: AGENTS.md is the full Buzz 624-line guide (wrong), CODE_OF_CONDUCT.md is correct SQLite Code of Ethics (Rule of St. Benedict) since e92b7085d, README describes Hush C correctly at high level, many VISION_*.md and Buzz docs remain.
+- Git: main + current gb/* only locally. ~580 origin/ remotes are Buzz history — do not use. Worktree inside repo under worktrees/.
+- Rust/TS/Flutter: full crates/ (25+), desktop/, mobile/, web/, Cargo.*, pnpm*, Justfile, etc. All to be excised.
+- /opt/repo stray wts: lumenEh-* and loose worktrees belong to other experiments; Hush policy is "all worktrees inside the repo dir under worktrees/".
+
+**Scope for this RDAP (full port)**:
+Primary Goal: Hush on main is pure legible C11 (hush-c becomes the implementation), .goose/ is the complete Goose skills/config home, all development follows documented worktree lifecycle from clean main, no Rust/TS/Flutter/legacy agent dirs remain, CoC is SQLite ethics, main is protected by documented process, Buzz branches are acknowledged as historical only.
+
+Non-Goals: Full Nostr (no full WS, no Schnorr real verify in MVP, no Postgres/Redis, no agents desktop surface, no mobile). We keep the scoped relay core + build + Goose harness.
+
+Success (measurable):
+- After excision + polish: `git ls-files | grep -E '\.(rs|tsx|ts|dart|lock)$|Cargo.toml|pnpm' | wc -l` == 0 (except maybe docs references that are updated).
+- `./configure && make && make test` succeeds clean.
+- All .c/.h pass write-legible-c §14 checklist (audited in Final Phase).
+- .goose/skills has at least worktree, c-build, c-test, legible-c, relay, goose-init; GOOSE.md + short AGENTS.md declare Goose-only + worktree prime directive.
+- README/CONTRIBUTING/AGENTS.md updated; no "just ci", "cargo", "desktop dev" instructions for Hush.
+- Local branches: only main + active gb/*; `git branch -r` not used for work.
+- Worktree removed after merge; main clean; "Hush C/Goose RDAP complete."
+
+Constraints: C11 + write-legible-c mandatory. POSIX sh for configure. Keep demo/ as static Tailwind (CDN) separate from C. No new heavy deps.
+
+Risks (updated):
+1. Removing large surface may leave stale references in docs — mitigate by targeted grep/sed + review.
+2. hush-c parser is naive — keep as MVP; document as such.
+3. Skills need to be actionable for Goose (exact commands + verifs).
+4. Main protection is process, not git hooks (unless we add simple one); document strongly.
+
+### Updated Concrete Plan (post M1.5)
+See HUSH_C_RDAP_PLAN.md updated below or follow the RDAP structure executed here:
+- Phase 2: Define exact excision list, new repo layout, updated headers if needed, AGENTS.md rewrite plan.
+- Phase 3: Impl excision (rm -rf crates desktop ...), populate .goose/skills fully, rewrite root docs, polish hush-c for full §14 (fix any near-misses), update configure/Makefile if needed for C-only, add main-protection note + example pre-push.
+- Phase 4/Final: Full build+test+audit, git lifecycle (push branch, merge --no-ff on main, worktree remove), prune local branches, final clean status, confirmation.
+
+Every remaining Milestone will be committed with "Milestone X.Y: ..."
+
+**Verification of gate**: This section + commit message "Milestone M1.5" + updated plan artifact.
+
