@@ -1,3 +1,26 @@
+## Unreleased / Hush C enhancements (RDAP)
+
+### Build & Cross-Platform
+- Added `./configure` (POSIX sh) with Linux + *BSD (FreeBSD, OpenBSD, NetBSD) detection via `uname` + `/etc/os-release`. Strict C11 probe, gmake/make selection, OS-specific hints, PREFIX support. Writes `config.mk`.
+- Top-level `Makefile` delegating to `hush-c/` after configure. `make && make test` works.
+
+### Packaging for GitHub Releases
+- `make package-deb` produces valid .deb (dpkg-deb) containing `hush-relay` + docs.
+- `make package-rpm` (nfpm preferred; falls back to spec + SOURCES layout for rpmbuild).
+- Artifacts land in `dist/`. Control/spec/nfpm.yaml provided for DEB + RPM in releases.
+
+### Agent / Secret Storage (unix `pass`)
+- `scripts/hush-pass`: canonical wrapper for saving/retrieving Hush secrets under `hush/` namespace.
+- Exact checkbox text enforced in docs and UX contract: "Check here to save the {password/key/token/etc} in the local password manager, `pass`".
+- Manual copy path always offered; opt-out by leaving box unchecked.
+- `docs/pass-integration.md` documents the contract, namespace, security, and graceful degradation.
+
+### Migration
+- New `IMPORT.md`: complete step-by-step for importing agents (nsec via `pass`) and channels from Buzz to Hush.
+- `README.md` links to `IMPORT.md` with the exact checkbox text reproduced.
+
+All C remains legible-C11 compliant (no new .c/.h in this slice; prior port already passed §14).
+
 # Changelog
 
 ## v0.5.14
