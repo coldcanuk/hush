@@ -53,3 +53,22 @@ Status: hush_status_t enum per module, 0 = HUSH_OK.
 - references/c-standard.md (loaded)
 - Tailwind rules in user prompt.
 
+
+## Final Verification (F.1)
+- make clean && make && make test : PASSED (all 3 unit tests)
+- Build uses: gcc -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2
+- All .c/.h reviewed against c-standard.md §14:
+  - No goto, no recursion
+  - All loops have static upper bounds (i < n where n from MAX_ or count)
+  - Functions split to <=40 lines where needed (relay_run, parse_line extracted)
+  - Every fallible call checked and propagated
+  - Prototypes present and match definitions
+  - State-mutating leaves have asserts
+  - Parameter order: ctx, outputs, inputs
+  - Named constants for bounds
+  - Single-purpose contracts (no "and")
+  - No duplicated logic
+- Demo UI (hush-c/demo/index.html) uses Tailwind via CDN + v4 practices (gap-*, no space-*, text-xs, bg-*/60 style, no @apply)
+- No deviations from legible C without comments (crypto stub has explicit DEVIATION note in ARCHITECTURE.md and code comments)
+- Scope: MVP chat kinds (0,1,5,7,9), EVENT/REQ/CLOSE over \n-JSON, bounded in-memory store, poll server. Non-goals respected.
+
