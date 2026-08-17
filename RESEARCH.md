@@ -395,3 +395,20 @@ Commit after every completed Milestone with message: "Milestone X.Y: <concise>"
 
 **References for implementers**: This RESEARCH.md, HUSH_ARCHITECTURE.md, c-standard.md (loaded), RELEASING.md, desktop/src-tauri secret handling, pass(1) man page.
 
+
+## 2026-08-17 Phase 1 continuation (this RDAP instance)
+
+### M1.3 C completeness
+- hush-c/ implements minimal viable Nostr relay core for kinds 0/1/5/7/9 over TCP \n-JSON.
+- Builds clean with strict C11 flags, 3 unit tests pass.
+- configure + top Makefile already drive hush-c exclusively for C artifacts.
+- No other C in tree.
+- Post-excision: the repo surface will be C-only (hush-c + build glue + docs + .goose).
+
+### M1.4 Branch/main protection + worktree discipline
+- Hush does NOT carry Buzz's 580 branches. Remote tracking is historical.
+- Policy: `git branch -r` output is not used for work. Feature work ONLY via `git worktree add -b gb/<slug> worktrees/<slug>` from clean main.
+- main protected by social + documented contract: direct commits to main forbidden except for merge of completed worktrees.
+- Orphaned wts: forbidden inside Hush. All wts under worktrees/ inside the git repo. External /opt/repo/*-wt* belong to sibling experiments; prune via their owning .git or rm when confirmed loose.
+- Goose prime directive: the AGENTS.md will be replaced by short Goose-specific; .goose/ is the skills/config home.
+
