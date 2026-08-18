@@ -18,7 +18,8 @@ enum {
     HUSH_HTTP_EVENTS_MAX = 64,
     HUSH_HTTP_HDR_MAX = 8192,
     HUSH_ID_HEX_WIDTH = 64,
-    HUSH_HTTP_KIND_SIGNAL = 25000
+    HUSH_HTTP_KIND_SIGNAL = 25000,
+    HUSH_HTTP_LOGIN_REPLY_MAX = 384
 };
 
 #define HUSH_HTTP_CLOSE_JSON "{\"ok\":true,\"action\":\"close\"}\n"
@@ -101,6 +102,7 @@ static void hush_http_take_secret(const char **dst, char *buf,
                                   const char *body, const char *kind);
 static hush_status_t hush_http_serve_provider_post(int fd, const char *body);
 static hush_status_t hush_http_serve_provider_scan(int fd, const char *body);
+static hush_status_t hush_http_serve_provider_login(int fd, const char *body);
 static void hush_http_reply_scan(int fd, const hush_provider_scan_t *scan,
                                  hush_status_t st);
 
@@ -830,6 +832,8 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_provider_post(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/provider/scan") == 0)
         return hush_http_serve_provider_scan(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/provider/login") == 0)
+        return hush_http_serve_provider_login(fd, hush_http_body(req, len));
     hush_http_reply(fd, "404 Not Found", "text/plain", "not found\n", 10);
     return HUSH_ERR_NOT_FOUND;
 }
@@ -1031,6 +1035,31 @@ static hush_status_t hush_http_serve_provider_scan(int fd, const char *body)
     (void)hush_json_field(body, "api_key", key, sizeof(key));
     st = hush_provider_scan(&scan, id, host, key);
     hush_http_reply_scan(fd, &scan, st);
+    return HUSH_OK;
+}
+
+static hush_status_t hush_http_serve_provider_login(int fd, const char *body)
+{
+    char id[HUSH_PROVIDER_ID_MAX];
+    char err[HUSH_PROVIDER_ERR_MAX];
+    char reply[HUSH_HTTP_LOGIN_REPLY_MAX];
+    char esc[HUSH_PROVIDER_ERR_MAX * 2];
+    hush_status_t st;
+    int wr;
+
+    if (!hush_json_field(body, "provider", id, sizeof(id))) {
+        hush_http_reply(fd, "400 Bad Request", "text/plain", "bad request\n", 12);
+        return HUSH_ERR_PARSE;
+    }
+    st = hush_provider_start_login(id);
+    hush_provider_last_error(err, sizeof(err));
+    hush_json_escape(err, esc, sizeof(esc));
+    wr = snprintf(reply, sizeof(reply),
+                  "{\"ok\":%s,\"error\":\"%s\"}\n",
+                  st == HUSH_OK ? "true" : "false", esc);
+    if (wr <= 0 || (size_t)wr >= sizeof(reply))
+        return HUSH_ERR_IO;
+    hush_http_reply(fd, "200 OK", "application/json", reply, (size_t)wr);
     return HUSH_OK;
 }
 

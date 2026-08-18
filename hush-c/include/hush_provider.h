@@ -101,6 +101,11 @@ void hush_provider_secret_path(char *out, size_t outsz,
 hush_status_t hush_provider_scan(hush_provider_scan_t *out, const char *id,
                                  const char *host, const char *api_key);
 
+/* Starts the official CLI login for a home-config provider.
+ * grok-build runs `grok login --oauth`. Codex runs `codex login`.
+ * Goose is refused (use goose configure). Does not wait. */
+hush_status_t hush_provider_start_login(const char *id);
+
 /* Copies the last module error. out may be NULL. */
 void hush_provider_last_error(char *out, size_t outsz);
 

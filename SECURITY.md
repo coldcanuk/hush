@@ -100,6 +100,10 @@ default**. The human must uncheck the modal box to opt out.
 | Provider token | `hush/providers/<id>/token` | `pass show hush/providers/<id>/token` |
 | Provider passkey | `hush/providers/<id>/passkey` | `pass show hush/providers/<id>/passkey` |
 
+Grok Build and Codex OAuth tokens stay in `~/.grok/auth.json` and
+`~/.codex`. Hush only forks the official CLI (`grok login --oauth`,
+`codex login`) and never copies those homes into `pass`.
+
 Hive metadata (vibe name, visibility, token, channels, projects,
 profile without email, members, robot labels) lives in
 `~/.config/hush/vibe.json` mode 0600. That file must never contain an

@@ -21,7 +21,9 @@ enum {
     HUSH_PROVIDER_CURL_TIME_S = 8,
     HUSH_PROVIDER_YAML_LINE_MAX = 256,
     HUSH_PROVIDER_OBJ_MAX = 1024,
-    HUSH_PROVIDER_CURL_CFG_MAX = 2048
+    HUSH_PROVIDER_CURL_CFG_MAX = 2048,
+    HUSH_PROVIDER_LOGIN_ARGV_MAX = 4,
+    HUSH_PROVIDER_LOGIN_CMD_MAX = 96
 };
 
 #define HUSH_PROVIDER_SECRET_PATH_FMT "providers/%s/%s"
@@ -127,6 +129,16 @@ static void hush_provider_parse_models(hush_provider_scan_t *out,
                                        const char *id, const char *body);
 static void hush_provider_add_model(hush_provider_scan_t *out,
                                     const char *name);
+/* Fills argv for the official login of id. Returns 0 when id has none. */
+static int hush_provider_login_argv(char **argv, size_t argvsz, const char *id);
+/* Writes "bin login [--oauth]" into out. */
+static void hush_provider_fill_login_cmd(char *out, size_t outsz, char **argv);
+/* Adapter: execlp term -e cmd. Returns only when exec fails. */
+static void hush_provider_exec_term(const char *term, const char *cmd);
+/* Opens a terminal when possible, else execvp of argv. Does not return. */
+static void hush_provider_exec_login(char **argv);
+/* fork + exec login. Parent returns immediately. */
+static hush_status_t hush_provider_spawn_login(char **argv);
 
 int hush_provider_is_id(const char *id)
 {
@@ -267,6 +279,20 @@ hush_status_t hush_provider_scan(hush_provider_scan_t *out, const char *id,
         return hush_provider_fail("no models");
     }
     return HUSH_OK;
+}
+
+hush_status_t hush_provider_start_login(const char *id)
+{
+    char *argv[HUSH_PROVIDER_LOGIN_ARGV_MAX];
+
+    hush_provider_copy(g_last_error, sizeof(g_last_error), "");
+    if (!hush_provider_is_id(id))
+        return hush_provider_fail("unknown provider");
+    if (!hush_provider_login_argv(argv, HUSH_PROVIDER_LOGIN_ARGV_MAX, id))
+        return hush_provider_fail("login not offered");
+    if (!hush_provider_has_binary(argv[0]))
+        return hush_provider_fail("binary missing");
+    return hush_provider_spawn_login(argv);
 }
 
 void hush_provider_last_error(char *out, size_t outsz)
@@ -989,4 +1015,84 @@ static void hush_provider_add_model(hush_provider_scan_t *out, const char *name)
         return;
     hush_provider_copy(out->models[out->nmodels], HUSH_PROVIDER_MODEL_MAX, name);
     out->nmodels += 1;
+}
+
+static int hush_provider_login_argv(char **argv, size_t argvsz, const char *id)
+{
+    assert(argv != NULL);
+    assert(argvsz >= (size_t)HUSH_PROVIDER_LOGIN_ARGV_MAX);
+    assert(id != NULL);
+    memset(argv, 0, argvsz * sizeof(*argv));
+    if (strcmp(id, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0) {
+        argv[0] = (char *)"grok";
+        argv[1] = (char *)"login";
+        argv[2] = (char *)"--oauth";
+        return 1;
+    }
+    if (strcmp(id, HUSH_ROSTER_PROVIDER_CODEX) == 0) {
+        argv[0] = (char *)"codex";
+        argv[1] = (char *)"login";
+        return 1;
+    }
+    return 0;
+}
+
+static void hush_provider_fill_login_cmd(char *out, size_t outsz, char **argv)
+{
+    assert(out != NULL);
+    assert(outsz > 0);
+    assert(argv != NULL);
+    assert(argv[0] != NULL);
+    if (argv[2] != NULL)
+        snprintf(out, outsz, "%s %s %s", argv[0], argv[1], argv[2]);
+    else if (argv[1] != NULL)
+        snprintf(out, outsz, "%s %s", argv[0], argv[1]);
+    else
+        snprintf(out, outsz, "%s", argv[0]);
+}
+
+static void hush_provider_exec_term(const char *term, const char *cmd)
+{
+    assert(term != NULL);
+    assert(cmd != NULL);
+    if (term[0] == '\0')
+        return;
+    execlp(term, term, "-e", cmd, (char *)NULL);
+}
+
+static void hush_provider_exec_login(char **argv)
+{
+    char cmd[HUSH_PROVIDER_LOGIN_CMD_MAX];
+    const char *term;
+    const char *display;
+
+    assert(argv != NULL);
+    assert(argv[0] != NULL);
+    hush_provider_fill_login_cmd(cmd, sizeof(cmd), argv);
+    term = getenv("HUSH_PROVIDER_TERM");
+    if (term != NULL && term[0] != '\0') {
+        hush_provider_exec_term(term, cmd);
+        _exit(127);
+    }
+    display = getenv("DISPLAY");
+    if (display != NULL && display[0] != '\0') {
+        hush_provider_exec_term("x-terminal-emulator", cmd);
+        hush_provider_exec_term("xterm", cmd);
+    }
+    execvp(argv[0], argv);
+    _exit(127);
+}
+
+static hush_status_t hush_provider_spawn_login(char **argv)
+{
+    pid_t pid;
+
+    assert(argv != NULL);
+    assert(argv[0] != NULL);
+    pid = fork();
+    if (pid < 0)
+        return hush_provider_fail("fork");
+    if (pid == 0)
+        hush_provider_exec_login(argv);
+    return HUSH_OK;
 }
