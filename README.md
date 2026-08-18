@@ -27,6 +27,11 @@ Optimized for the Goose AI agent. All development uses worktrees **inside this r
 
 The chat UI is a Progressive Web App served by the relay itself
 (`hush-c/demo/`: `index.html`, `manifest.webmanifest`, `sw.js`, icons).
+On first launch it asks for a Nostr identity (create or import `nsec1…`),
+backs up the key (optional `pass` save), names this relay as a **vibe**,
+and seeds **Sgt Major Payne** plus starter channels. From the hive you can
+create more channels and a basic git project.
+
 Install it from the browser (Chromium “Install”, or iOS Share → Add to Home Screen)
 while the relay is running at `http://127.0.0.1:<port>/`.
 

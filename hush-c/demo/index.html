@@ -93,8 +93,60 @@
       padding: 0 18px; font-weight: 650; min-width: 88px;
     }
     #send:hover { filter: brightness(1.05); }
+    .gate {
+      display: none; flex: 1; align-items: center; justify-content: center;
+      padding: 32px 18px;
+    }
+    .gate.show { display: flex; }
+    .card {
+      width: min(34rem, 100%); background: var(--surface); border: 1px solid var(--line);
+      border-radius: 18px; padding: 28px 24px 24px;
+    }
+    .card h1 { margin: 0 0 8px; font-size: 1.6rem; letter-spacing: -0.04em; }
+    .card p { margin: 0 0 18px; color: var(--muted); line-height: 1.5; }
+    .card label { display: block; font-size: 0.8rem; color: var(--muted); margin: 12px 0 6px; }
+    .card input[type="text"], .card input[type="password"], .card textarea {
+      width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+      border-radius: 10px; padding: 12px 14px; font: inherit; outline: none;
+    }
+    .card textarea { min-height: 72px; resize: vertical; }
+    .card input:focus, .card textarea:focus { border-color: var(--accent-dim); }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .btn {
+      background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 999px;
+      padding: 10px 18px; font-weight: 650; font: inherit;
+    }
+    .btn.ghost {
+      background: transparent; color: var(--fg); border: 1px solid var(--line);
+    }
+    .help { margin-top: 16px; font-size: 0.8rem; color: var(--faint); }
+    .help button { background: none; border: 0; color: var(--accent); padding: 0; font: inherit; }
+    .keybox {
+      font-family: var(--mono); font-size: 0.82rem; word-break: break-all;
+      background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+      padding: 14px; user-select: none;
+    }
+    .keybox.revealed { user-select: text; }
+    .warn { color: var(--warn); font-size: 0.82rem; margin-top: 10px; }
+    .passbox { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: 0.82rem; color: var(--muted); }
+    .hive { display: none; flex: 1; min-height: 0; }
+    .hive.show { display: grid; }
+    .create { display: flex; flex-direction: column; gap: 8px; padding: 0 8px; }
+    .create input {
+      width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+      border-radius: 8px; padding: 8px 10px; font: inherit;
+    }
+    .mini {
+      background: var(--surface-2); color: var(--fg); border: 0; border-radius: 8px;
+      padding: 8px 10px; font-size: 0.8rem;
+    }
+    .agent {
+      margin: 8px; padding: 10px; border: 1px solid var(--accent-dim); border-radius: 10px;
+      font-size: 0.78rem; color: var(--muted); line-height: 1.45;
+    }
+    .agent strong { color: var(--accent); display: block; margin-bottom: 4px; }
     @media (max-width: 640px) {
-      .shell { grid-template-columns: 1fr; }
+      .shell, .hive { grid-template-columns: 1fr; }
       nav { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }
       .stats { display: none; }
       .lbl { display: none; }
@@ -111,7 +163,7 @@
       </svg>
       <div>
         <div class="title">hush</div>
-        <div class="sub">local hive mind</div>
+        <div class="sub" id="vibe-sub">local hive mind</div>
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -119,13 +171,22 @@
       <div id="badge">connecting…</div>
     </div>
   </header>
-  <div class="shell">
+  <section class="gate" id="gate" aria-live="polite"></section>
+  <div class="shell hive" id="hive">
     <nav>
-      <div>
+      <div id="chan-list">
         <div class="lbl">Channels</div>
-        <button class="chan on" data-ch="general" type="button"><span class="dot"></span>#general</button>
-        <button class="chan" data-ch="agents" type="button"><span class="dot"></span>#agents</button>
-        <button class="chan" data-ch="incidents" type="button"><span class="dot"></span>#incidents</button>
+      </div>
+      <div class="create">
+        <div class="lbl">Create</div>
+        <input id="new-chan" maxlength="48" placeholder="new channel">
+        <button class="mini" id="add-chan" type="button">Add channel</button>
+        <input id="new-proj" maxlength="48" placeholder="new project">
+        <button class="mini" id="add-proj" type="button">Create project</button>
+      </div>
+      <div class="agent" id="payne-card">
+        <strong>Sgt Major Payne</strong>
+        First agent on deck. He finds the right robot — or raises one.
       </div>
       <div class="stats" id="stats">waiting for relay</div>
     </nav>
@@ -143,19 +204,214 @@
   </div>
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
-    let channel = "general";
+    let channel = "welcome";
     let seen = "";
+    let session = { logged_in: false, ready: false, channels: [] };
+    let page = "landing";
+    let pendingNsec = "";
+    let keyRevealed = false;
+    let gateErr = "";
 
     function $(id) { return document.getElementById(id); }
 
-    document.querySelectorAll(".chan").forEach((b) => {
-      b.addEventListener("click", () => {
-        document.querySelectorAll(".chan").forEach((x) => x.classList.remove("on"));
-        b.classList.add("on");
-        channel = b.getAttribute("data-ch");
-        $("room").textContent = "#" + channel;
-        seen = "";
-        tick();
+    async function api(path, body) {
+      const opt = body ? {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      } : {};
+      const r = await fetch(API + path, opt);
+      if (!r.ok) throw new Error("request failed");
+      return r.json();
+    }
+
+    function applySession(s) {
+      session = s || session;
+      if (session.ready) page = "hive";
+      else if (session.logged_in && !session.backup_acked) page = "backup";
+      else if (session.logged_in && session.backup_acked && !session.has_vibe) page = "vibe";
+      else if (!session.logged_in && page !== "import" && page !== "help") page = "landing";
+      if (session.nsec) pendingNsec = session.nsec;
+      if (session.backup_acked) pendingNsec = "";
+      paint();
+    }
+
+    function paint() {
+      const ready = !!session.ready;
+      $("gate").classList.toggle("show", !ready);
+      $("hive").classList.toggle("show", ready);
+      if (session.vibe && session.vibe.name)
+        $("vibe-sub").textContent = session.vibe.name;
+      if (!ready) {
+        $("gate").innerHTML = gateHtml();
+        bindGate();
+        return;
+      }
+      paintChannels();
+      paintPayne();
+    }
+
+    function gateHtml() {
+      if (page === "help") {
+        return card("What’s an identity key?",
+          "<p>Hush uses a Nostr identity key instead of a password. It is created on this machine and represents you.</p>" +
+          "<p>Your public key (<code>npub</code>) is safe to share. Your private key (<code>nsec</code>) is the account. Anyone with it can act as you. There is no forgot-password.</p>" +
+          "<p>Create a new key if you are new. Import an existing <code>nsec1…</code> if you already have a Nostr identity.</p>" +
+          actions([{ id: "back-help", ghost: true, label: "Back" }]));
+      }
+      if (page === "import") {
+        return card("Use an existing key",
+          "<p>Paste an <code>nsec1…</code> key. We show the matching <code>npub</code> before anything is saved.</p>" +
+          "<label for=\"nsec-in\">Private key</label>" +
+          "<input id=\"nsec-in\" type=\"password\" autocomplete=\"off\" spellcheck=\"false\" placeholder=\"nsec1…\">" +
+          "<div class=\"help\" id=\"npub-preview\"></div>" +
+          errLine() +
+          actions([
+            { id: "do-import", label: "Import key" },
+            { id: "back-import", ghost: true, label: "Back" }
+          ]));
+      }
+      if (page === "backup") {
+        const shown = keyRevealed ? esc(pendingNsec) : "•".repeat(Math.max(16, pendingNsec.length || 63));
+        return card("Your unique identity key has been created",
+          "<p>This key is your account. Save it somewhere safe. Hush cannot recover it if you lose it.</p>" +
+          "<div class=\"keybox" + (keyRevealed ? " revealed" : "") + "\" id=\"nsec-box\">" + shown + "</div>" +
+          "<label class=\"passbox\"><input id=\"save-pass\" type=\"checkbox\"> Check here to save the nsec in the local password manager, <code>pass</code></label>" +
+          "<p class=\"warn\">Never share your private key. Anyone with it can impersonate you.</p>" +
+          errLine() +
+          actions([
+            { id: "reveal-key", ghost: true, label: keyRevealed ? "Hide" : "Reveal" },
+            { id: "copy-key", ghost: true, label: "Copy value" },
+            { id: "ack-key", label: "I saved it" }
+          ]));
+      }
+      if (page === "vibe") {
+        return card("Name your vibe",
+          "<p>A vibe is the main server — this Hush relay. It is your community’s primary endpoint.</p>" +
+          "<label for=\"vibe-name\">Vibe name</label>" +
+          "<input id=\"vibe-name\" maxlength=\"48\" value=\"local hive\" placeholder=\"local hive\">" +
+          "<label for=\"vibe-about\">About</label>" +
+          "<textarea id=\"vibe-about\" maxlength=\"200\" placeholder=\"Primary Hush endpoint.\"></textarea>" +
+          errLine() +
+          actions([{ id: "do-vibe", label: "Stand up the hive" }]));
+      }
+      return card("Your people, your agents, your projects",
+        "<p>Hush is a local hive mind. First we need a Nostr identity — a key that belongs to you, not to us.</p>" +
+        errLine() +
+        actions([
+          { id: "create-id", label: "Create a new identity key" },
+          { id: "use-id", ghost: true, label: "Use an existing key" }
+        ]) +
+        "<div class=\"help\"><button type=\"button\" id=\"show-help\">What’s an identity key?</button></div>");
+    }
+
+    function card(title, inner) {
+      return "<div class=\"card\"><h1>" + title + "</h1>" + inner + "</div>";
+    }
+    function actions(items) {
+      return "<div class=\"actions\">" + items.map((b) =>
+        "<button class=\"btn" + (b.ghost ? " ghost" : "") + "\" id=\"" + b.id + "\" type=\"button\">" +
+        b.label + "</button>").join("") + "</div>";
+    }
+    function errLine() {
+      return gateErr ? "<p class=\"warn\">" + esc(gateErr) + "</p>" : "";
+    }
+    function esc(s) {
+      return String(s || "").replace(/[&<>\"]/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;"
+      }[c]));
+    }
+
+    function bindGate() {
+      const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("click", fn); };
+      on("create-id", () => postIdentity({ action: "create" }));
+      on("use-id", () => { page = "import"; gateErr = ""; paint(); });
+      on("show-help", () => { page = "help"; paint(); });
+      on("back-help", () => { page = "landing"; paint(); });
+      on("back-import", () => { page = "landing"; gateErr = ""; paint(); });
+      on("do-import", () => {
+        const nsec = ($("nsec-in") && $("nsec-in").value || "").trim();
+        postIdentity({ action: "import", nsec: nsec });
+      });
+      on("reveal-key", () => { keyRevealed = !keyRevealed; paint(); });
+      on("copy-key", async () => {
+        if (!pendingNsec) return;
+        try { await navigator.clipboard.writeText(pendingNsec); } catch (e) {}
+      });
+      on("ack-key", () => postIdentity({ action: "ack_backup" }));
+      on("do-vibe", () => {
+        const name = ($("vibe-name") && $("vibe-name").value) || "local hive";
+        const about = ($("vibe-about") && $("vibe-about").value) || "";
+        postJson("/api/vibe", { name: name, about: about });
+      });
+      const inp = $("nsec-in");
+      if (inp) inp.addEventListener("input", () => {
+        const v = inp.value.trim();
+        $("npub-preview").textContent = v.startsWith("nsec1")
+          ? "Looks like an nsec. Import to see the npub."
+          : "";
+      });
+    }
+
+    async function postIdentity(body) {
+      gateErr = "";
+      try { applySession(await api("/api/identity", body)); }
+      catch (e) { gateErr = "Could not complete that step."; paint(); }
+    }
+    async function postJson(path, body) {
+      gateErr = "";
+      try { applySession(await api(path, body)); }
+      catch (e) { gateErr = "Could not complete that step."; paint(); }
+    }
+
+    function paintChannels() {
+      const box = $("chan-list");
+      const chans = session.channels && session.channels.length
+        ? session.channels
+        : [{ name: "general", slug: "general" }];
+      if (!chans.some((c) => c.slug === channel))
+        channel = chans[0].slug;
+      box.innerHTML = "<div class=\"lbl\">Channels</div>";
+      chans.forEach((c) => {
+        const b = document.createElement("button");
+        b.className = "chan" + (c.slug === channel ? " on" : "");
+        b.type = "button";
+        b.innerHTML = "<span class=\"dot\"></span>#" + esc(c.slug);
+        b.addEventListener("click", () => {
+          channel = c.slug;
+          $("room").textContent = "#" + channel;
+          seen = "";
+          paintChannels();
+          tick();
+        });
+        box.appendChild(b);
+      });
+      $("room").textContent = "#" + channel;
+    }
+
+    function paintPayne() {
+      const p = session.payne || {};
+      $("payne-card").innerHTML =
+        "<strong>" + esc(p.name || "Sgt Major Payne") + "</strong>" +
+        esc(p.about || "Finds the right robot, or raises one.") +
+        (p.npub ? "<div class=\"help\">" + esc(p.npub.slice(0, 16)) + "…</div>" : "");
+    }
+
+    $("add-chan").addEventListener("click", async () => {
+      const name = $("new-chan").value.trim();
+      if (!name) return;
+      $("new-chan").value = "";
+      await postJson("/api/channel", { name: name });
+    });
+    $("add-proj").addEventListener("click", async () => {
+      const name = $("new-proj").value.trim();
+      if (!name) return;
+      $("new-proj").value = "";
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
+      await postJson("/api/project", {
+        name: name,
+        path: "/tmp/hush-projects/" + slug,
+        git: "true"
       });
     });
 
@@ -165,12 +421,7 @@
       if (!text) return;
       $("msg").value = "";
       try {
-        const r = await fetch(API + "/api/event", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: text, kind: 1, channel: channel })
-        });
-        if (!r.ok) throw new Error("post failed");
+        await api("/api/event", { content: text, kind: 1, channel: channel });
         await tick();
       } catch (err) {
         badge(false, "send failed");
@@ -186,9 +437,11 @@
     function render(events, status) {
       const mine = events.filter((e) => (e.channel || "general") === channel);
       $("count").textContent = mine.length + (mine.length === 1 ? " note" : " notes");
+      const projN = (session.projects || []).length;
       $("stats").innerHTML =
         (status.ok ? "relay live" : "relay down") + "<br>" +
         status.events + " stored<br>" +
+        projN + " project" + (projN === 1 ? "" : "s") + "<br>" +
         status.clients + " sockets";
       const key = mine.map((e) => e.id).join(",");
       if (key === seen) return;
@@ -219,6 +472,10 @@
     }
 
     function who(pk) {
+      if (session.pubkey && pk === session.pubkey) return "you";
+      if (session.payne && session.payne.npub && pk &&
+          session.payne.npub.indexOf(pk.slice(0, 8)) !== -1)
+        return "Payne";
       if (!pk || /^0+1$/.test(pk) || pk === "local") return "local";
       return pk.slice(0, 8);
     }
@@ -236,12 +493,16 @@
 
     async function tick() {
       try {
-        const [st, ev] = await Promise.all([
+        const [st, ev, sess] = await Promise.all([
           fetch(API + "/api/status").then((r) => r.json()),
-          fetch(API + "/api/events").then((r) => r.json())
+          fetch(API + "/api/events").then((r) => r.json()),
+          fetch(API + "/api/session").then((r) => r.json())
         ]);
-        badge(true, "listening :" + (st.port || ""));
-        render(ev.events || ev || [], st);
+        session = sess;
+        if (session.ready) page = "hive";
+        paint();
+        badge(true, session.npub ? session.npub.slice(0, 12) + "…" : ("listening :" + (st.port || "")));
+        if (session.ready) render(ev.events || ev || [], st);
       } catch (err) {
         badge(false, "relay unreachable");
         $("stats").textContent = "start hush-relay";

@@ -6,11 +6,13 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "hush_event.h"
+#include "hush_launch.h"
 #include "hush_store.h"
 #include "hush_status.h"
 
 void hush_http_set_listen_port(uint16_t port);
 void hush_http_set_client_count(int n);
+void hush_http_set_launch(hush_launch_t *launch);
 
 /* 1 if the first bytes are an HTTP method. */
 int hush_http_looks_like(const char *buf, size_t len);

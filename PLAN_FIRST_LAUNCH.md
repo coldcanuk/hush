@@ -21,21 +21,21 @@ See RESEARCH.md §2026-08-17 first-launch. Copy Buzz’s **sequence**, not its s
 
 ## Phase 2 — Architecture
 
-- M2.1 Lock routes, modules, session JSON, Payne seed (this file + RESEARCH).
+- [x] M2.1 Lock routes, modules, session JSON, Payne seed (this file + RESEARCH).
 
 ## Phase 3 — Implementation
 
-- M3.1 `hush_bech32` + NIP-19 vector tests.
-- M3.2 `hush_identity` (OpenSSL secp256k1) + `scripts/hush-pass`.
-- M3.3 `hush_launch` session / vibe / channel / project / Payne.
-- M3.4 HTTP routes + session pubkey on `POST /api/event`.
-- M3.5 PWA first-launch gate + hive create flows.
-- M3.6 Tests (`check_launch.sh`) + README.
+- [x] M3.1 `hush_bech32` + NIP-19 vector tests.
+- [x] M3.2 `hush_identity` (OpenSSL secp256k1) + `scripts/hush-pass`.
+- [x] M3.3 `hush_launch` session / vibe / channel / project / Payne.
+- [x] M3.4 HTTP routes + session pubkey on `POST /api/event`.
+- [x] M3.5 PWA first-launch gate + hive create flows.
+- [x] M3.6 Tests (`check_launch.sh`) + README.
 
 ## Phase 4 — Verify / land
 
-- M4.1 `./configure && make && make test`.
-- M4.2 Push, PR, auto-merge, delete worktree.
+- [x] M4.1 `./configure && make && make test`.
+- [ ] M4.2 Push, PR, auto-merge, delete worktree.
 
 ## Task notes
 
