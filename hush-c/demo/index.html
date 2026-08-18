@@ -1105,8 +1105,8 @@
           : ("Run " + HOME_CMDS[id] + ", or enter a key.");
       else if (id === "cline")
         $("provider-home-help").textContent = st.has_home || st.has_binary
-          ? "Cline is on this machine."
-          : "Install the Cline extension, then come back. Or paste an API key and host.";
+          ? "Cline is on this machine. It uses ClinePass or a bring-your-own provider key — not OAuth."
+          : "Install the Cline extension, then come back. Cline uses ClinePass or a bring-your-own provider key. Or paste an API key and host.";
       else
         $("provider-home-help").textContent = "";
       $("provider-key").value = "";

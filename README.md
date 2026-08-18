@@ -37,8 +37,10 @@ retrieve with `pass show hush/identity/nsec`) → Vibe (public or private)
 organization, theme (`dark` / `light` / `color-blind` / `dracula` /
 `desert` / `monochrome` / `christmas`), and Logout. From the hive you
 can create channels and projects, invite humans, and raise agents
-(plaintext/Markdown context only). See
-[docs/pass-integration.md](docs/pass-integration.md).
+(plaintext/Markdown context only). Hive metadata persists in
+`~/.config/hush/vibe.json` so `make clean && make install` or Exit
+does not force a new vibe after you import the same nsec. Secrets stay
+in `pass`. See [docs/pass-integration.md](docs/pass-integration.md).
 
 Install it from the browser (Chromium “Install”, or iOS Share → Add to Home Screen)
 while the relay is running at `http://127.0.0.1:<port>/`.
@@ -162,8 +164,14 @@ pass show hush/providers/<id>/passkey
 ```
 
 Host and model live in `~/.config/hush/providers.json`.
+The named vibe, channels, projects, profile (no email), members, and
+raised-robot labels live in `~/.config/hush/vibe.json` (0600).
+`make clean` only deletes build products; it does not touch that
+directory. Tests set `HUSH_CONFIG_DIR`.
 `GET /api/provider` never returns the values. Goose / Grok / Codex
 home secrets stay in those homes and are never copied.
+Cline authenticates with ClinePass or a bring-your-own provider key,
+not a Grok/Codex-style OAuth-first CLI.
 
 The application launcher entry (`hush-relay.desktop`) starts or attaches the
 GUI. The **Quit Hush** desktop action runs `--quit`.

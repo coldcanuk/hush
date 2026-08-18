@@ -100,6 +100,11 @@ default**. The human must uncheck the modal box to opt out.
 | Provider token | `hush/providers/<id>/token` | `pass show hush/providers/<id>/token` |
 | Provider passkey | `hush/providers/<id>/passkey` | `pass show hush/providers/<id>/passkey` |
 
+Hive metadata (vibe name, visibility, token, channels, projects,
+profile without email, members, robot labels) lives in
+`~/.config/hush/vibe.json` mode 0600. That file must never contain an
+nsec or provider secret. `make clean` does not delete it.
+
 See [IMPORT.md](IMPORT.md) and [docs/pass-integration.md](docs/pass-integration.md).
 
 The `HUSH_PRIVATE_KEY` environment variable, when set, takes precedence for

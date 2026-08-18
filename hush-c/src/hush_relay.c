@@ -438,6 +438,7 @@ static void hush_relay_prepare(uint16_t port)
     hush_http_set_listen_port(port);
     hush_launch_init(&g_launch);
     (void)hush_launch_restore_identity(&g_launch);
+    (void)hush_launch_restore_vibe(&g_launch);
     hush_http_set_launch(&g_launch);
     hush_turn_init(&g_turn);
     hush_http_set_turn(&g_turn);

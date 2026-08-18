@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "hush_launch.h"
 #include "hush_pass.h"
@@ -30,6 +31,13 @@ int main(void)
 
     if (setenv("HUSH_FAKE_PASS_DIR", "/tmp/hush-launch-pass-store", 1) != 0)
         return 1;
+    {
+        char cfg[128];
+
+        snprintf(cfg, sizeof(cfg), "/tmp/hush-launch-cfg-%d", (int)getpid());
+        if (setenv("HUSH_CONFIG_DIR", cfg, 1) != 0)
+            return 1;
+    }
     /* Isolated from tests/test_pass.c, which uses /tmp/hush-unit-pass-<pid>. */
     hush_pass_set_helper("tests/fake-pass.sh");
     hush_launch_init(&launch);
@@ -103,6 +111,33 @@ int main(void)
     expect(hush_launch_logout(&launch) == HUSH_OK, "logout");
     expect(!launch.logged_in, "logged out");
     expect(!hush_launch_is_ready(&launch), "logout not ready");
+    {
+        static hush_launch_t again;
+        FILE *fp;
+        char path[192];
+        char body[4096];
+        size_t nread = 0;
+        const char *cfg = getenv("HUSH_CONFIG_DIR");
+
+        expect(cfg != NULL && cfg[0] != '\0', "config dir");
+        snprintf(path, sizeof(path), "%s/vibe.json", cfg);
+        fp = fopen(path, "r");
+        expect(fp != NULL, "vibe.json exists");
+        if (fp != NULL) {
+            nread = fread(body, 1, sizeof(body) - 1, fp);
+            body[nread] = '\0';
+            fclose(fp);
+        }
+        expect(strstr(body, "nsec") == NULL, "vibe.json has no nsec");
+        expect(strstr(body, "\"vibe_name\":\"HQ\"") != NULL, "saved name");
+        hush_launch_init(&again);
+        expect(hush_launch_restore_identity(&again) == HUSH_OK, "id again");
+        expect(hush_launch_restore_vibe(&again) == HUSH_OK, "vibe again");
+        expect(again.has_vibe, "restored has_vibe");
+        expect(strcmp(again.vibe_name, "HQ") == 0, "restored name");
+        expect(again.nchannels >= 3, "restored channels");
+        expect(strncmp(again.payne.npub, "npub1", 5) == 0, "restored payne");
+    }
     hush_store_destroy(store);
     hush_pass_set_helper(NULL);
     if (g_fail)

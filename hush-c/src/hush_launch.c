@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,13 +21,19 @@ enum {
     HUSH_LAUNCH_KIND_REPO = 30617,
     HUSH_LAUNCH_SLUG_FALLBACK = 'x',
     HUSH_LAUNCH_ID_WIDTH = 16,
-    HUSH_LAUNCH_CMD_MAX = 768
+    HUSH_LAUNCH_CMD_MAX = 768,
+    HUSH_LAUNCH_FILE_MAX = 16384,
+    HUSH_LAUNCH_KEY_MAX = 40,
+    HUSH_LAUNCH_COUNT_MAX = 8
 };
 
 #define HUSH_LAUNCH_DEFAULT_VIBE "local hive"
 #define HUSH_LAUNCH_CHAN_GENERAL "general"
 #define HUSH_LAUNCH_CHAN_WELCOME "welcome"
 #define HUSH_LAUNCH_CHAN_AGENTS "agents"
+#define HUSH_LAUNCH_VIBE_FILE "vibe.json"
+#define HUSH_LAUNCH_VIBE_VERSION "1"
+#define HUSH_LAUNCH_ENV_CONFIG "HUSH_CONFIG_DIR"
 
 /* Copies text, trimmed, into dst. Empty becomes fallback. */
 static void hush_launch_copy_name(char *dst, size_t dstsz,
@@ -102,6 +109,101 @@ static hush_status_t hush_launch_format_projects(const hush_launch_t *launch,
 static hush_status_t hush_launch_format_roster(const hush_launch_t *launch,
                                                char *out, size_t outsz,
                                                size_t *off);
+
+/* Resolves $HUSH_CONFIG_DIR or ~/.config/hush into out. */
+static void hush_launch_config_dir(char *out, size_t outsz);
+
+/* Resolves hush/vibe.json into out. Empty on overflow. */
+static void hush_launch_vibe_path(char *out, size_t outsz);
+
+/* mkdir 0700 the config dir. */
+static hush_status_t hush_launch_ensure_config_dir(void);
+
+/* Reads vibe.json into buf. Missing file is HUSH_ERR_NOT_FOUND. */
+static hush_status_t hush_launch_read_vibe_file(char *buf, size_t bufsz);
+
+/* Writes buf to vibe.json via a sibling tmp + rename. */
+static hush_status_t hush_launch_write_vibe_file(const char *buf);
+
+/* Writes every byte of buf to fd. Closes fd. Unlinks tmp on failure. */
+static hush_status_t hush_launch_flush_tmp(int fd, const char *tmp,
+                                           const char *buf);
+
+/* Copies a "key":"value" field. Returns 1 when present and non-empty. */
+static int hush_launch_json_string(const char *json, const char *key,
+                                   char *out, size_t outsz);
+
+/* Parses a decimal count field. Caps at maxv. */
+static size_t hush_launch_json_count(const char *json, const char *key,
+                                     size_t maxv);
+
+/* Formats an indexed persist key into out. */
+static void hush_launch_index_key(char *out, size_t outsz,
+                                  const char *stem, size_t idx);
+
+/* Appends "key":"escaped" plus a trailing comma. */
+static hush_status_t hush_launch_put_field(char *out, size_t outsz, size_t *off,
+                                           const char *key, const char *val);
+
+/* Appends the vibe head fields. */
+static hush_status_t hush_launch_put_vibe_head(const hush_launch_t *launch,
+                                               char *out, size_t outsz,
+                                               size_t *off);
+
+/* Appends channel_* indexed fields. */
+static hush_status_t hush_launch_put_channels(const hush_launch_t *launch,
+                                              char *out, size_t outsz,
+                                              size_t *off);
+
+/* Appends project_* indexed fields. */
+static hush_status_t hush_launch_put_projects(const hush_launch_t *launch,
+                                              char *out, size_t outsz,
+                                              size_t *off);
+
+/* Appends agent_* indexed fields. */
+static hush_status_t hush_launch_put_agents(const hush_launch_t *launch,
+                                            char *out, size_t outsz,
+                                            size_t *off);
+
+/* Appends member_* fields and closes the JSON object. */
+static hush_status_t hush_launch_put_members(const hush_launch_t *launch,
+                                             char *out, size_t outsz,
+                                             size_t *off);
+
+/* Appends profile + agent_* + member_* fields and closes the object. */
+static hush_status_t hush_launch_put_roster(const hush_launch_t *launch,
+                                            char *out, size_t outsz,
+                                            size_t *off);
+
+/* Restores one agent nsec from pass, or generates a fresh key. */
+static hush_status_t hush_launch_restore_agent_id(hush_roster_agent_t *agent);
+
+/* Fills launch vibe fields from json. Requires vibe_name. */
+static hush_status_t hush_launch_take_vibe_head(hush_launch_t *launch,
+                                                const char *json);
+
+/* Fills channels from json. */
+static hush_status_t hush_launch_take_channels(hush_launch_t *launch,
+                                               const char *json);
+
+/* Fills projects from json. */
+static hush_status_t hush_launch_take_projects(hush_launch_t *launch,
+                                               const char *json);
+
+/* Fills profile, agents, members from json. */
+static hush_status_t hush_launch_take_roster(hush_launch_t *launch,
+                                             const char *json);
+
+/* Restores one agent slot from persist fields + optional pass nsec. */
+static hush_status_t hush_launch_take_agent(hush_launch_t *launch,
+                                            const char *json, size_t idx);
+
+/* Restores members from persist fields. */
+static hush_status_t hush_launch_take_members(hush_launch_t *launch,
+                                              const char *json);
+
+/* Restores Payne from pass or generates a fresh key. */
+static hush_status_t hush_launch_restore_payne(hush_launch_t *launch);
 
 void hush_launch_init(hush_launch_t *launch)
 {
@@ -184,6 +286,50 @@ hush_status_t hush_launch_restore_identity(hush_launch_t *launch)
     return HUSH_OK;
 }
 
+hush_status_t hush_launch_save_vibe(const hush_launch_t *launch)
+{
+    char json[HUSH_LAUNCH_FILE_MAX];
+    size_t off = 0;
+
+    if (launch == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe)
+        return HUSH_OK;
+    json[0] = '{';
+    json[1] = '\0';
+    off = 1;
+    HUSH_TRY(hush_launch_put_vibe_head(launch, json, sizeof(json), &off));
+    HUSH_TRY(hush_launch_put_channels(launch, json, sizeof(json), &off));
+    HUSH_TRY(hush_launch_put_projects(launch, json, sizeof(json), &off));
+    HUSH_TRY(hush_launch_put_roster(launch, json, sizeof(json), &off));
+    return hush_launch_write_vibe_file(json);
+}
+
+hush_status_t hush_launch_restore_vibe(hush_launch_t *launch)
+{
+    char json[HUSH_LAUNCH_FILE_MAX];
+    hush_status_t st;
+
+    if (launch == NULL)
+        return HUSH_ERR_ARG;
+    if (launch->has_vibe)
+        return HUSH_OK;
+    st = hush_launch_read_vibe_file(json, sizeof(json));
+    if (st == HUSH_ERR_NOT_FOUND)
+        return HUSH_OK;
+    if (st != HUSH_OK)
+        return HUSH_OK;
+    if (hush_launch_take_vibe_head(launch, json) != HUSH_OK)
+        return HUSH_OK;
+    (void)hush_launch_take_channels(launch, json);
+    (void)hush_launch_take_projects(launch, json);
+    (void)hush_launch_take_roster(launch, json);
+    if (hush_launch_restore_payne(launch) != HUSH_OK)
+        return HUSH_OK;
+    launch->has_vibe = 1;
+    return HUSH_OK;
+}
+
 hush_status_t hush_launch_logout(hush_launch_t *launch)
 {
     if (launch == NULL)
@@ -204,7 +350,8 @@ hush_status_t hush_launch_set_profile(hush_launch_t *launch,
         return HUSH_ERR_ARG;
     if (!launch->logged_in)
         return HUSH_ERR_ARG;
-    return hush_roster_set_profile(&launch->roster, in);
+    HUSH_TRY(hush_roster_set_profile(&launch->roster, in));
+    return hush_launch_save_vibe(launch);
 }
 
 hush_status_t hush_launch_add_member(hush_launch_t *launch,
@@ -215,7 +362,8 @@ hush_status_t hush_launch_add_member(hush_launch_t *launch,
         return HUSH_ERR_ARG;
     if (!launch->has_vibe)
         return HUSH_ERR_ARG;
-    return hush_roster_add_member(&launch->roster, key, name);
+    HUSH_TRY(hush_roster_add_member(&launch->roster, key, name));
+    return hush_launch_save_vibe(launch);
 }
 
 hush_status_t hush_launch_add_agent(hush_launch_t *launch,
@@ -227,7 +375,8 @@ hush_status_t hush_launch_add_agent(hush_launch_t *launch,
         return HUSH_ERR_ARG;
     if (!launch->has_vibe || !launch->logged_in)
         return HUSH_ERR_ARG;
-    return hush_roster_add_agent(&launch->roster, store, in, save_pass);
+    HUSH_TRY(hush_roster_add_agent(&launch->roster, store, in, save_pass));
+    return hush_launch_save_vibe(launch);
 }
 
 hush_status_t hush_launch_remove_agent(hush_launch_t *launch, const char *slug)
@@ -236,7 +385,8 @@ hush_status_t hush_launch_remove_agent(hush_launch_t *launch, const char *slug)
         return HUSH_ERR_ARG;
     if (!launch->has_vibe || !launch->logged_in)
         return HUSH_ERR_ARG;
-    return hush_roster_remove_agent(&launch->roster, slug);
+    HUSH_TRY(hush_roster_remove_agent(&launch->roster, slug));
+    return hush_launch_save_vibe(launch);
 }
 
 hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
@@ -262,7 +412,7 @@ hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
     if (hush_launch_seed_hive(launch, store) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
     launch->has_vibe = 1;
-    return HUSH_OK;
+    return hush_launch_save_vibe(launch);
 }
 
 hush_status_t hush_launch_set_vibe_visibility(hush_launch_t *launch,
@@ -278,7 +428,7 @@ hush_status_t hush_launch_set_vibe_visibility(hush_launch_t *launch,
                                    sizeof(launch->vibe_token)) != HUSH_OK)
             return HUSH_ERR_IO;
     }
-    return HUSH_OK;
+    return hush_launch_save_vibe(launch);
 }
 
 hush_status_t hush_launch_add_channel(hush_launch_t *launch, const char *name)
@@ -294,7 +444,8 @@ hush_status_t hush_launch_add_channel(hush_launch_t *launch, const char *name)
         return HUSH_ERR_PARSE;
     if (hush_launch_has_channel(launch, slug))
         return HUSH_OK;
-    return hush_launch_push_channel(launch, name);
+    HUSH_TRY(hush_launch_push_channel(launch, name));
+    return hush_launch_save_vibe(launch);
 }
 
 hush_status_t hush_launch_add_project(hush_launch_t *launch,
@@ -324,7 +475,7 @@ hush_status_t hush_launch_add_project(hush_launch_t *launch,
     if (hush_launch_store_repo(store, &launch->human, proj) != HUSH_OK)
         return HUSH_ERR_FULL;
     launch->nprojects++;
-    return HUSH_OK;
+    return hush_launch_save_vibe(launch);
 }
 
 hush_status_t hush_launch_format_session(const hush_launch_t *launch,
@@ -793,5 +944,544 @@ static hush_status_t hush_launch_make_token(char *out, size_t outsz)
         out[i * 2 + 1] = hex[raw[i] & 0x0f];
     }
     out[16] = '\0';
+    return HUSH_OK;
+}
+
+static void hush_launch_config_dir(char *out, size_t outsz)
+{
+    const char *env;
+    const char *xdg;
+    const char *home;
+    int n;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    env = getenv(HUSH_LAUNCH_ENV_CONFIG);
+    if (env != NULL && env[0] != '\0') {
+        hush_launch_copy_name(out, outsz, env, "");
+        return;
+    }
+    xdg = getenv("XDG_CONFIG_HOME");
+    if (xdg != NULL && xdg[0] != '\0') {
+        n = snprintf(out, outsz, "%s/hush", xdg);
+        if (n > 0 && (size_t)n < outsz)
+            return;
+    }
+    home = getenv("HOME");
+    if (home != NULL && home[0] != '\0') {
+        n = snprintf(out, outsz, "%s/.config/hush", home);
+        if (n > 0 && (size_t)n < outsz)
+            return;
+    }
+    hush_launch_copy_name(out, outsz, "/tmp/hush", "");
+}
+
+static void hush_launch_vibe_path(char *out, size_t outsz)
+{
+    char dir[HUSH_LAUNCH_PATH_MAX];
+    int n;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    hush_launch_config_dir(dir, sizeof(dir));
+    n = snprintf(out, outsz, "%s/%s", dir, HUSH_LAUNCH_VIBE_FILE);
+    if (n <= 0 || (size_t)n >= outsz)
+        out[0] = '\0';
+}
+
+static hush_status_t hush_launch_ensure_config_dir(void)
+{
+    char dir[HUSH_LAUNCH_PATH_MAX];
+
+    hush_launch_config_dir(dir, sizeof(dir));
+    if (dir[0] == '\0')
+        return HUSH_ERR_IO;
+    if (mkdir(dir, 0700) != 0 && errno != EEXIST)
+        return HUSH_ERR_IO;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_read_vibe_file(char *buf, size_t bufsz)
+{
+    char path[HUSH_LAUNCH_PATH_MAX];
+    FILE *fp;
+    size_t n;
+
+    assert(buf != NULL);
+    assert(bufsz > 0);
+    buf[0] = '\0';
+    hush_launch_vibe_path(path, sizeof(path));
+    if (path[0] == '\0')
+        return HUSH_ERR_IO;
+    fp = fopen(path, "r");
+    if (fp == NULL)
+        return HUSH_ERR_NOT_FOUND;
+    n = fread(buf, 1, bufsz - 1, fp);
+    buf[n] = '\0';
+    fclose(fp);
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_flush_tmp(int fd, const char *tmp,
+                                           const char *buf)
+{
+    size_t len;
+    ssize_t wr;
+
+    assert(tmp != NULL);
+    assert(buf != NULL);
+    len = strlen(buf);
+    wr = write(fd, buf, len);
+    if (wr != (ssize_t)len || close(fd) != 0) {
+        close(fd);
+        unlink(tmp);
+        return HUSH_ERR_IO;
+    }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_write_vibe_file(const char *buf)
+{
+    char path[HUSH_LAUNCH_PATH_MAX];
+    char tmp[HUSH_LAUNCH_PATH_MAX];
+    int fd;
+    int n;
+
+    if (buf == NULL)
+        return HUSH_ERR_ARG;
+    if (hush_launch_ensure_config_dir() != HUSH_OK)
+        return HUSH_ERR_IO;
+    hush_launch_vibe_path(path, sizeof(path));
+    if (path[0] == '\0')
+        return HUSH_ERR_IO;
+    n = snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+    if (n <= 0 || (size_t)n >= sizeof(tmp))
+        return HUSH_ERR_IO;
+    fd = open(tmp, O_CREAT | O_TRUNC | O_WRONLY, 0600);
+    if (fd < 0)
+        return HUSH_ERR_IO;
+    if (hush_launch_flush_tmp(fd, tmp, buf) != HUSH_OK)
+        return HUSH_ERR_IO;
+    if (rename(tmp, path) != 0) {
+        unlink(tmp);
+        return HUSH_ERR_IO;
+    }
+    return HUSH_OK;
+}
+
+static int hush_launch_json_string(const char *json, const char *key,
+                                   char *out, size_t outsz)
+{
+    char quoted[HUSH_LAUNCH_KEY_MAX + 8];
+    const char *p;
+    size_t i = 0;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    out[0] = '\0';
+    if (json == NULL || key == NULL)
+        return 0;
+    if (snprintf(quoted, sizeof(quoted), "\"%s\":\"", key)
+        >= (int)sizeof(quoted))
+        return 0;
+    p = strstr(json, quoted);
+    if (p == NULL)
+        return 0;
+    p += strlen(quoted);
+    while (*p != '\0' && *p != '"' && i + 1 < outsz) {
+        if (*p == '\\' && p[1] != '\0')
+            p++;
+        out[i++] = *p++;
+    }
+    out[i] = '\0';
+    return out[0] != '\0';
+}
+
+static size_t hush_launch_json_count(const char *json, const char *key,
+                                     size_t maxv)
+{
+    char text[HUSH_LAUNCH_COUNT_MAX];
+    unsigned long val;
+    char *end = NULL;
+
+    if (!hush_launch_json_string(json, key, text, sizeof(text)))
+        return 0;
+    val = strtoul(text, &end, 10);
+    if (end == text)
+        return 0;
+    if (val > (unsigned long)maxv)
+        return maxv;
+    return (size_t)val;
+}
+
+static void hush_launch_index_key(char *out, size_t outsz,
+                                  const char *stem, size_t idx)
+{
+    assert(out != NULL);
+    assert(outsz > 0);
+    assert(stem != NULL);
+    if (snprintf(out, outsz, "%s_%zu", stem, idx) >= (int)outsz)
+        out[0] = '\0';
+}
+
+static hush_status_t hush_launch_put_field(char *out, size_t outsz, size_t *off,
+                                           const char *key, const char *val)
+{
+    char esc[HUSH_ROSTER_PROMPT_MAX * 2];
+    int n;
+
+    assert(out != NULL);
+    assert(off != NULL);
+    assert(key != NULL);
+    hush_launch_json_escape(val != NULL ? val : "", esc, sizeof(esc));
+    n = snprintf(out + *off, outsz - *off, "\"%s\":\"%s\",", key, esc);
+    if (n < 0 || *off + (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    *off += (size_t)n;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_put_vibe_head(const hush_launch_t *launch,
+                                               char *out, size_t outsz,
+                                               size_t *off)
+{
+    char flag[2];
+
+    assert(launch != NULL);
+    flag[0] = launch->vibe_public ? '1' : '0';
+    flag[1] = '\0';
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "version",
+                                   HUSH_LAUNCH_VIBE_VERSION));
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "vibe_name",
+                                   launch->vibe_name));
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "vibe_about",
+                                   launch->vibe_about));
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "vibe_public", flag));
+    return hush_launch_put_field(out, outsz, off, "vibe_token",
+                                 launch->vibe_token);
+}
+
+static hush_status_t hush_launch_put_channels(const hush_launch_t *launch,
+                                              char *out, size_t outsz,
+                                              size_t *off)
+{
+    char key[HUSH_LAUNCH_KEY_MAX];
+    char count[HUSH_LAUNCH_COUNT_MAX];
+    size_t i;
+
+    assert(launch != NULL);
+    if (snprintf(count, sizeof(count), "%zu", launch->nchannels)
+        >= (int)sizeof(count))
+        return HUSH_ERR_FULL;
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "nchannels", count));
+    for (i = 0; i < launch->nchannels; ++i) {
+        hush_launch_index_key(key, sizeof(key), "channel_name", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->channels[i].name));
+        hush_launch_index_key(key, sizeof(key), "channel_slug", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->channels[i].slug));
+    }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_put_projects(const hush_launch_t *launch,
+                                              char *out, size_t outsz,
+                                              size_t *off)
+{
+    char key[HUSH_LAUNCH_KEY_MAX];
+    char count[HUSH_LAUNCH_COUNT_MAX];
+    size_t i;
+
+    assert(launch != NULL);
+    if (snprintf(count, sizeof(count), "%zu", launch->nprojects)
+        >= (int)sizeof(count))
+        return HUSH_ERR_FULL;
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "nprojects", count));
+    for (i = 0; i < launch->nprojects; ++i) {
+        hush_launch_index_key(key, sizeof(key), "project_name", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->projects[i].name));
+        hush_launch_index_key(key, sizeof(key), "project_slug", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->projects[i].slug));
+        hush_launch_index_key(key, sizeof(key), "project_path", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->projects[i].path));
+    }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_put_agents(const hush_launch_t *launch,
+                                            char *out, size_t outsz,
+                                            size_t *off)
+{
+    char key[HUSH_LAUNCH_KEY_MAX];
+    char count[HUSH_LAUNCH_COUNT_MAX];
+    size_t i;
+
+    assert(launch != NULL);
+    if (snprintf(count, sizeof(count), "%zu", launch->roster.nagents)
+        >= (int)sizeof(count))
+        return HUSH_ERR_FULL;
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "nagents", count));
+    for (i = 0; i < launch->roster.nagents; ++i) {
+        hush_launch_index_key(key, sizeof(key), "agent_name", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->roster.agents[i].name));
+        hush_launch_index_key(key, sizeof(key), "agent_slug", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->roster.agents[i].slug));
+        hush_launch_index_key(key, sizeof(key), "agent_provider", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->roster.agents[i].provider));
+        hush_launch_index_key(key, sizeof(key), "agent_prompt", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->roster.agents[i].prompt));
+    }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_put_members(const hush_launch_t *launch,
+                                             char *out, size_t outsz,
+                                             size_t *off)
+{
+    char key[HUSH_LAUNCH_KEY_MAX];
+    char count[HUSH_LAUNCH_COUNT_MAX];
+    size_t i;
+
+    assert(launch != NULL);
+    if (snprintf(count, sizeof(count), "%zu", launch->roster.nmembers)
+        >= (int)sizeof(count))
+        return HUSH_ERR_FULL;
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "nmembers", count));
+    for (i = 0; i < launch->roster.nmembers; ++i) {
+        hush_launch_index_key(key, sizeof(key), "member_npub", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->roster.members[i].npub));
+        hush_launch_index_key(key, sizeof(key), "member_name", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->roster.members[i].name));
+    }
+    if (*off == 0)
+        return HUSH_ERR_FULL;
+    out[*off - 1] = '}';
+    if (*off + 1 >= outsz)
+        return HUSH_ERR_FULL;
+    out[*off] = '\0';
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_put_roster(const hush_launch_t *launch,
+                                            char *out, size_t outsz,
+                                            size_t *off)
+{
+    const hush_roster_profile_t *profile;
+
+    assert(launch != NULL);
+    profile = &launch->roster.profile;
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "theme", profile->theme));
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "first_name",
+                                   profile->first_name));
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "last_name",
+                                   profile->last_name));
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "organization",
+                                   profile->organization));
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "picture",
+                                   profile->picture));
+    HUSH_TRY(hush_launch_put_agents(launch, out, outsz, off));
+    return hush_launch_put_members(launch, out, outsz, off);
+}
+
+static hush_status_t hush_launch_take_vibe_head(hush_launch_t *launch,
+                                                const char *json)
+{
+    char flag[2];
+
+    assert(launch != NULL);
+    assert(json != NULL);
+    if (!hush_launch_json_string(json, "vibe_name", launch->vibe_name,
+                                 sizeof(launch->vibe_name)))
+        return HUSH_ERR_PARSE;
+    (void)hush_launch_json_string(json, "vibe_about", launch->vibe_about,
+                                  sizeof(launch->vibe_about));
+    if (!hush_launch_json_string(json, "vibe_token", launch->vibe_token,
+                                 sizeof(launch->vibe_token)))
+        return HUSH_ERR_PARSE;
+    launch->vibe_public = 1;
+    if (hush_launch_json_string(json, "vibe_public", flag, sizeof(flag))
+        && flag[0] == '0')
+        launch->vibe_public = 0;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_take_channels(hush_launch_t *launch,
+                                               const char *json)
+{
+    char key[HUSH_LAUNCH_KEY_MAX];
+    size_t n;
+    size_t i;
+
+    assert(launch != NULL);
+    launch->nchannels = 0;
+    n = hush_launch_json_count(json, "nchannels",
+                               (size_t)HUSH_LAUNCH_CHANNELS_MAX);
+    for (i = 0; i < n; ++i) {
+        hush_launch_channel_t *ch = &launch->channels[i];
+
+        memset(ch, 0, sizeof(*ch));
+        hush_launch_index_key(key, sizeof(key), "channel_name", i);
+        (void)hush_launch_json_string(json, key, ch->name, sizeof(ch->name));
+        hush_launch_index_key(key, sizeof(key), "channel_slug", i);
+        (void)hush_launch_json_string(json, key, ch->slug, sizeof(ch->slug));
+        if (ch->name[0] == '\0')
+            continue;
+        if (ch->slug[0] == '\0')
+            hush_launch_slugify(ch->slug, sizeof(ch->slug), ch->name);
+        launch->nchannels++;
+    }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_take_projects(hush_launch_t *launch,
+                                               const char *json)
+{
+    char key[HUSH_LAUNCH_KEY_MAX];
+    size_t n;
+    size_t i;
+
+    assert(launch != NULL);
+    launch->nprojects = 0;
+    n = hush_launch_json_count(json, "nprojects",
+                               (size_t)HUSH_LAUNCH_PROJECTS_MAX);
+    for (i = 0; i < n; ++i) {
+        hush_launch_project_t *proj = &launch->projects[i];
+
+        memset(proj, 0, sizeof(*proj));
+        hush_launch_index_key(key, sizeof(key), "project_name", i);
+        (void)hush_launch_json_string(json, key, proj->name, sizeof(proj->name));
+        hush_launch_index_key(key, sizeof(key), "project_slug", i);
+        (void)hush_launch_json_string(json, key, proj->slug, sizeof(proj->slug));
+        hush_launch_index_key(key, sizeof(key), "project_path", i);
+        (void)hush_launch_json_string(json, key, proj->path, sizeof(proj->path));
+        if (proj->name[0] == '\0')
+            continue;
+        launch->nprojects++;
+    }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_restore_agent_id(hush_roster_agent_t *agent)
+{
+    char path[HUSH_PASS_PATH_MAX];
+    char secret[HUSH_PASS_SECRET_MAX];
+
+    assert(agent != NULL);
+    if (snprintf(path, sizeof(path), "agents/%s/nsec", agent->slug)
+        >= (int)sizeof(path))
+        return hush_identity_generate(&agent->id);
+    if (hush_pass_has(path)
+        && hush_pass_get(secret, sizeof(secret), path) == HUSH_OK
+        && hush_identity_import(&agent->id, secret) == HUSH_OK)
+        return HUSH_OK;
+    return hush_identity_generate(&agent->id);
+}
+
+static hush_status_t hush_launch_take_agent(hush_launch_t *launch,
+                                            const char *json, size_t idx)
+{
+    hush_roster_agent_t *agent;
+    char key[HUSH_LAUNCH_KEY_MAX];
+
+    assert(launch != NULL);
+    assert(idx < (size_t)HUSH_ROSTER_AGENTS_MAX);
+    agent = &launch->roster.agents[launch->roster.nagents];
+    memset(agent, 0, sizeof(*agent));
+    hush_launch_index_key(key, sizeof(key), "agent_name", idx);
+    (void)hush_launch_json_string(json, key, agent->name, sizeof(agent->name));
+    hush_launch_index_key(key, sizeof(key), "agent_slug", idx);
+    (void)hush_launch_json_string(json, key, agent->slug, sizeof(agent->slug));
+    hush_launch_index_key(key, sizeof(key), "agent_provider", idx);
+    (void)hush_launch_json_string(json, key, agent->provider,
+                                  sizeof(agent->provider));
+    hush_launch_index_key(key, sizeof(key), "agent_prompt", idx);
+    (void)hush_launch_json_string(json, key, agent->prompt,
+                                  sizeof(agent->prompt));
+    if (agent->name[0] == '\0' || agent->slug[0] == '\0')
+        return HUSH_OK;
+    if (!hush_roster_is_provider(agent->provider))
+        hush_launch_copy_name(agent->provider, sizeof(agent->provider),
+                              HUSH_ROSTER_PROVIDER_GOOSE, "");
+    if (hush_launch_restore_agent_id(agent) != HUSH_OK)
+        return HUSH_ERR_CRYPTO;
+    launch->roster.nagents++;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_take_members(hush_launch_t *launch,
+                                              const char *json)
+{
+    char key[HUSH_LAUNCH_KEY_MAX];
+    size_t n;
+    size_t i;
+
+    assert(launch != NULL);
+    n = hush_launch_json_count(json, "nmembers",
+                               (size_t)HUSH_ROSTER_MEMBERS_MAX);
+    for (i = 0; i < n; ++i) {
+        char npub[HUSH_IDENTITY_NPUB_MAX];
+        char name[HUSH_ROSTER_NAME_MAX];
+
+        hush_launch_index_key(key, sizeof(key), "member_npub", i);
+        if (!hush_launch_json_string(json, key, npub, sizeof(npub)))
+            continue;
+        hush_launch_index_key(key, sizeof(key), "member_name", i);
+        (void)hush_launch_json_string(json, key, name, sizeof(name));
+        (void)hush_roster_add_member(&launch->roster, npub, name);
+    }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_take_roster(hush_launch_t *launch,
+                                             const char *json)
+{
+    hush_roster_profile_t profile;
+    size_t n;
+    size_t i;
+
+    assert(launch != NULL);
+    memset(&profile, 0, sizeof(profile));
+    (void)hush_launch_json_string(json, "theme", profile.theme,
+                                  sizeof(profile.theme));
+    (void)hush_launch_json_string(json, "first_name", profile.first_name,
+                                  sizeof(profile.first_name));
+    (void)hush_launch_json_string(json, "last_name", profile.last_name,
+                                  sizeof(profile.last_name));
+    (void)hush_launch_json_string(json, "organization", profile.organization,
+                                  sizeof(profile.organization));
+    (void)hush_launch_json_string(json, "picture", profile.picture,
+                                  sizeof(profile.picture));
+    if (profile.theme[0] != '\0')
+        (void)hush_roster_set_profile(&launch->roster, &profile);
+    n = hush_launch_json_count(json, "nagents", (size_t)HUSH_ROSTER_AGENTS_MAX);
+    for (i = 0; i < n; ++i)
+        HUSH_TRY(hush_launch_take_agent(launch, json, i));
+    return hush_launch_take_members(launch, json);
+}
+
+static hush_status_t hush_launch_restore_payne(hush_launch_t *launch)
+{
+    char secret[HUSH_PASS_SECRET_MAX];
+
+    assert(launch != NULL);
+    hush_identity_clear(&launch->payne);
+    if (hush_pass_has(HUSH_PASS_PAYNE_NSEC)
+        && hush_pass_get(secret, sizeof(secret), HUSH_PASS_PAYNE_NSEC) == HUSH_OK
+        && hush_identity_import(&launch->payne, secret) == HUSH_OK)
+        return HUSH_OK;
+    if (hush_identity_generate(&launch->payne) != HUSH_OK)
+        return HUSH_ERR_CRYPTO;
+    if (launch->save_pass)
+        hush_launch_try_save(launch, HUSH_PASS_PAYNE_NSEC, launch->payne.nsec);
     return HUSH_OK;
 }
