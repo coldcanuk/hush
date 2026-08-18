@@ -35,7 +35,7 @@ hush-relay: src/hush_relay_main.o libhush.a
 src/hush_ui_html.h: demo/index.html demo/sw.js demo/manifest.webmanifest \
 		demo/icons/icon-192.png demo/icons/icon-512.png \
 		demo/icons/apple-touch-icon.png ../scripts/embed-ui.sh
-	sh ../scripts/embed-ui.sh demo > $@
+	tmp=$@.tmp.$$$$; sh ../scripts/embed-ui.sh demo > $$tmp && mv $$tmp $@
 
 src/hush_http.o: src/hush_ui_html.h
 
