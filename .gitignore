@@ -63,6 +63,7 @@ GTAGS
 /build-dir/
 *.deb
 *.rpm
+*.pkg
 *.tar
 *.tar.gz
 *.tgz

@@ -461,3 +461,242 @@ Every remaining Milestone will be committed with "Milestone X.Y: ..."
 
 **Verification of gate**: This section + commit message "Milestone M1.5" + updated plan artifact.
 
+
+---
+
+# 2026-08-17 RDAP: OpenBSD + FreeBSD package management
+
+**Feature requested**: support OpenBSD and FreeBSD package management in addition to existing DEB, RPM, and Flatpak.
+
+Primary sources (fetched this session):
+- https://www.openbsd.org/faq/faq15.html (Package Management)
+- https://www.openbsd.org/faq/ports/ports.html (Working with Ports)
+- https://man.openbsd.org/pkg_create.1
+- https://www.freebsdsoftware.org/blog/freebsd-pkg-reference.html
+- https://man.freebsd.org/cgi/man.cgi?query=pkg-create&sektion=8&manpath=FreeBSD+14.3-RELEASE+and+Ports
+- Existing in-tree packaging: `debian/`, `hush-relay.spec`, `io.github.coldcanuk.hush.yml`, top-level `Makefile` targets `deb` / `rpm` / `flatpak`
+
+## Scope locked
+
+### Primary Goal
+Ship first-class OpenBSD and FreeBSD packaging for `hush-relay` that a BSD user can:
+1. drop into the official ports tree layout and `make package`, **or**
+2. build a local binary package and install it with the native tool (`pkg_add` on OpenBSD, `pkg add` / `pkg install` on FreeBSD).
+
+### Non-Goals
+- Do not rewrite DEB / RPM / Flatpak unless a shared hook is broken (DESTDIR forwarding).
+- Do not submit to official OpenBSD ports CVS or FreeBSD ports git in this slice.
+- Do not add rc.d / rcctl / service units (relay is a foreground binary today).
+- Do not produce a Linux-built binary labeled as an OpenBSD/FreeBSD package (wrong ABI).
+- No NetBSD pkgsrc in this slice (configure already hints at it).
+- No C core changes.
+
+### Success Criteria / Definition of Done
+- [ ] In-tree OpenBSD port skeleton: `openbsd/net/hush-relay/{Makefile,pkg/DESCR,pkg/PLIST}`
+- [ ] In-tree FreeBSD port skeleton: `freebsd/net/hush-relay/{Makefile,pkg-descr,pkg-plist}`
+- [ ] `make openbsd` and `make freebsd` (and `make bsd`) exist and are documented
+- [ ] Scripts stage a destroot + packing metadata on any POSIX host
+- [ ] On the native OS, scripts invoke `pkg_create` (OpenBSD) or `pkg create` (FreeBSD)
+- [ ] README documents install via `pkg_add` and `pkg add` / `pkg install`, matching the DEB/RPM/Flatpak sections
+- [ ] Top-level `make install` forwards `DESTDIR` (required by every packaging path)
+- [ ] No `.c`/`.h` edits; worktree lifecycle + PR to `main`
+
+### Constraints
+- C11 + write-legible-c if any C is touched (none expected).
+- POSIX `sh` for scripts (`set -eu`).
+- Worktree: `/opt/repo/hush/worktrees/bsd-pkg` on `gb/bsd-pkg` only.
+- Version source of truth: top-level `VERSION` (`0.0.1`).
+- License: GPLv3+ (same as DEB/RPM).
+- BSD third-party prefix is `/usr/local` (not `/usr`).
+
+### Assumptions
+- GitHub source tags match `VERSION` (`0.0.1`) so `GH_TAGNAME` / `SITES` work when a release exists; local `make dist` is the fallback tarball.
+- `gmake` is required on both BSDs (already detected by `./configure`).
+- No runtime shared-library deps beyond libc (`WANTLIB = c`).
+- This host is Linux: native `pkg_create` / `pkg create` will not run here; verification is metadata + staging + `sh -n`.
+
+### Required environment / tools
+- Always: POSIX sh, make/gmake, C11 compiler, `install(1)`, `sha256`/`sha256sum`/`openssl`.
+- OpenBSD native finish: `pkg_create(1)`, `pkg_add(1)`, `pkg_info(1)`, `pkg_delete(1)`.
+- FreeBSD native finish: `pkg create`, `pkg add`, `pkg info`, `pkg delete`.
+- Ports-tree finish: OpenBSD `/usr/ports` + `bsd.port.mk`; FreeBSD `/usr/ports` + `bsd.port.mk`.
+
+### Top risks
+1. **Cannot run `pkg_create` / `pkg create` on this Linux host.** Mitigation: complete ports skeletons + staging scripts; native invocation is a guarded branch; document the exact on-BSD commands.
+2. **OpenBSD `pkg_create` is picky (COMMENT, FULLPKGPATH, packing-list annotations).** Mitigation: follow `pkg_create(1)` mandatory `-D COMMENT=` / `-D FULLPKGPATH=` / `-d` / `-f` / `-p`; use `@bin` for the executable.
+3. **FreeBSD `pkg create` manifest vs plist vs rootdir mismatch.** Mitigation: generate `+MANIFEST` with `files` hashes from the destroot; also keep a ports `pkg-plist`.
+4. **Top Makefile drops `DESTDIR`.** Mitigation: forward it in `install`/`uninstall` (shared fix, not a DEB/RPM rewrite).
+5. **`.gitignore` has `*.plist`.** Mitigation: OpenBSD file is `pkg/PLIST` (no suffix); FreeBSD is `pkg-plist`.
+
+## Research synthesis
+
+### Existing packaging surface (this tree)
+| Format | Path | Consumer | Prefix | Build hook |
+|--------|------|----------|--------|------------|
+| DEB | `debian/` (`control`, `rules`, `changelog`, `copyright`, `hush-relay.install`) | `dpkg-buildpackage` via `make deb` | `/usr` | `override_dh_auto_*` |
+| RPM | `hush-relay.spec` | `rpmbuild -bb` via `make rpm` (needs `make dist`) | `/usr` | `%configure` + `%make_install` |
+| Flatpak | `io.github.coldcanuk.hush.yml` | `flatpak-builder` via `make flatpak` | `/app` | simple buildsystem |
+| Source | `make dist` → `git archive` | all of the above | n/a | `VERSION` |
+
+Package identity today: **`hush-relay`**, summary “Lightweight, legible C11 Nostr relay core”, maintainer `coldcanuk@users.noreply.github.com`, license GPLv3+.
+
+Install payload (from `hush-c/Makefile`):
+- `$(BINDIR)/hush-relay` (0755)
+- `$(DATADIR)/applications/hush-relay.desktop` (0644)
+- `$(DATADIR)/icons/hicolor/{48,128,256}x{48,128,256}/apps/hush-relay.png` (0644)
+
+`configure` already prints BSD hints (`pkg install -y gmake gcc pkgconf` / `pkg_add gmake`) and prefers `gmake` when `uname` is FreeBSD/OpenBSD/NetBSD. C sources are POSIX (`poll`, BSD sockets) — no Linux-only APIs. **The gap is binary/port packaging, not compilation.**
+
+Bug found: top-level `Makefile` `install` does not pass `DESTDIR` into `hush-c`. `debian/rules` and the RPM spec pass `DESTDIR` at the top; it is currently ignored. Must fix as part of this work.
+
+### OpenBSD (FAQ 15 + ports + pkg_create)
+
+**User-facing tools** (FAQ 15):
+| Action | Command |
+|--------|---------|
+| Install from mirror | `pkg_add hush-relay` |
+| Install local file | `pkg_add ./hush-relay-0.0.1.tgz` |
+| Search | `pkg_info -aQ hush` |
+| Info | `pkg_info hush-relay` |
+| Update all | `pkg_add -u` |
+| Remove | `pkg_delete hush-relay` |
+| Remove leftover deps | `pkg_delete -a` |
+
+Packages are `.tgz` **plus** packing metadata (not a raw tarball). Database: `/var/db/pkg`. Mirror via `/etc/installurl` or `PKG_PATH`.
+
+**Creation** (`pkg_create(1)`):
+```
+pkg_create [-A arches] [-B pkg-destdir] -d desc \
+  -D COMMENT=value -D FULLPKGPATH=value -D PORTSDIR=value \
+  -f packinglist -p prefix pkg-name
+```
+- `COMMENT` and `FULLPKGPATH` are mandatory for updates.
+- `-B` is the destroot prepended when reading files.
+- `-p` is the install prefix (record + `@cwd` base). Default localbase `/usr/local`.
+- `-A '*'` = arch-independent; we will **not** use that for the compiled binary. Omit `-A` so the package is native-arch, or pass the build arch.
+- Packing-list: filenames relative to `@cwd`; `@bin` for OpenBSD executables; trailing `/` or `@dir` for directories.
+
+**Ports tree** (ports FAQ):
+```
+/usr/ports/<category>/<port>/
+  Makefile
+  distinfo          # SHA256 + SIZE; generated by `make makesum`
+  pkg/PLIST
+  pkg/DESCR
+  patches/          # optional
+  files/            # optional
+```
+`make` in the port dir walks depends, fake-installs, then `pkg_create`. Official advice: prefer packages over building ports; we still ship a port so `make package` works.
+
+In-tree we keep a **drop-in copy** at `openbsd/net/hush-relay/` (category `net`, matching DEB `Section: net`).
+
+Port Makefile variables we will set:
+- `COMMENT`, `DISTNAME`/`PKGNAME`, `CATEGORIES=net`
+- `HOMEPAGE`, `MAINTAINER`
+- `# GPLv3+` then `PERMIT_PACKAGE = Yes`
+- `GH_ACCOUNT` / `GH_PROJECT` / `GH_TAGNAME` (or `SITES` + `DISTFILES`)
+- `WANTLIB = c`
+- `USE_GMAKE = Yes`
+- `CONFIGURE_STYLE = simple`, `CONFIGURE_ARGS = --prefix=${PREFIX}`
+- `TEST_TARGET = test`
+
+### FreeBSD (pkg reference + pkg-create(8) + Porter's Handbook)
+
+**User-facing tools**:
+| Action | Command |
+|--------|---------|
+| Bootstrap | `pkg bootstrap` (first use) |
+| Install from repo | `pkg install hush-relay` |
+| Install local file | `pkg add ./hush-relay-0.0.1.pkg` |
+| Search | `pkg search hush` |
+| Info / files | `pkg info hush-relay` / `pkg info -l hush-relay` |
+| Update catalog + upgrade | `pkg update && pkg upgrade` |
+| Remove | `pkg delete hush-relay` |
+| Orphans | `pkg autoremove` |
+| Which package owns a file | `pkg which /usr/local/bin/hush-relay` |
+| Create from installed | `pkg create hush-relay` |
+| Create from destroot | `pkg create -M +MANIFEST -r rootdir -o outdir` |
+
+Packages are `.pkg`. Database: `/var/db/pkg`. Repos: `/etc/pkg/FreeBSD.conf` + `/usr/local/etc/pkg/repos/`. Poudriere is the official bulk builder; we do not require it.
+
+**`pkg create` metadata (`+MANIFEST`)** — UCL or JSON:
+- Required-ish: `name`, `version`, `origin` (`category/port`), `comment` (one line), `desc`, `maintainer`, `www`, `prefix`
+- Optional: `licenses`, `categories`, `abi`/`arch`, `deps`, `files` (path → sha256 or `{uname,gname,perm}`)
+- `-r rootdir` makes archive paths relative to that destroot
+- Legacy `-p plist` (`@dir`, `@mode`, `@owner`, `@group`) also works
+
+**Ports tree**:
+```
+/usr/ports/<category>/<port>/
+  Makefile
+  distinfo          # TIMESTAMP + SHA256 + SIZE; `make makesum`
+  pkg-descr         # long desc; last line `WWW: url`
+  pkg-plist         # or PLIST_FILES in Makefile for tiny ports
+```
+
+In-tree drop-in: `freebsd/net/hush-relay/`.
+
+Port Makefile variables we will set:
+- `PORTNAME=hush-relay`, `DISTVERSION` from `VERSION`
+- `CATEGORIES=net`, `MAINTAINER`, `COMMENT`, `WWW`
+- `LICENSE=GPLv3+`, `LICENSE_FILE=${WRKSRC}/LICENSE`
+- `USE_GITHUB=yes`, `GH_ACCOUNT=coldcanuk`, `GH_PROJECT=hush`
+- `USES=gmake`, `HAS_CONFIGURE=yes` (our script is not GNU autoconf)
+- `CONFIGURE_ARGS=--prefix=${PREFIX}`
+- `PLIST_FILES` listing the five installed paths
+
+### Shared architecture (Phase 2 decisions)
+
+```
+                    VERSION + hush-c install payload
+                                |
+        +-----------------------+-----------------------+
+        |                       |                       |
+   debian/ + spec + yml    openbsd/net/hush-relay   freebsd/net/hush-relay
+        |                       |                       |
+   make deb|rpm|flatpak    make openbsd             make freebsd
+                                |                       |
+                    scripts/package-openbsd.sh   scripts/package-freebsd.sh
+                                |                       |
+                    destroot + PLIST + DESCR     destroot + +MANIFEST
+                                |                       |
+                    [OpenBSD] pkg_create         [FreeBSD] pkg create
+                                |                       |
+                    hush-relay-VER.tgz           hush-relay-VER.pkg
+                                |                       |
+                    pkg_add ./file.tgz           pkg add ./file.pkg
+```
+
+Rules:
+1. **Ports skeletons are the source of truth** for names, comment, origin, plist.
+2. **Scripts never emit a `.tgz`/`.pkg` on the wrong OS.** Staging + metadata always; native tool only when `uname` matches.
+3. **Prefix is `/usr/local`** on both BSDs.
+4. **Origin/FULLPKGPATH is `net/hush-relay`.**
+5. **DESTDIR is forwarded** from the top Makefile.
+6. **No libc-other deps.** Empty `RUN_DEPENDS` / no `deps` key.
+
+### Updated concrete plan (remaining phases)
+
+**Phase 0** — COMPLETE: worktree `/opt/repo/hush/worktrees/bsd-pkg`, branch `gb/bsd-pkg`.
+
+**Phase 1** — this section is the synthesis gate (M1.7).
+
+**Phase 2** — architecture frozen in this section (M2.1). No extra doc file required.
+
+**Phase 3 — Implementation**
+- M3.1 OpenBSD: `openbsd/net/hush-relay/{Makefile,pkg/DESCR,pkg/PLIST}`, `openbsd/README.md`, `scripts/package-openbsd.sh`
+- M3.2 FreeBSD: `freebsd/net/hush-relay/{Makefile,pkg-descr,pkg-plist}`, `freebsd/README.md`, `scripts/package-freebsd.sh`
+- M3.3 Wiring: top `Makefile` targets `openbsd` `freebsd` `bsd`; forward `DESTDIR`; README install sections; `.gitignore` `*.pkg`
+
+**Phase 4 — Verify + land**
+- `sh -n` scripts; run both package scripts on Linux; assert destroot + metadata
+- `make -n openbsd freebsd bsd`
+- Confirm no C edits
+- Commit, push `gb/bsd-pkg`, PR → auto-merge, remove worktree
+
+### References
+- OpenBSD FAQ 15: https://www.openbsd.org/faq/faq15.html
+- OpenBSD ports: https://www.openbsd.org/faq/ports/ports.html
+- OpenBSD pkg_create(1): https://man.openbsd.org/pkg_create.1
+- FreeBSD pkg reference: https://www.freebsdsoftware.org/blog/freebsd-pkg-reference.html
+- FreeBSD pkg-create(8): https://man.freebsd.org/cgi/man.cgi?query=pkg-create&sektion=8
