@@ -1,4 +1,4 @@
-/* hush_http.h: tiny HTTP adapter so the desktop launcher can open a UI. */
+/* hush_http.h: HTTP adapter for the PWA UI and JSON API. */
 
 #ifndef HUSH_HTTP_H
 #define HUSH_HTTP_H

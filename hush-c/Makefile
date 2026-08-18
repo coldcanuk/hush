@@ -30,8 +30,10 @@ libhush.a: $(OBJS)
 hush-relay: src/hush_relay_main.o libhush.a
 	$(CC) -o $@ $^ $(LDFLAGS)
 
-src/hush_ui_html.h: demo/index.html ../scripts/embed-ui.sh
-	sh ../scripts/embed-ui.sh demo/index.html > $@
+src/hush_ui_html.h: demo/index.html demo/sw.js demo/manifest.webmanifest \
+		demo/icons/icon-192.png demo/icons/icon-512.png \
+		demo/icons/apple-touch-icon.png ../scripts/embed-ui.sh
+	sh ../scripts/embed-ui.sh demo > $@
 
 src/hush_http.o: src/hush_ui_html.h
 
@@ -41,8 +43,9 @@ src/%.o: src/%.c
 tests/test_%: tests/test_%.c libhush.a
 	$(CC) $(CFLAGS) $< libhush.a -o $@ $(LDFLAGS)
 
-test: $(TEST_BINS)
+test: $(TEST_BINS) hush-relay
 	@for t in $(TEST_BINS); do echo "RUN $$t"; ./$$t || exit 1; done
+	@sh tests/check_pwa.sh
 	@echo "ALL TESTS PASSED"
 
 clean:

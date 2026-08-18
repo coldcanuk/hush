@@ -22,10 +22,13 @@ Optimized for the Goose AI agent. All development uses worktrees **inside this r
 - CLOSE
 - Simple TCP newline-delimited JSON protocol (MVP; WebSocket adapter later)
 - `poll(2)` single-threaded server
-- Same port also serves the chat UI over HTTP (`GET /`)
+- Same port also serves the chat **PWA** over HTTP (`GET /`, manifest, service worker, icons)
 - Strict build: `-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow`
 
-The chat UI is served by the relay itself (also kept at `hush-c/demo/index.html`).
+The chat UI is a Progressive Web App served by the relay itself
+(`hush-c/demo/`: `index.html`, `manifest.webmanifest`, `sw.js`, icons).
+Install it from the browser (Chromium “Install”, or iOS Share → Add to Home Screen)
+while the relay is running at `http://127.0.0.1:<port>/`.
 
 Importing identities and channels from the predecessor project? See [IMPORT.md](IMPORT.md).
 
