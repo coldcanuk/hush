@@ -78,9 +78,9 @@ JSON 32768.
 
 ### M2.1 Lock contracts
 
-- [ ] Task 1 of M2.1: add UI_SPEC §12 OAuth signed-in, §13 mentions,
+- [x] Task 1 of M2.1: add UI_SPEC §12 OAuth signed-in, §13 mentions,
       §14 channel groups / manage / delete.
-- [ ] Task 2 of M2.1: add API rows to UI_SPEC data table.
+- [x] Task 2 of M2.1: add API rows to UI_SPEC data table.
 - Verify: `rg -n "Manage Channel|mention_0|group_id" UI_SPEC.md`.
 - Commit: `Milestone 2.1: lock OAuth mention group contracts`
 
