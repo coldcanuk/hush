@@ -20,8 +20,8 @@ a reference to fill in the "code of conduct" box on supplier registration
 forms.
 
 The Hush project learned of this story from SQLite and decided to shape its
-code of ethics documentation around the same idea as SQLite. After forking
-Buzz and creating the legible C11 implementation, I chose to base Hush's
+code of ethics documentation around the same idea as SQLite. After forking Buzz
+and creating the legible C11 implementation, I chose to base Hush's
 Code of Ethics on the Rule of St. Benedict in the same way.
 
 ## 2. Purpose
