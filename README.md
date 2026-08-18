@@ -86,6 +86,41 @@ make flatpak
 flatpak install flathub io.github.coldcanuk.hush
 ```
 
+### OpenBSD (`pkg_add`)
+
+```sh
+# On OpenBSD (pkg_add gmake first):
+./configure --prefix=/usr/local
+make openbsd
+doas pkg_add ./dist/openbsd/hush-relay-*.tgz
+
+# Or drop the port into the ports tree:
+#   doas cp -R openbsd/net/hush-relay /usr/ports/net/hush-relay
+#   cd /usr/ports/net/hush-relay && make makesum && make package
+```
+
+Everyday commands ([FAQ 15](https://www.openbsd.org/faq/faq15.html)):
+`pkg_info -aQ hush`, `doas pkg_add -u`, `doas pkg_delete hush-relay`.
+Details: [openbsd/README.md](openbsd/README.md).
+
+### FreeBSD (`pkg`)
+
+```sh
+# On FreeBSD (pkg install -y gmake first):
+./configure --prefix=/usr/local
+gmake freebsd
+pkg add ./dist/freebsd/hush-relay-*.pkg
+
+# Or drop the port into the ports tree:
+#   cp -R freebsd/net/hush-relay /usr/ports/net/hush-relay
+#   cd /usr/ports/net/hush-relay && make makesum && make package
+```
+
+Everyday commands ([pkg reference](https://www.freebsdsoftware.org/blog/freebsd-pkg-reference.html)):
+`pkg search hush`, `pkg info hush-relay`, `pkg update && pkg upgrade`,
+`pkg delete hush-relay`.
+Details: [freebsd/README.md](freebsd/README.md).
+
 ### From Source (all platforms)
 
 ```bash
