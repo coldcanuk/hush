@@ -152,3 +152,96 @@ Follow strictly. Commit after every Milestone. Re-audit at end. State "Grok Buil
 - Quinn: low cog load (one flag for quit, simple --quit/--close).
 - Parker: serves the JTBD "I can reliably close the chat window while keeping my hive alive, or fully quit when done."
 
+
+## Detailed Design (M2.1 locked)
+
+### CLI surface (hush_relay_main.c)
+- Existing: [port] [--open | --no-open] [-h|--help]
+- New:
+  - --quit : If a pidfile exists and process is alive, send SIGTERM, wait briefly, unlink, exit 0. If no server, exit 0 (idempotent).
+  - --close : Friendly no-op. Prints "GUI closed. Relay still running on :port. Click launcher to re-attach." Exit 0. (Primary Close is user closing the browser window.)
+- Unknown options still error + help + exit 1.
+- Update hush_print_help() with new flags and a "Close vs Quit" paragraph.
+
+### Signals & graceful shutdown (hush_relay.c)
+- Add:
+  static volatile sig_atomic_t g_shutdown = 0;
+  static void hush_shutdown_handler(int sig) { (void)sig; g_shutdown = 1; }
+- In hush_relay_run, after existing signal ignores:
+  signal(SIGINT, hush_shutdown_handler);
+  signal(SIGTERM, hush_shutdown_handler);
+- In the poll loop, after pr = poll(...):
+  if (pr < 0) {
+      if (errno == EINTR) {
+          if (g_shutdown) break;
+          continue;
+      }
+      break;
+  }
+  if (g_shutdown) break;
+  ... rest
+- On break / return from loop: existing cleanup always runs (turn_shutdown, store_destroy, close(ls)).
+- Return HUSH_OK (main will turn into exit 0). This is intentional clean quit.
+
+### Pidfile
+- Location (per-user):
+  - If XDG_RUNTIME_DIR set: $XDG_RUNTIME_DIR/hush/relay.pid
+  - Else: $HOME/.local/state/hush/relay.pid (create dirs as needed, 0700)
+- On successful listen (after listen() succeeds, before poll loop):
+  write getpid() + '\n' to the file (O_CREAT|O_TRUNC|O_WRONLY, 0600).
+- On every normal exit from hush_relay_run (including error paths that got far enough):
+  unlink the pidfile (best effort).
+- Helper functions (legible, small):
+  static void hush_pidfile_path(char *out, size_t sz);
+  static void hush_write_pidfile(void);
+  static void hush_remove_pidfile(void);
+- --quit uses the same path logic to find the pid.
+
+### Re-attach / attach path (existing + polish)
+- Keep the EADDRINUSE + open_ui path.
+- Change the message to: "hush-relay already running on http://127.0.0.1:%u/ — opening UI..."
+- This becomes the documented "re-attach" behavior.
+
+### Exit codes
+- HUSH_OK (0) from run → main returns 0 (covers normal run, attach, --quit success, --close).
+- Errors → 1 (or keep current mapping).
+- Document in help: "Exit code 0 means clean (including intentional quit)."
+
+### Desktop file
+- Add:
+  Actions=Quit;
+  ...
+  [Desktop Action Quit]
+  Name=Quit Hush
+  Exec=hush-relay --quit
+  Icon=hush-relay
+- Comment on the main entry: "Launches or attaches the GUI. Use 'Quit Hush' action or --quit to fully stop the relay."
+
+### Close semantics (documentation + behavior)
+- There is no reliable "tell the browser to close its --app window" from the relay.
+- Close = close the browser window yourself, or launch without --open.
+- Launcher click always provides "get a window" (start or re-attach).
+- --close flag exists for scripts/launchers that want a "close GUI" verb that doesn't kill the server.
+
+### Cleanup ordering (already mostly correct)
+On any exit from the main loop or early error after listen:
+  hush_turn_shutdown(&g_turn);
+  hush_store_destroy(g_store);
+  close(ls);
+  hush_remove_pidfile();
+  return appropriate status;
+
+### Testing
+- Existing check_launch.sh continues to pass.
+- New manual/added smoke:
+  - Start with --no-open, verify pidfile + port.
+  - Launcher click (or --open) while running → re-attach message + window.
+  - Close browser window → port still listening.
+  - --quit → port gone, exit 0, pidfile gone.
+  - Ctrl+C while running → clean exit 0.
+- For unit tests: test_pidfile.c or extend test_launch if simple.
+
+### Legible-c
+- All new/changed .c/.h will be reviewed against the 17-item checklist before commit.
+- Functions ≤40 lines, depth ≤2, named literals, checked calls, etc.
+
