@@ -3,7 +3,7 @@
 #   ./configure [PREFIX=...]
 #   make
 #   make test
-#   make install [PREFIX=...]     # installs hush-relay + .desktop launcher
+#   make install [PREFIX=...]     # installs hush-relay + .desktop + icons
 #   make uninstall
 
 include config.mk
@@ -27,6 +27,7 @@ install:
 	@echo
 	@echo "To refresh your application launcher (Linux):"
 	@echo "  update-desktop-database $(DATADIR)/applications || true"
+	@echo "  gtk-update-icon-cache -f $(DATADIR)/icons/hicolor || true"
 	@echo
 	@echo "hush-relay should now appear in your menu / launcher."
 

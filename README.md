@@ -1,5 +1,7 @@
 # Hush
 
+<img src="assets/icons/256x256/hush-relay.png" width="72" height="72" alt="Hush">
+
 **Version: 0.0.1**
 
 **Hush** is a lightweight, legible C11 implementation of core Nostr relay functionality.

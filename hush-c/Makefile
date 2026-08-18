@@ -1,6 +1,7 @@
 # Makefile for Hush C (legible C11)
 # Full workflow support: ./configure, make, make install, make uninstall
 # Desktop: installs hush-relay.desktop into the application launcher directory.
+# Icon: installs hush-relay.png into the hicolor theme (48/128/256).
 
 CC := gcc
 CFLAGS := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2
@@ -11,6 +12,8 @@ PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share
 APPDIR ?= $(DATADIR)/applications
+ICONDIR ?= $(DATADIR)/icons/hicolor
+ICON_SIZES := 48 128 256
 
 SRCS := $(wildcard src/*.c)
 OBJS := $(SRCS:.c=.o)
@@ -48,17 +51,27 @@ install: all
 	install -m 0755 hush-relay $(DESTDIR)$(BINDIR)/hush-relay
 	install -d $(DESTDIR)$(APPDIR)
 	install -m 0644 ../hush-relay.desktop $(DESTDIR)$(APPDIR)/hush-relay.desktop
+	@for size in $(ICON_SIZES); do \
+		install -d $(DESTDIR)$(ICONDIR)/$${size}x$${size}/apps; \
+		install -m 0644 ../assets/icons/$${size}x$${size}/hush-relay.png \
+			$(DESTDIR)$(ICONDIR)/$${size}x$${size}/apps/hush-relay.png; \
+	done
 	@echo
 	@echo "Installed:"
 	@echo "  $(DESTDIR)$(BINDIR)/hush-relay"
 	@echo "  $(DESTDIR)$(APPDIR)/hush-relay.desktop"
+	@echo "  $(DESTDIR)$(ICONDIR)/{48,128,256}x{48,128,256}/apps/hush-relay.png"
 	@echo
-	@echo "Update desktop database (Linux):"
+	@echo "Update desktop database and icon cache (Linux):"
 	@echo "  update-desktop-database $(DESTDIR)$(APPDIR) || true"
+	@echo "  gtk-update-icon-cache -f $(DESTDIR)$(ICONDIR) || true"
 	@echo
 	@echo "User-local example: make install PREFIX=\$$HOME/.local"
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/hush-relay
 	rm -f $(DESTDIR)$(APPDIR)/hush-relay.desktop
-	@echo "Removed hush-relay and desktop entry."
+	@for size in $(ICON_SIZES); do \
+		rm -f $(DESTDIR)$(ICONDIR)/$${size}x$${size}/apps/hush-relay.png; \
+	done
+	@echo "Removed hush-relay, desktop entry, and launcher icons."
