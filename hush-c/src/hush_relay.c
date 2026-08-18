@@ -219,10 +219,13 @@ static void hush_exec_app_browser(const char *url, const char *app_arg)
                "--class=hush-relay", "--name=Hush", app_arg, (char *)NULL);
     }
     execlp("epiphany", "epiphany", "--application-mode", url, (char *)NULL);
+    execlp("flatpak", "flatpak", "run", "com.brave.Browser",
+           "--class=hush-relay", app_arg, (char *)NULL);
     execlp("flatpak", "flatpak", "run", "org.chromium.Chromium",
            "--class=hush-relay", app_arg, (char *)NULL);
     execlp("flatpak", "flatpak", "run", "com.google.Chrome",
            "--class=hush-relay", app_arg, (char *)NULL);
+    execlp("xdg-open", "xdg-open", url, (char *)NULL);
 }
 
 static int hush_active_clients(void)
