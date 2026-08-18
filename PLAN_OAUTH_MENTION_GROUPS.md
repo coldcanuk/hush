@@ -88,11 +88,11 @@ JSON 32768.
 
 ### M3.1 Data model
 
-- [ ] Task 1 of M3.1: extend `hush_launch_channel_t` with `id`,
+- [x] Task 1 of M3.1: extend `hush_launch_channel_t` with `id`,
       `group_id`, human npubs, robot slugs + counts. Add
       `hush_launch_group_t` and `groups[]` / `ngroups` on launch.
       Bump JSON max to 32768. `HUSH_LAUNCH_ID_HEX = 32`.
-- [ ] Task 2 of M3.1: `hush_launch_make_uuid` (16 random bytes → 32
+- [x] Task 2 of M3.1: `hush_launch_make_uuid` (16 random bytes → 32
       hex). Assign on push_channel and create_group. Restore fills
       missing ids then save.
 - Verify: `test_launch` still builds after header change (next tasks
@@ -100,19 +100,19 @@ JSON 32768.
 
 ### M3.2 Mutators
 
-- [ ] Task 1 of M3.2: `hush_launch_remove_channel` (refuse last).
-- [ ] Task 2 of M3.2: `hush_launch_add_group`,
+- [x] Task 1 of M3.2: `hush_launch_remove_channel` (refuse last).
+- [x] Task 2 of M3.2: `hush_launch_add_group`,
       `hush_launch_set_channel_group` (empty group_id = ungroup).
-- [ ] Task 3 of M3.2: `hush_launch_set_channel_roster` (humans +
+- [x] Task 3 of M3.2: `hush_launch_set_channel_roster` (humans +
       robots by slug/npub; validate against roster).
 - Verify: unit tests in `test_launch.c`.
 - Commit: `Milestone 3.2: channel UUID group roster mutators`
 
 ### M3.3 Persist + session JSON
 
-- [ ] Task 1 of M3.3: put/take channel id, group_id, humans, robots;
+- [x] Task 1 of M3.3: put/take channel id, group_id, humans, robots;
       put/take groups.
-- [ ] Task 2 of M3.3: format session channels with id + group_id +
+- [x] Task 2 of M3.3: format session channels with id + group_id +
       members; add `"groups":[...]`.
 - Verify: restore test asserts UUID + group survive vibe.json.
 - Commit: `Milestone 3.3: persist channel groups`
