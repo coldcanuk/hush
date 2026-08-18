@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "hush_identity.h"
+#include "hush_pass.h"
 #include "hush_status.h"
 #include "hush_store.h"
 
@@ -17,6 +18,8 @@ enum {
     HUSH_LAUNCH_PROJECTS_MAX = 16,
     HUSH_LAUNCH_JSON_MAX = 8192
 };
+
+#define HUSH_LAUNCH_PASS_FAIL "pass helper failed"
 
 #define HUSH_LAUNCH_PAYNE_NAME "Sgt Major Payne"
 #define HUSH_LAUNCH_PAYNE_SLUG "sgt-major-payne"
@@ -38,6 +41,9 @@ typedef struct {
     int logged_in;
     int backup_acked;
     int has_vibe;
+    int save_pass;
+    int pass_saved;
+    char pass_error[HUSH_PASS_ERR_MAX];
     hush_identity_t human;
     hush_identity_t payne;
     char vibe_name[HUSH_LAUNCH_NAME_MAX];
@@ -58,8 +64,12 @@ hush_status_t hush_launch_create_identity(hush_launch_t *launch);
 hush_status_t hush_launch_import_identity(hush_launch_t *launch,
                                           const char *secret);
 
-/* Marks the backup step done. Fails if not logged in. */
-hush_status_t hush_launch_ack_backup(hush_launch_t *launch);
+/* Marks the backup step done. save_pass 1 (default) writes the nsec
+ * to pass. Fails if not logged in. */
+hush_status_t hush_launch_ack_backup(hush_launch_t *launch, int save_pass);
+
+/* Loads hush/identity/nsec when present. Soft-fails if pass is absent. */
+hush_status_t hush_launch_restore_identity(hush_launch_t *launch);
 
 /* Names this relay and seeds starter channels + Payne. */
 hush_status_t hush_launch_create_vibe(hush_launch_t *launch,

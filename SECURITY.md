@@ -74,8 +74,15 @@ treat a running `hush-relay` as a compliance archive.
 
 ### Agent Secret Storage — `pass`
 
-Hush-aware tools store agent nsecs under the unix password manager `pass`,
-namespaced as `hush/agents/<agent-name>/nsec`. See [IMPORT.md](IMPORT.md).
+Hush-aware tools store secrets in the unix password manager `pass` **by
+default**. The human must uncheck the modal box to opt out.
+
+| Secret | Path | Retrieve |
+|---|---|---|
+| Human identity | `hush/identity/nsec` | `pass show hush/identity/nsec` |
+| Agent nsec | `hush/agents/<agent-name>/nsec` | `pass show hush/agents/<agent-name>/nsec` |
+
+See [IMPORT.md](IMPORT.md) and [docs/pass-integration.md](docs/pass-integration.md).
 
 The `HUSH_PRIVATE_KEY` environment variable, when set, takes precedence for
 harnessed agents and CI.

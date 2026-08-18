@@ -899,3 +899,109 @@ Still opted out of C. First-launch UI continues hand-written CSS to match the ex
 ## Remaining plan
 
 See `PLAN_FIRST_LAUNCH.md`.
+
+---
+
+# 2026-08-17 RDAP: Default-on Unix `pass` for identity keys
+
+## Scope locked
+
+- **Primary goal:** Whenever Hush generates or first-shows an nsec (or any other secret), a modal presents the value to copy, with a **checked-by-default** checkbox that saves it via the unix password manager `pass`. The human must physically uncheck to opt out. Retrieve CLI is shown in the modal.
+- **Non-goals:** Replacing `pass` with another manager; GPG key generation; OS keyring; NIP-49 `ncryptsec`; persisting the in-memory event ring; rewriting first-launch beyond the backup/import secret modal; requiring `pass` to create an identity.
+- **Success / DoD:**
+  1. Fresh-key backup modal shows the nsec (masked by default) + Copy.
+  2. Checkbox is **checked by default**. Label includes retrieve CLI: `pass show hush/identity/nsec` (or `hush-pass get identity/nsec`).
+  3. Leaving it checked on “I saved it” writes `hush/identity/nsec` via `scripts/hush-pass` / `pass insert`.
+  4. Unchecking skips `pass` entirely.
+  5. Import and Payne-agent secrets use the same contract (default-on, opt-out by uncheck).
+  6. Missing / uninitialized `pass` never blocks identity creation; UI reports the failure and still offers copy.
+  7. `make && make test` pass under `-Werror`. New unit + route tests cover save / skip / missing-pass.
+- **Constraints:** C11 + write-legible-c; worktree `gb/pass-identity-keys`; land via PR. Never write `main`.
+- **Assumptions:** `pass` is the durable store. Browser never keeps nsec after ack. Relay process holds in-memory identity. Tests must not require a live GPG agent (injectable backend).
+- **Environment:** `pass` v1.7.4 and `gpg` are on PATH. This machine’s `~/.password-store` has no `.gpg-id` (`pass insert` currently fails until `pass init`). Tests therefore use a stub backend.
+- **Risks:**
+  1. Calling real `pass` from unit tests hangs on GPG pinentry → injectable command + stub script.
+  2. Putting nsec on `argv` of `pass insert` leaks via `ps` → pipe stdin, never argv.
+  3. Hard-failing create when `pass` is missing → save is best-effort; identity still succeeds.
+  4. `hush_http.c` / `hush_launch.c` already near complexity budget → new `hush_pass` module; HTTP only parses `save_pass`.
+
+## Findings (code, this tree)
+
+### What exists
+
+- `scripts/hush-pass` wraps `pass` under namespace `hush/<path>`. Commands: `save|get|has|ls`.
+- Bug: `save` with a third argv value uses `"${3+x}"` then pipes `$3`, but **never passes `-f`**, so a second save of the same path prompts and can hang.
+- Docs (`IMPORT.md`, `SECURITY.md`, `RESEARCH.md` first-launch) already name `pass` as the store and prescribe the checkbox.
+- PWA backup card in `hush-c/demo/index.html` already has the checkbox, **unchecked**, and **never reads it**. `ack_backup` posts `{action:"ack_backup"}` only.
+- `POST /api/identity` (`hush_http_serve_identity`) handles `create` / `import` / `ack_backup`. No `save_pass` field. Import auto-acks backup and never offers the modal.
+- `hush_identity` generates/imports secp256k1 keys. It does not talk to `pass`.
+- `hush_launch_create_vibe` generates Payne’s key in-process and never stores it.
+- Relay start (`hush_relay_run`) does not restore identity from `pass`.
+- `hush-pass` is not installed by `make install` / DEB / RPM.
+- No `docs/pass-integration.md` (IMPORT.md links it).
+- `check_launch.sh` only greps the checkbox string in HTML source. It never posts `save_pass` and never inspects a store.
+
+### Contract (locked)
+
+| Secret | `pass` path | Retrieve CLI |
+|---|---|---|
+| Human identity nsec | `hush/identity/nsec` | `pass show hush/identity/nsec` |
+| Agent nsec | `hush/agents/<slug>/nsec` | `pass show hush/agents/<slug>/nsec` |
+| Other token | `hush/<category>/<name>` | `pass show hush/<category>/<name>` |
+
+Helper equivalents:
+
+```
+hush-pass save identity/nsec
+hush-pass get  identity/nsec
+hush-pass has  identity/nsec
+```
+
+**Checkbox (default checked):**
+
+`Checked to save password to Unix Password Manager. Retrieve with: pass show hush/identity/nsec`
+
+(For agents, the retrieve path is `pass show hush/agents/<slug>/nsec`.)
+
+**Modal:** the existing first-launch backup card *is* the modal. Import also gets the same backup card (do not auto-ack). Any later secret-generation UI reuses the same pattern.
+
+**Default:** checked. Uncheck = do not call `pass`. Copy is always available.
+
+**Failure:** if `pass` is missing or the store is uninitialized, identity still succeeds; session JSON reports `pass_saved:false` and a short `pass_error` string. Human still has Copy.
+
+### Architecture (locked)
+
+New module `hush_pass` (C11, write-legible-c §15):
+
+- `hush_pass_save(path, secret)` — pipes secret to `hush-pass save <path>` (or `pass insert -e -m -f hush/<path>`).
+- `hush_pass_get(path, out, outsz)` / `hush_pass_has(path)`.
+- `hush_pass_set_helper(cmd)` — test seam (default: `hush-pass` on PATH, else `scripts/hush-pass` relative to cwd).
+- Never put the secret on argv. Never log it.
+- Missing helper / non-zero child → `HUSH_ERR_IO`, no abort of identity.
+
+Launch / HTTP:
+
+- `hush_launch_ack_backup(launch, save_pass)` — if `save_pass`, persist human nsec under `identity/nsec`.
+- Import no longer auto-acks; import lands on the same backup modal (checkbox default on).
+- `POST /api/identity` `{action, nsec?, save_pass?}`. Absent `save_pass` on ack = **true** (server-side default matches UI).
+- Session JSON grows `pass_saved` (bool) and `pass_error` (string, empty on success).
+- On vibe seed, persist Payne under `agents/sgt-major-payne/nsec` using the same default-on flag carried from the backup step (`launch->save_pass`).
+- Optional restore: if process starts with no identity and `hush_pass_has("identity/nsec")`, import it and mark backup already acked (no modal). Soft-fail if `pass` absent.
+
+PWA:
+
+- Checkbox `checked` by default. Label includes retrieve CLI.
+- `ack_backup` and import-ack send `save_pass: <checkbox.checked>`.
+- Import goes to backup page (do not skip).
+- Surface `pass_error` if save failed.
+
+Tests:
+
+- `tests/test_pass.c` with a stub helper that writes under `$TMPDIR`.
+- `check_launch.sh` asserts `checked` attribute + retrieve CLI string.
+- Route test: ack with `save_pass:true` against stub (or skip real pass).
+- `scripts/hush-pass` gains `-f` on insert so re-save does not prompt.
+
+## Remaining plan
+
+See `PLAN_PASS_IDENTITY.md`.

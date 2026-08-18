@@ -10,6 +10,7 @@
 
 #include "hush_event.h"
 #include "hush_launch.h"
+#include "hush_pass.h"
 
 enum {
     HUSH_LAUNCH_KIND_META = 0,
@@ -69,6 +70,10 @@ static void hush_launch_make_id(char *out65);
 /* JSON-escapes src into dst. */
 static size_t hush_launch_json_escape(const char *src, char *dst, size_t dstsz);
 
+/* Best-effort pass insert. Never fails the caller. */
+static void hush_launch_try_save(hush_launch_t *launch, const char *path,
+                                 const char *secret);
+
 /* Runs git init at path. Succeeds if .git already exists. */
 static hush_status_t hush_launch_git_init(const char *path);
 
@@ -118,21 +123,52 @@ hush_status_t hush_launch_import_identity(hush_launch_t *launch,
     hush_identity_clear(&launch->human);
     launch->logged_in = 0;
     launch->backup_acked = 0;
+    launch->pass_saved = 0;
+    launch->pass_error[0] = '\0';
     st = hush_identity_import(&launch->human, secret);
     if (st != HUSH_OK)
         return st;
     launch->logged_in = 1;
-    launch->backup_acked = 1;
     return HUSH_OK;
 }
 
-hush_status_t hush_launch_ack_backup(hush_launch_t *launch)
+hush_status_t hush_launch_ack_backup(hush_launch_t *launch, int save_pass)
 {
     if (launch == NULL)
         return HUSH_ERR_ARG;
     if (!launch->logged_in)
         return HUSH_ERR_ARG;
+    launch->save_pass = save_pass ? 1 : 0;
+    launch->pass_saved = 0;
+    launch->pass_error[0] = '\0';
+    if (launch->save_pass)
+        hush_launch_try_save(launch, HUSH_PASS_IDENTITY_NSEC,
+                             launch->human.nsec);
     launch->backup_acked = 1;
+    return HUSH_OK;
+}
+
+hush_status_t hush_launch_restore_identity(hush_launch_t *launch)
+{
+    char secret[HUSH_PASS_SECRET_MAX];
+
+    if (launch == NULL)
+        return HUSH_ERR_ARG;
+    if (launch->logged_in)
+        return HUSH_OK;
+    if (!hush_pass_has(HUSH_PASS_IDENTITY_NSEC))
+        return HUSH_OK;
+    if (hush_pass_get(secret, sizeof(secret), HUSH_PASS_IDENTITY_NSEC) != HUSH_OK)
+        return HUSH_OK;
+    if (hush_identity_import(&launch->human, secret) != HUSH_OK) {
+        hush_identity_clear(&launch->human);
+        return HUSH_OK;
+    }
+    launch->logged_in = 1;
+    launch->backup_acked = 1;
+    launch->save_pass = 1;
+    launch->pass_saved = 1;
+    launch->pass_error[0] = '\0';
     return HUSH_OK;
 }
 
@@ -327,6 +363,8 @@ static hush_status_t hush_launch_seed_hive(hush_launch_t *launch,
     assert(store != NULL);
     if (hush_identity_generate(&launch->payne) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
+    if (launch->save_pass)
+        hush_launch_try_save(launch, HUSH_PASS_PAYNE_NSEC, launch->payne.nsec);
     if (hush_launch_push_channel(launch, HUSH_LAUNCH_CHAN_GENERAL) != HUSH_OK)
         return HUSH_ERR_FULL;
     if (hush_launch_push_channel(launch, HUSH_LAUNCH_CHAN_WELCOME) != HUSH_OK)
@@ -457,7 +495,8 @@ static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
     hush_launch_json_escape(launch->vibe_about, esc_about, sizeof(esc_about));
     n = snprintf(out, outsz,
                  "{\"ok\":true,\"logged_in\":%s,\"backup_acked\":%s,"
-                 "\"has_vibe\":%s,\"ready\":%s,\"port\":%u,"
+                 "\"has_vibe\":%s,\"ready\":%s,\"save_pass\":%s,"
+                 "\"pass_saved\":%s,\"pass_error\":\"%s\",\"port\":%u,"
                  "\"npub\":\"%s\",\"pubkey\":\"%s\",\"nsec\":\"%s\","
                  "\"vibe\":{\"name\":\"%s\",\"about\":\"%s\"},"
                  "\"payne\":{\"name\":\"%s\",\"npub\":\"%s\","
@@ -466,6 +505,9 @@ static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
                  launch->backup_acked ? "true" : "false",
                  launch->has_vibe ? "true" : "false",
                  hush_launch_is_ready(launch) ? "true" : "false",
+                 launch->save_pass ? "true" : "false",
+                 launch->pass_saved ? "true" : "false",
+                 launch->pass_error,
                  (unsigned)port,
                  launch->logged_in ? launch->human.npub : "",
                  launch->logged_in ? launch->human.pubkey_hex : "",
@@ -565,6 +607,24 @@ static hush_status_t hush_launch_git_init(const char *path)
     if (stat(gitdir, &st) == 0)
         return HUSH_OK;
     return HUSH_ERR_IO;
+}
+
+static void hush_launch_try_save(hush_launch_t *launch, const char *path,
+                                 const char *secret)
+{
+    assert(launch != NULL);
+    assert(path != NULL);
+    assert(secret != NULL);
+    if (hush_pass_save(path, secret) == HUSH_OK) {
+        launch->pass_saved = 1;
+        launch->pass_error[0] = '\0';
+        return;
+    }
+    launch->pass_saved = 0;
+    hush_pass_last_error(launch->pass_error, sizeof(launch->pass_error));
+    if (launch->pass_error[0] == '\0')
+        memcpy(launch->pass_error, HUSH_LAUNCH_PASS_FAIL,
+               sizeof(HUSH_LAUNCH_PASS_FAIL));
 }
 
 static size_t hush_launch_json_escape(const char *src, char *dst, size_t dstsz)

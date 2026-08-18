@@ -68,6 +68,7 @@ hush_status_t hush_relay_run(uint16_t port, int open_ui)
     hush_clients_reset();
     hush_http_set_listen_port(port);
     hush_launch_init(&g_launch);
+    (void)hush_launch_restore_identity(&g_launch);
     hush_http_set_launch(&g_launch);
 
     ls = hush_listen_on(port);

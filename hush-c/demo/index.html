@@ -129,6 +129,12 @@
     .keybox.revealed { user-select: text; }
     .warn { color: var(--warn); font-size: 0.82rem; margin-top: 10px; }
     .passbox { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: 0.82rem; color: var(--muted); }
+    .passbox code { color: var(--fg); font-size: 0.78rem; }
+    dialog.secret {
+      border: 1px solid var(--line); border-radius: 18px; padding: 0;
+      background: var(--surface); color: var(--fg); width: min(34rem, 92vw);
+    }
+    dialog.secret::backdrop { background: rgba(0, 0, 0, 0.62); }
     .hive { display: none; flex: 1; min-height: 0; }
     .hive.show { display: grid; }
     .create { display: flex; flex-direction: column; gap: 8px; padding: 0 8px; }
@@ -210,6 +216,7 @@
     let page = "landing";
     let pendingNsec = "";
     let keyRevealed = false;
+    let savePass = true;
     let gateErr = "";
 
     function $(id) { return document.getElementById(id); }
@@ -273,17 +280,20 @@
       }
       if (page === "backup") {
         const shown = keyRevealed ? esc(pendingNsec) : "•".repeat(Math.max(16, pendingNsec.length || 63));
-        return card("Your unique identity key has been created",
-          "<p>This key is your account. Save it somewhere safe. Hush cannot recover it if you lose it.</p>" +
+        return "<dialog class=\"secret\" id=\"secret-modal\" open>" +
+          card("Your unique identity key has been created",
+          "<p>This key is your account. Copy it now. Hush cannot recover it if you lose it.</p>" +
           "<div class=\"keybox" + (keyRevealed ? " revealed" : "") + "\" id=\"nsec-box\">" + shown + "</div>" +
-          "<label class=\"passbox\"><input id=\"save-pass\" type=\"checkbox\"> Check here to save the nsec in the local password manager, <code>pass</code></label>" +
-          "<p class=\"warn\">Never share your private key. Anyone with it can impersonate you.</p>" +
+          "<label class=\"passbox\"><input id=\"save-pass\" type=\"checkbox\"" +
+          (savePass ? " checked" : "") +
+          "> Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/identity/nsec</code></label>" +
+          "<p class=\"warn\">Never share your private key. Anyone with it can impersonate you. Uncheck the box only if you do not want <code>pass</code> to store it.</p>" +
           errLine() +
           actions([
             { id: "reveal-key", ghost: true, label: keyRevealed ? "Hide" : "Reveal" },
             { id: "copy-key", ghost: true, label: "Copy value" },
             { id: "ack-key", label: "I saved it" }
-          ]));
+          ])) + "</dialog>";
       }
       if (page === "vibe") {
         return card("Name your vibe",
@@ -314,7 +324,12 @@
         b.label + "</button>").join("") + "</div>";
     }
     function errLine() {
-      return gateErr ? "<p class=\"warn\">" + esc(gateErr) + "</p>" : "";
+      const passErr = session.pass_error || "";
+      const bits = [];
+      if (gateErr) bits.push(esc(gateErr));
+      if (passErr) bits.push("Could not save to pass: " + esc(passErr) +
+        ". Copy the key and run <code>pass show hush/identity/nsec</code> later.");
+      return bits.length ? "<p class=\"warn\">" + bits.join(" ") + "</p>" : "";
     }
     function esc(s) {
       return String(s || "").replace(/[&<>\"]/g, (c) => ({
@@ -338,7 +353,13 @@
         if (!pendingNsec) return;
         try { await navigator.clipboard.writeText(pendingNsec); } catch (e) {}
       });
-      on("ack-key", () => postIdentity({ action: "ack_backup" }));
+      on("ack-key", () => {
+        const box = $("save-pass");
+        savePass = !box || box.checked;
+        postIdentity({ action: "ack_backup", save_pass: savePass });
+      });
+      const box = $("save-pass");
+      if (box) box.addEventListener("change", () => { savePass = box.checked; });
       on("do-vibe", () => {
         const name = ($("vibe-name") && $("vibe-name").value) || "local hive";
         const about = ($("vibe-about") && $("vibe-about").value) || "";
