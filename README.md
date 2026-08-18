@@ -146,10 +146,14 @@ the process. `POST /api/exit` sets the same shutdown flag as SIGTERM.
 Selecting an AI provider on **Raise a robot** reveals a pencil. That
 opens a tailored drawer:
 
-- Goose, Grok Build, Codex reuse the home config
-  (`~/.config/goose`, `~/.grok`, `~/.codex`) or accept an override key.
+- Grok Build and Codex are OAuth-only: **Log in with OAuth** starts
+  `grok login --oauth` or `codex login` in a terminal. Hush does not
+  implement the browser dance and does not write `~/.grok` or
+  `~/.codex`.
+- Goose reuses `~/.config/goose` or accepts an override key.
 - Gemini / xAI / OpenAI / Anthropic take an API key, host URL, and a
-  scanned or typed model.
+  scanned or typed model. Those fields use the same `+` / `−` pills as
+  the robot name and system prompt.
 - Cline shows an honest empty state if the editor extension is missing.
 
 Secrets Hush accepts for a provider (API key, username, password,

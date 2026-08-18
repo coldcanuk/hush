@@ -163,13 +163,15 @@ Selecting a provider radio shows `#provider-cfg` (pencil ✎, ≥44px,
 title “Configure this provider.”) next to that label. Click opens
 `#provider-drawer`. Fields depend on the family. Status is loaded
 from `GET /api/provider`. Save is `POST /api/provider`. Scan is
-`POST /api/provider/scan`.
+`POST /api/provider/scan`. Official CLI login is
+`POST /api/provider/login`.
 
 | Family | Ids | Drawer |
 |---|---|---|
-| Home-config CLI | `goose`, `grok-build`, `codex` | Status (binary / home config / active model). Primary: **Use existing configuration** when home or binary+auth is present. Secondary: optional API key + host + model. Copy names the official command (`goose configure`, `grok login`, `codex login`). Never write those home files. |
-| HTTP API | `gemini-api`, `xai-api`, `openai-api`, `anthropic-api` | API key (password). Optional username / password / token / passkey behind one disclosure. Host URL, defaulted. **Scan models** then `<select>` or type-in. |
-| Editor agent | `cline` | Honest empty state if Cline is missing. Cline authenticates with **ClinePass**, usage billing, or **bring-your-own provider key** — not a Grok/Codex-style OAuth-first CLI. Optional API key + other credentials + host + model. |
+| OAuth CLI | `grok-build`, `codex` | Status + one **Log in with OAuth** button. No API-key dump, no Save. The button `POST`s `/api/provider/login` then records `use_home`. Grok runs `grok login --oauth`. Codex runs `codex login`. Hush never writes `~/.grok` or `~/.codex`. |
+| Home-config CLI | `goose` | Status (binary / home config / active model). Primary: **Use existing configuration**. Secondary: optional API key + host + model as `+`/`−` pills. Copy: `goose configure`. Never write Goose homes. |
+| HTTP API | `gemini-api`, `xai-api`, `openai-api`, `anthropic-api` | API key, username, password, token, passkey, host, and model as `+`/`−` pill rows (same pattern as Raise-robot name / system prompt). Host URL defaulted. **Scan models** then type-in. |
+| Editor agent | `cline` | Honest empty state if Cline is missing. Cline authenticates with **ClinePass**, usage billing, or **bring-your-own provider key** — not a Grok/Codex-style OAuth-first CLI. Optional credentials as the same `+`/`−` pills. |
 
 Goose home is `~/.config/goose/config.yaml` (official). Legacy
 `~/.goose` is probed and mentioned only if it exists.
@@ -217,6 +219,7 @@ not a radio this slice.
 | `GET /api/provider` | status per id: family, has_binary, has_home, has_key, has_username, has_password, has_token, has_passkey, use_home, host, model, configured. Never secret values or secret field names. |
 | `POST /api/provider` | `{provider, use_home?, host?, model?, api_key?, username?, password?, token?, passkey?}` save overlay + optional secrets to pass |
 | `POST /api/provider/scan` | `{provider, host?, api_key?}` → `model_0`…`model_31` or `{ok:false,error}`. Empty key loads `api_key` then `token` from pass. |
+| `POST /api/provider/login` | `{provider}` starts the official CLI login. `grok-build` → `grok login --oauth`. `codex` → `codex login`. Goose and unknown ids return `{ok:false,error}`. Does not wait. Tests set `HUSH_PROVIDER_TERM`. |
 | `GET /avatar/<64-hex>` | stored picture bytes |
 
 Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.

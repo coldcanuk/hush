@@ -34,7 +34,12 @@ wait_up() {
 
 export HOME="$home"
 unset XDG_CONFIG_HOME
-mkdir -p "$home/.config/goose"
+export HUSH_PROVIDER_TERM=/bin/true
+mkdir -p "$home/.config/goose" "$home/bin"
+printf '%s\n' '#!/bin/sh' 'exit 0' > "$home/bin/grok"
+chmod 0755 "$home/bin/grok"
+PATH="$home/bin:$PATH"
+export PATH
 printf '%s\n' 'active_provider: xai_oauth' > "$home/.config/goose/config.yaml"
 printf '%s\n' '  xai_oauth:' >> "$home/.config/goose/config.yaml"
 printf '%s\n' '    model: grok-4.6' >> "$home/.config/goose/config.yaml"
@@ -107,5 +112,23 @@ bad=$(curl -s -o /tmp/hush-bad-provider -w '%{http_code}' \
     -H 'Content-Type: application/json' \
     -d '{"provider":"nope"}')
 test "$bad" != "200" || fail "unknown provider must fail"
+
+login=$(curl -sf -X POST "http://127.0.0.1:${port}/api/provider/login" \
+    -H 'Content-Type: application/json' \
+    -d '{"provider":"grok-build"}')
+echo "$login" | grep -q '"ok":true' || fail "grok login should start"
+echo "$login" | grep -q '"ok":false' && fail "grok login reported false"
+
+goose_login=$(curl -sf -X POST "http://127.0.0.1:${port}/api/provider/login" \
+    -H 'Content-Type: application/json' \
+    -d '{"provider":"goose"}')
+echo "$goose_login" | grep -q '"ok":false' || fail "goose login should refuse"
+echo "$goose_login" | grep -q 'login not offered' || fail "goose login message"
+
+unknown_login=$(curl -sf -X POST "http://127.0.0.1:${port}/api/provider/login" \
+    -H 'Content-Type: application/json' \
+    -d '{"provider":"nope"}')
+echo "$unknown_login" | grep -q '"ok":false' || fail "unknown login should refuse"
+echo "$unknown_login" | grep -q 'unknown provider' || fail "unknown login message"
 
 echo "provider routes ok"

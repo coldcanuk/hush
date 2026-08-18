@@ -172,6 +172,40 @@ int main(void)
            "scan fail");
     expect(scan.error[0] != '\0', "scan error text");
 
+    {
+        char err[HUSH_PROVIDER_ERR_MAX];
+        char saved_path[1024];
+
+        if (setenv("HUSH_PROVIDER_TERM", "/bin/true", 1) != 0)
+            return 1;
+        snprintf(path, sizeof(path), "%s/grok", bindir);
+        write_file(path, "#!/bin/sh\nexit 0\n");
+        if (chmod(path, 0755) != 0)
+            return 1;
+        expect(hush_provider_start_login("grok-build") == HUSH_OK,
+               "grok login spawn");
+        hush_provider_last_error(err, sizeof(err));
+        expect(err[0] == '\0', "grok login no error");
+        expect(hush_provider_start_login("goose") == HUSH_ERR_IO,
+               "goose login refused");
+        hush_provider_last_error(err, sizeof(err));
+        expect(strcmp(err, "login not offered") == 0, "goose login msg");
+        expect(hush_provider_start_login("nope") == HUSH_ERR_IO,
+               "unknown login refused");
+        hush_provider_last_error(err, sizeof(err));
+        expect(strcmp(err, "unknown provider") == 0, "unknown login msg");
+        snprintf(saved_path, sizeof(saved_path), "%s",
+                 getenv("PATH") != NULL ? getenv("PATH") : "");
+        if (setenv("PATH", "/tmp/hush-empty-path", 1) != 0)
+            return 1;
+        expect(hush_provider_start_login("grok-build") == HUSH_ERR_IO,
+               "grok missing binary");
+        hush_provider_last_error(err, sizeof(err));
+        expect(strcmp(err, "binary missing") == 0, "missing binary msg");
+        if (setenv("PATH", saved_path, 1) != 0)
+            return 1;
+    }
+
     hush_pass_set_helper(NULL);
     if (g_fail)
         return 1;

@@ -23,6 +23,11 @@ fail() { echo "PWA check failed: $1" >&2; exit 1; }
 html=$(curl -sf "http://127.0.0.1:${port}/")
 echo "$html" | grep -q 'rel="manifest"' || fail "HTML missing manifest link"
 echo "$html" | grep -q 'serviceWorker' || fail "HTML missing SW register"
+echo "$html" | grep -q 'id="provider-oauth"' || fail "HTML missing OAuth button"
+echo "$html" | grep -q 'Log in with Grok OAuth' || fail "HTML missing Grok OAuth copy"
+echo "$html" | grep -q 'grok login --oauth' || fail "HTML missing grok login --oauth"
+echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + button"
+echo "$html" | grep -q 'OAUTH_PROVIDERS' || fail "HTML missing OAuth map"
 mf=$(curl -sf "http://127.0.0.1:${port}/manifest.webmanifest")
 echo "$mf" | grep -q '"short_name"' || fail "manifest short_name"
 echo "$mf" | grep -q '192x192' || fail "manifest 192"

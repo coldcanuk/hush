@@ -214,7 +214,8 @@
     .robot-card.open .robot-body { display: block; }
     .robot-actions { display: flex; gap: 6px; margin-top: 8px; }
     .pill-row { display: flex; align-items: flex-start; gap: 8px; }
-    .pill-row input[type="text"], .pill-row textarea { flex: 1; min-width: 0; }
+    .pill-row input[type="text"], .pill-row input[type="password"],
+    .pill-row textarea { flex: 1; min-width: 0; }
     .icon-plus, .icon-minus, .icon-edit {
       flex: 0 0 auto; width: 44px; height: 44px; border-radius: 10px;
       border: 1px solid var(--line); background: var(--surface-2); color: var(--fg);
@@ -500,29 +501,60 @@
           Use existing configuration</label>
         <p class="help" id="provider-home-help"></p>
       </div>
+      <div id="provider-oauth-fields" hidden>
+        <p class="help" id="provider-oauth-help"></p>
+        <div class="actions">
+          <button class="btn" id="provider-oauth" type="button">Log in with OAuth</button>
+        </div>
+      </div>
       <div id="provider-api-fields">
         <label for="provider-key">API key</label>
-        <input id="provider-key" type="password" maxlength="512" autocomplete="off">
+        <div class="pill-row">
+          <input id="provider-key" type="password" maxlength="512" autocomplete="off">
+          <button class="icon-plus" id="provider-key-add" type="button" aria-label="Add API key">+</button>
+        </div>
+        <div class="pills" id="provider-key-pill"></div>
         <p class="help" id="provider-key-help">Stored in pass. Never shown again.</p>
-        <details id="provider-more">
-          <summary>Add username, password, token, or passkey</summary>
-          <label for="provider-username">Username</label>
+        <label for="provider-username">Username</label>
+        <div class="pill-row">
           <input id="provider-username" type="password" maxlength="512" autocomplete="off">
-          <p class="help" id="provider-username-help">Stored in pass. Never shown again.</p>
-          <label for="provider-password">Password</label>
+          <button class="icon-plus" id="provider-username-add" type="button" aria-label="Add username">+</button>
+        </div>
+        <div class="pills" id="provider-username-pill"></div>
+        <p class="help" id="provider-username-help">Stored in pass. Never shown again.</p>
+        <label for="provider-password">Password</label>
+        <div class="pill-row">
           <input id="provider-password" type="password" maxlength="512" autocomplete="off">
-          <p class="help" id="provider-password-help">Stored in pass. Never shown again.</p>
-          <label for="provider-token">Token</label>
+          <button class="icon-plus" id="provider-password-add" type="button" aria-label="Add password">+</button>
+        </div>
+        <div class="pills" id="provider-password-pill"></div>
+        <p class="help" id="provider-password-help">Stored in pass. Never shown again.</p>
+        <label for="provider-token">Token</label>
+        <div class="pill-row">
           <input id="provider-token" type="password" maxlength="512" autocomplete="off">
-          <p class="help" id="provider-token-help">Stored in pass. Never shown again.</p>
-          <label for="provider-passkey">Passkey</label>
+          <button class="icon-plus" id="provider-token-add" type="button" aria-label="Add token">+</button>
+        </div>
+        <div class="pills" id="provider-token-pill"></div>
+        <p class="help" id="provider-token-help">Stored in pass. Never shown again.</p>
+        <label for="provider-passkey">Passkey</label>
+        <div class="pill-row">
           <input id="provider-passkey" type="password" maxlength="512" autocomplete="off">
-          <p class="help" id="provider-passkey-help">Stored in pass. Never shown again.</p>
-        </details>
+          <button class="icon-plus" id="provider-passkey-add" type="button" aria-label="Add passkey">+</button>
+        </div>
+        <div class="pills" id="provider-passkey-pill"></div>
+        <p class="help" id="provider-passkey-help">Stored in pass. Never shown again.</p>
         <label for="provider-host">Endpoint host</label>
-        <input id="provider-host" type="text" maxlength="240" placeholder="https://">
+        <div class="pill-row">
+          <input id="provider-host" type="text" maxlength="240" placeholder="https://">
+          <button class="icon-plus" id="provider-host-add" type="button" aria-label="Add host">+</button>
+        </div>
+        <div class="pills" id="provider-host-pill"></div>
         <label for="provider-model">Model</label>
-        <input id="provider-model" type="text" maxlength="64" list="provider-model-list" placeholder="type or scan">
+        <div class="pill-row">
+          <input id="provider-model" type="text" maxlength="64" list="provider-model-list" placeholder="type or scan">
+          <button class="icon-plus" id="provider-model-add" type="button" aria-label="Add model">+</button>
+        </div>
+        <div class="pills" id="provider-model-pill"></div>
         <datalist id="provider-model-list"></datalist>
         <div class="actions">
           <button class="btn ghost" id="provider-scan" type="button">Scan models</button>
@@ -575,9 +607,22 @@
     const CONTEXT_MAX = 3;
     const HOME_CMDS = {
       "goose": "goose configure",
-      "grok-build": "grok login",
+      "grok-build": "grok login --oauth",
       "codex": "codex login"
     };
+    const OAUTH_PROVIDERS = {
+      "grok-build": "Log in with Grok OAuth",
+      "codex": "Log in with Codex OAuth"
+    };
+    const SECRET_FIELDS = [
+      { id: "provider-key", kind: "api_key", has: "has_key", label: "API key" },
+      { id: "provider-username", kind: "username", has: "has_username", label: "Username" },
+      { id: "provider-password", kind: "password", has: "has_password", label: "Password" },
+      { id: "provider-token", kind: "token", has: "has_token", label: "Token" },
+      { id: "provider-passkey", kind: "passkey", has: "has_passkey", label: "Passkey" },
+      { id: "provider-host", kind: "host", has: "", label: "Host" },
+      { id: "provider-model", kind: "model", has: "", label: "Model" }
+    ];
     let robotOpen = {};
     let draftName = "";
     let draftPrompt = "";
@@ -1084,54 +1129,94 @@
       return bits.length ? bits.join(" · ") : "Not configured yet.";
     }
 
+    function secretHelp(st, field, id) {
+      if (field.has && st[field.has])
+        return field.label + " is in pass. Retrieve with: pass show hush/providers/" + id + "/" + field.kind;
+      return "Stored in pass. Never shown again.";
+    }
+
+    function paintSecretPill(field, held) {
+      const box = $(field.id + "-pill");
+      const input = $(field.id);
+      if (!box || !input) return;
+      if (!held) { box.innerHTML = ""; return; }
+      box.innerHTML = "<span class=\"pill\"><em>" + esc(field.label) +
+        " set</em><button type=\"button\" id=\"" + field.id +
+        "-del\" aria-label=\"Remove " + field.label + "\">−</button></span>";
+      $(field.id + "-del").addEventListener("click", () => {
+        input.value = "";
+        paintSecretPill(field, false);
+      });
+    }
+
+    function holdSecretField(field) {
+      const input = $(field.id);
+      if (!input) return;
+      const value = (input.value || "").trim();
+      if (!value) {
+        $("provider-err").textContent = "Enter " + field.label.toLowerCase() + " first.";
+        return;
+      }
+      $("provider-err").textContent = "";
+      paintSecretPill(field, true);
+    }
+
+    function bindSecretFields() {
+      SECRET_FIELDS.forEach((field) => {
+        const add = $(field.id + "-add");
+        if (!add || add.dataset.bound) return;
+        add.dataset.bound = "1";
+        add.addEventListener("click", () => holdSecretField(field));
+      });
+    }
+
     function fillProviderDrawer(id) {
       const st = providerMap[id] || {};
       const family = st.family || "";
+      const isOauth = !!OAUTH_PROVIDERS[id];
       const isHome = family === "home";
       const isApi = family === "api" || family === "editor";
       $("provider-title").textContent = "Configure " + (PROVIDERS[id] || id);
       $("provider-status").textContent = providerStatusLine(st);
       $("provider-err").textContent = "";
-      $("provider-home-fields").hidden = !isHome && family !== "editor";
-      $("provider-api-fields").hidden = !isApi && !isHome;
+      $("provider-home-fields").hidden = isOauth || (!isHome && family !== "editor");
+      $("provider-oauth-fields").hidden = !isOauth;
+      $("provider-api-fields").hidden = isOauth || (!isApi && !isHome);
+      $("provider-save").hidden = isOauth;
       $("provider-use-home").checked = !!st.use_home || (!!st.has_home && !st.has_key);
       if (id === "goose" && st.has_home)
         $("provider-home-help").textContent = "Use the Goose already standing in ~/.config/goose.";
       else if (id === "goose")
         $("provider-home-help").textContent = "Goose is not configured here. Run goose configure, or enter a key.";
-      else if (HOME_CMDS[id])
-        $("provider-home-help").textContent = st.has_home || st.has_binary
-          ? ("Use the " + (PROVIDERS[id] || id) + " already standing here.")
-          : ("Run " + HOME_CMDS[id] + ", or enter a key.");
       else if (id === "cline")
         $("provider-home-help").textContent = st.has_home || st.has_binary
           ? "Cline is on this machine. It uses ClinePass or a bring-your-own provider key — not OAuth."
           : "Install the Cline extension, then come back. Cline uses ClinePass or a bring-your-own provider key. Or paste an API key and host.";
       else
         $("provider-home-help").textContent = "";
-      $("provider-key").value = "";
-      $("provider-username").value = "";
-      $("provider-password").value = "";
-      $("provider-token").value = "";
-      $("provider-passkey").value = "";
-      $("provider-key-help").textContent = st.has_key
-        ? "Key is in pass. Retrieve with: pass show hush/providers/" + id + "/api_key"
-        : "Stored in pass. Never shown again.";
-      $("provider-username-help").textContent = st.has_username
-        ? "Username is in pass. Retrieve with: pass show hush/providers/" + id + "/username"
-        : "Stored in pass. Never shown again.";
-      $("provider-password-help").textContent = st.has_password
-        ? "Password is in pass. Retrieve with: pass show hush/providers/" + id + "/password"
-        : "Stored in pass. Never shown again.";
-      $("provider-token-help").textContent = st.has_token
-        ? "Token is in pass. Retrieve with: pass show hush/providers/" + id + "/token"
-        : "Stored in pass. Never shown again.";
-      $("provider-passkey-help").textContent = st.has_passkey
-        ? "Passkey is in pass. Retrieve with: pass show hush/providers/" + id + "/passkey"
-        : "Stored in pass. Never shown again.";
-      $("provider-more").open = !!(st.has_username || st.has_password || st.has_token || st.has_passkey);
-      $("provider-host").value = st.host || "";
-      $("provider-model").value = st.model || st.home_model || "";
+      if (isOauth) {
+        $("provider-oauth").textContent = OAUTH_PROVIDERS[id];
+        $("provider-oauth-help").textContent = st.has_home
+          ? (PROVIDERS[id] + " is already authorized on this machine.")
+          : ("This starts " + HOME_CMDS[id] + " on the command line.");
+      }
+      SECRET_FIELDS.forEach((field) => {
+        const input = $(field.id);
+        if (!input) return;
+        if (field.kind === "host")
+          input.value = st.host || "";
+        else if (field.kind === "model")
+          input.value = st.model || st.home_model || "";
+        else
+          input.value = "";
+        const help = $(field.id + "-help");
+        if (help && field.has)
+          help.textContent = secretHelp(st, field, id);
+        const held = field.kind === "host" ? !!input.value
+          : field.kind === "model" ? !!input.value
+          : !!(field.has && st[field.has]);
+        paintSecretPill(field, held);
+      });
       $("provider-model-list").innerHTML = "";
     }
 
@@ -1180,6 +1265,28 @@
       openProviderDrawer();
     });
     $("provider-close").addEventListener("click", () => $("provider-drawer").classList.remove("show"));
+    bindSecretFields();
+    $("provider-oauth").addEventListener("click", async () => {
+      if (!cfgId) return;
+      $("provider-err").textContent = "";
+      try {
+        const data = await api("/api/provider/login", { provider: cfgId });
+        if (!data || data.ok === false) {
+          $("provider-err").textContent = (data && data.error)
+            ? data.error
+            : "Could not start the official login.";
+          return;
+        }
+        $("provider-status").textContent =
+          "Started " + (HOME_CMDS[cfgId] || "login") +
+          ". Finish it in the terminal, then come back.";
+        await api("/api/provider", { provider: cfgId, use_home: true });
+        await loadProviders();
+        fillProviderDrawer(cfgId);
+      } catch (e) {
+        $("provider-err").textContent = "Could not start the official login.";
+      }
+    });
     $("provider-save").addEventListener("click", async () => {
       if (!cfgId) return;
       $("provider-err").textContent = "";

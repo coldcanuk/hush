@@ -2202,8 +2202,8 @@ config/tmp.
 
 | Runtime | How it actually authenticates | What Hush does / should do |
 |---|---|---|
-| **Grok Build** | `grok login --oauth` → OAuth at auth.x.ai, tokens in `~/.grok/auth.json`. Also `--device-auth`. Fallback `XAI_API_KEY`. Confirmed: `grok login --help` prints `--oauth` / `--device-auth`. | Family A. Detect `~/.grok/auth.json` + `grok` on PATH. Copy: `grok login`. Optional API key into `pass`. Never start the OAuth browser from C. |
-| **Codex** | `codex login` (ChatGPT OAuth) **or** `codex login --with-api-key` (stdin). Home `~/.codex`. Confirmed: `codex login --help`. | Family A. Detect `codex` + `~/.codex`. Copy: `codex login`. Optional key into `pass`. |
+| **Grok Build** | `grok login --oauth` → OAuth at auth.x.ai, tokens in `~/.grok/auth.json`. Also `--device-auth`. Fallback `XAI_API_KEY`. Confirmed: `grok login --help` prints `--oauth` / `--device-auth`. | Family A OAuth-only drawer. **Log in with OAuth** forks `grok login --oauth` (prefer a terminal). Detect `~/.grok/auth.json` + `grok` on PATH. Never write `~/.grok`. Never implement auth.x.ai in C. |
+| **Codex** | `codex login` (ChatGPT OAuth) **or** `codex login --with-api-key` (stdin). Home `~/.codex`. Confirmed: `codex login --help`. | Family A OAuth-only drawer. **Log in with OAuth** forks `codex login`. Detect `codex` + `~/.codex`. Never write `~/.codex`. |
 | **Goose** | Interactive `goose configure` writes `~/.config/goose/config.yaml` + `secrets.yaml`. Keys/passwords entered in the Goose TUI, not Hush. Official: goose-docs.ai config-files + providers. | Family A. Detect official yaml (legacy `~/.goose` probed). Copy: `goose configure`. Optional override key into `pass`. Never write Goose homes. |
 | **Cline** | **Not OAuth-first.** Docs (docs.cline.bot installing-cline, 200): "Cline provider for pay-as-you-go, ClinePass for a flat monthly subscription, or bring your own provider key." Anthropic page: "Anthropic API (key-based)". OpenRouter page: "Get an API Key". Home page: "Bring your own key or your own weights." No `cline` binary / `~/.cline` / editor extension on this host. | Family C. Honest empty state + optional API key/host/model. Do **not** claim OAuth. Mention ClinePass / BYOK. |
 | **Gemini / xAI / OpenAI / Anthropic API** | API keys. Hosts already defaulted. | Family B. Key in `pass`, host/model in `providers.json`. |
@@ -2308,3 +2308,18 @@ survives rebuilds.
 - `goose configure --help` → configure TUI.
 - Cline docs 200: installing-cline BYOK/ClinePass; anthropic key-based;
   openrouter API key. No Cline install on this host.
+
+## Addendum — wrap official Grok/Codex login (2026-08-18)
+
+User asked that Grok Build stop showing the generic API-key form and
+instead offer only **Log in with OAuth**, wrapping `grok login --oauth`.
+This revises the prior non-goal “never spawn those CLIs” for **login
+only**. Still not an in-process OAuth browser. Still no writes to
+`~/.grok` / `~/.codex` / Goose / Cline homes.
+
+- `POST /api/provider/login` `{provider}` → `hush_provider_start_login`.
+- Grok: `grok login --oauth`. Codex: `codex login`. Goose: refused.
+- Prefer `HUSH_PROVIDER_TERM`, else `x-terminal-emulator` / `xterm`
+  when `DISPLAY` is set, else `execvp` of the official argv.
+- Does not wait. `SIGCHLD` is already `SIG_IGN`.
+- Tests set `HUSH_PROVIDER_TERM=/bin/true` and a fake `HOME`.
