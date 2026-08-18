@@ -150,9 +150,20 @@ opens a tailored drawer:
   scanned or typed model.
 - Cline shows an honest empty state if the editor extension is missing.
 
-Keys are stored with `pass show hush/providers/<id>/api_key`. Host and
-model live in `~/.config/hush/providers.json`. `GET /api/provider`
-never returns the key.
+Secrets Hush accepts for a provider (API key, username, password,
+token, passkey) live only in `pass`:
+
+```
+pass show hush/providers/<id>/api_key
+pass show hush/providers/<id>/username
+pass show hush/providers/<id>/password
+pass show hush/providers/<id>/token
+pass show hush/providers/<id>/passkey
+```
+
+Host and model live in `~/.config/hush/providers.json`.
+`GET /api/provider` never returns the values. Goose / Grok / Codex
+home secrets stay in those homes and are never copied.
 
 The application launcher entry (`hush-relay.desktop`) starts or attaches the
 GUI. The **Quit Hush** desktop action runs `--quit`.

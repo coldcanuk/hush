@@ -94,6 +94,11 @@ default**. The human must uncheck the modal box to opt out.
 |---|---|---|
 | Human identity | `hush/identity/nsec` | `pass show hush/identity/nsec` |
 | Agent nsec | `hush/agents/<agent-name>/nsec` | `pass show hush/agents/<agent-name>/nsec` |
+| Provider API key | `hush/providers/<id>/api_key` | `pass show hush/providers/<id>/api_key` |
+| Provider username | `hush/providers/<id>/username` | `pass show hush/providers/<id>/username` |
+| Provider password | `hush/providers/<id>/password` | `pass show hush/providers/<id>/password` |
+| Provider token | `hush/providers/<id>/token` | `pass show hush/providers/<id>/token` |
+| Provider passkey | `hush/providers/<id>/passkey` | `pass show hush/providers/<id>/passkey` |
 
 See [IMPORT.md](IMPORT.md) and [docs/pass-integration.md](docs/pass-integration.md).
 

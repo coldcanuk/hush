@@ -78,8 +78,9 @@ Payne: “State the robot’s name.” “Write its system prompt.”
 
 ```
 GET  /api/provider
-POST /api/provider {provider, use_home?, host?, model?, api_key?}
+POST /api/provider {provider, use_home?, host?, model?, api_key?, username?, password?, token?, passkey?}
 POST /api/provider/scan {provider, host?, api_key?}
 ```
 
-Keys live at `pass show hush/providers/<id>/api_key`. Never echo them.
+Secrets live at `pass show hush/providers/<id>/{api_key,username,password,token,passkey}`.
+Never echo them. Scan with an empty key loads `api_key` then `token` from pass.
