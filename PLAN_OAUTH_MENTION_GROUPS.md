@@ -121,12 +121,12 @@ JSON 32768.
 
 ### M4.1 Channel routes
 
-- [ ] Task 1 of M4.1: `POST /api/channel` accepts `action` =
+- [x] Task 1 of M4.1: `POST /api/channel` accepts `action` =
       `create` (default) | `delete` | `group` | `ungroup` | `manage`.
       Fields: `name`, `slug`, `group`, `group_id`, `human_0`…,
       `robot_0`….
-- [ ] Task 2 of M4.1: `POST /api/group {name}` creates a group.
-- [ ] Task 3 of M4.1: `POST /api/event` accepts `mention_0`…`mention_7`
+- [x] Task 2 of M4.1: `POST /api/group {name}` creates a group.
+- [x] Task 3 of M4.1: `POST /api/event` accepts `mention_0`…`mention_7`
       as extra `p` tags. Events JSON includes content unchanged.
 - Verify: extend `check_launch.sh`.
 - Commit: `Milestone 4.1: channel group mention HTTP`
