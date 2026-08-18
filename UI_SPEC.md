@@ -1,5 +1,5 @@
-# Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create
-Version: 2026-08-18 (RDAP M2.1, gb/robot-cards-ux)
+# Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit
+Version: 2026-08-18 (RDAP M2, gb/exit-close-design)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec and the onboard raise-form notes where they conflict.
 Quinn + Parker + Payne. No feline.
@@ -48,11 +48,34 @@ Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
 `logged_in && backup_acked && has_vibe` → splash detects → hive.
 
 ### 4. Hive
-- Header: hush + vibe name + Install + Profile + Settings + Call.
+- Header: hush + vibe name + Install + Profile + Settings + Call
+  + **Close** + **Exit** + badge.
 - Sidebar: Channels; Create channel/project; **Raise a robot**;
   **Invite human**; **Robots** list (Payne first, then raised agents).
   Each robot is its own card with a 44px `+`/`-` expand/collapse.
 - Stream + composer unchanged in spirit. Empty: Payne directive.
+
+### 10. Close vs Exit (process lifecycle)
+
+The OS/PWA window `×` is **not** our Close and **not** our Exit.
+The hive ships two labeled buttons in the header, always visible
+(including splash/gate).
+
+| Button | Id | Meaning |
+|---|---|---|
+| **Close** | `#hive-close` | Detach the GUI. Relay stays up. Next launcher click re-attaches. |
+| **Exit** | `#hive-exit` | Quit. Every process stops. Exit code 0. |
+
+- Close: `POST /api/close` then `window.close()`. If the window stays
+  (a tab the script did not open), show `#hive-banner`:
+  "Window stays open here. Close this window. The hive is still standing."
+- Exit: confirm "Quit the hive? Every process stops." then
+  `POST /api/exit` then `window.close()`.
+- Close is ghost `iconbtn`. Exit is danger `iconbtn`. Both ≥44px.
+- Titles: Close = "Close the window. Hive stays standing."
+  Exit = "Quit the hive. Every process stops."
+- Drawer "Close" buttons stay local (Settings / Profile / Raise).
+  They never quit the process.
 
 ### 5. Profile (always reachable)
 Drawer fields:
@@ -128,6 +151,8 @@ Goose/Payne skill: `.goose/skills/agent-create/SKILL.md`.
 | `POST /api/profile` | first/last/email/org/theme; optional avatar b64 |
 | `POST /api/agent` | create agent + context |
 | `POST /api/member` | add human (npub) |
+| `POST /api/close` | acknowledge Close; does **not** stop the process |
+| `POST /api/exit` | acknowledge Exit; sets shutdown flag; process exits 0 |
 | `GET /avatar/<64-hex>` | stored picture bytes |
 
 Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
@@ -139,7 +164,8 @@ Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
 - Author pills: you / Payne / agent / human.
 
 ## Hick cuts
-- Header ≤5 actions.
+- Header primary choices: Profile, Settings, Call-when-ready, Close, Exit.
+  Install is opportunistic. Badge is status.
 - Onboard: one primary button.
 - Themes only in Settings.
 - Agent + human add are drawers, not splash steps.
@@ -156,6 +182,8 @@ Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
 - Profile/Settings visible before ready.
 - Payne always first in the robot card list when vibe present.
 - A robot cannot be raised without a system prompt and an AI provider.
+- Close and Exit are distinct labeled hive buttons. The OS `×` is neither.
+- Close never kills the relay. Exit always does, with exit code 0.
 - No catfu / Griffe / Scout / Brave / feline words.
 - Embed after every HTML change:
   `./scripts/embed-ui.sh hush-c/demo` from the worktree root.

@@ -1231,7 +1231,6 @@ See new or updated plan file + milestones below. Commit gate ends Phase 1.
 
 References: catfu .goose/recipes + .agents/skills (fetched), RESEARCH prior sections, PLAN_*.md, NOSTR.md, hush_launch.h, demo/index.html full, Quinn/Parker/Alfred patterns.
 
-<<<<<<< HEAD
 ---
 
 # 2026-08-18 RDAP: Proper Onboarding + Profile + Multi-vibe Members + Payne Agent Creation
@@ -1621,14 +1620,80 @@ Provide two distinct, reliable operations for the Hush relay + GUI:
 - Graceful shutdown via SIGINT/SIGTERM setting a flag checked after poll.
 - Pidfile for discovery by `--quit` (XDG_RUNTIME_DIR or ~/.local/state/hush/relay.pid).
 - `--quit`: read pidfile, verify process, kill -TERM, unlink, exit 0.
-- `--close`: for MVP a successful no-op (or future "suppress auto-open"). Primary Close mechanism is user closing the browser window + launcher re-attach.
+- `--close`: print the re-attach hint and exit 0. Does not stop the server.
 - Re-attach remains the bind-fail + open path (it already does what the user wants for "click again").
 - Exit code 0 for HUSH_OK (including clean quit). Main maps errors to 1.
 - Update help, desktop (add Actions=Quit;), and a small README section.
 - All C changes follow write-legible-c.
+
+## 2026-08-18 addendum: in-app Close and Exit (user correction)
+
+The hive header still has no labeled **Close** or **Exit**. The only `×`
+visible is the browser/PWA window chrome. Drawer "Close" buttons only
+dismiss Settings / Profile / Raise. That is the bug the user is pointing at.
+
+### Current hive header (main @ 75d52f238)
+
+`Install | Profile | Settings | Call | badge`
+
+No process-lifecycle control. Hick budget is already 5 visible header
+actions (Call is hidden until ready). Adding two more labeled verbs
+directly in the header would break Hick.
+
+### Locked UI placement
+
+A header group **Hive** sits after Settings (and Call when ready):
+
+- **Close** — ghost `iconbtn`. Detach the GUI. Relay stays up.
+- **Exit** — danger `iconbtn`. Quit the process. Exit code 0.
+
+Payne titles: Close = "Close the window. Hive stays standing."
+Exit = "Quit the hive. Every process stops."
+
+The OS/PWA `×` is not our Close and is not our Exit. We do not restyle it.
+
+### Close (in-app)
+
+1. Client `POST /api/close` `{ }` — server replies `{ok:true,action:"close"}`
+   and does **not** set the shutdown flag.
+2. Client then `window.close()`. If the window stays open (tab / PWA that
+   the script did not open), paint a one-line banner:
+   "Window stays open here. Close this window. The hive is still standing."
+3. Next launcher click (`hush-relay --open`) re-attaches via EADDRINUSE.
+
+`/api/close` exists so scripts and tests can name the verb. It is not a
+server shutdown.
+
+### Exit (in-app)
+
+1. Confirm: "Quit the hive? Every process stops." Primary **Exit**. Ghost cancel.
+2. `POST /api/exit` `{ }` — server replies `{ok:true,action:"exit"}` then
+   sets the same `g_shutdown` flag SIGTERM uses.
+3. Poll loop breaks, cleanup runs (`turn_shutdown`, `store_destroy`,
+   `close(ls)`, unlink pidfile), `hush_relay_run` returns `HUSH_OK`,
+   `main` exits 0.
+4. Client, after 200, `window.close()`.
+
+No auth on `/api/exit` or `/api/close`. Bound to localhost by listen
+address. Authenticated control API stays a non-goal.
+
+### CLI stays complementary
+
+| Verb | In-app | CLI | Process |
+|---|---|---|---|
+| Close | `#hive-close` → `/api/close` + `window.close()` | `--close` (hint, exit 0) | stays |
+| Exit | `#hive-exit` → `/api/exit` | `--quit` or SIGINT/SIGTERM | dies, code 0 |
+
+### Hick
+
+Header still ≤5 *primary* choices: Profile, Settings, Call-when-ready,
+Close, Exit. Install remains opportunistic. Badge is status, not a choice.
 
 ## Verification (this research phase)
 - Inspected hush_relay.c (loop, signals, attach, open_app_window, cleanup).
 - Inspected hush_relay_main.c, headers, turn/store shutdown paths.
 - Desktop file, current help text, launch behavior from user report.
 - Unix patterns for long-lived server + detachable GUI confirmed.
+- Re-read hive header on current main (75d52f238): no Close/Exit buttons.
+- Re-read leftover PLAN_EXIT_CLOSE.md: CLI-only; that is why the user
+  still cannot see an Exit button.

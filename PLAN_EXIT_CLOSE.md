@@ -1,247 +1,261 @@
-# PLAN: Proper Exit (Quit) vs Close for Hush Relay (RDAP)
+# PLAN: Exit (Quit) vs Close — in-app buttons + process lifecycle (RDAP)
 
-Branch: gb/exit-close-design
-Worktree: worktrees/exit-close-design
-Base: main (034cfd3d5)
+Branch: `gb/exit-close-design`
+Worktree: `worktrees/exit-close-design`
+Base: `main` `75d52f238` (rebased; original research was on `034cfd3d5`)
 
-## 1. Select Planning Methodology
-RDAP (Research-Driven Adaptive Planning) — Double Diamond + Spiral risk iterations + small atomic Milestones with strict DoD + commit per M.
+## 1. Methodology
 
-## 2. Scope of Work
+RDAP — Double Diamond + Spiral risk iterations + atomic Milestones with
+strict Definition of Done. Commit after every Milestone. Land only via PR.
+
+## 2. Scope
 
 **Primary Goal**
-Implement two distinct operations:
-- **Close**: The GUI (browser --app window) is dismissed. The relay core keeps running and listening. Launcher click re-attaches a GUI to the running process.
-- **Exit/Quit**: Full, clean termination of the relay process with proper signal handling, cleanup, and exit codes (0 for intentional clean quit).
+
+Two distinct, labeled operations the user can see and use:
+
+- **Close** — dismiss the GUI. The relay keeps listening. Next launcher
+  click re-attaches the GUI.
+- **Exit** — quit. Kill the relay process, run cleanup, return exit code 0.
+
+The OS/PWA window `×` is neither of these. The hive must ship its own
+**Close** and **Exit** buttons.
 
 **Non-Goals**
-- Force-closing external browser windows from C.
-- System tray.
-- Authenticated control API.
-- Changing the external-browser GUI model.
 
-**Success Criteria / DoD (measurable)**
-1. Launcher (hush-relay --open or desktop) when nothing running: starts server + opens GUI.
-2. Launcher when server running: re-attaches (opens GUI window) via EADDRINUSE path without new listener.
-3. User closes browser window: GUI gone, server still up (ss shows port, re-attach works).
-4. `hush-relay --quit` or SIGINT/SIGTERM: clean shutdown, exit code 0.
-5. `hush-relay --no-open`: headless server.
-6. Proper cleanup always runs (turn, store, socket).
-7. Exit codes: 0 for clean/quit, non-zero for errors.
-8. Updated --help, desktop (Actions or Quit entry), README note.
-9. `make && make test` pass.
-10. Worktree lifecycle + PR followed.
+- Force-closing an arbitrary browser window from C.
+- System tray.
+- Authenticated remote control API.
+- Changing the single-binary + `--app` window model.
+- Restyling the OS `×`.
+
+**Success Criteria / DoD**
+
+1. Header shows labeled **Close** and **Exit** (not a lone `×`).
+2. Close: `POST /api/close` then `window.close()`. Port still listening.
+   `hush-relay --open` re-attaches.
+3. Exit: confirm, `POST /api/exit`, process exits 0, port gone, pidfile gone.
+4. `hush-relay --quit` and SIGINT/SIGTERM take the same cleanup path, exit 0.
+5. `hush-relay --close` prints the re-attach hint and exits 0 (server stays).
+6. `hush-relay --no-open` still starts headless.
+7. Cleanup always runs: turn, store, listen socket, pidfile.
+8. Exit codes: 0 clean/quit, non-zero on error.
+9. `--help`, desktop Actions=Quit, README Close vs Exit section.
+10. `./configure && make && make test` pass. HTML greps for the buttons.
+11. PR → merge → worktree removed. Never write to `main`.
 
 **Constraints**
-- C11 + write-legible-c.
-- Single binary + embedded PWA.
-- Worktree/gb/* + PR only.
-- Re-embed after UI changes.
+
+- C11 + write-legible-c (fn ≤40, depth ≤2, named literals, no function-static
+  mutables, asserts on internal helpers).
+- Worktree `gb/*` + PR only.
+- Re-embed after every HTML change: `./scripts/embed-ui.sh hush-c/demo`.
+- Hick: header ≤5 primary choices.
+- Listen is localhost-facing in practice; no new auth on `/api/exit`.
 
 **Assumptions**
-- "GUI close" is user action on browser window or not forcing --open.
-- Launcher re-attach on bind failure is the mechanism for "click again".
-- Pidfile + signals sufficient for --quit.
 
-**Top Risks + Mitigations**
-1. Stale pidfile → check alive with kill(pid,0), careful write.
-2. Cannot force browser close → document user closes window; re-attach works.
-3. Build drift → document embed+make+cp after changes.
-4. Signal safety → only flag in handler.
-5. Multiple launches → rely on bind + pidfile.
+- GUI = Chromium-family `--app` window (or tab if that is what opened).
+- `window.close()` works for `--app`. Tabs may refuse; then we show a banner.
+- Same `g_shutdown` flag for SIGTERM, `--quit`, and `/api/exit`.
 
-**Required Environment**
-- gcc, make, standard Unix signals/poll/fork.
-- For tests: curl, ss, pkill.
+**Top Risks**
 
-## 3. Comprehensive Plan (Phases → Milestones → Tasks)
+1. Stale pidfile → `kill(pid, 0)` before SIGTERM; unlink on every exit path.
+2. `/api/exit` from a tab cannot be undone → confirm dialog.
+3. `window.close()` no-op in a normal tab → banner, do not pretend we quit.
+4. Signal-unsafe work in the handler → flag only.
+5. Header Hick overflow → Close/Exit replace nothing essential; Call stays
+   hidden until ready; Install stays opportunistic.
 
-### Phase 0 — Environment & Isolation Setup (COMPLETE)
-- M0.1: Worktree gb/exit-close-design created on clean main (verified).
+## 3. Phases → Milestones → Tasks
 
-### Phase 1 — Research & Discovery (GATE)
-- M1.1: Inventory current code (loop, signals, attach, main, desktop, cleanup).
-  - Task 1.1.1: `cd worktrees/exit-close-design && grep -n -E 'signal|SIG|poll|EINTR|break|return HUSH|hush_open_app_window|EADDRINUSE' hush-c/src/hush_relay.c`
-  - Task 1.1.2: `cat hush-c/src/hush_relay_main.c`
-  - Task 1.1.3: `cat hush-relay.desktop`
-  - Verification: Output shows only PIPE/CHLD ignore, poll loop exits only on error, attach on EADDRINUSE, desktop always --open, main returns 0/1.
-- M1.2: Research Unix patterns for daemon+GUI (attach vs quit) + pidfile + signals.
-  - Task 1.2.1: Create research/exit-close-notes.md with findings (self-pipe or flag, pidfile, re-attach via bind fail, --quit sends SIGTERM).
-  - Verification: File exists with sections on current behavior, desired, patterns, risks.
-- M1.3 (MANDATORY LAST): Synthesize into RESEARCH_EXIT_CLOSE.md (or append) + concrete PLAN_EXIT_CLOSE.md + commit.
-  - Task 1.3.1: `git add RESEARCH_EXIT_CLOSE.md PLAN_EXIT_CLOSE.md RESEARCH.md && git commit -m "Milestone 1.3: Phase 1 synthesis gate — exit vs close research + plan"`
-  - Task 1.3.2: `git push -u origin HEAD`
-  - Verification: Commit message shows M1.3; plan file present with full RDAP structure.
+### Phase 0 — Isolation (COMPLETE)
 
-### Phase 2 — Define / Architecture
-- M2.1: Lock design (flags, signals, pidfile, attach message, desktop).
-  - Task 2.1.1: Write detailed design section in PLAN (volatile flag + check after poll, pidfile in XDG_RUNTIME_DIR or ~/.local/state/hush/relay.pid, --quit reads pid + kill -TERM, --close as friendly no-op or "no open", friendly attach message).
-  - Task 2.1.2: Update exit codes doc (0 for clean quit).
-  - Verification: Design written, reviewed against constraints.
-- M2.2: Update risk register + test strategy.
-  - Commit after M2.
+- Worktree `worktrees/exit-close-design` on `gb/exit-close-design`.
+- Rebased onto `main` `75d52f238` (PR #24 robot cards).
+
+### Phase 1 — Research (GATE, this commit)
+
+- M1.1–M1.3 already landed CLI-only research.
+- **M1.4 (this commit):** user correction — in-app Close/Exit are required.
+  Update RESEARCH.md, this plan, UI_SPEC. Commit the gate.
+
+### Phase 2 — Architecture (this commit)
+
+Locked design below. UI_SPEC section 10 is authoritative for chrome.
 
 ### Phase 3 — Implementation
-- M3.1: Add graceful signal handling + flag.
-  - Task 3.1.1: In hush_relay.c, add volatile sig_atomic_t g_shutdown = 0; handler for SIGINT/SIGTERM that sets it.
-  - Task 3.1.2: In loop, on EINTR or after poll, if (g_shutdown) break;
-  - Task 3.1.3: `./scripts/embed-ui.sh hush-c/demo 2>/dev/null || true; make -C hush-c clean; make -C hush-c`
-  - Verification: Build succeeds; manual test Ctrl+C does cleanup and exits 0 (check logs, ss port gone).
-  - Commit: "M3.1: Graceful SIGINT/SIGTERM handling with flag"
-- M3.2: Pidfile support.
-  - Task 3.2.1: Add pidfile write on successful listen (use XDG_RUNTIME_DIR/hush/relay.pid or fallback).
-  - Task 3.2.2: Unlink on clean exit.
-  - Task 3.2.3: Rebuild.
-  - Verification: After start, pidfile exists and contains correct pid.
-  - Commit.
-- M3.3: Add --quit and --close to CLI + main.
-  - Task 3.3.1: In hush_relay_main.c, handle --quit: read pidfile, if alive kill -TERM, unlink, return 0.
-  - Task 3.3.2: Handle --close: print friendly message, return 0 (no-op for server; documents "GUI closed").
-  - Task 3.3.3: Update hush_print_help().
-  - Task 3.3.4: Rebuild + test `./hush-c/hush-relay --help`.
-  - Verification: --quit stops a running instance cleanly (exit 0); --close exits 0 quickly.
-  - Commit.
-- M3.4: Improve attach message and desktop.
-  - Task 3.4.1: Change "already listening" message to "Hush relay running — opening UI...".
-  - Task 3.4.2: Update hush-relay.desktop with Actions=Quit; or add comment for --quit.
-  - Task 3.4.3: Rebuild.
-  - Verification: Launch while running shows friendly message and re-opens UI.
-  - Commit.
-- M3.5 (if needed): Minor C legible-c fixes + tests.
-  - Full checklist if any .c/.h touched.
-  - Extend check_launch.sh or add simple test for --quit.
-  - Commit.
 
-### Phase 4 — Verification, Polish, Integration & Cleanup
-- M4.1: Full build + test.
-  - `./configure && make clean && make && make test`
-  - Manual: start, launcher click (re-attach), close browser, launcher re-attach, --quit, Ctrl+C.
-  - Verification: all green, port released on quit, exit code 0 on clean quit.
-- M4.2: Docs + polish.
-  - Update README with "Close vs Quit" section.
-  - Update help text if needed.
-  - Run legible-c checklist on changed files.
-- M4.3: Final commit + push.
-  - `git add . && git commit -m "Complete: exit/quit vs close design — proper signals, --quit, pidfile, re-attach, exit codes 0 for clean quit"`
-  - `git push -u origin HEAD`
-- M4.4: PR + land.
-  - `gh pr create --base main --head gb/exit-close-design --title "Proper Exit (Quit) vs Close for relay (signals, --quit, pidfile, re-attach)" --body "..." `
-  - `gh pr merge --auto --merge`
-- M4.5: Post-merge cleanup.
-  - `cd /opt/repo/hush && git checkout main && git pull --ff-only origin main`
-  - `git worktree remove worktrees/exit-close-design`
-  - `git branch -d gb/exit-close-design || true`
-  - `git push origin --delete gb/exit-close-design || true`
-  - Verify only main worktree, clean.
+#### M3.1 Signals + shutdown flag
 
-## 4. Audit the Plan (before execution)
-- Every Task has exact command or snippet + verification + M reference.
-- Phase 1 gate (M1.3) present.
-- Worktree lifecycle complete.
-- Tasks atomic.
-- legible-c called out.
-- Research → plan gate explicit.
-- Plan frozen after this audit.
+Files: `hush-c/src/hush_relay.c`, `hush-c/include/hush_relay.h`.
 
-## 5-7. Execute → Audit → Confirm
-Follow strictly. Commit after every Milestone. Re-audit at end. State "Grok Build complete." only when all DoD + cleanup done.
+- `static volatile sig_atomic_t g_shutdown = 0;`
+- Handler sets the flag only.
+- `hush_relay_request_shutdown(void)` sets the same flag (HTTP Exit).
+- After `poll`: EINTR continue unless `g_shutdown`; then break.
+- On break: existing cleanup, then unlink pidfile (once M3.2 lands).
 
-## Notes
-- Use `scripts/embed-ui.sh hush-c/demo` + make after any change that could affect served assets (even if not UI).
-- Payne voice / disciplined: messages are clear, no fluff ("Hush relay running — opening UI...").
-- Quinn: low cog load (one flag for quit, simple --quit/--close).
-- Parker: serves the JTBD "I can reliably close the chat window while keeping my hive alive, or fully quit when done."
+Verify: `make -C hush-c` compiles.
 
+#### M3.2 Pidfile
 
-## Detailed Design (M2.1 locked)
+- Path: `$XDG_RUNTIME_DIR/hush/relay.pid` else `$HOME/.local/state/hush/relay.pid`.
+- Write after successful `listen`, before the poll loop (`0600`).
+- Unlink on every return from `hush_relay_run` that got past listen.
+- Helpers at file end: `hush_pidfile_path`, `hush_write_pidfile`,
+  `hush_remove_pidfile`.
 
-### CLI surface (hush_relay_main.c)
-- Existing: [port] [--open | --no-open] [-h|--help]
-- New:
-  - --quit : If a pidfile exists and process is alive, send SIGTERM, wait briefly, unlink, exit 0. If no server, exit 0 (idempotent).
-  - --close : Friendly no-op. Prints "GUI closed. Relay still running on :port. Click launcher to re-attach." Exit 0. (Primary Close is user closing the browser window.)
-- Unknown options still error + help + exit 1.
-- Update hush_print_help() with new flags and a "Close vs Quit" paragraph.
+Verify: start `--no-open`, `cat` pidfile matches `pidof`/`pgrep`.
 
-### Signals & graceful shutdown (hush_relay.c)
-- Add:
-  static volatile sig_atomic_t g_shutdown = 0;
-  static void hush_shutdown_handler(int sig) { (void)sig; g_shutdown = 1; }
-- In hush_relay_run, after existing signal ignores:
-  signal(SIGINT, hush_shutdown_handler);
-  signal(SIGTERM, hush_shutdown_handler);
-- In the poll loop, after pr = poll(...):
-  if (pr < 0) {
-      if (errno == EINTR) {
-          if (g_shutdown) break;
-          continue;
-      }
-      break;
-  }
-  if (g_shutdown) break;
-  ... rest
-- On break / return from loop: existing cleanup always runs (turn_shutdown, store_destroy, close(ls)).
-- Return HUSH_OK (main will turn into exit 0). This is intentional clean quit.
+#### M3.3 CLI `--quit` / `--close`
 
-### Pidfile
-- Location (per-user):
-  - If XDG_RUNTIME_DIR set: $XDG_RUNTIME_DIR/hush/relay.pid
-  - Else: $HOME/.local/state/hush/relay.pid (create dirs as needed, 0700)
-- On successful listen (after listen() succeeds, before poll loop):
-  write getpid() + '\n' to the file (O_CREAT|O_TRUNC|O_WRONLY, 0600).
-- On every normal exit from hush_relay_run (including error paths that got far enough):
-  unlink the pidfile (best effort).
-- Helper functions (legible, small):
-  static void hush_pidfile_path(char *out, size_t sz);
-  static void hush_write_pidfile(void);
-  static void hush_remove_pidfile(void);
-- --quit uses the same path logic to find the pid.
+`hush-c/src/hush_relay_main.c`:
 
-### Re-attach / attach path (existing + polish)
-- Keep the EADDRINUSE + open_ui path.
-- Change the message to: "hush-relay already running on http://127.0.0.1:%u/ — opening UI..."
-- This becomes the documented "re-attach" behavior.
+- `--quit`: read pidfile, `kill(pid, 0)` then `SIGTERM`, wait up to 2s,
+  unlink, return 0. Missing server → 0 (idempotent).
+- `--close`: print
+  `GUI closed. Relay still running. Click the launcher to re-attach.`
+  return 0.
+- Help lists both plus "Close vs Exit" paragraph.
+- Attach message:
+  `hush-relay already running on http://127.0.0.1:%u/ — opening UI...`
+
+`hush-relay.desktop`:
+
+```
+Actions=Quit;
+[Desktop Action Quit]
+Name=Quit Hush
+Exec=hush-relay --quit
+```
+
+Verify: `--help` shows the verbs; `--close` exits 0.
+
+#### M3.4 HTTP `/api/close` and `/api/exit`
+
+`hush-c/include/hush_http.h` + `hush-c/src/hush_http.c`:
+
+- `POST /api/close` → `200 {"ok":true,"action":"close"}`. No flag.
+- `POST /api/exit` → `200 {"ok":true,"action":"exit"}` then
+  `hush_relay_request_shutdown()`.
+- Dispatch in `hush_http_serve_api_post`. Small dedicated helpers.
+
+Verify: curl against a `--no-open` instance; `/api/exit` drops the port.
+
+#### M3.5 In-app buttons
+
+`hush-c/demo/index.html`:
+
+- Header: `#hive-close` "Close", `#hive-exit` "Exit".
+- Confirm dialog for Exit.
+- Close handler: POST `/api/close`, then `window.close()`, else banner.
+- Exit handler: confirm → POST `/api/exit` → `window.close()`.
+- CSS: `.iconbtn.danger` for Exit (not full-width form danger).
+- Banner `#hive-banner` under the header, hidden by default.
+
+Then: `./scripts/embed-ui.sh hush-c/demo`.
+
+#### M3.6 Tests
+
+`hush-c/tests/check_launch.sh` HTML greps:
+
+- `id="hive-close"`
+- `id="hive-exit"`
+- `/api/exit`
+- `/api/close`
+
+New `hush-c/tests/check_exit.sh`:
+
+1. Start `--no-open` on a throwaway port.
+2. Assert pidfile exists.
+3. `POST /api/close` → 200, session still answers.
+4. `POST /api/exit` → 200, wait, port gone, pidfile gone, process exit 0.
+5. Second run: `--quit` while up → process gone, exit 0.
+6. `--close` with nothing up → exit 0.
+7. `--help` mentions `--quit` and `--close`.
+
+Wire into `hush-c/Makefile` `test` after `check_launch.sh`.
+
+### Phase 4 — Verify, docs, land
+
+- M4.1 `./configure && make clean && make && make test`
+- M4.2 README "Close vs Exit" + help polish + write-legible-c §14
+- M4.3 Final commit + push
+- M4.4 `gh pr create` + `gh pr merge --auto --merge`
+- M4.5 After MERGED: pull main, remove worktree, delete `gb/exit-close-design`
+
+## 4. Audit (frozen)
+
+- Every implementation Milestone has files, commands, and a verification.
+- Phase 1 research gate is this commit (M1.4 + M2).
+- Worktree lifecycle is the Prime Directive (PR, not local merge).
+- In-app buttons are first-class, not a CLI footnote.
+
+## 5–7. Execute → Audit → Confirm
+
+Commit after every Milestone. State "Grok Build complete." only when the
+PR is merged, the worktree is gone, and main is clean.
+
+## Detailed design (locked)
+
+### Shutdown flag
+
+```c
+static volatile sig_atomic_t g_shutdown = 0;
+
+static void hush_shutdown_handler(int sig)
+{
+    (void)sig;
+    g_shutdown = 1;
+}
+
+void hush_relay_request_shutdown(void)
+{
+    g_shutdown = 1;
+}
+```
+
+Handler is async-signal-safe. HTTP Exit calls the public setter.
+
+### Poll loop
+
+```
+pr = poll(...)
+if (pr < 0) {
+    if (errno == EINTR) {
+        if (g_shutdown) break;
+        continue;
+    }
+    break;
+}
+if (g_shutdown)
+    break;
+```
+
+The `for (;;)` loop is the intentional event pump (write-legible-c §5).
 
 ### Exit codes
-- HUSH_OK (0) from run → main returns 0 (covers normal run, attach, --quit success, --close).
-- Errors → 1 (or keep current mapping).
-- Document in help: "Exit code 0 means clean (including intentional quit)."
 
-### Desktop file
-- Add:
-  Actions=Quit;
-  ...
-  [Desktop Action Quit]
-  Name=Quit Hush
-  Exec=hush-relay --quit
-  Icon=hush-relay
-- Comment on the main entry: "Launches or attaches the GUI. Use 'Quit Hush' action or --quit to fully stop the relay."
+| Path | Code |
+|---|---|
+| Clean run, Ctrl+C, SIGTERM, `--quit`, `/api/exit` | 0 |
+| `--close`, `--help`, attach-only `--open` | 0 |
+| Bind / store / unknown flag | 1 |
 
-### Close semantics (documentation + behavior)
-- There is no reliable "tell the browser to close its --app window" from the relay.
-- Close = close the browser window yourself, or launch without --open.
-- Launcher click always provides "get a window" (start or re-attach).
-- --close flag exists for scripts/launchers that want a "close GUI" verb that doesn't kill the server.
+### Header chrome (Quinn)
 
-### Cleanup ordering (already mostly correct)
-On any exit from the main loop or early error after listen:
-  hush_turn_shutdown(&g_turn);
-  hush_store_destroy(g_store);
-  close(ls);
-  hush_remove_pidfile();
-  return appropriate status;
+```
+[brand]     [Install?] [Profile] [Settings] [Call?] [Close] [Exit] [badge]
+```
 
-### Testing
-- Existing check_launch.sh continues to pass.
-- New manual/added smoke:
-  - Start with --no-open, verify pidfile + port.
-  - Launcher click (or --open) while running → re-attach message + window.
-  - Close browser window → port still listening.
-  - --quit → port gone, exit 0, pidfile gone.
-  - Ctrl+C while running → clean exit 0.
-- For unit tests: test_pidfile.c or extend test_launch if simple.
+Close = ghost. Exit = danger. Both `min-height`/`min-width` 44px.
 
-### Legible-c
-- All new/changed .c/.h will be reviewed against the 17-item checklist before commit.
-- Functions ≤40 lines, depth ≤2, named literals, checked calls, etc.
+### Payne copy
 
+- Close title: "Close the window. Hive stays standing."
+- Exit title: "Quit the hive. Every process stops."
+- Exit confirm: "Quit the hive? Every process stops."
+- Close leftover banner: "Window stays open here. Close this window. The hive is still standing."

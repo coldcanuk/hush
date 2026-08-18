@@ -52,7 +52,9 @@ Success / DoD (measurable):
 - Desktop: current entry = "Hush" (open/attach). Add `Actions=Quit;` or a second .desktop "Hush Quit" that runs `--quit`.
 
 ## Architecture Decisions (locked for this slice)
-- No new control socket or HTTP /quit endpoint in this slice (keep simple; use signals + pidfile).
+- HTTP verbs added after the user correction: `POST /api/close` (ack only)
+  and `POST /api/exit` (sets the same shutdown flag as SIGTERM). No auth;
+  localhost process. Still no generic control socket.
 - Pidfile location: `$XDG_RUNTIME_DIR/hush/relay.pid` or fallback `~/.local/state/hush/relay.pid` (or /tmp for tests).
 - Re-attach remains the EADDRINUSE + open_ui path (it already works for "click launcher again").
 - Add CLI flags: `--quit`, keep `--open` / `--no-open`.
