@@ -218,8 +218,9 @@
     </div>
     <div style="display:flex;align-items:center;gap:8px">
       <button id="install" type="button">Install</button>
+      <button class="iconbtn" id="profile-btn" type="button">Profile</button>
+      <button class="iconbtn" id="settings-btn" type="button">Settings</button>
       <button class="iconbtn" id="call-btn" type="button" hidden>Call</button>
-      <button class="iconbtn" id="settings-btn" type="button" hidden>Settings</button>
       <div id="badge">connecting…</div>
     </div>
   </header>
@@ -333,7 +334,9 @@
       const ready = !!session.ready;
       $("gate").classList.toggle("show", !ready);
       $("hive").classList.toggle("show", ready);
-      $("settings-btn").hidden = !ready;
+      // Always visible per spec (M2): Profile + Settings on splash/gate/hive
+      $("profile-btn").hidden = false;
+      $("settings-btn").hidden = false;
       $("call-btn").hidden = !ready;
       if (session.vibe && session.vibe.name)
         $("vibe-sub").textContent = session.vibe.name;
