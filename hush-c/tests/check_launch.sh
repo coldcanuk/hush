@@ -45,6 +45,7 @@ vibe=$(curl -sf -X POST "http://127.0.0.1:${port}/api/vibe" \
     -H 'Content-Type: application/json' \
     -d '{"name":"HQ","about":"primary endpoint"}')
 echo "$vibe" | grep -q '"ready":true' || fail "vibe should ready the hive"
+echo "$vibe" | grep -q '"visibility":"public"' || fail "vibe default public"
 echo "$vibe" | grep -q 'Sgt Major Payne' || fail "Payne missing"
 echo "$vibe" | grep -q '"slug":"welcome"' || fail "welcome channel missing"
 chan=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \

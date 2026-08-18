@@ -1,0 +1,27 @@
+[Unit]
+Description=Hush STUN/TURN server (coturn)
+Documentation=https://github.com/coldcanuk/hush
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/turnserver -c /etc/hush/turnserver.conf --no-cli --pidfile /run/hush-turn/turnserver.pid
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=3
+RuntimeDirectory=hush-turn
+RuntimeDirectoryMode=0755
+LogsDirectory=hush
+StateDirectory=hush
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hush /var/log/hush
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

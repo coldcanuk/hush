@@ -9,6 +9,7 @@ Rules-Requires-Root: no
 Package: hush-relay
 Architecture: any
 Depends: ${misc:Depends}
+Recommends: coturn
 Description: Lightweight, legible C11 Nostr relay core
  Hush is a minimal, self-hosted Nostr relay written in strict C11.
  .

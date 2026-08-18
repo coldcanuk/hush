@@ -20,20 +20,20 @@ See RESEARCH.md §2026-08-17 STUN/TURN. Manage **coturn**, do not vendor it.
 
 ## Phase 2 — Architecture
 
-- [ ] M2.1 Lock modules, routes, systemd unit, vibe visibility, signaling kind.
+- [x] M2.1 Lock modules, routes, systemd unit, vibe visibility, signaling kind.
 
 ## Phase 3 — Implementation
 
-- [ ] M3.1 `./configure --enable-stun-turn` / `--disable-stun-turn` (default on).
-- [ ] M3.2 `hush_turn` + systemd unit + conf template + install.
-- [ ] M3.3 Vibe public/private on `hush_launch` + session JSON.
-- [ ] M3.4 HTTP `/api/turn` `/api/ice` `/api/signal` + status.whisper.
-- [ ] M3.5 PWA Settings + Call (mesh) + visibility.
-- [ ] M3.6 Tests + README/SECURITY.
+- [x] M3.1 `./configure --enable-stun-turn` / `--disable-stun-turn` (default on).
+- [x] M3.2 `hush_turn` + systemd unit + conf template + install.
+- [x] M3.3 Vibe public/private on `hush_launch` + session JSON.
+- [x] M3.4 HTTP `/api/turn` `/api/ice` `/api/signal` + status.whisper.
+- [x] M3.5 PWA Settings + Call (mesh) + visibility.
+- [x] M3.6 Tests + README/SECURITY.
 
 ## Phase 4 — Verify / land
 
-- [ ] M4.1 `./configure && make && make test` (on and off).
+- [x] M4.1 `./configure && make && make test` (on and off).
 - [ ] M4.2 Push, PR, auto-merge, delete worktree.
 
 ## Locked decisions

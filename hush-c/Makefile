@@ -14,6 +14,8 @@ DATADIR ?= $(PREFIX)/share
 APPDIR ?= $(DATADIR)/applications
 ICONDIR ?= $(DATADIR)/icons/hicolor
 ICON_SIZES := 48 128 256
+ENABLE_STUN_TURN ?= 1
+HUSHSHARE ?= $(DATADIR)/hush
 
 SRCS := $(wildcard src/*.c)
 OBJS := $(SRCS:.c=.o)
@@ -47,6 +49,7 @@ test: $(TEST_BINS) hush-relay
 	@for t in $(TEST_BINS); do echo "RUN $$t"; ./$$t || exit 1; done
 	@sh tests/check_pwa.sh
 	@sh tests/check_launch.sh
+	@sh tests/check_turn.sh
 	@echo "ALL TESTS PASSED"
 
 clean:
@@ -76,6 +79,24 @@ install: all
 	@echo "  gtk-update-icon-cache -f $(DESTDIR)$(ICONDIR) || true"
 	@echo
 	@echo "System-wide install: sudo make install PREFIX=/usr"
+ifneq ($(ENABLE_STUN_TURN),0)
+	install -d $(DESTDIR)$(HUSHSHARE)/systemd
+	install -m 0644 ../contrib/systemd/hush-turn.service \
+		$(DESTDIR)$(HUSHSHARE)/systemd/hush-turn.service
+	install -m 0644 ../contrib/turnserver.conf.in \
+		$(DESTDIR)$(HUSHSHARE)/turnserver.conf.in
+	@if [ -n "$(DESTDIR)" ] || [ "$$(id -u)" = "0" ]; then \
+		install -d $(DESTDIR)/lib/systemd/system; \
+		install -m 0644 ../contrib/systemd/hush-turn.service \
+			$(DESTDIR)/lib/systemd/system/hush-turn.service; \
+		echo "Installed hush-turn.service (not enabled)."; \
+		echo "  sudo systemctl enable --now hush-turn"; \
+		echo "  or use Settings → Daemon mode"; \
+	else \
+		echo "STUN/TURN templates: $(DESTDIR)$(HUSHSHARE)/"; \
+		echo "Daemon mode needs: sudo make install PREFIX=/usr"; \
+	fi
+endif
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/hush-relay

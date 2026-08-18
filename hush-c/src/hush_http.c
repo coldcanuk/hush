@@ -14,12 +14,14 @@ enum {
     HUSH_HTTP_PATH_MAX = 128,
     HUSH_HTTP_EVENTS_MAX = 64,
     HUSH_HTTP_HDR_MAX = 8192,
-    HUSH_ID_HEX_WIDTH = 64
+    HUSH_ID_HEX_WIDTH = 64,
+    HUSH_HTTP_KIND_SIGNAL = 25000
 };
 
 static uint16_t g_listen_port;
 static int g_client_count;
 static hush_launch_t *g_launch;
+static hush_turn_t *g_turn;
 
 static const char *hush_find_headers_end(const char *buf, size_t len);
 static long hush_http_content_length(const char *buf, size_t hlen);
@@ -46,6 +48,12 @@ static hush_status_t hush_http_serve_vibe(int fd, const char *body,
 static hush_status_t hush_http_serve_channel(int fd, const char *body);
 static hush_status_t hush_http_serve_project(int fd, const char *body,
                                              hush_store_t *store);
+static hush_status_t hush_http_serve_turn_post(int fd, const char *body);
+static void hush_http_serve_turn_get(int fd);
+static void hush_http_serve_ice(int fd);
+static hush_status_t hush_http_serve_signal(int fd, const char *body,
+                                            hush_store_t *store,
+                                            hush_event_t *out);
 static hush_status_t hush_http_serve_api_post(int fd, const char *path,
                                               const char *req, size_t len,
                                               hush_store_t *store,
@@ -65,6 +73,11 @@ void hush_http_set_client_count(int n)
 void hush_http_set_launch(hush_launch_t *launch)
 {
     g_launch = launch;
+}
+
+void hush_http_set_turn(hush_turn_t *turn)
+{
+    g_turn = turn;
 }
 
 int hush_http_looks_like(const char *buf, size_t len)
@@ -125,6 +138,14 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
     }
     if (strcmp(path, "/api/session") == 0) {
         hush_http_serve_session(fd);
+        return HUSH_OK;
+    }
+    if (strcmp(path, "/api/turn") == 0) {
+        hush_http_serve_turn_get(fd);
+        return HUSH_OK;
+    }
+    if (strcmp(path, "/api/ice") == 0) {
+        hush_http_serve_ice(fd);
         return HUSH_OK;
     }
     if (memcmp(req, "POST", 4) == 0)
@@ -344,16 +365,26 @@ static void hush_make_event_id(char *out65)
 
 static void hush_http_serve_status(int fd, const hush_store_t *store)
 {
-    char body[192];
+    char body[384];
     hush_event_t tmp[HUSH_HTTP_EVENTS_MAX];
     size_t n;
     int w;
+    int whisper;
+    int turn_on;
+    int vibe_pub;
 
     n = hush_store_query(store, NULL, 0, tmp, HUSH_HTTP_EVENTS_MAX);
+    whisper = hush_turn_whisper_available();
+    turn_on = (g_turn != NULL && g_turn->running);
+    vibe_pub = (g_launch == NULL || !g_launch->has_vibe || g_launch->vibe_public);
     w = snprintf(body, sizeof(body),
                  "{\"ok\":true,\"version\":\"0.0.1\",\"events\":%zu,"
-                 "\"clients\":%d,\"port\":%u}\n",
-                 n, g_client_count, (unsigned)g_listen_port);
+                 "\"clients\":%d,\"port\":%u,\"whisper\":%s,"
+                 "\"turn_running\":%s,\"vibe_public\":%s}\n",
+                 n, g_client_count, (unsigned)g_listen_port,
+                 whisper ? "true" : "false",
+                 turn_on ? "true" : "false",
+                 vibe_pub ? "true" : "false");
     if (w < 0)
         w = 0;
     hush_http_reply(fd, "200 OK", "application/json", body, (size_t)w);
@@ -507,16 +538,28 @@ static hush_status_t hush_http_serve_vibe(int fd, const char *body,
 {
     char name[HUSH_LAUNCH_NAME_MAX];
     char about[HUSH_LAUNCH_ABOUT_MAX];
+    char vis[16];
+    int is_public = 1;
 
     if (g_launch == NULL || body == NULL || store == NULL)
         return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    if (hush_json_field(body, "visibility", vis, sizeof(vis)) &&
+        strcmp(vis, "private") == 0)
+        is_public = 0;
+    if (g_launch->has_vibe &&
+        !hush_json_field(body, "name", name, sizeof(name)))
+        return hush_http_reply_session(fd,
+                                       hush_launch_set_vibe_visibility(g_launch,
+                                                                       is_public));
     if (!hush_json_field(body, "name", name, sizeof(name)))
         memcpy(name, "local hive", 11);
     if (!hush_json_field(body, "about", about, sizeof(about)))
         about[0] = '\0';
+    if (hush_launch_create_vibe(g_launch, store, name, about) != HUSH_OK)
+        return hush_http_reply_session(fd, HUSH_ERR_CRYPTO);
     return hush_http_reply_session(fd,
-                                   hush_launch_create_vibe(g_launch, store,
-                                                           name, about));
+                                   hush_launch_set_vibe_visibility(g_launch,
+                                                                   is_public));
 }
 
 static hush_status_t hush_http_serve_channel(int fd, const char *body)
@@ -567,6 +610,11 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_channel(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/project") == 0)
         return hush_http_serve_project(fd, hush_http_body(req, len), store);
+    if (strcmp(path, "/api/turn") == 0)
+        return hush_http_serve_turn_post(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/signal") == 0)
+        return hush_http_serve_signal(fd, hush_http_body(req, len),
+                                      store, out_posted);
     hush_http_reply(fd, "404 Not Found", "text/plain", "not found\n", 10);
     return HUSH_ERR_NOT_FOUND;
 }
@@ -581,4 +629,104 @@ static const char *hush_http_body(const char *req, size_t len)
     if (end == NULL)
         return "";
     return end + 4;
+}
+
+static void hush_http_serve_turn_get(int fd)
+{
+    char body[HUSH_TURN_JSON_MAX];
+    size_t n = 0;
+    hush_turn_t empty;
+
+    if (g_turn == NULL) {
+        hush_turn_init(&empty);
+        if (hush_turn_format_status(&empty, body, sizeof(body), &n) != HUSH_OK)
+            n = 0;
+    } else {
+        hush_turn_refresh(g_turn);
+        if (hush_turn_format_status(g_turn, body, sizeof(body), &n) != HUSH_OK)
+            n = 0;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", body, n);
+}
+
+static void hush_http_serve_ice(int fd)
+{
+    char body[HUSH_TURN_JSON_MAX];
+    size_t n = 0;
+    hush_turn_t empty;
+
+    if (g_turn == NULL) {
+        hush_turn_init(&empty);
+        if (hush_turn_format_ice(&empty, body, sizeof(body), &n) != HUSH_OK)
+            n = 0;
+    } else if (hush_turn_format_ice(g_turn, body, sizeof(body), &n) != HUSH_OK) {
+        n = 0;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", body, n);
+}
+
+static hush_status_t hush_http_serve_turn_post(int fd, const char *body)
+{
+    char enabled[8];
+    char daemon[8];
+    char host[HUSH_TURN_HOST_MAX];
+    hush_turn_mode_t mode;
+    hush_status_t st;
+
+    if (g_turn == NULL || body == NULL) {
+        hush_http_reply(fd, "503 Service Unavailable", "text/plain",
+                        "turn off\n", 9);
+        return HUSH_ERR_NOT_FOUND;
+    }
+    if (hush_json_field(body, "host", host, sizeof(host)))
+        (void)hush_turn_set_public_host(g_turn, host);
+    if (hush_json_field(body, "enabled", enabled, sizeof(enabled)) &&
+        (strcmp(enabled, "false") == 0 || strcmp(enabled, "0") == 0)) {
+        st = hush_turn_disable(g_turn);
+        hush_http_serve_turn_get(fd);
+        return st;
+    }
+    mode = HUSH_TURN_MODE_CHILD;
+    if (hush_json_field(body, "daemon", daemon, sizeof(daemon)) &&
+        (strcmp(daemon, "true") == 0 || strcmp(daemon, "1") == 0))
+        mode = HUSH_TURN_MODE_DAEMON;
+    st = hush_turn_enable(g_turn, mode);
+    hush_http_serve_turn_get(fd);
+    return (st == HUSH_OK) ? HUSH_OK : st;
+}
+
+static hush_status_t hush_http_serve_signal(int fd, const char *body,
+                                            hush_store_t *store,
+                                            hush_event_t *out)
+{
+    char channel[64];
+
+    if (body == NULL || store == NULL || out == NULL)
+        return HUSH_ERR_ARG;
+    memset(out, 0, sizeof(*out));
+    if (body[0] == '\0' || strlen(body) >= HUSH_EVENT_MAX_CONTENT) {
+        hush_http_reply(fd, "400 Bad Request", "text/plain", "need body\n", 10);
+        return HUSH_ERR_PARSE;
+    }
+    if (!hush_json_field(body, "channel", channel, sizeof(channel)))
+        memcpy(channel, "general", 8);
+    hush_make_event_id(out->id);
+    if (g_launch != NULL && g_launch->logged_in)
+        memcpy(out->pubkey, g_launch->human.pubkey_hex, 65);
+    else
+        memcpy(out->pubkey,
+               "0000000000000000000000000000000000000000000000000000000000000001",
+               65);
+    out->kind = (uint32_t)HUSH_HTTP_KIND_SIGNAL;
+    out->created_at = (int64_t)time(NULL);
+    memcpy(out->content, body, strlen(body) + 1);
+    out->tag_count = 1;
+    memcpy(out->tags[0][0], "h", 2);
+    memcpy(out->tags[0][1], channel, strlen(channel) + 1);
+    if (hush_store_insert(store, out) != HUSH_OK) {
+        hush_http_reply(fd, "507 Insufficient Storage", "text/plain", "full\n", 5);
+        return HUSH_ERR_FULL;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", "{\"ok\":true}\n", 12);
+    return HUSH_OK;
 }

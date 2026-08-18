@@ -23,6 +23,9 @@ Optimized for the Goose AI agent. All development uses worktrees **inside this r
 - Simple TCP newline-delimited JSON protocol (MVP; WebSocket adapter later)
 - `poll(2)` single-threaded server
 - Same port also serves the chat **PWA** over HTTP (`GET /`, manifest, service worker, icons)
+- Optional **STUN/TURN** (coturn) from Settings, including systemd daemon mode
+- Vibes are **public** (discoverable) or **private** (join token)
+- Mesh **conference calling** (humans and AI agents; agent voice needs Whisper)
 - Strict build: `-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow`
 
 The chat UI is a Progressive Web App served by the relay itself
@@ -60,6 +63,49 @@ Importing identities and channels from the predecessor project? See [IMPORT.md](
 make
 make test
 ```
+
+STUN/TURN support is **on by default**. To omit it:
+
+```bash
+./configure --disable-stun-turn
+make
+```
+
+## STUN/TURN and conference calls
+
+Hush does not vendor [coturn](https://github.com/coturn/coturn). It writes a
+config and starts the `turnserver` binary when you click **Enable STUN/TURN**
+in Settings.
+
+```bash
+# Debian / Ubuntu / Pop!_OS
+sudo apt install coturn
+```
+
+- **Child mode** (no root): `hush-relay` forks `turnserver` on port 3478
+  (root) or 13478 (user) with a generated long-term username/password.
+- **Daemon mode** (systemd): requires a system install so the unit is in
+  `/lib/systemd/system/`:
+
+```bash
+sudo make install PREFIX=/usr
+# then either:
+sudo systemctl enable --now hush-turn
+# or open Settings → Daemon mode
+```
+
+Open the firewall for `3478/tcp`, `3478/udp`, and the relay range
+`49152-49251/udp`. Set **Public host / IP** if the machine is behind NAT.
+
+A **vibe** (this relay) can be public or private. Public vibes are
+discoverable and joinable. Private vibes hide from discovery and share a
+join token.
+
+Conference calls are a WebRTC mesh on the current channel (kind 25000
+signaling). Supported mixes: human↔human, many humans, human↔agent,
+agent↔agent, and mixed. AI agents need a speech model such as Whisper
+(`HUSH_WHISPER=1` or `whisper` on `PATH`) to hear; otherwise they join as
+signaling-only.
 
 ## Run
 
