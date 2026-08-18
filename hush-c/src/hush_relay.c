@@ -21,7 +21,8 @@
 
 enum {
     HUSH_MAX_CLIENTS = 32,
-    HUSH_BUF_SZ = 8192,
+    /* 64 KiB: HTTP JSON plus a downscaled avatar. Was 8192. */
+    HUSH_BUF_SZ = 65536,
     HUSH_LISTEN_BACKLOG = 8,
     HUSH_POLL_TIMEOUT_MS = 1000,
     HUSH_FD_NONE = -1,
