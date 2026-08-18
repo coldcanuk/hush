@@ -352,6 +352,14 @@
     }
 
     function gateHtml() {
+      if (page === "splash") {
+        return card("Hush — local hive mind",
+          "<p><strong>Sgt Major Payne reporting for duty.</strong></p>" +
+          "<p>Detecting identity and vibe...</p>" +
+          errLine() +
+          actions([{ id: "begin", label: "Begin" }]) +
+          "<div class=\"help\">Disciplined collaboration with humans and agents.</div>");
+      }
       if (page === "help") {
         return card("What’s an identity key?",
           "<p>Hush uses a Nostr identity key instead of a password. It is created on this machine and represents you.</p>" +
@@ -457,6 +465,7 @@
       });
       const box = $("save-pass");
       if (box) box.addEventListener("change", () => { savePass = box.checked; });
+      on("begin", () => { page = "landing"; gateErr = ""; paint(); });
       on("do-vibe", () => {
         const name = ($("vibe-name") && $("vibe-name").value) || "local hive";
         const about = ($("vibe-about") && $("vibe-about").value) || "";
@@ -561,6 +570,23 @@
       syncSettings();
     });
     $("settings-close").addEventListener("click", () => $("settings").classList.remove("show"));
+    $("profile-btn").addEventListener("click", () => {
+      const p = $("profile");
+      if (p) {
+        p.classList.add("show");
+        const np = $("profile-npub");
+        if (np) np.textContent = (session.npub || session.pubkey || "no identity yet");
+      }
+    });
+    $("profile-close").addEventListener("click", () => { const p=$("profile"); if (p) p.classList.remove("show"); });
+    $("profile-copy").addEventListener("click", async () => {
+      const v = session.npub || session.pubkey || "";
+      if (v) { try { await navigator.clipboard.writeText(v); } catch(e){} }
+    });
+    $("profile-logout").addEventListener("click", () => {
+      const p = $("profile"); if (p) p.classList.remove("show");
+      page = "landing"; gateErr = ""; paint();
+    });
     $("call-btn").addEventListener("click", () => {
       $("stage").classList.add("show");
       $("call-title").textContent = "Conference · #" + channel;
@@ -842,5 +868,20 @@
       installBtn.classList.remove("show");
     });
   </script>
+
+  <div class="drawer" id="profile" role="dialog" aria-label="Profile">
+    <div class="panel">
+      <h2>Profile</h2>
+      <p id="profile-npub" class="help" style="font-family:var(--mono);word-break:break-all"></p>
+      <p class="help">Your Nostr identity. npub is safe to share. nsec is private — never share.</p>
+      <div class="actions">
+        <button class="btn ghost" id="profile-copy" type="button">Copy npub</button>
+        <button class="btn ghost" id="profile-logout" type="button">Logout / Use different key</button>
+        <button class="btn" id="profile-close" type="button">Close</button>
+      </div>
+      <p class="help">Sgt Major Payne: "Guard your orders. Report when ready."</p>
+    </div>
+  </div>
+
 </body>
 </html>
