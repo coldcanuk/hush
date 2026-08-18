@@ -455,6 +455,10 @@
       paint();
     }
 
+    /* tick() paints every 1s. Replacing an unchanged gate destroys #nsec-in
+       (and any in-progress paste) and retriggers password-manager highlight. */
+    let lastGateHtml = "";
+
     function paint() {
       const ready = !!session.ready;
       $("gate").classList.toggle("show", !ready);
@@ -468,10 +472,15 @@
       if (session.vibe && session.vibe.visibility)
         $("vibe-vis").textContent = session.vibe.visibility;
       if (!ready) {
-        $("gate").innerHTML = gateHtml();
+        const html = gateHtml();
+        if (html === lastGateHtml)
+          return;
+        $("gate").innerHTML = html;
+        lastGateHtml = html;
         bindGate();
         return;
       }
+      lastGateHtml = "";
       paintChannels();
       paintPayne();
     }
@@ -505,7 +514,7 @@
           stepBar(1) +
           "<p>Paste an <code>nsec1…</code> key. We show the matching <code>npub</code> before anything is saved.</p>" +
           "<label for=\"nsec-in\">Private key</label>" +
-          "<input id=\"nsec-in\" type=\"password\" autocomplete=\"off\" spellcheck=\"false\" placeholder=\"nsec1…\">" +
+          "<input id=\"nsec-in\" type=\"password\" autocomplete=\"off\" spellcheck=\"false\" data-lpignore=\"true\" data-form-type=\"other\" placeholder=\"nsec1…\">" +
           "<div class=\"help\" id=\"npub-preview\"></div>" +
           errLine() +
           actions([
