@@ -31,4 +31,12 @@ hush_status_t hush_proto_parse_line(const char *line, hush_client_msg_t *out_msg
 hush_status_t hush_proto_format_event(const char *sub_id, const hush_event_t *ev,
                                       char *out_buf, size_t bufsz, size_t *out_written);
 
+/* Serialize ["OK", id, true|false, "msg"]. */
+hush_status_t hush_proto_format_ok(const char *ev_id, int ok, const char *msg,
+                                   char *out_buf, size_t bufsz, size_t *out_written);
+
+/* Serialize ["EOSE", sub]. */
+hush_status_t hush_proto_format_eose(const char *sub_id, char *out_buf, size_t bufsz,
+                                     size_t *out_written);
+
 #endif /* HUSH_PROTO_H */

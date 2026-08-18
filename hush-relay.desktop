@@ -1,12 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=Hush Relay
-GenericName=Nostr Relay
-Comment=Lightweight, legible C11 Nostr relay core (hush-relay)
-Exec=hush-relay
+Name=Hush
+GenericName=Hive Mind Chat
+Comment=Local Nostr relay and hive-mind chat
+Exec=hush-relay --open
 TryExec=hush-relay
 Icon=hush-relay
-Terminal=true
-Categories=Network;Utility;ConsoleOnly;
-Keywords=nostr;relay;chat;agent;
+Terminal=false
+Categories=Network;Chat;InstantMessaging;
+Keywords=nostr;relay;chat;agent;hush;
 StartupNotify=false

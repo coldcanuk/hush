@@ -37,7 +37,7 @@ hush_status_t hush_proto_parse_line(const char *line, hush_client_msg_t *out_msg
         return HUSH_ERR_PARSE;
     } else if (strcmp(typ, "REQ") == 0) {
         out_msg->type = HUSH_MSG_REQ;
-        const char *q = strchr(p, '"');
+        const char *q = strchr(p + 1, '"');
         if (q) {
             q++;
             (void)hush_extract_quoted(q, out_msg->sub_id, sizeof(out_msg->sub_id));
@@ -65,6 +65,39 @@ hush_status_t hush_proto_format_event(const char *sub_id, const hush_event_t *ev
     int n = snprintf(out_buf, bufsz,
                      "[\"EVENT\",\"%s\",{\"id\":\"%s\",\"pubkey\":\"%s\",\"kind\":%u,\"content\":\"%s\"}]\n",
                      sub_id, ev->id, ev->pubkey, ev->kind, ev->content);
+    if (n < 0 || (size_t)n >= bufsz)
+        return HUSH_ERR_FULL;
+    if (out_written)
+        *out_written = (size_t)n;
+    return HUSH_OK;
+}
+
+hush_status_t hush_proto_format_ok(const char *ev_id, int ok, const char *msg,
+                                   char *out_buf, size_t bufsz, size_t *out_written)
+{
+    int n;
+
+    if (ev_id == NULL || out_buf == NULL)
+        return HUSH_ERR_ARG;
+    if (msg == NULL)
+        msg = "";
+    n = snprintf(out_buf, bufsz, "[\"OK\",\"%s\",%s,\"%s\"]\n",
+                 ev_id, ok ? "true" : "false", msg);
+    if (n < 0 || (size_t)n >= bufsz)
+        return HUSH_ERR_FULL;
+    if (out_written)
+        *out_written = (size_t)n;
+    return HUSH_OK;
+}
+
+hush_status_t hush_proto_format_eose(const char *sub_id, char *out_buf, size_t bufsz,
+                                     size_t *out_written)
+{
+    int n;
+
+    if (sub_id == NULL || out_buf == NULL)
+        return HUSH_ERR_ARG;
+    n = snprintf(out_buf, bufsz, "[\"EOSE\",\"%s\"]\n", sub_id);
     if (n < 0 || (size_t)n >= bufsz)
         return HUSH_ERR_FULL;
     if (out_written)

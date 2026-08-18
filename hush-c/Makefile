@@ -30,6 +30,11 @@ libhush.a: $(OBJS)
 hush-relay: src/hush_relay_main.o libhush.a
 	$(CC) -o $@ $^ $(LDFLAGS)
 
+src/hush_ui_html.h: demo/index.html ../scripts/embed-ui.sh
+	sh ../scripts/embed-ui.sh demo/index.html > $@
+
+src/hush_http.o: src/hush_ui_html.h
+
 src/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -41,10 +46,10 @@ test: $(TEST_BINS)
 	@echo "ALL TESTS PASSED"
 
 clean:
-	rm -f $(OBJS) libhush.a hush-relay $(TEST_BINS) src/hush_relay_main.o
+	rm -f $(OBJS) libhush.a hush-relay $(TEST_BINS) src/hush_relay_main.o src/hush_ui_html.h
 
 demo:
-	@echo "See hush-c/demo/ for Tailwind UI demo (static)"
+	@echo "See hush-c/demo/ for the chat UI (also served by hush-relay on /)"
 
 install: all
 	install -d $(DESTDIR)$(BINDIR)

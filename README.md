@@ -22,9 +22,10 @@ Optimized for the Goose AI agent. All development uses worktrees **inside this r
 - CLOSE
 - Simple TCP newline-delimited JSON protocol (MVP; WebSocket adapter later)
 - `poll(2)` single-threaded server
+- Same port also serves the chat UI over HTTP (`GET /`)
 - Strict build: `-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow`
 
-A small TailwindCSS demo UI is in `hush-c/demo/index.html`.
+The chat UI is served by the relay itself (also kept at `hush-c/demo/index.html`).
 
 Importing identities and channels from the predecessor project? See [IMPORT.md](IMPORT.md).
 
@@ -53,8 +54,18 @@ make test
 ## Run
 
 ```bash
-./hush-relay 10555
+./hush-relay          # default port 10555; opens the chat UI if a display is available
+./hush-relay --open   # same, and always open the browser (used by the .desktop launcher)
+./hush-relay --no-open 10555
 ```
+
+The process is a server: it prints the listen URL and stays running until Ctrl+C.
+Open `http://127.0.0.1:10555/` for the chat UI. The same port also speaks the
+newline-delimited Nostr JSON protocol (see `.goose/skills/relay/SKILL.md`).
+
+The application launcher entry (`hush-relay.desktop`) starts the relay **without**
+a terminal window and opens the UI in your default browser. Clicking the icon
+again while the relay is already running just reopens the UI.
 
 ## Installation
 
