@@ -1,0 +1,25 @@
+Source: hush
+Section: net
+Priority: optional
+Maintainer: Hush Contributors <coldcanuk@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13), dh-sequence-none
+Standards-Version: 4.6.0
+Rules-Requires-Root: no
+
+Package: hush-relay
+Architecture: any
+Depends: ${misc:Depends}
+Description: Lightweight, legible C11 Nostr relay core
+ Hush is a minimal, self-hosted Nostr relay written in strict C11.
+ .
+ Features:
+  * NIP-01 basics for chat (kinds 0, 1, 5, 7, 9)
+  * EVENT ingestion with bounded in-memory store
+  * REQ with filter matching (kinds, authors, ids, since/until, #h)
+  * CLOSE command
+  * Simple TCP newline-delimited JSON protocol
+  * poll(2) single-threaded server
+  * Strict build: -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow
+ .
+ Optimized for the Goose AI agent. Designed for set-and-forget
+ self-hosting and embedding.
