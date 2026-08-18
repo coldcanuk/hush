@@ -1,5 +1,6 @@
 /* hush_http.c: owns HTTP status/events/PWA UI serving for hush-relay. */
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +23,7 @@ static uint16_t g_listen_port;
 static int g_client_count;
 static hush_launch_t *g_launch;
 static hush_turn_t *g_turn;
+static char g_context_text[HUSH_ROSTER_CONTEXT_MAX][HUSH_ROSTER_CONTEXT_BYTES];
 
 static const char *hush_find_headers_end(const char *buf, size_t len);
 static long hush_http_content_length(const char *buf, size_t hlen);
@@ -47,6 +49,13 @@ static hush_status_t hush_http_serve_profile(int fd, const char *body);
 static hush_status_t hush_http_serve_member(int fd, const char *body);
 static hush_status_t hush_http_serve_agent(int fd, const char *body,
                                            hush_store_t *store);
+static hush_status_t hush_http_delete_agent(int fd, const char *body);
+static hush_status_t hush_http_fill_agent_context(hush_roster_agent_in_t *in,
+                                                  const char *body);
+static hush_status_t hush_http_read_context_slot(hush_roster_context_in_t *slot,
+                                                 const char *body, size_t idx);
+static hush_status_t hush_http_read_legacy_context(hush_roster_context_in_t *slot,
+                                                   const char *body);
 static hush_status_t hush_http_serve_vibe(int fd, const char *body,
                                           hush_store_t *store);
 static hush_status_t hush_http_serve_channel(int fd, const char *body);
@@ -592,31 +601,104 @@ static hush_status_t hush_http_serve_agent(int fd, const char *body,
                                            hush_store_t *store)
 {
     hush_roster_agent_in_t in;
-    char mime[HUSH_ROSTER_NAME_MAX];
-    char fname[HUSH_ROSTER_NAME_MAX];
-    static char text[HUSH_ROSTER_CONTEXT_BYTES];
+    char action[16];
+    hush_status_t st;
 
     if (g_launch == NULL || body == NULL || store == NULL)
         return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    if (hush_json_field(body, "action", action, sizeof(action)) &&
+        strcmp(action, "delete") == 0)
+        return hush_http_delete_agent(fd, body);
     memset(&in, 0, sizeof(in));
     if (!hush_json_field(body, "name", in.name, sizeof(in.name)))
         return hush_http_reply_session(fd, HUSH_ERR_PARSE);
-    (void)hush_json_field(body, "system_prompt", in.prompt, sizeof(in.prompt));
+    if (!hush_json_field(body, "system_prompt", in.prompt, sizeof(in.prompt)))
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    if (!hush_json_field(body, "provider", in.provider, sizeof(in.provider)))
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
     (void)hush_json_field(body, "picture", in.picture, sizeof(in.picture));
-    if (hush_json_field(body, "context_name", fname, sizeof(fname))) {
-        if (!hush_json_field(body, "context_mime", mime, sizeof(mime)))
-            memcpy(mime, HUSH_ROSTER_MIME_PLAIN, sizeof(HUSH_ROSTER_MIME_PLAIN));
-        if (!hush_json_field(body, "context_text", text, sizeof(text)))
-            text[0] = '\0';
-        memcpy(in.context[0].name, fname, sizeof(in.context[0].name));
-        memcpy(in.context[0].mime, mime, sizeof(in.context[0].mime));
-        in.context[0].text = text;
-        in.context[0].bytes = strlen(text);
-        in.ncontext = 1;
-    }
+    st = hush_http_fill_agent_context(&in, body);
+    if (st != HUSH_OK)
+        return hush_http_reply_session(fd, st);
     return hush_http_reply_session(fd,
                                    hush_launch_add_agent(g_launch, store, &in,
                                                          hush_http_want_save_pass(body)));
+}
+
+static hush_status_t hush_http_delete_agent(int fd, const char *body)
+{
+    char slug[HUSH_ROSTER_NAME_MAX];
+
+    if (!hush_json_field(body, "slug", slug, sizeof(slug)))
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    return hush_http_reply_session(fd, hush_launch_remove_agent(g_launch, slug));
+}
+
+static hush_status_t hush_http_fill_agent_context(hush_roster_agent_in_t *in,
+                                                  const char *body)
+{
+    size_t i;
+    hush_status_t st;
+
+    assert(in != NULL);
+    assert(body != NULL);
+    for (i = 0; i < (size_t)HUSH_ROSTER_CONTEXT_MAX; ++i) {
+        st = hush_http_read_context_slot(&in->context[in->ncontext], body, i);
+        if (st == HUSH_ERR_NOT_FOUND)
+            continue;
+        if (st != HUSH_OK)
+            return st;
+        in->ncontext++;
+    }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_http_read_context_slot(hush_roster_context_in_t *slot,
+                                                 const char *body, size_t idx)
+{
+    char key[24];
+
+    assert(slot != NULL);
+    assert(body != NULL);
+    assert(idx < (size_t)HUSH_ROSTER_CONTEXT_MAX);
+    if (snprintf(key, sizeof(key), "context_name_%zu", idx) >= (int)sizeof(key))
+        return HUSH_ERR_FULL;
+    if (!hush_json_field(body, key, slot->name, sizeof(slot->name))) {
+        if (idx == 0)
+            return hush_http_read_legacy_context(slot, body);
+        return HUSH_ERR_NOT_FOUND;
+    }
+    if (snprintf(key, sizeof(key), "context_mime_%zu", idx) >= (int)sizeof(key))
+        return HUSH_ERR_FULL;
+    if (!hush_json_field(body, key, slot->mime, sizeof(slot->mime)))
+        memcpy(slot->mime, HUSH_ROSTER_MIME_PLAIN,
+               sizeof(HUSH_ROSTER_MIME_PLAIN));
+    if (snprintf(key, sizeof(key), "context_text_%zu", idx) >= (int)sizeof(key))
+        return HUSH_ERR_FULL;
+    if (!hush_json_field(body, key, g_context_text[idx],
+                         sizeof(g_context_text[idx])))
+        g_context_text[idx][0] = '\0';
+    slot->text = g_context_text[idx];
+    slot->bytes = strlen(g_context_text[idx]);
+    return HUSH_OK;
+}
+
+static hush_status_t hush_http_read_legacy_context(hush_roster_context_in_t *slot,
+                                                   const char *body)
+{
+    assert(slot != NULL);
+    assert(body != NULL);
+    if (!hush_json_field(body, "context_name", slot->name, sizeof(slot->name)))
+        return HUSH_ERR_NOT_FOUND;
+    if (!hush_json_field(body, "context_mime", slot->mime, sizeof(slot->mime)))
+        memcpy(slot->mime, HUSH_ROSTER_MIME_PLAIN,
+               sizeof(HUSH_ROSTER_MIME_PLAIN));
+    if (!hush_json_field(body, "context_text", g_context_text[0],
+                         sizeof(g_context_text[0])))
+        g_context_text[0][0] = '\0';
+    slot->text = g_context_text[0];
+    slot->bytes = strlen(g_context_text[0]);
+    return HUSH_OK;
 }
 
 static hush_status_t hush_http_serve_vibe(int fd, const char *body,

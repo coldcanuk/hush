@@ -38,6 +38,12 @@ echo "$html" | grep -q 'data-theme=\"dracula\"' || fail "HTML missing dracula th
 echo "$html" | grep -q 'action: \"logout\"' || fail "HTML missing server logout"
 echo "$html" | grep -q 'Raise a robot' || fail "HTML missing raise-agent"
 echo "$html" | grep -q 'Invite human' || fail "HTML missing invite-human"
+echo "$html" | grep -q 'id="robot-list"' || fail "HTML missing robot list"
+echo "$html" | grep -q 'paintRobots' || fail "HTML missing robot cards"
+echo "$html" | grep -q 'System Prompt' || fail "HTML missing system prompt"
+echo "$html" | grep -q 'agent-provider' || fail "HTML missing AI provider"
+echo "$html" | grep -q 'Delete this robot' || fail "HTML missing delete robot"
+echo "$html" | grep -q 'CONTEXT_MAX = 3' || fail "HTML missing 3-file cap"
 echo "$html" | grep -q 'isContextFile' || fail "HTML missing MIME check"
 echo "$html" | grep -q 'Checked to save password to Unix Password Manager' || fail "pass checkbox copy"
 echo "$html" | grep -q 'pass show hush/identity/nsec' || fail "retrieve CLI"
@@ -86,12 +92,21 @@ mem=$(curl -sf -X POST "http://127.0.0.1:${port}/api/member" \
 echo "$mem" | grep -q 'Alice' || fail "member add"
 ag=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
-    -d '{"name":"Sentry","system_prompt":"Watch.","save_pass":false}')
+    -d '{"name":"Sentry","system_prompt":"Watch.","provider":"goose","save_pass":false}')
 echo "$ag" | grep -q '"slug":"sentry"' || fail "agent create"
+echo "$ag" | grep -q '"provider":"goose"' || fail "agent provider"
+noprov=$(curl -s -o /tmp/hush-noprov-agent -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"name":"Ghost","system_prompt":"Watch.","save_pass":false}')
+test "$noprov" != "200" || fail "provider required"
 bad=$(curl -s -o /tmp/hush-bad-agent -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
-    -d '{"name":"Badfile","context_name":"x.pdf","context_mime":"application/pdf","context_text":"%PDF"}')
+    -d '{"name":"Badfile","system_prompt":"Watch.","provider":"goose","context_name":"x.pdf","context_mime":"application/pdf","context_text":"%PDF"}')
 test "$bad" != "200" || fail "pdf context must be rejected"
+gone=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"delete","slug":"sentry"}')
+echo "$gone" | grep -q '"slug":"sentry"' && fail "deleted agent still listed"
 logged=$(curl -sf -X POST "http://127.0.0.1:${port}/api/identity" \
     -H 'Content-Type: application/json' \
     -d '{"action":"logout"}')

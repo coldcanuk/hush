@@ -15,7 +15,8 @@ enum {
     HUSH_ROSTER_KIND_NOTE = 1,
     HUSH_ROSTER_ID_WIDTH = 16,
     HUSH_ROSTER_SLUG_FALLBACK = 'a',
-    HUSH_ROSTER_THEME_COUNT = 7
+    HUSH_ROSTER_THEME_COUNT = 7,
+    HUSH_ROSTER_PROVIDER_COUNT = 8
 };
 
 #define HUSH_ROSTER_CHAN_AGENTS "agents"
@@ -28,6 +29,17 @@ static const char *const hush_roster_themes[HUSH_ROSTER_THEME_COUNT] = {
     "desert",
     "monochrome",
     "christmas"
+};
+
+static const char *const hush_roster_providers[HUSH_ROSTER_PROVIDER_COUNT] = {
+    HUSH_ROSTER_PROVIDER_GOOSE,
+    HUSH_ROSTER_PROVIDER_GROK_BUILD,
+    HUSH_ROSTER_PROVIDER_CODEX,
+    HUSH_ROSTER_PROVIDER_CLINE,
+    HUSH_ROSTER_PROVIDER_GEMINI,
+    HUSH_ROSTER_PROVIDER_XAI,
+    HUSH_ROSTER_PROVIDER_OPENAI,
+    HUSH_ROSTER_PROVIDER_ANTHROPIC
 };
 
 /* Copies trimmed text into dst. Empty becomes fallback (may be ""). */
@@ -93,10 +105,20 @@ static hush_status_t hush_roster_format_members(const hush_roster_t *roster,
                                                 char *out, size_t outsz,
                                                 size_t *off);
 
-/* Copies name, slug, prompt, picture from in. */
+/* Copies name, slug, prompt, provider, picture from in. */
 static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
                                             hush_roster_agent_t *agent,
                                             const hush_roster_agent_in_t *in);
+
+/* Writes a session-safe prompt preview into dst. */
+static void hush_roster_preview_prompt(char *dst, size_t dstsz,
+                                       const char *prompt);
+
+/* True when slug is Payne's reserved organizer slug. */
+static int hush_roster_is_payne_slug(const char *slug);
+
+/* Compacts the agent table after removing index. */
+static void hush_roster_compact_agents(hush_roster_t *roster, size_t idx);
 
 /* Copies context slots after MIME checks. */
 static hush_status_t hush_roster_fill_context(hush_roster_agent_t *agent,
@@ -145,6 +167,19 @@ int hush_roster_is_theme(const char *theme)
         return 0;
     for (i = 0; i < (size_t)HUSH_ROSTER_THEME_COUNT; ++i) {
         if (strcmp(theme, hush_roster_themes[i]) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+int hush_roster_is_provider(const char *provider)
+{
+    size_t i;
+
+    if (provider == NULL || provider[0] == '\0')
+        return 0;
+    for (i = 0; i < (size_t)HUSH_ROSTER_PROVIDER_COUNT; ++i) {
+        if (strcmp(provider, hush_roster_providers[i]) == 0)
             return 1;
     }
     return 0;
@@ -235,6 +270,23 @@ hush_status_t hush_roster_add_agent(hush_roster_t *roster,
     return HUSH_OK;
 }
 
+hush_status_t hush_roster_remove_agent(hush_roster_t *roster, const char *slug)
+{
+    size_t i;
+
+    if (roster == NULL || slug == NULL || slug[0] == '\0')
+        return HUSH_ERR_ARG;
+    if (hush_roster_is_payne_slug(slug))
+        return HUSH_ERR_DENIED;
+    for (i = 0; i < roster->nagents; ++i) {
+        if (strcmp(roster->agents[i].slug, slug) != 0)
+            continue;
+        hush_roster_compact_agents(roster, i);
+        return HUSH_OK;
+    }
+    return HUSH_ERR_NOT_FOUND;
+}
+
 hush_status_t hush_roster_format_json(const hush_roster_t *roster,
                                       char *out, size_t outsz,
                                       size_t *out_len)
@@ -265,6 +317,12 @@ static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
     if (hush_roster_has_agent_slug(roster, agent->slug))
         return HUSH_ERR_PARSE;
     hush_roster_copy_text(agent->prompt, sizeof(agent->prompt), in->prompt, "");
+    if (agent->prompt[0] == '\0')
+        return HUSH_ERR_PARSE;
+    hush_roster_copy_text(agent->provider, sizeof(agent->provider),
+                          in->provider, "");
+    if (!hush_roster_is_provider(agent->provider))
+        return HUSH_ERR_PARSE;
     hush_roster_copy_text(agent->picture, sizeof(agent->picture),
                           in->picture, "");
     return HUSH_OK;
@@ -330,6 +388,8 @@ static hush_status_t hush_roster_format_agents(const hush_roster_t *roster,
                                                size_t *off)
 {
     char esc[HUSH_ROSTER_NAME_MAX * 2];
+    char preview[HUSH_ROSTER_PROMPT_PREVIEW + 1];
+    char esc_prompt[HUSH_ROSTER_PROMPT_PREVIEW * 2];
     size_t i;
     int n;
 
@@ -338,12 +398,17 @@ static hush_status_t hush_roster_format_agents(const hush_roster_t *roster,
     assert(off != NULL);
     for (i = 0; i < roster->nagents; ++i) {
         hush_roster_json_escape(roster->agents[i].name, esc, sizeof(esc));
+        hush_roster_preview_prompt(preview, sizeof(preview),
+                                   roster->agents[i].prompt);
+        hush_roster_json_escape(preview, esc_prompt, sizeof(esc_prompt));
         n = snprintf(out + *off, outsz - *off,
                      "%s{\"name\":\"%s\",\"slug\":\"%s\",\"npub\":\"%s\","
-                     "\"ncontext\":%zu}",
+                     "\"provider\":\"%s\",\"prompt\":\"%s\",\"ncontext\":%zu}",
                      (i == 0) ? "" : ",",
                      esc, roster->agents[i].slug,
                      roster->agents[i].id.npub,
+                     roster->agents[i].provider,
+                     esc_prompt,
                      roster->agents[i].ncontext);
         if (n < 0 || *off + (size_t)n >= outsz)
             return HUSH_ERR_FULL;
@@ -650,4 +715,42 @@ static void hush_roster_hex_encode(char *out65, const unsigned char *raw)
         out65[i * 2 + 1] = hex[raw[i] & 0x0f];
     }
     out65[HUSH_IDENTITY_HEX_LEN] = '\0';
+}
+
+static void hush_roster_preview_prompt(char *dst, size_t dstsz,
+                                       const char *prompt)
+{
+    size_t i = 0;
+    size_t cap;
+
+    assert(dst != NULL);
+    assert(dstsz > 0);
+    if (prompt == NULL)
+        prompt = "";
+    cap = dstsz - 1;
+    if (cap > (size_t)HUSH_ROSTER_PROMPT_PREVIEW)
+        cap = (size_t)HUSH_ROSTER_PROMPT_PREVIEW;
+    while (prompt[i] != '\0' && i < cap) {
+        dst[i] = prompt[i];
+        i++;
+    }
+    dst[i] = '\0';
+}
+
+static int hush_roster_is_payne_slug(const char *slug)
+{
+    assert(slug != NULL);
+    return strcmp(slug, HUSH_ROSTER_PAYNE_SLUG) == 0;
+}
+
+static void hush_roster_compact_agents(hush_roster_t *roster, size_t idx)
+{
+    size_t i;
+
+    assert(roster != NULL);
+    assert(idx < roster->nagents);
+    for (i = idx; i + 1 < roster->nagents; ++i)
+        roster->agents[i] = roster->agents[i + 1];
+    memset(&roster->agents[roster->nagents - 1], 0, sizeof(roster->agents[0]));
+    roster->nagents--;
 }

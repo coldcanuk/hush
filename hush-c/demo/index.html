@@ -186,6 +186,65 @@
       font-size: 0.78rem; color: var(--muted); line-height: 1.45;
     }
     .agent strong { color: var(--accent); display: block; margin-bottom: 4px; }
+    .robots { display: flex; flex-direction: column; gap: 8px; padding: 0 8px; }
+    .robot-card {
+      border: 1px solid var(--accent-dim); border-radius: 10px; background: var(--bg);
+      overflow: hidden;
+    }
+    .robot-head {
+      display: flex; align-items: center; gap: 8px; width: 100%;
+      background: transparent; color: inherit; border: 0; padding: 8px;
+      text-align: left; font: inherit;
+    }
+    .robot-head:hover { background: var(--surface-2); }
+    .robot-copy { flex: 1; min-width: 0; }
+    .robot-copy strong {
+      display: block; color: var(--accent); font-size: 0.82rem; margin: 0;
+    }
+    .robot-copy span { display: block; color: var(--faint); font-size: 0.7rem; }
+    .toggle {
+      flex: 0 0 auto; width: 44px; height: 44px; border-radius: 10px;
+      border: 1px solid var(--line); background: var(--surface-2); color: var(--fg);
+      font-size: 1.25rem; font-weight: 650; line-height: 1;
+    }
+    .robot-body {
+      display: none; padding: 0 10px 10px; font-size: 0.75rem; color: var(--muted);
+      line-height: 1.45;
+    }
+    .robot-card.open .robot-body { display: block; }
+    .robot-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .pill-row { display: flex; align-items: flex-start; gap: 8px; }
+    .pill-row input[type="text"], .pill-row textarea { flex: 1; min-width: 0; }
+    .icon-plus, .icon-minus, .icon-edit {
+      flex: 0 0 auto; width: 44px; height: 44px; border-radius: 10px;
+      border: 1px solid var(--line); background: var(--surface-2); color: var(--fg);
+      font-size: 1.1rem; font-weight: 650;
+    }
+    .pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; min-height: 0; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+      background: var(--accent-dim); color: var(--fg); border-radius: 999px;
+      padding: 6px 10px; font-size: 0.78rem;
+    }
+    .pill em { font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14rem; }
+    .pill button {
+      background: none; border: 0; color: inherit; padding: 0; font: inherit; line-height: 1;
+    }
+    .providers { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0 12px; }
+    .providers label {
+      display: flex; align-items: center; gap: 6px; border: 1px solid var(--line);
+      border-radius: 10px; padding: 8px; font-size: 0.78rem; color: var(--muted); cursor: pointer;
+    }
+    .providers input { margin: 0; }
+    .btn.danger {
+      background: var(--warn); color: #fff; width: 100%; margin-top: 8px;
+    }
+    .btn.danger:disabled { opacity: 0.4; }
+    .panel input[type="text"], .panel textarea, .panel input[type="email"] {
+      width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+      border-radius: 10px; padding: 10px 12px; font: inherit; outline: none;
+    }
+    .panel textarea { min-height: 88px; resize: vertical; }
     .iconbtn {
       background: var(--bg); color: var(--fg); border: 1px solid var(--line);
       border-radius: 999px; padding: 6px 10px; font-size: 0.78rem; font-weight: 650;
@@ -274,10 +333,7 @@
         <button class="mini" id="raise-agent" type="button">Raise a robot</button>
         <button class="mini" id="invite-human" type="button">Invite human</button>
       </div>
-      <div class="agent" id="payne-card">
-        <strong>Sgt Major Payne</strong>
-        First agent on deck. He finds the right robot — or raises one.
-      </div>
+      <div class="robots" id="robot-list" aria-label="Robots"></div>
       <div class="stats" id="stats">waiting for relay</div>
     </nav>
     <main>
@@ -369,17 +425,41 @@
   </div>
   <div class="drawer" id="agent-drawer" role="dialog" aria-label="Raise a robot">
     <div class="panel">
-      <h2>Raise a robot</h2>
+      <h2 id="agent-title">Raise a robot</h2>
       <p class="help">Sgt Major Payne will walk you through it.</p>
       <label for="agent-name">Name</label>
-      <input id="agent-name" type="text" maxlength="48" placeholder="Sentry">
-      <p class="help">State the robot’s name.</p>
-      <label for="agent-prompt">Standing orders</label>
-      <textarea id="agent-prompt" maxlength="1000" placeholder="Watch the perimeter."></textarea>
-      <p class="help">Write its standing orders.</p>
-      <label for="agent-file">Context file</label>
-      <input id="agent-file" type="file" accept=".txt,.md,text/plain,text/markdown">
-      <p class="help">Attach only plain text or Markdown. I will refuse the rest.</p>
+      <div class="pill-row">
+        <input id="agent-name" type="text" maxlength="48" placeholder="Sentry">
+        <button class="icon-plus" id="agent-name-add" type="button" aria-label="Add name">+</button>
+      </div>
+      <div class="pills" id="agent-name-pill"></div>
+      <p class="help">State the robot’s name. Leave blank to auto-generate one.</p>
+      <label for="agent-prompt">System Prompt</label>
+      <div class="pill-row">
+        <textarea id="agent-prompt" maxlength="1000" placeholder="Watch the perimeter."></textarea>
+        <button class="icon-plus" id="agent-prompt-add" type="button" aria-label="Add system prompt">+</button>
+      </div>
+      <div class="pills" id="agent-prompt-pill"></div>
+      <p class="help">Write its system prompt. Required.</p>
+      <label>Context files</label>
+      <div class="pill-row">
+        <input id="agent-file" type="file" accept=".txt,.md,text/plain,text/markdown" hidden>
+        <button class="icon-plus" id="agent-file-add" type="button" aria-label="Add context file">+</button>
+        <button class="icon-minus" id="agent-file-del" type="button" aria-label="Remove selected context file">−</button>
+      </div>
+      <div class="pills" id="agent-files"></div>
+      <p class="help">Maximum 3 files. Plaintext and Markdown only.</p>
+      <p class="help">AI provider (required)</p>
+      <div class="providers" id="agent-providers">
+        <label><input type="radio" name="agent-provider" value="goose"> Goose</label>
+        <label><input type="radio" name="agent-provider" value="grok-build"> Grok Build</label>
+        <label><input type="radio" name="agent-provider" value="codex"> Codex</label>
+        <label><input type="radio" name="agent-provider" value="cline"> Cline</label>
+        <label><input type="radio" name="agent-provider" value="gemini-api"> Gemini API</label>
+        <label><input type="radio" name="agent-provider" value="xai-api"> xAI API</label>
+        <label><input type="radio" name="agent-provider" value="openai-api"> OpenAI API</label>
+        <label><input type="radio" name="agent-provider" value="anthropic-api"> Anthropic API</label>
+      </div>
       <label class="passbox"><input id="agent-pass" type="checkbox" checked>
         Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
       <p class="warn" id="agent-err"></p>
@@ -387,6 +467,7 @@
         <button class="btn" id="agent-save" type="button">Raise this robot</button>
         <button class="btn ghost" id="agent-close" type="button">Close</button>
       </div>
+      <button class="btn danger" id="agent-delete" type="button" disabled>Delete this robot</button>
     </div>
   </div>
   <div class="drawer" id="member-drawer" role="dialog" aria-label="Invite human">
@@ -416,6 +497,23 @@
     let keyRevealed = false;
     let savePass = true;
     let gateErr = "";
+    const PROVIDERS = {
+      "goose": "Goose",
+      "grok-build": "Grok Build",
+      "codex": "Codex",
+      "cline": "Cline",
+      "gemini-api": "Gemini API",
+      "xai-api": "xAI API",
+      "openai-api": "OpenAI API",
+      "anthropic-api": "Anthropic API"
+    };
+    const CONTEXT_MAX = 3;
+    let robotOpen = {};
+    let draftName = "";
+    let draftPrompt = "";
+    let draftFiles = [];
+    let draftFileSel = -1;
+    let editSlug = "";
 
     function $(id) { return document.getElementById(id); }
 
@@ -482,7 +580,7 @@
       }
       lastGateHtml = "";
       paintChannels();
-      paintPayne();
+      paintRobots();
     }
 
     function stepBar(n) {
@@ -684,19 +782,85 @@
       $("room").textContent = "#" + channel;
     }
 
-    function paintPayne() {
+    function providerLabel(id) {
+      return PROVIDERS[id] || id || "no provider";
+    }
+
+    function robotModels() {
       const p = session.payne || {};
-      const agents = session.agents || [];
-      let extra = "";
-      agents.forEach((a) => {
-        extra += "<div class=\"help\">" + esc(a.name || a.slug) +
-          (a.npub ? " · " + esc(a.npub.slice(0, 12)) + "…" : "") + "</div>";
+      const list = [{
+        slug: "sgt-major-payne",
+        name: p.name || "Sgt Major Payne",
+        about: p.about || "Finds the right robot, or raises one.",
+        npub: p.npub || "",
+        provider: "goose",
+        prompt: p.about || "",
+        ncontext: 0,
+        locked: true
+      }];
+      (session.agents || []).forEach((a) => {
+        if (!a || a.slug === "sgt-major-payne") return;
+        list.push({
+          slug: a.slug,
+          name: a.name || a.slug,
+          about: a.prompt || "",
+          npub: a.npub || "",
+          provider: a.provider || "",
+          prompt: a.prompt || "",
+          ncontext: a.ncontext || 0,
+          locked: false
+        });
       });
-      $("payne-card").innerHTML =
-        "<strong>" + esc(p.name || "Sgt Major Payne") + "</strong>" +
-        esc(p.about || "Finds the right robot, or raises one.") +
-        (p.npub ? "<div class=\"help\">" + esc(p.npub.slice(0, 16)) + "…</div>" : "") +
-        extra;
+      return list;
+    }
+
+    function paintRobots() {
+      const box = $("robot-list");
+      if (!box) return;
+      box.innerHTML = "<div class=\"lbl\">Robots</div>";
+      robotModels().forEach((bot) => {
+        const open = !!robotOpen[bot.slug];
+        const card = document.createElement("article");
+        card.className = "robot-card" + (open ? " open" : "");
+        card.dataset.slug = bot.slug;
+        const head = document.createElement("div");
+        head.className = "robot-head";
+        head.innerHTML =
+          "<div class=\"robot-copy\"><strong>" + esc(bot.name) + "</strong>" +
+          "<span>" + esc(providerLabel(bot.provider)) + "</span></div>";
+        const tog = document.createElement("button");
+        tog.className = "toggle";
+        tog.type = "button";
+        tog.setAttribute("aria-expanded", open ? "true" : "false");
+        tog.setAttribute("aria-label", open ? "Collapse " + bot.name : "Expand " + bot.name);
+        tog.textContent = open ? "−" : "+";
+        tog.addEventListener("click", () => {
+          robotOpen[bot.slug] = !robotOpen[bot.slug];
+          paintRobots();
+        });
+        head.appendChild(tog);
+        card.appendChild(head);
+        const body = document.createElement("div");
+        body.className = "robot-body";
+        body.innerHTML =
+          "<p>" + esc(bot.about || "No system prompt yet.") + "</p>" +
+          (bot.npub ? "<p class=\"help\">" + esc(bot.npub.slice(0, 16)) + "…</p>" : "") +
+          "<p class=\"help\">" + String(bot.ncontext) + " context file" +
+          (bot.ncontext === 1 ? "" : "s") + "</p>";
+        const actions = document.createElement("div");
+        actions.className = "robot-actions";
+        if (!bot.locked) {
+          const edit = document.createElement("button");
+          edit.className = "mini";
+          edit.type = "button";
+          edit.textContent = "Edit";
+          edit.addEventListener("click", () => openAgentDrawer(bot));
+          actions.appendChild(edit);
+        }
+        body.appendChild(actions);
+        card.appendChild(body);
+        box.appendChild(card);
+      });
     }
 
     $("add-chan").addEventListener("click", async () => {
@@ -714,11 +878,176 @@
       return /\.(txt|md|markdown)$/i.test(name);
     }
 
-    $("raise-agent").addEventListener("click", () => {
-      $("agent-err").textContent = "";
+    function resetAgentDraft() {
+      draftName = "";
+      draftPrompt = "";
+      draftFiles = [];
+      draftFileSel = -1;
+      editSlug = "";
+      if ($("agent-name")) $("agent-name").value = "";
+      if ($("agent-prompt")) $("agent-prompt").value = "";
+      if ($("agent-file")) $("agent-file").value = "";
+      document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
+        el.checked = false;
+      });
+      if ($("agent-title")) $("agent-title").textContent = "Raise a robot";
+      if ($("agent-save")) $("agent-save").textContent = "Raise this robot";
+      if ($("agent-delete")) $("agent-delete").disabled = true;
+      if ($("agent-err")) $("agent-err").textContent = "";
+      paintNamePill();
+      paintPromptPill();
+      paintFilePills();
+    }
+
+    function paintNamePill() {
+      const box = $("agent-name-pill");
+      if (!box) return;
+      if (!draftName) { box.innerHTML = ""; return; }
+      box.innerHTML = "<span class=\"pill\"><em>" + esc(draftName) +
+        "</em><button type=\"button\" id=\"agent-name-edit\" aria-label=\"Edit name\">✎</button></span>";
+      $("agent-name-edit").addEventListener("click", () => {
+        $("agent-name").value = draftName;
+        draftName = "";
+        paintNamePill();
+        $("agent-name").focus();
+      });
+    }
+
+    function paintPromptPill() {
+      const box = $("agent-prompt-pill");
+      if (!box) return;
+      if (!draftPrompt) { box.innerHTML = ""; return; }
+      const short = draftPrompt.length > 48 ? draftPrompt.slice(0, 48) + "…" : draftPrompt;
+      box.innerHTML = "<span class=\"pill\"><em>" + esc(short) +
+        "</em><button type=\"button\" id=\"agent-prompt-edit\" aria-label=\"Edit system prompt\">✎</button>" +
+        "<button type=\"button\" id=\"agent-prompt-del\" aria-label=\"Delete system prompt\">−</button></span>";
+      $("agent-prompt-edit").addEventListener("click", () => {
+        $("agent-prompt").value = draftPrompt;
+        draftPrompt = "";
+        paintPromptPill();
+        $("agent-prompt").focus();
+      });
+      $("agent-prompt-del").addEventListener("click", () => {
+        draftPrompt = "";
+        $("agent-prompt").value = "";
+        paintPromptPill();
+      });
+    }
+
+    function paintFilePills() {
+      const box = $("agent-files");
+      if (!box) return;
+      box.innerHTML = "";
+      draftFiles.forEach((f, i) => {
+        const pill = document.createElement("span");
+        pill.className = "pill";
+        if (i === draftFileSel) pill.style.outline = "2px solid var(--accent)";
+        const label = document.createElement("em");
+        label.textContent = f.name;
+        const minus = document.createElement("button");
+        minus.type = "button";
+        minus.setAttribute("aria-label", "Remove " + f.name);
+        minus.textContent = "−";
+        minus.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          draftFiles.splice(i, 1);
+          draftFileSel = -1;
+          paintFilePills();
+        });
+        pill.appendChild(label);
+        pill.appendChild(minus);
+        pill.addEventListener("click", () => {
+          draftFileSel = i;
+          paintFilePills();
+        });
+        box.appendChild(pill);
+      });
+    }
+
+    function chosenProvider() {
+      const el = document.querySelector("input[name='agent-provider']:checked");
+      return el ? el.value : "";
+    }
+
+    function autoRobotName() {
+      const hex = Date.now().toString(16).slice(-4);
+      return "Robot-" + hex;
+    }
+
+    function openAgentDrawer(bot) {
+      resetAgentDraft();
+      if (bot && bot.slug && !bot.locked) {
+        editSlug = bot.slug;
+        draftName = bot.name || "";
+        draftPrompt = bot.prompt || "";
+        $("agent-title").textContent = "Edit robot";
+        $("agent-save").textContent = "Save this robot";
+        $("agent-delete").disabled = false;
+        document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
+          el.checked = el.value === bot.provider;
+        });
+        paintNamePill();
+        paintPromptPill();
+      }
       $("agent-drawer").classList.add("show");
-    });
+    }
+
+    $("raise-agent").addEventListener("click", () => openAgentDrawer(null));
     $("agent-close").addEventListener("click", () => $("agent-drawer").classList.remove("show"));
+    $("agent-name-add").addEventListener("click", () => {
+      const name = ($("agent-name").value || "").trim();
+      if (!name) { $("agent-err").textContent = "State the robot’s name."; return; }
+      draftName = name;
+      $("agent-name").value = "";
+      $("agent-err").textContent = "";
+      paintNamePill();
+    });
+    $("agent-prompt-add").addEventListener("click", () => {
+      const prompt = ($("agent-prompt").value || "").trim();
+      if (!prompt) { $("agent-err").textContent = "Write its system prompt."; return; }
+      draftPrompt = prompt;
+      $("agent-prompt").value = "";
+      $("agent-err").textContent = "";
+      paintPromptPill();
+    });
+    $("agent-file-add").addEventListener("click", () => {
+      if (draftFiles.length >= CONTEXT_MAX) {
+        $("agent-err").textContent = "Maximum 3 context files.";
+        return;
+      }
+      $("agent-file").click();
+    });
+    $("agent-file").addEventListener("change", async () => {
+      const file = $("agent-file").files && $("agent-file").files[0];
+      $("agent-file").value = "";
+      if (!file) return;
+      if (draftFiles.length >= CONTEXT_MAX) {
+        $("agent-err").textContent = "Maximum 3 context files.";
+        return;
+      }
+      if (!isContextFile(file)) {
+        $("agent-err").textContent = "Only plaintext and Markdown.";
+        return;
+      }
+      const text = await file.text();
+      draftFiles.push({
+        name: file.name,
+        mime: file.type || (/\.md$/i.test(file.name) ? "text/markdown" : "text/plain"),
+        text: text
+      });
+      draftFileSel = draftFiles.length - 1;
+      $("agent-err").textContent = "";
+      paintFilePills();
+    });
+    $("agent-file-del").addEventListener("click", () => {
+      if (draftFileSel < 0 || draftFileSel >= draftFiles.length) {
+        $("agent-err").textContent = "Select a context file to remove.";
+        return;
+      }
+      draftFiles.splice(draftFileSel, 1);
+      draftFileSel = -1;
+      paintFilePills();
+    });
     $("invite-human").addEventListener("click", () => {
       $("member-err").textContent = "";
       $("member-token").textContent = (session.vibe && session.vibe.visibility === "private")
@@ -737,30 +1066,49 @@
       } catch (e) { $("member-err").textContent = "Could not add that human."; }
     });
     $("agent-save").addEventListener("click", async () => {
-      const name = ($("agent-name") && $("agent-name").value || "").trim();
-      const prompt = ($("agent-prompt") && $("agent-prompt").value || "").trim();
+      const typedName = ($("agent-name") && $("agent-name").value || "").trim();
+      const typedPrompt = ($("agent-prompt") && $("agent-prompt").value || "").trim();
+      if (typedName) draftName = typedName;
+      if (typedPrompt) draftPrompt = typedPrompt;
+      const name = draftName || autoRobotName();
+      const prompt = draftPrompt;
+      const provider = chosenProvider();
       const box = $("agent-pass");
-      const file = $("agent-file") && $("agent-file").files && $("agent-file").files[0];
       $("agent-err").textContent = "";
-      if (!name) { $("agent-err").textContent = "State the robot’s name."; return; }
-      if (file && !isContextFile(file)) {
-        $("agent-err").textContent = "Only plaintext and Markdown.";
-        return;
-      }
+      if (!prompt) { $("agent-err").textContent = "Write its system prompt."; return; }
+      if (!provider) { $("agent-err").textContent = "Choose an AI provider."; return; }
       const body = {
         name: name,
         system_prompt: prompt,
+        provider: provider,
         save_pass: !box || box.checked
       };
+      draftFiles.forEach((f, i) => {
+        body["context_name_" + i] = f.name;
+        body["context_mime_" + i] = f.mime;
+        body["context_text_" + i] = f.text;
+      });
       try {
-        if (file) {
-          body.context_name = file.name;
-          body.context_mime = file.type || (/\.md$/i.test(file.name) ? "text/markdown" : "text/plain");
-          body.context_text = await file.text();
-        }
         applySession(await api("/api/agent", body));
         $("agent-drawer").classList.remove("show");
+        resetAgentDraft();
       } catch (e) { $("agent-err").textContent = "Could not raise that robot."; }
+    });
+    $("agent-delete").addEventListener("click", async () => {
+      if (!editSlug) {
+        $("agent-err").textContent = "Raise the robot before you can delete it.";
+        return;
+      }
+      if (editSlug === "sgt-major-payne") {
+        $("agent-err").textContent = "Payne stays on deck.";
+        return;
+      }
+      if (!confirm("Delete this robot?")) return;
+      try {
+        applySession(await api("/api/agent", { action: "delete", slug: editSlug }));
+        $("agent-drawer").classList.remove("show");
+        resetAgentDraft();
+      } catch (e) { $("agent-err").textContent = "Could not delete that robot."; }
     });
     $("add-proj").addEventListener("click", async () => {
       const name = $("new-proj").value.trim();

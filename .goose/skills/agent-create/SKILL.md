@@ -7,12 +7,15 @@ must create an agent with skills on the fly.
 ## Contract
 
 1. Collect:
-   - `name` (required)
-   - `system_prompt` (standing orders)
-   - optional context file: **plaintext or Markdown only**
+   - `name` (optional; empty becomes `Robot-XXXX`)
+   - `system_prompt` (**required**)
+   - `provider` (**required**) — one of:
+     `goose`, `grok-build`, `codex`, `cline`,
+     `gemini-api`, `xai-api`, `openai-api`, `anthropic-api`
+   - optional context files: **plaintext or Markdown only**, max 3
 2. Never put an nsec in chat.
 3. POST JSON to the running relay (default `http://127.0.0.1:10555`).
-4. Confirm from the session `agents[]` entry (`name`, `slug`, `npub`).
+4. Confirm from the session `agents[]` entry (`name`, `slug`, `npub`, `provider`).
 5. Tell the human the retrieve path:
    `pass show hush/agents/<slug>/nsec`
 
@@ -22,7 +25,7 @@ Accepted context: `text/plain`, `text/markdown`, `text/x-markdown`,
 or filename ending `.txt` / `.md` / `.markdown`.
 
 Rejected: PDF, images, HTML, empty MIME with any other extension.
-The server re-checks. Do not bypass the check.
+The server re-checks. Do not bypass the check. Max 3 files.
 
 ## Request
 
@@ -33,14 +36,24 @@ Content-Type: application/json
 {
   "name": "Sentry",
   "system_prompt": "Watch the perimeter.",
+  "provider": "goose",
   "save_pass": true,
-  "context_name": "brief.md",
-  "context_mime": "text/markdown",
-  "context_text": "# stand to"
+  "context_name_0": "brief.md",
+  "context_mime_0": "text/markdown",
+  "context_text_0": "# stand to"
 }
 ```
 
 `save_pass` defaults on. The human must opt out.
+
+## Delete
+
+```
+POST /api/agent
+{ "action": "delete", "slug": "sentry" }
+```
+
+Payne (`sgt-major-payne`) cannot be deleted.
 
 ## Verify
 
@@ -48,11 +61,11 @@ Content-Type: application/json
 curl -s http://127.0.0.1:10555/api/session | grep sentry
 ```
 
-Session lists `{name, slug, npub, ncontext}`. nsec is never returned
-after create.
+Session lists `{name, slug, npub, provider, prompt, ncontext}`. nsec is
+never returned after create.
 
 ## Voice
 
-Payne: “State the robot’s name.” “Write its standing orders.”
-“Attach only plain text or Markdown. I will refuse the rest.”
+Payne: “State the robot’s name.” “Write its system prompt.”
+“Choose an AI provider.” “Attach only plain text or Markdown. I will refuse the rest.”
 “Carry on.”

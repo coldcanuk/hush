@@ -1,7 +1,8 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create
-Version: 2026-08-18 (RDAP M2.1, gb/onboard-profile-agents)
+Version: 2026-08-18 (RDAP M2.1, gb/robot-cards-ux)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
-M2.1 splash spec where they conflict. Quinn + Parker + Payne. No feline.
+M2.1 splash spec and the onboard raise-form notes where they conflict.
+Quinn + Parker + Payne. No feline.
 
 ## Core Principles (Quinn)
 - Cognitive Load Index ≤ 3/10. Gestalt Clarity ≥ 85/100.
@@ -48,8 +49,9 @@ Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
 
 ### 4. Hive
 - Header: hush + vibe name + Install + Profile + Settings + Call.
-- Sidebar: Channels; **Agents** (Payne first); Create channel/project;
-  **Raise a robot**; **Invite human**; **Manage vibe**.
+- Sidebar: Channels; Create channel/project; **Raise a robot**;
+  **Invite human**; **Robots** list (Payne first, then raised agents).
+  Each robot is its own card with a 44px `+`/`-` expand/collapse.
 - Stream + composer unchanged in spirit. Empty: Payne directive.
 
 ### 5. Profile (always reachable)
@@ -87,19 +89,33 @@ Private vibe also shows the join token.
 `POST /api/member {npub, role:"human", name?}`.
 
 ### 9. Raise a robot (agent create)
-Payne walks the fields (one line each):
-- Avatar (same widget as profile).
-- Name. “State the robot’s name.”
-- System prompt textarea. “Write its standing orders.”
-- Context files. `accept=".txt,.md,text/plain,text/markdown"`.
+Payne walks the fields. Each commit-field uses `+` to freeze a pill
+and a pencil to edit it again.
+- Name. Input + `+` → pill + pencil. “State the robot’s name.”
+  Empty on submit → auto-name `Robot-XXXX`.
+- **System Prompt** (required; replaces “standing orders”).
+  Multiline + `+` → pill + pencil + `-` (clears).
+  “Write its system prompt.”
+- Context files. Max **3**. Plaintext and Markdown only.
+  `accept=".txt,.md,text/plain,text/markdown"`.
+  `+` opens the file browser. `-` removes the selected file.
   “Attach only plain text or Markdown. I will refuse the rest.”
+- **AI provider** (required). One of:
+  Goose, Grok Build, Codex, Cline, Gemini API, xAI API,
+  OpenAI API, Anthropic API.
+  Wire ids: `goose`, `grok-build`, `codex`, `cline`,
+  `gemini-api`, `xai-api`, `openai-api`, `anthropic-api`.
 - pass checkbox default-on:
   `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/agents/<slug>/nsec`
 - CTA: **Raise this robot**.
+- Red **Delete this robot** at the bottom. Disabled on a fresh raise.
+  Enabled when editing an existing non-Payne robot. Payne cannot be deleted.
 
-Client rejects other MIME. Server re-checks. Max 4 files, 4096 bytes each.
+Client rejects other MIME. Server re-checks. Max 3 files, 4096 bytes each.
 
-`POST /api/agent {name, system_prompt, save_pass, picture?, context:[{name,mime,text}]}`.
+`POST /api/agent {name, system_prompt, provider, save_pass, picture?, context_name_0, context_mime_0, context_text_0, …_2}`.
+
+Delete: `POST /api/agent {action:"delete", slug}`.
 
 Goose/Payne skill: `.goose/skills/agent-create/SKILL.md`.
 
@@ -131,14 +147,15 @@ Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
 ## Caps (named, one site each)
 - HTTP recv `HUSH_BUF_SZ = 65536` (was 8192; HTTP JSON + small avatar).
 - Session JSON `HUSH_LAUNCH_JSON_MAX = 16384`.
-- Context: 4 files × 4096 bytes.
+- Context: 3 files × 4096 bytes.
 - Avatar on disk: sniffed JPEG/PNG only; client downscales ≤96px.
 - Kind 0 `picture` is a URL, never a data URI (`HUSH_EVENT_MAX_CONTENT = 4096`).
 
 ## Non-negotiables
 - pass checkbox default checked + retrieve CLI.
 - Profile/Settings visible before ready.
-- Payne always in agent list when vibe present.
+- Payne always first in the robot card list when vibe present.
+- A robot cannot be raised without a system prompt and an AI provider.
 - No catfu / Griffe / Scout / Brave / feline words.
 - Embed after every HTML change:
   `./scripts/embed-ui.sh hush-c/demo` from the worktree root.

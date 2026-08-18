@@ -230,6 +230,15 @@ hush_status_t hush_launch_add_agent(hush_launch_t *launch,
     return hush_roster_add_agent(&launch->roster, store, in, save_pass);
 }
 
+hush_status_t hush_launch_remove_agent(hush_launch_t *launch, const char *slug)
+{
+    if (launch == NULL || slug == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe || !launch->logged_in)
+        return HUSH_ERR_ARG;
+    return hush_roster_remove_agent(&launch->roster, slug);
+}
+
 hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
                                       hush_store_t *store,
                                       const char *name,
