@@ -1,4 +1,4 @@
-/* hush_provider.c: owns home detect, overlay file, pass keys, and model scan. */
+/* hush_provider.c: owns home detect, overlay file, pass secrets, and model scan. */
 
 #define _POSIX_C_SOURCE 200809L
 
@@ -20,10 +20,11 @@ enum {
     HUSH_PROVIDER_SCAN_BODY_MAX = 65536,
     HUSH_PROVIDER_CURL_TIME_S = 8,
     HUSH_PROVIDER_YAML_LINE_MAX = 256,
-    HUSH_PROVIDER_OBJ_MAX = 1024
+    HUSH_PROVIDER_OBJ_MAX = 1024,
+    HUSH_PROVIDER_CURL_CFG_MAX = 2048
 };
 
-#define HUSH_PROVIDER_KEY_FMT "providers/%s/api_key"
+#define HUSH_PROVIDER_SECRET_PATH_FMT "providers/%s/%s"
 #define HUSH_PROVIDER_CURL_BIN "curl"
 #define HUSH_PROVIDER_ANTHROPIC_VER "2023-06-01"
 
@@ -54,6 +55,14 @@ static const hush_provider_meta_t hush_provider_meta[HUSH_PROVIDER_COUNT] = {
       HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_ANTHROPIC, "" }
 };
 
+static const char *const hush_provider_secret_kind[HUSH_PROVIDER_SECRET_COUNT] = {
+    HUSH_PROVIDER_SECRET_API_KEY,
+    HUSH_PROVIDER_SECRET_USERNAME,
+    HUSH_PROVIDER_SECRET_PASSWORD,
+    HUSH_PROVIDER_SECRET_TOKEN,
+    HUSH_PROVIDER_SECRET_PASSKEY
+};
+
 static char g_last_error[HUSH_PROVIDER_ERR_MAX];
 
 static void hush_provider_copy(char *dst, size_t dstsz, const char *src);
@@ -76,7 +85,20 @@ static void hush_provider_detect_home(hush_provider_status_t *st);
 static void hush_provider_home_path(char *out, size_t outsz, const char *id);
 static void hush_provider_read_goose_model(char *out, size_t outsz);
 static void hush_provider_trim_yaml(char *text);
-static void hush_provider_key_path(char *out, size_t outsz, const char *id);
+/* True when kind is one of the five provider secret names. */
+static int hush_provider_is_secret_kind(const char *kind);
+/* Returns the matching optional secret pointer from in. */
+static const char *hush_provider_in_secret(const hush_provider_in_t *in,
+                                           const char *kind);
+/* True when pass has providers/<id>/<kind>. */
+static int hush_provider_has_kind(const char *id, const char *kind);
+/* Sets has_* from hush_pass_has for every kind. */
+static void hush_provider_fill_has(hush_provider_status_t *st);
+/* Writes each non-empty in secret to pass. Soft-fails. */
+static void hush_provider_save_secrets(const hush_provider_in_t *in);
+/* Copies posted, else pass api_key, else pass token. */
+static void hush_provider_load_scan_key(char *out, size_t outsz, const char *id,
+                                        const char *posted);
 static void hush_provider_mark_configured(hush_provider_status_t *st);
 static hush_status_t hush_provider_upsert_json(char *json, size_t jsonsz,
                                                const hush_provider_in_t *in,
@@ -135,7 +157,6 @@ hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id)
 {
     const hush_provider_meta_t *meta;
     char json[HUSH_PROVIDER_JSON_MAX];
-    char key_path[HUSH_PASS_PATH_MAX];
 
     if (out == NULL)
         return HUSH_ERR_ARG;
@@ -151,8 +172,7 @@ hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id)
     json[0] = '\0';
     (void)hush_provider_read_file(json, sizeof(json));
     hush_provider_load_overlay(out, json);
-    hush_provider_key_path(key_path, sizeof(key_path), meta->id);
-    out->has_key = hush_pass_has(key_path);
+    hush_provider_fill_has(out);
     hush_provider_mark_configured(out);
     return HUSH_OK;
 }
@@ -182,13 +202,9 @@ hush_status_t hush_provider_save(const hush_provider_in_t *in)
 
     if (in == NULL || !hush_provider_is_id(in->id))
         return HUSH_ERR_ARG;
-    hush_provider_key_path(key_path, sizeof(key_path), in->id);
-    if (in->api_key != NULL && in->api_key[0] != '\0') {
-        st = hush_pass_save(key_path, in->api_key);
-        if (st != HUSH_OK)
-            hush_provider_copy(g_last_error, sizeof(g_last_error),
-                               "pass save failed");
-    }
+    hush_provider_save_secrets(in);
+    hush_provider_secret_path(key_path, sizeof(key_path), in->id,
+                              HUSH_PROVIDER_SECRET_API_KEY);
     has_key = hush_pass_has(key_path);
     json[0] = '\0';
     (void)hush_provider_read_file(json, sizeof(json));
@@ -198,12 +214,28 @@ hush_status_t hush_provider_save(const hush_provider_in_t *in)
     return hush_provider_write_file(json);
 }
 
+void hush_provider_secret_path(char *out, size_t outsz,
+                               const char *id, const char *kind)
+{
+    int n;
+
+    if (out == NULL || outsz == 0)
+        return;
+    out[0] = '\0';
+    if (!hush_provider_is_id(id) || !hush_provider_is_secret_kind(kind))
+        return;
+    n = snprintf(out, outsz, HUSH_PROVIDER_SECRET_PATH_FMT, id, kind);
+    if (n <= 0 || (size_t)n >= outsz)
+        out[0] = '\0';
+}
+
 hush_status_t hush_provider_scan(hush_provider_scan_t *out, const char *id,
                                  const char *host, const char *api_key)
 {
     char cfg[HUSH_PROVIDER_PATH_MAX];
     char body[HUSH_PROVIDER_SCAN_BODY_MAX];
     char use_host[HUSH_PROVIDER_HOST_MAX];
+    char use_key[HUSH_PROVIDER_KEY_MAX];
     hush_status_t st;
 
     if (out == NULL || !hush_provider_is_id(id))
@@ -217,7 +249,8 @@ hush_status_t hush_provider_scan(hush_provider_scan_t *out, const char *id,
         hush_provider_copy(out->error, sizeof(out->error), "host required");
         return hush_provider_fail("host required");
     }
-    st = hush_provider_write_curl_cfg(cfg, sizeof(cfg), id, use_host, api_key);
+    hush_provider_load_scan_key(use_key, sizeof(use_key), id, api_key);
+    st = hush_provider_write_curl_cfg(cfg, sizeof(cfg), id, use_host, use_key);
     if (st != HUSH_OK) {
         hush_provider_copy(out->error, sizeof(out->error), g_last_error);
         return st;
@@ -584,13 +617,96 @@ static void hush_provider_read_goose_model(char *out, size_t outsz)
     fclose(fp);
 }
 
-static void hush_provider_key_path(char *out, size_t outsz, const char *id)
+static int hush_provider_is_secret_kind(const char *kind)
 {
-    int n;
+    size_t i;
 
-    n = snprintf(out, outsz, HUSH_PROVIDER_KEY_FMT, id);
-    if (n <= 0 || (size_t)n >= outsz)
-        out[0] = '\0';
+    if (kind == NULL || kind[0] == '\0')
+        return 0;
+    for (i = 0; i < (size_t)HUSH_PROVIDER_SECRET_COUNT; i++) {
+        if (strcmp(kind, hush_provider_secret_kind[i]) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static const char *hush_provider_in_secret(const hush_provider_in_t *in,
+                                           const char *kind)
+{
+    assert(in != NULL);
+    assert(kind != NULL);
+    if (strcmp(kind, HUSH_PROVIDER_SECRET_API_KEY) == 0)
+        return in->api_key;
+    if (strcmp(kind, HUSH_PROVIDER_SECRET_USERNAME) == 0)
+        return in->username;
+    if (strcmp(kind, HUSH_PROVIDER_SECRET_PASSWORD) == 0)
+        return in->password;
+    if (strcmp(kind, HUSH_PROVIDER_SECRET_TOKEN) == 0)
+        return in->token;
+    if (strcmp(kind, HUSH_PROVIDER_SECRET_PASSKEY) == 0)
+        return in->passkey;
+    return NULL;
+}
+
+static int hush_provider_has_kind(const char *id, const char *kind)
+{
+    char path[HUSH_PASS_PATH_MAX];
+
+    hush_provider_secret_path(path, sizeof(path), id, kind);
+    return hush_pass_has(path);
+}
+
+static void hush_provider_fill_has(hush_provider_status_t *st)
+{
+    assert(st != NULL);
+    st->has_key = hush_provider_has_kind(st->id, HUSH_PROVIDER_SECRET_API_KEY);
+    st->has_username = hush_provider_has_kind(st->id,
+                                              HUSH_PROVIDER_SECRET_USERNAME);
+    st->has_password = hush_provider_has_kind(st->id,
+                                              HUSH_PROVIDER_SECRET_PASSWORD);
+    st->has_token = hush_provider_has_kind(st->id, HUSH_PROVIDER_SECRET_TOKEN);
+    st->has_passkey = hush_provider_has_kind(st->id,
+                                             HUSH_PROVIDER_SECRET_PASSKEY);
+}
+
+static void hush_provider_save_secrets(const hush_provider_in_t *in)
+{
+    size_t i;
+    char path[HUSH_PASS_PATH_MAX];
+    const char *secret;
+
+    assert(in != NULL);
+    for (i = 0; i < (size_t)HUSH_PROVIDER_SECRET_COUNT; i++) {
+        secret = hush_provider_in_secret(in, hush_provider_secret_kind[i]);
+        if (secret == NULL || secret[0] == '\0')
+            continue;
+        hush_provider_secret_path(path, sizeof(path), in->id,
+                                  hush_provider_secret_kind[i]);
+        if (hush_pass_save(path, secret) != HUSH_OK)
+            hush_provider_copy(g_last_error, sizeof(g_last_error),
+                               "pass save failed");
+    }
+}
+
+static void hush_provider_load_scan_key(char *out, size_t outsz, const char *id,
+                                        const char *posted)
+{
+    char path[HUSH_PASS_PATH_MAX];
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    out[0] = '\0';
+    if (posted != NULL && posted[0] != '\0') {
+        hush_provider_copy(out, outsz, posted);
+        return;
+    }
+    hush_provider_secret_path(path, sizeof(path), id,
+                              HUSH_PROVIDER_SECRET_API_KEY);
+    if (hush_pass_get(out, outsz, path) == HUSH_OK && out[0] != '\0')
+        return;
+    hush_provider_secret_path(path, sizeof(path), id,
+                              HUSH_PROVIDER_SECRET_TOKEN);
+    (void)hush_pass_get(out, outsz, path);
 }
 
 static void hush_provider_mark_configured(hush_provider_status_t *st)
@@ -734,8 +850,8 @@ static hush_status_t hush_provider_write_curl_cfg(char *path, size_t pathsz,
                                                   const char *host,
                                                   const char *api_key)
 {
-    char url[HUSH_PROVIDER_HOST_MAX + 80];
-    char body[1024];
+    char url[HUSH_PROVIDER_URL_MAX];
+    char body[HUSH_PROVIDER_CURL_CFG_MAX];
     const char *tmpdir = getenv("TMPDIR");
     int fd;
     ssize_t wr;
