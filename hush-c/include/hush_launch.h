@@ -93,6 +93,9 @@ hush_status_t hush_launch_add_agent(hush_launch_t *launch,
                                     const hush_roster_agent_in_t *in,
                                     int save_pass);
 
+/* Drops a raised agent by slug. Payne is refused. */
+hush_status_t hush_launch_remove_agent(hush_launch_t *launch, const char *slug);
+
 /* Names this relay and seeds starter channels + Payne. */
 hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
                                       hush_store_t *store,

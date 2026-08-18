@@ -42,6 +42,10 @@ int main(void)
     expect(hush_roster_is_context_mime("", "orders.md"), "md ext");
     expect(!hush_roster_is_context_mime("application/pdf", "x.pdf"), "pdf");
     expect(!hush_roster_is_context_mime("image/png", "x.png"), "png ctx");
+    expect(hush_roster_is_provider("goose"), "goose ok");
+    expect(hush_roster_is_provider("grok-build"), "grok-build ok");
+    expect(hush_roster_is_provider("anthropic-api"), "anthropic ok");
+    expect(!hush_roster_is_provider("chatgpt"), "chatgpt rejected");
     memset(&profile, 0, sizeof(profile));
     memcpy(profile.first_name, "Ada", 4);
     memcpy(profile.last_name, "Lovelace", 9);
@@ -63,6 +67,7 @@ int main(void)
     memset(&agent, 0, sizeof(agent));
     memcpy(agent.name, "Sentry", 7);
     memcpy(agent.prompt, "Watch the perimeter.", 21);
+    memcpy(agent.provider, "goose", 6);
     memcpy(agent.context[0].name, "brief.md", 9);
     memcpy(agent.context[0].mime, "text/markdown", 14);
     agent.context[0].text = "# stand to";
@@ -74,7 +79,19 @@ int main(void)
     expect(strncmp(roster.agents[0].id.npub, "npub1", 5) == 0, "agent npub");
     expect(hush_pass_has("agents/sentry/nsec"), "agent nsec in pass");
     memset(&agent, 0, sizeof(agent));
+    memcpy(agent.name, "NoPrompt", 9);
+    memcpy(agent.provider, "goose", 6);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+           "prompt required");
+    memset(&agent, 0, sizeof(agent));
+    memcpy(agent.name, "NoProvider", 11);
+    memcpy(agent.prompt, "Watch.", 7);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+           "provider required");
+    memset(&agent, 0, sizeof(agent));
     memcpy(agent.name, "Badfile", 8);
+    memcpy(agent.prompt, "Watch.", 7);
+    memcpy(agent.provider, "goose", 6);
     memcpy(agent.context[0].name, "x.pdf", 6);
     memcpy(agent.context[0].mime, "application/pdf", 16);
     agent.context[0].text = "%PDF";
@@ -88,7 +105,15 @@ int main(void)
     expect(strstr(json, "\"theme\":\"desert\"") != NULL, "theme json");
     expect(strstr(json, "\"first_name\":\"Ada\"") != NULL, "first json");
     expect(strstr(json, "\"slug\":\"sentry\"") != NULL, "sentry json");
+    expect(strstr(json, "\"provider\":\"goose\"") != NULL, "provider json");
     expect(strstr(json, "Alice") != NULL, "alice json");
+    expect(hush_roster_remove_agent(&roster, HUSH_ROSTER_PAYNE_SLUG) ==
+               HUSH_ERR_DENIED,
+           "payne stays");
+    expect(hush_roster_remove_agent(&roster, "sentry") == HUSH_OK, "delete");
+    expect(roster.nagents == 0, "empty after delete");
+    expect(hush_roster_remove_agent(&roster, "sentry") == HUSH_ERR_NOT_FOUND,
+           "gone");
     hush_store_destroy(store);
     hush_pass_set_helper(NULL);
     if (g_fail)
