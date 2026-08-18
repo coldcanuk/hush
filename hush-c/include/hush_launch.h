@@ -17,7 +17,11 @@ enum {
     HUSH_LAUNCH_PATH_MAX = 256,
     HUSH_LAUNCH_CHANNELS_MAX = 16,
     HUSH_LAUNCH_PROJECTS_MAX = 16,
-    HUSH_LAUNCH_JSON_MAX = 16384
+    HUSH_LAUNCH_GROUPS_MAX = 8,
+    HUSH_LAUNCH_CHAN_HUMANS_MAX = 8,
+    HUSH_LAUNCH_CHAN_ROBOTS_MAX = 8,
+    HUSH_LAUNCH_ID_HEX = 32,
+    HUSH_LAUNCH_JSON_MAX = 32768
 };
 
 #define HUSH_LAUNCH_PASS_FAIL "pass helper failed"
@@ -30,7 +34,18 @@ enum {
 typedef struct {
     char name[HUSH_LAUNCH_NAME_MAX];
     char slug[HUSH_LAUNCH_NAME_MAX];
+    char id[HUSH_LAUNCH_ID_HEX + 1];
+    char group_id[HUSH_LAUNCH_ID_HEX + 1];
+    char humans[HUSH_LAUNCH_CHAN_HUMANS_MAX][HUSH_IDENTITY_NPUB_MAX];
+    size_t nhumans;
+    char robots[HUSH_LAUNCH_CHAN_ROBOTS_MAX][HUSH_LAUNCH_NAME_MAX];
+    size_t nrobots;
 } hush_launch_channel_t;
+
+typedef struct {
+    char name[HUSH_LAUNCH_NAME_MAX];
+    char id[HUSH_LAUNCH_ID_HEX + 1];
+} hush_launch_group_t;
 
 typedef struct {
     char name[HUSH_LAUNCH_NAME_MAX];
@@ -53,6 +68,8 @@ typedef struct {
     char vibe_token[HUSH_LAUNCH_NAME_MAX];
     hush_launch_channel_t channels[HUSH_LAUNCH_CHANNELS_MAX];
     size_t nchannels;
+    hush_launch_group_t groups[HUSH_LAUNCH_GROUPS_MAX];
+    size_t ngroups;
     hush_launch_project_t projects[HUSH_LAUNCH_PROJECTS_MAX];
     size_t nprojects;
     hush_roster_t roster;
@@ -115,6 +132,26 @@ hush_status_t hush_launch_set_vibe_visibility(hush_launch_t *launch,
 /* Adds an open channel. Fails HUSH_ERR_FULL at cap. */
 hush_status_t hush_launch_add_channel(hush_launch_t *launch,
                                       const char *name);
+
+/* Drops a channel by slug. Refuses the last remaining channel. */
+hush_status_t hush_launch_remove_channel(hush_launch_t *launch,
+                                         const char *slug);
+
+/* Creates a parent group. Fails HUSH_ERR_FULL at cap. */
+hush_status_t hush_launch_add_group(hush_launch_t *launch, const char *name);
+
+/* Sets or clears channel.group_id. Empty group_id ungroups. */
+hush_status_t hush_launch_set_channel_group(hush_launch_t *launch,
+                                            const char *slug,
+                                            const char *group_id);
+
+/* Replaces the channel human/robot lists. Empty counts mean whole hive. */
+hush_status_t hush_launch_set_channel_roster(hush_launch_t *launch,
+                                             const char *slug,
+                                             const char *const *humans,
+                                             size_t nhumans,
+                                             const char *const *robots,
+                                             size_t nrobots);
 
 /* Records a project and optionally runs git init at path. */
 hush_status_t hush_launch_add_project(hush_launch_t *launch,

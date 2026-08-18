@@ -93,6 +93,38 @@
     }
     .chan:hover { background: var(--surface-2); }
     .chan.on { background: var(--surface-2); color: var(--accent); }
+    .chan-row { display: flex; align-items: center; gap: 4px; }
+    .chan-row .chan { flex: 1; min-width: 0; }
+    .chan-del {
+      flex: 0 0 auto; width: 44px; height: 44px; border-radius: 10px;
+      border: 1px solid var(--warn); background: transparent; color: var(--warn);
+      font-size: 1.25rem; font-weight: 700; line-height: 1;
+    }
+    .chan-del:hover { background: var(--warn); color: #fff; }
+    .group-lbl { font-size: 0.72rem; color: var(--muted); padding: 8px 8px 2px; font-weight: 650; }
+    .menu {
+      display: none; position: fixed; z-index: 40; min-width: 12rem;
+      background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+      padding: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    }
+    .menu.show { display: block; }
+    .menu button {
+      display: block; width: 100%; text-align: left; background: transparent;
+      border: 0; color: var(--fg); padding: 10px 12px; border-radius: 8px; font: inherit;
+    }
+    .menu button:hover { background: var(--surface-2); }
+    .mention-box {
+      display: none; position: absolute; left: 18px; right: 110px; bottom: 64px;
+      background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+      max-height: 12rem; overflow: auto; z-index: 15;
+    }
+    .mention-box.show { display: block; }
+    .mention-box button {
+      display: block; width: 100%; text-align: left; background: transparent;
+      border: 0; color: var(--fg); padding: 10px 12px; font: inherit;
+    }
+    .mention-box button.on, .mention-box button:hover { background: var(--surface-2); }
+    .composer { position: relative; }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
     .chan.on .dot { background: var(--accent); }
     .stats { margin-top: auto; font-size: 0.75rem; color: var(--muted); padding: 8px; line-height: 1.6; }
@@ -238,6 +270,11 @@
     }
     .providers input { margin: 0; }
     .providers label.picked { border-color: var(--accent-dim); color: var(--fg); }
+    .providers label.ready {
+      border-color: var(--accent); background: var(--accent-dim); color: var(--fg);
+    }
+    .providers label.ready .okmark { color: var(--accent); font-weight: 700; margin-left: auto; }
+    .providers label.ready .okhint { display: block; font-size: 0.68rem; color: var(--accent); }
     .providers .cfg {
       margin-left: auto; background: none; border: 0; color: inherit;
       min-width: 44px; min-height: 44px; font: inherit; cursor: pointer;
@@ -364,7 +401,8 @@
       </div>
       <div id="stream"></div>
       <form class="composer" id="form">
-        <input id="msg" autocomplete="off" maxlength="2000" placeholder="Write to the hive…">
+        <div class="mention-box" id="mention-box" hidden></div>
+        <input id="msg" autocomplete="off" maxlength="2000" placeholder="Write to the hive… @ a human or robot">
         <button id="send" type="submit">Send</button>
       </form>
     </main>
@@ -583,6 +621,29 @@
       </div>
     </div>
   </div>
+  <div class="drawer" id="manage-chan" role="dialog" aria-label="Manage Channel">
+    <div class="panel">
+      <h2 id="manage-title">Manage Channel</h2>
+      <p class="help">Name the group. Put the right humans and robots on the channel. Delete only when the room is done.</p>
+      <p class="help">Humans</p>
+      <div id="manage-humans"></div>
+      <label for="manage-invite">Invite npub</label>
+      <input id="manage-invite" type="text" maxlength="80" placeholder="npub1…">
+      <p class="help">Robots</p>
+      <div id="manage-robots"></div>
+      <p class="warn" id="manage-err"></p>
+      <div class="actions">
+        <button class="btn" id="manage-save" type="button">Save</button>
+        <button class="btn ghost" id="manage-close" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+  <div class="menu" id="chan-menu" role="menu">
+    <button type="button" data-act="add-group">Add To Group</button>
+    <button type="button" data-act="remove-group">Remove From Group</button>
+    <button type="button" data-act="delete">Delete Channel</button>
+    <button type="button" data-act="manage">Manage Channel</button>
+  </div>
 
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
@@ -631,6 +692,14 @@
     let editSlug = "";
     let providerMap = {};
     let cfgId = "";
+    let oauthPoll = 0;
+    let mentionOpen = false;
+    let mentionHits = [];
+    let mentionIdx = 0;
+    let mentionStart = -1;
+    let pendingMentions = [];
+    let menuSlug = "";
+    let manageSlug = "";
 
     function $(id) { return document.getElementById(id); }
 
@@ -878,25 +947,158 @@
       const box = $("chan-list");
       const chans = session.channels && session.channels.length
         ? session.channels
-        : [{ name: "general", slug: "general" }];
+        : [{ name: "general", slug: "general", id: "", group_id: "" }];
       if (!chans.some((c) => c.slug === channel))
         channel = chans[0].slug;
       box.innerHTML = "<div class=\"lbl\">Channels</div>";
-      chans.forEach((c) => {
-        const b = document.createElement("button");
-        b.className = "chan" + (c.slug === channel ? " on" : "");
-        b.type = "button";
-        b.innerHTML = "<span class=\"dot\"></span>#" + esc(c.slug);
-        b.addEventListener("click", () => {
-          channel = c.slug;
-          $("room").textContent = "#" + channel;
-          seen = "";
-          paintChannels();
-          tick();
-        });
-        box.appendChild(b);
+      const groups = session.groups || [];
+      groups.forEach((g) => {
+        const kids = chans.filter((c) => c.group_id && c.group_id === g.id);
+        if (!kids.length) return;
+        const lab = document.createElement("div");
+        lab.className = "group-lbl";
+        lab.textContent = g.name || "group";
+        box.appendChild(lab);
+        kids.forEach((c) => box.appendChild(channelRow(c)));
       });
+      const loose = chans.filter((c) => !c.group_id);
+      if (groups.length && loose.length) {
+        const lab = document.createElement("div");
+        lab.className = "group-lbl";
+        lab.textContent = "Ungrouped";
+        box.appendChild(lab);
+      }
+      loose.forEach((c) => box.appendChild(channelRow(c)));
       $("room").textContent = "#" + channel;
+    }
+
+    function channelRow(c) {
+      const row = document.createElement("div");
+      row.className = "chan-row";
+      const b = document.createElement("button");
+      b.className = "chan" + (c.slug === channel ? " on" : "");
+      b.type = "button";
+      b.innerHTML = "<span class=\"dot\"></span>#" + esc(c.slug);
+      b.addEventListener("click", () => {
+        channel = c.slug;
+        $("room").textContent = "#" + channel;
+        seen = "";
+        paintChannels();
+        tick();
+      });
+      b.addEventListener("contextmenu", (ev) => {
+        ev.preventDefault();
+        openChanMenu(c.slug, ev.clientX, ev.clientY);
+      });
+      const del = document.createElement("button");
+      del.className = "chan-del";
+      del.type = "button";
+      del.id = "chan-del";
+      del.setAttribute("aria-label", "Delete #" + c.slug);
+      del.textContent = "−";
+      del.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        deleteChannel(c.slug);
+      });
+      row.appendChild(b);
+      row.appendChild(del);
+      return row;
+    }
+
+    function hideChanMenu() {
+      const m = $("chan-menu");
+      if (m) m.classList.remove("show");
+      menuSlug = "";
+    }
+
+    function openChanMenu(slug, x, y) {
+      const m = $("chan-menu");
+      if (!m) return;
+      menuSlug = slug;
+      m.classList.add("show");
+      m.style.left = Math.min(x, window.innerWidth - 200) + "px";
+      m.style.top = Math.min(y, window.innerHeight - 180) + "px";
+    }
+
+    async function deleteChannel(slug) {
+      const chans = session.channels || [];
+      if (chans.length <= 1) {
+        alert("The last channel stays.");
+        return;
+      }
+      if (!confirm("Delete #" + slug + "? Notes stay on disk."))
+        return;
+      await postJson("/api/channel", { action: "delete", slug: slug });
+    }
+
+    async function addChannelToGroup(slug) {
+      const groups = session.groups || [];
+      const names = groups.map((g, i) => (i + 1) + ". " + g.name).join("\n");
+      const pick = prompt(
+        (names ? names + "\n\n" : "") +
+        "Type a group number, or a new group name.",
+        groups.length ? "1" : "Duty"
+      );
+      if (pick == null) return;
+      const trimmed = pick.trim();
+      if (!trimmed) return;
+      const asNum = parseInt(trimmed, 10);
+      if (asNum >= 1 && asNum <= groups.length)
+        await postJson("/api/channel", {
+          action: "group", slug: slug, group_id: groups[asNum - 1].id
+        });
+      else
+        await postJson("/api/channel", {
+          action: "group", slug: slug, group: trimmed
+        });
+    }
+
+    function openManageChannel(slug) {
+      const ch = (session.channels || []).find((c) => c.slug === slug);
+      if (!ch) return;
+      manageSlug = slug;
+      $("manage-title").textContent = "Manage #" + slug;
+      $("manage-err").textContent = "";
+      $("manage-invite").value = "";
+      const humans = $("manage-humans");
+      humans.innerHTML = "";
+      const listed = {};
+      (ch.humans || []).forEach((np) => { listed[np] = true; });
+      const pool = [];
+      if (session.npub)
+        pool.push({ name: "you", npub: session.npub });
+      (session.members || []).forEach((m) => {
+        if (m && m.npub) pool.push({ name: m.name || "human", npub: m.npub });
+      });
+      (ch.humans || []).forEach((np) => {
+        if (!pool.some((p) => p.npub === np))
+          pool.push({ name: np.slice(0, 12), npub: np });
+      });
+      if (!pool.length)
+        humans.innerHTML = "<p class=\"help\">Invite a human, or leave empty for the whole hive.</p>";
+      pool.forEach((p, i) => {
+        const id = "mh-" + i;
+        const lab = document.createElement("label");
+        lab.className = "passbox";
+        lab.innerHTML = "<input type=\"checkbox\" id=\"" + id + "\" data-npub=\"" +
+          esc(p.npub) + "\"" + (listed[p.npub] ? " checked" : "") + "> " +
+          esc(p.name);
+        humans.appendChild(lab);
+      });
+      const robots = $("manage-robots");
+      robots.innerHTML = "";
+      const onBot = {};
+      (ch.robots || []).forEach((s) => { onBot[s] = true; });
+      robotModels().forEach((bot, i) => {
+        const id = "mr-" + i;
+        const lab = document.createElement("label");
+        lab.className = "passbox";
+        lab.innerHTML = "<input type=\"checkbox\" id=\"" + id + "\" data-slug=\"" +
+          esc(bot.slug) + "\"" + (onBot[bot.slug] ? " checked" : "") + "> " +
+          esc(bot.name);
+        robots.appendChild(lab);
+      });
+      $("manage-chan").classList.add("show");
     }
 
     function providerLabel(id) {
@@ -1091,8 +1293,24 @@
       const btn = $("provider-cfg");
       document.querySelectorAll("#agent-providers label").forEach((lab) => {
         const radio = lab.querySelector("input");
+        const pid = radio ? radio.value : "";
+        const st = providerMap[pid] || {};
         const on = radio && radio.checked;
+        const ready = !!(OAUTH_PROVIDERS[pid] && st.has_home);
         lab.classList.toggle("picked", !!on);
+        lab.classList.toggle("ready", ready);
+        lab.querySelectorAll(".okmark, .okhint").forEach((n) => n.remove());
+        if (ready) {
+          const mark = document.createElement("span");
+          mark.className = "okmark";
+          mark.setAttribute("aria-hidden", "true");
+          mark.textContent = "✓";
+          lab.appendChild(mark);
+          const hint = document.createElement("span");
+          hint.className = "okhint";
+          hint.textContent = "authenticated";
+          lab.appendChild(hint);
+        }
         const old = lab.querySelector(".cfg-slot");
         if (old) old.remove();
         if (on && btn) {
@@ -1197,7 +1415,7 @@
       if (isOauth) {
         $("provider-oauth").textContent = OAUTH_PROVIDERS[id];
         $("provider-oauth-help").textContent = st.has_home
-          ? (PROVIDERS[id] + " is already authorized on this machine.")
+          ? (PROVIDERS[id] + " is authenticated. Close the login browser and the terminal. Carry on.")
           : ("This starts " + HOME_CMDS[id] + " on the command line.");
       }
       SECRET_FIELDS.forEach((field) => {
@@ -1277,17 +1495,41 @@
             : "Could not start the official login.";
           return;
         }
-        const started = "A terminal is running " +
-          (HOME_CMDS[cfgId] || "login") +
-          ". Finish sign-in there (a browser should open). Leave that window open until it says you are signed in.";
+        const started = "A terminal is running the official login. Finish sign-in in that window (a browser should open).";
         await api("/api/provider", { provider: cfgId, use_home: true });
         await loadProviders();
         fillProviderDrawer(cfgId);
         $("provider-status").textContent = started;
+        watchOauthHome(cfgId);
       } catch (e) {
         $("provider-err").textContent = "Could not start the official login.";
       }
     });
+
+    function watchOauthHome(id) {
+      if (oauthPoll) clearInterval(oauthPoll);
+      let ticks = 0;
+      oauthPoll = setInterval(async () => {
+        ticks += 1;
+        await loadProviders();
+        const st = providerMap[id] || {};
+        if (st.has_home) {
+          clearInterval(oauthPoll);
+          oauthPoll = 0;
+          fillProviderDrawer(id);
+          $("provider-status").textContent =
+            (PROVIDERS[id] || id) +
+            " is authenticated. Close the login browser and the terminal. Carry on.";
+          return;
+        }
+        if (ticks >= 45) {
+          clearInterval(oauthPoll);
+          oauthPoll = 0;
+          $("provider-status").textContent =
+            "Still waiting on the official login. Close extra windows when it says you are signed in, then reopen Configure.";
+        }
+      }, 2000);
+    }
     $("provider-save").addEventListener("click", async () => {
       if (!cfgId) return;
       $("provider-err").textContent = "";
@@ -1474,13 +1716,121 @@
       });
     });
 
+    function mentionRoster() {
+      const list = [];
+      const seenKey = {};
+      function add(name, npub, kind) {
+        if (!npub || seenKey[npub]) return;
+        seenKey[npub] = true;
+        list.push({ name: name, npub: npub, kind: kind });
+      }
+      if (session.npub) add("you", session.npub, "human");
+      robotModels().forEach((bot) => add(bot.name, bot.npub, "robot"));
+      (session.members || []).forEach((m) => {
+        if (m) add(m.name || "human", m.npub, "human");
+      });
+      return list;
+    }
+
+    function hideMentions() {
+      mentionOpen = false;
+      mentionHits = [];
+      mentionIdx = 0;
+      mentionStart = -1;
+      const box = $("mention-box");
+      if (box) {
+        box.classList.remove("show");
+        box.hidden = true;
+        box.innerHTML = "";
+      }
+    }
+
+    function paintMentionBox() {
+      const box = $("mention-box");
+      if (!box) return;
+      box.innerHTML = "";
+      mentionHits.forEach((hit, i) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = i === mentionIdx ? "on" : "";
+        b.textContent = "@" + hit.name + " · " + hit.kind;
+        b.addEventListener("click", () => applyMention(hit));
+        box.appendChild(b);
+      });
+      box.hidden = !mentionHits.length;
+      box.classList.toggle("show", mentionHits.length > 0);
+      mentionOpen = mentionHits.length > 0;
+    }
+
+    function applyMention(hit) {
+      const input = $("msg");
+      if (!input || mentionStart < 0) return;
+      const before = input.value.slice(0, mentionStart);
+      const after = input.value.slice(input.selectionStart);
+      input.value = before + "nostr:" + hit.npub + " " + after;
+      pendingMentions.push(hit.npub);
+      hideMentions();
+      input.focus();
+    }
+
+    function scanMention() {
+      const input = $("msg");
+      if (!input) return;
+      const pos = input.selectionStart || 0;
+      const text = input.value.slice(0, pos);
+      const at = text.lastIndexOf("@");
+      if (at < 0 || (at > 0 && !/\s/.test(text.charAt(at - 1)))) {
+        hideMentions();
+        return;
+      }
+      const q = text.slice(at + 1).toLowerCase();
+      if (q.indexOf(" ") >= 0 || q.indexOf("\n") >= 0) {
+        hideMentions();
+        return;
+      }
+      mentionStart = at;
+      mentionHits = mentionRoster().filter((h) =>
+        h.name.toLowerCase().indexOf(q) >= 0 ||
+        h.npub.toLowerCase().indexOf(q) >= 0
+      );
+      mentionIdx = 0;
+      paintMentionBox();
+    }
+
+    $("msg").addEventListener("input", scanMention);
+    $("msg").addEventListener("keydown", (ev) => {
+      if (!mentionOpen) return;
+      if (ev.key === "ArrowDown") {
+        ev.preventDefault();
+        mentionIdx = (mentionIdx + 1) % mentionHits.length;
+        paintMentionBox();
+      } else if (ev.key === "ArrowUp") {
+        ev.preventDefault();
+        mentionIdx = (mentionIdx - 1 + mentionHits.length) % mentionHits.length;
+        paintMentionBox();
+      } else if (ev.key === "Enter" || ev.key === "Tab") {
+        if (mentionHits[mentionIdx]) {
+          ev.preventDefault();
+          applyMention(mentionHits[mentionIdx]);
+        }
+      } else if (ev.key === "Escape") {
+        hideMentions();
+      }
+    });
+
     $("form").addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (mentionOpen) return;
       const text = $("msg").value.trim();
       if (!text) return;
       $("msg").value = "";
+      const body = { content: text, kind: 1, channel: channel };
+      pendingMentions.slice(0, 8).forEach((np, i) => {
+        body["mention_" + i] = np;
+      });
+      pendingMentions = [];
       try {
-        await api("/api/event", { content: text, kind: 1, channel: channel });
+        await api("/api/event", body);
         await tick();
       } catch (err) {
         badge(false, "send failed");
@@ -1765,7 +2115,7 @@
         meta.textContent = who(e.pubkey) + " · " + ago(e.created_at);
         const body = document.createElement("div");
         body.className = "body";
-        body.textContent = e.content || "";
+        body.textContent = prettyMentions(e.content || "");
         n.appendChild(meta);
         n.appendChild(body);
         s.appendChild(n);
@@ -1775,11 +2125,19 @@
 
     function who(pk) {
       if (session.pubkey && pk === session.pubkey) return "you";
-      if (session.payne && session.payne.npub && pk &&
-          session.payne.npub.indexOf(pk.slice(0, 8)) !== -1)
-        return "Payne";
+      const named = mentionRoster().find((h) =>
+        h.npub === pk || (pk && h.npub.indexOf(pk.slice(0, 8)) !== -1)
+      );
+      if (named) return named.name;
       if (!pk || /^0+1$/.test(pk) || pk === "local") return "local";
       return pk.slice(0, 8);
+    }
+
+    function prettyMentions(text) {
+      return String(text).replace(/nostr:(npub1[0-9a-z]+)/gi, (_, npub) => {
+        const hit = mentionRoster().find((h) => h.npub === npub);
+        return hit ? ("@" + hit.name) : ("@" + npub.slice(0, 12));
+      });
     }
 
     function ago(ts) {
@@ -1810,6 +2168,43 @@
         $("stats").textContent = "start hush-relay";
       }
     }
+
+    $("chan-menu").addEventListener("click", async (ev) => {
+      const btn = ev.target.closest("button[data-act]");
+      if (!btn || !menuSlug) return;
+      const act = btn.getAttribute("data-act");
+      const slug = menuSlug;
+      hideChanMenu();
+      if (act === "add-group") await addChannelToGroup(slug);
+      else if (act === "remove-group")
+        await postJson("/api/channel", { action: "ungroup", slug: slug });
+      else if (act === "delete") await deleteChannel(slug);
+      else if (act === "manage") openManageChannel(slug);
+    });
+    document.addEventListener("click", (ev) => {
+      if (!$("chan-menu").contains(ev.target)) hideChanMenu();
+    });
+    $("manage-close").addEventListener("click", () => $("manage-chan").classList.remove("show"));
+    $("manage-save").addEventListener("click", async () => {
+      if (!manageSlug) return;
+      const body = { action: "manage", slug: manageSlug };
+      let hi = 0;
+      $("manage-humans").querySelectorAll("input[data-npub]").forEach((el) => {
+        if (el.checked) body["human_" + (hi++)] = el.getAttribute("data-npub");
+      });
+      const extra = ($("manage-invite").value || "").trim();
+      if (extra) body["human_" + (hi++)] = extra;
+      let ri = 0;
+      $("manage-robots").querySelectorAll("input[data-slug]").forEach((el) => {
+        if (el.checked) body["robot_" + (ri++)] = el.getAttribute("data-slug");
+      });
+      try {
+        applySession(await api("/api/channel", body));
+        $("manage-chan").classList.remove("show");
+      } catch (e) {
+        $("manage-err").textContent = "Could not save that roster.";
+      }
+    });
 
     applyTheme(localStorage.getItem("hush-theme") || "dark");
     paint();

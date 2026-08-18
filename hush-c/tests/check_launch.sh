@@ -47,6 +47,14 @@ echo "$html" | grep -q 'agent-provider' || fail "HTML missing AI provider"
 echo "$html" | grep -q 'id="provider-cfg"' || fail "HTML missing provider pencil"
 echo "$html" | grep -q 'id="provider-drawer"' || fail "HTML missing provider drawer"
 echo "$html" | grep -q 'id="provider-oauth"' || fail "HTML missing OAuth login button"
+echo "$html" | grep -q 'Close the login browser and the terminal' || fail "HTML missing OAuth close-window copy"
+echo "$html" | grep -q 'label.ready' || fail "HTML missing provider ready style"
+echo "$html" | grep -q 'id="mention-box"' || fail "HTML missing mention box"
+echo "$html" | grep -q 'nostr:' || fail "HTML missing NIP-27 mention insert"
+echo "$html" | grep -q 'id="chan-menu"' || fail "HTML missing channel context menu"
+echo "$html" | grep -q 'id="manage-chan"' || fail "HTML missing manage channel"
+echo "$html" | grep -q 'chan-del' || fail "HTML missing channel delete"
+echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + pills"
 echo "$html" | grep -q 'id="provider-username"' || fail "HTML missing provider username"
 echo "$html" | grep -q 'id="provider-password"' || fail "HTML missing provider password"
@@ -99,6 +107,33 @@ chan=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
     -H 'Content-Type: application/json' \
     -d '{"name":"incidents"}')
 echo "$chan" | grep -q '"slug":"incidents"' || fail "channel create"
+echo "$chan" | grep -q '"id":"' || fail "channel uuid missing"
+grp=$(curl -sf -X POST "http://127.0.0.1:${port}/api/group" \
+    -H 'Content-Type: application/json' \
+    -d '{"name":"Duty"}')
+echo "$grp" | grep -q '"name":"Duty"' || fail "group create"
+gid=$(printf '%s' "$grp" | sed -n 's/.*"groups":\[{"name":"Duty","id":"\([0-9a-f]\{32\}\)".*/\1/p')
+test -n "$gid" || fail "group id missing"
+grouped=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
+    -H 'Content-Type: application/json' \
+    -d "{\"action\":\"group\",\"slug\":\"incidents\",\"group_id\":\"$gid\"}")
+echo "$grouped" | grep -q "\"group_id\":\"$gid\"" || fail "channel group"
+managed=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"manage","slug":"incidents","human_0":"npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg","robot_0":"sgt-major-payne"}')
+echo "$managed" | grep -q 'sgt-major-payne' || fail "channel manage robots"
+ungrouped=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"ungroup","slug":"incidents"}')
+echo "$ungrouped" | grep -q '"group_id":""' || fail "channel ungroup"
+deleted=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"delete","slug":"incidents"}')
+echo "$deleted" | grep -q '"slug":"incidents"' && fail "deleted channel still listed"
+chan=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
+    -H 'Content-Type: application/json' \
+    -d '{"name":"incidents"}')
+echo "$chan" | grep -q '"slug":"incidents"' || fail "channel recreate"
 proj=$(curl -sf -X POST "http://127.0.0.1:${port}/api/project" \
     -H 'Content-Type: application/json' \
     -d '{"name":"alpha","path":"/tmp/hush-check-alpha","git":"true"}')

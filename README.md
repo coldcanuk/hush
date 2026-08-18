@@ -37,10 +37,14 @@ retrieve with `pass show hush/identity/nsec`) → Vibe (public or private)
 organization, theme (`dark` / `light` / `color-blind` / `dracula` /
 `desert` / `monochrome` / `christmas`), and Logout. From the hive you
 can create channels and projects, invite humans, and raise agents
-(plaintext/Markdown context only). Hive metadata persists in
-`~/.config/hush/vibe.json` so `make clean && make install` or Exit
-does not force a new vibe after you import the same nsec. Secrets stay
-in `pass`. See [docs/pass-integration.md](docs/pass-integration.md).
+(plaintext/Markdown context only). `@` in the composer mentions humans
+and robots (NIP-27 `nostr:npub1…`). Channels carry a UUID, sit in
+optional Groups (NIP-29 parent), and can be deleted or managed from a
+right-click menu. After Grok/Codex OAuth the provider box shows
+authenticated and tells you to close the extra windows. Hive metadata
+persists in `~/.config/hush/vibe.json` so `make clean && make install`
+or Exit does not force a new vibe after you import the same nsec.
+Secrets stay in `pass`. See [docs/pass-integration.md](docs/pass-integration.md).
 
 Install it from the browser (Chromium “Install”, or iOS Share → Add to Home Screen)
 while the relay is running at `http://127.0.0.1:<port>/`.

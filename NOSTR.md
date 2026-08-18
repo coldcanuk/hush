@@ -2,6 +2,13 @@
 
 Hush is a Nostr relay that speaks NIP-29 (relay-based groups) natively. Third-party Nostr clients connect directly to `hush-relay` using NIP-29 and NIP-42 authentication. The old NIP-28 compatibility proxy has been removed.
 
+The local hive UI treats each channel as a NIP-29-shaped group with a
+32-hex id. `#h` on stored notes is still the channel **slug** so existing
+kind-1 notes keep matching. A Hush **Group** is a NIP-29 parent folder
+(`parent` / `child` in the spec; membership does not inherit). Composer
+`@` mentions follow NIP-27 (`nostr:npub1…` plus optional `p` tags).
+Full relay-signed `kind:39000` emission is a follow-up.
+
 ## Community scope
 
 Hush treats the relay URL/domain as authoritative for the community. Today's

@@ -74,6 +74,43 @@ int main(void)
     expect(strncmp(launch.payne.npub, "npub1", 5) == 0, "payne");
     expect(hush_launch_add_channel(&launch, "incidents") == HUSH_OK, "channel");
     expect(launch.nchannels == 4, "four channels");
+    expect(strlen(launch.channels[0].id) == (size_t)HUSH_LAUNCH_ID_HEX,
+           "channel uuid");
+    expect(hush_launch_add_group(&launch, "Duty") == HUSH_OK, "group");
+    expect(launch.ngroups == 1, "one group");
+    expect(strlen(launch.groups[0].id) == (size_t)HUSH_LAUNCH_ID_HEX,
+           "group uuid");
+    expect(hush_launch_set_channel_group(&launch, "incidents",
+                                        launch.groups[0].id) == HUSH_OK,
+           "add to group");
+    expect(strcmp(launch.channels[3].group_id, launch.groups[0].id) == 0,
+           "grouped");
+    {
+        const char *humans[] = {
+            "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"
+        };
+        const char *robots[] = { HUSH_LAUNCH_PAYNE_SLUG };
+
+        expect(hush_launch_set_channel_roster(&launch, "incidents",
+                                              humans, 1, robots, 1) == HUSH_OK,
+               "roster");
+        expect(launch.channels[3].nhumans == 1, "one human");
+        expect(launch.channels[3].nrobots == 1, "one robot");
+    }
+    expect(hush_launch_set_channel_group(&launch, "incidents", "") == HUSH_OK,
+           "ungroup");
+    expect(launch.channels[3].group_id[0] == '\0', "ungrouped");
+    expect(hush_launch_remove_channel(&launch, "incidents") == HUSH_OK,
+           "delete channel");
+    expect(launch.nchannels == 3, "three after delete");
+    expect(hush_launch_remove_channel(&launch, "general") == HUSH_OK,
+           "drop general");
+    expect(hush_launch_remove_channel(&launch, "welcome") == HUSH_OK,
+           "drop welcome");
+    expect(hush_launch_remove_channel(&launch, "agents") == HUSH_ERR_DENIED,
+           "last channel stays");
+    expect(hush_launch_add_channel(&launch, "incidents") == HUSH_OK,
+           "channel again");
     expect(hush_launch_add_project(&launch, store, "alpha", gitdir, 1) == HUSH_OK,
            "project");
     expect(launch.nprojects == 1, "one project");
@@ -135,7 +172,10 @@ int main(void)
         expect(hush_launch_restore_vibe(&again) == HUSH_OK, "vibe again");
         expect(again.has_vibe, "restored has_vibe");
         expect(strcmp(again.vibe_name, "HQ") == 0, "restored name");
-        expect(again.nchannels >= 3, "restored channels");
+        expect(again.nchannels >= 2, "restored channels");
+        expect(again.ngroups == 1, "restored group");
+        expect(strlen(again.channels[0].id) == (size_t)HUSH_LAUNCH_ID_HEX,
+               "restored channel uuid");
         expect(strncmp(again.payne.npub, "npub1", 5) == 0, "restored payne");
     }
     hush_store_destroy(store);

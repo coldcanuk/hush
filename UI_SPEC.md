@@ -1,5 +1,5 @@
-# Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure
-Version: 2026-08-18 (RDAP M2, gb/vibe-restore-robot-auth)
+# Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups
+Version: 2026-08-18 (RDAP M2, gb/oauth-mention-groups)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec and the onboard raise-form notes where they conflict.
 Quinn + Parker + Payne. No feline.
@@ -220,9 +220,69 @@ not a radio this slice.
 | `POST /api/provider` | `{provider, use_home?, host?, model?, api_key?, username?, password?, token?, passkey?}` save overlay + optional secrets to pass |
 | `POST /api/provider/scan` | `{provider, host?, api_key?}` → `model_0`…`model_31` or `{ok:false,error}`. Empty key loads `api_key` then `token` from pass. |
 | `POST /api/provider/login` | `{provider}` starts the official CLI login. `grok-build` → `grok login --oauth`. `codex` → `codex login`. Goose and unknown ids return `{ok:false,error}`. Does not wait. With `DISPLAY`, spawn `xterm -hold -e` (not `x-terminal-emulator`: COSMIC Term ignores `-e`). Tests set `HUSH_PROVIDER_TERM`. |
+| `POST /api/channel` | `{action:"create"\|"delete"\|"group"\|"ungroup"\|"manage", name?, slug?, group?, group_id?, human_0…human_7?, robot_0…robot_7?}`. Create needs `name`. Delete/group/ungroup/manage need `slug`. |
+| `POST /api/group` | `{name}` creates a parent group with its own UUID. |
+| `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags. Content may contain `nostr:npub1…`. |
 | `GET /avatar/<64-hex>` | stored picture bytes |
 
 Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
+Session `channels[]` now include `id` (32-hex UUID), `group_id`,
+`humans[]`, `robots[]`. Session `groups[]` is `{name,id}`.
+
+### 12. OAuth signed-in (Grok Build / Codex)
+
+`has_home` is the authenticated signal. `use_home` and `configured` are
+not enough — login sets `use_home` before the CLI writes the home file.
+
+- After **Log in with OAuth**, poll `GET /api/provider` every 2s for 90s.
+- While waiting: “A terminal is running the official login. Finish
+  sign-in in that window (a browser should open).”
+- When `has_home` is true: “Grok Build is authenticated. Close the
+  login browser and the terminal. Carry on.” (Codex: same shape.)
+- That provider radio gets class `ready`: accent-tinted box, a
+  checkmark after the label, and a one-line “authenticated” hint.
+- Color-blind theme uses `--accent` (blue) / `--warn` (orange). Never
+  green/red as the only pair.
+- Timeout without `has_home`: “Still waiting on the official login.
+  Close extra windows when it says you are signed in, then reopen
+  Configure.”
+
+### 13. @ mentions (NIP-27)
+
+Composer `@` after start-of-input or whitespace opens `#mention-box`.
+Roster: the signed-in human, Payne, raised robots, invited humans.
+Arrow keys + Enter or click. Inserts `nostr:<npub>` in the posted
+content and records that pubkey as `mention_N`. Render replaces
+`nostr:npub1…` with `@Name`. Mentioning a robot addresses it; this
+slice does not spawn a live reply.
+
+### 14. Channel groups + manage (NIP-29 parent)
+
+A Hush channel is a NIP-29-shaped group: random 32-hex `id`, `#h` on
+the wire stays the **slug** so existing notes keep matching. A Hush
+**Group** is a NIP-29 parent (`groups[].id`). `channel.group_id` empty
+means ungrouped. Membership does not inherit (NIP-29 subgroup rule).
+
+Sidebar: grouped channels under the group name, then ungrouped.
+Each row: name, red `−` (`#chan-del`, ≥44px) deletes after confirm
+(“Delete #slug? Notes stay on disk.”). Last channel cannot be deleted.
+
+Right-click a channel (`#chan-menu`):
+
+- Add To Group — pick an existing group or “New group…”
+- Remove From Group — no-op if ungrouped
+- Delete Channel — same confirm as `−`
+- Manage Channel — `#manage-chan` modal
+
+==Manage Channel==
+
+- Add/Invite/Remove Humans (hive members + free npub field)
+- Add/Invite/Remove Robots (Payne + raised)
+- Empty lists mean the whole hive (open, current behavior)
+- [Save] [Close]
+
+Payne: “Name the group. Put the right humans and robots on the
+channel. Delete only when the room is done.”
 
 ## Visual language
 - Dark default tokens stay. Themes override CSS variables on `html[data-theme]`.
@@ -239,7 +299,9 @@ Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
 
 ## Caps (named, one site each)
 - HTTP recv `HUSH_BUF_SZ = 65536` (was 8192; HTTP JSON + small avatar).
-- Session JSON `HUSH_LAUNCH_JSON_MAX = 16384`.
+- Session JSON `HUSH_LAUNCH_JSON_MAX = 32768`.
+- Groups: 8. Humans per channel: 8. Robots per channel: 8.
+- Channel / group id: 32 hex (`HUSH_LAUNCH_ID_HEX`).
 - Context: 3 files × 4096 bytes.
 - Provider models: 32 names × 64 bytes (`HUSH_PROVIDER_MODELS_MAX`).
 - Provider overlay: `$XDG_CONFIG_HOME/hush/providers.json` (0600).

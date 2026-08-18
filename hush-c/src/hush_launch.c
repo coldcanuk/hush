@@ -22,9 +22,10 @@ enum {
     HUSH_LAUNCH_SLUG_FALLBACK = 'x',
     HUSH_LAUNCH_ID_WIDTH = 16,
     HUSH_LAUNCH_CMD_MAX = 768,
-    HUSH_LAUNCH_FILE_MAX = 16384,
-    HUSH_LAUNCH_KEY_MAX = 40,
-    HUSH_LAUNCH_COUNT_MAX = 8
+    HUSH_LAUNCH_FILE_MAX = 32768,
+    HUSH_LAUNCH_KEY_MAX = 48,
+    HUSH_LAUNCH_COUNT_MAX = 8,
+    HUSH_LAUNCH_UUID_RAW = 16
 };
 
 #define HUSH_LAUNCH_DEFAULT_VIBE "local hive"
@@ -44,6 +45,26 @@ static void hush_launch_slugify(char *dst, size_t dstsz, const char *name);
 
 /* True when slug already exists in the channel table. */
 static int hush_launch_has_channel(const hush_launch_t *launch, const char *slug);
+
+/* Returns the channel with slug, or NULL. */
+static hush_launch_channel_t *hush_launch_find_channel(hush_launch_t *launch,
+                                                       const char *slug);
+
+/* True when group_id names an existing group. */
+static int hush_launch_has_group_id(const hush_launch_t *launch,
+                                    const char *group_id);
+
+/* True when slug is Payne or a raised robot. */
+static int hush_launch_has_robot(const hush_launch_t *launch, const char *slug);
+
+/* Writes 32 hex chars from /dev/urandom. */
+static hush_status_t hush_launch_make_uuid(char *out, size_t outsz);
+
+/* Assigns a UUID when ch->id is empty. */
+static hush_status_t hush_launch_ensure_channel_id(hush_launch_channel_t *ch);
+
+/* Assigns missing channel UUIDs and saves when any were filled. */
+static hush_status_t hush_launch_ensure_ids(hush_launch_t *launch);
 
 /* Appends a channel. Fails HUSH_ERR_FULL. */
 static hush_status_t hush_launch_push_channel(hush_launch_t *launch,
@@ -100,6 +121,15 @@ static hush_status_t hush_launch_format_channels(const hush_launch_t *launch,
                                                  char *out, size_t outsz,
                                                  size_t *off);
 
+/* Appends one channel's humans and robots arrays. */
+static hush_status_t hush_launch_format_channel_lists(
+    const hush_launch_channel_t *ch, char *out, size_t outsz, size_t *off);
+
+/* Appends the groups array after channels. */
+static hush_status_t hush_launch_format_groups(const hush_launch_t *launch,
+                                               char *out, size_t outsz,
+                                               size_t *off);
+
 /* Appends the projects array body. */
 static hush_status_t hush_launch_format_projects(const hush_launch_t *launch,
                                                  char *out, size_t outsz,
@@ -155,6 +185,16 @@ static hush_status_t hush_launch_put_channels(const hush_launch_t *launch,
                                               char *out, size_t outsz,
                                               size_t *off);
 
+/* Appends one channel's human_* / robot_* persist fields. */
+static hush_status_t hush_launch_put_channel_lists(
+    const hush_launch_channel_t *ch, size_t idx,
+    char *out, size_t outsz, size_t *off);
+
+/* Appends group_* indexed fields. */
+static hush_status_t hush_launch_put_groups(const hush_launch_t *launch,
+                                            char *out, size_t outsz,
+                                            size_t *off);
+
 /* Appends project_* indexed fields. */
 static hush_status_t hush_launch_put_projects(const hush_launch_t *launch,
                                               char *out, size_t outsz,
@@ -185,6 +225,14 @@ static hush_status_t hush_launch_take_vibe_head(hush_launch_t *launch,
 /* Fills channels from json. */
 static hush_status_t hush_launch_take_channels(hush_launch_t *launch,
                                                const char *json);
+
+/* Fills one restored channel's humans and robots. */
+static void hush_launch_take_channel_lists(hush_launch_channel_t *ch,
+                                           const char *json, size_t idx);
+
+/* Fills groups from json. */
+static hush_status_t hush_launch_take_groups(hush_launch_t *launch,
+                                             const char *json);
 
 /* Fills projects from json. */
 static hush_status_t hush_launch_take_projects(hush_launch_t *launch,
@@ -300,6 +348,7 @@ hush_status_t hush_launch_save_vibe(const hush_launch_t *launch)
     off = 1;
     HUSH_TRY(hush_launch_put_vibe_head(launch, json, sizeof(json), &off));
     HUSH_TRY(hush_launch_put_channels(launch, json, sizeof(json), &off));
+    HUSH_TRY(hush_launch_put_groups(launch, json, sizeof(json), &off));
     HUSH_TRY(hush_launch_put_projects(launch, json, sizeof(json), &off));
     HUSH_TRY(hush_launch_put_roster(launch, json, sizeof(json), &off));
     return hush_launch_write_vibe_file(json);
@@ -322,11 +371,13 @@ hush_status_t hush_launch_restore_vibe(hush_launch_t *launch)
     if (hush_launch_take_vibe_head(launch, json) != HUSH_OK)
         return HUSH_OK;
     (void)hush_launch_take_channels(launch, json);
+    (void)hush_launch_take_groups(launch, json);
     (void)hush_launch_take_projects(launch, json);
     (void)hush_launch_take_roster(launch, json);
     if (hush_launch_restore_payne(launch) != HUSH_OK)
         return HUSH_OK;
     launch->has_vibe = 1;
+    (void)hush_launch_ensure_ids(launch);
     return HUSH_OK;
 }
 
@@ -448,6 +499,120 @@ hush_status_t hush_launch_add_channel(hush_launch_t *launch, const char *name)
     return hush_launch_save_vibe(launch);
 }
 
+hush_status_t hush_launch_remove_channel(hush_launch_t *launch, const char *slug)
+{
+    size_t i;
+
+    if (launch == NULL || slug == NULL || slug[0] == '\0')
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe)
+        return HUSH_ERR_ARG;
+    if (launch->nchannels <= 1)
+        return HUSH_ERR_DENIED;
+    for (i = 0; i < launch->nchannels; ++i) {
+        if (strcmp(launch->channels[i].slug, slug) != 0)
+            continue;
+        if (i + 1 < launch->nchannels)
+            memmove(&launch->channels[i], &launch->channels[i + 1],
+                    (launch->nchannels - i - 1) * sizeof(launch->channels[0]));
+        launch->nchannels--;
+        memset(&launch->channels[launch->nchannels], 0,
+               sizeof(launch->channels[0]));
+        return hush_launch_save_vibe(launch);
+    }
+    return HUSH_ERR_NOT_FOUND;
+}
+
+hush_status_t hush_launch_add_group(hush_launch_t *launch, const char *name)
+{
+    hush_launch_group_t *group;
+
+    if (launch == NULL || name == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe)
+        return HUSH_ERR_ARG;
+    if (launch->ngroups >= (size_t)HUSH_LAUNCH_GROUPS_MAX)
+        return HUSH_ERR_FULL;
+    group = &launch->groups[launch->ngroups];
+    memset(group, 0, sizeof(*group));
+    hush_launch_copy_name(group->name, sizeof(group->name), name, "group");
+    if (hush_launch_make_uuid(group->id, sizeof(group->id)) != HUSH_OK)
+        return HUSH_ERR_IO;
+    launch->ngroups++;
+    return hush_launch_save_vibe(launch);
+}
+
+hush_status_t hush_launch_set_channel_group(hush_launch_t *launch,
+                                            const char *slug,
+                                            const char *group_id)
+{
+    hush_launch_channel_t *ch;
+
+    if (launch == NULL || slug == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe)
+        return HUSH_ERR_ARG;
+    ch = hush_launch_find_channel(launch, slug);
+    if (ch == NULL)
+        return HUSH_ERR_NOT_FOUND;
+    if (group_id == NULL || group_id[0] == '\0') {
+        ch->group_id[0] = '\0';
+        return hush_launch_save_vibe(launch);
+    }
+    if (!hush_launch_has_group_id(launch, group_id))
+        return HUSH_ERR_NOT_FOUND;
+    hush_launch_copy_name(ch->group_id, sizeof(ch->group_id), group_id, "");
+    return hush_launch_save_vibe(launch);
+}
+
+hush_status_t hush_launch_set_channel_roster(hush_launch_t *launch,
+                                             const char *slug,
+                                             const char *const *humans,
+                                             size_t nhumans,
+                                             const char *const *robots,
+                                             size_t nrobots)
+{
+    hush_launch_channel_t *ch;
+    size_t i;
+
+    if (launch == NULL || slug == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe)
+        return HUSH_ERR_ARG;
+    if (nhumans > (size_t)HUSH_LAUNCH_CHAN_HUMANS_MAX)
+        return HUSH_ERR_FULL;
+    if (nrobots > (size_t)HUSH_LAUNCH_CHAN_ROBOTS_MAX)
+        return HUSH_ERR_FULL;
+    if (nhumans > 0 && humans == NULL)
+        return HUSH_ERR_ARG;
+    if (nrobots > 0 && robots == NULL)
+        return HUSH_ERR_ARG;
+    ch = hush_launch_find_channel(launch, slug);
+    if (ch == NULL)
+        return HUSH_ERR_NOT_FOUND;
+    ch->nhumans = 0;
+    ch->nrobots = 0;
+    memset(ch->humans, 0, sizeof(ch->humans));
+    memset(ch->robots, 0, sizeof(ch->robots));
+    for (i = 0; i < nhumans; ++i) {
+        if (humans[i] == NULL || humans[i][0] == '\0')
+            return HUSH_ERR_PARSE;
+        hush_launch_copy_name(ch->humans[ch->nhumans],
+                              sizeof(ch->humans[0]), humans[i], "");
+        ch->nhumans++;
+    }
+    for (i = 0; i < nrobots; ++i) {
+        if (robots[i] == NULL || robots[i][0] == '\0')
+            return HUSH_ERR_PARSE;
+        if (!hush_launch_has_robot(launch, robots[i]))
+            return HUSH_ERR_NOT_FOUND;
+        hush_launch_copy_name(ch->robots[ch->nrobots],
+                              sizeof(ch->robots[0]), robots[i], "");
+        ch->nrobots++;
+    }
+    return hush_launch_save_vibe(launch);
+}
+
 hush_status_t hush_launch_add_project(hush_launch_t *launch,
                                       hush_store_t *store,
                                       const char *name,
@@ -492,6 +657,9 @@ hush_status_t hush_launch_format_session(const hush_launch_t *launch,
     if (st != HUSH_OK)
         return st;
     st = hush_launch_format_channels(launch, out, outsz, &off);
+    if (st != HUSH_OK)
+        return st;
+    st = hush_launch_format_groups(launch, out, outsz, &off);
     if (st != HUSH_OK)
         return st;
     st = hush_launch_format_projects(launch, out, outsz, &off);
@@ -580,6 +748,102 @@ static int hush_launch_has_channel(const hush_launch_t *launch, const char *slug
     return 0;
 }
 
+static hush_launch_channel_t *hush_launch_find_channel(hush_launch_t *launch,
+                                                       const char *slug)
+{
+    size_t i;
+
+    assert(launch != NULL);
+    assert(slug != NULL);
+    for (i = 0; i < launch->nchannels; ++i) {
+        if (strcmp(launch->channels[i].slug, slug) == 0)
+            return &launch->channels[i];
+    }
+    return NULL;
+}
+
+static int hush_launch_has_group_id(const hush_launch_t *launch,
+                                    const char *group_id)
+{
+    size_t i;
+
+    assert(launch != NULL);
+    if (group_id == NULL || group_id[0] == '\0')
+        return 0;
+    for (i = 0; i < launch->ngroups; ++i) {
+        if (strcmp(launch->groups[i].id, group_id) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static int hush_launch_has_robot(const hush_launch_t *launch, const char *slug)
+{
+    size_t i;
+
+    assert(launch != NULL);
+    assert(slug != NULL);
+    if (strcmp(slug, HUSH_LAUNCH_PAYNE_SLUG) == 0)
+        return 1;
+    for (i = 0; i < launch->roster.nagents; ++i) {
+        if (strcmp(launch->roster.agents[i].slug, slug) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static hush_status_t hush_launch_make_uuid(char *out, size_t outsz)
+{
+    unsigned char raw[HUSH_LAUNCH_UUID_RAW];
+    static const char hex[] = "0123456789abcdef";
+    int fd;
+    ssize_t n;
+    size_t i;
+
+    assert(out != NULL);
+    if (outsz < (size_t)HUSH_LAUNCH_ID_HEX + 1)
+        return HUSH_ERR_ARG;
+    fd = open("/dev/urandom", O_RDONLY);
+    if (fd < 0)
+        return HUSH_ERR_IO;
+    n = read(fd, raw, sizeof(raw));
+    close(fd);
+    if (n != (ssize_t)sizeof(raw))
+        return HUSH_ERR_IO;
+    for (i = 0; i < sizeof(raw); ++i) {
+        out[i * 2] = hex[(raw[i] >> 4) & 0x0f];
+        out[i * 2 + 1] = hex[raw[i] & 0x0f];
+    }
+    out[HUSH_LAUNCH_ID_HEX] = '\0';
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_ensure_channel_id(hush_launch_channel_t *ch)
+{
+    assert(ch != NULL);
+    if (ch->id[0] != '\0')
+        return HUSH_OK;
+    return hush_launch_make_uuid(ch->id, sizeof(ch->id));
+}
+
+static hush_status_t hush_launch_ensure_ids(hush_launch_t *launch)
+{
+    size_t i;
+    int dirty = 0;
+
+    assert(launch != NULL);
+    for (i = 0; i < launch->nchannels; ++i) {
+        if (launch->channels[i].id[0] != '\0')
+            continue;
+        if (hush_launch_ensure_channel_id(&launch->channels[i]) != HUSH_OK)
+            return HUSH_ERR_IO;
+        dirty = 1;
+    }
+    if (dirty)
+        return hush_launch_save_vibe(launch);
+    return HUSH_OK;
+}
+
 static hush_status_t hush_launch_push_channel(hush_launch_t *launch,
                                               const char *name)
 {
@@ -593,6 +857,8 @@ static hush_status_t hush_launch_push_channel(hush_launch_t *launch,
     memset(ch, 0, sizeof(*ch));
     hush_launch_copy_name(ch->name, sizeof(ch->name), name, "channel");
     hush_launch_slugify(ch->slug, sizeof(ch->slug), ch->name);
+    if (hush_launch_ensure_channel_id(ch) != HUSH_OK)
+        return HUSH_ERR_IO;
     launch->nchannels++;
     return HUSH_OK;
 }
@@ -781,18 +1047,97 @@ static hush_status_t hush_launch_format_channels(const hush_launch_t *launch,
     assert(out != NULL);
     assert(off != NULL);
     for (i = 0; i < launch->nchannels; ++i) {
-        if (*off + 64 >= outsz)
+        if (*off + 96 >= outsz)
             return HUSH_ERR_FULL;
         hush_launch_json_escape(launch->channels[i].name, esc_name,
                                 sizeof(esc_name));
         n = snprintf(out + *off, outsz - *off,
-                     "%s{\"name\":\"%s\",\"slug\":\"%s\"}",
+                     "%s{\"name\":\"%s\",\"slug\":\"%s\",\"id\":\"%s\","
+                     "\"group_id\":\"%s\"",
                      (i == 0) ? "" : ",",
-                     esc_name, launch->channels[i].slug);
+                     esc_name, launch->channels[i].slug,
+                     launch->channels[i].id, launch->channels[i].group_id);
         if (n < 0)
             return HUSH_ERR_FULL;
         *off += (size_t)n;
+        HUSH_TRY(hush_launch_format_channel_lists(&launch->channels[i],
+                                                  out, outsz, off));
+        if (*off + 1 >= outsz)
+            return HUSH_ERR_FULL;
+        out[(*off)++] = '}';
+        out[*off] = '\0';
     }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_format_channel_lists(
+    const hush_launch_channel_t *ch, char *out, size_t outsz, size_t *off)
+{
+    char esc[HUSH_IDENTITY_NPUB_MAX * 2];
+    size_t i;
+    int n;
+
+    assert(ch != NULL);
+    assert(out != NULL);
+    assert(off != NULL);
+    n = snprintf(out + *off, outsz - *off, ",\"humans\":[");
+    if (n < 0 || *off + (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    *off += (size_t)n;
+    for (i = 0; i < ch->nhumans; ++i) {
+        hush_launch_json_escape(ch->humans[i], esc, sizeof(esc));
+        n = snprintf(out + *off, outsz - *off, "%s\"%s\"",
+                     (i == 0) ? "" : ",", esc);
+        if (n < 0 || *off + (size_t)n >= outsz)
+            return HUSH_ERR_FULL;
+        *off += (size_t)n;
+    }
+    n = snprintf(out + *off, outsz - *off, "],\"robots\":[");
+    if (n < 0 || *off + (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    *off += (size_t)n;
+    for (i = 0; i < ch->nrobots; ++i) {
+        hush_launch_json_escape(ch->robots[i], esc, sizeof(esc));
+        n = snprintf(out + *off, outsz - *off, "%s\"%s\"",
+                     (i == 0) ? "" : ",", esc);
+        if (n < 0 || *off + (size_t)n >= outsz)
+            return HUSH_ERR_FULL;
+        *off += (size_t)n;
+    }
+    if (*off + 1 >= outsz)
+        return HUSH_ERR_FULL;
+    out[(*off)++] = ']';
+    out[*off] = '\0';
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_format_groups(const hush_launch_t *launch,
+                                               char *out, size_t outsz,
+                                               size_t *off)
+{
+    char esc_name[HUSH_LAUNCH_NAME_MAX * 2];
+    size_t i;
+    int n;
+
+    assert(launch != NULL);
+    assert(out != NULL);
+    assert(off != NULL);
+    if (*off + 14 >= outsz)
+        return HUSH_ERR_FULL;
+    memcpy(out + *off, "],\"groups\":[", 12);
+    *off += 12;
+    for (i = 0; i < launch->ngroups; ++i) {
+        hush_launch_json_escape(launch->groups[i].name, esc_name,
+                                sizeof(esc_name));
+        n = snprintf(out + *off, outsz - *off,
+                     "%s{\"name\":\"%s\",\"id\":\"%s\"}",
+                     (i == 0) ? "" : ",",
+                     esc_name, launch->groups[i].id);
+        if (n < 0 || *off + (size_t)n >= outsz)
+            return HUSH_ERR_FULL;
+        *off += (size_t)n;
+    }
+    out[*off] = '\0';
     return HUSH_OK;
 }
 
@@ -1181,6 +1526,73 @@ static hush_status_t hush_launch_put_channels(const hush_launch_t *launch,
         hush_launch_index_key(key, sizeof(key), "channel_slug", i);
         HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
                                        launch->channels[i].slug));
+        hush_launch_index_key(key, sizeof(key), "channel_id", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->channels[i].id));
+        hush_launch_index_key(key, sizeof(key), "channel_group", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->channels[i].group_id));
+        HUSH_TRY(hush_launch_put_channel_lists(&launch->channels[i], i,
+                                              out, outsz, off));
+    }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_put_channel_lists(
+    const hush_launch_channel_t *ch, size_t idx,
+    char *out, size_t outsz, size_t *off)
+{
+    char key[HUSH_LAUNCH_KEY_MAX];
+    char stem[HUSH_LAUNCH_KEY_MAX];
+    char count[HUSH_LAUNCH_COUNT_MAX];
+    size_t i;
+
+    assert(ch != NULL);
+    if (snprintf(count, sizeof(count), "%zu", ch->nhumans) >= (int)sizeof(count))
+        return HUSH_ERR_FULL;
+    hush_launch_index_key(key, sizeof(key), "channel_nhumans", idx);
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, key, count));
+    for (i = 0; i < ch->nhumans; ++i) {
+        if (snprintf(stem, sizeof(stem), "channel_%zu_human", idx)
+            >= (int)sizeof(stem))
+            return HUSH_ERR_FULL;
+        hush_launch_index_key(key, sizeof(key), stem, i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key, ch->humans[i]));
+    }
+    if (snprintf(count, sizeof(count), "%zu", ch->nrobots) >= (int)sizeof(count))
+        return HUSH_ERR_FULL;
+    hush_launch_index_key(key, sizeof(key), "channel_nrobots", idx);
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, key, count));
+    for (i = 0; i < ch->nrobots; ++i) {
+        if (snprintf(stem, sizeof(stem), "channel_%zu_robot", idx)
+            >= (int)sizeof(stem))
+            return HUSH_ERR_FULL;
+        hush_launch_index_key(key, sizeof(key), stem, i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key, ch->robots[i]));
+    }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_put_groups(const hush_launch_t *launch,
+                                            char *out, size_t outsz,
+                                            size_t *off)
+{
+    char key[HUSH_LAUNCH_KEY_MAX];
+    char count[HUSH_LAUNCH_COUNT_MAX];
+    size_t i;
+
+    assert(launch != NULL);
+    if (snprintf(count, sizeof(count), "%zu", launch->ngroups)
+        >= (int)sizeof(count))
+        return HUSH_ERR_FULL;
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "ngroups", count));
+    for (i = 0; i < launch->ngroups; ++i) {
+        hush_launch_index_key(key, sizeof(key), "group_name", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->groups[i].name));
+        hush_launch_index_key(key, sizeof(key), "group_id", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->groups[i].id));
     }
     return HUSH_OK;
 }
@@ -1334,11 +1746,80 @@ static hush_status_t hush_launch_take_channels(hush_launch_t *launch,
         (void)hush_launch_json_string(json, key, ch->name, sizeof(ch->name));
         hush_launch_index_key(key, sizeof(key), "channel_slug", i);
         (void)hush_launch_json_string(json, key, ch->slug, sizeof(ch->slug));
+        hush_launch_index_key(key, sizeof(key), "channel_id", i);
+        (void)hush_launch_json_string(json, key, ch->id, sizeof(ch->id));
+        hush_launch_index_key(key, sizeof(key), "channel_group", i);
+        (void)hush_launch_json_string(json, key, ch->group_id,
+                                      sizeof(ch->group_id));
+        hush_launch_take_channel_lists(ch, json, i);
         if (ch->name[0] == '\0')
             continue;
         if (ch->slug[0] == '\0')
             hush_launch_slugify(ch->slug, sizeof(ch->slug), ch->name);
         launch->nchannels++;
+    }
+    return HUSH_OK;
+}
+
+static void hush_launch_take_channel_lists(hush_launch_channel_t *ch,
+                                           const char *json, size_t idx)
+{
+    char key[HUSH_LAUNCH_KEY_MAX];
+    char stem[HUSH_LAUNCH_KEY_MAX];
+    size_t n;
+    size_t i;
+
+    assert(ch != NULL);
+    ch->nhumans = 0;
+    ch->nrobots = 0;
+    hush_launch_index_key(key, sizeof(key), "channel_nhumans", idx);
+    n = hush_launch_json_count(json, key, (size_t)HUSH_LAUNCH_CHAN_HUMANS_MAX);
+    for (i = 0; i < n; ++i) {
+        if (snprintf(stem, sizeof(stem), "channel_%zu_human", idx)
+            >= (int)sizeof(stem))
+            break;
+        hush_launch_index_key(key, sizeof(key), stem, i);
+        if (!hush_launch_json_string(json, key, ch->humans[ch->nhumans],
+                                     sizeof(ch->humans[0])))
+            continue;
+        ch->nhumans++;
+    }
+    hush_launch_index_key(key, sizeof(key), "channel_nrobots", idx);
+    n = hush_launch_json_count(json, key, (size_t)HUSH_LAUNCH_CHAN_ROBOTS_MAX);
+    for (i = 0; i < n; ++i) {
+        if (snprintf(stem, sizeof(stem), "channel_%zu_robot", idx)
+            >= (int)sizeof(stem))
+            break;
+        hush_launch_index_key(key, sizeof(key), stem, i);
+        if (!hush_launch_json_string(json, key, ch->robots[ch->nrobots],
+                                     sizeof(ch->robots[0])))
+            continue;
+        ch->nrobots++;
+    }
+}
+
+static hush_status_t hush_launch_take_groups(hush_launch_t *launch,
+                                             const char *json)
+{
+    char key[HUSH_LAUNCH_KEY_MAX];
+    size_t n;
+    size_t i;
+
+    assert(launch != NULL);
+    launch->ngroups = 0;
+    n = hush_launch_json_count(json, "ngroups", (size_t)HUSH_LAUNCH_GROUPS_MAX);
+    for (i = 0; i < n; ++i) {
+        hush_launch_group_t *group = &launch->groups[i];
+
+        memset(group, 0, sizeof(*group));
+        hush_launch_index_key(key, sizeof(key), "group_name", i);
+        (void)hush_launch_json_string(json, key, group->name,
+                                      sizeof(group->name));
+        hush_launch_index_key(key, sizeof(key), "group_id", i);
+        (void)hush_launch_json_string(json, key, group->id, sizeof(group->id));
+        if (group->name[0] == '\0' || group->id[0] == '\0')
+            continue;
+        launch->ngroups++;
     }
     return HUSH_OK;
 }
