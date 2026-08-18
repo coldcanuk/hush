@@ -135,29 +135,29 @@ JSON 32768.
 
 ### M5.1 OAuth signed-in
 
-- [ ] Task 1 of M5.1: CSS `.providers label.ready` + checkmark.
-- [ ] Task 2 of M5.1: after OAuth click, poll `/api/provider` until
+- [x] Task 1 of M5.1: CSS `.providers label.ready` + checkmark.
+- [x] Task 2 of M5.1: after OAuth click, poll `/api/provider` until
       `has_home` or timeout; copy: close the browser and the
       terminal. `paintProviderPencil` marks ready radios.
 - Verify: `rg` in demo HTML for close-window copy + `.ready`.
 
 ### M5.2 Mentions
 
-- [ ] Task 1 of M5.2: `#mention-box` under composer. `@` after
+- [x] Task 1 of M5.2: `#mention-box` under composer. `@` after
       start/whitespace opens roster. Enter/click inserts
       `nostr:<npub>` and records mention pubkeys.
-- [ ] Task 2 of M5.2: `render` replaces `nostr:npub1…` with `@Name`.
+- [x] Task 2 of M5.2: `render` replaces `nostr:npub1…` with `@Name`.
       `who()` maps raised-robot pubkeys.
 - Verify: HTML contains `mention-box` and `nostr:`.
 
 ### M5.3 Channels, groups, manage
 
-- [ ] Task 1 of M5.3: `paintChannels` groups under labeled folders;
+- [x] Task 1 of M5.3: `paintChannels` groups under labeled folders;
       red `−` per row; context menu with four items.
-- [ ] Task 2 of M5.3: `#manage-chan` modal: humans + robots
+- [x] Task 2 of M5.3: `#manage-chan` modal: humans + robots
       checklists, Save, Close. Prompt for new group name on Add To
       Group when none exist / “New group…”.
-- [ ] Task 3 of M5.3: embed UI.
+- [x] Task 3 of M5.3: embed UI.
 - Verify: `check_launch.sh` greps for manage-chan, mention-box,
   chan-del, contextmenu.
 - Commit: `Milestone 5.3: OAuth mention group UI`
@@ -166,7 +166,7 @@ JSON 32768.
 
 ### M6.1 Tests and docs
 
-- [ ] Task 1 of M6.1: `./configure && make && make test`.
-- [ ] Task 2 of M6.1: README / NOSTR one-liners if needed.
+- [x] Task 1 of M6.1: `./configure && make && make test`.
+- [x] Task 2 of M6.1: README / NOSTR one-liners if needed.
 - [ ] Task 3 of M6.1: PR → auto-merge → delete worktree.
 - Verify: main clean, “Grok Build complete.”
