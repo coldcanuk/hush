@@ -26,6 +26,8 @@ Optimized for the Goose AI agent. All development uses worktrees **inside this r
 
 A small TailwindCSS demo UI is in `hush-c/demo/index.html`.
 
+Importing identities and channels from the predecessor project? See [IMPORT.md](IMPORT.md).
+
 ## Goose + Worktree (Prime Directive)
 
 **Law:** [PRIME_DIRECTIVE.md](PRIME_DIRECTIVE.md) — also [AGENTS.md](AGENTS.md), [BRANCHING.md](BRANCHING.md).
