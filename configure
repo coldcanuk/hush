@@ -110,6 +110,7 @@ echo "Checking build requirements..."
 check_cmd "$CC"
 check_cmd "$MAKE_CMD"
 check_cmd install
+check_cmd python3
 
 echo
 echo "Testing C11 compiler capability (strict flags)..."

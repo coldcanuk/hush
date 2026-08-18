@@ -4,6 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Hush</title>
+  <meta name="theme-color" content="#09090b">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Hush">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <style>
     :root {
       --bg: #09090b;
@@ -39,6 +47,11 @@
       border: 1px solid var(--line); color: var(--muted); background: var(--bg); white-space: nowrap;
     }
     #badge.ok { color: var(--accent); border-color: var(--accent-dim); }
+    #install {
+      display: none; font-size: 0.72rem; font-weight: 650; padding: 5px 10px;
+      border-radius: 999px; border: 0; background: var(--accent); color: var(--accent-ink);
+    }
+    #install.show { display: inline-block; }
     #badge.bad { color: var(--warn); border-color: #7f1d1d; }
     .shell { flex: 1; display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
     nav { border-right: 1px solid var(--line); background: var(--surface); padding: 14px 10px; display: flex; flex-direction: column; gap: 16px; }
@@ -101,7 +114,10 @@
         <div class="sub">local hive mind</div>
       </div>
     </div>
-    <div id="badge">connecting…</div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button id="install" type="button">Install</button>
+      <div id="badge">connecting…</div>
+    </div>
   </header>
   <div class="shell">
     <nav>
@@ -234,6 +250,28 @@
 
     tick();
     setInterval(tick, 1000);
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+    let installEvt = null;
+    const installBtn = $("install");
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      installEvt = e;
+      installBtn.classList.add("show");
+    });
+    installBtn.addEventListener("click", async () => {
+      if (!installEvt) return;
+      installEvt.prompt();
+      await installEvt.userChoice;
+      installEvt = null;
+      installBtn.classList.remove("show");
+    });
+    window.addEventListener("appinstalled", () => {
+      installEvt = null;
+      installBtn.classList.remove("show");
+    });
   </script>
 </body>
 </html>

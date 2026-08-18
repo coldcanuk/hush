@@ -1,4 +1,4 @@
-/* hush_http.c: owns HTTP status/events/UI serving for the hush-relay desktop UI. */
+/* hush_http.c: owns HTTP status/events/PWA UI serving for hush-relay. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,6 +26,7 @@ static void hush_http_path(const char *req, char *out, size_t outsz);
 static void hush_http_write_all(int fd, const char *buf, size_t len);
 static void hush_http_reply(int fd, const char *status, const char *ctype,
                             const char *body, size_t blen);
+static int hush_http_serve_asset(int fd, const char *path);
 static void hush_json_unescape_copy(const char *src, char *dst, size_t dstsz);
 static int hush_json_field(const char *body, const char *key, char *out, size_t outsz);
 static size_t hush_json_escape(const char *in, char *out, size_t outsz);
@@ -91,11 +92,8 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
         return HUSH_OK;
     }
     hush_http_path(req, path, sizeof(path));
-    if (strcmp(path, "/") == 0 || strcmp(path, "/index.html") == 0) {
-        hush_http_reply(fd, "200 OK", "text/html; charset=utf-8",
-                        HUSH_UI_HTML, strlen(HUSH_UI_HTML));
+    if (hush_http_serve_asset(fd, path))
         return HUSH_OK;
-    }
     if (strcmp(path, "/api/status") == 0) {
         hush_http_serve_status(fd, store);
         return HUSH_OK;
@@ -156,6 +154,42 @@ static void hush_http_path(const char *req, char *out, size_t outsz)
         i++;
     }
     out[i] = '\0';
+}
+
+static int hush_http_serve_asset(int fd, const char *path)
+{
+    struct hush_http_asset {
+        const char *path;
+        const char *ctype;
+        const char *body;
+        size_t len;
+    };
+    static const struct hush_http_asset assets[] = {
+        { "/", "text/html; charset=utf-8", HUSH_UI_HTML, 0 },
+        { "/index.html", "text/html; charset=utf-8", HUSH_UI_HTML, 0 },
+        { "/manifest.webmanifest", "application/manifest+json",
+          HUSH_UI_MANIFEST, 0 },
+        { "/sw.js", "application/javascript; charset=utf-8", HUSH_UI_SW, 0 },
+        { "/icon-192.png", "image/png",
+          (const char *)HUSH_UI_ICON_192, (size_t)HUSH_UI_ICON_192_LEN },
+        { "/icon-512.png", "image/png",
+          (const char *)HUSH_UI_ICON_512, (size_t)HUSH_UI_ICON_512_LEN },
+        { "/apple-touch-icon.png", "image/png",
+          (const char *)HUSH_UI_ICON_180, (size_t)HUSH_UI_ICON_180_LEN }
+    };
+    size_t i;
+    size_t n;
+    const char *body;
+
+    for (i = 0; i < sizeof(assets) / sizeof(assets[0]); ++i) {
+        if (strcmp(path, assets[i].path) != 0)
+            continue;
+        body = assets[i].body;
+        n = assets[i].len != 0 ? assets[i].len : strlen(body);
+        hush_http_reply(fd, "200 OK", assets[i].ctype, body, n);
+        return 1;
+    }
+    return 0;
 }
 
 static void hush_http_write_all(int fd, const char *buf, size_t len)
