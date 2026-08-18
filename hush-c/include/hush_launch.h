@@ -48,6 +48,8 @@ typedef struct {
     hush_identity_t payne;
     char vibe_name[HUSH_LAUNCH_NAME_MAX];
     char vibe_about[HUSH_LAUNCH_ABOUT_MAX];
+    int vibe_public;
+    char vibe_token[HUSH_LAUNCH_NAME_MAX];
     hush_launch_channel_t channels[HUSH_LAUNCH_CHANNELS_MAX];
     size_t nchannels;
     hush_launch_project_t projects[HUSH_LAUNCH_PROJECTS_MAX];
@@ -76,6 +78,10 @@ hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
                                       hush_store_t *store,
                                       const char *name,
                                       const char *about);
+
+/* public=1 discoverable; public=0 requires join token. */
+hush_status_t hush_launch_set_vibe_visibility(hush_launch_t *launch,
+                                              int is_public);
 
 /* Adds an open channel. Fails HUSH_ERR_FULL at cap. */
 hush_status_t hush_launch_add_channel(hush_launch_t *launch,

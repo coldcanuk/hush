@@ -2,11 +2,13 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "hush_event.h"
 #include "hush_launch.h"
@@ -64,6 +66,9 @@ static void hush_launch_fill_event(hush_event_t *ev, const char *pubkey_hex,
                                    uint32_t kind, const char *content,
                                    const char *channel);
 
+/* Writes a 16-char hex join token. */
+static hush_status_t hush_launch_make_token(char *out, size_t outsz);
+
 /* Writes a deterministic hex id from time + seq. */
 static void hush_launch_make_id(char *out65);
 
@@ -98,6 +103,7 @@ void hush_launch_init(hush_launch_t *launch)
     if (launch == NULL)
         return;
     memset(launch, 0, sizeof(*launch));
+    launch->vibe_public = 1;
 }
 
 hush_status_t hush_launch_create_identity(hush_launch_t *launch)
@@ -185,12 +191,32 @@ hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
                           name, HUSH_LAUNCH_DEFAULT_VIBE);
     hush_launch_copy_name(launch->vibe_about, sizeof(launch->vibe_about),
                           about, "Primary Hush endpoint.");
+    launch->vibe_public = 1;
+    if (hush_launch_make_token(launch->vibe_token,
+                               sizeof(launch->vibe_token)) != HUSH_OK)
+        return HUSH_ERR_IO;
     launch->nchannels = 0;
     launch->nprojects = 0;
     hush_identity_clear(&launch->payne);
     if (hush_launch_seed_hive(launch, store) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
     launch->has_vibe = 1;
+    return HUSH_OK;
+}
+
+hush_status_t hush_launch_set_vibe_visibility(hush_launch_t *launch,
+                                              int is_public)
+{
+    if (launch == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe)
+        return HUSH_ERR_ARG;
+    launch->vibe_public = is_public ? 1 : 0;
+    if (!launch->vibe_public && launch->vibe_token[0] == '\0') {
+        if (hush_launch_make_token(launch->vibe_token,
+                                   sizeof(launch->vibe_token)) != HUSH_OK)
+            return HUSH_ERR_IO;
+    }
     return HUSH_OK;
 }
 
@@ -498,7 +524,9 @@ static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
                  "\"has_vibe\":%s,\"ready\":%s,\"save_pass\":%s,"
                  "\"pass_saved\":%s,\"pass_error\":\"%s\",\"port\":%u,"
                  "\"npub\":\"%s\",\"pubkey\":\"%s\",\"nsec\":\"%s\","
-                 "\"vibe\":{\"name\":\"%s\",\"about\":\"%s\"},"
+                 "\"vibe\":{\"name\":\"%s\",\"about\":\"%s\","
+                 "\"visibility\":\"%s\",\"discoverable\":%s,"
+                 "\"join_token\":\"%s\"},"
                  "\"payne\":{\"name\":\"%s\",\"npub\":\"%s\","
                  "\"about\":\"%s\"},\"channels\":[",
                  launch->logged_in ? "true" : "false",
@@ -514,6 +542,9 @@ static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
                  (launch->logged_in && !launch->backup_acked)
                      ? launch->human.nsec : "",
                  esc_vibe, esc_about,
+                 launch->vibe_public ? "public" : "private",
+                 launch->vibe_public ? "true" : "false",
+                 launch->has_vibe ? launch->vibe_token : "",
                  launch->has_vibe ? HUSH_LAUNCH_PAYNE_NAME : "",
                  launch->has_vibe ? launch->payne.npub : "",
                  launch->has_vibe ? HUSH_LAUNCH_PAYNE_ABOUT : "");
@@ -649,4 +680,30 @@ static size_t hush_launch_json_escape(const char *src, char *dst, size_t dstsz)
     }
     dst[o] = '\0';
     return o;
+}
+
+static hush_status_t hush_launch_make_token(char *out, size_t outsz)
+{
+    unsigned char raw[8];
+    static const char hex[] = "0123456789abcdef";
+    int fd;
+    ssize_t n;
+    size_t i;
+
+    assert(out != NULL);
+    if (outsz < 17)
+        return HUSH_ERR_ARG;
+    fd = open("/dev/urandom", O_RDONLY);
+    if (fd < 0)
+        return HUSH_ERR_IO;
+    n = read(fd, raw, sizeof(raw));
+    close(fd);
+    if (n != (ssize_t)sizeof(raw))
+        return HUSH_ERR_IO;
+    for (i = 0; i < sizeof(raw); ++i) {
+        out[i * 2] = hex[(raw[i] >> 4) & 0x0f];
+        out[i * 2 + 1] = hex[raw[i] & 0x0f];
+    }
+    out[16] = '\0';
+    return HUSH_OK;
 }

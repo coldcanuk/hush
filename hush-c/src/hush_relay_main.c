@@ -56,4 +56,7 @@ static void hush_print_help(void)
     printf("  port       listen port (default 10555)\n");
     printf("  --open     open the chat as a standalone app window\n");
     printf("  --no-open  do not open a window (even on a graphical session)\n");
+    printf("STUN/TURN: Settings → Enable STUN/TURN (needs coturn).\n");
+    printf("Daemon:    sudo make install PREFIX=/usr, then Settings → Daemon mode\n");
+    printf("           or: sudo systemctl enable --now hush-turn\n");
 }

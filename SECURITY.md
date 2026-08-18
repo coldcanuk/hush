@@ -66,6 +66,19 @@ Private channels are invisible to non-members: they do not appear in channel
 listings, and subscription filters for private channel events return nothing
 unless the subscriber is a member.
 
+A **vibe** (this relay) has the same visibility: `public` vibes are
+discoverable and joinable; `private` vibes are not listed and require the
+operator’s join token. Full NIP-42 AUTH is still planned — the MVP hides
+listings and issues a token, it does not yet challenge every socket.
+
+### STUN/TURN
+
+The optional coturn child/daemon is started with a generated long-term
+credential (`user=hush:<random>`). Never run an open TURN relay: it will be
+used as a DDoS reflector. TLS/DTLS for TURN is out of this slice; put
+coturn behind a firewall and set `external-ip` when NATed. Daemon mode
+installs a systemd unit but does not enable it until the operator asks.
+
 ### In-Memory Store (MVP)
 
 The MVP store is a bounded in-memory ring. Events are not durable across

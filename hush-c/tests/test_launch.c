@@ -53,6 +53,15 @@ int main(void)
                                    "primary endpoint") == HUSH_OK,
            "vibe");
     expect(hush_launch_is_ready(&launch), "ready");
+    expect(launch.vibe_public == 1, "vibe public default");
+    expect(launch.vibe_token[0] != '\0', "join token");
+    expect(hush_launch_set_vibe_visibility(&launch, 0) == HUSH_OK, "private");
+    expect(launch.vibe_public == 0, "vibe private");
+    expect(hush_launch_format_session(&launch, 10555, json, sizeof(json),
+                                      &n) == HUSH_OK,
+           "session private");
+    expect(strstr(json, "\"visibility\":\"private\"") != NULL, "vis private");
+    expect(hush_launch_set_vibe_visibility(&launch, 1) == HUSH_OK, "public");
     expect(launch.nchannels == 3, "starter channels");
     expect(strncmp(launch.payne.npub, "npub1", 5) == 0, "payne");
     expect(hush_launch_add_channel(&launch, "incidents") == HUSH_OK, "channel");

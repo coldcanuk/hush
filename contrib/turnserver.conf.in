@@ -1,0 +1,18 @@
+# Hush-generated coturn config. hush-relay rewrites this file.
+# WebRTC requires long-term credentials (--lt-cred-mech).
+
+listening-port=3478
+min-port=49152
+max-port=49251
+fingerprint
+lt-cred-mech
+realm=hush.local
+user=hush:replace-me
+no-cli
+no-tls
+no-dtls
+no-multicast-peers
+stale-nonce=600
+log-file=/var/log/hush/turnserver.log
+pidfile=/run/hush-turn/turnserver.pid
+# external-ip=YOUR.PUBLIC.IP

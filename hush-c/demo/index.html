@@ -151,6 +151,50 @@
       font-size: 0.78rem; color: var(--muted); line-height: 1.45;
     }
     .agent strong { color: var(--accent); display: block; margin-bottom: 4px; }
+    .iconbtn {
+      background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+      border-radius: 999px; padding: 6px 10px; font-size: 0.78rem; font-weight: 650;
+    }
+    .iconbtn.on { border-color: var(--accent-dim); color: var(--accent); }
+    .drawer, .stage {
+      display: none; position: fixed; inset: 0; background: rgba(9,9,11,0.72);
+      z-index: 20; align-items: flex-start; justify-content: center; padding: 48px 16px 16px;
+    }
+    .drawer.show, .stage.show { display: flex; }
+    .panel {
+      width: min(28rem, 100%); background: var(--surface); border: 1px solid var(--line);
+      border-radius: 16px; padding: 20px; max-height: calc(100vh - 64px); overflow: auto;
+    }
+    .panel h2 { margin: 0 0 6px; font-size: 1.1rem; }
+    .panel p { margin: 0 0 12px; color: var(--muted); font-size: 0.86rem; line-height: 1.45; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+    .row label { font-size: 0.9rem; }
+    .switch { position: relative; width: 42px; height: 24px; flex: 0 0 auto; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0; background: var(--line); border-radius: 999px; cursor: pointer;
+    }
+    .slider:before {
+      content: ""; position: absolute; height: 18px; width: 18px; left: 3px; top: 3px;
+      background: var(--fg); border-radius: 50%;
+    }
+    .switch input:checked + .slider { background: var(--accent-dim); }
+    .switch input:checked + .slider:before { transform: translateX(18px); background: var(--accent); }
+    .vis { display: flex; gap: 8px; margin: 10px 0 0; }
+    .vis label {
+      flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 10px;
+      font-size: 0.82rem; color: var(--muted); cursor: pointer;
+    }
+    .vis input { margin-right: 6px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 12px 0; }
+    .tile { background: #000; border-radius: 12px; overflow: hidden; min-height: 120px; position: relative; }
+    .tile video { width: 100%; height: 160px; object-fit: cover; background: #000; }
+    .tile span {
+      position: absolute; left: 8px; bottom: 8px; font-size: 0.7rem;
+      background: rgba(0,0,0,0.55); padding: 2px 8px; border-radius: 999px;
+    }
+    .wide { width: min(52rem, 100%); }
+    .badge-vis { font-size: 0.7rem; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
     @media (max-width: 640px) {
       .shell, .hive { grid-template-columns: 1fr; }
       nav { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -174,6 +218,8 @@
     </div>
     <div style="display:flex;align-items:center;gap:8px">
       <button id="install" type="button">Install</button>
+      <button class="iconbtn" id="call-btn" type="button" hidden>Call</button>
+      <button class="iconbtn" id="settings-btn" type="button" hidden>Settings</button>
       <div id="badge">connecting…</div>
     </div>
   </header>
@@ -200,6 +246,7 @@
       <div class="room">
         <h1 id="room">#general</h1>
         <span id="count">0 notes</span>
+        <span class="badge-vis" id="vibe-vis"></span>
       </div>
       <div id="stream"></div>
       <form class="composer" id="form">
@@ -207,6 +254,45 @@
         <button id="send" type="submit">Send</button>
       </form>
     </main>
+  </div>
+  <div class="drawer" id="settings" role="dialog" aria-label="Settings">
+    <div class="panel">
+      <h2>Settings</h2>
+      <p>Enable a local STUN/TURN server so conference calls work across NAT. coturn must be installed for the process to start.</p>
+      <div class="row">
+        <label for="turn-on">Enable STUN/TURN</label>
+        <label class="switch"><input id="turn-on" type="checkbox"><span class="slider"></span></label>
+      </div>
+      <div class="row">
+        <label for="turn-daemon">Daemon mode (systemd)</label>
+        <label class="switch"><input id="turn-daemon" type="checkbox"><span class="slider"></span></label>
+      </div>
+      <label for="turn-host">Public host / IP</label>
+      <input id="turn-host" type="text" maxlength="120" placeholder="127.0.0.1" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:8px 0 4px">
+      <p id="turn-status" class="help">turn off</p>
+      <div class="row">
+        <label for="vibe-public">Public vibe (discoverable)</label>
+        <label class="switch"><input id="vibe-public" type="checkbox" checked><span class="slider"></span></label>
+      </div>
+      <p id="vibe-token" class="help"></p>
+      <p class="help">AI voice in a call needs a speech model such as Whisper. Without it, agents can join but cannot hear.</p>
+      <div class="actions">
+        <button class="btn" id="settings-close" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+  <div class="stage" id="stage" role="dialog" aria-label="Conference">
+    <div class="panel wide">
+      <h2 id="call-title">Conference</h2>
+      <p id="call-help">Mesh call on this channel. Humans and agents can join. Voice for agents requires Whisper.</p>
+      <div class="grid" id="tiles"></div>
+      <div class="actions">
+        <button class="btn" id="call-join" type="button">Join call</button>
+        <button class="btn ghost" id="call-agent" type="button">Invite Payne</button>
+        <button class="btn ghost" id="call-leave" type="button">Leave</button>
+        <button class="btn ghost" id="call-close" type="button">Close</button>
+      </div>
+    </div>
   </div>
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
@@ -247,8 +333,12 @@
       const ready = !!session.ready;
       $("gate").classList.toggle("show", !ready);
       $("hive").classList.toggle("show", ready);
+      $("settings-btn").hidden = !ready;
+      $("call-btn").hidden = !ready;
       if (session.vibe && session.vibe.name)
         $("vibe-sub").textContent = session.vibe.name;
+      if (session.vibe && session.vibe.visibility)
+        $("vibe-vis").textContent = session.vibe.visibility;
       if (!ready) {
         $("gate").innerHTML = gateHtml();
         bindGate();
@@ -302,6 +392,10 @@
           "<input id=\"vibe-name\" maxlength=\"48\" value=\"local hive\" placeholder=\"local hive\">" +
           "<label for=\"vibe-about\">About</label>" +
           "<textarea id=\"vibe-about\" maxlength=\"200\" placeholder=\"Primary Hush endpoint.\"></textarea>" +
+          "<div class=\"vis\">" +
+          "<label><input type=\"radio\" name=\"vibe-vis\" value=\"public\" checked> Public — discoverable and joinable</label>" +
+          "<label><input type=\"radio\" name=\"vibe-vis\" value=\"private\"> Private — invite token required</label>" +
+          "</div>" +
           errLine() +
           actions([{ id: "do-vibe", label: "Stand up the hive" }]));
       }
@@ -363,7 +457,9 @@
       on("do-vibe", () => {
         const name = ($("vibe-name") && $("vibe-name").value) || "local hive";
         const about = ($("vibe-about") && $("vibe-about").value) || "";
-        postJson("/api/vibe", { name: name, about: about });
+        const visEl = document.querySelector("input[name='vibe-vis']:checked");
+        const visibility = visEl ? visEl.value : "public";
+        postJson("/api/vibe", { name: name, about: about, visibility: visibility });
       });
       const inp = $("nsec-in");
       if (inp) inp.addEventListener("input", () => {
@@ -449,6 +545,192 @@
       }
     });
 
+    const selfId = "p" + Math.random().toString(16).slice(2, 10);
+    const PEER_MAX = 8;
+    let iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+    let localStream = null;
+    let inCall = false;
+    const peers = {};
+    const seenSig = {};
+
+    $("settings-btn").addEventListener("click", () => {
+      $("settings").classList.add("show");
+      syncSettings();
+    });
+    $("settings-close").addEventListener("click", () => $("settings").classList.remove("show"));
+    $("call-btn").addEventListener("click", () => {
+      $("stage").classList.add("show");
+      $("call-title").textContent = "Conference · #" + channel;
+    });
+    $("call-close").addEventListener("click", () => $("stage").classList.remove("show"));
+    $("turn-on").addEventListener("change", () => postTurn());
+    $("turn-daemon").addEventListener("change", () => postTurn());
+    $("turn-host").addEventListener("change", () => postTurn());
+    $("vibe-public").addEventListener("change", async () => {
+      const visibility = $("vibe-public").checked ? "public" : "private";
+      try { applySession(await api("/api/vibe", { visibility: visibility })); }
+      catch (e) {}
+      syncSettings();
+    });
+
+    async function syncSettings() {
+      try {
+        const t = await api("/api/turn");
+        $("turn-on").checked = !!t.enabled;
+        $("turn-daemon").checked = t.mode === "daemon";
+        $("turn-host").value = t.host || "";
+        $("turn-status").textContent =
+          (t.compiled ? "compiled" : "not compiled") +
+          " · " + (t.running ? "running :" + t.port : "stopped") +
+          (t.have_binary ? " · coturn found" : " · install coturn") +
+          (t.need_root ? " · daemon needs sudo make install PREFIX=/usr" : "") +
+          (t.whisper ? " · Whisper ready" : " · Whisper not found");
+        const ice = await api("/api/ice");
+        if (ice.iceServers) iceServers = ice.iceServers;
+      } catch (e) {
+        $("turn-status").textContent = "turn api unreachable";
+      }
+      if (session.vibe) {
+        $("vibe-public").checked = session.vibe.visibility !== "private";
+        $("vibe-token").textContent = session.vibe.visibility === "private"
+          ? ("Join token: " + (session.vibe.join_token || ""))
+          : "Public vibes are discoverable and joinable.";
+      }
+    }
+
+    async function postTurn() {
+      try {
+        await api("/api/turn", {
+          enabled: $("turn-on").checked,
+          daemon: $("turn-daemon").checked,
+          host: $("turn-host").value.trim()
+        });
+      } catch (e) {}
+      await syncSettings();
+    }
+
+    function addTile(id, stream, label) {
+      let tile = document.getElementById("tile-" + id);
+      if (!tile) {
+        tile = document.createElement("div");
+        tile.className = "tile";
+        tile.id = "tile-" + id;
+        const v = document.createElement("video");
+        v.autoplay = true;
+        v.playsInline = true;
+        v.muted = id === selfId;
+        const s = document.createElement("span");
+        s.textContent = label;
+        tile.appendChild(v);
+        tile.appendChild(s);
+        $("tiles").appendChild(tile);
+      }
+      const video = tile.querySelector("video");
+      if (stream && video.srcObject !== stream) video.srcObject = stream;
+      tile.querySelector("span").textContent = label;
+    }
+
+    async function signal(payload) {
+      payload.channel = channel;
+      payload.from = payload.from || selfId;
+      await api("/api/signal", payload);
+    }
+
+    async function ensureLocal() {
+      if (localStream) return localStream;
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      addTile(selfId, localStream, "you · human");
+      return localStream;
+    }
+
+    function pcFor(id, role) {
+      if (peers[id]) return peers[id];
+      if (Object.keys(peers).length >= PEER_MAX) return null;
+      const pc = new RTCPeerConnection({ iceServers: iceServers });
+      peers[id] = pc;
+      if (localStream) localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
+      pc.onicecandidate = (ev) => {
+        if (ev.candidate)
+          signal({ t: "ice", to: id, role: "human", candidate: ev.candidate });
+      };
+      pc.ontrack = (ev) => addTile(id, ev.streams[0], (role || "peer"));
+      return pc;
+    }
+
+    async function callPeer(id, role) {
+      const pc = pcFor(id, role);
+      if (!pc) return;
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await signal({ t: "offer", to: id, role: "human", sdp: offer });
+    }
+
+    async function handleSig(ev) {
+      if (!inCall || ev.kind !== 25000 || seenSig[ev.id]) return;
+      let msg;
+      try { msg = JSON.parse(ev.content); } catch (e) { return; }
+      if (!msg || msg.from === selfId) return;
+      if (msg.channel && msg.channel !== channel) return;
+      if (msg.to && msg.to !== "*" && msg.to !== selfId) return;
+      seenSig[ev.id] = 1;
+      if (msg.t === "join") {
+        addTile(msg.from, null, (msg.role || "peer") + " · " + msg.from.slice(0, 6));
+        if (msg.role !== "agent") await callPeer(msg.from, msg.role);
+        return;
+      }
+      if (msg.t === "leave") {
+        if (peers[msg.from]) { peers[msg.from].close(); delete peers[msg.from]; }
+        const tile = document.getElementById("tile-" + msg.from);
+        if (tile) tile.remove();
+        return;
+      }
+      if (msg.t === "offer" && msg.sdp) {
+        const pc = pcFor(msg.from, msg.role);
+        if (!pc) return;
+        await pc.setRemoteDescription(msg.sdp);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await signal({ t: "answer", to: msg.from, role: "human", sdp: answer });
+        return;
+      }
+      if (msg.t === "answer" && msg.sdp && peers[msg.from]) {
+        await peers[msg.from].setRemoteDescription(msg.sdp);
+        return;
+      }
+      if (msg.t === "ice" && msg.candidate && peers[msg.from]) {
+        try { await peers[msg.from].addIceCandidate(msg.candidate); } catch (e) {}
+      }
+    }
+
+    $("call-join").addEventListener("click", async () => {
+      try {
+        await syncSettings();
+        await ensureLocal();
+        inCall = true;
+        await signal({ t: "join", to: "*", role: "human" });
+      } catch (e) {
+        $("call-help").textContent = "Camera/mic blocked or ICE unavailable.";
+      }
+    });
+    $("call-leave").addEventListener("click", async () => {
+      inCall = false;
+      Object.keys(peers).forEach((id) => { peers[id].close(); delete peers[id]; });
+      if (localStream) {
+        localStream.getTracks().forEach((t) => t.stop());
+        localStream = null;
+      }
+      $("tiles").innerHTML = "";
+      try { await signal({ t: "leave", to: "*" }); } catch (e) {}
+    });
+    $("call-agent").addEventListener("click", async () => {
+      const agentId = "payne";
+      addTile(agentId, null, "Payne · agent");
+      try {
+        await signal({ t: "join", from: agentId, to: "*", role: "agent" });
+      } catch (e) {}
+      $("call-help").textContent = "Payne joined as an agent. Voice needs Whisper (HUSH_WHISPER or whisper on PATH).";
+    });
+
     function badge(ok, text) {
       const el = $("badge");
       el.textContent = text;
@@ -456,7 +738,9 @@
     }
 
     function render(events, status) {
-      const mine = events.filter((e) => (e.channel || "general") === channel);
+      events.forEach((e) => { handleSig(e); });
+      const mine = events.filter((e) =>
+        (e.channel || "general") === channel && e.kind !== 25000);
       $("count").textContent = mine.length + (mine.length === 1 ? " note" : " notes");
       const projN = (session.projects || []).length;
       $("stats").innerHTML =

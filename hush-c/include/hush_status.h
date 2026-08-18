@@ -10,7 +10,8 @@ typedef enum {
     HUSH_ERR_FULL = -3,
     HUSH_ERR_NOT_FOUND = -4,
     HUSH_ERR_CRYPTO = -5,
-    HUSH_ERR_IO = -6
+    HUSH_ERR_IO = -6,
+    HUSH_ERR_DENIED = -7
 } hush_status_t;
 
 /* Propagates any non-OK status to the caller.

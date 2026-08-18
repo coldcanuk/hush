@@ -20,6 +20,7 @@ BINDIR="${BINDIR:-}"
 DATADIR="${DATADIR:-}"
 CC="${CC:-}"
 MAKE_CMD="${MAKE:-}"
+ENABLE_STUN_TURN="${ENABLE_STUN_TURN:-1}"
 
 # Parse command-line options (override env)
 for arg in "$@"; do
@@ -29,6 +30,8 @@ for arg in "$@"; do
         --datadir=*)  DATADIR="${arg#--datadir=}" ;;
         --cc=*)       CC="${arg#--cc=}" ;;
         --make=*)     MAKE_CMD="${arg#--make=}" ;;
+        --enable-stun-turn)  ENABLE_STUN_TURN=1 ;;
+        --disable-stun-turn) ENABLE_STUN_TURN=0 ;;
         -h|--help)
             echo "configure for Hush (hush-relay - legible C11 Nostr relay)"
             echo ""
@@ -38,6 +41,8 @@ for arg in "$@"; do
             echo "  --datadir=PATH  Data directory     (default: \$PREFIX/share)"
             echo "  --cc=COMPILER   C compiler"
             echo "  --make=MAKE     make or gmake"
+            echo "  --enable-stun-turn   compile STUN/TURN manager (default)"
+            echo "  --disable-stun-turn  omit STUN/TURN manager"
             echo ""
             echo "Environment variables are also honored (PREFIX=... ./configure)"
             exit 0
@@ -94,6 +99,11 @@ fi
 
 echo "Using CC:   $CC"
 echo "Using MAKE: $MAKE_CMD"
+if [ "$ENABLE_STUN_TURN" = "1" ]; then
+    echo "STUN/TURN:  enabled (default; --disable-stun-turn to omit)"
+else
+    echo "STUN/TURN:  disabled"
+fi
 echo
 
 MISSING=""
@@ -111,6 +121,15 @@ check_cmd "$CC"
 check_cmd "$MAKE_CMD"
 check_cmd install
 check_cmd python3
+
+TURNSERVER=""
+if command -v turnserver >/dev/null 2>&1; then
+    TURNSERVER="$(command -v turnserver)"
+    echo "FOUND:   turnserver ($TURNSERVER)"
+else
+    echo "OPTIONAL: turnserver (coturn) not on PATH"
+    echo "          install coturn to start a STUN/TURN server from Settings."
+fi
 
 echo
 echo "Testing C11 compiler capability (strict flags)..."
@@ -135,6 +154,22 @@ if "$CC" -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -c /tmp/hush_c11_p
 else
     echo "C11 strict probe: FAILED"
     MISSING="$MISSING c11-strict"
+fi
+
+OPENSSL_CFLAGS=""
+OPENSSL_LIBS="-lcrypto"
+if [ -f /usr/include/openssl/bn.h ]; then
+    echo "FOUND:   openssl headers (/usr/include/openssl)"
+elif [ -f /usr/include/node/openssl/bn.h ]; then
+    OPENSSL_CFLAGS="-I/usr/include/node"
+    echo "FOUND:   openssl headers (/usr/include/node)"
+    if [ ! -e /usr/lib/$(uname -m)-linux-gnu/libcrypto.so ] && \
+       [ -e /usr/lib/$(uname -m)-linux-gnu/libcrypto.so.3 ]; then
+        OPENSSL_LIBS="-l:libcrypto.so.3"
+    fi
+else
+    echo "MISSING: openssl headers (libssl-dev)"
+    MISSING="$MISSING openssl"
 fi
 
 # Helpful output, especially for Pop!_OS
@@ -188,7 +223,11 @@ OS_UNAME := $OS_UNAME
 OS_ID    := ${OS_RELEASE_ID:-unknown}
 
 # Legible C11 flags (matching hush-c expectations)
-CFLAGS  := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2
+CFLAGS  := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2 -DHUSH_STUN_TURN=$ENABLE_STUN_TURN $OPENSSL_CFLAGS
+LDFLAGS := $OPENSSL_LIBS
+
+ENABLE_STUN_TURN := $ENABLE_STUN_TURN
+TURNSERVER := $TURNSERVER
 CONF
 
 echo
@@ -196,6 +235,7 @@ echo "Configuration written to config.mk"
 echo "  PREFIX=$PREFIX"
 echo "  BINDIR=$BINDIR"
 echo "  DATADIR=$DATADIR"
+echo "  STUN/TURN=$ENABLE_STUN_TURN"
 echo
 echo "Standard workflow:"
 echo "  ./configure"

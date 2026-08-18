@@ -18,10 +18,10 @@ include config.mk
 .PHONY: all test clean install uninstall package-deb package-rpm packages deb rpm flatpak openbsd freebsd bsd dist
 
 all:
-	$(MAKE) -C hush-c all CC="$(CC)" CFLAGS="$(CFLAGS)"
+	$(MAKE) -C hush-c all CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)"
 
 test:
-	$(MAKE) -C hush-c test CC="$(CC)" CFLAGS="$(CFLAGS)"
+	$(MAKE) -C hush-c test CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)"
 
 clean:
 	$(MAKE) -C hush-c clean
@@ -32,7 +32,8 @@ install:
 		DESTDIR="$(DESTDIR)" \
 		PREFIX="$(PREFIX)" \
 		BINDIR="$(BINDIR)" \
-		DATADIR="$(DATADIR)"
+		DATADIR="$(DATADIR)" \
+		ENABLE_STUN_TURN="$(ENABLE_STUN_TURN)"
 	@echo
 	@echo "To refresh your application launcher (Linux):"
 	@echo "  update-desktop-database $(DATADIR)/applications || true"

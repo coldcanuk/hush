@@ -1005,3 +1005,123 @@ Tests:
 ## Remaining plan
 
 See `PLAN_PASS_IDENTITY.md`.
+
+---
+
+# 2026-08-17 RDAP: STUN/TURN (coturn), vibe visibility, conference calling
+
+## Scope locked
+
+- **Primary goal:** Let a Hush operator enable a local STUN/TURN server from Settings so voice/video conference calls (human↔human, many humans, human↔agent, agent↔agent, mixed) can traverse NAT. A vibe is public (discoverable + joinable) or private (not).
+- **Non-goals:** Vendoring the coturn source tree; embedding Whisper.cpp; building an SFU; TURN TLS/DTLS certificates in this slice; NIP-42 AUTH; replacing the first-launch identity flow; Tailwind.
+- **Success / DoD:**
+  1. `./configure` has `--enable-stun-turn` (default) and `--disable-stun-turn`.
+  2. Settings has an **Enable STUN/TURN** control that writes a coturn config and starts `turnserver` (child of `hush-relay`).
+  3. **Daemon mode** installs/starts a systemd unit. `sudo make install PREFIX=/usr` (or equivalent) is required for the system unit; documented.
+  4. `GET /api/ice` returns WebRTC `iceServers` (STUN + long-term TURN credentials).
+  5. A vibe has `visibility: public|private`. Public is discoverable/joinable; private is not listed and needs the join token.
+  6. PWA can start a mesh conference on a channel (offer/answer/ICE via kind 25000). Participant roles: `human` | `agent`.
+  7. AI voice is gated: `/api/status` reports `whisper`. Without a speech model (Whisper or equivalent) agents join as text/signaling-only.
+  8. `make && make test` pass under `-Werror` with STUN/TURN compiled in *and* with `--disable-stun-turn`.
+- **Constraints:** C11 + write-legible-c (fn ≤40 lines, depth ≤2, named literals, no recursion/goto). Single binary + embedded PWA. coturn is a **runtime** dependency (`turnserver` on PATH), not a link-time library. Worktree `gb/stun-turn`. Land via PR only.
+- **Assumptions:** One vibe per relay process (already true). Conference is a **mesh** (each peer talks to each other peer). Home deployments can live with a small relay port range (49152–49251). Open TURN is abuse-prone → always generate credentials.
+- **Environment:** gcc, OpenSSL (`-lcrypto` already required for identity), optional `turnserver` (coturn), optional `systemctl`, no apt in some sandboxes.
+- **Risks:**
+  1. Open/unauthenticated TURN becomes a DDoS relay → long-term `user=` creds, never empty.
+  2. Binding :3478 needs root or `CAP_NET_BIND_SERVICE` → child mode falls back to 13478.
+  3. `hush_http.c` / `index.html` already large → new `hush_turn` module; HTTP only dispatches; UI overlays.
+  4. Missing `turnserver` must not fail the build or crash the relay → compile-time flag + runtime `have_binary`.
+  5. Conference without ICE still works on LAN; TURN is for NAT.
+
+## Findings
+
+### coturn (https://github.com/coturn/coturn)
+
+- coturn is a TURN **and** STUN server (RFC 8489 STUN, RFC 8656 TURN).
+- Not a library we should vendor. Run the `turnserver` binary. Config file or CLI.
+- Daemon: `turnserver --daemon` / `-o`. systemd: Debian ships `coturn.service`; Hush ships its own `hush-turn.service` so we own the config path (`/etc/hush/turnserver.conf`) and do not fight a distro coturn instance.
+- WebRTC requires `--lt-cred-mech` (long-term credentials). REST API (`--use-auth-secret` + HMAC-SHA1 timestamp usernames) is nicer for multi-tenant; a **single-operator self-host** is simpler with one generated `user=hush:<secret>` written into the conf and returned from `/api/ice`.
+- Useful knobs: `listening-port` (3478), `min-port`/`max-port` (relay UDP), `realm`, `fingerprint`, `external-ip` when behind NAT, `no-cli`, `no-tls`/`no-dtls` until certs exist, `no-multicast-peers`, `pidfile`, `log-file`.
+- Runtime ports: 3478/tcp+udp (signaling), plus the relay range. Document firewall.
+
+### Why Hush does not embed coturn
+
+- coturn depends on libevent2, optional OpenSSL, DB backends. Linking it would explode the C11 single-binary contract and the no-system-package sandbox.
+- Process isolation is a feature: a TURN crash must not take down the relay.
+- License: coturn is BSD-like; we generate config and exec. No source copy.
+
+### Vibe visibility (maps onto existing first-launch “vibe”)
+
+RESEARCH §2026-08-17 first-launch already locked: **vibe = this relay / primary endpoint**. Do **not** invent a second vibe object.
+
+SECURITY.md already states the intended ACL: private channels are invisible to non-members. This slice applies the same idea to the **vibe itself**:
+
+| visibility | discoverable | joinable |
+|---|---|---|
+| `public` | yes (`session.vibe.discoverable=true`) | anyone who can reach the relay |
+| `private` | no | only with `vibe.join_token` |
+
+Enforcement is honest-MVP: we hide listings and require the token on session/join APIs. Full NIP-42 AUTH is still later.
+
+### Conference topologies
+
+WebRTC mesh on a channel, signaling over existing store (kind **25000**, `#h` = channel):
+
+| Mix | How |
+|---|---|
+| Human ↔ human 1:1 | 2 peer connections |
+| Many humans | full mesh, N(N−1)/2 |
+| Agent ↔ agent 1:1 | same; both `role=agent` |
+| Human ↔ agent 1:1 | same |
+| Human + many agents | mesh; agents need speech I/O |
+| Many humans + many agents | mesh; cap peers (8) |
+
+Signaling JSON in event content: `{t:offer|answer|ice|join|leave, from, to, role, sdp?, candidate?}`.
+
+SFU is a later milestone if N grows.
+
+### Whisper / AI voice
+
+- WebRTC carries **media**. An AI agent that *speaks* needs STT (Whisper-class) + a conversational model + TTS.
+- This slice **does not** vendor Whisper. `GET /api/status` includes `"whisper":false` unless `HUSH_WHISPER=1` or a `whisper` binary is on PATH.
+- Agents can still **join** a call (signaling + optional playback). Without a speech model they do not claim to hear.
+- Browser `SpeechRecognition` is an optional demo fallback and is labeled as such — not a substitute for Whisper.
+
+### Configure / install
+
+```
+./configure                  # ENABLE_STUN_TURN=1 (default)
+./configure --disable-stun-turn
+./configure --enable-stun-turn
+```
+
+`config.mk` writes `ENABLE_STUN_TURN`, `TURNSERVER` (path or empty), and `-DHUSH_STUN_TURN=0|1`.
+
+`sudo make install PREFIX=/usr` installs:
+
+- `hush-relay` as today
+- `$(DATADIR)/hush/turnserver.conf.in`
+- `$(DATADIR)/hush/systemd/hush-turn.service`
+- `/lib/systemd/system/hush-turn.service` (system unit; does **not** enable itself)
+
+`make install` to `~/.local` installs the templates only and prints that daemon mode needs a system install.
+
+Debian `Recommends: coturn`.
+
+### Architecture (locked)
+
+| Piece | Role |
+|---|---|
+| `hush_turn` | find binary, write conf, spawn/kill child, systemd start/stop, ICE JSON |
+| `hush_launch` | vibe `visibility` + `join_token` |
+| `hush_http` | `GET/POST /api/turn`, `GET /api/ice`, `POST /api/signal`; extend session + status |
+| `contrib/systemd/hush-turn.service` | Type=simple, `turnserver -c /etc/hush/turnserver.conf --no-cli` |
+| PWA Settings | Enable STUN/TURN, Daemon mode, public host, vibe visibility |
+| PWA Call | mesh conference on the current channel |
+
+Do **not** add Tailwind. Hand CSS matching the existing PWA.
+
+## Remaining plan
+
+See `PLAN_STUN_TURN.md`.
+

@@ -17,6 +17,7 @@
 #include "hush_relay.h"
 #include "hush_status.h"
 #include "hush_store.h"
+#include "hush_turn.h"
 
 enum {
     HUSH_MAX_CLIENTS = 32,
@@ -41,6 +42,7 @@ struct client {
 static struct client clients[HUSH_MAX_CLIENTS];
 static hush_store_t *g_store = NULL;
 static hush_launch_t g_launch;
+static hush_turn_t g_turn;
 
 static void hush_clients_reset(void);
 static int hush_listen_on(uint16_t port);
@@ -70,6 +72,8 @@ hush_status_t hush_relay_run(uint16_t port, int open_ui)
     hush_launch_init(&g_launch);
     (void)hush_launch_restore_identity(&g_launch);
     hush_http_set_launch(&g_launch);
+    hush_turn_init(&g_turn);
+    hush_http_set_turn(&g_turn);
 
     ls = hush_listen_on(port);
     if (ls < 0) {
@@ -103,6 +107,7 @@ hush_status_t hush_relay_run(uint16_t port, int open_ui)
         int i;
 
         hush_http_set_client_count(hush_active_clients());
+        hush_turn_refresh(&g_turn);
         fds[0].fd = ls;
         fds[0].events = POLLIN;
         fds[0].revents = 0;
@@ -124,6 +129,7 @@ hush_status_t hush_relay_run(uint16_t port, int open_ui)
             (void)hush_accept_new(ls);
         hush_service_clients(fds, nf);
     }
+    hush_turn_shutdown(&g_turn);
     hush_store_destroy(g_store);
     close(ls);
     return HUSH_OK;

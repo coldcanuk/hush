@@ -9,10 +9,12 @@
 #include "hush_launch.h"
 #include "hush_store.h"
 #include "hush_status.h"
+#include "hush_turn.h"
 
 void hush_http_set_listen_port(uint16_t port);
 void hush_http_set_client_count(int n);
 void hush_http_set_launch(hush_launch_t *launch);
+void hush_http_set_turn(hush_turn_t *turn);
 
 /* 1 if the first bytes are an HTTP method. */
 int hush_http_looks_like(const char *buf, size_t len);

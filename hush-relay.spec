@@ -19,6 +19,7 @@ Features:
  - CLOSE command
  - Simple TCP newline-delimited JSON protocol
  - poll(2) single-threaded server
+ - Optional coturn STUN/TURN + conference signaling
  - Strict build: -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow
 
 Optimized for the Goose AI agent. Designed for set-and-forget
@@ -37,6 +38,9 @@ self-hosting and embedding.
 %files
 /usr/bin/hush-relay
 %{_datadir}/applications/hush-relay.desktop
+%{_datadir}/hush/turnserver.conf.in
+%{_datadir}/hush/systemd/hush-turn.service
+/lib/systemd/system/hush-turn.service
 
 %changelog
 * Sun Aug 17 2026 Hush Contributors <coldcanuk@users.noreply.github.com> - 0.0.1-1
