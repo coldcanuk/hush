@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "hush_http.h"
+#include "hush_launch.h"
 #include "hush_proto.h"
 #include "hush_relay.h"
 #include "hush_status.h"
@@ -39,6 +40,7 @@ struct client {
 
 static struct client clients[HUSH_MAX_CLIENTS];
 static hush_store_t *g_store = NULL;
+static hush_launch_t g_launch;
 
 static void hush_clients_reset(void);
 static int hush_listen_on(uint16_t port);
@@ -65,6 +67,8 @@ hush_status_t hush_relay_run(uint16_t port, int open_ui)
     signal(SIGCHLD, SIG_IGN);
     hush_clients_reset();
     hush_http_set_listen_port(port);
+    hush_launch_init(&g_launch);
+    hush_http_set_launch(&g_launch);
 
     ls = hush_listen_on(port);
     if (ls < 0) {

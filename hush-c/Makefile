@@ -5,7 +5,7 @@
 
 CC := gcc
 CFLAGS := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2
-LDFLAGS :=
+LDFLAGS := -lcrypto
 
 # These can be overridden by top-level or configure
 PREFIX ?= $(HOME)/.local
@@ -46,6 +46,7 @@ tests/test_%: tests/test_%.c libhush.a
 test: $(TEST_BINS) hush-relay
 	@for t in $(TEST_BINS); do echo "RUN $$t"; ./$$t || exit 1; done
 	@sh tests/check_pwa.sh
+	@sh tests/check_launch.sh
 	@echo "ALL TESTS PASSED"
 
 clean:

@@ -1,0 +1,43 @@
+#!/bin/sh
+# hush-pass — thin wrapper around `pass` for Hush secrets.
+# Namespace: hush/<path>
+# Usage:
+#   hush-pass save <path> [value]     # value from argv or stdin
+#   hush-pass get  <path>
+#   hush-pass has  <path>
+#   hush-pass ls
+set -eu
+PREFIX="hush"
+
+die() { echo "hush-pass: $*" >&2; exit 1; }
+
+if ! command -v pass >/dev/null 2>&1; then
+    die "pass is not installed"
+fi
+
+cmd="${1:-}"
+path="${2:-}"
+case "$cmd" in
+    save)
+        [ -n "$path" ] || die "usage: hush-pass save <path> [value]"
+        if [ "${3+x}" = "x" ]; then
+            printf '%s\n' "$3" | pass insert -e -m "${PREFIX}/${path}" >/dev/null
+        else
+            pass insert -e -m "${PREFIX}/${path}" >/dev/null
+        fi
+        ;;
+    get)
+        [ -n "$path" ] || die "usage: hush-pass get <path>"
+        pass show "${PREFIX}/${path}"
+        ;;
+    has)
+        [ -n "$path" ] || die "usage: hush-pass has <path>"
+        pass show "${PREFIX}/${path}" >/dev/null 2>&1
+        ;;
+    ls|list)
+        pass ls "$PREFIX" 2>/dev/null || true
+        ;;
+    *)
+        die "usage: hush-pass save|get|has|ls [path]"
+        ;;
+esac
