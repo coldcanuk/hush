@@ -23,6 +23,11 @@ echo "$sess" | grep -q '"logged_in":false' || fail "cold session should be logge
 echo "$sess" | grep -q '"ready":false' || fail "cold session should not be ready"
 html=$(curl -sf "http://127.0.0.1:${port}/")
 echo "$html" | grep -q 'id="gate"' || fail "HTML missing first-launch gate"
+# Drawers after </script> make boot listeners throw; splash stays blank.
+prof_at=$(printf '%s' "$html" | awk 'index($0, "id=\"profile\""){print NR; exit}')
+script_at=$(printf '%s' "$html" | awk 'index($0, "<script>"){print NR; exit}')
+test -n "$prof_at" && test -n "$script_at" && test "$prof_at" -lt "$script_at" \
+    || fail "profile drawer must precede boot script"
 echo "$html" | grep -q 'class=\\\"feather\\\"' || fail "HTML missing feather splash"
 echo "$html" | grep -q '/icon-192.png' || fail "HTML missing feather src"
 echo "$html" | grep -q 'stepBar' || fail "HTML missing wizard progress"
