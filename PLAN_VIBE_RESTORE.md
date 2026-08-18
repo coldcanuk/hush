@@ -94,16 +94,23 @@ gcc, make, `./configure`, `make test`, curl, `pass` / fake-pass.
 - Verify: `rg -n "vibe.json|ClinePass|HUSH_CONFIG_DIR" UI_SPEC.md`
 - Commit: `Milestone 2.1: lock vibe persist and Cline auth contract`
 
-#### M2.2 Module boundary
+#### M2.2 Module boundary (frozen)
 
-- Task 1 of M2.2: `hush_launch` owns save/load. Path helper lives in
+- [x] Task 1 of M2.2: `hush_launch` owns save/load. Path helper lives in
   launch (copy of provider dir rule + `HUSH_CONFIG_DIR`). Extract
   shared `hush_home` only if a later milestone needs a third caller.
-- Task 2 of M2.2: Public API:
+- [x] Task 2 of M2.2: Public API:
   `hush_launch_save_vibe`, `hush_launch_restore_vibe`.
   Relay calls restore after identity. Mutators call save.
 - Verify: this PLAN still names one owner.
 - Commit: `Milestone 2.2: lock launch persist boundary`
+
+| Concern | Owner |
+|---|---|
+| vibe.json path + save/load | `hush_launch` |
+| Boot restore after identity | `hush_relay_prepare` |
+| providers.json | `hush_provider` (unchanged) |
+| nsecs | `hush_pass` only |
 
 ### Phase 3 — Implementation
 
