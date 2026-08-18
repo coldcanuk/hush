@@ -23,6 +23,10 @@ echo "$sess" | grep -q '"logged_in":false' || fail "cold session should be logge
 echo "$sess" | grep -q '"ready":false' || fail "cold session should not be ready"
 html=$(curl -sf "http://127.0.0.1:${port}/")
 echo "$html" | grep -q 'id="gate"' || fail "HTML missing first-launch gate"
+echo "$html" | grep -q 'class=\\\"feather\\\"' || fail "HTML missing feather splash"
+echo "$html" | grep -q '/icon-192.png' || fail "HTML missing feather src"
+echo "$html" | grep -q 'stepBar' || fail "HTML missing wizard progress"
+echo "$html" | grep -q 'Carry on.' || fail "HTML missing Meet Payne CTA"
 echo "$html" | grep -q 'Create a new identity key' || fail "HTML missing create CTA"
 echo "$html" | grep -q 'Checked to save password to Unix Password Manager' || fail "pass checkbox copy"
 echo "$html" | grep -q 'pass show hush/identity/nsec' || fail "retrieve CLI"

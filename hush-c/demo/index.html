@@ -102,6 +102,11 @@
       width: min(34rem, 100%); background: var(--surface); border: 1px solid var(--line);
       border-radius: 18px; padding: 28px 24px 24px;
     }
+    .feather { display: block; width: 72px; height: 72px; margin: 0 auto 16px; border-radius: 16px; }
+    .steps { display: flex; gap: 8px; align-items: center; margin: 0 0 16px; color: var(--faint); font-size: 0.75rem; }
+    .steps span { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+    .steps span.on { background: var(--accent); }
+    .steps em { font-style: normal; margin-left: auto; letter-spacing: 0.08em; }
     .card h1 { margin: 0 0 8px; font-size: 1.6rem; letter-spacing: -0.04em; }
     .card p { margin: 0 0 18px; color: var(--muted); line-height: 1.5; }
     .card label { display: block; font-size: 0.8rem; color: var(--muted); margin: 12px 0 6px; }
@@ -321,10 +326,11 @@
 
     function applySession(s) {
       session = s || session;
-      if (session.ready) page = "hive";
+      if (session.ready && page !== "payne") page = "hive";
       else if (session.logged_in && !session.backup_acked) page = "backup";
       else if (session.logged_in && session.backup_acked && !session.has_vibe) page = "vibe";
-      else if (!session.logged_in && page !== "import" && page !== "help") page = "landing";
+      else if (!session.logged_in && page !== "import" && page !== "help" && page !== "splash")
+        page = "landing";
       if (session.nsec) pendingNsec = session.nsec;
       if (session.backup_acked) pendingNsec = "";
       paint();
@@ -351,17 +357,25 @@
       paintPayne();
     }
 
+    function stepBar(n) {
+      const dots = [1, 2, 3, 4].map((i) =>
+        "<span class=\"" + (i <= n ? "on" : "") + "\"></span>").join("");
+      return "<div class=\"steps\">" + dots + "<em>" + n + " / 4</em></div>";
+    }
+
     function gateHtml() {
       if (page === "splash") {
-        return card("Hush — local hive mind",
+        return card("hush",
+          "<img class=\"feather\" src=\"/icon-192.png\" alt=\"hush\">" +
           "<p><strong>Sgt Major Payne reporting for duty.</strong></p>" +
-          "<p>Detecting identity and vibe...</p>" +
+          "<p>Detecting identity and vibe…</p>" +
           errLine() +
           actions([{ id: "begin", label: "Begin" }]) +
           "<div class=\"help\">Disciplined collaboration with humans and agents.</div>");
       }
       if (page === "help") {
         return card("What’s an identity key?",
+          stepBar(1) +
           "<p>Hush uses a Nostr identity key instead of a password. It is created on this machine and represents you.</p>" +
           "<p>Your public key (<code>npub</code>) is safe to share. Your private key (<code>nsec</code>) is the account. Anyone with it can act as you. There is no forgot-password.</p>" +
           "<p>Create a new key if you are new. Import an existing <code>nsec1…</code> if you already have a Nostr identity.</p>" +
@@ -369,6 +383,7 @@
       }
       if (page === "import") {
         return card("Use an existing key",
+          stepBar(1) +
           "<p>Paste an <code>nsec1…</code> key. We show the matching <code>npub</code> before anything is saved.</p>" +
           "<label for=\"nsec-in\">Private key</label>" +
           "<input id=\"nsec-in\" type=\"password\" autocomplete=\"off\" spellcheck=\"false\" placeholder=\"nsec1…\">" +
@@ -383,6 +398,7 @@
         const shown = keyRevealed ? esc(pendingNsec) : "•".repeat(Math.max(16, pendingNsec.length || 63));
         return "<dialog class=\"secret\" id=\"secret-modal\" open>" +
           card("Your unique identity key has been created",
+          stepBar(2) +
           "<p>This key is your account. Copy it now. Hush cannot recover it if you lose it.</p>" +
           "<div class=\"keybox" + (keyRevealed ? " revealed" : "") + "\" id=\"nsec-box\">" + shown + "</div>" +
           "<label class=\"passbox\"><input id=\"save-pass\" type=\"checkbox\"" +
@@ -398,6 +414,7 @@
       }
       if (page === "vibe") {
         return card("Name your vibe",
+          stepBar(3) +
           "<p>A vibe is the main server — this Hush relay. It is your community’s primary endpoint.</p>" +
           "<label for=\"vibe-name\">Vibe name</label>" +
           "<input id=\"vibe-name\" maxlength=\"48\" value=\"local hive\" placeholder=\"local hive\">" +
@@ -410,7 +427,19 @@
           errLine() +
           actions([{ id: "do-vibe", label: "Stand up the hive" }]));
       }
+      if (page === "payne") {
+        const p = session.payne || {};
+        return card("Sgt Major Payne",
+          stepBar(4) +
+          "<p><strong>At ease.</strong> " +
+          esc(p.about || "I find the right robot — or raise one.") + "</p>" +
+          (p.npub ? "<p class=\"help\">" + esc(p.npub.slice(0, 20)) + "…</p>" : "") +
+          "<p>At ease. I'm Sgt Major Payne. Tell me what you want built and I'll find — or raise — the right robot for the job.</p>" +
+          errLine() +
+          actions([{ id: "meet-payne", label: "Carry on." }]));
+      }
       return card("Your people, your agents, your projects",
+        stepBar(1) +
         "<p>Hush is a local hive mind. First we need a Nostr identity — a key that belongs to you, not to us.</p>" +
         errLine() +
         actions([
@@ -465,12 +494,21 @@
       });
       const box = $("save-pass");
       if (box) box.addEventListener("change", () => { savePass = box.checked; });
-      on("begin", () => { page = "landing"; gateErr = ""; paint(); });
+      on("begin", () => {
+        gateErr = "";
+        if (session.ready) page = "hive";
+        else if (session.logged_in && !session.backup_acked) page = "backup";
+        else if (session.logged_in && session.backup_acked && !session.has_vibe) page = "vibe";
+        else page = "landing";
+        paint();
+      });
+      on("meet-payne", () => { page = "hive"; gateErr = ""; paint(); });
       on("do-vibe", () => {
         const name = ($("vibe-name") && $("vibe-name").value) || "local hive";
         const about = ($("vibe-about") && $("vibe-about").value) || "";
         const visEl = document.querySelector("input[name='vibe-vis']:checked");
         const visibility = visEl ? visEl.value : "public";
+        page = "payne";
         postJson("/api/vibe", { name: name, about: about, visibility: visibility });
       });
       const inp = $("nsec-in");
@@ -833,7 +871,7 @@
           fetch(API + "/api/session").then((r) => r.json())
         ]);
         session = sess;
-        if (session.ready) page = "hive";
+        if (session.ready && page !== "payne") page = "hive";
         paint();
         badge(true, session.npub ? session.npub.slice(0, 12) + "…" : ("listening :" + (st.port || "")));
         if (session.ready) render(ev.events || ev || [], st);
