@@ -8,7 +8,7 @@ CFLAGS := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2
 LDFLAGS :=
 
 # These can be overridden by top-level or configure
-PREFIX ?= /usr/local
+PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share
 APPDIR ?= $(DATADIR)/applications
@@ -66,7 +66,7 @@ install: all
 	@echo "  update-desktop-database $(DESTDIR)$(APPDIR) || true"
 	@echo "  gtk-update-icon-cache -f $(DESTDIR)$(ICONDIR) || true"
 	@echo
-	@echo "User-local example: make install PREFIX=\$$HOME/.local"
+	@echo "System-wide install: sudo make install PREFIX=/usr"
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/hush-relay
