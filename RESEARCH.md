@@ -780,3 +780,122 @@ Existing RESEARCH opted Tailwind out of C. Current `index.html` is hand-written 
 ## Remaining plan
 
 See `PLAN_PWA.md`.
+
+---
+
+# 2026-08-17 RDAP: First-launch UX (Nostr login, community/vibe, project, channel, Sgt Major Payne)
+
+## Scope locked
+
+- **Primary goal:** When the Hush PWA first launches it detects login state, walks the human through the same *login sequence Buzz uses* (identity key → backup → community), then lands them in a useful hive: create a vibe (this relay), create channels, create a project (basic git), and meet **Sgt Major Payne** as the first agent.
+- **Non-goals:** Full NIP-42 AUTH challenge loop; NIP-07 browser-extension signing as the only path; hosted multi-tenant community SaaS; running an LLM for Payne; NIP-90 Data Vending Machines (upstream **unrecommended**); Tailwind; a Node/Vite frontend; persisting the in-memory event ring; Schnorr-verify of every EVENT (existing stub stays).
+- **Success / DoD:**
+  1. Cold PWA load with no identity shows a first-launch gate, not the chat composer.
+  2. Human can **create** a Nostr identity (secp256k1) or **import** an `nsec1…` key. Public form is `npub1…` (NIP-19).
+  3. Fresh-key path shows the nsec once, masked by default, with Copy + the exact `pass` checkbox: `Check here to save the nsec in the local password manager, \`pass\``.
+  4. After identity, human must have (or create) a **vibe** — the primary endpoint / this relay — before the hive UI.
+  5. First vibe seeds `#general`, `#welcome`, `#agents` and **Sgt Major Payne**.
+  6. From the hive, human can create another channel, create a project (NIP-34 kind 30617 + optional `git init`), and see Payne on deck.
+  7. `GET /api/session` reports `{logged_in, npub, vibe, agents, channels, projects}`.
+  8. `make && make test` pass under `-Werror`. Bech32 vectors from NIP-19 pass.
+- **Constraints:** C11 + write-legible-c; single binary + embedded PWA; OpenSSL for secp256k1; `pass` for optional secret persist; worktree `gb/first-launch-ux`; land via PR. Hush is **not Buzz** — we copy the *sequence and security contract*, not Tauri/React.
+- **Assumptions:** Local-first: this `hush-relay` process *is* the vibe. Community = host (NOSTR.md). Browser never keeps nsec after the backup step; relay holds the in-process identity; `pass` is the durable store.
+- **Environment:** gcc, OpenSSL 3 (`libcrypto`, secp256k1), `pass` optional, `git` optional for projects.
+- **Risks:**
+  1. Shipping fake keys (hash-as-pubkey) would break Nostr interop → real secp256k1 via OpenSSL.
+  2. Showing nsec in the DOM by default → mask + reveal + copy, same as Buzz `NsecMaskedDisplay`.
+  3. `hush_http.c` growing past 40-line functions → new `hush_launch` / `hush_identity` / `hush_bech32` modules; HTTP only dispatches.
+  4. Relay restart loses identity → optional `pass show hush/identity/nsec` restore.
+  5. Scope creep into full NIP-29/34/42 → seed + announce only; enforcement later.
+
+## Findings
+
+### Nostr keys (https://nostr.com/nostr-keys + NIP-19)
+
+- Every account is a **secp256k1** keypair. Public key = username (`npub1…`). Private key = password (`nsec1…`). There is no “forgot password”.
+- Apps **sign** notes with the private key. Anyone with the nsec *is* the account.
+- NIP-19: bech32 (not bech32m) prefixes `npub` / `nsec` / `note`. Hex stays on the wire. Shareable forms (`nprofile`, `nevent`, `naddr`) are TLV and out of this slice.
+- Verified vectors (NIP-19):
+  - pubkey hex `7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e` → `npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg`
+  - secret hex `67dea2ed018072d675f5415ecfaed7d2597555e202d85b3d65ea4e58d2d92ffa` → `nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5`
+- NIP-07 (`window.nostr`) is the *browser extension* signer. Useful later; first-launch must work without an extension (Buzz generates or imports).
+- NIP-49 `ncryptsec` and NIP-46 remote signing: later.
+
+### Relays (https://nostr.com/relays)
+
+- A relay is a post office, not an identity provider. Hush *is* a relay. The first-launch “community” is this process’s URL (`http://127.0.0.1:<port>/`).
+- Several public relays exist (damus, nos.lol, …). This slice does not auto-join the public network.
+
+### NIPs / kinds that map to the product words
+
+| Product word | Protocol | This slice |
+|---|---|---|
+| Login / identity | secp256k1 + NIP-19 + kind 0 metadata | generate / import / backup / session |
+| Community | Hush: host-authoritative (NOSTR.md). NIP-72 unrecommended; NIP-29 groups | **vibe** = this relay named |
+| Channel | NIP-29 `#h` + kind 9007 create / kind 9 chat; Buzz starter `#general` + `#welcome-everyone` | seed `general`, `welcome`, `agents` |
+| Project | NIP-34 kind 30617 repo announcement + `git clone` URL | name + `git init` under `~/hush/projects/<slug>` |
+| Vibe | “main server / primary endpoint” | named local relay (NIP-11-shaped name/about) |
+| First agent | Buzz Welcome Team = Fizz / Honey / Bumble | **Sgt Major Payne** (organizer; find or create robots) |
+| Auth to relay | NIP-42 kind 22242 | **not** in this slice (SECURITY.md: planned) |
+| DVM | NIP-90 **unrecommended** upstream | out of scope |
+
+Hush `NOSTR.md` already documents the Buzz-era NIP-29/42/43 surface as *intent*. The C MVP store is still kinds 0/1/5/7/9 over HTTP + newline JSON. First-launch writes those kinds (and 30617 as a stored event) without claiming full NIP-29 enforcement.
+
+### What Buzz actually does on first launch (code, `/opt/repo/buzz`)
+
+Boot gates in `desktop/src/app/App.tsx`:
+
+1. **Machine onboarding** (`useMachineOnboardingState` / `MachineOnboardingFlow`)
+   - Pages: `identity` → (`key-import` **or** create) → `backup` → `setup` (runtimes) → `config`.
+   - Create: `getIdentity()` / `persistCurrentIdentity()` — secp256k1 via `nostr::Keys::generate()`, nsec in OS keychain + optional `identity.key`.
+   - Import: `NostrKeyImportForm` — paste or drop `nsec1…`, live `npub` preview, masked input.
+   - Backup: `BackupStep` + `NsecMaskedDisplay` — nsec not in the DOM until Reveal; Copy; “never share”.
+   - Help: “What’s an identity key?” — you own it, no password reset, create new or use existing Nostr key.
+   - Lost keyring → land on import. Locked → `KeyringLockedScreen`.
+2. **Community** (`useCommunityInit` / `WelcomeSetup`)
+   - No community → “Join or create a community” / “I already have a community”.
+   - Community *is* a relay URL. Auto-connect only for internal default-relay builds.
+   - Membership: NIP-43 snapshot (`getMyRelayMembershipLookup`); denied / unreachable / ok.
+3. **Profile + welcome seed** (`useFirstRunOnboardingGate`, `welcome.ts`, `welcomeGuide.ts`)
+   - Skip onboarding if a real kind:0 exists for this pubkey (or localStorage `buzz-onboarding-complete.v1:<pubkey>`).
+   - Ensure starter channels `#general` (open) + `#welcome-everyone` (open) + private `Welcome`.
+   - Seed Welcome Team agents (Fizz lead, Honey, Bumble).
+
+Hush will **not** port Tauri, keychain, ACP runtimes, or the three-bee team. We keep the **order and the safety copy**.
+
+### Current Hush UI (code)
+
+- `hush-c/demo/index.html` is an installable PWA chat shell. Hard-coded channels. Posts as pubkey `000…001`. **No login gate.**
+- HTTP: `GET /`, PWA assets, `GET /api/status`, `GET /api/events`, `POST /api/event`.
+- Secrets contract already in `IMPORT.md` / `SECURITY.md`: `pass` namespace `hush/agents/<name>/nsec`; checkbox label is mandatory when offering to save a secret. Helper `scripts/hush-pass` is documented but **missing** — add it.
+- SHA-256 / Schnorr still stubbed (`hush_event.c`). Identity generation is a *new* crypto path and must be real.
+
+### Architecture decision (locked)
+
+Keep the single-binary embed model. First-launch is **client state machine in the PWA** + **authoritative session in the relay**.
+
+| Route | Role |
+|---|---|
+| `GET /api/session` | login + vibe + agents + channels + projects snapshot |
+| `POST /api/identity` | `create` / `import` / `ack_backup` / `logout` |
+| `GET`/`POST /api/vibe` | name this relay (community) |
+| `POST /api/channel` | add a hive channel (`#h`) |
+| `POST /api/project` | NIP-34-shaped announce + optional `git init` |
+| existing `/api/event(s)` | chat; posts use the session pubkey when logged in |
+
+Modules (new):
+
+- `hush_bech32` — NIP-19 encode/decode
+- `hush_identity` — secp256k1 generate/import, nsec/npub, optional `pass`
+- `hush_launch` — session, vibe, Payne, channel/project catalogs
+- PWA gate screens in `demo/index.html` (hand CSS, no Tailwind)
+
+Sgt Major Payne is a **seeded agent record** (name, about, pubkey of a generated agent key stored under `hush/agents/sgt-major-payne/nsec` only if the human checked `pass`). He is not an LLM in this slice; the UI presents him as the organizer who will find or create the right robot.
+
+### Tailwind
+
+Still opted out of C. First-launch UI continues hand-written CSS to match the existing PWA.
+
+## Remaining plan
+
+See `PLAN_FIRST_LAUNCH.md`.
