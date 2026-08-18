@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <style>
-    :root {
+    :root, html[data-theme="dark"] {
       --bg: #09090b;
       --surface: #18181b;
       --surface-2: #1f1f23;
@@ -27,6 +27,36 @@
       --warn: #f87171;
       --sans: "Segoe UI", system-ui, sans-serif;
       --mono: ui-monospace, "Cascadia Mono", monospace;
+    }
+    html[data-theme="light"] {
+      --bg: #f4f4f5; --surface: #ffffff; --surface-2: #e4e4e7; --line: #d4d4d8;
+      --fg: #18181b; --muted: #52525b; --faint: #71717a; --accent: #059669;
+      --accent-ink: #ecfdf5; --accent-dim: #a7f3d0; --warn: #b91c1c;
+    }
+    html[data-theme="color-blind"] {
+      --bg: #0b1220; --surface: #152033; --surface-2: #1e2d48; --line: #334155;
+      --fg: #f8fafc; --muted: #94a3b8; --faint: #64748b; --accent: #38bdf8;
+      --accent-ink: #082f49; --accent-dim: #075985; --warn: #fb923c;
+    }
+    html[data-theme="dracula"] {
+      --bg: #282a36; --surface: #21222c; --surface-2: #343746; --line: #44475a;
+      --fg: #f8f8f2; --muted: #bd93f9; --faint: #6272a4; --accent: #50fa7b;
+      --accent-ink: #1a2e1d; --accent-dim: #2d4a32; --warn: #ff5555;
+    }
+    html[data-theme="desert"] {
+      --bg: #2a2118; --surface: #3a2e22; --surface-2: #4a3b2c; --line: #6b5340;
+      --fg: #f5e6d3; --muted: #c4a574; --faint: #8a7355; --accent: #d97706;
+      --accent-ink: #2a1605; --accent-dim: #78350f; --warn: #f87171;
+    }
+    html[data-theme="monochrome"] {
+      --bg: #111111; --surface: #1c1c1c; --surface-2: #2a2a2a; --line: #3f3f3f;
+      --fg: #f5f5f5; --muted: #a3a3a3; --faint: #737373; --accent: #e5e5e5;
+      --accent-ink: #171717; --accent-dim: #525252; --warn: #d4d4d4;
+    }
+    html[data-theme="christmas"] {
+      --bg: #0f1f14; --surface: #16261b; --surface-2: #1e3324; --line: #2d4a35;
+      --fg: #f8faf8; --muted: #b7c9bb; --faint: #7a9180; --accent: #c41e3a;
+      --accent-ink: #fff1f2; --accent-dim: #7f1d1d; --warn: #fbbf24;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: var(--sans); }
@@ -281,6 +311,16 @@
         <label class="switch"><input id="vibe-public" type="checkbox" checked><span class="slider"></span></label>
       </div>
       <p id="vibe-token" class="help"></p>
+      <p class="help">Theme</p>
+      <div class="vis" id="theme-list">
+        <label><input type="radio" name="theme" value="dark" checked> dark</label>
+        <label><input type="radio" name="theme" value="light"> light</label>
+        <label><input type="radio" name="theme" value="color-blind"> color blind</label>
+        <label><input type="radio" name="theme" value="dracula"> dracula</label>
+        <label><input type="radio" name="theme" value="desert"> desert</label>
+        <label><input type="radio" name="theme" value="monochrome"> monochrome</label>
+        <label><input type="radio" name="theme" value="christmas"> christmas</label>
+      </div>
       <p class="help">AI voice in a call needs a speech model such as Whisper. Without it, agents can join but cannot hear.</p>
       <div class="actions">
         <button class="btn" id="settings-close" type="button">Close</button>
@@ -324,6 +364,18 @@
       return r.json();
     }
 
+    function applyTheme(name) {
+      const allowed = ["dark", "light", "color-blind", "dracula", "desert", "monochrome", "christmas"];
+      const theme = allowed.indexOf(name) >= 0 ? name : (localStorage.getItem("hush-theme") || "dark");
+      document.documentElement.setAttribute("data-theme", theme);
+      localStorage.setItem("hush-theme", theme);
+      const meta = document.querySelector("meta[name='theme-color']");
+      if (meta) meta.setAttribute("content", getComputedStyle(document.documentElement).getPropertyValue("--bg").trim());
+      document.querySelectorAll("input[name='theme']").forEach((el) => {
+        el.checked = el.value === theme;
+      });
+    }
+
     function applySession(s) {
       session = s || session;
       if (session.ready && page !== "payne") page = "hive";
@@ -333,6 +385,7 @@
         page = "landing";
       if (session.nsec) pendingNsec = session.nsec;
       if (session.backup_acked) pendingNsec = "";
+      applyTheme((session.profile && session.profile.theme) || session.theme);
       paint();
     }
 
@@ -614,6 +667,11 @@
         p.classList.add("show");
         const np = $("profile-npub");
         if (np) np.textContent = (session.npub || session.pubkey || "no identity yet");
+        const prof = session.profile || {};
+        if ($("prof-first")) $("prof-first").value = prof.first_name || "";
+        if ($("prof-last")) $("prof-last").value = prof.last_name || "";
+        if ($("prof-email")) $("prof-email").value = prof.email || "";
+        if ($("prof-org")) $("prof-org").value = prof.organization || "";
       }
     });
     $("profile-close").addEventListener("click", () => { const p=$("profile"); if (p) p.classList.remove("show"); });
@@ -621,9 +679,31 @@
       const v = session.npub || session.pubkey || "";
       if (v) { try { await navigator.clipboard.writeText(v); } catch(e){} }
     });
-    $("profile-logout").addEventListener("click", () => {
+    $("profile-save").addEventListener("click", async () => {
+      try {
+        applySession(await api("/api/profile", {
+          first_name: ($("prof-first") && $("prof-first").value) || "",
+          last_name: ($("prof-last") && $("prof-last").value) || "",
+          email: ($("prof-email") && $("prof-email").value) || "",
+          organization: ($("prof-org") && $("prof-org").value) || "",
+          theme: localStorage.getItem("hush-theme") || "dark"
+        }));
+      } catch (e) {}
+    });
+    $("profile-logout").addEventListener("click", async () => {
+      if (!confirm("Logout and use a different key?")) return;
       const p = $("profile"); if (p) p.classList.remove("show");
-      page = "landing"; gateErr = ""; paint();
+      try { applySession(await api("/api/identity", { action: "logout" })); }
+      catch (e) { page = "landing"; gateErr = ""; paint(); }
+    });
+    document.querySelectorAll("input[name='theme']").forEach((el) => {
+      el.addEventListener("change", async () => {
+        if (!el.checked) return;
+        applyTheme(el.value);
+        try {
+          applySession(await api("/api/profile", { theme: el.value }));
+        } catch (e) {}
+      });
     });
     $("call-btn").addEventListener("click", () => {
       $("stage").classList.add("show");
@@ -881,6 +961,7 @@
       }
     }
 
+    applyTheme(localStorage.getItem("hush-theme") || "dark");
     tick();
     setInterval(tick, 1000);
 
@@ -910,12 +991,24 @@
   <div class="drawer" id="profile" role="dialog" aria-label="Profile">
     <div class="panel">
       <h2>Profile</h2>
+      <p class="help">Your identity is your orders. Guard it.</p>
       <p id="profile-npub" class="help" style="font-family:var(--mono);word-break:break-all"></p>
-      <p class="help">Your Nostr identity. npub is safe to share. nsec is private — never share.</p>
+      <label for="prof-first">First name</label>
+      <input id="prof-first" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
+      <label for="prof-last">Last name</label>
+      <input id="prof-last" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
+      <label for="prof-email">Email</label>
+      <input id="prof-email" type="email" maxlength="80" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
+      <label for="prof-org">Organization</label>
+      <input id="prof-org" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
+      <label for="prof-avatar">Avatar</label>
+      <input id="prof-avatar" type="file" accept="image/jpeg,image/png,image/webp">
+      <p class="help" id="prof-avatar-status">Optional. JPEG or PNG, stored as a Nostr picture URL.</p>
       <div class="actions">
+        <button class="btn" id="profile-save" type="button">Save profile</button>
         <button class="btn ghost" id="profile-copy" type="button">Copy npub</button>
-        <button class="btn ghost" id="profile-logout" type="button">Logout / Use different key</button>
-        <button class="btn" id="profile-close" type="button">Close</button>
+        <button class="btn ghost" id="profile-logout" type="button">Logout</button>
+        <button class="btn ghost" id="profile-close" type="button">Close</button>
       </div>
       <p class="help">Sgt Major Payne: "Guard your orders. Report when ready."</p>
     </div>

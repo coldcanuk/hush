@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include "hush_identity.h"
 #include "hush_pass.h"
+#include "hush_roster.h"
 #include "hush_status.h"
 #include "hush_store.h"
 
@@ -54,6 +55,7 @@ typedef struct {
     size_t nchannels;
     hush_launch_project_t projects[HUSH_LAUNCH_PROJECTS_MAX];
     size_t nprojects;
+    hush_roster_t roster;
 } hush_launch_t;
 
 /* Zeros session. Safe on NULL. */
@@ -72,6 +74,13 @@ hush_status_t hush_launch_ack_backup(hush_launch_t *launch, int save_pass);
 
 /* Loads hush/identity/nsec when present. Soft-fails if pass is absent. */
 hush_status_t hush_launch_restore_identity(hush_launch_t *launch);
+
+/* Clears the human login. Vibe and roster stay. */
+hush_status_t hush_launch_logout(hush_launch_t *launch);
+
+/* Copies profile fields onto the roster. Rejects a bad theme. */
+hush_status_t hush_launch_set_profile(hush_launch_t *launch,
+                                      const hush_roster_profile_t *in);
 
 /* Names this relay and seeds starter channels + Payne. */
 hush_status_t hush_launch_create_vibe(hush_launch_t *launch,

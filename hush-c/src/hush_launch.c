@@ -93,10 +93,15 @@ static hush_status_t hush_launch_format_channels(const hush_launch_t *launch,
                                                  char *out, size_t outsz,
                                                  size_t *off);
 
-/* Appends the projects array body and closing brace. */
+/* Appends the projects array body. */
 static hush_status_t hush_launch_format_projects(const hush_launch_t *launch,
                                                  char *out, size_t outsz,
                                                  size_t *off);
+
+/* Appends roster JSON and closes the session object. */
+static hush_status_t hush_launch_format_roster(const hush_launch_t *launch,
+                                               char *out, size_t outsz,
+                                               size_t *off);
 
 void hush_launch_init(hush_launch_t *launch)
 {
@@ -104,6 +109,7 @@ void hush_launch_init(hush_launch_t *launch)
         return;
     memset(launch, 0, sizeof(*launch));
     launch->vibe_public = 1;
+    hush_roster_init(&launch->roster);
 }
 
 hush_status_t hush_launch_create_identity(hush_launch_t *launch)
@@ -176,6 +182,29 @@ hush_status_t hush_launch_restore_identity(hush_launch_t *launch)
     launch->pass_saved = 1;
     launch->pass_error[0] = '\0';
     return HUSH_OK;
+}
+
+hush_status_t hush_launch_logout(hush_launch_t *launch)
+{
+    if (launch == NULL)
+        return HUSH_ERR_ARG;
+    hush_identity_clear(&launch->human);
+    launch->logged_in = 0;
+    launch->backup_acked = 0;
+    launch->save_pass = 0;
+    launch->pass_saved = 0;
+    launch->pass_error[0] = '\0';
+    return HUSH_OK;
+}
+
+hush_status_t hush_launch_set_profile(hush_launch_t *launch,
+                                      const hush_roster_profile_t *in)
+{
+    if (launch == NULL || in == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->logged_in)
+        return HUSH_ERR_ARG;
+    return hush_roster_set_profile(&launch->roster, in);
 }
 
 hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
@@ -283,6 +312,9 @@ hush_status_t hush_launch_format_session(const hush_launch_t *launch,
     if (st != HUSH_OK)
         return st;
     st = hush_launch_format_projects(launch, out, outsz, &off);
+    if (st != HUSH_OK)
+        return st;
+    st = hush_launch_format_roster(launch, out, outsz, &off);
     if (st != HUSH_OK)
         return st;
     if (out_len != NULL)
@@ -612,10 +644,34 @@ static hush_status_t hush_launch_format_projects(const hush_launch_t *launch,
             return HUSH_ERR_FULL;
         *off += (size_t)n;
     }
+    if (*off + 2 >= outsz)
+        return HUSH_ERR_FULL;
+    out[(*off)++] = ']';
+    out[*off] = '\0';
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_format_roster(const hush_launch_t *launch,
+                                               char *out, size_t outsz,
+                                               size_t *off)
+{
+    size_t n = 0;
+    size_t room;
+
+    assert(launch != NULL);
+    assert(out != NULL);
+    assert(off != NULL);
     if (*off + 3 >= outsz)
         return HUSH_ERR_FULL;
-    memcpy(out + *off, "]}\n", 3);
-    *off += 3;
+    room = outsz - *off;
+    if (hush_roster_format_json(&launch->roster, out + *off, room, &n) != HUSH_OK)
+        return HUSH_ERR_FULL;
+    *off += n;
+    if (*off + 2 >= outsz)
+        return HUSH_ERR_FULL;
+    out[(*off)++] = '}';
+    out[(*off)++] = '\n';
+    out[*off] = '\0';
     return HUSH_OK;
 }
 

@@ -29,7 +29,6 @@ enum {
 typedef struct {
     char name[HUSH_ROSTER_NAME_MAX];
     char mime[HUSH_ROSTER_NAME_MAX];
-    char text[HUSH_ROSTER_CONTEXT_BYTES];
     size_t bytes;
 } hush_roster_context_t;
 
@@ -84,10 +83,26 @@ hush_status_t hush_roster_add_member(hush_roster_t *roster,
                                      const char *key,
                                      const char *name);
 
+/* One inbound context file (validated, not stored on the live roster). */
+typedef struct {
+    char name[HUSH_ROSTER_NAME_MAX];
+    char mime[HUSH_ROSTER_NAME_MAX];
+    const char *text;
+    size_t bytes;
+} hush_roster_context_in_t;
+
+typedef struct {
+    char name[HUSH_ROSTER_NAME_MAX];
+    char prompt[HUSH_ROSTER_PROMPT_MAX];
+    char picture[HUSH_ROSTER_PATH_MAX];
+    hush_roster_context_in_t context[HUSH_ROSTER_CONTEXT_MAX];
+    size_t ncontext;
+} hush_roster_agent_in_t;
+
 /* Creates an agent identity, stores optional context, optional pass save. */
 hush_status_t hush_roster_add_agent(hush_roster_t *roster,
                                     hush_store_t *store,
-                                    const hush_roster_agent_t *in,
+                                    const hush_roster_agent_in_t *in,
                                     int save_pass);
 
 /* Appends agents and members JSON after a channels/projects-style cursor.

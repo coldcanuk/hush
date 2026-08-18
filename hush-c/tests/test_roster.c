@@ -22,11 +22,11 @@ static void expect(int cond, const char *msg)
 
 int main(void)
 {
-    hush_roster_t roster;
+    static hush_roster_t roster;
+    static char json[HUSH_ROSTER_JSON_MAX];
     hush_roster_profile_t profile;
-    hush_roster_agent_t agent;
+    hush_roster_agent_in_t agent;
     hush_store_t *store = NULL;
-    char json[HUSH_ROSTER_JSON_MAX];
     size_t n = 0;
 
     if (setenv("HUSH_FAKE_PASS_DIR", "/tmp/hush-roster-pass-store", 1) != 0)
@@ -65,7 +65,8 @@ int main(void)
     memcpy(agent.prompt, "Watch the perimeter.", 21);
     memcpy(agent.context[0].name, "brief.md", 9);
     memcpy(agent.context[0].mime, "text/markdown", 14);
-    memcpy(agent.context[0].text, "# stand to", 11);
+    agent.context[0].text = "# stand to";
+    agent.context[0].bytes = 11;
     agent.ncontext = 1;
     expect(hush_roster_add_agent(&roster, store, &agent, 1) == HUSH_OK,
            "agent");
@@ -76,7 +77,8 @@ int main(void)
     memcpy(agent.name, "Badfile", 8);
     memcpy(agent.context[0].name, "x.pdf", 6);
     memcpy(agent.context[0].mime, "application/pdf", 16);
-    memcpy(agent.context[0].text, "%PDF", 5);
+    agent.context[0].text = "%PDF";
+    agent.context[0].bytes = 4;
     agent.ncontext = 1;
     expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_DENIED,
            "pdf denied");

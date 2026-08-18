@@ -47,7 +47,7 @@ static int hush_roster_has_member(const hush_roster_t *roster,
 
 /* Copies one context slot after a MIME check. */
 static hush_status_t hush_roster_copy_context(hush_roster_context_t *dst,
-                                              const hush_roster_context_t *src);
+                                              const hush_roster_context_in_t *src);
 
 /* Inserts a kind 0 profile for the agent. */
 static hush_status_t hush_roster_store_agent_profile(hush_store_t *store,
@@ -96,11 +96,11 @@ static hush_status_t hush_roster_format_members(const hush_roster_t *roster,
 /* Copies name, slug, prompt, picture from in. */
 static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
                                             hush_roster_agent_t *agent,
-                                            const hush_roster_agent_t *in);
+                                            const hush_roster_agent_in_t *in);
 
 /* Copies context slots after MIME checks. */
 static hush_status_t hush_roster_fill_context(hush_roster_agent_t *agent,
-                                              const hush_roster_agent_t *in);
+                                              const hush_roster_agent_in_t *in);
 
 void hush_roster_init(hush_roster_t *roster)
 {
@@ -205,7 +205,7 @@ hush_status_t hush_roster_add_member(hush_roster_t *roster,
 
 hush_status_t hush_roster_add_agent(hush_roster_t *roster,
                                     hush_store_t *store,
-                                    const hush_roster_agent_t *in,
+                                    const hush_roster_agent_in_t *in,
                                     int save_pass)
 {
     hush_roster_agent_t *agent;
@@ -253,7 +253,7 @@ hush_status_t hush_roster_format_json(const hush_roster_t *roster,
 
 static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
                                             hush_roster_agent_t *agent,
-                                            const hush_roster_agent_t *in)
+                                            const hush_roster_agent_in_t *in)
 {
     assert(roster != NULL);
     assert(agent != NULL);
@@ -271,7 +271,7 @@ static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
 }
 
 static hush_status_t hush_roster_fill_context(hush_roster_agent_t *agent,
-                                              const hush_roster_agent_t *in)
+                                              const hush_roster_agent_in_t *in)
 {
     size_t i;
 
@@ -468,23 +468,24 @@ static int hush_roster_has_member(const hush_roster_t *roster,
 }
 
 static hush_status_t hush_roster_copy_context(hush_roster_context_t *dst,
-                                              const hush_roster_context_t *src)
+                                              const hush_roster_context_in_t *src)
 {
+    size_t n;
+
     assert(dst != NULL);
     assert(src != NULL);
     if (!hush_roster_is_context_mime(src->mime, src->name))
         return HUSH_ERR_DENIED;
-    if (src->bytes > (size_t)HUSH_ROSTER_CONTEXT_BYTES)
+    n = src->bytes;
+    if (src->text != NULL && n == 0)
+        n = strlen(src->text);
+    if (n > (size_t)HUSH_ROSTER_CONTEXT_BYTES)
         return HUSH_ERR_FULL;
     memset(dst, 0, sizeof(*dst));
     hush_roster_copy_text(dst->name, sizeof(dst->name), src->name, "notes.txt");
     hush_roster_copy_text(dst->mime, sizeof(dst->mime), src->mime,
                           HUSH_ROSTER_MIME_PLAIN);
-    if (src->text[0] != '\0') {
-        strncpy(dst->text, src->text, sizeof(dst->text) - 1);
-        dst->text[sizeof(dst->text) - 1] = '\0';
-        dst->bytes = strlen(dst->text);
-    }
+    dst->bytes = n;
     return HUSH_OK;
 }
 

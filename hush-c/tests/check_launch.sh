@@ -28,6 +28,9 @@ echo "$html" | grep -q '/icon-192.png' || fail "HTML missing feather src"
 echo "$html" | grep -q 'stepBar' || fail "HTML missing wizard progress"
 echo "$html" | grep -q 'Carry on.' || fail "HTML missing Meet Payne CTA"
 echo "$html" | grep -q 'Create a new identity key' || fail "HTML missing create CTA"
+echo "$html" | grep -q 'prof-first' || fail "HTML missing profile first name"
+echo "$html" | grep -q 'data-theme=\"dracula\"' || fail "HTML missing dracula theme"
+echo "$html" | grep -q 'action: \"logout\"' || fail "HTML missing server logout"
 echo "$html" | grep -q 'Checked to save password to Unix Password Manager' || fail "pass checkbox copy"
 echo "$html" | grep -q 'pass show hush/identity/nsec' || fail "retrieve CLI"
 echo "$html" | grep -q 'id=\\\"save-pass\\\"' || fail "pass checkbox id"
@@ -52,6 +55,12 @@ echo "$vibe" | grep -q '"ready":true' || fail "vibe should ready the hive"
 echo "$vibe" | grep -q '"visibility":"public"' || fail "vibe default public"
 echo "$vibe" | grep -q 'Sgt Major Payne' || fail "Payne missing"
 echo "$vibe" | grep -q '"slug":"welcome"' || fail "welcome channel missing"
+echo "$vibe" | grep -q '"theme":"dark"' || fail "default theme missing"
+prof=$(curl -sf -X POST "http://127.0.0.1:${port}/api/profile" \
+    -H 'Content-Type: application/json' \
+    -d '{"first_name":"Ada","last_name":"Lovelace","email":"ada@hive.local","organization":"HQ","theme":"dracula"}')
+echo "$prof" | grep -q '"first_name":"Ada"' || fail "profile first name"
+echo "$prof" | grep -q '"theme":"dracula"' || fail "profile theme"
 chan=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
     -H 'Content-Type: application/json' \
     -d '{"name":"incidents"}')
@@ -61,4 +70,10 @@ proj=$(curl -sf -X POST "http://127.0.0.1:${port}/api/project" \
     -d '{"name":"alpha","path":"/tmp/hush-check-alpha","git":"true"}')
 echo "$proj" | grep -q '"slug":"alpha"' || fail "project create"
 test -d /tmp/hush-check-alpha/.git || fail "git init"
+logged=$(curl -sf -X POST "http://127.0.0.1:${port}/api/identity" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"logout"}')
+echo "$logged" | grep -q '"logged_in":false' || fail "logout should clear login"
+echo "$logged" | grep -q '"ready":false' || fail "logout should not stay ready"
+echo "$logged" | grep -q '"has_vibe":true' || fail "logout should keep vibe"
 echo "launch routes ok"
