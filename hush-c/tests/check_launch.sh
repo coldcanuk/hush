@@ -43,6 +43,8 @@ echo "$html" | grep -q 'Checked to save password to Unix Password Manager' || fa
 echo "$html" | grep -q 'pass show hush/identity/nsec' || fail "retrieve CLI"
 echo "$html" | grep -q 'id=\\\"save-pass\\\"' || fail "pass checkbox id"
 echo "$html" | grep -q 'savePass = true' || fail "checkbox defaults on"
+echo "$html" | grep -q 'lastGateHtml' || fail "gate paint must skip unchanged trees"
+echo "$html" | grep -q 'data-lpignore' || fail "nsec input must ignore password-manager autofill"
 echo "$html" | grep -q 'dialog class=\\\"secret\\\"' || fail "secret modal"
 created=$(curl -sf -X POST "http://127.0.0.1:${port}/api/identity" \
     -H 'Content-Type: application/json' \
