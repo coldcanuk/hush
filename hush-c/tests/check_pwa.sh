@@ -26,6 +26,7 @@ echo "$html" | grep -q 'serviceWorker' || fail "HTML missing SW register"
 echo "$html" | grep -q 'id="provider-oauth"' || fail "HTML missing OAuth button"
 echo "$html" | grep -q 'Log in with Grok OAuth' || fail "HTML missing Grok OAuth copy"
 echo "$html" | grep -q 'grok login --oauth' || fail "HTML missing grok login --oauth"
+echo "$html" | grep -q 'a browser should open' || fail "HTML missing OAuth hold copy"
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + button"
 echo "$html" | grep -q 'OAUTH_PROVIDERS' || fail "HTML missing OAuth map"
 mf=$(curl -sf "http://127.0.0.1:${port}/manifest.webmanifest")

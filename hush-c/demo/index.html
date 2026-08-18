@@ -1277,12 +1277,13 @@
             : "Could not start the official login.";
           return;
         }
-        $("provider-status").textContent =
-          "Started " + (HOME_CMDS[cfgId] || "login") +
-          ". Finish it in the terminal, then come back.";
+        const started = "A terminal is running " +
+          (HOME_CMDS[cfgId] || "login") +
+          ". Finish sign-in there (a browser should open). Leave that window open until it says you are signed in.";
         await api("/api/provider", { provider: cfgId, use_home: true });
         await loadProviders();
         fillProviderDrawer(cfgId);
+        $("provider-status").textContent = started;
       } catch (e) {
         $("provider-err").textContent = "Could not start the official login.";
       }

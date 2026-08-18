@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +26,8 @@ enum {
     HUSH_PROVIDER_LOGIN_ARGV_MAX = 4,
     HUSH_PROVIDER_LOGIN_CMD_MAX = 96
 };
+
+#define HUSH_PROVIDER_XTERM "xterm"
 
 #define HUSH_PROVIDER_SECRET_PATH_FMT "providers/%s/%s"
 #define HUSH_PROVIDER_CURL_BIN "curl"
@@ -133,9 +136,9 @@ static void hush_provider_add_model(hush_provider_scan_t *out,
 static int hush_provider_login_argv(char **argv, size_t argvsz, const char *id);
 /* Writes "bin login [--oauth]" into out. */
 static void hush_provider_fill_login_cmd(char *out, size_t outsz, char **argv);
-/* Adapter: execlp term -e cmd. Returns only when exec fails. */
-static void hush_provider_exec_term(const char *term, const char *cmd);
-/* Opens a terminal when possible, else execvp of argv. Does not return. */
+/* Adapter: execlp xterm -hold -e cmd. Returns only when exec fails. */
+static void hush_provider_exec_xterm(const char *cmd);
+/* Opens a held xterm when DISPLAY is set, else execvp of argv. Does not return. */
 static void hush_provider_exec_login(char **argv);
 /* fork + exec login. Parent returns immediately. */
 static hush_status_t hush_provider_spawn_login(char **argv);
@@ -1051,13 +1054,13 @@ static void hush_provider_fill_login_cmd(char *out, size_t outsz, char **argv)
         snprintf(out, outsz, "%s", argv[0]);
 }
 
-static void hush_provider_exec_term(const char *term, const char *cmd)
+static void hush_provider_exec_xterm(const char *cmd)
 {
-    assert(term != NULL);
     assert(cmd != NULL);
-    if (term[0] == '\0')
+    if (cmd[0] == '\0')
         return;
-    execlp(term, term, "-e", cmd, (char *)NULL);
+    execlp(HUSH_PROVIDER_XTERM, HUSH_PROVIDER_XTERM, "-hold", "-e",
+           cmd, (char *)NULL);
 }
 
 static void hush_provider_exec_login(char **argv)
@@ -1068,17 +1071,16 @@ static void hush_provider_exec_login(char **argv)
 
     assert(argv != NULL);
     assert(argv[0] != NULL);
+    (void)signal(SIGCHLD, SIG_DFL);
     hush_provider_fill_login_cmd(cmd, sizeof(cmd), argv);
     term = getenv("HUSH_PROVIDER_TERM");
     if (term != NULL && term[0] != '\0') {
-        hush_provider_exec_term(term, cmd);
+        execlp(term, term, "-e", cmd, (char *)NULL);
         _exit(127);
     }
     display = getenv("DISPLAY");
-    if (display != NULL && display[0] != '\0') {
-        hush_provider_exec_term("x-terminal-emulator", cmd);
-        hush_provider_exec_term("xterm", cmd);
-    }
+    if (display != NULL && display[0] != '\0')
+        hush_provider_exec_xterm(cmd);
     execvp(argv[0], argv);
     _exit(127);
 }
