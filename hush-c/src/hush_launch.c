@@ -207,6 +207,29 @@ hush_status_t hush_launch_set_profile(hush_launch_t *launch,
     return hush_roster_set_profile(&launch->roster, in);
 }
 
+hush_status_t hush_launch_add_member(hush_launch_t *launch,
+                                     const char *key,
+                                     const char *name)
+{
+    if (launch == NULL || key == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe)
+        return HUSH_ERR_ARG;
+    return hush_roster_add_member(&launch->roster, key, name);
+}
+
+hush_status_t hush_launch_add_agent(hush_launch_t *launch,
+                                    hush_store_t *store,
+                                    const hush_roster_agent_in_t *in,
+                                    int save_pass)
+{
+    if (launch == NULL || store == NULL || in == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe || !launch->logged_in)
+        return HUSH_ERR_ARG;
+    return hush_roster_add_agent(&launch->roster, store, in, save_pass);
+}
+
 hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
                                       hush_store_t *store,
                                       const char *name,

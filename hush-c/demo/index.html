@@ -271,6 +271,8 @@
         <button class="mini" id="add-chan" type="button">Add channel</button>
         <input id="new-proj" maxlength="48" placeholder="new project">
         <button class="mini" id="add-proj" type="button">Create project</button>
+        <button class="mini" id="raise-agent" type="button">Raise a robot</button>
+        <button class="mini" id="invite-human" type="button">Invite human</button>
       </div>
       <div class="agent" id="payne-card">
         <strong>Sgt Major Payne</strong>
@@ -611,10 +613,17 @@
 
     function paintPayne() {
       const p = session.payne || {};
+      const agents = session.agents || [];
+      let extra = "";
+      agents.forEach((a) => {
+        extra += "<div class=\"help\">" + esc(a.name || a.slug) +
+          (a.npub ? " · " + esc(a.npub.slice(0, 12)) + "…" : "") + "</div>";
+      });
       $("payne-card").innerHTML =
         "<strong>" + esc(p.name || "Sgt Major Payne") + "</strong>" +
         esc(p.about || "Finds the right robot, or raises one.") +
-        (p.npub ? "<div class=\"help\">" + esc(p.npub.slice(0, 16)) + "…</div>" : "");
+        (p.npub ? "<div class=\"help\">" + esc(p.npub.slice(0, 16)) + "…</div>" : "") +
+        extra;
     }
 
     $("add-chan").addEventListener("click", async () => {
@@ -622,6 +631,63 @@
       if (!name) return;
       $("new-chan").value = "";
       await postJson("/api/channel", { name: name });
+    });
+    function isContextFile(file) {
+      if (!file) return false;
+      const mime = file.type || "";
+      const name = file.name || "";
+      if (mime === "text/plain" || mime === "text/markdown" || mime === "text/x-markdown")
+        return true;
+      return /\.(txt|md|markdown)$/i.test(name);
+    }
+
+    $("raise-agent").addEventListener("click", () => {
+      $("agent-err").textContent = "";
+      $("agent-drawer").classList.add("show");
+    });
+    $("agent-close").addEventListener("click", () => $("agent-drawer").classList.remove("show"));
+    $("invite-human").addEventListener("click", () => {
+      $("member-err").textContent = "";
+      $("member-token").textContent = (session.vibe && session.vibe.visibility === "private")
+        ? ("Join token: " + (session.vibe.join_token || ""))
+        : "Public vibe — no token required.";
+      $("member-drawer").classList.add("show");
+    });
+    $("member-close").addEventListener("click", () => $("member-drawer").classList.remove("show"));
+    $("member-save").addEventListener("click", async () => {
+      const npub = ($("member-npub") && $("member-npub").value || "").trim();
+      const name = ($("member-name") && $("member-name").value || "").trim();
+      if (!npub) { $("member-err").textContent = "Need an npub."; return; }
+      try {
+        applySession(await api("/api/member", { npub: npub, name: name || "human" }));
+        $("member-drawer").classList.remove("show");
+      } catch (e) { $("member-err").textContent = "Could not add that human."; }
+    });
+    $("agent-save").addEventListener("click", async () => {
+      const name = ($("agent-name") && $("agent-name").value || "").trim();
+      const prompt = ($("agent-prompt") && $("agent-prompt").value || "").trim();
+      const box = $("agent-pass");
+      const file = $("agent-file") && $("agent-file").files && $("agent-file").files[0];
+      $("agent-err").textContent = "";
+      if (!name) { $("agent-err").textContent = "State the robot’s name."; return; }
+      if (file && !isContextFile(file)) {
+        $("agent-err").textContent = "Only plaintext and Markdown.";
+        return;
+      }
+      const body = {
+        name: name,
+        system_prompt: prompt,
+        save_pass: !box || box.checked
+      };
+      try {
+        if (file) {
+          body.context_name = file.name;
+          body.context_mime = file.type || (/\.md$/i.test(file.name) ? "text/markdown" : "text/plain");
+          body.context_text = await file.text();
+        }
+        applySession(await api("/api/agent", body));
+        $("agent-drawer").classList.remove("show");
+      } catch (e) { $("agent-err").textContent = "Could not raise that robot."; }
     });
     $("add-proj").addEventListener("click", async () => {
       const name = $("new-proj").value.trim();
@@ -1011,6 +1077,44 @@
         <button class="btn ghost" id="profile-close" type="button">Close</button>
       </div>
       <p class="help">Sgt Major Payne: "Guard your orders. Report when ready."</p>
+    </div>
+  </div>
+  <div class="drawer" id="agent-drawer" role="dialog" aria-label="Raise a robot">
+    <div class="panel">
+      <h2>Raise a robot</h2>
+      <p class="help">Sgt Major Payne will walk you through it.</p>
+      <label for="agent-name">Name</label>
+      <input id="agent-name" type="text" maxlength="48" placeholder="Sentry">
+      <p class="help">State the robot’s name.</p>
+      <label for="agent-prompt">Standing orders</label>
+      <textarea id="agent-prompt" maxlength="1000" placeholder="Watch the perimeter."></textarea>
+      <p class="help">Write its standing orders.</p>
+      <label for="agent-file">Context file</label>
+      <input id="agent-file" type="file" accept=".txt,.md,text/plain,text/markdown">
+      <p class="help">Attach only plain text or Markdown. I will refuse the rest.</p>
+      <label class="passbox"><input id="agent-pass" type="checkbox" checked>
+        Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
+      <p class="warn" id="agent-err"></p>
+      <div class="actions">
+        <button class="btn" id="agent-save" type="button">Raise this robot</button>
+        <button class="btn ghost" id="agent-close" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+  <div class="drawer" id="member-drawer" role="dialog" aria-label="Invite human">
+    <div class="panel">
+      <h2>Invite human</h2>
+      <p class="help">Name the soldier. Private vibes also need the join token.</p>
+      <label for="member-npub">npub</label>
+      <input id="member-npub" type="text" maxlength="80" placeholder="npub1…">
+      <label for="member-name">Display name</label>
+      <input id="member-name" type="text" maxlength="48" placeholder="human">
+      <p class="help" id="member-token"></p>
+      <p class="warn" id="member-err"></p>
+      <div class="actions">
+        <button class="btn" id="member-save" type="button">Add human</button>
+        <button class="btn ghost" id="member-close" type="button">Close</button>
+      </div>
     </div>
   </div>
 

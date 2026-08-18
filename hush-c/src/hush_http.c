@@ -44,6 +44,9 @@ static hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
 static int hush_http_want_save_pass(const char *body);
 static hush_status_t hush_http_serve_identity(int fd, const char *body);
 static hush_status_t hush_http_serve_profile(int fd, const char *body);
+static hush_status_t hush_http_serve_member(int fd, const char *body);
+static hush_status_t hush_http_serve_agent(int fd, const char *body,
+                                           hush_store_t *store);
 static hush_status_t hush_http_serve_vibe(int fd, const char *body,
                                           hush_store_t *store);
 static hush_status_t hush_http_serve_channel(int fd, const char *body);
@@ -570,6 +573,52 @@ static hush_status_t hush_http_serve_profile(int fd, const char *body)
                                    hush_launch_set_profile(g_launch, &profile));
 }
 
+static hush_status_t hush_http_serve_member(int fd, const char *body)
+{
+    char key[HUSH_IDENTITY_NPUB_MAX];
+    char name[HUSH_ROSTER_NAME_MAX];
+
+    if (g_launch == NULL || body == NULL)
+        return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    if (!hush_json_field(body, "npub", key, sizeof(key)))
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    if (!hush_json_field(body, "name", name, sizeof(name)))
+        memcpy(name, "human", 6);
+    return hush_http_reply_session(fd,
+                                   hush_launch_add_member(g_launch, key, name));
+}
+
+static hush_status_t hush_http_serve_agent(int fd, const char *body,
+                                           hush_store_t *store)
+{
+    hush_roster_agent_in_t in;
+    char mime[HUSH_ROSTER_NAME_MAX];
+    char fname[HUSH_ROSTER_NAME_MAX];
+    static char text[HUSH_ROSTER_CONTEXT_BYTES];
+
+    if (g_launch == NULL || body == NULL || store == NULL)
+        return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    memset(&in, 0, sizeof(in));
+    if (!hush_json_field(body, "name", in.name, sizeof(in.name)))
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    (void)hush_json_field(body, "system_prompt", in.prompt, sizeof(in.prompt));
+    (void)hush_json_field(body, "picture", in.picture, sizeof(in.picture));
+    if (hush_json_field(body, "context_name", fname, sizeof(fname))) {
+        if (!hush_json_field(body, "context_mime", mime, sizeof(mime)))
+            memcpy(mime, HUSH_ROSTER_MIME_PLAIN, sizeof(HUSH_ROSTER_MIME_PLAIN));
+        if (!hush_json_field(body, "context_text", text, sizeof(text)))
+            text[0] = '\0';
+        memcpy(in.context[0].name, fname, sizeof(in.context[0].name));
+        memcpy(in.context[0].mime, mime, sizeof(in.context[0].mime));
+        in.context[0].text = text;
+        in.context[0].bytes = strlen(text);
+        in.ncontext = 1;
+    }
+    return hush_http_reply_session(fd,
+                                   hush_launch_add_agent(g_launch, store, &in,
+                                                         hush_http_want_save_pass(body)));
+}
+
 static hush_status_t hush_http_serve_vibe(int fd, const char *body,
                                           hush_store_t *store)
 {
@@ -643,6 +692,10 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_identity(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/profile") == 0)
         return hush_http_serve_profile(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/member") == 0)
+        return hush_http_serve_member(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/agent") == 0)
+        return hush_http_serve_agent(fd, hush_http_body(req, len), store);
     if (strcmp(path, "/api/vibe") == 0)
         return hush_http_serve_vibe(fd, hush_http_body(req, len), store);
     if (strcmp(path, "/api/channel") == 0)

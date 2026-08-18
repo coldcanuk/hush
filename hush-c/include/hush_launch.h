@@ -82,6 +82,17 @@ hush_status_t hush_launch_logout(hush_launch_t *launch);
 hush_status_t hush_launch_set_profile(hush_launch_t *launch,
                                       const hush_roster_profile_t *in);
 
+/* Adds a human member by npub. Requires a vibe. */
+hush_status_t hush_launch_add_member(hush_launch_t *launch,
+                                     const char *key,
+                                     const char *name);
+
+/* Raises an agent on the roster. Requires a vibe. */
+hush_status_t hush_launch_add_agent(hush_launch_t *launch,
+                                    hush_store_t *store,
+                                    const hush_roster_agent_in_t *in,
+                                    int save_pass);
+
 /* Names this relay and seeds starter channels + Payne. */
 hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
                                       hush_store_t *store,

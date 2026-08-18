@@ -30,11 +30,14 @@ Optimized for the Goose AI agent. All development uses worktrees **inside this r
 
 The chat UI is a Progressive Web App served by the relay itself
 (`hush-c/demo/`: `index.html`, `manifest.webmanifest`, `sw.js`, icons).
-On first launch it asks for a Nostr identity (create or import `nsec1…`),
-backs up the key in a modal (unix `pass` **checked by default**; retrieve
-with `pass show hush/identity/nsec`), names this relay as a **vibe**,
-and seeds **Sgt Major Payne** plus starter channels. From the hive you can
-create more channels and a basic git project. See
+On first launch a feather splash detects identity and vibe, then a
+numbered wizard walks Identity → Backup (`pass` **checked by default**;
+retrieve with `pass show hush/identity/nsec`) → Vibe (public or private)
+→ Meet **Sgt Major Payne**. Profile holds first/last name, email,
+organization, theme (`dark` / `light` / `color-blind` / `dracula` /
+`desert` / `monochrome` / `christmas`), and Logout. From the hive you
+can create channels and projects, invite humans, and raise agents
+(plaintext/Markdown context only). See
 [docs/pass-integration.md](docs/pass-integration.md).
 
 Install it from the browser (Chromium “Install”, or iOS Share → Add to Home Screen)
