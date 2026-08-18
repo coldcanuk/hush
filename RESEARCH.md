@@ -1125,3 +1125,109 @@ Do **not** add Tailwind. Hand CSS matching the existing PWA.
 
 See `PLAN_STUN_TURN.md`.
 
+
+---
+
+# 2026-08-18 RDAP: Splash, Onboarding Wizard, Profile/Settings, Messaging UI for Human+Agent Teams (Sgt Major Payne)
+
+## Scope Locked (Primary Goal)
+Deliver a researched, disciplined UI:
+- **Splash / intro**: Brief loading phase that detects existing identity + vibe + config. Shows Hush branding + "Sgt Major Payne" presence.
+- **No-config path**: Clear linear onboarding wizard (Identity → Backup/pass (default on) → Vibe/Team name → Channels/Agents seed → Enter hive).
+- **Config path**: Auto-login/resume to messaging UI (or minimal gate).
+- **Always-reachable controls**: Profile (view npub, logout, manage identity), Settings (STUN etc + new UI prefs), Login/Import from header or splash.
+- **Core UI**: Traditional messaging system for collaboration — channels (teams/squads), message stream with author roles (you / Payne / human / agent), agent roster with Sgt Major Payne prominent, composer, presence indicators.
+- Messaging as the primary collaboration surface for mixed human + agent teams.
+
+Non-goals (Parker filter):
+- Full NIP-42 auth challenge loop (later).
+- Rich threading / reactions MVP.
+- External LLM wiring for Payne (he is seeded persona + future DVM).
+- Feline branding or Alfred; use disciplined "Sgt Major Payne" voice.
+- Tailwind in C; keep hand CSS + existing PWA shell.
+
+Success / DoD (measurable):
+1. Launch shows splash (detect state) <1s perceived.
+2. Fresh run: wizard steps complete → ready hive with Payne seeded.
+3. Restored run (pass + vibe): direct or 1-click to hive; no dead-end "no buttons".
+4. Header always exposes: Profile, Settings, (Login if needed), Install PWA.
+5. Messaging UI: sidebar (Channels + Agents/Teams), main stream (notes with meta), composer, Payne card + invite.
+6. Low cog load (Quinn): ≤5 primary actions visible; consistent nav; recognition over recall.
+7. `./configure && make && make test` + check_launch.sh + curl smoke pass.
+8. All per write-legible-c for C (if touched); worktree commits + PR gate.
+
+## Research Synthesis (Quinn + Parker + Payne essence from catfu + Hush)
+
+### From catfu specialists (adapted, non-feline)
+- **ui-quinn** (Nielsen, UCD, Atomic, Hick/Fitts, Gestalt):
+  - Cognitive Load Index target ≤3/10. Gestalt Clarity ≥85.
+  - Few choices (Hick): primary rail = Channels | Agents | Projects (not 4+).
+  - Large targets, proximity for related actions, consistent language.
+  - Recognition: icons + short labels + keyboard hints.
+  - Error prevention: confirm before destructive (logout).
+- **product-parker** (JTBD, Lean, RICE, Hook):
+  - JTBD: "Collaborate with my team (humans + agents) using a familiar messaging interface to plan, assign, and ship work."
+  - MVP: channels as squads, messages as work notes, Payne as first agent who "finds or raises the robot".
+  - RICE high on clarity + speed to first message; low on bloat.
+  - No addiction hooks; utility only.
+- **caretaker-alfred → Payne**:
+  - Human male mentor. Precise, warm discipline. "At ease.", "Mission first.", one directive/tip per major screen.
+  - Seeds #welcome with Payne note. Always present in Agents roster.
+  - Every major flow ends with a Payne-flavored line (not "Tip:" literally; "Carry on." or "Report when ready.").
+- **catfu-brand**:
+  - Enforce: disciplined, no fluff, military-adjacent but not parody. Lowercase "hush" in UI where product name. Payne as mascot/agent.
+  - No "Brave", no vendor leakage. "hush" not "Hush" in prose unless title.
+
+### Hush current state (code + run)
+- PWA served from C via embed (hush_http_serve_asset + scripts/embed-ui.sh). index.html has gate state machine (landing → create/import → backup (secret modal + pass checkbox default true) → vibe → hive).
+- Session /api/session drives everything: logged_in, backup_acked, has_vibe, ready, channels, payne, vibe.
+- On relay start: hush_launch_restore_identity (pass) → if ready, hive shows.
+- Problem reported: after launcher click, user sees PWA but "no onboarding window or button for login/profile/settings". Likely hit restored path or header hidden until ready. Gate exists but not surfaced as distinct splash.
+- Payne already in launch (HUSH_LAUNCH_PAYNE_NAME, seeded profile + welcome note).
+- Messaging: flat #channels + stream + basic call/settings drawers. No persistent agent roster in main nav. Profile implicit (npub in session).
+
+### Nostr / messaging patterns for collab
+- Kinds 0 (profiles for humans/agents), 1 (chat notes tagged #h=channel).
+- Agents as first-class: separate roster, special "who" rendering ("Payne"), invite to calls (role=agent).
+- Traditional: sidebar channels (like Slack/Discord teams), message list with author badges, composer at bottom, thread later.
+- Vibe = the relay instance (named community).
+
+### PWA / splash best practices (from MDN + existing)
+- Splash can be the initial gate render or a brief "connecting…" overlay while first /api/session + /api/events tick.
+- Detect config: session.logged_in && backup_acked && has_vibe → ready.
+- Onboarding as wizard: numbered steps or progressive cards to reduce overwhelm (Quinn).
+- Always header controls: use CSS to show Profile/Settings even on gate (or persistent top bar).
+
+## Architecture Decisions (locked for this slice)
+- UI remains single-file demo/index.html + CSS + vanilla JS (embedded). No new frameworks.
+- State: drive from /api/session (authoritative). Client paints splash → wizard → hive.
+- New surfaces:
+  - Splash: loading + brand + "Sgt Major Payne reporting" + auto-advance or "Begin".
+  - Wizard: 4 clear steps (use progress dots or numbered). Re-uses existing cards but linear.
+  - Profile drawer/modal: npub display, copy, logout, re-import, about human.
+  - Agents roster (sidebar section): Payne always top; "Invite agent" later.
+  - Polish messaging: author pills ("you", "Payne", "agent", short pk), timestamps relative, empty states with Payne directive.
+- Header: always visible brand + Install + Profile + Settings + (Call if ready). Gate can have slim header.
+- C changes: minimal. If any (e.g. new session fields), apply legible-c + checklist. Prefer HTML/JS for flows.
+- Embed after edits: scripts/embed-ui.sh demo ; rebuild.
+- Persona copy: Payne voice in empty states, welcome, buttons where natural.
+
+## Risks + Mitigations
+1. State machine complexity → single source of truth in paint()/applySession(); test via check_launch + manual curl.
+2. Embed drift → always run embed + make after HTML changes; add to check.
+3. User sees "nothing" on restore → ensure splash/hive has profile/settings buttons unconditionally.
+4. Cognitive bloat → strict Hick cuts: no more than 5 nav items; fold advanced in Settings.
+5. Legible C violation → do not edit .c/.h unless necessary; if do, load legible-c and run checklist before commit.
+
+## Updated Plan (RDAP)
+See new or updated plan file + milestones below. Commit gate ends Phase 1.
+
+## Verification Performed (this research)
+- Built + ran cold + post-create flows (session JSON, HTML gate presence).
+- Read catfu recipes + SKILLs (essence extracted).
+- Inspected launch.c, http.c, relay.c, demo JS state machine, check_launch.sh.
+- Confirmed Payne seeding, pass default-on, vibe, channels.
+- Confirmed no splash overlay currently (gate is the on-ramp).
+
+References: catfu .goose/recipes + .agents/skills (fetched), RESEARCH prior sections, PLAN_*.md, NOSTR.md, hush_launch.h, demo/index.html full, Quinn/Parker/Alfred patterns.
+
