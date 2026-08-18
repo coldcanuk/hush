@@ -9,14 +9,13 @@
 #
 # Invocation:
 #   ./configure
-#   PREFIX=$HOME/.local ./configure
-#   ./configure --prefix=$HOME/.local
+#   ./configure --prefix=/usr
 #   ./configure --prefix=/opt/hush --bindir=/opt/hush/bin
 
 set -e
 
 # Start with environment values if present
-PREFIX="${PREFIX:-/usr/local}"
+PREFIX="${PREFIX:-$HOME/.local}"
 BINDIR="${BINDIR:-}"
 DATADIR="${DATADIR:-}"
 CC="${CC:-}"
@@ -34,7 +33,7 @@ for arg in "$@"; do
             echo "configure for Hush (hush-relay - legible C11 Nostr relay)"
             echo ""
             echo "Options:"
-            echo "  --prefix=PATH   Installation prefix (default: /usr/local)"
+            echo "  --prefix=PATH   Installation prefix (default: \$HOME/.local)"
             echo "  --bindir=PATH   Binary directory   (default: \$PREFIX/bin)"
             echo "  --datadir=PATH  Data directory     (default: \$PREFIX/share)"
             echo "  --cc=COMPILER   C compiler"
@@ -201,10 +200,10 @@ echo "Standard workflow:"
 echo "  ./configure"
 echo "  make"
 echo "  make test"
-echo "  make install                 # may need sudo for system prefix"
-echo "  make install PREFIX=\$HOME/.local   # recommended for most users"
+echo "  make install                 # installs to \$HOME/.local (no sudo needed)"
+echo "  sudo make install PREFIX=/usr  # system-wide install"
 echo
-echo "After user-local install, you may want:"
+echo "After install, you may want:"
 echo "  update-desktop-database \$HOME/.local/share/applications || true"
 echo
 

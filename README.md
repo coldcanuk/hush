@@ -91,7 +91,17 @@ flatpak install flathub io.github.coldcanuk.hush
 ```bash
 ./configure
 make
-sudo make install
+make install
+```
+
+`make install` installs to `~/.local/bin/` by default — no `sudo` required.
+
+For a system-wide install:
+
+```bash
+./configure
+make
+sudo make install PREFIX=/usr
 ```
 
 ## Skills for Goose
