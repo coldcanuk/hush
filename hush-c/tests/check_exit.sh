@@ -21,11 +21,15 @@ pidfile_path() {
 }
 
 cleanup() {
+    if [ -n "${fake_pid:-}" ]; then
+        kill "$fake_pid" 2>/dev/null || true
+        wait "$fake_pid" 2>/dev/null || true
+    fi
     if [ -n "$pid" ]; then
         kill "$pid" 2>/dev/null || true
         wait "$pid" 2>/dev/null || true
     fi
-    rm -f "$log"
+    rm -f "$log" "${fake:-}"
     rm -rf "$cfg"
 }
 trap cleanup EXIT
@@ -68,6 +72,18 @@ pidfile=$(pidfile_path)
 test -f "$pidfile" || fail "pidfile missing ($pidfile)"
 grep -q "$(printf '%s' "$pid")" "$pidfile" || fail "pidfile pid mismatch"
 
+# Fake a leftover --app window so Exit must reap it (the real browser
+# is not spawned under --no-open). cmdline must contain both needles.
+fake=$(mktemp)
+printf '#!/bin/sh\nsleep 30\n' >"$fake"
+chmod +x "$fake"
+"$fake" --class=hush-relay --app="http://127.0.0.1:${port}/" >/dev/null 2>&1 &
+fake_pid=$!
+sleep 0.05
+kill -0 "$fake_pid" 2>/dev/null || fail "fake app window did not start"
+tr '\0' ' ' <"/proc/${fake_pid}/cmdline" | grep -q -- '--class=hush-relay' \
+    || fail "fake cmdline missing class"
+
 close=$(curl -sf -X POST "http://127.0.0.1:${port}/api/close" \
     -H 'Content-Type: application/json' -d '{}')
 echo "$close" | grep -q '"action":"close"' || fail "close json"
@@ -81,6 +97,10 @@ wait_down "$pid" || fail "exit did not stop the process"
 wait "$pid"
 test "$?" -eq 0 || fail "exit must be code 0"
 test ! -f "$pidfile" || fail "pidfile left after exit"
+if kill -0 "$fake_pid" 2>/dev/null; then
+    fail "exit left a --app child running"
+fi
+fake_pid=""
 pid=""
 
 "$bin" --no-open "$port" >"$log" 2>&1 &

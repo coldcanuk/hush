@@ -7,6 +7,7 @@ The local hive UI treats each channel as a NIP-29-shaped group with a
 kind-1 notes keep matching. A Hush **Group** is a NIP-29 parent folder
 (`parent` / `child` in the spec; membership does not inherit). Composer
 `@` mentions follow NIP-27 (`nostr:npub1…` plus optional `p` tags).
+The hive shows those mentions as `@Name` pills; the wire is unchanged.
 Full relay-signed `kind:39000` emission is a follow-up.
 
 ## Community scope
