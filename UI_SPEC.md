@@ -1,89 +1,145 @@
-# Hush UI Spec — Splash + Wizard + Messaging (Sgt Major Payne)
-Version: 2026-08-18 (RDAP M2.1)
-Authoritative for this feature. Quinn + Parker + Payne adapted from catfu specialists (no feline).
+# Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create
+Version: 2026-08-18 (RDAP M2.1, gb/onboard-profile-agents)
+Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
+M2.1 splash spec where they conflict. Quinn + Parker + Payne. No feline.
 
 ## Core Principles (Quinn)
 - Cognitive Load Index ≤ 3/10. Gestalt Clarity ≥ 85/100.
-- Hick's Law: ≤5 primary visible choices at any time.
-- Fitts: large targets (min 44px tap, 10px padding).
-- Recognition > recall: icons + labels + consistent pills.
-- Proximity: related actions grouped (Channels together; Agents together).
-- Error prevention: confirm logout; nsec never auto-persisted to browser.
+- Hick: ≤5 primary visible choices. Themes live in Settings, not header.
+- Fitts: min 44px tap, 10px padding.
+- Recognition > recall. One primary CTA per onboard step.
+- Error prevention: confirm logout; nsec never in the DOM after ack;
+  context files re-checked on the server.
 
-## Payne Voice (adapted Alfred mentor → disciplined human)
+## Payne Voice
 - "At ease." "Mission first." "Report when ready." "Find or raise the right robot."
-- One directive per major screen/empty state.
-- Precise, respectful, no fluff. "Carry on."
+- One directive per major screen. Precise. No fluff. "Carry on."
 
 ## Product JTBD (Parker)
-- "As a human or agent lead, I collaborate with mixed teams using familiar messaging (channels, notes, presence) to plan, assign, and ship."
-- MVP cuts: no rich threads, no external LLM for Payne (signaling + persona only).
+"As a human lead I stand up a local hive, name myself, pick a look, and
+raise humans + robots that share channels."
 
 ## Flows (locked)
-1. **Splash (detect)**: 300-800ms brand + "Sgt Major Payne reporting." + spinner. 
-   - Poll /api/session once or twice.
-   - If ready → auto to hive (or "Enter hive" CTA).
-   - Else → wizard or slim gate with header controls.
-   - Always header: brand | Install | Profile | Settings | (Call if ready).
 
-2. **Onboarding Wizard (no config)**: linear 4 steps, progress dots or 1/4 2/4...
-   - Step 1: Identity — Create new (primary) or Import existing nsec.
-   - Step 2: Backup — Reveal nsec (masked), Copy, checkbox **checked** "Checked to save ... to Unix Password Manager. Retrieve with: pass show hush/identity/nsec".
-   - Step 3: Vibe — Name the relay (default "local hive"), about, public/private toggle.
-   - Step 4: Team seed — Confirm starter channels + "Sgt Major Payne" agent. "Stand up the hive".
-   - Payne microcopy on each: "State your name and rank." etc. End with "Carry on."
+### 1. Splash (detect)
+- Feather logo: `<img src="/icon-192.png" alt="hush" class="feather">`.
+  Not a new illustration. Not the 193 KiB source PNG inline.
+- Line: "Sgt Major Payne reporting for duty."
+- Sub: "Detecting identity and vibe…"
+- Poll `/api/session`. If `ready` → hive. Else **Begin** → wizard step 1.
+- Header always: brand | Install | Profile | Settings | (Call if ready).
 
-3. **Resume / Login (config present)**: From splash or header Login → same identity/import + backup if needed. Auto-advance when ready.
+### 2. Onboarding wizard (no user or no vibe)
+Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
 
-4. **Hive (messaging)**:
-   - Header (always): brand (hush) + vibe name + Install + Profile + Settings + Call.
-   - Sidebar (left, 220px+): 
-     - Channels (lbl + list of #slug, active highlight).
-     - Create channel input + Add.
-     - Agents/Teams (lbl): Sgt Major Payne (prominent, badge "agent", npub short), other humans/agents.
-     - Create project (for later).
-   - Main:
-     - Room header: #channel | note count | visibility.
-     - Stream: notes as cards. Meta: who (pill: you / Payne / agent / human / pk8) · ago.
-     - Empty: "The hive is quiet. State the mission for #" + channel + ". — Payne"
-     - Composer: input + Send (Payne placeholder "Write orders...").
-   - Drawers: Settings (existing + future UI), Conference (mesh + Payne invite).
+1. **Identity** — Create new (primary) or Import nsec. Help: “What’s an identity key?”
+2. **Backup** — Masked nsec, Reveal, Copy. Checkbox **checked**:
+   `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/identity/nsec`
+3. **Vibe** — Name (default `local hive`), about, public / private radios.
+   CTA: **Stand up the hive**.
+4. **Meet Payne** — After vibe exists (session `ready` but page stays
+   `payne` until the human confirms). Show name, about, npub short,
+   welcome quote. CTA: **Carry on.** Then hive.
 
-5. **Profile (always reachable)**:
-   - Modal: your npub (copyable), human name/about (from kind0 if any), "Logout" (clears session client-side + server if needed), "Use different key" (import).
-   - Never shows nsec after ack.
+`tick()` must not force `page = "hive"` while `page === "payne"`.
 
-6. **Settings**: existing STUN/TURN + vibe vis + future (theme, Payne directives on/off).
+### 3. Resume
+`logged_in && backup_acked && has_vibe` → splash detects → hive.
 
-## Data / Session (no breaking change)
-Use existing /api/session shape. Client may add local "page" state only. Server remains source of truth for logged_in/backup_acked/has_vibe/ready/channels/pay ne/vibe.
+### 4. Hive
+- Header: hush + vibe name + Install + Profile + Settings + Call.
+- Sidebar: Channels; **Agents** (Payne first); Create channel/project;
+  **Raise a robot**; **Invite human**; **Manage vibe**.
+- Stream + composer unchanged in spirit. Empty: Payne directive.
 
-## Visual Language (existing + disciplined polish)
-- Dark: --bg #09090b, --surface #18181b, --accent #34d399 (emerald disciplined).
-- Sans + mono for keys.
-- Pills for authors: small rounded, color by role (you=accent, Payne=accent-dim, agent=muted).
-- No more than 5 nav items.
+### 5. Profile (always reachable)
+Drawer fields:
+- Avatar upload (JPEG/PNG/WebP client; server stores JPEG/PNG, kind 0
+  `picture` = `http://127.0.0.1:<port>/avatar/<pubkey>`).
+- First name, last name, email, organization.
+- npub (copy). Never nsec after ack.
+- **Logout** — confirm, then `POST /api/identity {action:"logout"}`.
+  Server clears human login; vibe/agents stay. Client returns to splash.
 
-## Hick Cuts (explicit)
-- Primary: Channels list, Agents list, Composer, Header actions (4-5).
-- Advanced: Settings drawer, Call stage.
-- No landing page bloat; no 3rd rail items.
+Email is **session-only**. Never written into kind 0.
 
-## Verification per M
-- Quinn quick audit (load, gestalt) in commit msg or separate note.
-- Parker: "does this serve the messaging collab JTBD?"
-- After every UI edit: scripts/embed-ui.sh demo && make -C hush-c (or top make)
-- Smoke: curl session, check_launch.sh, manual fresh/restored.
+Kind 0 for the human:
+`name` = first or slug; `display_name` = "First Last";
+`about` may append organization; `picture` = avatar URL.
 
-## Payne Directives (examples to place)
-- Splash: "Sgt Major Payne reporting for duty."
-- Empty stream: "At ease. Write the first order."
-- After vibe: "Hive standing. Carry on."
-- Profile: "Your identity is your orders. Guard it."
+### 6. Settings
+- Existing STUN/TURN + vibe public/private + join token.
+- **Theme** radios (only place themes appear):
+  `dark` | `light` | `color-blind` | `dracula` | `desert` |
+  `monochrome` | `christmas`
+- Persist `localStorage.hush-theme` immediately and `POST /api/profile {theme}`.
 
-## Non-negotiables (enforce)
-- Checkbox default checked + exact retrieve text.
+### 7. Manage vibe
+This process **is** the vibe. No second relay.
+- Visibility public / private.
+- Private: show join token + copy.
+- Rename allowed via same `/api/vibe` name field later if cheap; not required
+  for DoD if visibility + invite work.
+
+### 8. Invite human
+Drawer: npub (or hex pubkey) + optional display name.
+Private vibe also shows the join token.
+`POST /api/member {npub, role:"human", name?}`.
+
+### 9. Raise a robot (agent create)
+Payne walks the fields (one line each):
+- Avatar (same widget as profile).
+- Name. “State the robot’s name.”
+- System prompt textarea. “Write its standing orders.”
+- Context files. `accept=".txt,.md,text/plain,text/markdown"`.
+  “Attach only plain text or Markdown. I will refuse the rest.”
+- pass checkbox default-on:
+  `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/agents/<slug>/nsec`
+- CTA: **Raise this robot**.
+
+Client rejects other MIME. Server re-checks. Max 4 files, 4096 bytes each.
+
+`POST /api/agent {name, system_prompt, save_pass, picture?, context:[{name,mime,text}]}`.
+
+Goose/Payne skill: `.goose/skills/agent-create/SKILL.md`.
+
+## Data / API (additive)
+
+| Route | Role |
+|---|---|
+| `GET /api/session` | existing + `profile`, `theme`, `agents[]`, `members[]` |
+| `POST /api/identity` | `create` \| `import` \| `ack_backup` \| **`logout`** |
+| `POST /api/profile` | first/last/email/org/theme; optional avatar b64 |
+| `POST /api/agent` | create agent + context |
+| `POST /api/member` | add human (npub) |
+| `GET /avatar/<64-hex>` | stored picture bytes |
+
+Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
+
+## Visual language
+- Dark default tokens stay. Themes override CSS variables on `html[data-theme]`.
+- Color-blind: blue / orange, never green / red as the sole pair.
+- Feather 36–72px on splash, no animation beyond a quiet fade if cheap.
+- Author pills: you / Payne / agent / human.
+
+## Hick cuts
+- Header ≤5 actions.
+- Onboard: one primary button.
+- Themes only in Settings.
+- Agent + human add are drawers, not splash steps.
+
+## Caps (named, one site each)
+- HTTP recv `HUSH_BUF_SZ = 65536` (was 8192; HTTP JSON + small avatar).
+- Session JSON `HUSH_LAUNCH_JSON_MAX = 16384`.
+- Context: 4 files × 4096 bytes.
+- Avatar on disk: sniffed JPEG/PNG only; client downscales ≤96px.
+- Kind 0 `picture` is a URL, never a data URI (`HUSH_EVENT_MAX_CONTENT = 4096`).
+
+## Non-negotiables
+- pass checkbox default checked + retrieve CLI.
 - Profile/Settings visible before ready.
 - Payne always in agent list when vibe present.
-- No catfu, Griffe, Scout, Brave, feline words.
-- Embed after HTML change.
+- No catfu / Griffe / Scout / Brave / feline words.
+- Embed after every HTML change:
+  `./scripts/embed-ui.sh hush-c/demo` from the worktree root.
+- write-legible-c §14 on every C commit.
