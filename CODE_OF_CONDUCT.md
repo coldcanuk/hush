@@ -2,11 +2,11 @@
 
 ## 1. History
 
-This document was originally called a "Code of Conduct" and was created for the purpose of filling in a box on "supplier registration" forms submitted to the SQLite developers by some clients. However, the SQLite team subsequently learned that "Code of Conduct" has a very specific and almost sacred meaning to some readers, a meaning to which this document does not conform [[1]](https://www.theregister.co.uk/2018/10/22/sqlite_code_of_conduct/) [[2]](https://pjmedia.com/news-and-politics/paula-bolyard/2018/10/24/tech-community-outraged-after-sqlite-founder-adopts-christian-code-of-conduct-n61746) [[3]](https://www.youtube.com/watch?v=S48VzyCwwtk). Therefore this document was renamed to "Code of Ethics", as we are encouraged to do by rule 71 in particular and also rules 2, 8, 9, 18, 19, 30, 66, and in the spirit of all the rest.
+This Code of Ethics originates with the SQLite project. The SQLite developers first published it as a "Code of Conduct," written to fill a box on supplier-registration forms submitted to them by some of their clients. They later learned that "Code of Conduct" has a very specific and almost sacred meaning to some readers, a meaning to which that document does not conform [[1]](https://www.theregister.co.uk/2018/10/22/sqlite_code_of_conduct/) [[2]](https://pjmedia.com/news-and-politics/paula-bolyard/2018/10/24/tech-community-outraged-after-sqlite-founder-adopts-christian-code-of-conduct-n61746) [[3]](https://www.youtube.com/watch?v=S48VzyCwwtk). They therefore renamed it a "Code of Ethics," as they were encouraged to do by rule 71 in particular and also rules 2, 8, 9, 18, 19, 30, 66, and in the spirit of all the rest.
 
-This document continues to be used for its original purpose — providing a reference to fill in the "code of conduct" box on supplier registration forms.
+SQLite continues to use that document for its original purpose — providing a reference to fill in the "code of conduct" box on supplier registration forms. The source is kept at https://www.sqlite.org/codeofethics.html.
 
-The Hush project learned of this story from SQLite and decided to shape its code of ethics documentation around the same idea as SQLite. After forking the Buzz project and creating the legible C11 implementation, the team at Hush chose to base Hush's Code of Ethics on the Rule of St. Benedict in the same way.
+The Hush project learned of this story from SQLite and chose the same foundation. After forking the Buzz project and creating the legible C11 implementation, Hush adopted this Code of Ethics as its own: the same Rule of St. Benedict, the same name, and the same one-way promise to everyone who uses or contributes to the project.
 
 ## 2. Purpose
 
