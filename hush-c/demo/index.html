@@ -942,7 +942,20 @@
         const pill = document.createElement("span");
         pill.className = "pill";
         if (i === draftFileSel) pill.style.outline = "2px solid var(--accent)";
-        pill.innerHTML = "<em>" + esc(f.name) + "</em>";
+        const label = document.createElement("em");
+        label.textContent = f.name;
+        const minus = document.createElement("button");
+        minus.type = "button";
+        minus.setAttribute("aria-label", "Remove " + f.name);
+        minus.textContent = "−";
+        minus.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          draftFiles.splice(i, 1);
+          draftFileSel = -1;
+          paintFilePills();
+        });
+        pill.appendChild(label);
+        pill.appendChild(minus);
         pill.addEventListener("click", () => {
           draftFileSel = i;
           paintFilePills();
