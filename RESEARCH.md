@@ -700,3 +700,83 @@ Rules:
 - OpenBSD pkg_create(1): https://man.openbsd.org/pkg_create.1
 - FreeBSD pkg reference: https://www.freebsdsoftware.org/blog/freebsd-pkg-reference.html
 - FreeBSD pkg-create(8): https://man.freebsd.org/cgi/man.cgi?query=pkg-create&sektion=8
+
+---
+
+# 2026-08-17 RDAP: Hush chat UI as a Progressive Web App
+
+## Scope locked
+
+- **Primary goal:** The HTML UI already served by `hush-relay` (`GET /`) is a real, installable PWA: add-to-home-screen / install as app on Chromium (desktop + Android) and Safari iOS Add to Home Screen.
+- **Non-goals:** Push notifications, Web Push keys, background sync, a separate Node/Vite frontend, changing the Nostr wire protocol, HTTPS termination inside hush-relay, offline posting, account auth.
+- **Success / DoD:**
+  1. `GET /` HTML contains `<link rel="manifest">`, theme-color, apple-touch-icon, and `navigator.serviceWorker.register("/sw.js")`.
+  2. `GET /manifest.webmanifest` is JSON with `name`/`short_name`, `start_url`, `display: standalone`, icons 192 and 512 PNG.
+  3. `GET /sw.js` is JavaScript with `install`/`activate`/`fetch` handlers. `/api/*` is not intercepted.
+  4. `GET /icon-192.png` and `GET /icon-512.png` return PNG (`\x89PNG`).
+  5. `make && make test` still pass under `-Werror`.
+  6. `curl` against a running `hush-relay` returns 200 for all PWA routes.
+- **Constraints:** C11 + write-legible-c; single binary; no Tailwind-in-C; no new runtime deps; worktree `gb/pwa`; land via PR. Secure context = localhost / 127.0.0.1 (existing bind) or operator HTTPS reverse proxy.
+- **Assumptions:** Users install from the relay origin they already open (`http://127.0.0.1:<port>/`). Existing 256×256 launcher PNG is a valid source for 180/192/512. Service worker is still the reliable Chromium install path even if Lighthouse no longer lists it.
+- **Environment:** gcc, gmake, POSIX, Python3+PIL (dev only, to rasterize icons), ffmpeg available as fallback. No Node required.
+- **Risks:**
+  1. SW caches stale UI after binary upgrade → cache name `hush-ui-v1` + network-first static + skipWaiting/clients.claim.
+  2. `(void)write` class of `-Werror` bugs on new routes → reuse `hush_http_write_all`.
+  3. Huge generated headers if we embed uncompressed assets → PNG from 256px source stays small.
+  4. Preview host is not localhost → install prompt may be blocked; functionality still works.
+  5. `hush_http_serve` grows past 40 lines → extract static asset dispatch.
+
+## Findings
+
+### Installability (MDN + Chrome Lighthouse, 2025–2026)
+
+Chromium installable manifest requires:
+
+- `name` or `short_name`
+- `icons` including **192×192** and **512×512**
+- `start_url`
+- `display` in `{standalone, fullscreen, minimal-ui}`
+- `prefer_related_applications` not `true`
+
+Served over **HTTPS**, or **localhost / 127.0.0.1** (with or without port).
+
+A service worker is **not** listed on the current Lighthouse installable-manifest page, but a controlling SW with a `fetch` handler remains the conservative path for “Add to Home Screen” and offline shell. Safari iOS uses Share → Add to Home Screen and ignores `beforeinstallprompt`.
+
+Manifest MIME: `application/manifest+json` (fallback `application/json` also parsed). Link: `<link rel="manifest" href="/manifest.webmanifest">`.
+
+Apple: `<meta name="apple-mobile-web-app-capable" content="yes">`, `<link rel="apple-touch-icon" href="/apple-touch-icon.png">` (180×180).
+
+### Current Hush UI (code)
+
+- Single file `hush-c/demo/index.html` (~239 lines), inline CSS/JS, no manifest, no SW.
+- Embedded at build by `scripts/embed-ui.sh` → `src/hush_ui_html.h` → `HUSH_UI_HTML[]`.
+- `hush_http_serve` only routes `/`, `/index.html`, `/api/status`, `/api/events`, POST `/api/event`.
+- Icons exist at `assets/icons/{48,128,256}/hush-relay.png` only — **no 192/512**.
+- Relay listens `INADDR_ANY`, default port **10555**, prints `http://127.0.0.1:<port>/`.
+- UI uses `fetch("/api/...")` when not `file:`.
+
+### Architecture decision (locked)
+
+Keep the **single-binary, embed-at-build** model. Do **not** read the filesystem at runtime (breaks install prefixes and the desktop launcher).
+
+| Route | Type | Source |
+|---|---|---|
+| `/`, `/index.html` | text/html | `demo/index.html` |
+| `/manifest.webmanifest` | application/manifest+json | `demo/manifest.webmanifest` |
+| `/sw.js` | application/javascript | `demo/sw.js` |
+| `/icon-192.png` | image/png | `demo/icons/icon-192.png` |
+| `/icon-512.png` | image/png | `demo/icons/icon-512.png` |
+| `/apple-touch-icon.png` | image/png | `demo/icons/apple-touch-icon.png` |
+| `/api/*` | unchanged | not cached by SW |
+
+`scripts/embed-ui.sh` becomes a multi-asset generator writing `src/hush_ui_html.h` (text constants + `unsigned char` blobs + lengths).
+
+SW policy: precache shell; **do not** `respondWith` for `/api/*` (live relay data); network-first for documents so upgrades win; fallback to cache when offline.
+
+### Tailwind
+
+Existing RESEARCH opted Tailwind out of C. Current `index.html` is hand-written CSS (the Tailwind-CDN note is stale). PWA work does not introduce Tailwind.
+
+## Remaining plan
+
+See `PLAN_PWA.md`.
