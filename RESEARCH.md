@@ -2142,3 +2142,169 @@ always re-reads `hush_pass_has`. Overlay never stores the values.
   save path.
 - `pass` on PATH; no `~/.password-store/hush/providers` yet.
 - `HUSH_PASS_SECRET_MAX` and `HUSH_PROVIDER_KEY_MAX` both 256.
+
+---
+
+# 2026-08-18 RDAP: Persist vibe + home config (`~/.config/hush`) + provider auth facts
+
+## Scope locked
+
+- **Primary goal:** After `git pull && ./configure && make clean && make && make install` (or any process restart / Exit), importing the same nsec (or restoring it from `pass`) must recover the vibe the human already stood up — name, about, visibility, join token, channels, projects, profile, members, raised robots — without forcing "Name your vibe" again. Durable hive state lives under `~/.config/hush/`.
+- **Secondary goal:** Document, and keep honest in the Raise-robot configure drawer, how each of the eight providers actually authenticates. Do **not** invent an OAuth dance inside Hush.
+- **Non-goals:** Persisting the in-memory event ring / chat history. Multi-vibe / multi-tenant. Writing Goose / Grok / Codex / Cline home files. Browser OAuth from C. Spawning those CLIs. Changing `make clean` to preserve object files. Copying nsecs into `~/.config/hush/` (they stay in `pass`). Persisting TURN secrets already owned by `hush_turn`.
+- **Success criteria:**
+  1. `hush_launch_create_vibe` writes `$XDG_CONFIG_HOME/hush/vibe.json` (else `$HOME/.config/hush/vibe.json`) mode 0600.
+  2. Boot after `hush_launch_restore_identity` loads that file when present and sets `has_vibe=1`.
+  3. Import of the same nsec on a cold process with a saved vibe skips the vibe wizard (`ready=true` after backup ack).
+  4. `make clean` still only deletes build products (`hush-c/Makefile` `rm -f $(OBJS) libhush.a hush-relay …`). It never touches `~/.config/hush`.
+  5. File contains no nsec. GET `/api/session` after restore still has `"nsec":""` once backup is acked.
+  6. Payne nsec, if previously saved, is restored from `pass` (`hush/agents/sgt-major-payne/nsec`); otherwise a new Payne key is generated and optionally saved.
+  7. Raised-agent nsecs restore from `pass` (`hush/agents/<slug>/nsec`) when present; missing pass is a soft-fail (identity regenerated or slot kept without secret).
+  8. Provider drawer copy matches researched auth (Grok/Codex OAuth-or-key, Goose `goose configure`, Cline ClinePass/BYOK — **not** OAuth-first).
+  9. `./configure && make && make test` pass. Worktree + PR lifecycle.
+
+## Why the vibe is lost today (quoted)
+
+Boot (`hush_relay.c`):
+
+```
+hush_launch_init(&g_launch);
+(void)hush_launch_restore_identity(&g_launch);
+```
+
+`hush_launch_restore_identity` only loads `hush/identity/nsec`. It never
+touches `has_vibe`. `hush_launch_init` is `memset` — `has_vibe` starts 0.
+
+`hush_store` is an in-memory ring (`HUSH_STORE_CAPACITY = 1024`). No file.
+
+`hush_launch_create_vibe` sets `launch->has_vibe = 1` in RAM only.
+
+UI (`index.html` `applySession`):
+
+```
+else if (session.logged_in && session.backup_acked && !session.has_vibe) page = "vibe";
+```
+
+Ready is `logged_in && backup_acked && has_vibe`. Import therefore always
+lands on "Name your vibe" after Exit / rebuild / new process.
+
+`make clean` is innocent: it only `rm -f` objects and the binary. The
+user's `make clean ; make & make install` sequence reinstalls a new
+binary; the next launch is a new process with a zeroed `g_launch`.
+
+`~/.config/hush` does not exist on this host today. Only
+`hush_provider_config_dir` already targets `$XDG_CONFIG_HOME/hush` else
+`$HOME/.config/hush` for `providers.json`. That is the existing home
+root. The human now locked it as the persist tree for *all* operational
+config/tmp.
+
+## Provider auth (researched this session)
+
+| Runtime | How it actually authenticates | What Hush does / should do |
+|---|---|---|
+| **Grok Build** | `grok login --oauth` → OAuth at auth.x.ai, tokens in `~/.grok/auth.json`. Also `--device-auth`. Fallback `XAI_API_KEY`. Confirmed: `grok login --help` prints `--oauth` / `--device-auth`. | Family A. Detect `~/.grok/auth.json` + `grok` on PATH. Copy: `grok login`. Optional API key into `pass`. Never start the OAuth browser from C. |
+| **Codex** | `codex login` (ChatGPT OAuth) **or** `codex login --with-api-key` (stdin). Home `~/.codex`. Confirmed: `codex login --help`. | Family A. Detect `codex` + `~/.codex`. Copy: `codex login`. Optional key into `pass`. |
+| **Goose** | Interactive `goose configure` writes `~/.config/goose/config.yaml` + `secrets.yaml`. Keys/passwords entered in the Goose TUI, not Hush. Official: goose-docs.ai config-files + providers. | Family A. Detect official yaml (legacy `~/.goose` probed). Copy: `goose configure`. Optional override key into `pass`. Never write Goose homes. |
+| **Cline** | **Not OAuth-first.** Docs (docs.cline.bot installing-cline, 200): "Cline provider for pay-as-you-go, ClinePass for a flat monthly subscription, or bring your own provider key." Anthropic page: "Anthropic API (key-based)". OpenRouter page: "Get an API Key". Home page: "Bring your own key or your own weights." No `cline` binary / `~/.cline` / editor extension on this host. | Family C. Honest empty state + optional API key/host/model. Do **not** claim OAuth. Mention ClinePass / BYOK. |
+| **Gemini / xAI / OpenAI / Anthropic API** | API keys. Hosts already defaulted. | Family B. Key in `pass`, host/model in `providers.json`. |
+
+Locked decision: Hush continues to **borrow** home-config CLIs and store
+only pasted secrets in `pass`. Raising a robot still stores only the
+provider id. Configure remains optional.
+
+## Persist design (locked)
+
+One file, string-field JSON (same parser class as `hush_json_field` /
+`hush_provider_json_string`). No nested arrays — indexed keys.
+
+Path: `hush_home_config_dir()` + `/vibe.json`.
+
+```
+{
+  "version":"1",
+  "vibe_name":"HQ",
+  "vibe_about":"primary endpoint",
+  "vibe_public":"1",
+  "vibe_token":"…",
+  "theme":"dracula",
+  "first_name":"Ada",
+  "last_name":"",
+  "organization":"",
+  "picture":"",
+  "nchannels":"4",
+  "channel_name_0":"general",
+  "channel_slug_0":"general",
+  "nprojects":"1",
+  "project_name_0":"alpha",
+  "project_slug_0":"alpha",
+  "project_path_0":"/tmp/…",
+  "nagents":"1",
+  "agent_name_0":"Scout",
+  "agent_slug_0":"scout",
+  "agent_provider_0":"goose",
+  "agent_prompt_0":"…preview or full ≤1024…",
+  "agent_ncontext_0":"0",
+  "nmembers":"1",
+  "member_npub_0":"npub1…",
+  "member_name_0":"Ada"
+}
+```
+
+Email is session-only (UI_SPEC) — **omit** from disk.
+
+Secrets: never nsec, never provider keys. Payne/agent nsecs stay in
+`pass`. On restore:
+
+1. Load vibe.json → fill launch + roster metadata.
+2. If `hush_pass_has(HUSH_PASS_PAYNE_NSEC)` import Payne; else generate
+   and save only when `save_pass` is already on from identity restore.
+3. For each agent slug, if `pass` has `agents/<slug>/nsec` import;
+   else generate a fresh key (soft) so the card still has an npub.
+
+Write triggers (after successful mutation): create vibe, set visibility,
+add channel, add project, set profile, add/remove agent, add member.
+
+Read trigger: `hush_relay_prepare` after `restore_identity`. Missing
+file is not an error (`has_vibe` stays 0). Corrupt file: ignore, keep
+cold (do not crash).
+
+Override: `HUSH_CONFIG_DIR` for tests (mirrors `HUSH_STATE_DIR` for
+turn). Tests must never write the developer's real `~/.config/hush`.
+
+Module: extend `hush_launch` (owns vibe/session). Reuse
+`hush_provider_config_dir` path rule — extract a tiny shared
+`hush_home` helper **only if** it stays ≤ one file and avoids a
+cross-module tangle. Prefer duplicating the 15-line path resolve in
+launch first (Linus: smallest diff). If both copies exist after the
+slice, extract.
+
+`make clean` / `make install`: no change. Docs must say home config
+survives rebuilds.
+
+## Risks
+
+1. Session JSON + disk JSON size (`HUSH_LAUNCH_JSON_MAX = 16384`).
+   Mitigation: persist prompt preview or cap; refuse extra agents at
+   existing roster max.
+2. Import of a *different* nsec onto an existing vibe. Mitigation: the
+   vibe is the relay, not the person (UI_SPEC §7). Restore vibe
+   regardless of which human logs in. Logout already keeps vibe in RAM;
+   disk matches that.
+3. Two hush-relay processes racing the file. Mitigation: same as today
+   (one listen port; second process opens UI). Write via tmp + rename.
+4. Context file bodies not on the roster after raise (only name/mime/
+   bytes). Mitigation: persist what the live roster has; no new store.
+5. Cline copy currently says "Install the Cline extension" — keep, add
+   ClinePass/BYOK so we do not imply OAuth.
+
+## Verification performed (research)
+
+- Quoted restore-only-identity in `hush_relay.c:439-440` and
+  `hush_launch.c:163-184`.
+- Quoted `make clean` object-only delete.
+- `ls ~/.config/hush` → absent. `pass ls hush` → empty tree.
+- `grok login --help` → `--oauth`, `--device-auth`.
+- `codex login --help` → OAuth default + `--with-api-key`.
+- `goose configure --help` → configure TUI.
+- Cline docs 200: installing-cline BYOK/ClinePass; anthropic key-based;
+  openrouter API key. No Cline install on this host.

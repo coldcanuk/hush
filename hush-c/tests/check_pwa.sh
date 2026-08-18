@@ -5,9 +5,11 @@ cd "$(dirname "$0")/.."
 bin=./hush-relay
 port=18765
 log=$(mktemp)
+cfg=$(mktemp -d)
+export HUSH_CONFIG_DIR="$cfg"
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
-cleanup() { kill "$pid" 2>/dev/null || true; rm -f "$log"; }
+cleanup() { kill "$pid" 2>/dev/null || true; rm -f "$log"; rm -rf "$cfg"; }
 trap cleanup EXIT
 i=0
 while [ "$i" -lt 50 ]; do

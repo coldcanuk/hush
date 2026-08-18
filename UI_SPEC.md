@@ -1,5 +1,5 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure
-Version: 2026-08-18 (RDAP M2, gb/provider-pass-audit)
+Version: 2026-08-18 (RDAP M2, gb/vibe-restore-robot-auth)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec and the onboard raise-form notes where they conflict.
 Quinn + Parker + Payne. No feline.
@@ -46,6 +46,12 @@ Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
 
 ### 3. Resume
 `logged_in && backup_acked && has_vibe` → splash detects → hive.
+
+`has_vibe` is restored from `$XDG_CONFIG_HOME/hush/vibe.json` (else
+`$HOME/.config/hush/vibe.json`) after identity restore or nsec import.
+`make clean` / `make install` must not force “Name your vibe” again.
+Tests override the directory with `HUSH_CONFIG_DIR`. The file never
+holds an nsec or provider secret.
 
 ### 4. Hive
 - Header: hush + vibe name + Install + Profile + Settings + Call
@@ -105,6 +111,9 @@ This process **is** the vibe. No second relay.
 - Private: show join token + copy.
 - Rename allowed via same `/api/vibe` name field later if cheap; not required
   for DoD if visibility + invite work.
+- Hive metadata (name, about, visibility, token, channels, projects,
+  profile sans email, members, raised-robot labels) persists in
+  `~/.config/hush/vibe.json` (0600) and survives rebuild / Exit.
 
 ### 8. Invite human
 Drawer: npub (or hex pubkey) + optional display name.
@@ -160,7 +169,7 @@ from `GET /api/provider`. Save is `POST /api/provider`. Scan is
 |---|---|---|
 | Home-config CLI | `goose`, `grok-build`, `codex` | Status (binary / home config / active model). Primary: **Use existing configuration** when home or binary+auth is present. Secondary: optional API key + host + model. Copy names the official command (`goose configure`, `grok login`, `codex login`). Never write those home files. |
 | HTTP API | `gemini-api`, `xai-api`, `openai-api`, `anthropic-api` | API key (password). Optional username / password / token / passkey behind one disclosure. Host URL, defaulted. **Scan models** then `<select>` or type-in. |
-| Editor agent | `cline` | Honest empty state if Cline is missing. Optional API key + other credentials + host + model. |
+| Editor agent | `cline` | Honest empty state if Cline is missing. Cline authenticates with **ClinePass**, usage billing, or **bring-your-own provider key** — not a Grok/Codex-style OAuth-first CLI. Optional API key + other credentials + host + model. |
 
 Goose home is `~/.config/goose/config.yaml` (official). Legacy
 `~/.goose` is probed and mentioned only if it exists.
@@ -231,6 +240,8 @@ Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
 - Context: 3 files × 4096 bytes.
 - Provider models: 32 names × 64 bytes (`HUSH_PROVIDER_MODELS_MAX`).
 - Provider overlay: `$XDG_CONFIG_HOME/hush/providers.json` (0600).
+- Vibe overlay: `$XDG_CONFIG_HOME/hush/vibe.json` (0600). Override
+  directory with `HUSH_CONFIG_DIR` (tests). Never nsec.
 - Avatar on disk: sniffed JPEG/PNG only; client downscales ≤96px.
 - Kind 0 `picture` is a URL, never a data URI (`HUSH_EVENT_MAX_CONTENT = 4096`).
 

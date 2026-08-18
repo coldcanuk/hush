@@ -75,6 +75,12 @@ hush_status_t hush_launch_ack_backup(hush_launch_t *launch, int save_pass);
 /* Loads hush/identity/nsec when present. Soft-fails if pass is absent. */
 hush_status_t hush_launch_restore_identity(hush_launch_t *launch);
 
+/* Writes non-secret hive metadata to hush/vibe.json. No-op without a vibe. */
+hush_status_t hush_launch_save_vibe(const hush_launch_t *launch);
+
+/* Loads hush/vibe.json when present. Soft-fails if the file is absent. */
+hush_status_t hush_launch_restore_vibe(hush_launch_t *launch);
+
 /* Clears the human login. Vibe and roster stay. */
 hush_status_t hush_launch_logout(hush_launch_t *launch);
 

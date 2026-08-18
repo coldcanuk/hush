@@ -5,9 +5,11 @@ cd "$(dirname "$0")/.."
 bin=./hush-relay
 port=18766
 log=$(mktemp)
+cfg=$(mktemp -d)
+export HUSH_CONFIG_DIR="$cfg"
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
-cleanup() { kill "$pid" 2>/dev/null || true; rm -f "$log"; }
+cleanup() { kill "$pid" 2>/dev/null || true; rm -f "$log"; rm -rf "$cfg"; }
 trap cleanup EXIT
 i=0
 while [ "$i" -lt 50 ]; do
@@ -51,6 +53,8 @@ echo "$html" | grep -q 'id="provider-token"' || fail "HTML missing provider toke
 echo "$html" | grep -q 'id="provider-passkey"' || fail "HTML missing provider passkey"
 echo "$html" | grep -q '/api/provider' || fail "HTML missing provider route"
 echo "$html" | grep -q 'pass show hush/providers/' || fail "HTML missing provider retrieve CLI"
+echo "$html" | grep -q 'ClinePass' || fail "HTML missing ClinePass copy"
+echo "$html" | grep -q 'bring-your-own' || fail "HTML missing Cline BYOK copy"
 echo "$html" | grep -q 'Delete this robot' || fail "HTML missing delete robot"
 echo "$html" | grep -q 'CONTEXT_MAX = 3' || fail "HTML missing 3-file cap"
 echo "$html" | grep -q 'id="hive-close"' || fail "HTML missing Close button"
@@ -126,4 +130,23 @@ logged=$(curl -sf -X POST "http://127.0.0.1:${port}/api/identity" \
 echo "$logged" | grep -q '"logged_in":false' || fail "logout should clear login"
 echo "$logged" | grep -q '"ready":false' || fail "logout should not stay ready"
 echo "$logged" | grep -q '"has_vibe":true' || fail "logout should keep vibe"
+test -f "$cfg/vibe.json" || fail "vibe.json should survive create"
+grep -q nsec "$cfg/vibe.json" && fail "vibe.json must not store nsec"
+kill "$pid" 2>/dev/null || true
+wait "$pid" 2>/dev/null || true
+"$bin" --no-open "$port" >"$log" 2>&1 &
+pid=$!
+i=0
+while [ "$i" -lt 50 ]; do
+    if curl -sf "http://127.0.0.1:${port}/api/session" >/dev/null 2>&1; then
+        break
+    fi
+    i=$((i + 1))
+    sleep 0.05
+done
+restored=$(curl -sf "http://127.0.0.1:${port}/api/session")
+echo "$restored" | grep -q '"has_vibe":true' || fail "restart should restore vibe"
+echo "$restored" | grep -q '"name":"HQ"' || fail "restart should keep vibe name"
+echo "$restored" | grep -q '"slug":"incidents"' || fail "restart should keep channel"
+echo "$restored" | grep -q '"first_name":"Ada"' || fail "restart should keep profile"
 echo "launch routes ok"
