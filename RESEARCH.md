@@ -1957,3 +1957,188 @@ button. Header Hick unchanged.
 | Gemini `GOOGLE_API_KEY` | https://goose-docs.ai/docs/getting-started/providers |
 | Secrets live in `secrets.yaml`, not config.yaml | https://goose-docs.ai/docs/guides/config-files |
 
+
+---
+
+# 2026-08-18 RDAP: Provider secrets in unix `pass`
+
+## Scope locked
+
+- **Primary goal:** Every AI-provider secret Hush accepts — API key,
+  username, password, token, passkey — is stored only in the local
+  unix password manager `pass`. Audit the current paths. Close the
+  gaps. Retrieve CLIs are documented and greppable.
+- **Non-goals:** Copying Goose `secrets.yaml`, Grok `auth.json`,
+  Codex login, or Cline editor storage into `pass`. Writing those
+  foreign homes. OAuth / WebAuthn ceremonies from C. Deepseek radio.
+  libcurl. TURN / vibe / identity secrets (already out of this
+  module). Requiring `pass` to save host/model overlay.
+- **Success criteria:**
+  1. Inventory of every provider secret kind is in this file.
+  2. Each kind has one `pass` path: `hush/providers/<id>/<kind>`.
+  3. Overlay `providers.json` never contains secret values.
+  4. `GET /api/provider` and `GET /api/session` never echo secrets
+     and never use the secret field names as JSON keys.
+  5. `POST /api/provider` writes each non-empty secret via
+     `hush_pass_save`. Soft-fail if `pass` is missing (overlay still
+     writes).
+  6. `POST /api/provider/scan` uses a posted key if present, else
+     loads `api_key` (then `token`) from `pass`. Key never on argv.
+  7. Drawer accepts API key, username, password, token, passkey.
+     Empty fields stay empty after save. Help shows retrieve CLI.
+  8. `make test` proves save-to-pass, scan-from-pass, and no leak.
+  9. Docs (`docs/pass-integration.md`, `SECURITY.md`, `README.md`,
+     `UI_SPEC.md`) list every path.
+  10. PR merged, worktree removed, main clean.
+
+## Audit (this worktree @ 8e0172125 / gb/provider-pass-audit)
+
+### What Hush stores today
+
+| Kind | UI field | HTTP | Overlay JSON | `pass` path | Verdict |
+|---|---|---|---|---|---|
+| API key | `#provider-key` password | `POST /api/provider` `api_key` | `has_key` boolean only | `providers/<id>/api_key` | **In pass** when `pass` works. Soft-fail if helper missing. |
+| Username | none | none | none | none | **Gap** |
+| Password | none | none | none | none | **Gap** |
+| Token | none | none | none | none | **Gap**. Grok/Codex OAuth stay in foreign homes (by design). |
+| Passkey | none | none | none | none | **Gap**. No current provider uses WebAuthn. |
+
+### Surfaces that are not provider secrets
+
+| Surface | Where | Action this slice |
+|---|---|---|
+| Host URL, model name, `use_home` | `providers.json` 0600 | Keep. Not secrets. |
+| `has_key` cache in overlay | written, **not read** — status uses `hush_pass_has` | Keep boolean; do not add secret values. |
+| Goose `~/.config/goose/secrets.yaml` | never opened | Keep unread. Do not copy. |
+| Grok `~/.grok/auth.json` | existence → `has_home` | Keep unread. Do not copy. |
+| Codex `~/.codex` | directory → `has_home` | Keep unread. Do not copy. |
+| Cline editor secret store | not present here | Keep unread. Do not copy. |
+| Identity / agent nsec | already `hush/identity/nsec`, `hush/agents/<slug>/nsec` | Out of scope. |
+| Vibe join token | session JSON | Out of scope. |
+| TURN username/password | `hush_turn` generated LTC | Out of scope. |
+
+### Leak checks already present
+
+- `check_provider.sh`: GET must not contain `api_key` or `sk-`.
+  POST must not echo `sk-secret-test`. Scan must not echo `sk-`.
+- Overlay formatter writes only `use_home`, `host`, `model`, `has_key`.
+- HTTP GET appends `has_key` boolean, never the value.
+
+### Gaps that fail the user's contract
+
+1. **Only `api_key` has a pass path.** Username, password, token,
+   and passkey cannot be stored even if the human has them.
+2. **Scan never reads `pass`.** `hush_provider_scan` uses only the
+   posted `api_key`. After Save, Scan with an empty key field fails
+   even when `pass show hush/providers/<id>/api_key` would succeed.
+3. **`SECURITY.md` table is stale.** Provider API key row lives in
+   `docs/pass-integration.md` only.
+4. **No test that overlay bytes exclude secret values** after save
+   (HTTP leak tests exist; file-level does not).
+5. **`HUSH_PASS_SECRET_MAX = 256`** matches `HUSH_PROVIDER_KEY_MAX`.
+   JWTs can exceed 256. Widen both to 512 this slice (named constant,
+   one site each). Passkeys that are huge WebAuthn blobs are a
+   non-goal; the field is a pasted string.
+
+### `pass` conventions (verified)
+
+- Store: `~/.password-store`, GPG files, `pass insert -e -m -f`.
+- Hush helper: `scripts/hush-pass` prefixes `hush/`.
+- C API: `hush_pass_save/get/has(path)` — path **without** `hush/`.
+- Never put secret on argv (stdin pipe). Already true.
+- This host: `pass` is on PATH. `~/.password-store/hush/providers`
+  does not exist yet (no live key saved on this machine).
+- Missing `pass` must not block overlay save (existing identity law).
+
+### Provider auth shapes (unchanged from prior research)
+
+| Id | Hush-owned secret the human may paste | Foreign home (not copied) |
+|---|---|---|
+| goose | optional override API key / token | `~/.config/goose/secrets.yaml` |
+| grok-build | optional `XAI_API_KEY`-shaped key | `~/.grok/auth.json` OAuth |
+| codex | optional API key | `~/.codex` login |
+| cline | optional API key + host | editor secret storage |
+| gemini-api | `GOOGLE_API_KEY` | — |
+| xai-api | `XAI_API_KEY` | — |
+| openai-api | `OPENAI_API_KEY` | — |
+| anthropic-api | `ANTHROPIC_API_KEY` | — |
+
+None of the eight require a username, password, or passkey for the
+default public hosts. Custom / proxy hosts (and the user's explicit
+request) still need those kinds in `pass` the moment Hush accepts
+them.
+
+## Locked storage contract
+
+```
+hush/providers/<id>/api_key
+hush/providers/<id>/username
+hush/providers/<id>/password
+hush/providers/<id>/token
+hush/providers/<id>/passkey
+```
+
+Retrieve:
+
+```
+pass show hush/providers/<id>/api_key
+pass show hush/providers/<id>/username
+pass show hush/providers/<id>/password
+pass show hush/providers/<id>/token
+pass show hush/providers/<id>/passkey
+```
+
+Kinds (one definition site in `hush_provider.h`):
+
+```
+HUSH_PROVIDER_SECRET_API_KEY   "api_key"
+HUSH_PROVIDER_SECRET_USERNAME  "username"
+HUSH_PROVIDER_SECRET_PASSWORD  "password"
+HUSH_PROVIDER_SECRET_TOKEN     "token"
+HUSH_PROVIDER_SECRET_PASSKEY   "passkey"
+```
+
+Status booleans only: `has_key`, `has_username`, `has_password`,
+`has_token`, `has_passkey`. Overlay may cache those booleans. Status
+always re-reads `hush_pass_has`. Overlay never stores the values.
+
+## HTTP (localhost, no auth — same as /api/exit)
+
+| Route | Body | Reply |
+|---|---|---|
+| `GET /api/provider` | — | status + `has_*` booleans. Never secret field names as keys. Never values. |
+| `POST /api/provider` | `{provider, use_home?, host?, model?, api_key?, username?, password?, token?, passkey?}` | same status (no echo) |
+| `POST /api/provider/scan` | `{provider, host?, api_key?}` | `model_0`… ; if `api_key` empty, load pass `api_key` then `token` |
+
+## UX
+
+- Existing API key field stays primary (Family B / C / Family A override).
+- Optional group **Other credentials** (hidden until "Add username, password, token, or passkey" is opened) so Hick stays low.
+- Each field is `type=password`, emptied after paint, never refilled from the server.
+- Help: “Stored in pass. Never shown again.” After save, retrieve CLI for each kind that `has_*`.
+- Payne: “Credentials live in pass. I will not show them twice.”
+
+## Top risks
+
+1. **Hick / cognitive load** from five secret fields. Mitigation:
+   API key primary; other four behind one disclosure.
+2. **Copying foreign homes.** Mitigation: still read-only detect;
+   only secrets the human pastes into Hush go to `pass`.
+3. **Leak via GET field names.** Mitigation: only `has_*` in GET;
+   tests `grep` the secret kind names and sample values.
+4. **Scan without posted key.** Mitigation: `hush_pass_get` fallback.
+5. **`pass` missing.** Mitigation: keep soft-fail; overlay still
+   saves host/model; `has_*` stay false.
+
+## Verification (this research phase)
+
+- Read `hush_pass.h/.c`, `hush_provider.h/.c`, `hush_http.c`
+  provider handlers, `demo/index.html` drawer, `test_provider.c`,
+  `check_provider.sh`, `docs/pass-integration.md`, `SECURITY.md`,
+  `README.md` provider section, `UI_SPEC.md` §11, `scripts/hush-pass`.
+- Confirmed overlay formatter writes no secret values.
+- Confirmed scan does not call `hush_pass_get`.
+- Confirmed no username/password/token/passkey symbols in provider
+  save path.
+- `pass` on PATH; no `~/.password-store/hush/providers` yet.
+- `HUSH_PASS_SECRET_MAX` and `HUSH_PROVIDER_KEY_MAX` both 256.
