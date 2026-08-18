@@ -10,3 +10,5 @@ Terminal=false
 Categories=Network;Chat;InstantMessaging;
 Keywords=nostr;relay;chat;agent;hush;
 StartupNotify=false
+StartupWMClass=hush-relay
+SingleMainWindow=true

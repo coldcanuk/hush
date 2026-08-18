@@ -54,6 +54,6 @@ static void hush_print_help(void)
     printf("hush-relay %s — local Nostr relay + chat UI\n", HUSH_VERSION);
     printf("usage: hush-relay [port] [--open|--no-open]\n");
     printf("  port       listen port (default 10555)\n");
-    printf("  --open     open http://127.0.0.1:<port>/ in a browser\n");
-    printf("  --no-open  do not open a browser (even on a graphical session)\n");
+    printf("  --open     open the chat as a standalone app window\n");
+    printf("  --no-open  do not open a window (even on a graphical session)\n");
 }
