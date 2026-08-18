@@ -1,75 +1,239 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Hush — Demo UI (Tailwind)</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = { theme: { extend: {} } };
-  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hush</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --surface-2: #1f1f23;
+      --line: #27272a;
+      --fg: #f4f4f5;
+      --muted: #a1a1aa;
+      --faint: #71717a;
+      --accent: #34d399;
+      --accent-ink: #022c22;
+      --accent-dim: #064e3b;
+      --warn: #f87171;
+      --sans: "Segoe UI", system-ui, sans-serif;
+      --mono: ui-monospace, "Cascadia Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: var(--sans); }
+    body { display: flex; flex-direction: column; min-height: 100%; }
+    button, [role="button"] { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: 0.5; }
+    a { color: var(--accent); }
+    header {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--surface);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .mark { width: 36px; height: 36px; flex: 0 0 auto; }
+    .title { font-size: 1.15rem; font-weight: 650; letter-spacing: -0.03em; line-height: 1.2; }
+    .sub { font-size: 0.72rem; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+    #badge {
+      font-size: 0.72rem; font-family: var(--mono); padding: 5px 10px; border-radius: 999px;
+      border: 1px solid var(--line); color: var(--muted); background: var(--bg); white-space: nowrap;
+    }
+    #badge.ok { color: var(--accent); border-color: var(--accent-dim); }
+    #badge.bad { color: var(--warn); border-color: #7f1d1d; }
+    .shell { flex: 1; display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
+    nav { border-right: 1px solid var(--line); background: var(--surface); padding: 14px 10px; display: flex; flex-direction: column; gap: 16px; }
+    .lbl { font-size: 0.65rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); padding: 0 8px; }
+    .chan {
+      display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+      background: transparent; color: var(--fg); border: 0; border-radius: 8px;
+      padding: 10px 10px; font-size: 0.92rem;
+    }
+    .chan:hover { background: var(--surface-2); }
+    .chan.on { background: var(--surface-2); color: var(--accent); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+    .chan.on .dot { background: var(--accent); }
+    .stats { margin-top: auto; font-size: 0.75rem; color: var(--muted); padding: 8px; line-height: 1.6; }
+    main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+    .room {
+      padding: 12px 18px; border-bottom: 1px solid var(--line);
+      display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    }
+    .room h1 { margin: 0; font-size: 1rem; font-weight: 600; }
+    .room span { color: var(--muted); font-size: 0.75rem; }
+    #stream { flex: 1; overflow: auto; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+    .empty { margin: auto; text-align: center; color: var(--muted); max-width: 22rem; line-height: 1.5; }
+    .empty strong { display: block; color: var(--fg); margin-bottom: 6px; }
+    .note {
+      background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+      padding: 10px 12px; max-width: 40rem;
+    }
+    .note .meta { font-size: 0.7rem; color: var(--faint); font-family: var(--mono); margin-bottom: 4px; }
+    .note .body { white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
+    .composer { display: flex; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--line); background: var(--surface); }
+    #msg {
+      flex: 1; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+      border-radius: 10px; padding: 12px 14px; font: inherit; outline: none;
+    }
+    #msg:focus { border-color: var(--accent-dim); }
+    #send {
+      background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 10px;
+      padding: 0 18px; font-weight: 650; min-width: 88px;
+    }
+    #send:hover { filter: brightness(1.05); }
+    @media (max-width: 640px) {
+      .shell { grid-template-columns: 1fr; }
+      nav { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }
+      .stats { display: none; }
+      .lbl { display: none; }
+    }
+  </style>
 </head>
-<body class="bg-zinc-950 text-zinc-200">
-  <div class="max-w-4xl mx-auto p-6">
-    <header class="flex items-center justify-between mb-8">
-      <div class="flex items-center gap-3">
-        <img src="../../assets/icons/256x256/hush-relay.png" alt="Hush" width="36" height="36" class="size-9">
-        <div>
-          <div class="text-2xl font-semibold tracking-tight">hush</div>
-          <div class="text-xs text-zinc-500 -mt-1">C11 relay • Nostr core</div>
-        </div>
-      </div>
-      <div class="text-xs px-3 py-1 rounded bg-zinc-900 border border-zinc-800">MVP</div>
-    </header>
-
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <nav class="md:col-span-1 bg-zinc-900 border border-zinc-800 rounded-xl p-3">
-        <div class="text-xs uppercase tracking-widest text-zinc-500 px-2 mb-2">Channels</div>
-        <ul class="space-y-1 text-sm">
-          <li class="px-3 py-2 rounded-lg bg-zinc-800 flex items-center gap-2"><span class="text-emerald-400">●</span> general</li>
-          <li class="px-3 py-2 rounded-lg hover:bg-zinc-800 flex items-center gap-2">agents</li>
-          <li class="px-3 py-2 rounded-lg hover:bg-zinc-800 flex items-center gap-2">incidents</li>
-        </ul>
-      </nav>
-
-      <div class="md:col-span-2 bg-zinc-900 border border-zinc-800 rounded-xl flex flex-col min-h-[420px]">
-        <div class="px-4 py-3 border-b border-zinc-800 text-sm flex items-center justify-between">
-          <div>#general <span class="text-emerald-400 text-xs">3 online</span></div>
-          <button onclick="sendDemoMsg()" class="text-xs px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500">Send demo</button>
-        </div>
-        <div id="stream" class="flex-1 p-4 space-y-4 overflow-auto text-sm font-mono">
-          <div class="text-zinc-400">[hush] connected to C relay (MVP)</div>
-        </div>
-        <div class="p-3 border-t border-zinc-800">
-          <input id="msg" onkeyup="if(event.key==='Enter')sendDemoMsg()" class="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm" placeholder="Type a message (demo only)">
-        </div>
+<body>
+  <header>
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="14" fill="#064e3b"/>
+        <path d="M18 42c8-2 14-10 16-20 6 8 14 12 20 12-6 6-16 10-24 10-6 0-10-1-12-2z" fill="#34d399"/>
+        <path d="M20 40c7-10 10-20 10-28 2 6 8 14 16 18" fill="none" stroke="#ecfdf5" stroke-width="2.2" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <div class="title">hush</div>
+        <div class="sub">local hive mind</div>
       </div>
     </div>
-
-    <footer class="mt-8 text-[10px] text-zinc-500">
-      This demo uses Tailwind via CDN + classes following v4 rules (gap, /opacity, no @apply).
-      The actual Hush relay is pure legible C11. See hush-c/ and RESEARCH.md.
-    </footer>
+    <div id="badge">connecting…</div>
+  </header>
+  <div class="shell">
+    <nav>
+      <div>
+        <div class="lbl">Channels</div>
+        <button class="chan on" data-ch="general" type="button"><span class="dot"></span>#general</button>
+        <button class="chan" data-ch="agents" type="button"><span class="dot"></span>#agents</button>
+        <button class="chan" data-ch="incidents" type="button"><span class="dot"></span>#incidents</button>
+      </div>
+      <div class="stats" id="stats">waiting for relay</div>
+    </nav>
+    <main>
+      <div class="room">
+        <h1 id="room">#general</h1>
+        <span id="count">0 notes</span>
+      </div>
+      <div id="stream"></div>
+      <form class="composer" id="form">
+        <input id="msg" autocomplete="off" maxlength="2000" placeholder="Write to the hive…">
+        <button id="send" type="submit">Send</button>
+      </form>
+    </main>
   </div>
   <script>
-    function sendDemoMsg() {
-      const i = document.getElementById('msg');
-      const s = document.getElementById('stream');
-      if (!i || !s || !i.value.trim()) return;
-      const d = document.createElement('div');
-      d.className = 'text-emerald-300';
-      d.textContent = '> ' + i.value;
-      s.appendChild(d);
-      s.scrollTop = s.scrollHeight;
-      i.value = '';
-      setTimeout(() => {
-        const e = document.createElement('div');
-        e.className = 'text-zinc-400';
-        e.textContent = '< [hush-relay] echo: ' + d.textContent.slice(2);
-        s.appendChild(e);
-        s.scrollTop = s.scrollHeight;
-      }, 120);
+    const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
+    let channel = "general";
+    let seen = "";
+
+    function $(id) { return document.getElementById(id); }
+
+    document.querySelectorAll(".chan").forEach((b) => {
+      b.addEventListener("click", () => {
+        document.querySelectorAll(".chan").forEach((x) => x.classList.remove("on"));
+        b.classList.add("on");
+        channel = b.getAttribute("data-ch");
+        $("room").textContent = "#" + channel;
+        seen = "";
+        tick();
+      });
+    });
+
+    $("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = $("msg").value.trim();
+      if (!text) return;
+      $("msg").value = "";
+      try {
+        const r = await fetch(API + "/api/event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: text, kind: 1, channel: channel })
+        });
+        if (!r.ok) throw new Error("post failed");
+        await tick();
+      } catch (err) {
+        badge(false, "send failed");
+      }
+    });
+
+    function badge(ok, text) {
+      const el = $("badge");
+      el.textContent = text;
+      el.className = ok ? "ok" : "bad";
     }
-    console.log('%c[Hush] Tailwind demo ready (CDN + v4 practices)', 'color:#3f3');
+
+    function render(events, status) {
+      const mine = events.filter((e) => (e.channel || "general") === channel);
+      $("count").textContent = mine.length + (mine.length === 1 ? " note" : " notes");
+      $("stats").innerHTML =
+        (status.ok ? "relay live" : "relay down") + "<br>" +
+        status.events + " stored<br>" +
+        status.clients + " sockets";
+      const key = mine.map((e) => e.id).join(",");
+      if (key === seen) return;
+      seen = key;
+      const s = $("stream");
+      s.innerHTML = "";
+      if (!mine.length) {
+        const d = document.createElement("div");
+        d.className = "empty";
+        d.innerHTML = "<strong>The hive is quiet.</strong>Write the first note in #" + channel + ".";
+        s.appendChild(d);
+        return;
+      }
+      mine.forEach((e) => {
+        const n = document.createElement("div");
+        n.className = "note";
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = who(e.pubkey) + " · " + ago(e.created_at);
+        const body = document.createElement("div");
+        body.className = "body";
+        body.textContent = e.content || "";
+        n.appendChild(meta);
+        n.appendChild(body);
+        s.appendChild(n);
+      });
+      s.scrollTop = s.scrollHeight;
+    }
+
+    function who(pk) {
+      if (!pk || /^0+1$/.test(pk) || pk === "local") return "local";
+      return pk.slice(0, 8);
+    }
+
+    function ago(ts) {
+      const n = Number(ts) || 0;
+      if (!n) return "now";
+      const d = Math.max(0, Math.floor(Date.now() / 1000 - n));
+      if (d < 5) return "just now";
+      if (d < 60) return d + "s ago";
+      if (d < 3600) return Math.floor(d / 60) + "m ago";
+      if (d < 86400) return Math.floor(d / 3600) + "h ago";
+      return new Date(n * 1000).toLocaleString();
+    }
+
+    async function tick() {
+      try {
+        const [st, ev] = await Promise.all([
+          fetch(API + "/api/status").then((r) => r.json()),
+          fetch(API + "/api/events").then((r) => r.json())
+        ]);
+        badge(true, "listening :" + (st.port || ""));
+        render(ev.events || ev || [], st);
+      } catch (err) {
+        badge(false, "relay unreachable");
+        $("stats").textContent = "start hush-relay";
+      }
+    }
+
+    tick();
+    setInterval(tick, 1000);
   </script>
 </body>
 </html>

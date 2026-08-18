@@ -22,6 +22,7 @@
 /hush-c/hush-relay
 /hush-c/libhush.a
 hush-c/src/*.o
+hush-c/src/hush_ui_html.h
 hush-c/demo/*.o
 hush-c/tests/test_*
 !hush-c/tests/test_*.c
