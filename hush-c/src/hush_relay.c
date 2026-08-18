@@ -22,7 +22,9 @@ enum {
     HUSH_BUF_SZ = 8192,
     HUSH_LISTEN_BACKLOG = 8,
     HUSH_POLL_TIMEOUT_MS = 1000,
-    HUSH_FD_NONE = -1
+    HUSH_FD_NONE = -1,
+    HUSH_UI_URL_MAX = 64,
+    HUSH_UI_APP_ARG_MAX = 80
 };
 
 struct client {
@@ -41,7 +43,8 @@ static hush_store_t *g_store = NULL;
 static void hush_clients_reset(void);
 static int hush_listen_on(uint16_t port);
 static void hush_set_nonblock(int fd);
-static void hush_open_browser(uint16_t port);
+static void hush_open_app_window(uint16_t port);
+static void hush_exec_app_browser(const char *url, const char *app_arg);
 static int hush_active_clients(void);
 static hush_status_t hush_accept_new(int ls);
 static void hush_drop_client(struct client *c);
@@ -68,7 +71,7 @@ hush_status_t hush_relay_run(uint16_t port, int open_ui)
         if (errno == EADDRINUSE && open_ui) {
             fprintf(stdout, "hush-relay already listening on http://127.0.0.1:%u/\n",
                     (unsigned)port);
-            hush_open_browser(port);
+            hush_open_app_window(port);
             return HUSH_OK;
         }
         fprintf(stderr, "hush-relay: cannot bind :%u: %s\n",
@@ -82,12 +85,12 @@ hush_status_t hush_relay_run(uint16_t port, int open_ui)
     }
 
     fprintf(stdout, "listening on http://127.0.0.1:%u/\n", (unsigned)port);
-    fprintf(stdout, "  chat UI:  open that URL in a browser\n");
+    fprintf(stdout, "  chat UI:  standalone app window (no browser chrome)\n");
     fprintf(stdout, "  nostr:    newline JSON on the same port\n");
     fprintf(stdout, "  stop:     Ctrl+C\n");
     fflush(stdout);
     if (open_ui)
-        hush_open_browser(port);
+        hush_open_app_window(port);
 
     for (;;) {
         int nf = 1;
@@ -165,18 +168,50 @@ static void hush_set_nonblock(int fd)
         fcntl(fd, F_SETFL, fl | O_NONBLOCK);
 }
 
-static void hush_open_browser(uint16_t port)
+static void hush_open_app_window(uint16_t port)
 {
-    char url[64];
+    char url[HUSH_UI_URL_MAX];
+    char app_arg[HUSH_UI_APP_ARG_MAX];
     pid_t pid;
+    int n;
 
-    snprintf(url, sizeof(url), "http://127.0.0.1:%u/", (unsigned)port);
+    n = snprintf(url, sizeof(url), "http://127.0.0.1:%u/", (unsigned)port);
+    if (n <= 0 || (size_t)n >= sizeof(url))
+        return;
+    n = snprintf(app_arg, sizeof(app_arg), "--app=%s", url);
+    if (n <= 0 || (size_t)n >= sizeof(app_arg))
+        return;
     pid = fork();
-    if (pid == 0) {
-        execlp("xdg-open", "xdg-open", url, (char *)NULL);
-        execlp("gio", "gio", "open", url, (char *)NULL);
-        _exit(127);
+    if (pid != 0)
+        return;
+    hush_exec_app_browser(url, app_arg);
+    _exit(127);
+}
+
+static void hush_exec_app_browser(const char *url, const char *app_arg)
+{
+    static const char *const browsers[] = {
+        "chromium",
+        "chromium-browser",
+        "google-chrome",
+        "google-chrome-stable",
+        "brave-browser",
+        "microsoft-edge",
+        "microsoft-edge-stable",
+        "vivaldi",
+        NULL
+    };
+    size_t i;
+
+    for (i = 0; browsers[i] != NULL; ++i) {
+        execlp(browsers[i], browsers[i],
+               "--class=hush-relay", "--name=Hush", app_arg, (char *)NULL);
     }
+    execlp("epiphany", "epiphany", "--application-mode", url, (char *)NULL);
+    execlp("flatpak", "flatpak", "run", "org.chromium.Chromium",
+           "--class=hush-relay", app_arg, (char *)NULL);
+    execlp("flatpak", "flatpak", "run", "com.google.Chrome",
+           "--class=hush-relay", app_arg, (char *)NULL);
 }
 
 static int hush_active_clients(void)

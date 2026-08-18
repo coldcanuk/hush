@@ -57,18 +57,21 @@ make test
 ## Run
 
 ```bash
-./hush-relay          # default port 10555; opens the chat UI if a display is available
-./hush-relay --open   # same, and always open the browser (used by the .desktop launcher)
+./hush-relay          # default port 10555; opens a standalone app window if a display is available
+./hush-relay --open   # same, and always open the app window (used by the .desktop launcher)
 ./hush-relay --no-open 10555
 ```
 
 The process is a server: it prints the listen URL and stays running until Ctrl+C.
-Open `http://127.0.0.1:10555/` for the chat UI. The same port also speaks the
-newline-delimited Nostr JSON protocol (see `.goose/skills/relay/SKILL.md`).
+`--open` (the default on a graphical session) launches a **standalone app
+window** (Chromium/Chrome/Brave/Edge `--app=`, or Epiphany application mode)
+with no browser tab strip or URL bar. Firefox-as-default is not used, because
+it cannot hide chrome. The same port also speaks the newline-delimited Nostr
+JSON protocol (see `.goose/skills/relay/SKILL.md`).
 
 The application launcher entry (`hush-relay.desktop`) starts the relay **without**
-a terminal window and opens the UI in your default browser. Clicking the icon
-again while the relay is already running just reopens the UI.
+a terminal window and opens that app window. Clicking the icon again while the
+relay is already running just reopens the window.
 
 ## Installation
 
