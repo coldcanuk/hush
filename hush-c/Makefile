@@ -49,6 +49,7 @@ test: $(TEST_BINS) hush-relay
 	@for t in $(TEST_BINS); do echo "RUN $$t"; ./$$t || exit 1; done
 	@sh tests/check_pwa.sh
 	@sh tests/check_launch.sh
+	@sh tests/check_exit.sh
 	@sh tests/check_turn.sh
 	@echo "ALL TESTS PASSED"
 

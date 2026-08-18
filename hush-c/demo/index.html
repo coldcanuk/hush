@@ -248,8 +248,17 @@
     .iconbtn {
       background: var(--bg); color: var(--fg); border: 1px solid var(--line);
       border-radius: 999px; padding: 6px 10px; font-size: 0.78rem; font-weight: 650;
+      min-width: 44px; min-height: 44px;
     }
     .iconbtn.on { border-color: var(--accent-dim); color: var(--accent); }
+    .iconbtn.danger {
+      background: var(--warn); color: #fff; border-color: var(--warn);
+    }
+    #hive-banner {
+      display: none; padding: 8px 18px; font-size: 0.82rem; color: var(--muted);
+      border-bottom: 1px solid var(--line); background: var(--surface);
+    }
+    #hive-banner.show { display: block; }
     .drawer, .stage {
       display: none; position: fixed; inset: 0; background: rgba(9,9,11,0.72);
       z-index: 20; align-items: flex-start; justify-content: center; padding: 48px 16px 16px;
@@ -315,9 +324,14 @@
       <button class="iconbtn" id="profile-btn" type="button">Profile</button>
       <button class="iconbtn" id="settings-btn" type="button">Settings</button>
       <button class="iconbtn" id="call-btn" type="button" hidden>Call</button>
+      <button class="iconbtn" id="hive-close" type="button"
+              title="Close the window. Hive stays standing.">Close</button>
+      <button class="iconbtn danger" id="hive-exit" type="button"
+              title="Quit the hive. Every process stops.">Exit</button>
       <div id="badge">connecting…</div>
     </div>
   </header>
+  <div id="hive-banner" role="status">Window stays open here. Close this window. The hive is still standing.</div>
   <section class="gate" id="gate" aria-live="polite"></section>
   <div class="shell hive" id="hive">
     <nav>
@@ -1176,6 +1190,17 @@
           theme: localStorage.getItem("hush-theme") || "dark"
         }));
       } catch (e) {}
+    });
+    $("hive-close").addEventListener("click", async () => {
+      try { await api("/api/close", {}); } catch (err) { /* still close the window */ }
+      window.close();
+      const banner = $("hive-banner");
+      if (banner) banner.classList.add("show");
+    });
+    $("hive-exit").addEventListener("click", async () => {
+      if (!confirm("Quit the hive? Every process stops.")) return;
+      try { await api("/api/exit", {}); } catch (err) { /* process may already be gone */ }
+      window.close();
     });
     $("profile-logout").addEventListener("click", async () => {
       if (!confirm("Logout and use a different key?")) return;

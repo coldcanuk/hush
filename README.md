@@ -118,16 +118,29 @@ signaling-only.
 ./hush-relay --no-open 10555
 ```
 
-The process is a server: it prints the listen URL and stays running until Ctrl+C.
-`--open` (the default on a graphical session) launches a **standalone app
-window** (Chromium/Chrome/Brave/Edge `--app=`, or Epiphany application mode)
-with no browser tab strip or URL bar. Firefox-as-default is not used, because
-it cannot hide chrome. The same port also speaks the newline-delimited Nostr
-JSON protocol (see `.goose/skills/relay/SKILL.md`).
+The process is a server: it prints the listen URL and stays running until
+**Exit**, `--quit`, or Ctrl+C. `--open` (the default on a graphical session)
+launches a **standalone app window** (Chromium/Chrome/Brave/Edge `--app=`,
+or Epiphany application mode) with no browser tab strip or URL bar.
+Firefox-as-default is not used, because it cannot hide chrome. The same port
+also speaks the newline-delimited Nostr JSON protocol (see
+`.goose/skills/relay/SKILL.md`).
 
-The application launcher entry (`hush-relay.desktop`) starts the relay **without**
-a terminal window and opens that app window. Clicking the icon again while the
-relay is already running just reopens the window.
+### Close vs Exit
+
+These are two different verbs. The OS/PWA window `×` is neither of them.
+
+| Verb | In the hive | CLI | What happens |
+|---|---|---|---|
+| **Close** | header **Close** | `hush-relay --close` | GUI goes away. The relay keeps listening. |
+| **Exit** | header **Exit** | `hush-relay --quit` or Ctrl+C | Every process stops. Exit code 0. |
+
+Click the launcher (`hush-relay --open`) while the hive is already up to
+re-attach a window. `POST /api/close` acknowledges Close and does not stop
+the process. `POST /api/exit` sets the same shutdown flag as SIGTERM.
+
+The application launcher entry (`hush-relay.desktop`) starts or attaches the
+GUI. The **Quit Hush** desktop action runs `--quit`.
 
 ## Installation
 

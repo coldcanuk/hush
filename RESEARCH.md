@@ -1561,3 +1561,139 @@ Provider allowlist (one definition site):
 ## Updated plan
 
 See `PLAN_ROBOT_CARDS_UX.md` (frozen after this gate).
+
+---
+
+# 2026-08-18 RDAP: Exit (Quit) vs Close Semantics (Sgt Major Payne discipline)
+
+## Primary Goal
+Provide two distinct, reliable operations for the Hush relay + GUI:
+
+- **Close**: Dismiss the GUI (the browser --app / PWA window). The core `hush-relay` process continues running and listening. Clicking the launcher again re-attaches a GUI to the running instance.
+- **Exit / Quit**: Full, clean termination of the relay process with proper signal handling, resource cleanup, and exit codes (0 for intentional clean quit).
+
+## Non-Goals
+- Reliably force-closing an external browser --app window from the C process (not possible in a portable, robust way).
+- System tray icon or "minimize to tray".
+- Authenticated remote control API for quit.
+- Changing the fundamental single-binary + external-browser-GUI model.
+
+## Success Criteria / DoD
+1. Launcher (`hush-relay --open` or desktop icon) when nothing is running: starts the server and opens the GUI.
+2. Launcher click when server is already running on the port: re-attaches (opens a GUI window) without attempting to start a second listener (current EADDRINUSE path becomes the documented re-attach).
+3. User closes the browser window (or we do not force --open): GUI is gone; server stays up (verifiable by `ss -tlnp | grep 10555` and ability to re-attach).
+4. `hush-relay --quit` (or SIGINT/SIGTERM to the process): cleanly shuts down the server. Exit code 0 for normal user-initiated quit.
+5. `hush-relay --no-open`: runs headless (server only).
+6. Proper cleanup always executes on normal exit paths (turn shutdown, store destroy, listen socket close).
+7. Exit codes: 0 for clean success / intentional quit; non-zero for errors (bind failure, store full, etc.).
+8. Updated `--help`, desktop file (Actions or separate Quit entry), and short README section.
+9. `make && make test` pass (including existing launch checks).
+10. All work on `gb/exit-close-design` worktree, commits per milestone, land via PR, post-merge cleanup.
+
+## Constraints
+- C11 + write-legible-c (fn ≤40 lines, named literals, checked calls, etc.).
+- Single binary; UI is embedded PWA served over HTTP and opened via external browser `--app`.
+- Worktree + gb/* push + PR-only landing (PRIME_DIRECTIVE).
+- Re-embed (`scripts/embed-ui.sh`) + rebuild + reinstall after any UI or behavior change that affects the served assets.
+
+## Assumptions
+- The "GUI" is the browser window spawned with `--app=http://127.0.0.1:PORT/`.
+- "Close the window" is primarily a user action (or simply not passing --open). The launcher click provides re-attach.
+- A simple pidfile + signals is sufficient for `--quit` in this slice (no new control socket).
+
+## Top Risks + Mitigations
+1. Stale pidfile / multiple instances → write pidfile with care, verify alive with `kill(pid,0)` before signaling.
+2. Cannot force-close browser window → document that Close = close the window yourself or don't force-open; re-attach on next launcher click.
+3. Build/install drift (old binary served old UI in previous incident) → after source changes always: embed + make + cp to ~/.local/bin (document in README and install output).
+4. Signal handler correctness → only set a volatile flag in the handler; check the flag after poll returns.
+5. Desktop launcher always passed --open → update Exec or add Actions=Quit; document --no-open for headless.
+
+## Research Findings (condensed)
+- Current loop only exits on poll error (not EINTR). No SIGINT/SIGTERM handler for the server.
+- Attach already partially works via EADDRINUSE + open_ui path (prints message + opens window).
+- Cleanup code (turn_shutdown, store_destroy, close) already exists on the return path from the loop.
+- Main only understands --open/--no-open. Desktop hardcodes --open.
+- Turn has child-pid + kill logic; the relay itself has none.
+- Browser side "close" buttons only affect local drawers.
+
+## Architecture Decisions (locked)
+- Graceful shutdown via SIGINT/SIGTERM setting a flag checked after poll.
+- Pidfile for discovery by `--quit` (XDG_RUNTIME_DIR or ~/.local/state/hush/relay.pid).
+- `--quit`: read pidfile, verify process, kill -TERM, unlink, exit 0.
+- `--close`: print the re-attach hint and exit 0. Does not stop the server.
+- Re-attach remains the bind-fail + open path (it already does what the user wants for "click again").
+- Exit code 0 for HUSH_OK (including clean quit). Main maps errors to 1.
+- Update help, desktop (add Actions=Quit;), and a small README section.
+- All C changes follow write-legible-c.
+
+## 2026-08-18 addendum: in-app Close and Exit (user correction)
+
+The hive header still has no labeled **Close** or **Exit**. The only `×`
+visible is the browser/PWA window chrome. Drawer "Close" buttons only
+dismiss Settings / Profile / Raise. That is the bug the user is pointing at.
+
+### Current hive header (main @ 75d52f238)
+
+`Install | Profile | Settings | Call | badge`
+
+No process-lifecycle control. Hick budget is already 5 visible header
+actions (Call is hidden until ready). Adding two more labeled verbs
+directly in the header would break Hick.
+
+### Locked UI placement
+
+A header group **Hive** sits after Settings (and Call when ready):
+
+- **Close** — ghost `iconbtn`. Detach the GUI. Relay stays up.
+- **Exit** — danger `iconbtn`. Quit the process. Exit code 0.
+
+Payne titles: Close = "Close the window. Hive stays standing."
+Exit = "Quit the hive. Every process stops."
+
+The OS/PWA `×` is not our Close and is not our Exit. We do not restyle it.
+
+### Close (in-app)
+
+1. Client `POST /api/close` `{ }` — server replies `{ok:true,action:"close"}`
+   and does **not** set the shutdown flag.
+2. Client then `window.close()`. If the window stays open (tab / PWA that
+   the script did not open), paint a one-line banner:
+   "Window stays open here. Close this window. The hive is still standing."
+3. Next launcher click (`hush-relay --open`) re-attaches via EADDRINUSE.
+
+`/api/close` exists so scripts and tests can name the verb. It is not a
+server shutdown.
+
+### Exit (in-app)
+
+1. Confirm: "Quit the hive? Every process stops." Primary **Exit**. Ghost cancel.
+2. `POST /api/exit` `{ }` — server replies `{ok:true,action:"exit"}` then
+   sets the same `g_shutdown` flag SIGTERM uses.
+3. Poll loop breaks, cleanup runs (`turn_shutdown`, `store_destroy`,
+   `close(ls)`, unlink pidfile), `hush_relay_run` returns `HUSH_OK`,
+   `main` exits 0.
+4. Client, after 200, `window.close()`.
+
+No auth on `/api/exit` or `/api/close`. Bound to localhost by listen
+address. Authenticated control API stays a non-goal.
+
+### CLI stays complementary
+
+| Verb | In-app | CLI | Process |
+|---|---|---|---|
+| Close | `#hive-close` → `/api/close` + `window.close()` | `--close` (hint, exit 0) | stays |
+| Exit | `#hive-exit` → `/api/exit` | `--quit` or SIGINT/SIGTERM | dies, code 0 |
+
+### Hick
+
+Header still ≤5 *primary* choices: Profile, Settings, Call-when-ready,
+Close, Exit. Install remains opportunistic. Badge is status, not a choice.
+
+## Verification (this research phase)
+- Inspected hush_relay.c (loop, signals, attach, open_app_window, cleanup).
+- Inspected hush_relay_main.c, headers, turn/store shutdown paths.
+- Desktop file, current help text, launch behavior from user report.
+- Unix patterns for long-lived server + detachable GUI confirmed.
+- Re-read hive header on current main (75d52f238): no Close/Exit buttons.
+- Re-read leftover PLAN_EXIT_CLOSE.md: CLI-only; that is why the user
+  still cannot see an Exit button.
