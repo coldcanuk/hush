@@ -1,5 +1,7 @@
 # Hush
 
+<img src="assets/icons/256x256/hush-relay.png" width="72" height="72" alt="Hush">
+
 **Version: 0.0.1**
 
 **Hush** is a lightweight, legible C11 implementation of core Nostr relay functionality.
@@ -50,6 +52,46 @@ make test
 
 ```bash
 ./hush-relay 10555
+```
+
+## Installation
+
+Hush is available through multiple package managers. Choose the one that fits your distribution:
+
+### DEB (Debian, Ubuntu, Pop!\_OS, etc.)
+
+```bash
+# Build from source
+./configure
+make deb
+# Install the resulting .deb
+sudo dpkg -i ../hush-relay_*.deb
+```
+
+### RPM (Fedora, RHEL, CentOS, openSUSE, etc.)
+
+```bash
+# Build from source
+make rpm
+# Install the resulting .rpm
+sudo dnf install ~/rpmbuild/RPMS/*/hush-relay-*.rpm
+```
+
+### Flatpak (Any Linux distribution)
+
+```bash
+# Build from source
+make flatpak
+# Or install from Flathub (when available)
+flatpak install flathub io.github.coldcanuk.hush
+```
+
+### From Source (all platforms)
+
+```bash
+./configure
+make
+sudo make install
 ```
 
 ## Skills for Goose

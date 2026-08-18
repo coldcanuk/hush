@@ -1,0 +1,12 @@
+#!/bin/sh
+# debian/rules - Hush relay build rules
+# Simple dh-based rules for a C11 project with no external deps.
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cd .. && ./configure && make
+
+override_dh_auto_install:
+	cd .. && make install DESTDIR=$(CURDIR)/debian/hush-relay PREFIX=/usr

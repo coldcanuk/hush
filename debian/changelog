@@ -1,0 +1,11 @@
+hush (0.0.1-1) unstable; urgency=low
+
+  * Initial release.
+  * Lightweight, legible C11 Nostr relay core.
+  * NIP-01 basics for chat (kinds 0, 1, 5, 7, 9).
+  * EVENT ingestion with bounded in-memory store.
+  * REQ with filter matching.
+  * Simple TCP newline-delimited JSON protocol.
+  * poll(2) single-threaded server.
+
+ -- Hush Contributors <coldcanuk@users.noreply.github.com>  Sun, 17 Aug 2026 21:00:00 +0000
