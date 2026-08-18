@@ -38,15 +38,25 @@ organization, theme (`dark` / `light` / `color-blind` / `dracula` /
 `desert` / `monochrome` / `christmas`), and Logout. From the hive you
 can create channels and projects, invite humans, and raise agents
 (plaintext/Markdown context only). `@` in the composer mentions humans
-and robots (NIP-27 `nostr:npub1…`). Channels carry a UUID, sit in
-optional Groups (NIP-29 parent), and can be deleted or managed from a
-right-click menu. After Grok/Codex OAuth the provider box shows
-authenticated and tells you to close the extra windows. Hive metadata
-persists in `~/.config/hush/vibe.json` so `make clean && make install`
-or Exit does not force a new vibe after you import the same nsec.
-Secrets stay in `pass`. See [docs/pass-integration.md](docs/pass-integration.md).
+and robots as pills; the wire still uses NIP-27 `nostr:npub1…`.
+Channels carry a UUID, sit in optional Groups (NIP-29 parent), and can
+be deleted or managed from a right-click menu. Manage Channel adds and
+removes people with `+` / `−` pills. Install, Profile, Settings, Call,
+Close, and Exit live on a movable tool rail that collapses to a
+hamburger. Install puts Hush on the app launcher as its own window; it
+does not start a second hive. When Whisper is on PATH (or
+`HUSH_WHISPER` is set), robot cards show a 1:1 Call icon and channels
+show a Voice icon; mute any tile in the conference. After Grok/Codex
+OAuth the provider box shows authenticated and tells you to close the
+extra windows. Hive metadata persists in `~/.config/hush/vibe.json` so
+`make clean && make install` or Exit does not force a new vibe after
+you import the same nsec. **Exit** (`--quit`) stops the relay and the
+browser / login children it forked. **Close** leaves the hive standing.
+If `--open` attaches to a leftover listener, quit that process before a
+new install can take the port. Secrets stay in `pass`. See
+[docs/pass-integration.md](docs/pass-integration.md).
 
-Install it from the browser (Chromium “Install”, or iOS Share → Add to Home Screen)
+Install it from the tool rail (Chromium “Install”, or iOS Share → Add to Home Screen)
 while the relay is running at `http://127.0.0.1:<port>/`.
 
 Importing identities and channels from the predecessor project? See [IMPORT.md](IMPORT.md).

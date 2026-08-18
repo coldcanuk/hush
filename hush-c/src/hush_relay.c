@@ -3,6 +3,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <assert.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -37,7 +38,10 @@ enum {
     HUSH_PIDFILE_PATH_MAX = 256,
     HUSH_PIDFILE_BODY_MAX = 32,
     HUSH_QUIT_WAIT_TRIES = 20,
-    HUSH_QUIT_WAIT_MS = 100
+    HUSH_QUIT_WAIT_MS = 100,
+    HUSH_CHILD_MAX = 8,
+    HUSH_CHILD_CMDLINE_MAX = 512,
+    HUSH_PROC_PATH_MAX = 64
 };
 
 #define HUSH_PIDFILE_NAME_FMT "relay-%u.pid"
@@ -59,6 +63,9 @@ static hush_turn_t g_turn;
 static volatile sig_atomic_t g_shutdown = 0;
 static char g_pidfile_path[HUSH_PIDFILE_PATH_MAX];
 static int g_pidfile_ready = 0;
+static pid_t g_children[HUSH_CHILD_MAX];
+static int g_nchildren = 0;
+static uint16_t g_listen_port = 0;
 
 static void hush_clients_reset(void);
 static int hush_listen_on(uint16_t port);
@@ -89,6 +96,11 @@ static void hush_relay_prepare(uint16_t port);
 static hush_status_t hush_relay_bind(uint16_t port, int open_ui, int *out_ls);
 static void hush_relay_announce(uint16_t port, int open_ui);
 static void hush_relay_pump(int ls);
+static void hush_child_reset(void);
+static void hush_child_stop_one(pid_t pid);
+static int hush_child_cmdline_matches(pid_t pid, uint16_t port);
+static void hush_child_sweep_proc(uint16_t port);
+static void hush_child_sweep_entry(const char *name, uint16_t port);
 static void hush_relay_cleanup(int ls);
 static int hush_fill_pollfds(struct pollfd *fds, int ls);
 static int hush_poll_should_stop(int pr);
@@ -96,6 +108,34 @@ static int hush_poll_should_stop(int pr);
 void hush_relay_request_shutdown(void)
 {
     g_shutdown = 1;
+}
+
+void hush_relay_track_child(pid_t pid)
+{
+    int i;
+
+    if (pid <= 0)
+        return;
+    if (pid == getpid())
+        return;
+    for (i = 0; i < g_nchildren; ++i) {
+        if (g_children[i] == pid)
+            return;
+    }
+    if (g_nchildren >= HUSH_CHILD_MAX)
+        return;
+    g_children[g_nchildren] = pid;
+    g_nchildren++;
+}
+
+void hush_relay_reap_children(void)
+{
+    int i;
+
+    for (i = 0; i < g_nchildren; ++i)
+        hush_child_stop_one(g_children[i]);
+    hush_child_sweep_proc(g_listen_port);
+    hush_child_reset();
 }
 
 hush_status_t hush_relay_quit(uint16_t port)
@@ -201,8 +241,12 @@ static void hush_open_app_window(uint16_t port)
     if (n <= 0 || (size_t)n >= sizeof(app_arg))
         return;
     pid = fork();
-    if (pid != 0)
+    if (pid < 0)
         return;
+    if (pid > 0) {
+        hush_relay_track_child(pid);
+        return;
+    }
     hush_exec_app_browser(url, app_arg);
     _exit(127);
 }
@@ -431,6 +475,8 @@ static void hush_relay_prepare(uint16_t port)
     g_shutdown = 0;
     g_pidfile_ready = 0;
     g_pidfile_path[0] = '\0';
+    g_listen_port = port;
+    hush_child_reset();
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
     hush_install_shutdown_handlers();
@@ -457,7 +503,9 @@ static hush_status_t hush_relay_bind(uint16_t port, int open_ui, int *out_ls)
     }
     if (errno == EADDRINUSE && open_ui) {
         fprintf(stdout,
-                "hush-relay already running on http://127.0.0.1:%u/ — opening UI...\n",
+                "hush-relay already running on http://127.0.0.1:%u/ — opening UI...\n"
+                "This is the process already listening. Exit or hush-relay --quit "
+                "before a new install can take the port.\n",
                 (unsigned)port);
         hush_open_app_window(port);
         return HUSH_OK;
@@ -535,6 +583,7 @@ static void hush_relay_pump(int ls)
 
 static void hush_relay_cleanup(int ls)
 {
+    hush_relay_reap_children();
     hush_turn_shutdown(&g_turn);
     hush_store_destroy(g_store);
     close(ls);
@@ -668,3 +717,119 @@ static void hush_wait_pid_gone(pid_t pid)
         nanosleep(&pause, NULL);
     }
 }
+
+static void hush_child_reset(void)
+{
+    int i;
+
+    for (i = 0; i < HUSH_CHILD_MAX; ++i)
+        g_children[i] = 0;
+    g_nchildren = 0;
+}
+
+static void hush_child_stop_one(pid_t pid)
+{
+    assert(pid != getpid());
+    if (pid <= 1)
+        return;
+    if (!hush_pid_is_alive(pid))
+        return;
+    (void)kill(pid, SIGTERM);
+    hush_wait_pid_gone(pid);
+    if (hush_pid_is_alive(pid))
+        (void)kill(pid, SIGKILL);
+}
+
+#ifdef __linux__
+static int hush_child_read_cmdline(pid_t pid, char *out, size_t outsz)
+{
+    char path[HUSH_PROC_PATH_MAX];
+    int fd;
+    ssize_t n;
+    ssize_t i;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    if (snprintf(path, sizeof(path), "/proc/%ld/cmdline", (long)pid) >= (int)sizeof(path))
+        return 0;
+    fd = open(path, O_RDONLY);
+    if (fd < 0)
+        return 0;
+    n = read(fd, out, outsz - 1);
+    close(fd);
+    if (n <= 0)
+        return 0;
+    for (i = 0; i < n; ++i) {
+        if (out[i] == '\0')
+            out[i] = ' ';
+    }
+    out[n] = '\0';
+    return 1;
+}
+
+static int hush_child_cmdline_matches(pid_t pid, uint16_t port)
+{
+    char line[HUSH_CHILD_CMDLINE_MAX];
+    char needle[HUSH_UI_APP_ARG_MAX];
+    int n;
+
+    if (port == 0)
+        return 0;
+    if (pid == getpid())
+        return 0;
+    n = snprintf(needle, sizeof(needle),
+                 "--app=http://127.0.0.1:%u/", (unsigned)port);
+    if (n <= 0 || (size_t)n >= sizeof(needle))
+        return 0;
+    if (!hush_child_read_cmdline(pid, line, sizeof(line)))
+        return 0;
+    if (strstr(line, "--class=hush-relay") == NULL)
+        return 0;
+    return strstr(line, needle) != NULL;
+}
+
+static void hush_child_sweep_entry(const char *name, uint16_t port)
+{
+    char *end = NULL;
+    long value;
+    pid_t pid;
+
+    assert(name != NULL);
+    if (name[0] < '1' || name[0] > '9')
+        return;
+    value = strtol(name, &end, 10);
+    if (end == NULL || *end != '\0' || value <= 1)
+        return;
+    pid = (pid_t)value;
+    if (!hush_child_cmdline_matches(pid, port))
+        return;
+    hush_child_stop_one(pid);
+}
+
+static void hush_child_sweep_proc(uint16_t port)
+{
+    DIR *dir;
+    struct dirent *ent;
+
+    if (port == 0)
+        return;
+    dir = opendir("/proc");
+    if (dir == NULL)
+        return;
+    while ((ent = readdir(dir)) != NULL)
+        hush_child_sweep_entry(ent->d_name, port);
+    closedir(dir);
+}
+#else
+static int hush_child_cmdline_matches(pid_t pid, uint16_t port)
+{
+    (void)pid;
+    (void)port;
+    return 0;
+}
+
+static void hush_child_sweep_proc(uint16_t port)
+{
+    (void)port;
+}
+#endif

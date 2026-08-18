@@ -67,6 +67,7 @@
     header {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
       padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--surface);
+      position: relative; z-index: 5;
     }
     .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
     .mark { width: 36px; height: 36px; flex: 0 0 auto; }
@@ -95,12 +96,17 @@
     .chan.on { background: var(--surface-2); color: var(--accent); }
     .chan-row { display: flex; align-items: center; gap: 4px; }
     .chan-row .chan { flex: 1; min-width: 0; }
+    .chan-del, .chan-voice, .robot-call {
+      flex: 0 0 auto; width: 24px; height: 24px; border-radius: 6px;
+      border: 1px solid var(--line); background: transparent; color: var(--muted);
+      font-size: 0.85rem; font-weight: 700; line-height: 1; padding: 0;
+    }
     .chan-del {
-      flex: 0 0 auto; width: 44px; height: 44px; border-radius: 10px;
-      border: 1px solid var(--warn); background: transparent; color: var(--warn);
-      font-size: 1.25rem; font-weight: 700; line-height: 1;
+      border-color: var(--warn); color: var(--warn);
     }
     .chan-del:hover { background: var(--warn); color: #fff; }
+    .chan-voice, .robot-call { color: var(--accent); border-color: var(--accent-dim); }
+    .chan-voice:hover, .robot-call:hover { background: var(--accent-dim); }
     .group-lbl { font-size: 0.72rem; color: var(--muted); padding: 8px 8px 2px; font-weight: 650; }
     .menu {
       display: none; position: fixed; z-index: 40; min-width: 12rem;
@@ -144,12 +150,19 @@
     }
     .note .meta { font-size: 0.7rem; color: var(--faint); font-family: var(--mono); margin-bottom: 4px; }
     .note .body { white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
-    .composer { display: flex; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--line); background: var(--surface); }
-    #msg {
-      flex: 1; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
-      border-radius: 10px; padding: 12px 14px; font: inherit; outline: none;
+    .composer { display: flex; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--line); background: var(--surface); align-items: flex-end; }
+    .composer-box {
+      flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+      background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+      padding: 6px 8px; min-height: 44px;
     }
-    #msg:focus { border-color: var(--accent-dim); }
+    #composer-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+    .composer-pill { margin: 0; }
+    #msg {
+      flex: 1; min-width: 8rem; background: transparent; color: var(--fg); border: 0;
+      padding: 6px 6px; font: inherit; outline: none;
+    }
+    .composer-box:focus-within { border-color: var(--accent-dim); }
     #send {
       background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 10px;
       padding: 0 18px; font-weight: 650; min-width: 88px;
@@ -235,9 +248,9 @@
     }
     .robot-copy span { display: block; color: var(--faint); font-size: 0.7rem; }
     .toggle {
-      flex: 0 0 auto; width: 44px; height: 44px; border-radius: 10px;
+      flex: 0 0 auto; width: 24px; height: 24px; border-radius: 6px;
       border: 1px solid var(--line); background: var(--surface-2); color: var(--fg);
-      font-size: 1.25rem; font-weight: 650; line-height: 1;
+      font-size: 0.9rem; font-weight: 650; line-height: 1; padding: 0;
     }
     .robot-body {
       display: none; padding: 0 10px 10px; font-size: 0.75rem; color: var(--muted);
@@ -339,8 +352,36 @@
       position: absolute; left: 8px; bottom: 8px; font-size: 0.7rem;
       background: rgba(0,0,0,0.55); padding: 2px 8px; border-radius: 999px;
     }
+    .tile-mute {
+      position: absolute; right: 8px; bottom: 8px; font-size: 0.7rem;
+      background: rgba(0,0,0,0.55); color: #fff; border: 1px solid var(--line);
+      border-radius: 999px; padding: 4px 8px;
+    }
+    .tile-mute.on { background: var(--warn); border-color: var(--warn); }
     .wide { width: min(52rem, 100%); }
     .badge-vis { font-size: 0.7rem; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
+    #tool-rail {
+      position: fixed; z-index: 30; top: 10px; right: 12px;
+      display: flex; flex-direction: column; gap: 8px;
+      background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+      padding: 8px; box-shadow: 0 10px 28px rgba(0,0,0,0.35); min-width: 44px;
+      user-select: none;
+    }
+    #tool-rail.collapsed { padding: 6px; }
+    #tool-rail.collapsed .rail-body { display: none; }
+    .rail-bar { display: flex; align-items: center; gap: 6px; }
+    #rail-grip {
+      flex: 1; height: 18px; cursor: grab; border-radius: 6px;
+      background: repeating-linear-gradient(90deg, var(--line), var(--line) 2px, transparent 2px, transparent 6px);
+    }
+    #rail-toggle {
+      width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line);
+      background: var(--bg); color: var(--fg); font-size: 1.2rem; line-height: 1;
+    }
+    .rail-body { display: flex; flex-direction: column; gap: 6px; }
+    #install-help { font-size: 0.72rem; color: var(--faint); max-width: 14rem; line-height: 1.4; margin: 0; }
+    .pool-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    .pool-row span { flex: 1; font-size: 0.86rem; }
     @media (max-width: 640px) {
       .shell, .hive { grid-template-columns: 1fr; }
       nav { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -362,8 +403,16 @@
         <div class="sub" id="vibe-sub">local hive mind</div>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <button id="install" type="button">Install</button>
+    <div id="badge">connecting…</div>
+  </header>
+  <aside id="tool-rail" aria-label="Tools">
+    <div class="rail-bar">
+      <div id="rail-grip" title="Move the tool rail"></div>
+      <button id="rail-toggle" type="button" aria-expanded="true" aria-label="Collapse tools">☰</button>
+    </div>
+    <div class="rail-body" id="rail-body">
+      <button id="install" type="button" title="Install puts Hush on your app launcher as its own window. It does not start a second hive.">Install</button>
+      <p id="install-help">Install puts Hush on your app launcher as its own window. It does not start a second hive.</p>
       <button class="iconbtn" id="profile-btn" type="button">Profile</button>
       <button class="iconbtn" id="settings-btn" type="button">Settings</button>
       <button class="iconbtn" id="call-btn" type="button" hidden>Call</button>
@@ -371,9 +420,8 @@
               title="Close the window. Hive stays standing.">Close</button>
       <button class="iconbtn danger" id="hive-exit" type="button"
               title="Quit the hive. Every process stops.">Exit</button>
-      <div id="badge">connecting…</div>
     </div>
-  </header>
+  </aside>
   <div id="hive-banner" role="status">Window stays open here. Close this window. The hive is still standing.</div>
   <section class="gate" id="gate" aria-live="polite"></section>
   <div class="shell hive" id="hive">
@@ -402,7 +450,10 @@
       <div id="stream"></div>
       <form class="composer" id="form">
         <div class="mention-box" id="mention-box" hidden></div>
-        <input id="msg" autocomplete="off" maxlength="2000" placeholder="Write to the hive… @ a human or robot">
+        <div class="composer-box">
+          <div id="composer-pills"></div>
+          <input id="msg" autocomplete="off" maxlength="2000" placeholder="Write to the hive… @ a human or robot">
+        </div>
         <button id="send" type="submit">Send</button>
       </form>
     </main>
@@ -626,10 +677,15 @@
       <h2 id="manage-title">Manage Channel</h2>
       <p class="help">Name the group. Put the right humans and robots on the channel. Delete only when the room is done.</p>
       <p class="help">Humans</p>
+      <div class="pills" id="manage-human-pills"></div>
       <div id="manage-humans"></div>
       <label for="manage-invite">Invite npub</label>
-      <input id="manage-invite" type="text" maxlength="80" placeholder="npub1…">
+      <div class="pill-row">
+        <input id="manage-invite" type="text" maxlength="80" placeholder="npub1…">
+        <button class="icon-plus" id="manage-invite-add" type="button" aria-label="Add invited human">+</button>
+      </div>
       <p class="help">Robots</p>
+      <div class="pills" id="manage-robot-pills"></div>
       <div id="manage-robots"></div>
       <p class="warn" id="manage-err"></p>
       <div class="actions">
@@ -698,8 +754,13 @@
     let mentionIdx = 0;
     let mentionStart = -1;
     let pendingMentions = [];
+    let composerPills = [];
     let menuSlug = "";
     let manageSlug = "";
+    let manageHumanPills = [];
+    let manageRobotPills = [];
+    let whisperReady = false;
+    let railDrag = null;
 
     function $(id) { return document.getElementById(id); }
 
@@ -990,6 +1051,19 @@
         ev.preventDefault();
         openChanMenu(c.slug, ev.clientX, ev.clientY);
       });
+      if (whisperReady) {
+        const voice = document.createElement("button");
+        voice.className = "chan-voice";
+        voice.type = "button";
+        voice.setAttribute("aria-label", "Voice in #" + c.slug);
+        voice.textContent = "♫";
+        voice.title = "Talk on this channel";
+        voice.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          openChannelVoice(c);
+        });
+        row.appendChild(voice);
+      }
       const del = document.createElement("button");
       del.className = "chan-del";
       del.type = "button";
@@ -1053,6 +1127,101 @@
         });
     }
 
+    function humanPool() {
+      const pool = [];
+      const seenKey = {};
+      function add(name, npub) {
+        if (!npub || seenKey[npub]) return;
+        seenKey[npub] = true;
+        pool.push({ name: name, npub: npub });
+      }
+      if (session.npub) add("you", session.npub);
+      (session.members || []).forEach((m) => {
+        if (m) add(m.name || "human", m.npub);
+      });
+      return pool;
+    }
+
+    function paintManageLists() {
+      const onH = {};
+      manageHumanPills.forEach((p) => { onH[p.npub] = true; });
+      const hp = $("manage-human-pills");
+      hp.innerHTML = "";
+      manageHumanPills.forEach((p, i) => {
+        const pill = document.createElement("span");
+        pill.className = "pill";
+        pill.innerHTML = "<em>" + esc(p.name) + "</em>";
+        const minus = document.createElement("button");
+        minus.type = "button";
+        minus.setAttribute("aria-label", "Remove " + p.name);
+        minus.textContent = "−";
+        minus.addEventListener("click", () => {
+          manageHumanPills.splice(i, 1);
+          paintManageLists();
+        });
+        pill.appendChild(minus);
+        hp.appendChild(pill);
+      });
+      const humans = $("manage-humans");
+      humans.innerHTML = "";
+      const unusedH = humanPool().filter((p) => !onH[p.npub]);
+      if (!unusedH.length && !manageHumanPills.length)
+        humans.innerHTML = "<p class=\"help\">Invite a human, or leave empty for the whole hive.</p>";
+      unusedH.forEach((p) => {
+        const row = document.createElement("div");
+        row.className = "pool-row";
+        row.innerHTML = "<span>" + esc(p.name) + "</span>";
+        const plus = document.createElement("button");
+        plus.className = "icon-plus";
+        plus.type = "button";
+        plus.setAttribute("aria-label", "Add " + p.name);
+        plus.textContent = "+";
+        plus.addEventListener("click", () => {
+          manageHumanPills.push(p);
+          paintManageLists();
+        });
+        row.appendChild(plus);
+        humans.appendChild(row);
+      });
+      const onR = {};
+      manageRobotPills.forEach((p) => { onR[p.slug] = true; });
+      const rp = $("manage-robot-pills");
+      rp.innerHTML = "";
+      manageRobotPills.forEach((p, i) => {
+        const pill = document.createElement("span");
+        pill.className = "pill";
+        pill.innerHTML = "<em>" + esc(p.name) + "</em>";
+        const minus = document.createElement("button");
+        minus.type = "button";
+        minus.setAttribute("aria-label", "Remove " + p.name);
+        minus.textContent = "−";
+        minus.addEventListener("click", () => {
+          manageRobotPills.splice(i, 1);
+          paintManageLists();
+        });
+        pill.appendChild(minus);
+        rp.appendChild(pill);
+      });
+      const robots = $("manage-robots");
+      robots.innerHTML = "";
+      robotModels().filter((bot) => !onR[bot.slug]).forEach((bot) => {
+        const row = document.createElement("div");
+        row.className = "pool-row";
+        row.innerHTML = "<span>" + esc(bot.name) + "</span>";
+        const plus = document.createElement("button");
+        plus.className = "icon-plus";
+        plus.type = "button";
+        plus.setAttribute("aria-label", "Add " + bot.name);
+        plus.textContent = "+";
+        plus.addEventListener("click", () => {
+          manageRobotPills.push({ name: bot.name, slug: bot.slug });
+          paintManageLists();
+        });
+        row.appendChild(plus);
+        robots.appendChild(row);
+      });
+    }
+
     function openManageChannel(slug) {
       const ch = (session.channels || []).find((c) => c.slug === slug);
       if (!ch) return;
@@ -1060,44 +1229,17 @@
       $("manage-title").textContent = "Manage #" + slug;
       $("manage-err").textContent = "";
       $("manage-invite").value = "";
-      const humans = $("manage-humans");
-      humans.innerHTML = "";
-      const listed = {};
-      (ch.humans || []).forEach((np) => { listed[np] = true; });
-      const pool = [];
-      if (session.npub)
-        pool.push({ name: "you", npub: session.npub });
-      (session.members || []).forEach((m) => {
-        if (m && m.npub) pool.push({ name: m.name || "human", npub: m.npub });
+      const named = {};
+      humanPool().forEach((p) => { named[p.npub] = p.name; });
+      manageHumanPills = (ch.humans || []).map((np) => ({
+        name: named[np] || np.slice(0, 12),
+        npub: np
+      }));
+      manageRobotPills = (ch.robots || []).map((slug) => {
+        const bot = robotModels().find((b) => b.slug === slug);
+        return { name: bot ? bot.name : slug, slug: slug };
       });
-      (ch.humans || []).forEach((np) => {
-        if (!pool.some((p) => p.npub === np))
-          pool.push({ name: np.slice(0, 12), npub: np });
-      });
-      if (!pool.length)
-        humans.innerHTML = "<p class=\"help\">Invite a human, or leave empty for the whole hive.</p>";
-      pool.forEach((p, i) => {
-        const id = "mh-" + i;
-        const lab = document.createElement("label");
-        lab.className = "passbox";
-        lab.innerHTML = "<input type=\"checkbox\" id=\"" + id + "\" data-npub=\"" +
-          esc(p.npub) + "\"" + (listed[p.npub] ? " checked" : "") + "> " +
-          esc(p.name);
-        humans.appendChild(lab);
-      });
-      const robots = $("manage-robots");
-      robots.innerHTML = "";
-      const onBot = {};
-      (ch.robots || []).forEach((s) => { onBot[s] = true; });
-      robotModels().forEach((bot, i) => {
-        const id = "mr-" + i;
-        const lab = document.createElement("label");
-        lab.className = "passbox";
-        lab.innerHTML = "<input type=\"checkbox\" id=\"" + id + "\" data-slug=\"" +
-          esc(bot.slug) + "\"" + (onBot[bot.slug] ? " checked" : "") + "> " +
-          esc(bot.name);
-        robots.appendChild(lab);
-      });
+      paintManageLists();
       $("manage-chan").classList.add("show");
     }
 
@@ -1157,6 +1299,19 @@
           robotOpen[bot.slug] = !robotOpen[bot.slug];
           paintRobots();
         });
+        if (whisperReady) {
+          const call = document.createElement("button");
+          call.className = "robot-call";
+          call.type = "button";
+          call.setAttribute("aria-label", "Call " + bot.name);
+          call.textContent = "☎";
+          call.title = "One-to-one with " + bot.name;
+          call.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            openRobotCall(bot);
+          });
+          head.appendChild(call);
+        }
         head.appendChild(tog);
         card.appendChild(head);
         const body = document.createElement("div");
@@ -1762,13 +1917,37 @@
       mentionOpen = mentionHits.length > 0;
     }
 
+    function paintComposerPills() {
+      const box = $("composer-pills");
+      if (!box) return;
+      box.innerHTML = "";
+      composerPills.forEach((p, i) => {
+        const pill = document.createElement("span");
+        pill.className = "pill composer-pill";
+        pill.innerHTML = "<em>@" + esc(p.name) + "</em>";
+        const minus = document.createElement("button");
+        minus.type = "button";
+        minus.setAttribute("aria-label", "Remove @" + p.name);
+        minus.textContent = "−";
+        minus.addEventListener("click", () => {
+          composerPills.splice(i, 1);
+          pendingMentions = composerPills.map((x) => x.npub);
+          paintComposerPills();
+        });
+        pill.appendChild(minus);
+        box.appendChild(pill);
+      });
+    }
+
     function applyMention(hit) {
       const input = $("msg");
       if (!input || mentionStart < 0) return;
       const before = input.value.slice(0, mentionStart);
       const after = input.value.slice(input.selectionStart);
-      input.value = before + "nostr:" + hit.npub + " " + after;
-      pendingMentions.push(hit.npub);
+      input.value = (before + after).replace(/^\s+/, "");
+      composerPills.push({ name: hit.name, npub: hit.npub });
+      pendingMentions = composerPills.map((x) => x.npub);
+      paintComposerPills();
       hideMentions();
       input.focus();
     }
@@ -1799,6 +1978,14 @@
 
     $("msg").addEventListener("input", scanMention);
     $("msg").addEventListener("keydown", (ev) => {
+      if (ev.key === "Backspace" && $("msg").selectionStart === 0 &&
+          $("msg").selectionEnd === 0 && composerPills.length) {
+        ev.preventDefault();
+        composerPills.pop();
+        pendingMentions = composerPills.map((x) => x.npub);
+        paintComposerPills();
+        return;
+      }
       if (!mentionOpen) return;
       if (ev.key === "ArrowDown") {
         ev.preventDefault();
@@ -1821,9 +2008,14 @@
     $("form").addEventListener("submit", async (e) => {
       e.preventDefault();
       if (mentionOpen) return;
-      const text = $("msg").value.trim();
+      const leftover = $("msg").value.trim();
+      const bits = composerPills.map((p) => "nostr:" + p.npub);
+      if (leftover) bits.push(leftover);
+      const text = bits.join(" ").trim();
       if (!text) return;
       $("msg").value = "";
+      composerPills = [];
+      paintComposerPills();
       const body = { content: text, kind: 1, channel: channel };
       pendingMentions.slice(0, 8).forEach((np, i) => {
         body["mention_" + i] = np;
@@ -1906,8 +2098,10 @@
       });
     });
     $("call-btn").addEventListener("click", () => {
-      $("stage").classList.add("show");
-      $("call-title").textContent = "Conference · #" + channel;
+      openStage(
+        "Conference · #" + channel,
+        "Mesh call on this channel. Humans and agents can join. Voice for agents requires Whisper."
+      );
     });
     $("call-close").addEventListener("click", () => $("stage").classList.remove("show"));
     $("turn-on").addEventListener("change", () => postTurn());
@@ -1970,11 +2164,72 @@
         s.textContent = label;
         tile.appendChild(v);
         tile.appendChild(s);
+        if (id !== selfId) {
+          const mute = document.createElement("button");
+          mute.className = "tile-mute";
+          mute.type = "button";
+          mute.textContent = "Mute";
+          mute.addEventListener("click", () => {
+            const on = !v.muted;
+            v.muted = on;
+            mute.classList.toggle("on", on);
+            mute.textContent = on ? "Muted" : "Mute";
+          });
+          tile.appendChild(mute);
+        }
         $("tiles").appendChild(tile);
       }
       const video = tile.querySelector("video");
       if (stream && video.srcObject !== stream) video.srcObject = stream;
       tile.querySelector("span").textContent = label;
+    }
+
+    function openStage(title, help) {
+      $("stage").classList.add("show");
+      $("call-title").textContent = title;
+      $("call-help").textContent = help;
+    }
+
+    async function openRobotCall(bot) {
+      openStage(
+        "Call · " + bot.name,
+        "One-to-one with " + bot.name + ". Mute any voice you do not want."
+      );
+      try {
+        await syncSettings();
+        await ensureLocal();
+        inCall = true;
+        await signal({ t: "join", to: "*", role: "human" });
+        addTile(bot.slug, null, bot.name + " · robot");
+        await signal({ t: "join", from: bot.slug, to: "*", role: "agent" });
+      } catch (e) {
+        $("call-help").textContent = "Camera/mic blocked or ICE unavailable.";
+      }
+    }
+
+    async function openChannelVoice(ch) {
+      channel = ch.slug;
+      $("room").textContent = "#" + channel;
+      openStage(
+        "Voice · #" + ch.slug,
+        "Talk with humans and robots on this channel. Mute any voice you do not want."
+      );
+      try {
+        await syncSettings();
+        await ensureLocal();
+        inCall = true;
+        await signal({ t: "join", to: "*", role: "human" });
+        const slugs = (ch.robots && ch.robots.length)
+          ? ch.robots
+          : ["sgt-major-payne"];
+        slugs.forEach((slug) => {
+          const bot = robotModels().find((b) => b.slug === slug) || { name: slug, slug: slug };
+          addTile(bot.slug, null, bot.name + " · robot");
+          signal({ t: "join", from: bot.slug, to: "*", role: "agent" });
+        });
+      } catch (e) {
+        $("call-help").textContent = "Camera/mic blocked or ICE unavailable.";
+      }
     }
 
     async function signal(payload) {
@@ -2159,6 +2414,7 @@
           fetch(API + "/api/session").then((r) => r.json())
         ]);
         session = sess;
+        whisperReady = !!st.whisper;
         if (session.ready && page !== "payne") page = "hive";
         paint();
         badge(true, session.npub ? session.npub.slice(0, 12) + "…" : ("listening :" + (st.port || "")));
@@ -2185,18 +2441,21 @@
       if (!$("chan-menu").contains(ev.target)) hideChanMenu();
     });
     $("manage-close").addEventListener("click", () => $("manage-chan").classList.remove("show"));
+    $("manage-invite-add").addEventListener("click", () => {
+      const extra = ($("manage-invite").value || "").trim();
+      if (!extra) return;
+      manageHumanPills.push({ name: extra.slice(0, 12), npub: extra });
+      $("manage-invite").value = "";
+      paintManageLists();
+    });
     $("manage-save").addEventListener("click", async () => {
       if (!manageSlug) return;
       const body = { action: "manage", slug: manageSlug };
-      let hi = 0;
-      $("manage-humans").querySelectorAll("input[data-npub]").forEach((el) => {
-        if (el.checked) body["human_" + (hi++)] = el.getAttribute("data-npub");
+      manageHumanPills.slice(0, 8).forEach((p, i) => {
+        body["human_" + i] = p.npub;
       });
-      const extra = ($("manage-invite").value || "").trim();
-      if (extra) body["human_" + (hi++)] = extra;
-      let ri = 0;
-      $("manage-robots").querySelectorAll("input[data-slug]").forEach((el) => {
-        if (el.checked) body["robot_" + (ri++)] = el.getAttribute("data-slug");
+      manageRobotPills.slice(0, 8).forEach((p, i) => {
+        body["robot_" + i] = p.slug;
       });
       try {
         applySession(await api("/api/channel", body));
@@ -2205,6 +2464,58 @@
         $("manage-err").textContent = "Could not save that roster.";
       }
     });
+
+    function loadRail() {
+      const rail = $("tool-rail");
+      let saved = {};
+      try { saved = JSON.parse(localStorage.getItem("hush-rail") || "{}"); } catch (e) { saved = {}; }
+      if (typeof saved.x === "number" && typeof saved.y === "number") {
+        rail.style.left = saved.x + "px";
+        rail.style.top = saved.y + "px";
+        rail.style.right = "auto";
+      }
+      if (saved.collapsed) {
+        rail.classList.add("collapsed");
+        $("rail-toggle").setAttribute("aria-expanded", "false");
+        $("rail-toggle").setAttribute("aria-label", "Expand tools");
+      }
+    }
+    function saveRail() {
+      const rail = $("tool-rail");
+      const rect = rail.getBoundingClientRect();
+      localStorage.setItem("hush-rail", JSON.stringify({
+        x: rect.left,
+        y: rect.top,
+        collapsed: rail.classList.contains("collapsed")
+      }));
+    }
+    $("rail-toggle").addEventListener("click", () => {
+      const rail = $("tool-rail");
+      const on = rail.classList.toggle("collapsed");
+      $("rail-toggle").setAttribute("aria-expanded", on ? "false" : "true");
+      $("rail-toggle").setAttribute("aria-label", on ? "Expand tools" : "Collapse tools");
+      saveRail();
+    });
+    $("rail-grip").addEventListener("pointerdown", (ev) => {
+      const rail = $("tool-rail");
+      const rect = rail.getBoundingClientRect();
+      railDrag = { dx: ev.clientX - rect.left, dy: ev.clientY - rect.top };
+      $("rail-grip").setPointerCapture(ev.pointerId);
+    });
+    $("rail-grip").addEventListener("pointermove", (ev) => {
+      if (!railDrag) return;
+      const rail = $("tool-rail");
+      const x = Math.max(0, ev.clientX - railDrag.dx);
+      const y = Math.max(0, ev.clientY - railDrag.dy);
+      rail.style.left = x + "px";
+      rail.style.top = y + "px";
+      rail.style.right = "auto";
+    });
+    $("rail-grip").addEventListener("pointerup", () => {
+      railDrag = null;
+      saveRail();
+    });
+    loadRail();
 
     applyTheme(localStorage.getItem("hush-theme") || "dark");
     paint();

@@ -4,6 +4,8 @@
 #define HUSH_RELAY_H
 
 #include <stdint.h>
+#include <sys/types.h>
+
 #include "hush_status.h"
 
 enum {
@@ -20,5 +22,11 @@ void hush_relay_request_shutdown(void);
 
 /* Send SIGTERM to the instance that owns this port's pidfile. Idempotent. */
 hush_status_t hush_relay_quit(uint16_t port);
+
+/* Remember a forked UI or login child so Exit can stop it. pid <= 0 is ignored. */
+void hush_relay_track_child(pid_t pid);
+
+/* SIGTERM then SIGKILL tracked children. Linux also sweeps leftover --app windows. */
+void hush_relay_reap_children(void);
 
 #endif /* HUSH_RELAY_H */
