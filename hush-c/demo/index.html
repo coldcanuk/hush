@@ -342,6 +342,70 @@
       </div>
     </div>
   </div>
+  <div class="drawer" id="profile" role="dialog" aria-label="Profile">
+    <div class="panel">
+      <h2>Profile</h2>
+      <p class="help">Your identity is your orders. Guard it.</p>
+      <p id="profile-npub" class="help" style="font-family:var(--mono);word-break:break-all"></p>
+      <label for="prof-first">First name</label>
+      <input id="prof-first" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
+      <label for="prof-last">Last name</label>
+      <input id="prof-last" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
+      <label for="prof-email">Email</label>
+      <input id="prof-email" type="email" maxlength="80" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
+      <label for="prof-org">Organization</label>
+      <input id="prof-org" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
+      <label for="prof-avatar">Avatar</label>
+      <input id="prof-avatar" type="file" accept="image/jpeg,image/png,image/webp">
+      <p class="help" id="prof-avatar-status">Optional. JPEG or PNG, stored as a Nostr picture URL.</p>
+      <div class="actions">
+        <button class="btn" id="profile-save" type="button">Save profile</button>
+        <button class="btn ghost" id="profile-copy" type="button">Copy npub</button>
+        <button class="btn ghost" id="profile-logout" type="button">Logout</button>
+        <button class="btn ghost" id="profile-close" type="button">Close</button>
+      </div>
+      <p class="help">Sgt Major Payne: "Guard your orders. Report when ready."</p>
+    </div>
+  </div>
+  <div class="drawer" id="agent-drawer" role="dialog" aria-label="Raise a robot">
+    <div class="panel">
+      <h2>Raise a robot</h2>
+      <p class="help">Sgt Major Payne will walk you through it.</p>
+      <label for="agent-name">Name</label>
+      <input id="agent-name" type="text" maxlength="48" placeholder="Sentry">
+      <p class="help">State the robot’s name.</p>
+      <label for="agent-prompt">Standing orders</label>
+      <textarea id="agent-prompt" maxlength="1000" placeholder="Watch the perimeter."></textarea>
+      <p class="help">Write its standing orders.</p>
+      <label for="agent-file">Context file</label>
+      <input id="agent-file" type="file" accept=".txt,.md,text/plain,text/markdown">
+      <p class="help">Attach only plain text or Markdown. I will refuse the rest.</p>
+      <label class="passbox"><input id="agent-pass" type="checkbox" checked>
+        Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
+      <p class="warn" id="agent-err"></p>
+      <div class="actions">
+        <button class="btn" id="agent-save" type="button">Raise this robot</button>
+        <button class="btn ghost" id="agent-close" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+  <div class="drawer" id="member-drawer" role="dialog" aria-label="Invite human">
+    <div class="panel">
+      <h2>Invite human</h2>
+      <p class="help">Name the soldier. Private vibes also need the join token.</p>
+      <label for="member-npub">npub</label>
+      <input id="member-npub" type="text" maxlength="80" placeholder="npub1…">
+      <label for="member-name">Display name</label>
+      <input id="member-name" type="text" maxlength="48" placeholder="human">
+      <p class="help" id="member-token"></p>
+      <p class="warn" id="member-err"></p>
+      <div class="actions">
+        <button class="btn" id="member-save" type="button">Add human</button>
+        <button class="btn ghost" id="member-close" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
     let channel = "welcome";
@@ -1028,6 +1092,7 @@
     }
 
     applyTheme(localStorage.getItem("hush-theme") || "dark");
+    paint();
     tick();
     setInterval(tick, 1000);
 
@@ -1053,70 +1118,6 @@
       installBtn.classList.remove("show");
     });
   </script>
-
-  <div class="drawer" id="profile" role="dialog" aria-label="Profile">
-    <div class="panel">
-      <h2>Profile</h2>
-      <p class="help">Your identity is your orders. Guard it.</p>
-      <p id="profile-npub" class="help" style="font-family:var(--mono);word-break:break-all"></p>
-      <label for="prof-first">First name</label>
-      <input id="prof-first" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
-      <label for="prof-last">Last name</label>
-      <input id="prof-last" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
-      <label for="prof-email">Email</label>
-      <input id="prof-email" type="email" maxlength="80" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
-      <label for="prof-org">Organization</label>
-      <input id="prof-org" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
-      <label for="prof-avatar">Avatar</label>
-      <input id="prof-avatar" type="file" accept="image/jpeg,image/png,image/webp">
-      <p class="help" id="prof-avatar-status">Optional. JPEG or PNG, stored as a Nostr picture URL.</p>
-      <div class="actions">
-        <button class="btn" id="profile-save" type="button">Save profile</button>
-        <button class="btn ghost" id="profile-copy" type="button">Copy npub</button>
-        <button class="btn ghost" id="profile-logout" type="button">Logout</button>
-        <button class="btn ghost" id="profile-close" type="button">Close</button>
-      </div>
-      <p class="help">Sgt Major Payne: "Guard your orders. Report when ready."</p>
-    </div>
-  </div>
-  <div class="drawer" id="agent-drawer" role="dialog" aria-label="Raise a robot">
-    <div class="panel">
-      <h2>Raise a robot</h2>
-      <p class="help">Sgt Major Payne will walk you through it.</p>
-      <label for="agent-name">Name</label>
-      <input id="agent-name" type="text" maxlength="48" placeholder="Sentry">
-      <p class="help">State the robot’s name.</p>
-      <label for="agent-prompt">Standing orders</label>
-      <textarea id="agent-prompt" maxlength="1000" placeholder="Watch the perimeter."></textarea>
-      <p class="help">Write its standing orders.</p>
-      <label for="agent-file">Context file</label>
-      <input id="agent-file" type="file" accept=".txt,.md,text/plain,text/markdown">
-      <p class="help">Attach only plain text or Markdown. I will refuse the rest.</p>
-      <label class="passbox"><input id="agent-pass" type="checkbox" checked>
-        Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
-      <p class="warn" id="agent-err"></p>
-      <div class="actions">
-        <button class="btn" id="agent-save" type="button">Raise this robot</button>
-        <button class="btn ghost" id="agent-close" type="button">Close</button>
-      </div>
-    </div>
-  </div>
-  <div class="drawer" id="member-drawer" role="dialog" aria-label="Invite human">
-    <div class="panel">
-      <h2>Invite human</h2>
-      <p class="help">Name the soldier. Private vibes also need the join token.</p>
-      <label for="member-npub">npub</label>
-      <input id="member-npub" type="text" maxlength="80" placeholder="npub1…">
-      <label for="member-name">Display name</label>
-      <input id="member-name" type="text" maxlength="48" placeholder="human">
-      <p class="help" id="member-token"></p>
-      <p class="warn" id="member-err"></p>
-      <div class="actions">
-        <button class="btn" id="member-save" type="button">Add human</button>
-        <button class="btn ghost" id="member-close" type="button">Close</button>
-      </div>
-    </div>
-  </div>
 
 </body>
 </html>
