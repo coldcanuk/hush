@@ -24,6 +24,14 @@ enum {
 #define HUSH_HTTP_CLOSE_JSON "{\"ok\":true,\"action\":\"close\"}\n"
 #define HUSH_HTTP_EXIT_JSON  "{\"ok\":true,\"action\":\"exit\"}\n"
 
+typedef struct {
+    char api_key[HUSH_PROVIDER_KEY_MAX];
+    char username[HUSH_PROVIDER_KEY_MAX];
+    char password[HUSH_PROVIDER_KEY_MAX];
+    char token[HUSH_PROVIDER_KEY_MAX];
+    char passkey[HUSH_PROVIDER_KEY_MAX];
+} hush_http_provider_buf_t;
+
 static uint16_t g_listen_port;
 static int g_client_count;
 static hush_launch_t *g_launch;
@@ -83,6 +91,14 @@ static void hush_http_append_provider(char *body, size_t bodysz, size_t *n,
                                       const hush_provider_status_t *st,
                                       int first);
 static hush_status_t hush_http_serve_provider_get(int fd);
+/* Copies host, model, use_home, and optional secrets from body into in.
+ * Secret bytes live in buf; in holds borrowed pointers into buf. */
+static void hush_http_fill_provider_in(hush_provider_in_t *in,
+                                       hush_http_provider_buf_t *buf,
+                                       const char *body);
+/* Points *dst at buf when body contains kind. buf is KEY_MAX. */
+static void hush_http_take_secret(const char **dst, char *buf,
+                                  const char *body, const char *kind);
 static hush_status_t hush_http_serve_provider_post(int fd, const char *body);
 static hush_status_t hush_http_serve_provider_scan(int fd, const char *body);
 static void hush_http_reply_scan(int fd, const hush_provider_scan_t *scan,
@@ -851,6 +867,8 @@ static void hush_http_append_provider(char *body, size_t bodysz, size_t *n,
     wr = snprintf(body + *n, bodysz - *n,
                   "%s\"%s\":{\"label\":\"%s\",\"family\":\"%s\","
                   "\"has_binary\":%s,\"has_home\":%s,\"has_key\":%s,"
+                  "\"has_username\":%s,\"has_password\":%s,"
+                  "\"has_token\":%s,\"has_passkey\":%s,"
                   "\"use_home\":%s,\"host\":\"%s\",\"model\":\"%s\","
                   "\"home_model\":\"%s\",\"configured\":%s}",
                   first ? "" : ",",
@@ -858,6 +876,10 @@ static void hush_http_append_provider(char *body, size_t bodysz, size_t *n,
                   st->has_binary ? "true" : "false",
                   st->has_home ? "true" : "false",
                   st->has_key ? "true" : "false",
+                  st->has_username ? "true" : "false",
+                  st->has_password ? "true" : "false",
+                  st->has_token ? "true" : "false",
+                  st->has_passkey ? "true" : "false",
                   st->use_home ? "true" : "false",
                   host, model, home_model,
                   st->configured ? "true" : "false");
@@ -892,12 +914,45 @@ static hush_status_t hush_http_serve_provider_get(int fd)
     return HUSH_OK;
 }
 
+static void hush_http_take_secret(const char **dst, char *buf,
+                                  const char *body, const char *kind)
+{
+    assert(dst != NULL);
+    assert(buf != NULL);
+    if (hush_json_field(body, kind, buf, HUSH_PROVIDER_KEY_MAX))
+        *dst = buf;
+}
+
+static void hush_http_fill_provider_in(hush_provider_in_t *in,
+                                       hush_http_provider_buf_t *buf,
+                                       const char *body)
+{
+    char flag[8];
+
+    assert(in != NULL);
+    assert(buf != NULL);
+    memset(buf, 0, sizeof(*buf));
+    (void)hush_json_field(body, "host", in->host, sizeof(in->host));
+    (void)hush_json_field(body, "model", in->model, sizeof(in->model));
+    hush_http_take_secret(&in->api_key, buf->api_key, body,
+                          HUSH_PROVIDER_SECRET_API_KEY);
+    hush_http_take_secret(&in->username, buf->username, body,
+                          HUSH_PROVIDER_SECRET_USERNAME);
+    hush_http_take_secret(&in->password, buf->password, body,
+                          HUSH_PROVIDER_SECRET_PASSWORD);
+    hush_http_take_secret(&in->token, buf->token, body,
+                          HUSH_PROVIDER_SECRET_TOKEN);
+    hush_http_take_secret(&in->passkey, buf->passkey, body,
+                          HUSH_PROVIDER_SECRET_PASSKEY);
+    if (hush_json_field(body, "use_home", flag, sizeof(flag)))
+        in->use_home = strcmp(flag, "true") == 0 || strcmp(flag, "1") == 0;
+}
+
 static hush_status_t hush_http_serve_provider_post(int fd, const char *body)
 {
     hush_provider_in_t in;
     hush_provider_status_t st;
-    char key[HUSH_PROVIDER_KEY_MAX];
-    char flag[8];
+    hush_http_provider_buf_t buf;
     char reply[2048];
     size_t n = 0;
     int wr;
@@ -907,13 +962,7 @@ static hush_status_t hush_http_serve_provider_post(int fd, const char *body)
         hush_http_reply(fd, "400 Bad Request", "text/plain", "bad request\n", 12);
         return HUSH_ERR_PARSE;
     }
-    (void)hush_json_field(body, "host", in.host, sizeof(in.host));
-    (void)hush_json_field(body, "model", in.model, sizeof(in.model));
-    key[0] = '\0';
-    if (hush_json_field(body, "api_key", key, sizeof(key)))
-        in.api_key = key;
-    if (hush_json_field(body, "use_home", flag, sizeof(flag)))
-        in.use_home = strcmp(flag, "true") == 0 || strcmp(flag, "1") == 0;
+    hush_http_fill_provider_in(&in, &buf, body);
     if (hush_provider_save(&in) != HUSH_OK) {
         hush_http_reply(fd, "400 Bad Request", "text/plain", "bad request\n", 12);
         return HUSH_ERR_PARSE;
