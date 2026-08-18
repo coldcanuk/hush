@@ -139,6 +139,21 @@ Click the launcher (`hush-relay --open`) while the hive is already up to
 re-attach a window. `POST /api/close` acknowledges Close and does not stop
 the process. `POST /api/exit` sets the same shutdown flag as SIGTERM.
 
+### Provider configure
+
+Selecting an AI provider on **Raise a robot** reveals a pencil. That
+opens a tailored drawer:
+
+- Goose, Grok Build, Codex reuse the home config
+  (`~/.config/goose`, `~/.grok`, `~/.codex`) or accept an override key.
+- Gemini / xAI / OpenAI / Anthropic take an API key, host URL, and a
+  scanned or typed model.
+- Cline shows an honest empty state if the editor extension is missing.
+
+Keys are stored with `pass show hush/providers/<id>/api_key`. Host and
+model live in `~/.config/hush/providers.json`. `GET /api/provider`
+never returns the key.
+
 The application launcher entry (`hush-relay.desktop`) starts or attaches the
 GUI. The **Quit Hush** desktop action runs `--quit`.
 

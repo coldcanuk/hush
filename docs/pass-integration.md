@@ -10,6 +10,7 @@ The human must uncheck the box to opt out.
 |---|---|---|
 | Human identity nsec | `hush/identity/nsec` | `pass show hush/identity/nsec` |
 | Agent nsec | `hush/agents/<slug>/nsec` | `pass show hush/agents/<slug>/nsec` |
+| Provider API key | `hush/providers/<id>/api_key` | `pass show hush/providers/<id>/api_key` |
 | Other token | `hush/<category>/<name>` | `pass show hush/<category>/<name>` |
 
 Helper (same namespace, path without the `hush/` prefix):

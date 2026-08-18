@@ -236,6 +236,11 @@
       border-radius: 10px; padding: 8px; font-size: 0.78rem; color: var(--muted); cursor: pointer;
     }
     .providers input { margin: 0; }
+    .providers label.picked { border-color: var(--accent-dim); color: var(--fg); }
+    .providers .cfg {
+      margin-left: auto; background: none; border: 0; color: inherit;
+      min-width: 44px; min-height: 44px; font: inherit; cursor: pointer;
+    }
     .btn.danger {
       background: var(--warn); color: #fff; width: 100%; margin-top: 8px;
     }
@@ -474,6 +479,8 @@
         <label><input type="radio" name="agent-provider" value="openai-api"> OpenAI API</label>
         <label><input type="radio" name="agent-provider" value="anthropic-api"> Anthropic API</label>
       </div>
+      <button class="cfg" id="provider-cfg" type="button" hidden
+              title="Configure this provider.">✎</button>
       <label class="passbox"><input id="agent-pass" type="checkbox" checked>
         Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
       <p class="warn" id="agent-err"></p>
@@ -482,6 +489,35 @@
         <button class="btn ghost" id="agent-close" type="button">Close</button>
       </div>
       <button class="btn danger" id="agent-delete" type="button" disabled>Delete this robot</button>
+    </div>
+  </div>
+  <div class="drawer" id="provider-drawer" role="dialog" aria-label="Configure provider">
+    <div class="panel">
+      <h2 id="provider-title">Configure provider</h2>
+      <p class="help" id="provider-status">Choose a provider first.</p>
+      <div id="provider-home-fields">
+        <label class="passbox"><input id="provider-use-home" type="checkbox">
+          Use existing configuration</label>
+        <p class="help" id="provider-home-help"></p>
+      </div>
+      <div id="provider-api-fields">
+        <label for="provider-key">API key</label>
+        <input id="provider-key" type="password" maxlength="256" autocomplete="off">
+        <p class="help" id="provider-key-help">Stored in pass. Never shown again.</p>
+        <label for="provider-host">Endpoint host</label>
+        <input id="provider-host" type="text" maxlength="240" placeholder="https://">
+        <label for="provider-model">Model</label>
+        <input id="provider-model" type="text" maxlength="64" list="provider-model-list" placeholder="type or scan">
+        <datalist id="provider-model-list"></datalist>
+        <div class="actions">
+          <button class="btn ghost" id="provider-scan" type="button">Scan models</button>
+        </div>
+      </div>
+      <p class="warn" id="provider-err"></p>
+      <div class="actions">
+        <button class="btn" id="provider-save" type="button">Save configuration</button>
+        <button class="btn ghost" id="provider-close" type="button">Close</button>
+      </div>
     </div>
   </div>
   <div class="drawer" id="member-drawer" role="dialog" aria-label="Invite human">
@@ -522,12 +558,19 @@
       "anthropic-api": "Anthropic API"
     };
     const CONTEXT_MAX = 3;
+    const HOME_CMDS = {
+      "goose": "goose configure",
+      "grok-build": "grok login",
+      "codex": "codex login"
+    };
     let robotOpen = {};
     let draftName = "";
     let draftPrompt = "";
     let draftFiles = [];
     let draftFileSel = -1;
     let editSlug = "";
+    let providerMap = {};
+    let cfgId = "";
 
     function $(id) { return document.getElementById(id); }
 
@@ -983,6 +1026,88 @@
       return el ? el.value : "";
     }
 
+    function paintProviderPencil() {
+      const id = chosenProvider();
+      const btn = $("provider-cfg");
+      document.querySelectorAll("#agent-providers label").forEach((lab) => {
+        const radio = lab.querySelector("input");
+        const on = radio && radio.checked;
+        lab.classList.toggle("picked", !!on);
+        const old = lab.querySelector(".cfg-slot");
+        if (old) old.remove();
+        if (on && btn) {
+          lab.appendChild(btn);
+          btn.hidden = false;
+        }
+      });
+      if (btn && !id) btn.hidden = true;
+    }
+
+    async function loadProviders() {
+      try {
+        const data = await api("/api/provider");
+        providerMap = (data && data.providers) || {};
+      } catch (e) {
+        providerMap = {};
+      }
+      paintProviderPencil();
+    }
+
+    function providerStatusLine(st) {
+      if (!st) return "No status yet.";
+      const bits = [];
+      if (st.has_binary) bits.push("binary found");
+      if (st.has_home) bits.push("home config found");
+      if (st.has_key) bits.push("key on file");
+      if (st.configured) bits.push("configured");
+      if (st.home_model) bits.push("home model " + st.home_model);
+      if (st.model) bits.push("model " + st.model);
+      return bits.length ? bits.join(" · ") : "Not configured yet.";
+    }
+
+    function fillProviderDrawer(id) {
+      const st = providerMap[id] || {};
+      const family = st.family || "";
+      const isHome = family === "home";
+      const isApi = family === "api" || family === "editor";
+      $("provider-title").textContent = "Configure " + (PROVIDERS[id] || id);
+      $("provider-status").textContent = providerStatusLine(st);
+      $("provider-err").textContent = "";
+      $("provider-home-fields").hidden = !isHome && family !== "editor";
+      $("provider-api-fields").hidden = !isApi && !isHome;
+      $("provider-use-home").checked = !!st.use_home || (!!st.has_home && !st.has_key);
+      if (id === "goose" && st.has_home)
+        $("provider-home-help").textContent = "Use the Goose already standing in ~/.config/goose.";
+      else if (id === "goose")
+        $("provider-home-help").textContent = "Goose is not configured here. Run goose configure, or enter a key.";
+      else if (HOME_CMDS[id])
+        $("provider-home-help").textContent = st.has_home || st.has_binary
+          ? ("Use the " + (PROVIDERS[id] || id) + " already standing here.")
+          : ("Run " + HOME_CMDS[id] + ", or enter a key.");
+      else if (id === "cline")
+        $("provider-home-help").textContent = st.has_home || st.has_binary
+          ? "Cline is on this machine."
+          : "Install the Cline extension, then come back. Or paste an API key and host.";
+      else
+        $("provider-home-help").textContent = "";
+      $("provider-key").value = "";
+      $("provider-key-help").textContent = st.has_key
+        ? "Key is in pass. Retrieve with: pass show hush/providers/" + id + "/api_key"
+        : "Stored in pass. Never shown again.";
+      $("provider-host").value = st.host || "";
+      $("provider-model").value = st.model || st.home_model || "";
+      $("provider-model-list").innerHTML = "";
+    }
+
+    async function openProviderDrawer() {
+      const id = chosenProvider();
+      if (!id) return;
+      cfgId = id;
+      await loadProviders();
+      fillProviderDrawer(id);
+      $("provider-drawer").classList.add("show");
+    }
+
     function autoRobotName() {
       const hex = Date.now().toString(16).slice(-4);
       return "Robot-" + hex;
@@ -1003,11 +1128,72 @@
         paintNamePill();
         paintPromptPill();
       }
+      paintProviderPencil();
+      loadProviders();
       $("agent-drawer").classList.add("show");
     }
 
     $("raise-agent").addEventListener("click", () => openAgentDrawer(null));
     $("agent-close").addEventListener("click", () => $("agent-drawer").classList.remove("show"));
+    document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
+      el.addEventListener("change", paintProviderPencil);
+    });
+    $("provider-cfg").addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openProviderDrawer();
+    });
+    $("provider-close").addEventListener("click", () => $("provider-drawer").classList.remove("show"));
+    $("provider-save").addEventListener("click", async () => {
+      if (!cfgId) return;
+      $("provider-err").textContent = "";
+      const body = {
+        provider: cfgId,
+        use_home: $("provider-use-home").checked,
+        host: ($("provider-host").value || "").trim(),
+        model: ($("provider-model").value || "").trim()
+      };
+      const key = ($("provider-key").value || "").trim();
+      if (key) body.api_key = key;
+      try {
+        const data = await api("/api/provider", body);
+        providerMap = Object.assign(providerMap, (data && data.providers) || {});
+        fillProviderDrawer(cfgId);
+        $("provider-err").textContent = "";
+        $("provider-status").textContent = providerStatusLine(providerMap[cfgId]) + " Saved.";
+      } catch (e) {
+        $("provider-err").textContent = "Could not save that configuration.";
+      }
+    });
+    $("provider-scan").addEventListener("click", async () => {
+      if (!cfgId) return;
+      $("provider-err").textContent = "";
+      const body = {
+        provider: cfgId,
+        host: ($("provider-host").value || "").trim()
+      };
+      const key = ($("provider-key").value || "").trim();
+      if (key) body.api_key = key;
+      try {
+        const data = await api("/api/provider/scan", body);
+        const list = $("provider-model-list");
+        list.innerHTML = "";
+        let i = 0;
+        while (data && data["model_" + i]) {
+          const opt = document.createElement("option");
+          opt.value = data["model_" + i];
+          list.appendChild(opt);
+          i += 1;
+        }
+        if (i === 0) {
+          $("provider-err").textContent = "Could not list models. Type the model name.";
+          return;
+        }
+        if (!$("provider-model").value) $("provider-model").value = data.model_0;
+      } catch (e) {
+        $("provider-err").textContent = "Could not list models. Type the model name.";
+      }
+    });
     $("agent-name-add").addEventListener("click", () => {
       const name = ($("agent-name").value || "").trim();
       if (!name) { $("agent-err").textContent = "State the robot’s name."; return; }

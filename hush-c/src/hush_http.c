@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "hush_http.h"
+#include "hush_provider.h"
 #include "hush_relay.h"
 #include "hush_ui_html.h"
 
@@ -78,6 +79,14 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
 static const char *hush_http_body(const char *req, size_t len);
 static hush_status_t hush_http_serve_close(int fd);
 static hush_status_t hush_http_serve_exit(int fd);
+static void hush_http_append_provider(char *body, size_t bodysz, size_t *n,
+                                      const hush_provider_status_t *st,
+                                      int first);
+static hush_status_t hush_http_serve_provider_get(int fd);
+static hush_status_t hush_http_serve_provider_post(int fd, const char *body);
+static hush_status_t hush_http_serve_provider_scan(int fd, const char *body);
+static void hush_http_reply_scan(int fd, const hush_provider_scan_t *scan,
+                                 hush_status_t st);
 
 void hush_http_set_listen_port(uint16_t port)
 {
@@ -167,6 +176,8 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
         hush_http_serve_ice(fd);
         return HUSH_OK;
     }
+    if (strcmp(path, "/api/provider") == 0 && memcmp(req, "GET", 3) == 0)
+        return hush_http_serve_provider_get(fd);
     if (memcmp(req, "POST", 4) == 0)
         return hush_http_serve_api_post(fd, path, req, len, store, out_posted);
     hush_http_reply(fd, "404 Not Found", "text/plain", "not found\n", 10);
@@ -799,6 +810,10 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_close(fd);
     if (strcmp(path, "/api/exit") == 0)
         return hush_http_serve_exit(fd);
+    if (strcmp(path, "/api/provider") == 0)
+        return hush_http_serve_provider_post(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/provider/scan") == 0)
+        return hush_http_serve_provider_scan(fd, hush_http_body(req, len));
     hush_http_reply(fd, "404 Not Found", "text/plain", "not found\n", 10);
     return HUSH_ERR_NOT_FOUND;
 }
@@ -815,6 +830,158 @@ static hush_status_t hush_http_serve_exit(int fd)
     hush_http_reply(fd, "200 OK", "application/json",
                     HUSH_HTTP_EXIT_JSON, sizeof(HUSH_HTTP_EXIT_JSON) - 1);
     hush_relay_request_shutdown();
+    return HUSH_OK;
+}
+
+static void hush_http_append_provider(char *body, size_t bodysz, size_t *n,
+                                      const hush_provider_status_t *st,
+                                      int first)
+{
+    char host[HUSH_PROVIDER_HOST_MAX * 2];
+    char model[HUSH_PROVIDER_MODEL_MAX * 2];
+    char home_model[HUSH_PROVIDER_MODEL_MAX * 2];
+    int wr;
+
+    assert(body != NULL);
+    assert(n != NULL);
+    assert(st != NULL);
+    hush_json_escape(st->host, host, sizeof(host));
+    hush_json_escape(st->model, model, sizeof(model));
+    hush_json_escape(st->home_model, home_model, sizeof(home_model));
+    wr = snprintf(body + *n, bodysz - *n,
+                  "%s\"%s\":{\"label\":\"%s\",\"family\":\"%s\","
+                  "\"has_binary\":%s,\"has_home\":%s,\"has_key\":%s,"
+                  "\"use_home\":%s,\"host\":\"%s\",\"model\":\"%s\","
+                  "\"home_model\":\"%s\",\"configured\":%s}",
+                  first ? "" : ",",
+                  st->id, st->label, st->family,
+                  st->has_binary ? "true" : "false",
+                  st->has_home ? "true" : "false",
+                  st->has_key ? "true" : "false",
+                  st->use_home ? "true" : "false",
+                  host, model, home_model,
+                  st->configured ? "true" : "false");
+    if (wr > 0 && (size_t)wr < bodysz - *n)
+        *n += (size_t)wr;
+}
+
+static hush_status_t hush_http_serve_provider_get(int fd)
+{
+    hush_provider_status_t all[HUSH_PROVIDER_COUNT];
+    char body[HUSH_HTTP_JSON_MAX];
+    size_t n = 0;
+    size_t count = 0;
+    size_t i;
+    int wr;
+
+    if (hush_provider_status_all(all, &count) != HUSH_OK) {
+        hush_http_reply(fd, "500 Internal Server Error", "text/plain",
+                        "io error\n", 9);
+        return HUSH_ERR_IO;
+    }
+    wr = snprintf(body, sizeof(body), "{\"ok\":true,\"providers\":{");
+    if (wr > 0)
+        n = (size_t)wr;
+    for (i = 0; i < count; i++)
+        hush_http_append_provider(body, sizeof(body), &n, &all[i], i == 0);
+    if (n + 3 < sizeof(body)) {
+        memcpy(body + n, "}}\n", 3);
+        n += 3;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", body, n);
+    return HUSH_OK;
+}
+
+static hush_status_t hush_http_serve_provider_post(int fd, const char *body)
+{
+    hush_provider_in_t in;
+    hush_provider_status_t st;
+    char key[HUSH_PROVIDER_KEY_MAX];
+    char flag[8];
+    char reply[2048];
+    size_t n = 0;
+    int wr;
+
+    memset(&in, 0, sizeof(in));
+    if (!hush_json_field(body, "provider", in.id, sizeof(in.id))) {
+        hush_http_reply(fd, "400 Bad Request", "text/plain", "bad request\n", 12);
+        return HUSH_ERR_PARSE;
+    }
+    (void)hush_json_field(body, "host", in.host, sizeof(in.host));
+    (void)hush_json_field(body, "model", in.model, sizeof(in.model));
+    key[0] = '\0';
+    if (hush_json_field(body, "api_key", key, sizeof(key)))
+        in.api_key = key;
+    if (hush_json_field(body, "use_home", flag, sizeof(flag)))
+        in.use_home = strcmp(flag, "true") == 0 || strcmp(flag, "1") == 0;
+    if (hush_provider_save(&in) != HUSH_OK) {
+        hush_http_reply(fd, "400 Bad Request", "text/plain", "bad request\n", 12);
+        return HUSH_ERR_PARSE;
+    }
+    if (hush_provider_status(&st, in.id) != HUSH_OK)
+        return hush_http_serve_provider_get(fd);
+    wr = snprintf(reply, sizeof(reply), "{\"ok\":true,\"providers\":{");
+    if (wr > 0)
+        n = (size_t)wr;
+    hush_http_append_provider(reply, sizeof(reply), &n, &st, 1);
+    if (n + 3 < sizeof(reply)) {
+        memcpy(reply + n, "}}\n", 3);
+        n += 3;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", reply, n);
+    return HUSH_OK;
+}
+
+static void hush_http_reply_scan(int fd, const hush_provider_scan_t *scan,
+                                 hush_status_t st)
+{
+    char body[HUSH_HTTP_JSON_MAX];
+    char err[HUSH_PROVIDER_ERR_MAX * 2];
+    size_t n = 0;
+    size_t i;
+    int wr;
+
+    assert(scan != NULL);
+    hush_json_escape(scan->error, err, sizeof(err));
+    wr = snprintf(body, sizeof(body),
+                  "{\"ok\":%s,\"error\":\"%s\"",
+                  st == HUSH_OK ? "true" : "false", err);
+    if (wr > 0)
+        n = (size_t)wr;
+    for (i = 0; i < scan->nmodels; i++) {
+        char name[HUSH_PROVIDER_MODEL_MAX * 2];
+
+        hush_json_escape(scan->models[i], name, sizeof(name));
+        wr = snprintf(body + n, sizeof(body) - n, ",\"model_%zu\":\"%s\"",
+                      i, name);
+        if (wr > 0 && (size_t)wr < sizeof(body) - n)
+            n += (size_t)wr;
+    }
+    if (n + 2 < sizeof(body)) {
+        memcpy(body + n, "}\n", 2);
+        n += 2;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", body, n);
+}
+
+static hush_status_t hush_http_serve_provider_scan(int fd, const char *body)
+{
+    char id[HUSH_PROVIDER_ID_MAX];
+    char host[HUSH_PROVIDER_HOST_MAX];
+    char key[HUSH_PROVIDER_KEY_MAX];
+    hush_provider_scan_t scan;
+    hush_status_t st;
+
+    if (!hush_json_field(body, "provider", id, sizeof(id))) {
+        hush_http_reply(fd, "400 Bad Request", "text/plain", "bad request\n", 12);
+        return HUSH_ERR_PARSE;
+    }
+    host[0] = '\0';
+    key[0] = '\0';
+    (void)hush_json_field(body, "host", host, sizeof(host));
+    (void)hush_json_field(body, "api_key", key, sizeof(key));
+    st = hush_provider_scan(&scan, id, host, key);
+    hush_http_reply_scan(fd, &scan, st);
     return HUSH_OK;
 }
 

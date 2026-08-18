@@ -186,7 +186,8 @@ hush_status_t hush_provider_save(const hush_provider_in_t *in)
     if (in->api_key != NULL && in->api_key[0] != '\0') {
         st = hush_pass_save(key_path, in->api_key);
         if (st != HUSH_OK)
-            return hush_provider_fail("pass save failed");
+            hush_provider_copy(g_last_error, sizeof(g_last_error),
+                               "pass save failed");
     }
     has_key = hush_pass_has(key_path);
     json[0] = '\0';
@@ -419,7 +420,8 @@ static int hush_provider_json_string(const char *json, const char *key,
     out[0] = '\0';
     if (json == NULL || key == NULL)
         return 0;
-    if (snprintf(quoted, sizeof(quoted), "\"%s\":\"", key) >= (int)sizeof(quoted))
+    if (snprintf(quoted, sizeof(quoted), "\"%s\":\"", key)
+        >= (int)sizeof(quoted))
         return 0;
     p = strstr(json, quoted);
     if (p == NULL)
