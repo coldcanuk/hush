@@ -26,15 +26,17 @@ A small TailwindCSS demo UI is in `hush-c/demo/index.html`.
 
 ## Goose + Worktree (Prime Directive)
 
-See [AGENTS.md](AGENTS.md) and [BRANCHING.md](BRANCHING.md).
+**Law:** [PRIME_DIRECTIVE.md](PRIME_DIRECTIVE.md) — also [AGENTS.md](AGENTS.md), [BRANCHING.md](BRANCHING.md).
 
-All work:
-- Starts from clean `main`
-- Uses `git worktree add -b gb/<slug> worktrees/<slug>` (inside repo)
-- Commits after every Milestone
-- Merges --no-ff to main, then removes the worktree
+1. Always create a worktree: `git worktree add -b gb/<slug> worktrees/<slug>` (inside this repo only).
+2. Commit and **push** on that `gb/*` branch.
+3. Land on `main` **only** via Pull Request → review → auto-merge.
+4. After merge, delete the worktree.
+5. **Writing directly to `main` is strictly prohibited.**
 
-No orphaned worktrees or branches.
+```bash
+./scripts/install-hooks.sh   # blocks commit/push on main
+```
 
 ## Build
 
