@@ -15,6 +15,7 @@
 
 #include "hush_pass.h"
 #include "hush_provider.h"
+#include "hush_relay.h"
 #include "hush_roster.h"
 
 enum {
@@ -1096,5 +1097,6 @@ static hush_status_t hush_provider_spawn_login(char **argv)
         return hush_provider_fail("fork");
     if (pid == 0)
         hush_provider_exec_login(argv);
+    hush_relay_track_child(pid);
     return HUSH_OK;
 }
