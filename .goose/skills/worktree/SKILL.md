@@ -5,6 +5,7 @@ description: "Mandatory worktree lifecycle for all Hush development. Create insi
 # Worktree (Prime Directive)
 
 ## Start new work (from main worktree)
+# Worktrees MUST stay inside this repo (…/hush/worktrees/…), never /opt/repo/worktrees.
 git checkout main
 git pull --ff-only || true
 git status   # must be clean
@@ -14,6 +15,8 @@ WT="worktrees/${FEATURE_SLUG}"
 git worktree add -b "$BRANCH" "$WT"
 cd "$WT"
 pwd && git branch --show-current
+# Fail if path is not under the Hush repo root:
+#   pwd | grep -q '/hush/worktrees/' || exit 1
 
 ## After every Milestone
 git add .

@@ -4,7 +4,8 @@ Hush is a legible C11 Nostr relay core, optimized exclusively for the Goose agen
 
 ## Prime Directive: Worktrees Only
 - All work starts from clean `main`.
-- Create worktree **inside the repository**:
+- Create worktree **inside this repository only** (`/opt/repo/hush/worktrees/...`).
+  Never use `/opt/repo/worktrees` or any path outside the Hush repo.
   ```
   git checkout main && git pull --ff-only || true
   git status   # must be clean
@@ -16,6 +17,7 @@ Hush is a legible C11 Nostr relay core, optimized exclusively for the Goose agen
 - Finish: push branch, return to main, `git merge --no-ff`, push, `git worktree remove ...`, delete branch if desired.
 - No orphaned worktrees or branches. Delete when done.
 - `main` is protected: no direct pushes for features. Use worktree merges only.
+- Product version is `0.0.1` (see top-level `VERSION`).
 
 ## Goose is the Only Agent
 - `.goose/` is the canonical location for skills and configuration.

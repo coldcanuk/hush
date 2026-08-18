@@ -2,56 +2,23 @@
 
 ## 1. History
 
-This document was originally called a "Code of Conduct" and
-was created for the purpose of filling in a box on "supplier registration"
-forms submitted to the SQLite developers by some clients.  However,
-the SQLite team subsequently discovered that "Code of Conduct" has a very specific and
-almost sacred meaning to some readers, a meaning to which this
-document does not conform
-[[1]](https://www.theregister.co.uk/2018/10/22/sqlite_code_of_conduct/)
-[[2]](https://pjmedia.com/news-and-politics/paula-bolyard/2018/10/24/tech-community-outraged-after-sqlite-founder-adopts-christian-code-of-conduct-n61746)
-[[3]](https://www.youtube.com/watch?v=S48VzyCwwtk).
-Therefore the document was renamed to "Code of Ethics", as
-its authors were encouraged to do by rule 71 in particular and also rules 2, 8, 9, 18, 19,
-30, 66, and in the spirit of all the rest.
+This document was originally called a "Code of Conduct" and was created for the purpose of filling in a box on "supplier registration" forms submitted to the SQLite developers by some clients. However, we subsequently learned that "Code of Conduct" has a very specific and almost sacred meaning to some readers, a meaning to which this document does not conform [[1]](https://www.theregister.co.uk/2018/10/22/sqlite_code_of_conduct/) [[2]](https://pjmedia.com/news-and-politics/paula-bolyard/2018/10/24/tech-community-outraged-after-sqlite-founder-adopts-christian-code-of-conduct-n61746) [[3]](https://www.youtube.com/watch?v=S48VzyCwwtk). Therefore this document was renamed to "Code of Ethics", as we are encouraged to do by rule 71 in particular and also rules 2, 8, 9, 18, 19, 30, 66, and in the spirit of all the rest.
 
-This document continues to be used for its original purpose - providing
-a reference to fill in the "code of conduct" box on supplier registration
-forms.
+This document continues to be used for its original purpose — providing a reference to fill in the "code of conduct" box on supplier registration forms.
 
-The Hush project learned of this story from SQLite and decided to shape its
-code of ethics documentation around the same idea as SQLite. After forking Buzz
-and creating the legible C11 implementation, I chose to base Hush's
-Code of Ethics on the Rule of St. Benedict in the same way.
+The Hush project learned of this story from SQLite and decided to shape its code of ethics documentation around the same idea as SQLite. After forking the Buzz project and creating the legible C11 implementation, the team at Hush chose to base Hush's Code of Ethics on the Rule of St. Benedict in the same way.
 
 ## 2. Purpose
 
-I, the individual who forked the Buzz project and created the legible C11
-version called Hush, pledge to govern my interactions with users,
-contributors, and the larger Hush community in accordance with the
-"instruments of good works" from chapter 4 of
-[The Rule of St. Benedict](https://en.wikipedia.org/wiki/Rule_of_Saint_Benedict)
-(hereafter: "The Rule").
+The Hush project pledges to govern its interactions with users, contributors, and the larger Hush community in accordance with the "instruments of good works" from chapter 4 of [The Rule of St. Benedict](https://en.wikipedia.org/wiki/Rule_of_Saint_Benedict) (hereafter: "The Rule").
 
-This code of ethics has proven its mettle in thousands of diverse
-communities for over 1,500 years, and has served as a baseline for many
-civil law codes since the time of Charlemagne.
+This code of ethics has proven its mettle in thousands of diverse communities for over 1,500 years, and has served as a baseline for many civil law codes since the time of Charlemagne.
 
 ### 2.1. Scope of Application
 
-No one is required to follow The Rule, to know The Rule, or even
-to think that The Rule is a good idea.  I believe
-that anyone who follows The Rule will live a happier and more productive 
-life, but individuals are free to dispute or ignore that advice if
-they wish.
+No one is required to follow The Rule, to know The Rule, or even to think that The Rule is a good idea. The project believes that anyone who follows The Rule will live a happier and more productive life, but individuals are free to dispute or ignore that advice if they wish.
 
-I have pledged to follow the spirit of The Rule
-to the best of my ability. I
-view The Rule as my promise to all Hush users of how I am
-expected to behave.
-This is a one-way promise, or covenant.
-In other words, I am saying: "I will treat you this
-way regardless of how you treat me."
+The team at Hush pledges to follow the spirit of The Rule to the best of its ability. The project views The Rule as its promise to all Hush users of how it is expected to behave. This is a one-way promise, or covenant. In other words, the project commits to treating users this way regardless of how it is treated.
 
 ## 3. The Rule
 

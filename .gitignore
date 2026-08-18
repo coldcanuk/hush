@@ -1,0 +1,111 @@
+# Hush — C11 project .gitignore
+# Optimized for legible C builds, Goose worktrees, and local tooling.
+
+# --- Configure / generated build config ---
+/config.mk
+
+# --- Object files & archives ---
+*.o
+*.a
+*.lo
+*.la
+*.al
+*.so
+*.so.*
+*.dylib
+*.dll
+*.lib
+*.obj
+
+# --- Binaries (project + generic) ---
+/hush-relay
+/hush-c/hush-relay
+/hush-c/libhush.a
+hush-c/src/*.o
+hush-c/demo/*.o
+hush-c/tests/test_*
+!hush-c/tests/test_*.c
+*.out
+*.exe
+*.app
+a.out
+core
+core.*
+vgcore.*
+
+# --- Dependency / coverage / analysis ---
+*.d
+*.gcda
+*.gcno
+*.gcov
+*.profraw
+*.profdata
+*.su
+*.i
+*.s
+*.bc
+*.ll
+compile_commands.json
+.clangd/
+.cache/
+cscope.*
+tags
+TAGS
+GPATH
+GRTAGS
+GTAGS
+*.plist
+
+# --- Test / packaging output ---
+/dist/
+/build/
+/out/
+*.deb
+*.rpm
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+
+# --- Goose worktrees (checkouts live here; not committed) ---
+# Keep only the in-repo policy note; ignore actual worktree trees.
+/worktrees/*
+!/worktrees/README.md
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+*.orig
+*.rej
+.project
+.cproject
+.settings/
+*.code-workspace
+
+# --- OS junk ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+*~
+
+# --- Secrets / local env (never commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa
+id_ed25519
+
+# --- Logs ---
+*.log
+logs/

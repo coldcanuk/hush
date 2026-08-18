@@ -1,13 +1,16 @@
 # Hush
 
+**Version: 0.0.1**
+
 **Hush** is a lightweight, legible C11 implementation of core Nostr relay functionality.
 
-Optimized for the Goose AI agent. All development uses worktrees inside the repository.
+Optimized for the Goose AI agent. All development uses worktrees **inside this repository** (`worktrees/<slug>`), never under `/opt/repo/worktrees` or other external paths.
 
 - Written in strict C11 following the machine-legibility standard (write-legible-c).
 - Single binary: `hush-relay`
 - Designed for set-and-forget self-hosting and embedding.
 - **License: GPLv3**
+- Version source of truth: top-level `VERSION` (currently `0.0.1`)
 
 ## Features (MVP)
 
