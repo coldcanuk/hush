@@ -23,6 +23,7 @@ static int g_client_count;
 static const char *hush_find_headers_end(const char *buf, size_t len);
 static long hush_http_content_length(const char *buf, size_t hlen);
 static void hush_http_path(const char *req, char *out, size_t outsz);
+static void hush_http_write_all(int fd, const char *buf, size_t len);
 static void hush_http_reply(int fd, const char *status, const char *ctype,
                             const char *body, size_t blen);
 static void hush_json_unescape_copy(const char *src, char *dst, size_t dstsz);
@@ -157,13 +158,26 @@ static void hush_http_path(const char *req, char *out, size_t outsz)
     out[i] = '\0';
 }
 
+static void hush_http_write_all(int fd, const char *buf, size_t len)
+{
+    size_t off = 0;
+    ssize_t w;
+
+    if (buf == NULL)
+        return;
+    while (off < len) {
+        w = write(fd, buf + off, len - off);
+        if (w <= 0)
+            break;
+        off += (size_t)w;
+    }
+}
+
 static void hush_http_reply(int fd, const char *status, const char *ctype,
                             const char *body, size_t blen)
 {
     char hdr[320];
     int n;
-    size_t off = 0;
-    ssize_t w;
 
     n = snprintf(hdr, sizeof(hdr),
                  "HTTP/1.1 %s\r\n"
@@ -175,14 +189,9 @@ static void hush_http_reply(int fd, const char *status, const char *ctype,
                  "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
                  "\r\n",
                  status, ctype, blen);
-    if (n > 0)
-        (void)write(fd, hdr, (size_t)n);
-    while (off < blen) {
-        w = write(fd, body + off, blen - off);
-        if (w <= 0)
-            break;
-        off += (size_t)w;
-    }
+    if (n > 0 && (size_t)n < sizeof(hdr))
+        hush_http_write_all(fd, hdr, (size_t)n);
+    hush_http_write_all(fd, body, blen);
 }
 
 static void hush_json_unescape_copy(const char *src, char *dst, size_t dstsz)
