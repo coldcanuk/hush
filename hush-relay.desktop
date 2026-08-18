@@ -2,7 +2,7 @@
 Type=Application
 Name=Hush
 GenericName=Hive Mind Chat
-Comment=Local Nostr relay and hive-mind chat
+Comment=Launches or attaches the GUI. Use Quit Hush or --quit to stop the relay.
 Exec=hush-relay --open
 TryExec=hush-relay
 Icon=hush-relay
@@ -12,3 +12,9 @@ Keywords=nostr;relay;chat;agent;hush;
 StartupNotify=false
 StartupWMClass=hush-relay
 SingleMainWindow=true
+Actions=Quit;
+
+[Desktop Action Quit]
+Name=Quit Hush
+Exec=hush-relay --quit
+Icon=hush-relay

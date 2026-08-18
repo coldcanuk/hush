@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "hush_http.h"
+#include "hush_relay.h"
 #include "hush_ui_html.h"
 
 enum {
@@ -18,6 +19,9 @@ enum {
     HUSH_ID_HEX_WIDTH = 64,
     HUSH_HTTP_KIND_SIGNAL = 25000
 };
+
+#define HUSH_HTTP_CLOSE_JSON "{\"ok\":true,\"action\":\"close\"}\n"
+#define HUSH_HTTP_EXIT_JSON  "{\"ok\":true,\"action\":\"exit\"}\n"
 
 static uint16_t g_listen_port;
 static int g_client_count;
@@ -72,6 +76,8 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
                                               hush_store_t *store,
                                               hush_event_t *out_posted);
 static const char *hush_http_body(const char *req, size_t len);
+static hush_status_t hush_http_serve_close(int fd);
+static hush_status_t hush_http_serve_exit(int fd);
 
 void hush_http_set_listen_port(uint16_t port)
 {
@@ -789,8 +795,27 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
     if (strcmp(path, "/api/signal") == 0)
         return hush_http_serve_signal(fd, hush_http_body(req, len),
                                       store, out_posted);
+    if (strcmp(path, "/api/close") == 0)
+        return hush_http_serve_close(fd);
+    if (strcmp(path, "/api/exit") == 0)
+        return hush_http_serve_exit(fd);
     hush_http_reply(fd, "404 Not Found", "text/plain", "not found\n", 10);
     return HUSH_ERR_NOT_FOUND;
+}
+
+static hush_status_t hush_http_serve_close(int fd)
+{
+    hush_http_reply(fd, "200 OK", "application/json",
+                    HUSH_HTTP_CLOSE_JSON, sizeof(HUSH_HTTP_CLOSE_JSON) - 1);
+    return HUSH_OK;
+}
+
+static hush_status_t hush_http_serve_exit(int fd)
+{
+    hush_http_reply(fd, "200 OK", "application/json",
+                    HUSH_HTTP_EXIT_JSON, sizeof(HUSH_HTTP_EXIT_JSON) - 1);
+    hush_relay_request_shutdown();
+    return HUSH_OK;
 }
 
 static const char *hush_http_body(const char *req, size_t len)
