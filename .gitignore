@@ -60,6 +60,7 @@ GTAGS
 /dist/
 /build/
 /out/
+/build-dir/
 *.deb
 *.rpm
 *.tar

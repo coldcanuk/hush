@@ -1,0 +1,18 @@
+app-id: io.github.coldcanuk.hush
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+command: hush-relay
+
+modules:
+  - name: hush
+    buildsystem: simple
+    build-commands:
+      - ./configure --prefix=/app
+      - make
+      - make install DESTDIR=/app
+    sources:
+      - type: git
+        url: https://github.com/coldcanuk/hush
+        branch: main
+        tag: 0.0.1
