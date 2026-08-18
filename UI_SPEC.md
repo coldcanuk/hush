@@ -1,7 +1,8 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups
-Version: 2026-08-18 (RDAP M2, gb/oauth-mention-groups)
+Version: 2026-08-18 (RDAP M2, gb/pills-rail-voice-exit)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
-M2.1 splash spec and the onboard raise-form notes where they conflict.
+M2.1 splash spec, the onboard raise-form notes, and the oauth-mention-groups
+header/mention/manage rows where they conflict.
 Quinn + Parker + Payne. No feline.
 
 ## Core Principles (Quinn)
@@ -28,7 +29,7 @@ raise humans + robots that share channels."
 - Line: "Sgt Major Payne reporting for duty."
 - Sub: "Detecting identity and vibe…"
 - Poll `/api/session`. If `ready` → hive. Else **Begin** → wizard step 1.
-- Header always: brand | Install | Profile | Settings | (Call if ready).
+- Header always: brand + badge. Actions live on `#tool-rail` (§15).
 
 ### 2. Onboarding wizard (no user or no vibe)
 Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
@@ -54,17 +55,16 @@ Tests override the directory with `HUSH_CONFIG_DIR`. The file never
 holds an nsec or provider secret.
 
 ### 4. Hive
-- Header: hush + vibe name + Install + Profile + Settings + Call
-  + **Close** + **Exit** + badge.
+- Header: hush + vibe name + badge. Actions live on `#tool-rail` (§15).
 - Sidebar: Channels; Create channel/project; **Raise a robot**;
   **Invite human**; **Robots** list (Payne first, then raised agents).
-  Each robot is its own card with a 44px `+`/`-` expand/collapse.
+  Each robot is its own card with a compact 24px `+`/`-` expand/collapse.
 - Stream + composer unchanged in spirit. Empty: Payne directive.
 
 ### 10. Close vs Exit (process lifecycle)
 
 The OS/PWA window `×` is **not** our Close and **not** our Exit.
-The hive ships two labeled buttons in the header, always visible
+The hive ships two labeled buttons on `#tool-rail`, always reachable
 (including splash/gate).
 
 | Button | Id | Meaning |
@@ -251,10 +251,13 @@ not enough — login sets `use_home` before the CLI writes the home file.
 
 Composer `@` after start-of-input or whitespace opens `#mention-box`.
 Roster: the signed-in human, Payne, raised robots, invited humans.
-Arrow keys + Enter or click. Inserts `nostr:<npub>` in the posted
-content and records that pubkey as `mention_N`. Render replaces
-`nostr:npub1…` with `@Name`. Mentioning a robot addresses it; this
-slice does not spawn a live reply.
+Arrow keys + Enter or click. The visible composer shows an `@Name`
+pill (`.composer-pill`). The input never displays `nostr:npub1…`.
+Submit serializes each pill to `nostr:<npub>` in the posted content
+and records that pubkey as `mention_N`. Render replaces
+`nostr:npub1…` with `@Name`. Backspace at the start of leftover text
+removes the last pill. Mentioning a robot addresses it; this slice
+does not spawn a live reply.
 
 ### 14. Channel groups + manage (NIP-29 parent)
 
@@ -264,8 +267,10 @@ the wire stays the **slug** so existing notes keep matching. A Hush
 means ungrouped. Membership does not inherit (NIP-29 subgroup rule).
 
 Sidebar: grouped channels under the group name, then ungrouped.
-Each row: name, red `−` (`#chan-del`, ≥44px) deletes after confirm
-(“Delete #slug? Notes stay on disk.”). Last channel cannot be deleted.
+Each row: name, compact red `−` (`.chan-del`, 24×24) deletes after
+confirm (“Delete #slug? Notes stay on disk.”). Last channel cannot
+be deleted. When `status.whisper` is true a Voice icon (`.chan-voice`)
+sits on the row (§17).
 
 Right-click a channel (`#chan-menu`):
 
@@ -276,13 +281,69 @@ Right-click a channel (`#chan-menu`):
 
 ==Manage Channel==
 
-- Add/Invite/Remove Humans (hive members + free npub field)
-- Add/Invite/Remove Robots (Payne + raised)
+- Add/Invite/Remove Humans and Robots with the same `+` / `−` pill
+  language as Raise-robot name. No checkboxes.
+- Unused pool: name + `+`. Added names become `.pill` with `−`.
+- Invite npub `+` commits a human pill.
 - Empty lists mean the whole hive (open, current behavior)
 - [Save] [Close]
 
 Payne: “Name the group. Put the right humans and robots on the
 channel. Delete only when the room is done.”
+
+### 15. Tool rail
+
+`#tool-rail` is a `position:fixed` strip the human can drag by
+`#rail-grip`. Collapse (`#rail-toggle`) shrinks it to a hamburger.
+`localStorage.hush-rail` stores `{x,y,collapsed}`.
+
+Buttons, in order: **Install**, **Profile**, **Settings**, **Call**
+(when `session.ready`), **Close**, **Exit**. All ≥44px.
+
+`#install-help` (title + visible help when the rail is open):
+“Install puts Hush on your app launcher as its own window. It does
+not start a second hive.”
+
+Header Hick: brand + badge only. Drawer Close buttons stay local.
+
+### 16. Mention + manage pills
+
+Same `.pill` / `.icon-plus` / `.icon-minus` language as Raise-robot.
+Composer pills: `.composer-pill` inside `#composer-pills` next to
+`#msg`. Manage Channel lists: `#manage-humans` and `#manage-robots`
+render pills, not checkboxes.
+
+### 17. Whisper-gated call and channel voice
+
+`hush_turn_whisper_available()` already feeds `/api/status` and
+`/api/turn` as `whisper`. Cache it from `tick()`.
+
+When `whisper` is true:
+
+- Each robot card shows `.robot-call` (1:1). Opens `#stage`, joins,
+  signals `{t:"join", role:"agent", from: slug}`. Copy: “One-to-one
+  with <name>. Mute any voice you do not want.”
+- Each channel row shows `.chan-voice`. Opens `#stage` for that
+  channel and invites roster robots (Payne if the roster is empty).
+
+When `whisper` is false those icons are absent. Header/rail Call
+stays the generic conference entry.
+
+Each conference tile has `.tile-mute`. Mute is local: disable that
+tile’s inbound audio. Robots mute the same way humans do. This slice
+does not run Whisper STT/TTS inside the relay.
+
+### 18. Exit reaps children
+
+Exit / `--quit` / SIGTERM call `hush_relay_reap_children()` from
+`hush_relay_cleanup`. Tracked pids (cap 8) come from
+`hush_open_app_window` and `hush_provider_spawn_login` via
+`hush_relay_track_child`. Linux also sweeps `/proc` for leftover
+`--class=hush-relay` plus this port’s `--app=` URL.
+
+Close and attach never reap. Attach copy:
+“This is the process already listening. Exit or hush-relay --quit
+before a new install can take the port.”
 
 ## Visual language
 - Dark default tokens stay. Themes override CSS variables on `html[data-theme]`.
@@ -291,8 +352,8 @@ channel. Delete only when the room is done.”
 - Author pills: you / Payne / agent / human.
 
 ## Hick cuts
-- Header primary choices: Profile, Settings, Call-when-ready, Close, Exit.
-  Install is opportunistic. Badge is status.
+- Header primary choices: brand + badge. Actions live on the tool rail.
+  Install is opportunistic and explained. Badge is status.
 - Onboard: one primary button.
 - Themes only in Settings.
 - Agent + human add are drawers, not splash steps.
