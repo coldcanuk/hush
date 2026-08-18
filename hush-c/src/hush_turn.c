@@ -11,6 +11,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "hush_turn.h"
@@ -43,10 +44,13 @@ static int hush_turn_unit_present(void);
 static hush_status_t hush_turn_random_hex(char *out, size_t hex_chars);
 static hush_status_t hush_turn_ensure_dir(const char *path);
 static hush_status_t hush_turn_write_conf(const hush_turn_t *turn);
+static hush_status_t hush_turn_enable_child(hush_turn_t *turn);
+static hush_status_t hush_turn_enable_daemon(hush_turn_t *turn);
 static hush_status_t hush_turn_spawn_child(hush_turn_t *turn);
 static void hush_turn_kill_pid(pid_t pid);
 static hush_status_t hush_turn_exec_systemctl(const char *verb);
 static int hush_turn_alive(pid_t pid);
+static int hush_turn_host_ok(const char *host);
 
 void hush_turn_init(hush_turn_t *turn)
 {
@@ -71,11 +75,14 @@ hush_status_t hush_turn_set_public_host(hush_turn_t *turn, const char *host)
 {
     if (turn == NULL)
         return HUSH_ERR_ARG;
-    if (host == NULL || host[0] == '\0')
+    if (host == NULL || host[0] == '\0') {
         hush_turn_copy(turn->public_host, sizeof(turn->public_host),
                        HUSH_TURN_HOST_LOCAL);
-    else
-        hush_turn_copy(turn->public_host, sizeof(turn->public_host), host);
+        return HUSH_OK;
+    }
+    if (!hush_turn_host_ok(host))
+        return HUSH_ERR_PARSE;
+    hush_turn_copy(turn->public_host, sizeof(turn->public_host), host);
     return HUSH_OK;
 }
 
@@ -83,40 +90,17 @@ hush_status_t hush_turn_enable(hush_turn_t *turn, hush_turn_mode_t mode)
 {
     if (turn == NULL)
         return HUSH_ERR_ARG;
-    if (!turn->compiled_in)
-        return HUSH_ERR_NOT_FOUND;
     if (mode != HUSH_TURN_MODE_CHILD && mode != HUSH_TURN_MODE_DAEMON)
         return HUSH_ERR_ARG;
-    if (turn->password[0] == '\0') {
-        if (hush_turn_random_hex(turn->password, 32) != HUSH_OK)
-            return HUSH_ERR_IO;
-    }
-    if (hush_turn_ensure_dir(turn->state_dir) != HUSH_OK)
-        return HUSH_ERR_IO;
-    if (hush_turn_write_conf(turn) != HUSH_OK)
-        return HUSH_ERR_IO;
-    if (mode == HUSH_TURN_MODE_DAEMON) {
-        if (!turn->have_unit) {
-            turn->need_root = 1;
-            return HUSH_ERR_DENIED;
-        }
-        if (hush_turn_exec_systemctl("enable") != HUSH_OK)
-            return HUSH_ERR_IO;
-        if (hush_turn_exec_systemctl("start") != HUSH_OK)
-            return HUSH_ERR_IO;
-        turn->mode = HUSH_TURN_MODE_DAEMON;
-        turn->enabled = 1;
-        turn->running = 1;
-        return HUSH_OK;
-    }
-    if (!turn->have_binary)
+    if (!turn->compiled_in)
         return HUSH_ERR_NOT_FOUND;
-    if (hush_turn_spawn_child(turn) != HUSH_OK)
-        return HUSH_ERR_IO;
-    turn->mode = HUSH_TURN_MODE_CHILD;
-    turn->enabled = 1;
-    turn->running = 1;
-    return HUSH_OK;
+    if (turn->password[0] == '\0') {
+        if (hush_turn_random_hex(turn->password, HUSH_TURN_PASS_HEX) != HUSH_OK)
+            return HUSH_ERR_IO;
+    }
+    if (mode == HUSH_TURN_MODE_DAEMON)
+        return hush_turn_enable_daemon(turn);
+    return hush_turn_enable_child(turn);
 }
 
 hush_status_t hush_turn_disable(hush_turn_t *turn)
@@ -133,6 +117,70 @@ hush_status_t hush_turn_disable(hush_turn_t *turn)
     turn->enabled = 0;
     turn->running = 0;
     return HUSH_OK;
+}
+
+static hush_status_t hush_turn_enable_child(hush_turn_t *turn)
+{
+    assert(turn != NULL);
+    if (hush_turn_ensure_dir(turn->state_dir) != HUSH_OK)
+        return HUSH_ERR_IO;
+    if (hush_turn_write_conf(turn) != HUSH_OK)
+        return HUSH_ERR_IO;
+    if (!turn->have_binary)
+        return HUSH_ERR_NOT_FOUND;
+    if (hush_turn_spawn_child(turn) != HUSH_OK)
+        return HUSH_ERR_IO;
+    turn->mode = HUSH_TURN_MODE_CHILD;
+    turn->enabled = 1;
+    turn->running = 1;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_turn_enable_daemon(hush_turn_t *turn)
+{
+    assert(turn != NULL);
+    if (!turn->have_unit) {
+        turn->need_root = 1;
+        return HUSH_ERR_DENIED;
+    }
+    hush_turn_copy(turn->conf_path, sizeof(turn->conf_path),
+                   HUSH_TURN_SYS_CONF);
+    if (hush_turn_ensure_dir(HUSH_TURN_SYS_DIR) != HUSH_OK) {
+        turn->need_root = 1;
+        return HUSH_ERR_DENIED;
+    }
+    if (hush_turn_write_conf(turn) != HUSH_OK) {
+        turn->need_root = 1;
+        return HUSH_ERR_DENIED;
+    }
+    if (hush_turn_exec_systemctl("enable") != HUSH_OK)
+        return HUSH_ERR_IO;
+    if (hush_turn_exec_systemctl("start") != HUSH_OK)
+        return HUSH_ERR_IO;
+    turn->mode = HUSH_TURN_MODE_DAEMON;
+    turn->enabled = 1;
+    turn->running = 1;
+    return HUSH_OK;
+}
+
+static int hush_turn_host_ok(const char *host)
+{
+    size_t i;
+    unsigned char c;
+
+    if (host == NULL || host[0] == '\0')
+        return 0;
+    for (i = 0; host[i] != '\0'; ++i) {
+        c = (unsigned char)host[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+            continue;
+        if ((c >= '0' && c <= '9') || c == '.' || c == '-')
+            continue;
+        if (c == ':' || c == '[' || c == ']')
+            continue;
+        return 0;
+    }
+    return 1;
 }
 
 void hush_turn_refresh(hush_turn_t *turn)
@@ -271,7 +319,7 @@ static void hush_turn_resolve_state(hush_turn_t *turn)
             hush_turn_copy(turn->state_dir, sizeof(turn->state_dir),
                            "/tmp/hush");
     }
-    if (strlen(turn->state_dir) > 300)
+    if (strlen(turn->state_dir) > (size_t)HUSH_TURN_STATE_DIR_CAP)
         hush_turn_copy(turn->state_dir, sizeof(turn->state_dir), "/tmp/hush");
     (void)snprintf(turn->conf_path, sizeof(turn->conf_path),
                    "%s/turnserver.conf", turn->state_dir);
@@ -317,7 +365,7 @@ static hush_status_t hush_turn_random_hex(char *out, size_t hex_chars)
     size_t i;
 
     assert(out != NULL);
-    if (hex_chars == 0 || hex_chars > 32)
+    if (hex_chars == 0 || hex_chars > (size_t)HUSH_TURN_PASS_HEX)
         return HUSH_ERR_ARG;
     fd = open("/dev/urandom", O_RDONLY);
     if (fd < 0)
@@ -413,6 +461,7 @@ static int hush_turn_alive(pid_t pid)
 static hush_status_t hush_turn_exec_systemctl(const char *verb)
 {
     pid_t pid;
+    int status;
 
     assert(verb != NULL);
     pid = fork();
@@ -423,5 +472,9 @@ static hush_status_t hush_turn_exec_systemctl(const char *verb)
                (char *)NULL);
         _exit(127);
     }
+    if (waitpid(pid, &status, 0) < 0)
+        return HUSH_ERR_IO;
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+        return HUSH_ERR_IO;
     return HUSH_OK;
 }

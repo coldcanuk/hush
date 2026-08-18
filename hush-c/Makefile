@@ -89,6 +89,11 @@ ifneq ($(ENABLE_STUN_TURN),0)
 		install -d $(DESTDIR)/lib/systemd/system; \
 		install -m 0644 ../contrib/systemd/hush-turn.service \
 			$(DESTDIR)/lib/systemd/system/hush-turn.service; \
+		install -d $(DESTDIR)/etc/hush; \
+		if [ ! -f $(DESTDIR)/etc/hush/turnserver.conf ]; then \
+			install -m 0640 ../contrib/turnserver.conf.in \
+				$(DESTDIR)/etc/hush/turnserver.conf; \
+		fi; \
 		echo "Installed hush-turn.service (not enabled)."; \
 		echo "  sudo systemctl enable --now hush-turn"; \
 		echo "  or use Settings → Daemon mode"; \

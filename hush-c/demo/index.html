@@ -546,6 +546,7 @@
     });
 
     const selfId = "p" + Math.random().toString(16).slice(2, 10);
+    const PEER_MAX = 8;
     let iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
     let localStream = null;
     let inCall = false;
@@ -644,6 +645,7 @@
 
     function pcFor(id, role) {
       if (peers[id]) return peers[id];
+      if (Object.keys(peers).length >= PEER_MAX) return null;
       const pc = new RTCPeerConnection({ iceServers: iceServers });
       peers[id] = pc;
       if (localStream) localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
@@ -657,6 +659,7 @@
 
     async function callPeer(id, role) {
       const pc = pcFor(id, role);
+      if (!pc) return;
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       await signal({ t: "offer", to: id, role: "human", sdp: offer });
@@ -683,6 +686,7 @@
       }
       if (msg.t === "offer" && msg.sdp) {
         const pc = pcFor(msg.from, msg.role);
+        if (!pc) return;
         await pc.setRemoteDescription(msg.sdp);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);

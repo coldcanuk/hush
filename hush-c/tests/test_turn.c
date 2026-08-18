@@ -37,6 +37,12 @@ int main(void)
     expect(strstr(json, "\"mode\":\"off\"") != NULL, "mode off");
     expect(hush_turn_set_public_host(&turn, "203.0.113.8") == HUSH_OK, "host");
     expect(strcmp(turn.public_host, "203.0.113.8") == 0, "host set");
+    expect(hush_turn_set_public_host(&turn, "bad\"host") == HUSH_ERR_PARSE,
+           "reject inject host");
+    expect(strcmp(turn.public_host, "203.0.113.8") == 0, "host unchanged");
+    expect(hush_turn_set_public_host(&turn, "") == HUSH_OK, "host empty");
+    expect(strcmp(turn.public_host, "127.0.0.1") == 0, "host local");
+    expect(hush_turn_set_public_host(&turn, "203.0.113.8") == HUSH_OK, "host restore");
 
     dir = "/tmp/hush-turn-test";
     (void)snprintf(turn.state_dir, sizeof(turn.state_dir), "%s", dir);

@@ -34,6 +34,7 @@ See RESEARCH.md §2026-08-17 STUN/TURN. Manage **coturn**, do not vendor it.
 ## Phase 4 — Verify / land
 
 - [x] M4.1 `./configure && make && make test` (on and off).
+- [x] M4.1b Audit: daemon writes `/etc/hush/turnserver.conf`, systemctl waitpid, host sanitise, peer cap 8.
 - [ ] M4.2 Push, PR, auto-merge, delete worktree.
 
 ## Locked decisions

@@ -19,11 +19,16 @@ enum {
     HUSH_TURN_PASS_MAX = 64,
     HUSH_TURN_PATH_MAX = 384,
     HUSH_TURN_JSON_MAX = 1536,
-    HUSH_TURN_SECRET_BYTES = 16
+    HUSH_TURN_SECRET_BYTES = 16,
+    HUSH_TURN_PASS_HEX = 32,
+    HUSH_TURN_STATE_DIR_CAP = 300,
+    HUSH_TURN_PEER_MAX = 8
 };
 
 #define HUSH_TURN_REALM_DEFAULT "hush.local"
 #define HUSH_TURN_USER_DEFAULT "hush"
+#define HUSH_TURN_SYS_DIR "/etc/hush"
+#define HUSH_TURN_SYS_CONF "/etc/hush/turnserver.conf"
 
 typedef enum {
     HUSH_TURN_MODE_OFF = 0,
