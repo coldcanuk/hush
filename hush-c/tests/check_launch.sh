@@ -24,7 +24,11 @@ echo "$sess" | grep -q '"ready":false' || fail "cold session should not be ready
 html=$(curl -sf "http://127.0.0.1:${port}/")
 echo "$html" | grep -q 'id="gate"' || fail "HTML missing first-launch gate"
 echo "$html" | grep -q 'Create a new identity key' || fail "HTML missing create CTA"
-echo "$html" | grep -q 'Check here to save the nsec in the local password manager' || fail "pass checkbox copy"
+echo "$html" | grep -q 'Checked to save password to Unix Password Manager' || fail "pass checkbox copy"
+echo "$html" | grep -q 'pass show hush/identity/nsec' || fail "retrieve CLI"
+echo "$html" | grep -q 'id=\\\"save-pass\\\"' || fail "pass checkbox id"
+echo "$html" | grep -q 'savePass = true' || fail "checkbox defaults on"
+echo "$html" | grep -q 'dialog class=\\\"secret\\\"' || fail "secret modal"
 created=$(curl -sf -X POST "http://127.0.0.1:${port}/api/identity" \
     -H 'Content-Type: application/json' \
     -d '{"action":"create"}')
@@ -33,8 +37,10 @@ echo "$created" | grep -q '"nsec":"nsec1' || fail "create should return nsec onc
 echo "$created" | grep -q '"npub":"npub1' || fail "create should return npub"
 acked=$(curl -sf -X POST "http://127.0.0.1:${port}/api/identity" \
     -H 'Content-Type: application/json' \
-    -d '{"action":"ack_backup"}')
+    -d '{"action":"ack_backup","save_pass":false}')
 echo "$acked" | grep -q '"nsec":""' || fail "ack should drop nsec from session"
+echo "$acked" | grep -q '"save_pass":false' || fail "opt-out should skip pass"
+echo "$acked" | grep -q '"pass_saved":false' || fail "opt-out must not claim save"
 vibe=$(curl -sf -X POST "http://127.0.0.1:${port}/api/vibe" \
     -H 'Content-Type: application/json' \
     -d '{"name":"HQ","about":"primary endpoint"}')

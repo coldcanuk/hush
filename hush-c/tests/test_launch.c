@@ -1,9 +1,13 @@
 /* tests/test_launch.c: first-launch identity → vibe → channel → project. */
 
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "hush_launch.h"
+#include "hush_pass.h"
 #include "hush_store.h"
 
 static int g_fail;
@@ -24,6 +28,10 @@ int main(void)
     const char *gitdir = "/tmp/hush-launch-proj";
     size_t n = 0;
 
+    if (setenv("HUSH_FAKE_PASS_DIR", "/tmp/hush-launch-pass-store", 1) != 0)
+        return 1;
+    /* Isolated from tests/test_pass.c, which uses /tmp/hush-unit-pass-<pid>. */
+    hush_pass_set_helper("tests/fake-pass.sh");
     hush_launch_init(&launch);
     expect(!hush_launch_is_ready(&launch), "cold not ready");
     expect(hush_store_create(&store) == HUSH_OK, "store");
@@ -34,7 +42,9 @@ int main(void)
                                       &n) == HUSH_OK,
            "session after create");
     expect(strstr(json, "\"nsec\":\"nsec1") != NULL, "nsec once");
-    expect(hush_launch_ack_backup(&launch) == HUSH_OK, "ack");
+    expect(hush_launch_ack_backup(&launch, 1) == HUSH_OK, "ack");
+    expect(launch.pass_saved, "saved to pass");
+    expect(hush_pass_has(HUSH_PASS_IDENTITY_NSEC), "identity in store");
     expect(hush_launch_format_session(&launch, 10555, json, sizeof(json),
                                       &n) == HUSH_OK,
            "session after ack");
@@ -61,11 +71,15 @@ int main(void)
                "nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5") ==
                HUSH_OK,
            "import");
+    expect(!launch.backup_acked, "import still needs backup");
     expect(strcmp(launch.human.npub,
                   "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg") ==
                0,
            "imported npub");
+    expect(hush_launch_ack_backup(&launch, 0) == HUSH_OK, "import ack opt-out");
+    expect(!launch.pass_saved || launch.save_pass == 0, "opt-out skips pass");
     hush_store_destroy(store);
+    hush_pass_set_helper(NULL);
     if (g_fail)
         return 1;
     printf("test_launch ok\n");

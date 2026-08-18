@@ -50,13 +50,20 @@ echo "nsec1q9x8..." | ./scripts/hush-pass save "agents/brain/nsec"
 hush-pass save "agents/brain/nsec" "nsec1q9x8..."
 ```
 
-During agent creation in Hush-aware UIs you will see exactly:
+During identity or agent creation the modal checkbox is **checked by default**:
 
-> **Check here to save the nsec in the local password manager, `pass`**
+> **Checked to save password to Unix Password Manager. Retrieve with: `pass show hush/identity/nsec`**
 
-- Check the box → Hush calls the helper above.
-- Leave unchecked → opt-out (secret not stored via `pass`).
-- Always offered: **Copy value** button/link so you can save the secret in 1Password, Bitwarden, a paper backup, or any other manager.
+- Leave it checked → Hush writes via the helper above.
+- Uncheck it → opt-out (secret not stored via `pass`).
+- Always offered: **Copy value** so you can save the secret in 1Password, Bitwarden, a paper backup, or any other manager.
+
+Retrieve later:
+
+```sh
+pass show hush/identity/nsec
+./scripts/hush-pass get identity/nsec
+```
 
 Repeat for every agent.
 
@@ -103,8 +110,8 @@ Hush (MVP) is an in-memory relay. Events are lost on restart unless you add pers
 
 - When creating or importing an agent in a Hush-aware tool:
   - Provide the name.
-  - The UI offers the exact checkbox: "Check here to save the {nsec} in the local password manager, `pass`".
-  - If previously saved with `pass`, the tool can retrieve it via `scripts/hush-pass get`.
+  - The UI offers the default-checked box: "Checked to save password to Unix Password Manager. Retrieve with: `pass show hush/agents/<name>/nsec`".
+  - If previously saved with `pass`, the tool can retrieve it via `scripts/hush-pass get` or `pass show hush/agents/<name>/nsec`.
 - Point the agent at your Hush relay URL.
 - Start the agent. It should be able to sign events and participate in channels.
 

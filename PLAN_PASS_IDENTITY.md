@@ -25,16 +25,16 @@ Checkbox is **checked by default**. Uncheck to opt out. Retrieve CLI is shown.
 
 ## Phase 3 — Implementation
 
-- [ ] M3.1 `scripts/hush-pass` force-insert + docs/pass-integration.md.
-- [ ] M3.2 `hush_pass` C module + injectable helper + `test_pass`.
-- [ ] M3.3 Launch/HTTP: `save_pass` default true; import uses backup modal;
+- [x] M3.1 `scripts/hush-pass` force-insert + docs/pass-integration.md.
+- [x] M3.2 `hush_pass` C module + injectable helper + `test_pass`.
+- [x] M3.3 Launch/HTTP: `save_pass` default true; import uses backup modal;
       persist human + Payne; optional restore on boot.
-- [ ] M3.4 PWA modal: checked by default, retrieve CLI, post `save_pass`.
-- [ ] M3.5 Tests (`check_launch.sh`) + README / IMPORT / SECURITY.
+- [x] M3.4 PWA modal: checked by default, retrieve CLI, post `save_pass`.
+- [x] M3.5 Tests (`check_launch.sh`) + README / IMPORT / SECURITY.
 
 ## Phase 4 — Verify / land
 
-- [ ] M4.1 `./configure && make && make test`. write-legible-c §14 on C diffs.
+- [x] M4.1 `./configure && make && make test`. write-legible-c §14 on C diffs.
 - [ ] M4.2 Push, PR, auto-merge, delete worktree.
 
 ## Task notes

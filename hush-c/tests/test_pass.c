@@ -23,9 +23,11 @@ int main(void)
 {
     char secret[HUSH_PASS_SECRET_MAX];
     char err[HUSH_PASS_ERR_MAX];
-    const char *dir = "/tmp/hush-test-pass-store";
+    char dir[64];
     const char *helper = "tests/fake-pass.sh";
 
+    if (snprintf(dir, sizeof(dir), "/tmp/hush-unit-pass-%ld", (long)getpid()) < 0)
+        return 1;
     if (setenv("HUSH_FAKE_PASS_DIR", dir, 1) != 0)
         return 1;
     if (access(helper, X_OK) != 0)

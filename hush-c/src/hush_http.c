@@ -39,6 +39,7 @@ static void hush_http_serve_events(int fd, const hush_store_t *store);
 static void hush_http_serve_session(int fd);
 static hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
                                           hush_store_t *store, hush_event_t *out);
+static int hush_http_want_save_pass(const char *body);
 static hush_status_t hush_http_serve_identity(int fd, const char *body);
 static hush_status_t hush_http_serve_vibe(int fd, const char *body,
                                           hush_store_t *store);
@@ -466,6 +467,17 @@ static hush_status_t hush_http_reply_session(int fd, hush_status_t st)
     return st;
 }
 
+static int hush_http_want_save_pass(const char *body)
+{
+    char flag[8];
+
+    if (!hush_json_field(body, "save_pass", flag, sizeof(flag)))
+        return 1;
+    if (strcmp(flag, "false") == 0 || strcmp(flag, "0") == 0)
+        return 0;
+    return 1;
+}
+
 static hush_status_t hush_http_serve_identity(int fd, const char *body)
 {
     char action[32];
@@ -484,7 +496,9 @@ static hush_status_t hush_http_serve_identity(int fd, const char *body)
                                        hush_launch_import_identity(g_launch, secret));
     }
     if (strcmp(action, "ack_backup") == 0)
-        return hush_http_reply_session(fd, hush_launch_ack_backup(g_launch));
+        return hush_http_reply_session(fd,
+                                       hush_launch_ack_backup(g_launch,
+                                                              hush_http_want_save_pass(body)));
     return hush_http_reply_session(fd, HUSH_ERR_PARSE);
 }
 
