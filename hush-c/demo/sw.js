@@ -1,5 +1,5 @@
 /* Hush UI service worker: cache the shell, never intercept /api/. */
-const HUSH_CACHE = "hush-ui-v1";
+const HUSH_CACHE = "hush-ui-v5";
 const HUSH_PRECACHE = [
   "/",
   "/index.html",

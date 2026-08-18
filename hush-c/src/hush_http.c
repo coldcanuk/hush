@@ -43,6 +43,10 @@ static hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
                                           hush_store_t *store, hush_event_t *out);
 static int hush_http_want_save_pass(const char *body);
 static hush_status_t hush_http_serve_identity(int fd, const char *body);
+static hush_status_t hush_http_serve_profile(int fd, const char *body);
+static hush_status_t hush_http_serve_member(int fd, const char *body);
+static hush_status_t hush_http_serve_agent(int fd, const char *body,
+                                           hush_store_t *store);
 static hush_status_t hush_http_serve_vibe(int fd, const char *body,
                                           hush_store_t *store);
 static hush_status_t hush_http_serve_channel(int fd, const char *body);
@@ -292,13 +296,21 @@ static int hush_json_field(const char *body, const char *key, char *out, size_t 
 {
     char quoted[64];
     const char *p;
+    const char *hit = NULL;
 
     out[0] = '\0';
     if (snprintf(quoted, sizeof(quoted), "\"%s\":\"", key) >= (int)sizeof(quoted))
         return 0;
-    p = strstr(body, quoted);
-    if (p != NULL) {
-        hush_json_unescape_copy(p + strlen(quoted), out, outsz);
+    p = body;
+    while ((p = strstr(p, quoted)) != NULL) {
+        if (p == body || p[-1] == '{' || p[-1] == ',' || p[-1] == ' ') {
+            hit = p;
+            break;
+        }
+        p += 1;
+    }
+    if (hit != NULL) {
+        hush_json_unescape_copy(hit + strlen(quoted), out, outsz);
         return out[0] != '\0';
     }
     return hush_json_bare_field(body, key, out, outsz);
@@ -313,7 +325,12 @@ static int hush_json_bare_field(const char *body, const char *key,
 
     if (snprintf(bare, sizeof(bare), "\"%s\":", key) >= (int)sizeof(bare))
         return 0;
-    p = strstr(body, bare);
+    p = body;
+    while ((p = strstr(p, bare)) != NULL) {
+        if (p == body || p[-1] == '{' || p[-1] == ',' || p[-1] == ' ')
+            break;
+        p += 1;
+    }
     if (p == NULL)
         return 0;
     p += strlen(bare);
@@ -467,19 +484,19 @@ static hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
 
 static void hush_http_serve_session(int fd)
 {
-    char body[HUSH_LAUNCH_JSON_MAX];
+    static const char k_empty[] =
+        "{\"ok\":true,\"logged_in\":false,\"ready\":false}\n";
+    static char body[HUSH_LAUNCH_JSON_MAX];
     size_t n = 0;
-    hush_launch_t empty;
 
     if (g_launch == NULL) {
-        hush_launch_init(&empty);
-        if (hush_launch_format_session(&empty, g_listen_port, body,
-                                       sizeof(body), &n) != HUSH_OK)
-            n = 0;
-    } else if (hush_launch_format_session(g_launch, g_listen_port, body,
-                                          sizeof(body), &n) != HUSH_OK) {
-        n = 0;
+        hush_http_reply(fd, "200 OK", "application/json",
+                        k_empty, sizeof(k_empty) - 1);
+        return;
     }
+    if (hush_launch_format_session(g_launch, g_listen_port, body,
+                                   sizeof(body), &n) != HUSH_OK)
+        n = 0;
     hush_http_reply(fd, "200 OK", "application/json", body, n);
 }
 
@@ -530,7 +547,76 @@ static hush_status_t hush_http_serve_identity(int fd, const char *body)
         return hush_http_reply_session(fd,
                                        hush_launch_ack_backup(g_launch,
                                                               hush_http_want_save_pass(body)));
+    if (strcmp(action, "logout") == 0)
+        return hush_http_reply_session(fd, hush_launch_logout(g_launch));
     return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+}
+
+static hush_status_t hush_http_serve_profile(int fd, const char *body)
+{
+    hush_roster_profile_t profile;
+
+    if (g_launch == NULL || body == NULL)
+        return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    memset(&profile, 0, sizeof(profile));
+    (void)hush_json_field(body, "first_name", profile.first_name,
+                          sizeof(profile.first_name));
+    (void)hush_json_field(body, "last_name", profile.last_name,
+                          sizeof(profile.last_name));
+    (void)hush_json_field(body, "email", profile.email, sizeof(profile.email));
+    (void)hush_json_field(body, "organization", profile.organization,
+                          sizeof(profile.organization));
+    (void)hush_json_field(body, "theme", profile.theme, sizeof(profile.theme));
+    (void)hush_json_field(body, "picture", profile.picture,
+                          sizeof(profile.picture));
+    return hush_http_reply_session(fd,
+                                   hush_launch_set_profile(g_launch, &profile));
+}
+
+static hush_status_t hush_http_serve_member(int fd, const char *body)
+{
+    char key[HUSH_IDENTITY_NPUB_MAX];
+    char name[HUSH_ROSTER_NAME_MAX];
+
+    if (g_launch == NULL || body == NULL)
+        return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    if (!hush_json_field(body, "npub", key, sizeof(key)))
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    if (!hush_json_field(body, "name", name, sizeof(name)))
+        memcpy(name, "human", 6);
+    return hush_http_reply_session(fd,
+                                   hush_launch_add_member(g_launch, key, name));
+}
+
+static hush_status_t hush_http_serve_agent(int fd, const char *body,
+                                           hush_store_t *store)
+{
+    hush_roster_agent_in_t in;
+    char mime[HUSH_ROSTER_NAME_MAX];
+    char fname[HUSH_ROSTER_NAME_MAX];
+    static char text[HUSH_ROSTER_CONTEXT_BYTES];
+
+    if (g_launch == NULL || body == NULL || store == NULL)
+        return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    memset(&in, 0, sizeof(in));
+    if (!hush_json_field(body, "name", in.name, sizeof(in.name)))
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    (void)hush_json_field(body, "system_prompt", in.prompt, sizeof(in.prompt));
+    (void)hush_json_field(body, "picture", in.picture, sizeof(in.picture));
+    if (hush_json_field(body, "context_name", fname, sizeof(fname))) {
+        if (!hush_json_field(body, "context_mime", mime, sizeof(mime)))
+            memcpy(mime, HUSH_ROSTER_MIME_PLAIN, sizeof(HUSH_ROSTER_MIME_PLAIN));
+        if (!hush_json_field(body, "context_text", text, sizeof(text)))
+            text[0] = '\0';
+        memcpy(in.context[0].name, fname, sizeof(in.context[0].name));
+        memcpy(in.context[0].mime, mime, sizeof(in.context[0].mime));
+        in.context[0].text = text;
+        in.context[0].bytes = strlen(text);
+        in.ncontext = 1;
+    }
+    return hush_http_reply_session(fd,
+                                   hush_launch_add_agent(g_launch, store, &in,
+                                                         hush_http_want_save_pass(body)));
 }
 
 static hush_status_t hush_http_serve_vibe(int fd, const char *body,
@@ -604,6 +690,12 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_post(fd, req, len, store, out_posted);
     if (strcmp(path, "/api/identity") == 0)
         return hush_http_serve_identity(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/profile") == 0)
+        return hush_http_serve_profile(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/member") == 0)
+        return hush_http_serve_member(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/agent") == 0)
+        return hush_http_serve_agent(fd, hush_http_body(req, len), store);
     if (strcmp(path, "/api/vibe") == 0)
         return hush_http_serve_vibe(fd, hush_http_body(req, len), store);
     if (strcmp(path, "/api/channel") == 0)

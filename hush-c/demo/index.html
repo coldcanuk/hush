@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <style>
-    :root {
+    :root, html[data-theme="dark"] {
       --bg: #09090b;
       --surface: #18181b;
       --surface-2: #1f1f23;
@@ -27,6 +27,36 @@
       --warn: #f87171;
       --sans: "Segoe UI", system-ui, sans-serif;
       --mono: ui-monospace, "Cascadia Mono", monospace;
+    }
+    html[data-theme="light"] {
+      --bg: #f4f4f5; --surface: #ffffff; --surface-2: #e4e4e7; --line: #d4d4d8;
+      --fg: #18181b; --muted: #52525b; --faint: #71717a; --accent: #059669;
+      --accent-ink: #ecfdf5; --accent-dim: #a7f3d0; --warn: #b91c1c;
+    }
+    html[data-theme="color-blind"] {
+      --bg: #0b1220; --surface: #152033; --surface-2: #1e2d48; --line: #334155;
+      --fg: #f8fafc; --muted: #94a3b8; --faint: #64748b; --accent: #38bdf8;
+      --accent-ink: #082f49; --accent-dim: #075985; --warn: #fb923c;
+    }
+    html[data-theme="dracula"] {
+      --bg: #282a36; --surface: #21222c; --surface-2: #343746; --line: #44475a;
+      --fg: #f8f8f2; --muted: #bd93f9; --faint: #6272a4; --accent: #50fa7b;
+      --accent-ink: #1a2e1d; --accent-dim: #2d4a32; --warn: #ff5555;
+    }
+    html[data-theme="desert"] {
+      --bg: #2a2118; --surface: #3a2e22; --surface-2: #4a3b2c; --line: #6b5340;
+      --fg: #f5e6d3; --muted: #c4a574; --faint: #8a7355; --accent: #d97706;
+      --accent-ink: #2a1605; --accent-dim: #78350f; --warn: #f87171;
+    }
+    html[data-theme="monochrome"] {
+      --bg: #111111; --surface: #1c1c1c; --surface-2: #2a2a2a; --line: #3f3f3f;
+      --fg: #f5f5f5; --muted: #a3a3a3; --faint: #737373; --accent: #e5e5e5;
+      --accent-ink: #171717; --accent-dim: #525252; --warn: #d4d4d4;
+    }
+    html[data-theme="christmas"] {
+      --bg: #0f1f14; --surface: #16261b; --surface-2: #1e3324; --line: #2d4a35;
+      --fg: #f8faf8; --muted: #b7c9bb; --faint: #7a9180; --accent: #c41e3a;
+      --accent-ink: #fff1f2; --accent-dim: #7f1d1d; --warn: #fbbf24;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: var(--sans); }
@@ -102,6 +132,11 @@
       width: min(34rem, 100%); background: var(--surface); border: 1px solid var(--line);
       border-radius: 18px; padding: 28px 24px 24px;
     }
+    .feather { display: block; width: 72px; height: 72px; margin: 0 auto 16px; border-radius: 16px; }
+    .steps { display: flex; gap: 8px; align-items: center; margin: 0 0 16px; color: var(--faint); font-size: 0.75rem; }
+    .steps span { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+    .steps span.on { background: var(--accent); }
+    .steps em { font-style: normal; margin-left: auto; letter-spacing: 0.08em; }
     .card h1 { margin: 0 0 8px; font-size: 1.6rem; letter-spacing: -0.04em; }
     .card p { margin: 0 0 18px; color: var(--muted); line-height: 1.5; }
     .card label { display: block; font-size: 0.8rem; color: var(--muted); margin: 12px 0 6px; }
@@ -236,6 +271,8 @@
         <button class="mini" id="add-chan" type="button">Add channel</button>
         <input id="new-proj" maxlength="48" placeholder="new project">
         <button class="mini" id="add-proj" type="button">Create project</button>
+        <button class="mini" id="raise-agent" type="button">Raise a robot</button>
+        <button class="mini" id="invite-human" type="button">Invite human</button>
       </div>
       <div class="agent" id="payne-card">
         <strong>Sgt Major Payne</strong>
@@ -276,6 +313,16 @@
         <label class="switch"><input id="vibe-public" type="checkbox" checked><span class="slider"></span></label>
       </div>
       <p id="vibe-token" class="help"></p>
+      <p class="help">Theme</p>
+      <div class="vis" id="theme-list">
+        <label><input type="radio" name="theme" value="dark" checked> dark</label>
+        <label><input type="radio" name="theme" value="light"> light</label>
+        <label><input type="radio" name="theme" value="color-blind"> color blind</label>
+        <label><input type="radio" name="theme" value="dracula"> dracula</label>
+        <label><input type="radio" name="theme" value="desert"> desert</label>
+        <label><input type="radio" name="theme" value="monochrome"> monochrome</label>
+        <label><input type="radio" name="theme" value="christmas"> christmas</label>
+      </div>
       <p class="help">AI voice in a call needs a speech model such as Whisper. Without it, agents can join but cannot hear.</p>
       <div class="actions">
         <button class="btn" id="settings-close" type="button">Close</button>
@@ -319,14 +366,28 @@
       return r.json();
     }
 
+    function applyTheme(name) {
+      const allowed = ["dark", "light", "color-blind", "dracula", "desert", "monochrome", "christmas"];
+      const theme = allowed.indexOf(name) >= 0 ? name : (localStorage.getItem("hush-theme") || "dark");
+      document.documentElement.setAttribute("data-theme", theme);
+      localStorage.setItem("hush-theme", theme);
+      const meta = document.querySelector("meta[name='theme-color']");
+      if (meta) meta.setAttribute("content", getComputedStyle(document.documentElement).getPropertyValue("--bg").trim());
+      document.querySelectorAll("input[name='theme']").forEach((el) => {
+        el.checked = el.value === theme;
+      });
+    }
+
     function applySession(s) {
       session = s || session;
-      if (session.ready) page = "hive";
+      if (session.ready && page !== "payne") page = "hive";
       else if (session.logged_in && !session.backup_acked) page = "backup";
       else if (session.logged_in && session.backup_acked && !session.has_vibe) page = "vibe";
-      else if (!session.logged_in && page !== "import" && page !== "help") page = "landing";
+      else if (!session.logged_in && page !== "import" && page !== "help" && page !== "splash")
+        page = "landing";
       if (session.nsec) pendingNsec = session.nsec;
       if (session.backup_acked) pendingNsec = "";
+      applyTheme((session.profile && session.profile.theme) || session.theme);
       paint();
     }
 
@@ -351,17 +412,25 @@
       paintPayne();
     }
 
+    function stepBar(n) {
+      const dots = [1, 2, 3, 4].map((i) =>
+        "<span class=\"" + (i <= n ? "on" : "") + "\"></span>").join("");
+      return "<div class=\"steps\">" + dots + "<em>" + n + " / 4</em></div>";
+    }
+
     function gateHtml() {
       if (page === "splash") {
-        return card("Hush — local hive mind",
+        return card("hush",
+          "<img class=\"feather\" src=\"/icon-192.png\" alt=\"hush\">" +
           "<p><strong>Sgt Major Payne reporting for duty.</strong></p>" +
-          "<p>Detecting identity and vibe...</p>" +
+          "<p>Detecting identity and vibe…</p>" +
           errLine() +
           actions([{ id: "begin", label: "Begin" }]) +
           "<div class=\"help\">Disciplined collaboration with humans and agents.</div>");
       }
       if (page === "help") {
         return card("What’s an identity key?",
+          stepBar(1) +
           "<p>Hush uses a Nostr identity key instead of a password. It is created on this machine and represents you.</p>" +
           "<p>Your public key (<code>npub</code>) is safe to share. Your private key (<code>nsec</code>) is the account. Anyone with it can act as you. There is no forgot-password.</p>" +
           "<p>Create a new key if you are new. Import an existing <code>nsec1…</code> if you already have a Nostr identity.</p>" +
@@ -369,6 +438,7 @@
       }
       if (page === "import") {
         return card("Use an existing key",
+          stepBar(1) +
           "<p>Paste an <code>nsec1…</code> key. We show the matching <code>npub</code> before anything is saved.</p>" +
           "<label for=\"nsec-in\">Private key</label>" +
           "<input id=\"nsec-in\" type=\"password\" autocomplete=\"off\" spellcheck=\"false\" placeholder=\"nsec1…\">" +
@@ -383,6 +453,7 @@
         const shown = keyRevealed ? esc(pendingNsec) : "•".repeat(Math.max(16, pendingNsec.length || 63));
         return "<dialog class=\"secret\" id=\"secret-modal\" open>" +
           card("Your unique identity key has been created",
+          stepBar(2) +
           "<p>This key is your account. Copy it now. Hush cannot recover it if you lose it.</p>" +
           "<div class=\"keybox" + (keyRevealed ? " revealed" : "") + "\" id=\"nsec-box\">" + shown + "</div>" +
           "<label class=\"passbox\"><input id=\"save-pass\" type=\"checkbox\"" +
@@ -398,6 +469,7 @@
       }
       if (page === "vibe") {
         return card("Name your vibe",
+          stepBar(3) +
           "<p>A vibe is the main server — this Hush relay. It is your community’s primary endpoint.</p>" +
           "<label for=\"vibe-name\">Vibe name</label>" +
           "<input id=\"vibe-name\" maxlength=\"48\" value=\"local hive\" placeholder=\"local hive\">" +
@@ -410,7 +482,19 @@
           errLine() +
           actions([{ id: "do-vibe", label: "Stand up the hive" }]));
       }
+      if (page === "payne") {
+        const p = session.payne || {};
+        return card("Sgt Major Payne",
+          stepBar(4) +
+          "<p><strong>At ease.</strong> " +
+          esc(p.about || "I find the right robot — or raise one.") + "</p>" +
+          (p.npub ? "<p class=\"help\">" + esc(p.npub.slice(0, 20)) + "…</p>" : "") +
+          "<p>At ease. I'm Sgt Major Payne. Tell me what you want built and I'll find — or raise — the right robot for the job.</p>" +
+          errLine() +
+          actions([{ id: "meet-payne", label: "Carry on." }]));
+      }
       return card("Your people, your agents, your projects",
+        stepBar(1) +
         "<p>Hush is a local hive mind. First we need a Nostr identity — a key that belongs to you, not to us.</p>" +
         errLine() +
         actions([
@@ -465,12 +549,21 @@
       });
       const box = $("save-pass");
       if (box) box.addEventListener("change", () => { savePass = box.checked; });
-      on("begin", () => { page = "landing"; gateErr = ""; paint(); });
+      on("begin", () => {
+        gateErr = "";
+        if (session.ready) page = "hive";
+        else if (session.logged_in && !session.backup_acked) page = "backup";
+        else if (session.logged_in && session.backup_acked && !session.has_vibe) page = "vibe";
+        else page = "landing";
+        paint();
+      });
+      on("meet-payne", () => { page = "hive"; gateErr = ""; paint(); });
       on("do-vibe", () => {
         const name = ($("vibe-name") && $("vibe-name").value) || "local hive";
         const about = ($("vibe-about") && $("vibe-about").value) || "";
         const visEl = document.querySelector("input[name='vibe-vis']:checked");
         const visibility = visEl ? visEl.value : "public";
+        page = "payne";
         postJson("/api/vibe", { name: name, about: about, visibility: visibility });
       });
       const inp = $("nsec-in");
@@ -520,10 +613,17 @@
 
     function paintPayne() {
       const p = session.payne || {};
+      const agents = session.agents || [];
+      let extra = "";
+      agents.forEach((a) => {
+        extra += "<div class=\"help\">" + esc(a.name || a.slug) +
+          (a.npub ? " · " + esc(a.npub.slice(0, 12)) + "…" : "") + "</div>";
+      });
       $("payne-card").innerHTML =
         "<strong>" + esc(p.name || "Sgt Major Payne") + "</strong>" +
         esc(p.about || "Finds the right robot, or raises one.") +
-        (p.npub ? "<div class=\"help\">" + esc(p.npub.slice(0, 16)) + "…</div>" : "");
+        (p.npub ? "<div class=\"help\">" + esc(p.npub.slice(0, 16)) + "…</div>" : "") +
+        extra;
     }
 
     $("add-chan").addEventListener("click", async () => {
@@ -531,6 +631,63 @@
       if (!name) return;
       $("new-chan").value = "";
       await postJson("/api/channel", { name: name });
+    });
+    function isContextFile(file) {
+      if (!file) return false;
+      const mime = file.type || "";
+      const name = file.name || "";
+      if (mime === "text/plain" || mime === "text/markdown" || mime === "text/x-markdown")
+        return true;
+      return /\.(txt|md|markdown)$/i.test(name);
+    }
+
+    $("raise-agent").addEventListener("click", () => {
+      $("agent-err").textContent = "";
+      $("agent-drawer").classList.add("show");
+    });
+    $("agent-close").addEventListener("click", () => $("agent-drawer").classList.remove("show"));
+    $("invite-human").addEventListener("click", () => {
+      $("member-err").textContent = "";
+      $("member-token").textContent = (session.vibe && session.vibe.visibility === "private")
+        ? ("Join token: " + (session.vibe.join_token || ""))
+        : "Public vibe — no token required.";
+      $("member-drawer").classList.add("show");
+    });
+    $("member-close").addEventListener("click", () => $("member-drawer").classList.remove("show"));
+    $("member-save").addEventListener("click", async () => {
+      const npub = ($("member-npub") && $("member-npub").value || "").trim();
+      const name = ($("member-name") && $("member-name").value || "").trim();
+      if (!npub) { $("member-err").textContent = "Need an npub."; return; }
+      try {
+        applySession(await api("/api/member", { npub: npub, name: name || "human" }));
+        $("member-drawer").classList.remove("show");
+      } catch (e) { $("member-err").textContent = "Could not add that human."; }
+    });
+    $("agent-save").addEventListener("click", async () => {
+      const name = ($("agent-name") && $("agent-name").value || "").trim();
+      const prompt = ($("agent-prompt") && $("agent-prompt").value || "").trim();
+      const box = $("agent-pass");
+      const file = $("agent-file") && $("agent-file").files && $("agent-file").files[0];
+      $("agent-err").textContent = "";
+      if (!name) { $("agent-err").textContent = "State the robot’s name."; return; }
+      if (file && !isContextFile(file)) {
+        $("agent-err").textContent = "Only plaintext and Markdown.";
+        return;
+      }
+      const body = {
+        name: name,
+        system_prompt: prompt,
+        save_pass: !box || box.checked
+      };
+      try {
+        if (file) {
+          body.context_name = file.name;
+          body.context_mime = file.type || (/\.md$/i.test(file.name) ? "text/markdown" : "text/plain");
+          body.context_text = await file.text();
+        }
+        applySession(await api("/api/agent", body));
+        $("agent-drawer").classList.remove("show");
+      } catch (e) { $("agent-err").textContent = "Could not raise that robot."; }
     });
     $("add-proj").addEventListener("click", async () => {
       const name = $("new-proj").value.trim();
@@ -576,6 +733,11 @@
         p.classList.add("show");
         const np = $("profile-npub");
         if (np) np.textContent = (session.npub || session.pubkey || "no identity yet");
+        const prof = session.profile || {};
+        if ($("prof-first")) $("prof-first").value = prof.first_name || "";
+        if ($("prof-last")) $("prof-last").value = prof.last_name || "";
+        if ($("prof-email")) $("prof-email").value = prof.email || "";
+        if ($("prof-org")) $("prof-org").value = prof.organization || "";
       }
     });
     $("profile-close").addEventListener("click", () => { const p=$("profile"); if (p) p.classList.remove("show"); });
@@ -583,9 +745,31 @@
       const v = session.npub || session.pubkey || "";
       if (v) { try { await navigator.clipboard.writeText(v); } catch(e){} }
     });
-    $("profile-logout").addEventListener("click", () => {
+    $("profile-save").addEventListener("click", async () => {
+      try {
+        applySession(await api("/api/profile", {
+          first_name: ($("prof-first") && $("prof-first").value) || "",
+          last_name: ($("prof-last") && $("prof-last").value) || "",
+          email: ($("prof-email") && $("prof-email").value) || "",
+          organization: ($("prof-org") && $("prof-org").value) || "",
+          theme: localStorage.getItem("hush-theme") || "dark"
+        }));
+      } catch (e) {}
+    });
+    $("profile-logout").addEventListener("click", async () => {
+      if (!confirm("Logout and use a different key?")) return;
       const p = $("profile"); if (p) p.classList.remove("show");
-      page = "landing"; gateErr = ""; paint();
+      try { applySession(await api("/api/identity", { action: "logout" })); }
+      catch (e) { page = "landing"; gateErr = ""; paint(); }
+    });
+    document.querySelectorAll("input[name='theme']").forEach((el) => {
+      el.addEventListener("change", async () => {
+        if (!el.checked) return;
+        applyTheme(el.value);
+        try {
+          applySession(await api("/api/profile", { theme: el.value }));
+        } catch (e) {}
+      });
     });
     $("call-btn").addEventListener("click", () => {
       $("stage").classList.add("show");
@@ -833,7 +1017,7 @@
           fetch(API + "/api/session").then((r) => r.json())
         ]);
         session = sess;
-        if (session.ready) page = "hive";
+        if (session.ready && page !== "payne") page = "hive";
         paint();
         badge(true, session.npub ? session.npub.slice(0, 12) + "…" : ("listening :" + (st.port || "")));
         if (session.ready) render(ev.events || ev || [], st);
@@ -843,6 +1027,7 @@
       }
     }
 
+    applyTheme(localStorage.getItem("hush-theme") || "dark");
     tick();
     setInterval(tick, 1000);
 
@@ -872,14 +1057,64 @@
   <div class="drawer" id="profile" role="dialog" aria-label="Profile">
     <div class="panel">
       <h2>Profile</h2>
+      <p class="help">Your identity is your orders. Guard it.</p>
       <p id="profile-npub" class="help" style="font-family:var(--mono);word-break:break-all"></p>
-      <p class="help">Your Nostr identity. npub is safe to share. nsec is private — never share.</p>
+      <label for="prof-first">First name</label>
+      <input id="prof-first" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
+      <label for="prof-last">Last name</label>
+      <input id="prof-last" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
+      <label for="prof-email">Email</label>
+      <input id="prof-email" type="email" maxlength="80" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
+      <label for="prof-org">Organization</label>
+      <input id="prof-org" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;margin:4px 0">
+      <label for="prof-avatar">Avatar</label>
+      <input id="prof-avatar" type="file" accept="image/jpeg,image/png,image/webp">
+      <p class="help" id="prof-avatar-status">Optional. JPEG or PNG, stored as a Nostr picture URL.</p>
       <div class="actions">
+        <button class="btn" id="profile-save" type="button">Save profile</button>
         <button class="btn ghost" id="profile-copy" type="button">Copy npub</button>
-        <button class="btn ghost" id="profile-logout" type="button">Logout / Use different key</button>
-        <button class="btn" id="profile-close" type="button">Close</button>
+        <button class="btn ghost" id="profile-logout" type="button">Logout</button>
+        <button class="btn ghost" id="profile-close" type="button">Close</button>
       </div>
       <p class="help">Sgt Major Payne: "Guard your orders. Report when ready."</p>
+    </div>
+  </div>
+  <div class="drawer" id="agent-drawer" role="dialog" aria-label="Raise a robot">
+    <div class="panel">
+      <h2>Raise a robot</h2>
+      <p class="help">Sgt Major Payne will walk you through it.</p>
+      <label for="agent-name">Name</label>
+      <input id="agent-name" type="text" maxlength="48" placeholder="Sentry">
+      <p class="help">State the robot’s name.</p>
+      <label for="agent-prompt">Standing orders</label>
+      <textarea id="agent-prompt" maxlength="1000" placeholder="Watch the perimeter."></textarea>
+      <p class="help">Write its standing orders.</p>
+      <label for="agent-file">Context file</label>
+      <input id="agent-file" type="file" accept=".txt,.md,text/plain,text/markdown">
+      <p class="help">Attach only plain text or Markdown. I will refuse the rest.</p>
+      <label class="passbox"><input id="agent-pass" type="checkbox" checked>
+        Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
+      <p class="warn" id="agent-err"></p>
+      <div class="actions">
+        <button class="btn" id="agent-save" type="button">Raise this robot</button>
+        <button class="btn ghost" id="agent-close" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+  <div class="drawer" id="member-drawer" role="dialog" aria-label="Invite human">
+    <div class="panel">
+      <h2>Invite human</h2>
+      <p class="help">Name the soldier. Private vibes also need the join token.</p>
+      <label for="member-npub">npub</label>
+      <input id="member-npub" type="text" maxlength="80" placeholder="npub1…">
+      <label for="member-name">Display name</label>
+      <input id="member-name" type="text" maxlength="48" placeholder="human">
+      <p class="help" id="member-token"></p>
+      <p class="warn" id="member-err"></p>
+      <div class="actions">
+        <button class="btn" id="member-save" type="button">Add human</button>
+        <button class="btn ghost" id="member-close" type="button">Close</button>
+      </div>
     </div>
   </div>
 

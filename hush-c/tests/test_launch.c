@@ -22,9 +22,9 @@ static void expect(int cond, const char *msg)
 
 int main(void)
 {
-    hush_launch_t launch;
+    static hush_launch_t launch;
+    static char json[HUSH_LAUNCH_JSON_MAX];
     hush_store_t *store = NULL;
-    char json[HUSH_LAUNCH_JSON_MAX];
     const char *gitdir = "/tmp/hush-launch-proj";
     size_t n = 0;
 
@@ -87,6 +87,22 @@ int main(void)
            "imported npub");
     expect(hush_launch_ack_backup(&launch, 0) == HUSH_OK, "import ack opt-out");
     expect(!launch.pass_saved || launch.save_pass == 0, "opt-out skips pass");
+    {
+        hush_roster_profile_t profile;
+
+        memset(&profile, 0, sizeof(profile));
+        memcpy(profile.first_name, "Ada", 4);
+        memcpy(profile.theme, "dracula", 8);
+        expect(hush_launch_set_profile(&launch, &profile) == HUSH_OK, "profile");
+        expect(hush_launch_format_session(&launch, 10555, json, sizeof(json),
+                                          &n) == HUSH_OK,
+               "session profile");
+        expect(strstr(json, "\"first_name\":\"Ada\"") != NULL, "first in session");
+        expect(strstr(json, "\"theme\":\"dracula\"") != NULL, "theme in session");
+    }
+    expect(hush_launch_logout(&launch) == HUSH_OK, "logout");
+    expect(!launch.logged_in, "logged out");
+    expect(!hush_launch_is_ready(&launch), "logout not ready");
     hush_store_destroy(store);
     hush_pass_set_helper(NULL);
     if (g_fail)

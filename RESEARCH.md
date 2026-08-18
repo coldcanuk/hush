@@ -1231,3 +1231,192 @@ See new or updated plan file + milestones below. Commit gate ends Phase 1.
 
 References: catfu .goose/recipes + .agents/skills (fetched), RESEARCH prior sections, PLAN_*.md, NOSTR.md, hush_launch.h, demo/index.html full, Quinn/Parker/Alfred patterns.
 
+---
+
+# 2026-08-18 RDAP: Proper Onboarding + Profile + Multi-vibe Members + Payne Agent Creation
+
+## Scope locked
+
+- **Primary goal:** If no user or no vibe, run a proper onboard: identity key (save with `pass`), first vibe (public or private), introduce Sgt Major Payne. Splash uses the current feather logo, nothing fancy. After ready: Profile (Nostr-consistent avatar, seven themes, first/last/email/org, Logout), create/manage vibe, add humans and agents, agent creation like Buzz (Payne walks the human; Payne/Goose skill creates agents with skills on the fly; avatar, name, system prompt, context files plaintext+Markdown only with MIME check).
+- **Non-goals:** Multi-process vibes; Blossom/NIP-96; Payne as an LLM; Tauri/ACP port; Tailwind in C; NIP-42; email verification; spawning agent OS processes; Exit/Close (other worktree).
+- **Constraints:** C11 + write-legible-c; single binary + embed; `HUSH_BUF_SZ=8192` today; `HUSH_EVENT_MAX_CONTENT=4096`; `HUSH_LAUNCH_JSON_MAX=8192`; worktree `gb/onboard-profile-agents`; PR-only land.
+- **Assumptions:** One `hush-relay` = one vibe. “Create vibe” after first = rename/visibility/invite, not a second server. Payne is seeded persona + skill, not an LLM.
+
+## Current Hush (code, this worktree @ 034cfd3d5)
+
+### Session contract (`hush_launch_format_head`)
+
+```
+ok, logged_in, backup_acked, has_vibe, ready,
+save_pass, pass_saved, pass_error, port,
+npub, pubkey, nsec (only until backup_acked),
+vibe {name, about, visibility, discoverable, join_token},
+payne {name, npub, about},
+channels[], projects[]
+```
+
+`ready = logged_in && backup_acked && has_vibe`.
+
+Missing vs this request: `logout`, profile names/email/org, theme, picture, agents[], members[], agent create, MIME uploads.
+
+### Identity / vibe APIs (`hush_http.c`)
+
+- `POST /api/identity` actions: `create` | `import` | `ack_backup`. **No `logout`.**
+- `POST /api/vibe` create-or-set-visibility. One vibe per process. Public default; private mints a 16-hex join token.
+- No `/api/profile`, `/api/agent`, `/api/member`, `/avatar/…`.
+
+### UI (`hush-c/demo/index.html`, 887 lines)
+
+- `page` starts `"splash"` but `applySession` immediately overwrites to `landing` when `!logged_in`. Splash is a card with text, not the feather image.
+- Header SVG mark is an inline path, **not** `assets/hush_feather.png` / `/icon-192.png`.
+- Wizard is implicit cards (landing → import/help → backup modal → vibe). No 1/4 progress. No dedicated “Meet Payne” step (Payne is seeded silently on vibe create).
+- Profile drawer: npub + copy + **client-only** logout (`page = "landing"`; server stay logged in). No names, email, org, theme, avatar.
+- Settings: STUN/TURN + public/private toggle. No themes.
+- Sidebar: channels + create + single Payne card. No agents roster, no add-human, no create-agent.
+- `check_launch.sh` greps gate, create CTA, pass checkbox, secret modal, vibe/Payne/channel/project. Does not assert splash feather, logout, profile fields, or agents.
+
+### Kind 0 today (`hush_launch_store_profile`)
+
+```
+{"name":"%s","about":"%s"}
+```
+
+Human seeded as `"you"` / `"hive operator"`. Payne uses `HUSH_LAUNCH_PAYNE_NAME` / `ABOUT`. No `display_name`, no `picture`.
+
+### Pass paths (already locked)
+
+| Secret | Path |
+|---|---|
+| Human nsec | `hush/identity/nsec` |
+| Agent nsec | `hush/agents/<slug>/nsec` |
+| Payne | `hush/agents/sgt-major-payne/nsec` |
+
+Checkbox default-on; missing `pass` never blocks identity.
+
+### Buffer / size facts (hard)
+
+- Relay recv: `HUSH_BUF_SZ = 8192` (`hush_relay.c`). A JSON body with a data-URL avatar will not fit.
+- Event content: `HUSH_EVENT_MAX_CONTENT = 4096`. Kind 0 must stay under this → `picture` must be a short URL, not a data URI.
+- Session JSON: `HUSH_LAUNCH_JSON_MAX = 8192`. Adding agents/members requires raising this named cap or keeping arrays tiny.
+- Embed: `./scripts/embed-ui.sh hush-c/demo` from worktree root. Passing `demo` from repo root fails (`index.html` not found).
+- Feather: `assets/hush_feather.png` (193548 bytes) and demo icons `icon-192.png` / `icon-512.png` / `apple-touch-icon.png`. PWA already serves `/icon-192.png`. Splash should `<img src="/icon-192.png">` — do not embed the 193 KiB PNG as a data URL.
+
+## Nostr kind 0 (NIP-01) — avatar-consistent profile
+
+Buzz `build_profile` (`crates/buzz-sdk/src/builders.rs`) writes only present fields:
+
+- `display_name` — shown name
+- `name` — short / handle
+- `picture` — **URL** (http(s) or relay-served). Not a required MIME in the event; clients fetch the URL.
+- `about`
+- `nip05` (out of scope here)
+
+Hush `NOSTR.md` already documents kind 0 sync of display_name / avatar / about / NIP-05 (Buzz-era intent). C MVP only stores the event.
+
+**Hush mapping (locked):**
+
+| Form field | Kind 0 | Session-only |
+|---|---|---|
+| First + last | `display_name` = `"First Last"`; `name` = first or slug | also `first_name`, `last_name` |
+| Organization | optional suffix on `about` | `organization` |
+| Email | **never** published (privacy) | `email` |
+| Avatar | `picture` = `http://127.0.0.1:<port>/avatar/<pubkey>` | — |
+| Theme | not a NIP-01 field | `theme` + localStorage |
+
+Client downscales uploads to ≤96px JPEG/PNG so the stored file stays small. Magic-byte sniff on the server (JPEG `FF D8`, PNG `\x89PNG`). Reject other image types and all non-images.
+
+## Buzz agent creation (sequence we copy, not the stack)
+
+From `/opt/repo/buzz` desktop (not ported):
+
+1. Intent: definition vs definition+start (`agentCreateIntent.ts`). Hush MVP is **definition + identity** (generate nsec, kind 0, roster entry). No ACP spawn.
+2. Fields actually collected: **name**, **avatar** (`accept="image/gif,image/jpeg,image/png,image/webp"`), **systemPrompt**. Avatar may be emoji SVG data URL or uploaded image resolved to a hosted URL (`resolveManagedAgentAvatarUrl`).
+3. Managed agent create (`channelAgents.ts`) persists `systemPrompt`, `avatarUrl`, name, then a kind 0.
+4. Secrets: Buzz uses OS keychain; Hush uses `pass` at `hush/agents/<slug>/nsec`, same modal contract as identity.
+
+**Hush extras the user asked for (not in Buzz create dialog):** context files. Only `text/plain` and Markdown. Check MIME **and** extension on the client; **re-check on the server**. Cap: 4 files, 4096 bytes each (named constants). Store as agent-owned text, not as Nostr events (content would blow kind 0). Session may list `{name, mime, bytes}` only.
+
+Rejected context MIME examples: `application/pdf`, `image/png`, `text/html`, empty, `application/octet-stream`.
+
+Accepted: `text/plain`, `text/markdown`, `text/x-markdown`; filenames ending `.txt` / `.md` if the browser MIME is empty (common for `.md`).
+
+## Themes (Quinn + a11y)
+
+Seven named palettes, CSS variables only (`data-theme` on `<html>`). Hick: picker lives in **Settings**, not onboard, not header.
+
+| Token | Intent |
+|---|---|
+| `dark` | current default `#09090b` / emerald accent |
+| `light` | high-contrast light surface, dark ink, same emerald |
+| `color-blind` | blue/orange pair (not green/red); 4.5:1 body text |
+| `dracula` | `#282a36` / `#bd93f9` / `#50fa7b` |
+| `desert` | sand/clay/ink |
+| `monochrome` | greyscale + one ink accent |
+| `christmas` | deep green + restrained red; not neon |
+
+Persist: `localStorage.hush-theme` immediately (so splash is themed before session), and `POST /api/profile {theme}` so restored sessions match.
+
+## Payne voice + agent-creation skill
+
+Payne is already seeded (kind 0 + `#welcome` note). Onboard step 4 is the introduction: show name, about, npub short, the welcome quote, CTA “Carry on.”
+
+Skill file (Goose-canonical): `.goose/skills/agent-create/SKILL.md`.
+
+Contract for Payne/Goose:
+
+1. Collect name, system prompt, optional avatar, optional context files.
+2. `POST /api/agent` JSON. Never put nsec in chat.
+3. Confirm with session `agents[]` entry (npub, slug).
+4. Tell the human retrieve path: `pass show hush/agents/<slug>/nsec`.
+
+Payne walkthrough microcopy (one line per field): “State the robot’s name.” / “Write its standing orders.” / “Attach only plain text or Markdown. I will refuse the rest.”
+
+## UI architecture (Quinn / Parker)
+
+- Cognitive load ≤3/10; ≤5 header actions (Install, Profile, Settings, Call-when-ready, badge).
+- Onboard: 4 numbered steps, one primary CTA.
+- Profile: drawer, not a page. Confirm logout.
+- Agent create: dedicated drawer from sidebar “Raise a robot”.
+- Add human: dedicated drawer; private vibe shows join token.
+- No second vibe process. Button after first vibe: **Manage vibe** (visibility + invite). Onboard button stays **Stand up the hive**.
+
+## C architecture (legible-c)
+
+Do **not** grow `hush_launch.c` (709 lines) or `hush_http.c` (732) with agent/member/avatar logic inlined.
+
+| Module | Owns |
+|---|---|
+| `hush_launch` | identity, backup, vibe name/vis, session head, Payne seed |
+| `hush_roster` (new) | agents[], humans[], context files, MIME check, avatar files |
+| `hush_http` | dispatch only; raise recv buffer via named constant |
+| `demo/index.html` | splash/wizard/drawers/themes |
+
+HTTP buffer: raise `HUSH_BUF_SZ` from 8192 to **65536** (one named constant, comment: HTTP JSON + small avatar). Still far under event content abuse; JSON parser stays bounded.
+
+Avatar files: `$XDG_DATA_HOME/hush/avatars/<pubkey>.img` (fallback `~/.local/share/hush/avatars/`). `GET /avatar/<64-hex>` serves them with sniffed Content-Type.
+
+Logout: `hush_launch_logout` clears `logged_in`, `backup_acked`, human identity (zero nsec). Does **not** destroy vibe/agents (this process still *is* the vibe). Next visitor must create/import a key; restore-from-pass still works on relay restart.
+
+## Risks (updated)
+
+1. Recv 8 KiB → raise to 64 KiB before avatar milestone.
+2. Kind 0 4096 → picture is a URL, never a data URI.
+3. Session 8192 → raise `HUSH_LAUNCH_JSON_MAX` to 16384 when agents/members land.
+4. State machine → keep `applySession` as the only page writer; splash only until first session tick.
+5. Hick → themes in Settings; agent/human add in drawers.
+
+## Verification performed (this research)
+
+- Read `hush_launch.h/.c` (session JSON, seed, kind 0, pass).
+- Read `hush_http.c` identity/vibe dispatch (no logout/agent).
+- Read `demo/index.html` splash/gate/profile/logout (client-only).
+- Read `check_launch.sh`, `test_launch.c`, `hush_pass.h`, `hush_event.h`, `hush_relay.c` buffer.
+- Read `UI_SPEC.md`, `PLAN_SPLASH_ONBOARD_MESSAGING.md`, prior RESEARCH first-launch + splash sections.
+- Inspected Buzz `build_profile`, `AgentCreationPreview.tsx` accept= images, `channelAgents.ts` systemPrompt/avatar.
+- Confirmed feather assets and embed script path.
+- Confirmed `HUSH_BUF_SZ=8192` would reject a typical avatar POST.
+
+## Updated plan
+
+See `PLAN_ONBOARD_PROFILE_AGENTS.md` (frozen after this gate).
+

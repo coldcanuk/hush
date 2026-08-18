@@ -23,7 +23,17 @@ echo "$sess" | grep -q '"logged_in":false' || fail "cold session should be logge
 echo "$sess" | grep -q '"ready":false' || fail "cold session should not be ready"
 html=$(curl -sf "http://127.0.0.1:${port}/")
 echo "$html" | grep -q 'id="gate"' || fail "HTML missing first-launch gate"
+echo "$html" | grep -q 'class=\\\"feather\\\"' || fail "HTML missing feather splash"
+echo "$html" | grep -q '/icon-192.png' || fail "HTML missing feather src"
+echo "$html" | grep -q 'stepBar' || fail "HTML missing wizard progress"
+echo "$html" | grep -q 'Carry on.' || fail "HTML missing Meet Payne CTA"
 echo "$html" | grep -q 'Create a new identity key' || fail "HTML missing create CTA"
+echo "$html" | grep -q 'prof-first' || fail "HTML missing profile first name"
+echo "$html" | grep -q 'data-theme=\"dracula\"' || fail "HTML missing dracula theme"
+echo "$html" | grep -q 'action: \"logout\"' || fail "HTML missing server logout"
+echo "$html" | grep -q 'Raise a robot' || fail "HTML missing raise-agent"
+echo "$html" | grep -q 'Invite human' || fail "HTML missing invite-human"
+echo "$html" | grep -q 'isContextFile' || fail "HTML missing MIME check"
 echo "$html" | grep -q 'Checked to save password to Unix Password Manager' || fail "pass checkbox copy"
 echo "$html" | grep -q 'pass show hush/identity/nsec' || fail "retrieve CLI"
 echo "$html" | grep -q 'id=\\\"save-pass\\\"' || fail "pass checkbox id"
@@ -48,6 +58,12 @@ echo "$vibe" | grep -q '"ready":true' || fail "vibe should ready the hive"
 echo "$vibe" | grep -q '"visibility":"public"' || fail "vibe default public"
 echo "$vibe" | grep -q 'Sgt Major Payne' || fail "Payne missing"
 echo "$vibe" | grep -q '"slug":"welcome"' || fail "welcome channel missing"
+echo "$vibe" | grep -q '"theme":"dark"' || fail "default theme missing"
+prof=$(curl -sf -X POST "http://127.0.0.1:${port}/api/profile" \
+    -H 'Content-Type: application/json' \
+    -d '{"first_name":"Ada","last_name":"Lovelace","email":"ada@hive.local","organization":"HQ","theme":"dracula"}')
+echo "$prof" | grep -q '"first_name":"Ada"' || fail "profile first name"
+echo "$prof" | grep -q '"theme":"dracula"' || fail "profile theme"
 chan=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
     -H 'Content-Type: application/json' \
     -d '{"name":"incidents"}')
@@ -57,4 +73,22 @@ proj=$(curl -sf -X POST "http://127.0.0.1:${port}/api/project" \
     -d '{"name":"alpha","path":"/tmp/hush-check-alpha","git":"true"}')
 echo "$proj" | grep -q '"slug":"alpha"' || fail "project create"
 test -d /tmp/hush-check-alpha/.git || fail "git init"
+mem=$(curl -sf -X POST "http://127.0.0.1:${port}/api/member" \
+    -H 'Content-Type: application/json' \
+    -d '{"npub":"npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg","name":"Alice"}')
+echo "$mem" | grep -q 'Alice' || fail "member add"
+ag=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"name":"Sentry","system_prompt":"Watch.","save_pass":false}')
+echo "$ag" | grep -q '"slug":"sentry"' || fail "agent create"
+bad=$(curl -s -o /tmp/hush-bad-agent -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"name":"Badfile","context_name":"x.pdf","context_mime":"application/pdf","context_text":"%PDF"}')
+test "$bad" != "200" || fail "pdf context must be rejected"
+logged=$(curl -sf -X POST "http://127.0.0.1:${port}/api/identity" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"logout"}')
+echo "$logged" | grep -q '"logged_in":false' || fail "logout should clear login"
+echo "$logged" | grep -q '"ready":false' || fail "logout should not stay ready"
+echo "$logged" | grep -q '"has_vibe":true' || fail "logout should keep vibe"
 echo "launch routes ok"
