@@ -115,9 +115,32 @@ homes are borrowed, never overwritten.
   file / pass key / curl scan. HTTP only dispatches. Roster still
   owns the eight-id allowlist.
 - Task 2 of M2.2: document curl argv contract (no key on argv;
-  `CURL_KEY` env or header file 0600 in `$TMPDIR`).
+  header file 0600 in `$TMPDIR` via `curl --config`, never
+  `Authorization:` on argv).
 - Verify: this PLAN still names one owner per concern.
 - Commit: `Milestone 2.2: lock provider module boundary`
+
+#### Module boundary (frozen)
+
+| Concern | Owner |
+|---|---|
+| Eight wire ids | `hush_roster` (`hush_roster_is_provider`) |
+| Detect home/binary, overlay file, pass key, scan | `hush_provider` |
+| HTTP dispatch GET/POST `/api/provider` | `hush_http` |
+| Pencil + tailored drawer | `hush-c/demo/index.html` |
+
+#### Curl argv contract (frozen)
+
+Scan never puts the API key on argv or in a shell string.
+
+```
+curl -sS --max-time 8 --config <0600 tmpfile>
+```
+
+Tmpfile contains only curl `--config` directives (`url =`,
+`header = "Authorization: Bearer …"` or Gemini query). Unlink
+after wait. If `curl` is missing, return `HUSH_ERR_IO` and a
+stable error string; HTTP still replies 200 `{ok:false,error}`.
 
 ## Phase 3 — Implementation
 
