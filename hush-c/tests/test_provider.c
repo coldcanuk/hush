@@ -31,6 +31,28 @@ static void write_file(const char *path, const char *body)
     fclose(fp);
 }
 
+static void expect_overlay_clean(const char *home)
+{
+    char path[320];
+    char overlay[HUSH_PROVIDER_JSON_MAX];
+    FILE *fp;
+    size_t n = 0;
+
+    snprintf(path, sizeof(path), "%s/.config/hush/providers.json", home);
+    overlay[0] = '\0';
+    fp = fopen(path, "r");
+    if (fp != NULL) {
+        n = fread(overlay, 1, sizeof(overlay) - 1, fp);
+        overlay[n] = '\0';
+        fclose(fp);
+    }
+    expect(strstr(overlay, "sk-test-key") == NULL, "overlay no key");
+    expect(strstr(overlay, "user-alice") == NULL, "overlay no user");
+    expect(strstr(overlay, "pw-secret") == NULL, "overlay no password");
+    expect(strstr(overlay, "tok-secret") == NULL, "overlay no token");
+    expect(strstr(overlay, "pk-secret") == NULL, "overlay no passkey");
+}
+
 static int setup_home(char *home, size_t homesz)
 {
     char cmd[512];
@@ -95,12 +117,28 @@ int main(void)
     memcpy(in.host, "https://api.openai.com", 23);
     memcpy(in.model, "gpt-4o", 7);
     in.api_key = "sk-test-key";
+    in.username = "user-alice";
+    in.password = "pw-secret";
+    in.token = "tok-secret";
+    in.passkey = "pk-secret";
     expect(hush_provider_save(&in) == HUSH_OK, "save openai");
     expect(hush_provider_status(&st, "openai-api") == HUSH_OK, "openai status");
     expect(st.has_key, "has key");
+    expect(st.has_username, "has username");
+    expect(st.has_password, "has password");
+    expect(st.has_token, "has token");
+    expect(st.has_passkey, "has passkey");
     expect(strcmp(st.model, "gpt-4o") == 0, "model saved");
     expect(st.configured, "configured");
     expect(hush_pass_has("providers/openai-api/api_key"), "pass path");
+    expect(hush_pass_has("providers/openai-api/username"), "user path");
+    expect(hush_pass_has("providers/openai-api/password"), "pass path word");
+    expect(hush_pass_has("providers/openai-api/token"), "token path");
+    expect(hush_pass_has("providers/openai-api/passkey"), "passkey path");
+    hush_provider_secret_path(path, sizeof(path), "openai-api",
+                              HUSH_PROVIDER_SECRET_USERNAME);
+    expect(strcmp(path, "providers/openai-api/username") == 0, "secret path");
+    expect_overlay_clean(home);
 
     expect(hush_provider_status_all(all, &n) == HUSH_OK, "all");
     expect(n == (size_t)HUSH_PROVIDER_COUNT, "eight");
@@ -120,6 +158,10 @@ int main(void)
                               "https://api.openai.com", "sk-test") == HUSH_OK,
            "scan ok");
     expect(scan.nmodels == 2, "two models");
+    expect(hush_provider_scan(&scan, "openai-api",
+                              "https://api.openai.com", NULL) == HUSH_OK,
+           "scan from pass");
+    expect(scan.nmodels == 2, "two models from pass");
     expect(strcmp(scan.models[0], "gpt-4o") == 0, "first model");
     expect(strcmp(scan.models[1], "o3") == 0, "second model");
 

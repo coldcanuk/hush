@@ -502,8 +502,23 @@
       </div>
       <div id="provider-api-fields">
         <label for="provider-key">API key</label>
-        <input id="provider-key" type="password" maxlength="256" autocomplete="off">
+        <input id="provider-key" type="password" maxlength="512" autocomplete="off">
         <p class="help" id="provider-key-help">Stored in pass. Never shown again.</p>
+        <details id="provider-more">
+          <summary>Add username, password, token, or passkey</summary>
+          <label for="provider-username">Username</label>
+          <input id="provider-username" type="password" maxlength="512" autocomplete="off">
+          <p class="help" id="provider-username-help">Stored in pass. Never shown again.</p>
+          <label for="provider-password">Password</label>
+          <input id="provider-password" type="password" maxlength="512" autocomplete="off">
+          <p class="help" id="provider-password-help">Stored in pass. Never shown again.</p>
+          <label for="provider-token">Token</label>
+          <input id="provider-token" type="password" maxlength="512" autocomplete="off">
+          <p class="help" id="provider-token-help">Stored in pass. Never shown again.</p>
+          <label for="provider-passkey">Passkey</label>
+          <input id="provider-passkey" type="password" maxlength="512" autocomplete="off">
+          <p class="help" id="provider-passkey-help">Stored in pass. Never shown again.</p>
+        </details>
         <label for="provider-host">Endpoint host</label>
         <input id="provider-host" type="text" maxlength="240" placeholder="https://">
         <label for="provider-model">Model</label>
@@ -1059,6 +1074,10 @@
       if (st.has_binary) bits.push("binary found");
       if (st.has_home) bits.push("home config found");
       if (st.has_key) bits.push("key on file");
+      if (st.has_username) bits.push("username on file");
+      if (st.has_password) bits.push("password on file");
+      if (st.has_token) bits.push("token on file");
+      if (st.has_passkey) bits.push("passkey on file");
       if (st.configured) bits.push("configured");
       if (st.home_model) bits.push("home model " + st.home_model);
       if (st.model) bits.push("model " + st.model);
@@ -1091,9 +1110,26 @@
       else
         $("provider-home-help").textContent = "";
       $("provider-key").value = "";
+      $("provider-username").value = "";
+      $("provider-password").value = "";
+      $("provider-token").value = "";
+      $("provider-passkey").value = "";
       $("provider-key-help").textContent = st.has_key
         ? "Key is in pass. Retrieve with: pass show hush/providers/" + id + "/api_key"
         : "Stored in pass. Never shown again.";
+      $("provider-username-help").textContent = st.has_username
+        ? "Username is in pass. Retrieve with: pass show hush/providers/" + id + "/username"
+        : "Stored in pass. Never shown again.";
+      $("provider-password-help").textContent = st.has_password
+        ? "Password is in pass. Retrieve with: pass show hush/providers/" + id + "/password"
+        : "Stored in pass. Never shown again.";
+      $("provider-token-help").textContent = st.has_token
+        ? "Token is in pass. Retrieve with: pass show hush/providers/" + id + "/token"
+        : "Stored in pass. Never shown again.";
+      $("provider-passkey-help").textContent = st.has_passkey
+        ? "Passkey is in pass. Retrieve with: pass show hush/providers/" + id + "/passkey"
+        : "Stored in pass. Never shown again.";
+      $("provider-more").open = !!(st.has_username || st.has_password || st.has_token || st.has_passkey);
       $("provider-host").value = st.host || "";
       $("provider-model").value = st.model || st.home_model || "";
       $("provider-model-list").innerHTML = "";
@@ -1154,7 +1190,15 @@
         model: ($("provider-model").value || "").trim()
       };
       const key = ($("provider-key").value || "").trim();
+      const username = ($("provider-username").value || "").trim();
+      const password = ($("provider-password").value || "").trim();
+      const token = ($("provider-token").value || "").trim();
+      const passkey = ($("provider-passkey").value || "").trim();
       if (key) body.api_key = key;
+      if (username) body.username = username;
+      if (password) body.password = password;
+      if (token) body.token = token;
+      if (passkey) body.passkey = passkey;
       try {
         const data = await api("/api/provider", body);
         providerMap = Object.assign(providerMap, (data && data.providers) || {});

@@ -48,18 +48,48 @@ echo "$got" | grep -q '"goose"' || fail "GET missing goose"
 echo "$got" | grep -q '"openai-api"' || fail "GET missing openai"
 echo "$got" | grep -q '"family":"home"' || fail "GET missing home family"
 echo "$got" | grep -q '"family":"api"' || fail "GET missing api family"
-echo "$got" | grep -q 'api_key' && fail "GET leaked api_key"
+echo "$got" | grep -q '"api_key"' && fail "GET leaked api_key field"
+echo "$got" | grep -q '"username"' && fail "GET leaked username field"
+echo "$got" | grep -q '"password"' && fail "GET leaked password field"
+echo "$got" | grep -q '"token"' && fail "GET leaked token field"
+echo "$got" | grep -q '"passkey"' && fail "GET leaked passkey field"
 echo "$got" | grep -q 'sk-' && fail "GET leaked key material"
 
 saved=$(curl -sf -X POST "http://127.0.0.1:${port}/api/provider" \
     -H 'Content-Type: application/json' \
-    -d '{"provider":"openai-api","host":"https://api.openai.com","model":"gpt-4o","api_key":"sk-secret-test"}')
+    -d '{"provider":"openai-api","host":"https://api.openai.com","model":"gpt-4o","api_key":"sk-secret-test","username":"user-alice","password":"pw-secret","token":"tok-secret","passkey":"pk-secret"}')
 echo "$saved" | grep -q '"model":"gpt-4o"' || fail "POST did not save model"
 echo "$saved" | grep -q 'sk-secret-test' && fail "POST echoed api_key"
+echo "$saved" | grep -q 'user-alice' && fail "POST echoed username"
+echo "$saved" | grep -q 'pw-secret' && fail "POST echoed password"
+echo "$saved" | grep -q 'tok-secret' && fail "POST echoed token"
+echo "$saved" | grep -q 'pk-secret' && fail "POST echoed passkey"
+echo "$saved" | grep -q '"api_key"' && fail "POST leaked api_key field"
 
 again=$(curl -sf "http://127.0.0.1:${port}/api/provider")
 echo "$again" | grep -q '"model":"gpt-4o"' || fail "GET lost model"
 echo "$again" | grep -q 'sk-secret' && fail "later GET leaked key"
+echo "$again" | grep -q 'user-alice' && fail "later GET leaked username"
+echo "$again" | grep -q 'pw-secret' && fail "later GET leaked password"
+echo "$again" | grep -q 'tok-secret' && fail "later GET leaked token"
+echo "$again" | grep -q 'pk-secret' && fail "later GET leaked passkey"
+echo "$again" | grep -q '"api_key"' && fail "later GET leaked api_key field"
+echo "$again" | grep -q '"username"' && fail "later GET leaked username field"
+echo "$again" | grep -q '"password"' && fail "later GET leaked password field"
+echo "$again" | grep -q '"token"' && fail "later GET leaked token field"
+echo "$again" | grep -q '"passkey"' && fail "later GET leaked passkey field"
+
+overlay="$home/.config/hush/providers.json"
+test -f "$overlay" || fail "overlay missing"
+grep -q 'sk-secret-test' "$overlay" && fail "overlay stored api_key"
+grep -q 'user-alice' "$overlay" && fail "overlay stored username"
+grep -q 'pw-secret' "$overlay" && fail "overlay stored password"
+grep -q 'tok-secret' "$overlay" && fail "overlay stored token"
+grep -q 'pk-secret' "$overlay" && fail "overlay stored passkey"
+
+sess=$(curl -sf "http://127.0.0.1:${port}/api/session")
+echo "$sess" | grep -q 'sk-secret-test' && fail "session leaked api_key"
+echo "$sess" | grep -q 'pw-secret' && fail "session leaked password"
 
 home_save=$(curl -sf -X POST "http://127.0.0.1:${port}/api/provider" \
     -H 'Content-Type: application/json' \

@@ -1,5 +1,5 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure
-Version: 2026-08-18 (RDAP M2, gb/provider-configure)
+Version: 2026-08-18 (RDAP M2, gb/provider-pass-audit)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec and the onboard raise-form notes where they conflict.
 Quinn + Parker + Payne. No feline.
@@ -159,8 +159,8 @@ from `GET /api/provider`. Save is `POST /api/provider`. Scan is
 | Family | Ids | Drawer |
 |---|---|---|
 | Home-config CLI | `goose`, `grok-build`, `codex` | Status (binary / home config / active model). Primary: **Use existing configuration** when home or binary+auth is present. Secondary: optional API key + host + model. Copy names the official command (`goose configure`, `grok login`, `codex login`). Never write those home files. |
-| HTTP API | `gemini-api`, `xai-api`, `openai-api`, `anthropic-api` | API key (password). Host URL, defaulted. **Scan models** then `<select>` or type-in. |
-| Editor agent | `cline` | Honest empty state if Cline is missing. Optional API key + host + model. |
+| HTTP API | `gemini-api`, `xai-api`, `openai-api`, `anthropic-api` | API key (password). Optional username / password / token / passkey behind one disclosure. Host URL, defaulted. **Scan models** then `<select>` or type-in. |
+| Editor agent | `cline` | Honest empty state if Cline is missing. Optional API key + other credentials + host + model. |
 
 Goose home is `~/.config/goose/config.yaml` (official). Legacy
 `~/.goose` is probed and mentioned only if it exists.
@@ -172,9 +172,27 @@ Payne copy:
 - Missing Goose: “Goose is not configured here. Run goose configure, or enter a key.”
 - Scan fail: “Could not list models. Type the model name.”
 - Key saved: “Key is in pass. Retrieve with: pass show hush/providers/<id>/api_key”
+- Other secrets: “Stored in pass. Never shown again.” After save, retrieve CLI for each `has_*`.
+- Payne: “Credentials live in pass. I will not show them twice.”
+
+Provider secrets Hush accepts (API key, username, password, token,
+passkey) live only in `pass`:
+
+| Kind | Retrieve |
+|---|---|
+| API key | `pass show hush/providers/<id>/api_key` |
+| Username | `pass show hush/providers/<id>/username` |
+| Password | `pass show hush/providers/<id>/password` |
+| Token | `pass show hush/providers/<id>/token` |
+| Passkey | `pass show hush/providers/<id>/passkey` |
+
+Foreign homes (`~/.config/goose/secrets.yaml`, `~/.grok/auth.json`,
+`~/.codex`, Cline editor store) are never copied into `pass`.
 
 Keys never appear in `GET /api/session` or `GET /api/provider`.
-`has_key` is a boolean. Deepseek is not a radio this slice.
+`has_key`, `has_username`, `has_password`, `has_token`, `has_passkey`
+are booleans. Secret kind names are never GET JSON keys. Deepseek is
+not a radio this slice.
 
 ## Data / API (additive)
 
@@ -187,9 +205,9 @@ Keys never appear in `GET /api/session` or `GET /api/provider`.
 | `POST /api/member` | add human (npub) |
 | `POST /api/close` | acknowledge Close; does **not** stop the process |
 | `POST /api/exit` | acknowledge Exit; sets shutdown flag; process exits 0 |
-| `GET /api/provider` | status per id: family, has_binary, has_home, has_key, use_home, host, model, configured. Never the key. |
-| `POST /api/provider` | `{provider, use_home?, host?, model?, api_key?}` save overlay + optional key |
-| `POST /api/provider/scan` | `{provider, host?, api_key?}` → `model_0`…`model_31` or `{ok:false,error}` |
+| `GET /api/provider` | status per id: family, has_binary, has_home, has_key, has_username, has_password, has_token, has_passkey, use_home, host, model, configured. Never secret values or secret field names. |
+| `POST /api/provider` | `{provider, use_home?, host?, model?, api_key?, username?, password?, token?, passkey?}` save overlay + optional secrets to pass |
+| `POST /api/provider/scan` | `{provider, host?, api_key?}` → `model_0`…`model_31` or `{ok:false,error}`. Empty key loads `api_key` then `token` from pass. |
 | `GET /avatar/<64-hex>` | stored picture bytes |
 
 Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
@@ -221,7 +239,7 @@ Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
 - Profile/Settings visible before ready.
 - Payne always first in the robot card list when vibe present.
 - A robot cannot be raised without a system prompt and an AI provider.
-- Provider keys live only in `pass` (`hush/providers/<id>/api_key`).
+- Provider secrets live only in `pass` (`hush/providers/<id>/{api_key,username,password,token,passkey}`).
 - Hush never writes `~/.config/goose`, `~/.grok`, or `~/.codex`.
 - Close and Exit are distinct labeled hive buttons. The OS `×` is neither.
 - Close never kills the relay. Exit always does, with exit code 0.

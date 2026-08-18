@@ -17,12 +17,20 @@ enum {
     HUSH_PROVIDER_JSON_MAX = 8192,
     HUSH_PROVIDER_ERR_MAX = 160,
     HUSH_PROVIDER_COUNT = 8,
-    HUSH_PROVIDER_KEY_MAX = 256
+    HUSH_PROVIDER_KEY_MAX = 512,
+    HUSH_PROVIDER_URL_MAX = 1024,
+    HUSH_PROVIDER_SECRET_COUNT = 5
 };
 
 #define HUSH_PROVIDER_FAMILY_HOME "home"
 #define HUSH_PROVIDER_FAMILY_API "api"
 #define HUSH_PROVIDER_FAMILY_EDITOR "editor"
+
+#define HUSH_PROVIDER_SECRET_API_KEY "api_key"
+#define HUSH_PROVIDER_SECRET_USERNAME "username"
+#define HUSH_PROVIDER_SECRET_PASSWORD "password"
+#define HUSH_PROVIDER_SECRET_TOKEN "token"
+#define HUSH_PROVIDER_SECRET_PASSKEY "passkey"
 
 #define HUSH_PROVIDER_HOST_OPENAI "https://api.openai.com"
 #define HUSH_PROVIDER_HOST_XAI "https://api.x.ai"
@@ -41,6 +49,10 @@ typedef struct {
     int has_binary;
     int has_home;
     int has_key;
+    int has_username;
+    int has_password;
+    int has_token;
+    int has_passkey;
     int use_home;
     int configured;
 } hush_provider_status_t;
@@ -50,6 +62,10 @@ typedef struct {
     char host[HUSH_PROVIDER_HOST_MAX];
     char model[HUSH_PROVIDER_MODEL_MAX];
     const char *api_key;
+    const char *username;
+    const char *password;
+    const char *token;
+    const char *passkey;
     int use_home;
 } hush_provider_in_t;
 
@@ -74,8 +90,12 @@ hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id);
 /* Fills one status per known id. out must have HUSH_PROVIDER_COUNT slots. */
 hush_status_t hush_provider_status_all(hush_provider_status_t *out, size_t *out_n);
 
-/* Writes overlay host, model, and use_home. Optional api_key goes to pass. */
+/* Writes overlay host, model, and use_home. Optional secrets go to pass. */
 hush_status_t hush_provider_save(const hush_provider_in_t *in);
+
+/* Writes providers/<id>/<kind> (no hush/ prefix). Empty on a bad id or kind. */
+void hush_provider_secret_path(char *out, size_t outsz,
+                               const char *id, const char *kind);
 
 /* Lists models via curl. Fills out->error on failure. */
 hush_status_t hush_provider_scan(hush_provider_scan_t *out, const char *id,

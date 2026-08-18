@@ -11,6 +11,10 @@ The human must uncheck the box to opt out.
 | Human identity nsec | `hush/identity/nsec` | `pass show hush/identity/nsec` |
 | Agent nsec | `hush/agents/<slug>/nsec` | `pass show hush/agents/<slug>/nsec` |
 | Provider API key | `hush/providers/<id>/api_key` | `pass show hush/providers/<id>/api_key` |
+| Provider username | `hush/providers/<id>/username` | `pass show hush/providers/<id>/username` |
+| Provider password | `hush/providers/<id>/password` | `pass show hush/providers/<id>/password` |
+| Provider token | `hush/providers/<id>/token` | `pass show hush/providers/<id>/token` |
+| Provider passkey | `hush/providers/<id>/passkey` | `pass show hush/providers/<id>/passkey` |
 | Other token | `hush/<category>/<name>` | `pass show hush/<category>/<name>` |
 
 Helper (same namespace, path without the `hush/` prefix):
