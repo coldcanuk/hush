@@ -12,6 +12,9 @@ must create an agent with skills on the fly.
    - `provider` (**required**) — one of:
      `goose`, `grok-build`, `codex`, `cline`,
      `gemini-api`, `xai-api`, `openai-api`, `anthropic-api`
+   - optional: tell the human to click the pencil and configure that
+     provider (home config, or API key + host + model). Raise does
+     not require configure to succeed.
    - optional context files: **plaintext or Markdown only**, max 3
 2. Never put an nsec in chat.
 3. POST JSON to the running relay (default `http://127.0.0.1:10555`).
@@ -67,5 +70,16 @@ never returned after create.
 ## Voice
 
 Payne: “State the robot’s name.” “Write its system prompt.”
-“Choose an AI provider.” “Attach only plain text or Markdown. I will refuse the rest.”
+“Choose an AI provider.” “Configure this provider.”
+“Attach only plain text or Markdown. I will refuse the rest.”
 “Carry on.”
+
+## Configure (optional)
+
+```
+GET  /api/provider
+POST /api/provider {provider, use_home?, host?, model?, api_key?}
+POST /api/provider/scan {provider, host?, api_key?}
+```
+
+Keys live at `pass show hush/providers/<id>/api_key`. Never echo them.

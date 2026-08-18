@@ -1697,3 +1697,263 @@ Close, Exit. Install remains opportunistic. Badge is status, not a choice.
 - Re-read hive header on current main (75d52f238): no Close/Exit buttons.
 - Re-read leftover PLAN_EXIT_CLOSE.md: CLI-only; that is why the user
   still cannot see an Exit button.
+
+---
+
+# 2026-08-18 RDAP: Provider configure (pencil per AI runtime)
+
+## Scope locked
+
+- **Primary goal:** Selecting an AI provider on Raise a robot reveals a
+  tailored **Configure** control (pencil ✎). The human either reuses the
+  existing home-directory configuration for that runtime, or enters the
+  credentials that runtime actually needs. API-family providers then
+  accept a host URL + API key, scan for models, and store the chosen
+  model. Each provider's drawer is different.
+- **Non-goals:** Spawning Goose/Codex/Grok/Cline as child processes;
+  live LLM chat from the hive; rewriting `~/.config/goose/config.yaml`
+  or `~/.grok/config.toml`; OAuth browser dance from C; authenticated
+  remote control; system tray; Deepseek as a ninth radio unless we
+  also add the wire id (user mentioned it; see decision below);
+  libcurl / OpenSSL client; writing secrets into HTML or session JSON.
+- **Success criteria:**
+  1. Each of the eight provider radios shows a 44px pencil once selected.
+  2. Pencil opens `#provider-drawer` whose fields depend on the id.
+  3. Goose: detect `~/.config/goose/config.yaml` (not `~/.goose`);
+     offer "Use existing Goose configuration" vs enter override.
+  4. Grok Build: detect `~/.grok/auth.json` / `grok` on PATH;
+     offer existing login vs API key.
+  5. Codex: detect `codex` on PATH + `~/.codex`; offer `codex login`
+     hint vs API key. Do not invent a config.toml that is not there.
+  6. Cline: detect common editor-extension roots; if missing, show
+     install/open-Cline copy. Optional API key + host + model for a
+     standalone Cline-compatible endpoint.
+  7. gemini-api / xai-api / openai-api / anthropic-api: API key +
+     host URL (defaulted) + Scan models + model `<select>`.
+  8. Keys saved via existing `hush_pass` at
+     `providers/<id>/api_key`. Host and model stored in
+     `$XDG_CONFIG_HOME/hush/providers.json` (fallback
+     `$HOME/.config/hush/providers.json`). Never returned in
+     GET /api/session.
+  9. `GET /api/provider` lists status (configured / has_home /
+     has_binary / host / model / has_key / models[]). Never the key.
+  10. `POST /api/provider` saves. `POST /api/provider/scan` fetches
+      models for API-family ids.
+  11. `./configure && make && make test` pass. Embed after HTML change.
+- **Constraints:** C11 + write-legible-c; worktree
+  `worktrees/provider-configure` / `gb/provider-configure`; PR-only
+  land; no libcurl (POSIX sockets + optional TLS via existing
+  `-lcrypto` only if a later milestone needs it — v1 scan uses
+  plaintext HTTP to localhost or a tiny OpenSSL client only if we
+  must hit public HTTPS; see risk). JSON parser is string-field only.
+- **Assumptions:** Provider remains a roster label on the robot.
+  Configure state is hive-global (one config per provider id), not
+  per-robot. Existing Goose/Grok/Codex home configs are borrowed,
+  never overwritten. Scan may fail offline; human can type a model
+  name. Deepseek is **not** added this slice (no radio today; adding
+  it is a roster allowlist change and can follow).
+
+## Current code (this worktree @ f29a6d62c / gb/provider-configure)
+
+### Raise drawer (`hush-c/demo/index.html`)
+
+- Eight radios, no pencil, no configure drawer, no status.
+- `chosenProvider()` returns the radio value. Raise requires it.
+- Payne voice already: "Choose an AI provider."
+- Pencil already exists as ✎ on name/prompt pills — reuse that glyph.
+
+### Roster / HTTP
+
+- `hush_roster_is_provider` allowlist of eight wire ids.
+- `POST /api/agent` requires `provider`. Session lists it.
+- No `/api/provider`. No host/model/key fields on the agent.
+- `hush_json_field` is `"key":"value"` only. Indexed keys, not arrays.
+- `hush_pass` already stores secrets under `hush/<path>`.
+- No outbound HTTP client in hush-c. Link line is `-lcrypto` only.
+- Listen is localhost. No auth on control POSTs (same as /api/exit).
+
+### Home configs actually on this machine (2026-08-18)
+
+| Runtime | User said | Actual path / binary | Auth shape |
+|---|---|---|---|
+| Goose | `~/.goose` | **`~/.config/goose/config.yaml`** (goose 1.46.0 `goose info`). Secrets in `~/.config/goose/secrets.yaml`. `active_provider` + `providers.<id>.{enabled,model,configured}`. CLI: `goose configure`. | File + env. Official docs: https://goose-docs.ai/docs/guides/config-files and https://goose-docs.ai/docs/getting-started/providers |
+| Grok Build | — | `~/.grok/config.toml`, `~/.grok/auth.json` (OAuth at auth.x.ai), binary `grok`. Fallback `XAI_API_KEY`. `grok models`, `grok login`. | OAuth first, API key fallback |
+| Codex | — | Binary `codex`, home `~/.codex`. **No config.toml / auth.json here.** `codex doctor`: "no Codex credentials". `codex login` or API key env. Config would be `~/.codex/config.toml` when present. | OAuth or API key |
+| Cline | — | No `cline` binary, no `~/.cline`, no VS Code/Cursor Cline extension storage on this host. Official Cline is a VS Code/Cursor extension (`saoudrizwan.claude-dev`) storing keys in editor secret storage / `~/Documents/Cline`. | Editor extension |
+| Gemini API | — | `GOOGLE_API_KEY`. Host `https://generativelanguage.googleapis.com`. Models: `GET /v1beta/models?key=` | API key |
+| xAI API | — | `XAI_API_KEY`, optional `XAI_HOST` default `https://api.x.ai`. Models: `GET /v1/models` Bearer | API key |
+| OpenAI API | — | `OPENAI_API_KEY`, optional `OPENAI_HOST` default `https://api.openai.com`. Models: `GET /v1/models` Bearer | API key |
+| Anthropic API | — | `ANTHROPIC_API_KEY`, optional `ANTHROPIC_HOST` default `https://api.anthropic.com`. Models: `GET /v1/models` with `x-api-key` + `anthropic-version` | API key |
+
+**Correction vs the user prompt:** Goose's live config is
+`~/.config/goose`, documented and confirmed by `goose info`. We still
+probe `~/.goose` as a legacy alias and say so in the drawer if only
+that exists. We never invent `~/.goose` as the primary path.
+
+## Families (locked)
+
+### Family A — home-config CLIs (Goose, Grok Build, Codex)
+
+Drawer:
+
+1. Status line: binary found / missing; home config found / missing;
+   active model if we can read it without secrets.
+2. Primary: **Use existing configuration** (enabled when home config
+   or binary+auth is present). Saves `{provider, use_home:true}`.
+3. Secondary: override fields (optional API key + host + model) for
+   headless / CI. Key goes to `pass`.
+4. Copy that names the official configure command
+   (`goose configure`, `grok login`, `codex login`) — we do not
+   spawn those TUIs from the hive (non-goal: driving an interactive
+   TTY from C).
+
+Goose-specific read (no writes):
+
+- Path: `$XDG_CONFIG_HOME/goose/config.yaml` else `$HOME/.config/goose/config.yaml`.
+- Parse only `active_provider` and `providers.<id>.model` / `.configured`.
+- Never open `secrets.yaml`. Never echo keys.
+
+Grok-specific read:
+
+- `~/.grok/auth.json` exists and is non-empty → `has_home`.
+- `grok` on PATH → `has_binary`.
+- Optional: `XAI_API_KEY` in env → `has_env_key` (boolean only).
+
+Codex-specific read:
+
+- `codex` on PATH → `has_binary`.
+- `~/.codex` directory exists → `has_home`.
+- `~/.codex/auth.json` or `config.toml` present → `configured`.
+
+### Family B — HTTP APIs (Gemini, xAI, OpenAI, Anthropic)
+
+Drawer, in order (Hick ≤3 after the radio is chosen):
+
+1. API key (password input). Never echoed back; status is `has_key`.
+2. Endpoint host URL, prefilled with that provider's default.
+3. **Scan models** → POST /api/provider/scan → `<select>` of names.
+   Human may type a model if scan fails.
+4. Save.
+
+Defaults (one definition site in `hush_provider.h`):
+
+| id | default host | scan |
+|---|---|---|
+| openai-api | `https://api.openai.com` | `GET {host}/v1/models` `Authorization: Bearer` |
+| xai-api | `https://api.x.ai` | `GET {host}/v1/models` `Authorization: Bearer` |
+| anthropic-api | `https://api.anthropic.com` | `GET {host}/v1/models` `x-api-key` + `anthropic-version: 2023-06-01` |
+| gemini-api | `https://generativelanguage.googleapis.com` | `GET {host}/v1beta/models?key=` |
+
+### Family C — Cline (editor agent)
+
+Drawer:
+
+1. Status: Cline binary / `~/Documents/Cline` / known extension folder.
+2. If missing: Payne copy "Install the Cline extension, then come back.
+   Or paste an API key and host if you run Cline's OpenAI-compatible
+   endpoint."
+3. Optional API key + host + model (same scan shape as Family B,
+   default host empty — human must supply).
+
+## Storage
+
+`$XDG_CONFIG_HOME/hush/providers.json` else `$HOME/.config/hush/providers.json`.
+Mode 0600. Schema (flat, greppable, no nested arrays so a tiny
+hand parser can read it):
+
+```
+{
+  "goose": {"use_home":true,"host":"","model":"","has_key":false},
+  "openai-api": {"use_home":false,"host":"https://api.openai.com","model":"gpt-4o","has_key":true}
+}
+```
+
+The key itself is **only** in `pass` at `providers/<id>/api_key`.
+Retrieve: `pass show hush/providers/<id>/api_key`.
+`has_key` in the JSON is a cache of `hush_pass_has`.
+
+Session does **not** grow provider secrets. GET /api/provider is the
+status surface. Raise still only posts the provider id.
+
+## HTTP (localhost, no auth — same as /api/exit)
+
+| Route | Body | Reply |
+|---|---|---|
+| `GET /api/provider` | — | `{providers:{<id>:{label,family,has_binary,has_home,has_key,use_home,host,model,configured}}}` |
+| `POST /api/provider` | `{provider, use_home?, host?, model?, api_key?}` | same status for that id (key never echoed) |
+| `POST /api/provider/scan` | `{provider, host?, api_key?}` | `{ok, models:["…"], error?}` — models as indexed `model_0`…`model_31` because `hush_json_field` cannot parse arrays. Client also accepts a newline-joined `models` string. |
+
+Scan implementation risk: public APIs are HTTPS. hush-c has no
+HTTP client. Mitigations ranked:
+
+1. **Preferred v1:** spawn `curl` if present (`popen`/`posix_spawn`
+   with argv, never a shell string that includes the key on the
+   command line — key via env or stdin). Timeout 8s. Parse a
+   bounded models list. If curl is missing, return
+   `{ok:false,error:"curl missing"}` and keep the typed-model field.
+2. Rejected for v1: vendoring libcurl, writing a TLS client, or
+   asking the browser to call api.openai.com directly (CORS + key
+   in the page).
+
+`curl` is already how check_launch.sh talks to the relay. Same
+dependency class.
+
+## UX (Quinn / Payne)
+
+- Cognitive load: radio is the only new choice until selected;
+  then one pencil. Drawer has ≤3 fields for Family B, ≤2 actions
+  for Family A.
+- Fitts: pencil and Scan and Save ≥44px.
+- Recognition: defaults filled; status line says what we found.
+- Payne titles:
+  - pencil: "Configure this provider."
+  - Goose existing: "Use the Goose already standing in ~/.config/goose."
+  - missing Goose: "Goose is not configured here. Run goose configure, or enter a key."
+  - Exit/Close unchanged. Drawer Close never quits (already law).
+
+## Hick
+
+Raise drawer primary choices stay: Name, System Prompt, Context,
+Provider, Raise. Configure is revealed, not a ninth always-on
+button. Header Hick unchanged.
+
+## Top risks
+
+1. **HTTPS scan without a client.** Mitigation: curl argv + typed
+   model fallback. Do not block Raise on a failed scan.
+2. **Writing Goose/Grok/Codex home files.** Mitigation: read-only
+   detect; never write those trees. Hush stores its own overlay.
+3. **Key leakage.** Mitigation: pass only; 0600 json; never put
+   api_key in GET /api/session or HTML. Tests assert absence.
+4. **Cline is not a CLI on this host.** Mitigation: honest empty
+   state + optional API fields. Do not fake a Cline home.
+5. **User said ~/.goose.** Mitigation: probe both; document the
+   official path; copy mentions both if legacy exists.
+
+## Verification (this research phase)
+
+- Read raise form, UI_SPEC §9, hush_roster.h provider allowlist,
+  hush_http.c POST /api/agent, hush_pass.h, check_launch.sh.
+- Read official Goose docs: providers.md, config-files.md
+  (https://goose-docs.ai/). `goose info` → Config dir
+  `/home/chuck/.config/goose`.
+- Inspected local `~/.config/goose/config.yaml` structure
+  (redacted): `active_provider`, `providers.*.model/configured`.
+- Inspected `~/.grok/config.toml`, `auth.json` key names, `grok --help`.
+- `codex doctor`: no credentials; home is `~/.codex`.
+- No Cline binary or extension store on this host.
+- Confirmed hush-c has no outbound HTTP and links `-lcrypto` only.
+
+## Goose-doc verification
+
+| Item | Doc |
+|---|---|
+| Config path `~/.config/goose/config.yaml` | https://goose-docs.ai/docs/guides/config-files |
+| `active_provider` + `providers.<id>.{enabled,model,configured}` | https://goose-docs.ai/docs/guides/config-files |
+| `goose configure` flow; API key + host + model fetch | https://goose-docs.ai/docs/getting-started/providers |
+| Anthropic `ANTHROPIC_API_KEY` + `ANTHROPIC_HOST` default api.anthropic.com | https://goose-docs.ai/docs/getting-started/providers |
+| OpenAI `OPENAI_API_KEY` + `OPENAI_HOST` default api.openai.com | https://goose-docs.ai/docs/getting-started/providers |
+| xAI `XAI_API_KEY` + `XAI_HOST` | https://goose-docs.ai/docs/getting-started/providers |
+| Gemini `GOOGLE_API_KEY` | https://goose-docs.ai/docs/getting-started/providers |
+| Secrets live in `secrets.yaml`, not config.yaml | https://goose-docs.ai/docs/guides/config-files |
+

@@ -1,5 +1,5 @@
-# Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit
-Version: 2026-08-18 (RDAP M2, gb/exit-close-design)
+# Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure
+Version: 2026-08-18 (RDAP M2, gb/provider-configure)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec and the onboard raise-form notes where they conflict.
 Quinn + Parker + Payne. No feline.
@@ -128,6 +128,9 @@ and a pencil to edit it again.
   OpenAI API, Anthropic API.
   Wire ids: `goose`, `grok-build`, `codex`, `cline`,
   `gemini-api`, `xai-api`, `openai-api`, `anthropic-api`.
+  Selecting a radio reveals a 44px pencil (`#provider-cfg`) on that
+  row. Pencil opens `#provider-drawer` (see §11). Configure is
+  optional for Raise — the robot still stores only the provider id.
 - pass checkbox default-on:
   `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/agents/<slug>/nsec`
 - CTA: **Raise this robot**.
@@ -142,6 +145,37 @@ Delete: `POST /api/agent {action:"delete", slug}`.
 
 Goose/Payne skill: `.goose/skills/agent-create/SKILL.md`.
 
+### 11. Provider configure (pencil per runtime)
+
+The OS/PWA `×` is not Configure. Drawer Close on this panel only
+dismisses it. Hive Close/Exit stay in the header.
+
+Selecting a provider radio shows `#provider-cfg` (pencil ✎, ≥44px,
+title “Configure this provider.”) next to that label. Click opens
+`#provider-drawer`. Fields depend on the family. Status is loaded
+from `GET /api/provider`. Save is `POST /api/provider`. Scan is
+`POST /api/provider/scan`.
+
+| Family | Ids | Drawer |
+|---|---|---|
+| Home-config CLI | `goose`, `grok-build`, `codex` | Status (binary / home config / active model). Primary: **Use existing configuration** when home or binary+auth is present. Secondary: optional API key + host + model. Copy names the official command (`goose configure`, `grok login`, `codex login`). Never write those home files. |
+| HTTP API | `gemini-api`, `xai-api`, `openai-api`, `anthropic-api` | API key (password). Host URL, defaulted. **Scan models** then `<select>` or type-in. |
+| Editor agent | `cline` | Honest empty state if Cline is missing. Optional API key + host + model. |
+
+Goose home is `~/.config/goose/config.yaml` (official). Legacy
+`~/.goose` is probed and mentioned only if it exists.
+Grok home is `~/.grok/auth.json`. Codex home is `~/.codex`.
+
+Payne copy:
+
+- Existing Goose: “Use the Goose already standing in ~/.config/goose.”
+- Missing Goose: “Goose is not configured here. Run goose configure, or enter a key.”
+- Scan fail: “Could not list models. Type the model name.”
+- Key saved: “Key is in pass. Retrieve with: pass show hush/providers/<id>/api_key”
+
+Keys never appear in `GET /api/session` or `GET /api/provider`.
+`has_key` is a boolean. Deepseek is not a radio this slice.
+
 ## Data / API (additive)
 
 | Route | Role |
@@ -153,6 +187,9 @@ Goose/Payne skill: `.goose/skills/agent-create/SKILL.md`.
 | `POST /api/member` | add human (npub) |
 | `POST /api/close` | acknowledge Close; does **not** stop the process |
 | `POST /api/exit` | acknowledge Exit; sets shutdown flag; process exits 0 |
+| `GET /api/provider` | status per id: family, has_binary, has_home, has_key, use_home, host, model, configured. Never the key. |
+| `POST /api/provider` | `{provider, use_home?, host?, model?, api_key?}` save overlay + optional key |
+| `POST /api/provider/scan` | `{provider, host?, api_key?}` → `model_0`…`model_31` or `{ok:false,error}` |
 | `GET /avatar/<64-hex>` | stored picture bytes |
 
 Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
@@ -174,6 +211,8 @@ Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
 - HTTP recv `HUSH_BUF_SZ = 65536` (was 8192; HTTP JSON + small avatar).
 - Session JSON `HUSH_LAUNCH_JSON_MAX = 16384`.
 - Context: 3 files × 4096 bytes.
+- Provider models: 32 names × 64 bytes (`HUSH_PROVIDER_MODELS_MAX`).
+- Provider overlay: `$XDG_CONFIG_HOME/hush/providers.json` (0600).
 - Avatar on disk: sniffed JPEG/PNG only; client downscales ≤96px.
 - Kind 0 `picture` is a URL, never a data URI (`HUSH_EVENT_MAX_CONTENT = 4096`).
 
@@ -182,6 +221,8 @@ Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
 - Profile/Settings visible before ready.
 - Payne always first in the robot card list when vibe present.
 - A robot cannot be raised without a system prompt and an AI provider.
+- Provider keys live only in `pass` (`hush/providers/<id>/api_key`).
+- Hush never writes `~/.config/goose`, `~/.grok`, or `~/.codex`.
 - Close and Exit are distinct labeled hive buttons. The OS `×` is neither.
 - Close never kills the relay. Exit always does, with exit code 0.
 - No catfu / Griffe / Scout / Brave / feline words.
