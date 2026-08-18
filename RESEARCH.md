@@ -1420,3 +1420,144 @@ Logout: `hush_launch_logout` clears `logged_in`, `backup_acked`, human identity 
 
 See `PLAN_ONBOARD_PROFILE_AGENTS.md` (frozen after this gate).
 
+
+---
+
+# 2026-08-18 RDAP: Robot cards expand/collapse + Raise New Robot form
+
+## Scope locked
+
+- **Primary goal:** The hive sidebar lists every robot as its own expand/collapse card (`+` / `-`). Payne is first. The Raise a robot drawer is reorganized into pill-commit fields (name, required system prompt), up to 3 plaintext/Markdown context files, a required AI provider, and a red delete-agent action.
+- **Non-goals:** Spawning provider processes; wiring live LLM calls; Payne as an LLM; avatar redesign; Tailwind; multi-vibe; deleting Payne (seeded organizer stays); changing channel/project create.
+- **Success criteria:**
+  1. Sidebar robot list: Payne + `session.agents[]`, each card has a 44px `+`/`-` toggle. Collapsed = name + provider. Expanded = about/prompt, npub short, context count.
+  2. Raise form: Name input + `+` commits a pill; pencil re-edits. Empty name auto-generates (`Robot-XXXX`).
+  3. “Standing orders” renamed **System Prompt**. Required. Multiline. `+` commits a pill; pencil edits; `-` clears.
+  4. Context: max **3** files, plaintext/Markdown only, `+` opens file browser, `-` removes selected. Client + server re-check MIME.
+  5. AI provider required. Closed set: Goose, Grok Build, Codex, Cline, Gemini API, xAI API, OpenAI API, Anthropic API.
+  6. Red **Delete this robot** at the bottom of the form (create mode disabled; edit/delete of an existing robot from its card).
+  7. Server rejects create without provider or without system prompt. Server rejects a 4th context file and non-text MIME.
+  8. `./configure && make && make test` pass. Embed after HTML change.
+- **Constraints:** C11 + write-legible-c; worktree `gb/robot-cards-ux`; PR-only land; `HUSH_ROSTER_CONTEXT_MAX` currently 4 — lower to 3; JSON parser is string-field only (no nested arrays) so context stays as indexed fields `context_name_0`… or keep 3 flat triples.
+- **Assumptions:** Provider is a roster label, not a live runtime. Delete removes the in-memory roster entry (nsec in `pass` may remain; do not invent pass-delete). Payne is not deletable.
+
+## Current code (this worktree @ c65c65b83)
+
+### Sidebar (`demo/index.html`)
+
+- `#payne-card` is a single `.agent` rectangle at the bottom of `<nav>`.
+- `paintPayne()` overwrites that one card: Payne name/about/npub, then extra agents as `.help` lines. No expand/collapse. No per-robot card.
+- `.agent` CSS is a static bordered box. No toggle button. No `.pill` component.
+
+### Raise drawer
+
+- Fields: Name text, “Standing orders” textarea, one `<input type="file">`, pass checkbox, Raise / Close.
+- JS `agent-save` requires name, optional one file, optional prompt. No provider. No delete. No pill-commit UX.
+- `isContextFile` already accepts `text/plain`, `text/markdown`, `text/x-markdown`, `.txt` / `.md` / `.markdown`.
+
+### Roster / HTTP
+
+- `hush_roster_agent_t`: name, slug, prompt, picture, context[4], ncontext. **No provider. No delete.**
+- `hush_roster_add_agent` requires name; prompt may be empty.
+- HTTP `POST /api/agent` reads one triple: `context_name` / `context_mime` / `context_text`.
+- Session agent JSON: `{name, slug, npub, ncontext}` — no prompt, no provider, no context names.
+- No `DELETE` / `action:delete` path.
+
+### JSON parser limit
+
+`hush_json_field` only extracts `"key":"value"` strings (or bare scalars). It cannot walk `"context":[{…}]`. Indexed keys are the honest Hush-sized contract:
+
+```
+context_name_0, context_mime_0, context_text_0
+context_name_1, …
+context_name_2, …
+```
+
+## Design decisions (Quinn + Parker + Payne)
+
+### Robot cards
+
+- New `#robot-list` under Create, above stats. Label: **Robots**.
+- Each robot is an `<article class="robot-card">` with header row: name, provider badge, `+`/`-` icon button (`aria-expanded`).
+- Payne always first (`data-slug="sgt-major-payne"`). Created agents follow `session.agents`.
+- Collapsed default (Hick + density). Expanded shows about/prompt, npub short, context count, **Edit** (opens drawer prefilled) and, for non-Payne, **Delete**.
+- Toggle is 44×44 (Fitts). `+` when collapsed, `-` when expanded. One card may stay open; opening another may close the previous (accordion) to keep the 220px rail readable.
+
+### Raise form (pill-commit)
+
+Modern “commit then review” pattern, still one drawer:
+
+1. **Name** — text + `+`. Commit → pill with pencil. Empty on Raise → auto-name `Robot-` + 4 hex from `Date.now()`.
+2. **System Prompt** (required) — textarea + `+` commit → pill (truncated) with pencil and `-` (clears). Cannot Raise while empty.
+3. **Context files** — list of up to 3 pills. `+` triggers hidden file input (`accept=".txt,.md,text/plain,text/markdown"`). `-` on a pill removes it. Reject other MIME immediately.
+4. **AI provider** — required radio/select of the eight names. No default selected (forces a choice). Cannot Raise without one.
+5. pass checkbox unchanged (default on).
+6. Primary CTA **Raise this robot**. Ghost Close.
+7. **Delete this robot** — red, full-width, bottom. Disabled (and explained) on a fresh raise. Enabled when editing an existing slug.
+
+### Server contract (additive)
+
+`POST /api/agent`
+
+```
+{
+  "name": "Sentry",
+  "system_prompt": "Watch the perimeter.",
+  "provider": "Goose",
+  "save_pass": true,
+  "context_name_0": "brief.md",
+  "context_mime_0": "text/markdown",
+  "context_text_0": "# stand to"
+}
+```
+
+Delete:
+
+```
+POST /api/agent
+{ "action": "delete", "slug": "sentry" }
+```
+
+Payne slug `sgt-major-payne` is rejected.
+
+Session agent object grows:
+
+```
+{name, slug, npub, ncontext, provider, prompt}
+```
+
+`HUSH_ROSTER_CONTEXT_MAX` → 3.
+
+Provider allowlist (one definition site):
+
+| Wire id | Label |
+|---|---|
+| goose | Goose |
+| grok-build | Grok Build |
+| codex | Codex |
+| cline | Cline |
+| gemini-api | Gemini API |
+| xai-api | xAI API |
+| openai-api | OpenAI API |
+| anthropic-api | Anthropic API |
+
+## Risks
+
+1. **Session JSON size** — adding prompt (1024) × 16 agents can blow `HUSH_LAUNCH_JSON_MAX` (16384). Mitigation: session prompt is truncated to 160 chars (`HUSH_ROSTER_PROMPT_PREVIEW`).
+2. **`hush_http.c` / `hush_roster.c` line budgets** — keep new work in small helpers; do not inline array parse in `serve_agent`.
+3. **Delete vs pass** — leave `pass` entries; document. Inventing `pass rm` is out of scope.
+4. **Accordion vs independent cards** — independent expand is what the user asked (“each robot will have a card that can expand/collapse”). Independent wins; rail scrolls.
+5. **Delete button on create form** — user asked for a red delete at the bottom of the form. Show it always; disable until a slug exists (after raise, or when opened from a card).
+
+## Verification performed (this research)
+
+- Read `UI_SPEC.md` raise-robot section (standing orders, 4 files — both superseded by this request).
+- Read `demo/index.html` `#payne-card`, `paintPayne`, agent drawer, `agent-save`.
+- Read `hush_roster.h/.c` agent struct, add, format JSON, MIME check.
+- Read `hush_http.c` `hush_http_serve_agent` (single context triple).
+- Read `check_launch.sh` agent create + PDF reject.
+- Confirmed no provider field and no delete anywhere in hush-c.
+
+## Updated plan
+
+See `PLAN_ROBOT_CARDS_UX.md` (frozen after this gate).
