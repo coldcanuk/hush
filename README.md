@@ -62,7 +62,10 @@ button opens a resizable hive chat (1:1 or 1:n). In a 1:1 pane a
 follow-up without a new `@` still addresses that sole robot. The tool rail is a
 free-drag hamburger (no docks); double-click parks it left of the
 brand. The reply is one short `grok -p` note from an empty cwd (no
-desktop AGENTS.md).
+desktop AGENTS.md). Fenced code paints as a block; Canvas opens a
+right-hand editor (download, or save into a recorded project). JSON
+event bodies escape TAB and other C0 so a Go snippet cannot freeze
+the thinking chip.
 Click **relay live** for stored / projects / sockets. Hive metadata persists in `~/.config/hush/vibe.json` so
 `make clean && make install` or Exit does not force a new vibe after
 you import the same nsec. **Exit** (`--quit`) stops the relay and the

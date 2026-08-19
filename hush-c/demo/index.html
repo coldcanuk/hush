@@ -207,6 +207,44 @@
     .note.reply {
       margin-left: 1.4rem; border-left: 2px solid var(--accent-dim); padding-left: 10px;
     }
+    .code-block {
+      margin: 8px 0 0; padding: 10px 12px; overflow: auto;
+      background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+      font-family: var(--mono); font-size: 0.78rem; line-height: 1.4;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .code-block[data-lang="python"] { border-left: 3px solid #3776ab; }
+    .code-block[data-lang="go"] { border-left: 3px solid #00add8; }
+    .code-block[data-lang="javascript"], .code-block[data-lang="js"] { border-left: 3px solid #f7df1e; }
+    .code-block[data-lang="c"] { border-left: 3px solid #a8b9cc; }
+    .note-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .note-files button {
+      min-height: 32px; padding: 4px 10px; border-radius: 999px;
+      border: 1px solid var(--line); background: transparent; color: var(--fg);
+      font-size: 0.72rem; font-weight: 650;
+    }
+    .note-files button:hover { background: var(--surface-2); }
+    #code-canvas {
+      display: none; position: fixed; z-index: 28; right: 0; top: 0;
+      width: min(36rem, 46vw); height: 100%;
+      background: var(--surface); border-left: 1px solid var(--line);
+      box-shadow: -12px 0 32px rgba(0,0,0,0.35);
+      flex-direction: column; min-width: 240px;
+    }
+    #code-canvas.show { display: flex; }
+    #code-canvas .drawer-head { padding: 12px 14px 0; }
+    #canvas-tools {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 8px 14px;
+    }
+    #canvas-file { min-height: 36px; background: var(--bg); color: var(--fg);
+      border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+    #code-canvas-edit {
+      flex: 1; min-height: 0; margin: 0 14px 14px; padding: 10px 12px;
+      background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+      border-radius: 8px; font-family: var(--mono); font-size: 0.82rem;
+      line-height: 1.45; resize: none; white-space: pre-wrap;
+    }
     #thread-stream .note {
       max-width: min(78%, 28rem); border-radius: 16px 16px 16px 6px;
       background: var(--surface-2);
@@ -614,6 +652,19 @@
       <div id="thread-resize" title="Resize thread" aria-hidden="true"></div>
     </div>
   </div>
+  <div id="code-canvas" role="dialog" aria-label="Code canvas">
+    <div class="drawer-head">
+      <h2 id="canvas-title">Canvas</h2>
+      <button class="drawer-x" id="canvas-close" type="button" aria-label="Close canvas">×</button>
+    </div>
+    <div id="canvas-tools">
+      <select id="canvas-file" aria-label="File" hidden></select>
+      <button class="btn ghost" id="canvas-download" type="button">Download</button>
+      <button class="btn ghost" id="canvas-save" type="button">Save to project</button>
+    </div>
+    <p class="help" id="canvas-help" style="margin:0 14px 8px">Word wrap is on. Edit, then download or save into a recorded project.</p>
+    <textarea id="code-canvas-edit" spellcheck="false" wrap="soft"></textarea>
+  </div>
   <div class="drawer" id="relay-drawer" role="dialog" aria-label="Relay live">
     <div class="panel">
       <div class="drawer-head">
@@ -950,6 +1001,8 @@
     let threadMentionIdx = 0;
     let threadMentionStart = -1;
     let localThink = [];
+    let canvasFiles = [];
+    let canvasIdx = 0;
 
     function $(id) { return document.getElementById(id); }
 
@@ -2914,6 +2967,130 @@
       }
     }
 
+    function fenceLang(tag) {
+      const t = String(tag || "").trim().toLowerCase();
+      if (!t) return "txt";
+      return t.replace(/[^a-z0-9_+.-]/g, "") || "txt";
+    }
+
+    function fenceName(lang, idx) {
+      const map = { python: "py", py: "py", go: "go", javascript: "js", js: "js",
+        typescript: "ts", ts: "ts", c: "c", bash: "sh", sh: "sh", rust: "rs",
+        json: "json", html: "html", css: "css", basic: "bas" };
+      const ext = map[lang] || "txt";
+      return "snippet-" + (idx + 1) + "." + ext;
+    }
+
+    function splitFences(text) {
+      const src = String(text || "");
+      const re = /^```([^\n`]*)\n([\s\S]*?)^```[ \t]*$/gm;
+      const parts = [];
+      let last = 0;
+      let m;
+      while ((m = re.exec(src))) {
+        if (m.index > last)
+          parts.push({ kind: "text", text: src.slice(last, m.index) });
+        parts.push({ kind: "code", lang: fenceLang(m[1]), text: m[2].replace(/\n$/, "") });
+        last = m.index + m[0].length;
+      }
+      if (last < src.length)
+        parts.push({ kind: "text", text: src.slice(last) });
+      return parts;
+    }
+
+    function downloadBlob(name, text) {
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+
+    function firstProject() {
+      const list = (session && session.projects) || [];
+      return list[0] || null;
+    }
+
+    function paintCanvasSelect() {
+      const sel = $("canvas-file");
+      if (!sel) return;
+      sel.innerHTML = "";
+      canvasFiles.forEach((f, i) => {
+        const opt = document.createElement("option");
+        opt.value = String(i);
+        opt.textContent = f.name;
+        if (i === canvasIdx) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.hidden = canvasFiles.length < 2;
+    }
+
+    function showCanvasFile() {
+      const f = canvasFiles[canvasIdx];
+      const edit = $("code-canvas-edit");
+      if (!f || !edit) return;
+      edit.value = f.text;
+      edit.setAttribute("data-lang", f.lang || "txt");
+      $("canvas-title").textContent = f.name;
+      paintCanvasSelect();
+    }
+
+    function openCodeCanvas(files, idx) {
+      canvasFiles = (files || []).map((f) => ({
+        name: f.name, lang: f.lang, text: f.text
+      }));
+      canvasIdx = idx || 0;
+      if (!canvasFiles.length) return;
+      showCanvasFile();
+      $("code-canvas").classList.add("show");
+      const proj = firstProject();
+      $("canvas-save").disabled = !proj;
+      $("canvas-save").title = proj
+        ? ("Save into " + (proj.path || proj.slug))
+        : "Raise a project first";
+      $("canvas-help").textContent = proj
+        ? ("Word wrap is on. Save writes under " + (proj.path || proj.slug) + ".")
+        : "Word wrap is on. Download, or raise a project to save.";
+    }
+
+    function closeCodeCanvas() {
+      $("code-canvas").classList.remove("show");
+    }
+
+    $("canvas-close").addEventListener("click", closeCodeCanvas);
+    $("canvas-file").addEventListener("change", () => {
+      const f = canvasFiles[canvasIdx];
+      if (f) f.text = $("code-canvas-edit").value;
+      canvasIdx = Number($("canvas-file").value) || 0;
+      showCanvasFile();
+    });
+    $("code-canvas-edit").addEventListener("input", () => {
+      const f = canvasFiles[canvasIdx];
+      if (f) f.text = $("code-canvas-edit").value;
+    });
+    $("canvas-download").addEventListener("click", () => {
+      const f = canvasFiles[canvasIdx];
+      if (f) downloadBlob(f.name, $("code-canvas-edit").value);
+    });
+    $("canvas-save").addEventListener("click", async () => {
+      const f = canvasFiles[canvasIdx];
+      const proj = firstProject();
+      if (!f || !proj) return;
+      const text = $("code-canvas-edit").value;
+      f.text = text;
+      try {
+        await api("/api/canvas", {
+          project: proj.slug,
+          path: f.name,
+          content: text
+        });
+        badge(true, "saved " + f.name);
+      } catch (err) {
+        badge(false, "save failed");
+      }
+    });
+
     function paintNote(e, extra) {
       const n = document.createElement("div");
       const mine = isMineNote(e);
@@ -2921,11 +3098,48 @@
       const meta = document.createElement("div");
       meta.className = "meta";
       meta.textContent = who(e.pubkey) + " · " + ago(e.created_at);
-      const body = document.createElement("div");
-      body.className = "body";
-      body.textContent = prettyMentions(e.content || "");
       n.appendChild(meta);
-      n.appendChild(body);
+      const chunks = splitFences(prettyMentions(e.content || ""));
+      const files = [];
+      chunks.forEach((part) => {
+        if (part.kind === "code") {
+          const pre = document.createElement("pre");
+          pre.className = "code-block";
+          pre.setAttribute("data-lang", part.lang);
+          const code = document.createElement("code");
+          code.textContent = part.text;
+          pre.appendChild(code);
+          n.appendChild(pre);
+          files.push({
+            name: fenceName(part.lang, files.length),
+            lang: part.lang,
+            text: part.text
+          });
+          return;
+        }
+        if (!part.text) return;
+        const body = document.createElement("div");
+        body.className = "body";
+        body.textContent = part.text;
+        n.appendChild(body);
+      });
+      if (files.length) {
+        const bar = document.createElement("div");
+        bar.className = "note-files";
+        const dl = document.createElement("button");
+        dl.type = "button";
+        dl.textContent = files.length === 1 ? "Download" : "Download files";
+        dl.addEventListener("click", () => {
+          files.forEach((f) => downloadBlob(f.name, f.text));
+        });
+        const open = document.createElement("button");
+        open.type = "button";
+        open.textContent = "Canvas";
+        open.addEventListener("click", () => openCodeCanvas(files, 0));
+        bar.appendChild(dl);
+        bar.appendChild(open);
+        n.appendChild(bar);
+      }
       if (extra) extra(n, e);
       return n;
     }
@@ -3062,9 +3276,9 @@
 
     async function tick() {
       try {
-        const [st, ev, sess] = await Promise.all([
+        const [st, evRes, sess] = await Promise.all([
           fetch(API + "/api/status").then((r) => r.json()),
-          fetch(API + "/api/events").then((r) => r.json()),
+          fetch(API + "/api/events"),
           fetch(API + "/api/session").then((r) => r.json())
         ]);
         session = sess;
@@ -3072,7 +3286,12 @@
         if (session.ready && page !== "payne") page = "hive";
         paint();
         badge(true, session.npub ? session.npub.slice(0, 12) + "…" : ("listening :" + (st.port || "")));
-        if (session.ready) render(ev.events || ev || [], st);
+        let ev = null;
+        try { ev = await evRes.json(); } catch (parseErr) { ev = null; }
+        if (session.ready && ev)
+          render(ev.events || ev || [], st);
+        else if (st && st.thinking && !st.thinking.length)
+          localThink = [];
       } catch (err) {
         badge(false, "relay unreachable");
         $("stats").textContent = "start hush-relay";

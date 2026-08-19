@@ -9,7 +9,7 @@ cfg=$(mktemp -d)
 export HUSH_CONFIG_DIR="$cfg"
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
-cleanup() { kill "$pid" 2>/dev/null || true; rm -f "$log"; rm -rf "$cfg"; }
+cleanup() { kill "$pid" 2>/dev/null || true; rm -f "$log"; rm -rf "$cfg" /tmp/hush-check-alpha /tmp/hush-bad-canvas; }
 trap cleanup EXIT
 i=0
 while [ "$i" -lt 50 ]; do
@@ -85,6 +85,11 @@ echo "$html" | grep -q 'id="relay-drawer"' || fail "HTML missing relay drawer"
 echo "$html" | grep -q 'id="relay-close"' || fail "HTML missing relay close"
 echo "$html" | grep -q 'think-dot' || fail "HTML missing thinking chip"
 echo "$html" | grep -q 'id="thread-think"' || fail "HTML missing thread thinking strip"
+echo "$html" | grep -q 'id="code-canvas"' || fail "HTML missing code canvas"
+echo "$html" | grep -q 'code-block' || fail "HTML missing fenced code block"
+echo "$html" | grep -q '/api/canvas' || fail "HTML missing canvas save route"
+echo "$html" | grep -q 'splitFences' || fail "HTML missing fence splitter"
+echo "$html" | grep -q 'canvas-file' || fail "HTML missing canvas file selector"
 echo "$html" | grep -q 'paintThreadThink' || fail "HTML missing thread think painter"
 echo "$html" | grep -q 'send.disabled' || fail "HTML must disable send while thinking"
 if echo "$html" | grep -q 'bots.filter((b) => b.kind !== "human")'; then
@@ -200,6 +205,17 @@ proj=$(curl -sf -X POST "http://127.0.0.1:${port}/api/project" \
     -d '{"name":"alpha","path":"/tmp/hush-check-alpha","git":"true"}')
 echo "$proj" | grep -q '"slug":"alpha"' || fail "project create"
 test -d /tmp/hush-check-alpha/.git || fail "git init"
+can=$(curl -sf -X POST "http://127.0.0.1:${port}/api/canvas" \
+    -H 'Content-Type: application/json' \
+    -d '{"project":"alpha","path":"snippet-1.py","content":"print(1)"}')
+echo "$can" | grep -q '"ok":true' || fail "canvas save"
+test -f /tmp/hush-check-alpha/snippet-1.py || fail "canvas file missing"
+grep -q 'print(1)' /tmp/hush-check-alpha/snippet-1.py || fail "canvas content"
+badcan=$(curl -s -o /tmp/hush-bad-canvas -w '%{http_code}' -X POST \
+    "http://127.0.0.1:${port}/api/canvas" \
+    -H 'Content-Type: application/json' \
+    -d '{"project":"alpha","path":"../escape.py","content":"no"}')
+test "$badcan" != "200" || fail "canvas must refuse .."
 mem=$(curl -sf -X POST "http://127.0.0.1:${port}/api/member" \
     -H 'Content-Type: application/json' \
     -d '{"npub":"npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg","name":"Alice"}')
