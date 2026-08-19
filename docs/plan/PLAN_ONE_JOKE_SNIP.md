@@ -65,7 +65,7 @@ repeat a joke already in that thread.
 ## Phase 5 — Land
 
 ### M5.1 PR
-- [ ] Task 1: push `gb/one-joke-snip`, PR → main, auto-merge, remove
+- [x] Task 1: push `gb/one-joke-snip`, PR → main, auto-merge, remove
       worktree after MERGED.
 - Verify: `gh pr view` MERGED; main checkout clean.
 
