@@ -100,23 +100,23 @@ normal button size.
 - Commit: `Milestone 3.1: sticky thread scroll and 6-line composer`
 
 ### M3.2 Canvas highlight + Ctrl+K UI
-- [ ] Task 1 of M3.2: overlay `pre#code-canvas-hi`, language map,
+- [x] Task 1 of M3.2: overlay `pre#code-canvas-hi`, language map,
       Go keywords, scroll sync.
-- [ ] Task 2 of M3.2: `#canvas-k` popover, Ctrl/Cmd+K, Apply/Cancel.
+- [x] Task 2 of M3.2: `#canvas-k` popover, Ctrl/Cmd+K, Apply/Cancel.
       POST `/api/fixup`, replace selection.
 - Verify: `rg -n 'code-canvas-hi|canvas-k|golang' hush-c/demo/index.html`.
 - Commit: `Milestone 3.2: canvas highlight and ctrl-k popover`
 
 ### M3.3 Tool rail
-- [ ] Task 1 of M3.3: markup + CSS per lock. Install stays first.
+- [x] Task 1 of M3.3: markup + CSS per lock. Install stays first.
       `i` toggles help. Two-col grids. Blank disabled. Min/Max.
 - Verify: `rg -n 'rail-info|blank-btn|rail-min|rail-max' hush-c/demo/index.html`.
 - Commit: `Milestone 3.3: compact tool rail`
 
 ### M3.4 POST /api/fixup
-- [ ] Task 1 of M3.4: `hush_agent` fixup flavor (no note insert,
+- [x] Task 1 of M3.4: `hush_agent` fixup flavor (no note insert,
       `--max-turns` `HUSH_AGENT_FIXUP_TURNS` `"1"`).
-- [ ] Task 2 of M3.4: `hush_http_serve_fixup` + dispatch.
+- [x] Task 2 of M3.4: `hush_http_serve_fixup` + dispatch.
 - Verify: `make -C hush-c` compiles. §14 checklist on touched C.
 - Commit: `Milestone 3.4: api fixup without hive note`
 

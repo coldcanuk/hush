@@ -24,4 +24,16 @@ void hush_agent_poll(hush_store_t *store);
 /* Writes a JSON array of busy jobs into out. No-op if out is NULL. */
 void hush_agent_status(char *out, size_t outsz);
 
+/* Starts a one-shot grok rewrite. Does not insert a hive note.
+ * instruction and text may be empty; both are copied. Fails with
+ * HUSH_ERR_ARG, HUSH_ERR_FULL, or HUSH_ERR_IO. Writes a token. */
+hush_status_t hush_agent_start_fixup(char *token, size_t tokensz,
+                                     const char *instruction,
+                                     const char *text);
+
+/* Copies a finished fixup into out. HUSH_OK when ready,
+ * HUSH_ERR_NOT_FOUND while busy or unknown, HUSH_ERR_IO on fail. */
+hush_status_t hush_agent_take_fixup(const char *token, char *out,
+                                    size_t outsz);
+
 #endif /* HUSH_AGENT_H */

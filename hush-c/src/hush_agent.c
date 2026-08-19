@@ -30,7 +30,10 @@ enum {
     HUSH_AGENT_CWD_MODE = 0700,
     HUSH_AGENT_THREAD_MAX = 6,
     HUSH_AGENT_SNIP_MAX = 160,
-    HUSH_AGENT_SCAN_MAX = 64
+    HUSH_AGENT_SCAN_MAX = 64,
+    HUSH_AGENT_KIND_NOTE_JOB = 0,
+    HUSH_AGENT_KIND_FIXUP = 1,
+    HUSH_AGENT_TOKEN_MAX = 16
 };
 
 #define HUSH_AGENT_GROK_BIN "grok"
@@ -58,16 +61,28 @@ enum {
 #define HUSH_AGENT_HUMAN_FALLBACK "you"
 #define HUSH_AGENT_GROK_EFFORT "low"
 #define HUSH_AGENT_GROK_TURNS "2"
+#define HUSH_AGENT_FIXUP_TURNS "1"
 #define HUSH_AGENT_GROK_NOMEM "--no-memory"
+#define HUSH_AGENT_FIXUP_PROMPT \
+    "Rewrite only the given text per the instruction. " \
+    "Return only the rewritten text. No fences. No preamble."
+#define HUSH_AGENT_FIXUP_RULES \
+    "Return only the rewritten selection. No markdown fences. No chatter."
+#define HUSH_AGENT_FIXUP_HEAD "Instruction:\n"
+#define HUSH_AGENT_FIXUP_MID "\n\nText:\n"
 #define HUSH_AGENT_THREAD_HEAD \
     "Thread so far. Do not repeat a prior joke. " \
     "Fulfill the last human line in this note.\n"
 
 typedef struct {
     int busy;
+    int kind;
+    int done;
+    int ok;
     pid_t pid;
     int fd;
     time_t started;
+    char token[HUSH_AGENT_TOKEN_MAX];
     char parent_id[HUSH_EVENT_ID_HEX_LEN + 1];
     char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
     char human_pub[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
@@ -167,6 +182,12 @@ static void hush_agent_fill_thread(char *out, size_t outsz,
                                    const hush_event_t *parent,
                                    const hush_agent_thread_walk_t *names);
 static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job);
+static hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job);
+static void hush_agent_fill_fixup(hush_agent_job_t *job,
+                                  const char *instruction,
+                                  const char *text);
+static void hush_agent_make_token(char *out, size_t outsz);
+static hush_agent_job_t *hush_agent_find_token(const char *token);
 static void hush_agent_close_job(hush_agent_job_t *job);
 static void hush_agent_kill_job(hush_agent_job_t *job);
 static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
@@ -267,6 +288,49 @@ void hush_agent_poll(hush_store_t *store)
     }
 }
 
+hush_status_t hush_agent_start_fixup(char *token, size_t tokensz,
+                                     const char *instruction,
+                                     const char *text)
+{
+    hush_agent_job_t *job;
+
+    if (token == NULL || tokensz < 2)
+        return HUSH_ERR_ARG;
+    if (!hush_agent_grok_ready())
+        return HUSH_ERR_IO;
+    job = hush_agent_find_slot();
+    if (job == NULL)
+        return HUSH_ERR_FULL;
+    hush_agent_fill_fixup(job, instruction, text);
+    if (hush_agent_spawn_grok(job) != HUSH_OK) {
+        job->busy = 0;
+        return HUSH_ERR_IO;
+    }
+    hush_agent_copy(token, tokensz, job->token);
+    return HUSH_OK;
+}
+
+hush_status_t hush_agent_take_fixup(const char *token, char *out, size_t outsz)
+{
+    hush_agent_job_t *job;
+
+    if (token == NULL || token[0] == '\0' || out == NULL || outsz == 0)
+        return HUSH_ERR_ARG;
+    out[0] = '\0';
+    job = hush_agent_find_token(token);
+    if (job == NULL)
+        return HUSH_ERR_NOT_FOUND;
+    if (job->busy)
+        return HUSH_ERR_NOT_FOUND;
+    if (!job->ok || job->out[0] == '\0') {
+        hush_agent_close_job(job);
+        return HUSH_ERR_IO;
+    }
+    hush_agent_copy(out, outsz, job->out);
+    hush_agent_close_job(job);
+    return HUSH_OK;
+}
+
 static void hush_agent_copy(char *dst, size_t dstsz, const char *src)
 {
     size_t n;
@@ -315,8 +379,12 @@ static hush_agent_job_t *hush_agent_find_slot(void)
     size_t i;
 
     for (i = 0; i < (size_t)HUSH_AGENT_JOBS_MAX; i++) {
-        if (!g_jobs[i].busy)
-            return &g_jobs[i];
+        if (g_jobs[i].busy)
+            continue;
+        if (g_jobs[i].kind == HUSH_AGENT_KIND_FIXUP &&
+            g_jobs[i].token[0] != '\0')
+            continue;
+        return &g_jobs[i];
     }
     return NULL;
 }
@@ -493,6 +561,8 @@ static int hush_agent_status_append(char *out, size_t outsz, size_t *off,
     assert(out != NULL);
     assert(off != NULL);
     assert(job != NULL);
+    if (job->kind == HUSH_AGENT_KIND_FIXUP)
+        return 1;
     name = job->robot_name[0] ? job->robot_name : "robot";
     sep = (*off > 1) ? "," : "";
     n = snprintf(out + *off, outsz - *off,
@@ -762,6 +832,7 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
     memset(job, 0, sizeof(*job));
     job->fd = HUSH_AGENT_FD_NONE;
     job->busy = 1;
+    job->kind = HUSH_AGENT_KIND_NOTE_JOB;
     job->started = time(NULL);
     hush_agent_event_root(job->parent_id, sizeof(job->parent_id), parent);
     hush_agent_event_channel(job->channel, sizeof(job->channel), parent);
@@ -810,7 +881,8 @@ static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job)
     argv[9] = (char *)"--no-subagents";
     argv[10] = (char *)"--disable-web-search";
     argv[11] = (char *)"--max-turns";
-    argv[12] = (char *)HUSH_AGENT_GROK_TURNS;
+    argv[12] = (char *)(job->kind == HUSH_AGENT_KIND_FIXUP
+                       ? HUSH_AGENT_FIXUP_TURNS : HUSH_AGENT_GROK_TURNS);
     argv[13] = (char *)"--reasoning-effort";
     argv[14] = (char *)HUSH_AGENT_GROK_EFFORT;
     argv[15] = (char *)"--cwd";
@@ -825,29 +897,19 @@ static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job)
     _exit(127);
 }
 
-static hush_status_t hush_agent_start_grok(const hush_agent_job_in_t *in)
+static hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job)
 {
-    hush_agent_job_t *job;
     int fds[2];
     pid_t pid;
     int flags;
 
-    assert(in != NULL);
-    assert(in->bot != NULL);
-    assert(in->parent != NULL);
-    job = hush_agent_find_slot();
-    if (job == NULL)
-        return HUSH_ERR_FULL;
-    hush_agent_fill_job(job, in);
-    if (pipe(fds) != 0) {
-        job->busy = 0;
+    assert(job != NULL);
+    if (pipe(fds) != 0)
         return HUSH_ERR_IO;
-    }
     pid = fork();
     if (pid < 0) {
         close(fds[0]);
         close(fds[1]);
-        job->busy = 0;
         return HUSH_ERR_IO;
     }
     if (pid == 0) {
@@ -861,6 +923,72 @@ static hush_status_t hush_agent_start_grok(const hush_agent_job_in_t *in)
     job->pid = pid;
     job->fd = fds[0];
     hush_relay_track_child(pid);
+    return HUSH_OK;
+}
+
+static void hush_agent_make_token(char *out, size_t outsz)
+{
+    unsigned n;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    g_id_seq++;
+    n = g_id_seq;
+    (void)snprintf(out, outsz, "f%u", n);
+}
+
+static hush_agent_job_t *hush_agent_find_token(const char *token)
+{
+    size_t i;
+
+    assert(token != NULL);
+    for (i = 0; i < (size_t)HUSH_AGENT_JOBS_MAX; i++) {
+        if (g_jobs[i].kind != HUSH_AGENT_KIND_FIXUP)
+            continue;
+        if (strcmp(g_jobs[i].token, token) == 0)
+            return &g_jobs[i];
+    }
+    return NULL;
+}
+
+static void hush_agent_fill_fixup(hush_agent_job_t *job,
+                                  const char *instruction,
+                                  const char *text)
+{
+    assert(job != NULL);
+    memset(job, 0, sizeof(*job));
+    job->fd = HUSH_AGENT_FD_NONE;
+    job->busy = 1;
+    job->kind = HUSH_AGENT_KIND_FIXUP;
+    job->started = time(NULL);
+    hush_agent_make_token(job->token, sizeof(job->token));
+    hush_agent_copy(job->prompt, sizeof(job->prompt), HUSH_AGENT_FIXUP_PROMPT);
+    hush_agent_copy(job->rules, sizeof(job->rules), HUSH_AGENT_FIXUP_RULES);
+    hush_agent_prepare_cwd(job->cwd, sizeof(job->cwd));
+    if (snprintf(job->note, sizeof(job->note), "%s%s%s%s",
+                 HUSH_AGENT_FIXUP_HEAD,
+                 instruction != NULL ? instruction : "",
+                 HUSH_AGENT_FIXUP_MID,
+                 text != NULL ? text : "") >= (int)sizeof(job->note))
+        hush_agent_copy(job->note, sizeof(job->note),
+                        text != NULL ? text : "");
+}
+
+static hush_status_t hush_agent_start_grok(const hush_agent_job_in_t *in)
+{
+    hush_agent_job_t *job;
+
+    assert(in != NULL);
+    assert(in->bot != NULL);
+    assert(in->parent != NULL);
+    job = hush_agent_find_slot();
+    if (job == NULL)
+        return HUSH_ERR_FULL;
+    hush_agent_fill_job(job, in);
+    if (hush_agent_spawn_grok(job) != HUSH_OK) {
+        job->busy = 0;
+        return HUSH_ERR_IO;
+    }
     return HUSH_OK;
 }
 
@@ -893,6 +1021,15 @@ static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
 
     assert(job != NULL);
     hush_agent_trim(job->out);
+    if (job->kind == HUSH_AGENT_KIND_FIXUP) {
+        job->ok = ok && job->out[0] != '\0';
+        job->busy = 0;
+        if (job->fd >= 0)
+            close(job->fd);
+        job->fd = HUSH_AGENT_FD_NONE;
+        job->pid = 0;
+        return;
+    }
     if (store != NULL && ok && job->out[0] != '\0') {
         hush_agent_note_in_t in = {
             .pubkey = job->robot_pub,
