@@ -235,6 +235,8 @@
       padding: 0 18px; font-weight: 650; min-width: 88px; min-height: 44px;
     }
     #send:hover, #thread-send:hover { filter: brightness(1.05); }
+    .radio-col { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; }
+    .radio-col label, #manage-talk { min-height: 44px; display: flex; align-items: center; gap: 10px; }
     .gate {
       display: none; flex: 1; align-items: center; justify-content: center;
       padding: 32px 18px;
@@ -801,6 +803,44 @@
       <p class="help">Robots</p>
       <div class="pills" id="manage-robot-pills"></div>
       <div id="manage-robots"></div>
+      <div id="manage-policy">
+        <p class="help">Leash the robots. They speak when mentioned, or not at all.</p>
+        <p class="help">Kind</p>
+        <div class="radio-col">
+          <label><input type="radio" name="manage-kind" value="open"> Open hive</label>
+          <label><input type="radio" name="manage-kind" value="humans"> Humans</label>
+          <label><input type="radio" name="manage-kind" value="robots"> Robots</label>
+          <label><input type="radio" name="manage-kind" value="mixed"> Mixed</label>
+        </div>
+        <p class="help">Robots may reply</p>
+        <div class="radio-col">
+          <label><input type="radio" name="manage-reply" value="off"> Off</label>
+          <label><input type="radio" name="manage-reply" value="mention"> When mentioned</label>
+          <label><input type="radio" name="manage-reply" value="confirm"> Confirm first</label>
+        </div>
+        <details id="manage-policy-more">
+          <summary>Advanced leash</summary>
+          <label class="check"><input type="checkbox" id="manage-talk"> Robots may talk to robots</label>
+          <p class="help">Burst wait</p>
+          <div class="radio-col">
+            <label><input type="radio" name="manage-burst" value="500"> 0.5s</label>
+            <label><input type="radio" name="manage-burst" value="2000"> 2s</label>
+            <label><input type="radio" name="manage-burst" value="5000"> 5s</label>
+          </div>
+          <p class="help">Max live jobs</p>
+          <div class="radio-col">
+            <label><input type="radio" name="manage-jobs" value="1"> 1</label>
+            <label><input type="radio" name="manage-jobs" value="2"> 2</label>
+            <label><input type="radio" name="manage-jobs" value="4"> 4</label>
+          </div>
+          <p class="help">Cooldown</p>
+          <div class="radio-col">
+            <label><input type="radio" name="manage-cool" value="0"> off</label>
+            <label><input type="radio" name="manage-cool" value="10"> 10s</label>
+            <label><input type="radio" name="manage-cool" value="30"> 30s</label>
+          </div>
+        </details>
+      </div>
       <p class="warn" id="manage-err"></p>
       <div class="actions">
         <button class="btn" id="manage-save" type="button">Save</button>
@@ -1349,6 +1389,23 @@
       });
     }
 
+    function setRadio(name, value) {
+      document.querySelectorAll('input[name="' + name + '"]').forEach((el) => {
+        el.checked = el.value === String(value);
+      });
+    }
+    function radioValue(name, fallback) {
+      const on = document.querySelector('input[name="' + name + '"]:checked');
+      return on ? on.value : fallback;
+    }
+    function fillManagePolicy(ch) {
+      setRadio("manage-kind", ch.kind || "open");
+      setRadio("manage-reply", ch.robot_reply || "mention");
+      $("manage-talk").checked = !!ch.robot_talk;
+      setRadio("manage-burst", ch.burst_ms || 2000);
+      setRadio("manage-jobs", ch.max_jobs || 2);
+      setRadio("manage-cool", typeof ch.cooldown_s === "number" ? ch.cooldown_s : 10);
+    }
     function openManageChannel(slug) {
       const ch = (session.channels || []).find((c) => c.slug === slug);
       if (!ch) return;
@@ -1366,6 +1423,7 @@
         const bot = robotModels().find((b) => b.slug === slug);
         return { name: bot ? bot.name : slug, slug: slug };
       });
+      fillManagePolicy(ch);
       paintManageLists();
       $("manage-chan").classList.add("show");
     }
@@ -2896,6 +2954,13 @@
       manageRobotPills.slice(0, 8).forEach((p, i) => {
         body["robot_" + i] = p.slug;
       });
+      body.kind = radioValue("manage-kind", "open");
+      body.robot_reply = radioValue("manage-reply", "mention");
+      body.robot_talk = $("manage-talk").checked ? 1 : 0;
+      body.burst_ms = parseInt(radioValue("manage-burst", "2000"), 10);
+      body.max_jobs = parseInt(radioValue("manage-jobs", "2"), 10);
+      body.cooldown_s = parseInt(radioValue("manage-cool", "10"), 10);
+      body.robot_hops = body.robot_talk ? 1 : 0;
       try {
         applySession(await api("/api/channel", body));
         $("manage-chan").classList.remove("show");
