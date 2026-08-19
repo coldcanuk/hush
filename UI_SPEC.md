@@ -1,10 +1,11 @@
-# Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups
-Version: 2026-08-18 (RDAP M2, gb/thread-chat-rail-ux)
+# Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups + Channel Policy
+Version: 2026-08-19 (RDAP M2, gb/conv-intel-policy)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec, the onboard raise-form notes, the oauth-mention-groups
 header/mention/manage rows, the oauth-mention-rail indent-only thread,
-the thread-think-hygiene Close/Exit paragraph, and the oauth-mention-rail
-six-dock tool-rail paragraph where they conflict.
+the thread-think-hygiene Close/Exit paragraph, the oauth-mention-rail
+six-dock tool-rail paragraph, and the membership-only Manage Channel
+paragraph where they conflict.
 Quinn + Parker + Payne. No feline.
 
 ## Core Principles (Quinn)
@@ -245,16 +246,17 @@ not a radio this slice.
 | `POST /api/provider` | `{provider, use_home?, host?, model?, api_key?, username?, password?, token?, passkey?}` save overlay + optional secrets to pass |
 | `POST /api/provider/scan` | `{provider, host?, api_key?}` → `model_0`…`model_31` or `{ok:false,error}`. Empty key loads `api_key` then `token` from pass. |
 | `POST /api/provider/login` | `{provider}` starts the official CLI login. `grok-build` → `grok login --oauth`. `codex` → `codex login`. Goose and unknown ids return `{ok:false,error}`. Does not wait. With `DISPLAY`, spawn `xterm -hold -e` (not `x-terminal-emulator`: COSMIC Term ignores `-e`). Tests set `HUSH_PROVIDER_TERM`. |
-| `POST /api/channel` | `{action:"create"\|"delete"\|"group"\|"ungroup"\|"manage", name?, slug?, group?, group_id?, human_0…human_7?, robot_0…robot_7?}`. Create needs `name`. Delete/group/ungroup/manage need `slug`. |
+| `POST /api/channel` | `{action:"create"\|"delete"\|"group"\|"ungroup"\|"manage", name?, slug?, group?, group_id?, human_0…human_7?, robot_0…robot_7?, kind?, robot_reply?, robot_talk?, burst_ms?, max_jobs?, cooldown_s?}`. Create needs `name`. Delete/group/ungroup/manage need `slug`. Manage may also set the policy leash (§20). |
 | `POST /api/group` | `{name}` creates a parent group with its own UUID. |
 | `GET /api/status` | existing + `thinking` (JSON array of `{name,parent}` for in-flight robot jobs). |
 | `GET /api/events` | notes plus `reply_to` (first `e` tag; empty when the note is not a reply). |
-| `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id). Content may contain `nostr:npub1…`. Mentions dispatch `hush_agent`. |
+| `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id). Content may contain `nostr:npub1…`. Mentions enter `hush_intel` (burst / policy) before `hush_agent`. |
 | `GET /avatar/<64-hex>` | stored picture bytes |
 
 Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
 Session `channels[]` now include `id` (32-hex UUID), `group_id`,
-`humans[]`, `robots[]`. Session `groups[]` is `{name,id}`.
+`humans[]`, `robots[]`, `kind`, `robot_reply`, `robot_talk`,
+`burst_ms`, `max_jobs`, `cooldown_s`. Session `groups[]` is `{name,id}`.
 
 ### 12. OAuth signed-in (Grok Build / Codex)
 
@@ -314,8 +316,9 @@ repeat a prior joke.
 Composer inside the pane reuses the hive `.composer-box`:
 `#thread-pills` + `#thread-msg` leftover + `#thread-mention` `@`
 box (full hive roster, so a 1:1 thread can become 1:n). Submit posts
-`reply_to=<root id>` and `mention_0…N` for every robot now in the
-member set plus any new pills. Do not mention the human. `#thread-close`
+`reply_to=<root id>` and `mention_0…N` only for **new** pills typed in
+this send. Do not re-mention every robot already in the member set.
+Do not mention the human. `#thread-close`
 [x] and Escape return to the channel. The same Thread button reopens
 the same root.
 
@@ -370,11 +373,13 @@ Right-click a channel (`#chan-menu`):
   language as Raise-robot name. No checkboxes.
 - Unused pool: name + `+`. Added names become `.pill` with `−`.
 - Invite npub `+` commits a human pill.
-- Empty lists mean the whole hive (open, current behavior)
+- Empty lists mean the whole hive when `kind` is `open` (current
+  behavior). `humans` / `robots` / `mixed` require the matching pills.
+- **Policy** (`#manage-policy`) — see §20. Kind radios + reply radios
+  are always visible. Burst / jobs / cooldown live in `<details>`.
 - [Save] [Close]
 
-Payne: “Name the group. Put the right humans and robots on the
-channel. Delete only when the room is done.”
+Payne: “Leash the robots. They speak when mentioned, or not at all.”
 
 ### 15. Tool rail
 
@@ -453,6 +458,47 @@ count, whisper, and turn. `#relay-close` [x] sits at the right of the
 title row and dismisses the drawer. Nothing on `#stats` is a link
 off-hive.
 
+### 20. Channel policy + conversation intelligence
+
+A robot spends tokens only when all of these hold:
+
+1. It is on the channel roster, or `kind` is `open`.
+2. `robot_reply` is not `off`.
+3. A human mentioned it (`p` tag).
+4. The note is not mention-only.
+5. The burst window has closed, or the human confirmed.
+6. `max_jobs`, `cooldown_s`, and `robot_hops` allow it.
+
+Otherwise the robot stays silent or posts one on-deck line. Recap /
+confirm notes are kind 1, `e` = root, `t` = `hush-confirm`. Intel
+ignores those tags so a confirm does not start another hold.
+
+| Field | Values | Default |
+|---|---|---|
+| `kind` | `open` `humans` `robots` `mixed` | `open` |
+| `robot_reply` | `off` `mention` `confirm` | `mention` |
+| `robot_talk` | `0` `1` | `0` |
+| `burst_ms` | `500` `2000` `5000` | `2000` |
+| `max_jobs` | `1` `2` `4` | `2` |
+| `cooldown_s` | `0` `10` `30` | `10` |
+| `robot_hops` | `0` `1` | `0` |
+
+`#manage-policy` radios (Fitts ≥44px):
+
+- Kind: Open hive / Humans / Robots / Mixed.
+- Robots may reply: Off / When mentioned / Confirm first.
+- `<details id="manage-policy-more">` Advanced: robots may talk to
+  robots (checkbox; visible for `robots` / `mixed`), burst wait
+  (0.5s / 2s / 5s), max live jobs (1 / 2 / 4), cooldown (off / 10s /
+  30s).
+
+Chatty path: same human, same `(channel, root, robot)`, notes inside
+`burst_ms` fold (cap 8). One clear ask starts the job. Two or more
+notes post a recap and wait for `yes` / `y` / `confirm` / `go` /
+`do it` / `1`… or a correction. `robot_reply=confirm` always recaps
+first. Duplicate content <1s is dropped. In-flight Grok is not killed
+when policy flips; new considers honor the new leash.
+
 ## Visual language
 - Dark default tokens stay. Themes override CSS variables on `html[data-theme]`.
 - Color-blind: blue / orange, never green / red as the sole pair.
@@ -470,6 +516,8 @@ off-hive.
 - HTTP recv `HUSH_BUF_SZ = 65536` (was 8192; HTTP JSON + small avatar).
 - Session JSON `HUSH_LAUNCH_JSON_MAX = 32768`.
 - Groups: 8. Humans per channel: 8. Robots per channel: 8.
+- Channel policy: burst notes 8 (`HUSH_INTEL_BURST_MAX`); holds 8
+  (`HUSH_INTEL_HOLD_MAX`); confirm tag `hush-confirm`.
 - Channel / group id: 32 hex (`HUSH_LAUNCH_ID_HEX`).
 - Context: 3 files × 4096 bytes.
 - Provider models: 32 names × 64 bytes (`HUSH_PROVIDER_MODELS_MAX`).
