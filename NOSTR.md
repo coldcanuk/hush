@@ -8,8 +8,10 @@ kind-1 notes keep matching. A Hush **Group** is a NIP-29 parent folder
 (`parent` / `child` in the spec; membership does not inherit). Composer
 `@` mentions follow NIP-27 (`nostr:npub1…` plus optional `p` tags).
 The hive shows those mentions as `@Name` pills. A mentioned robot
-replies as a kind-1 note with an `e` tag on the parent (`reply_to`
-in `/api/events`). Grok Build robots run `grok -p`. The wire stays
+replies as a kind-1 note with an `e` tag on the **root** (`reply_to`
+in `/api/events`). The channel stream lists roots; the thread pane
+holds the dialogue. Grok Build robots run isolated `grok -p`
+(`--cwd` empty, tools denied, one turn). The wire stays
 NIP-27 + NIP-10-shaped `e`/`p`.
 Full relay-signed `kind:39000` emission is a follow-up.
 

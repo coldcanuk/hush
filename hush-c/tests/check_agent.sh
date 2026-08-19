@@ -69,6 +69,9 @@ echo "$ag" | grep -q '"slug":"happy"' || fail "happy not raised"
 npub=$(printf '%s' "$ag" | sed -n 's/.*"slug":"happy"[^}]*"npub":"\([^"]*\)".*/\1/p')
 test -n "$npub" || fail "happy npub missing"
 
+st=$(curl -sf "http://127.0.0.1:${port}/api/status")
+printf '%s' "$st" | grep -q '"thinking"' || fail "status missing thinking"
+
 sent=$(curl -sf -X POST "http://127.0.0.1:${port}/api/event" \
     -H 'Content-Type: application/json' \
     -d "{\"content\":\"nostr:${npub} Hello. Tell me a joke\",\"kind\":1,\"channel\":\"general\",\"mention_0\":\"${npub}\"}")
@@ -87,5 +90,20 @@ while [ "$i" -lt 40 ]; do
 done
 printf '%s' "$got" | grep -q '"reply_to":"' || fail "no threaded reply"
 printf '%s' "$got" | grep -q 'Byte me' || fail "grok reply missing"
+
+root=$(printf '%s' "$got" | sed -n 's/.*"id":"\([^"]*\)","pubkey":"[^"]*","kind":1,"created_at":[0-9]*,"content":"nostr:[^"]* Hello. Tell me a joke".*/\1/p')
+test -n "$root" || root=$(printf '%s' "$got" | sed -n 's/.*"reply_to":"\([^"]*\)".*/\1/p')
+test -n "$root" || fail "root id missing"
+follow=$(curl -sf -X POST "http://127.0.0.1:${port}/api/event" \
+    -H 'Content-Type: application/json' \
+    -d "{\"content\":\"another\",\"kind\":1,\"channel\":\"general\",\"reply_to\":\"${root}\",\"mention_0\":\"${npub}\"}")
+echo "$follow" | grep -q '"ok":true' || fail "follow-up not stored"
+got=$(curl -sf "http://127.0.0.1:${port}/api/events")
+printf '%s' "$got" | grep -q "\"content\":\"another\"" || fail "follow-up content missing"
+printf '%s' "$got" | grep -q "\"reply_to\":\"${root}\"" || fail "follow-up missing root e tag"
+grep -q -- '--cwd' src/hush_agent.c || fail "grok argv missing --cwd"
+grep -q -- '--max-turns' src/hush_agent.c || fail "grok argv missing --max-turns"
+grep -q -- '--disallowed-tools' src/hush_agent.c || fail "grok argv missing denylist"
+grep -q -- '--reasoning-effort' src/hush_agent.c || fail "grok argv missing reasoning"
 
 echo "agent mention reply ok"
