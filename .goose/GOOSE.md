@@ -26,4 +26,4 @@ make
 make test
 ```
 
-See AGENTS.md (short Hush version) and RESEARCH.md.
+See AGENTS.md (short Hush version) and docs/research/RESEARCH.md.

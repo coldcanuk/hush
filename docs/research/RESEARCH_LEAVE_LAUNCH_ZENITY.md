@@ -299,7 +299,7 @@ attach-on-EADDRINUSE, Exit/Close HTTP, or SIGCHLD=`SIG_IGN`.
 
 ## Phase 6 — Plan
 
-See `PLAN_LEAVE_LAUNCH_ZENITY.md`.
+See [`../plan/PLAN_LEAVE_LAUNCH_ZENITY.md`](../plan/PLAN_LEAVE_LAUNCH_ZENITY.md).
 
 ## Unanimous agreement gate
 

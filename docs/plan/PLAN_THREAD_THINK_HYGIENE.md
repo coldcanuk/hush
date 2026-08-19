@@ -6,7 +6,7 @@ Base: `main` `7095430f1`
 
 ## 1. Methodology
 
-RDAP. Four-minds gate is recorded in `RESEARCH_THREAD_THINK_HYGIENE.md`.
+RDAP. Four-minds gate is recorded in [`../research/RESEARCH_THREAD_THINK_HYGIENE.md`](../research/RESEARCH_THREAD_THINK_HYGIENE.md).
 Commit after every Milestone on this branch. Land only via PR.
 Never write `main`.
 

@@ -6,7 +6,7 @@ Base: `main` `5aec1f621`
 
 ## 1. Methodology
 
-RDAP. Four-minds gate is recorded in `RESEARCH_THREAD_CHAT_RAIL_UX.md`.
+RDAP. Four-minds gate is recorded in [`../research/RESEARCH_THREAD_CHAT_RAIL_UX.md`](../research/RESEARCH_THREAD_CHAT_RAIL_UX.md).
 Commit after every Milestone on this branch. Land only via PR.
 Never write `main`.
 

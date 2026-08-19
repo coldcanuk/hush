@@ -474,4 +474,4 @@ intercept exists. Lever H5 (P=0.311): hive-owned `#hive-leave` plus
 last-`--app`-child `kill(pid,0)` + zenity follow-up. Reject customizing
 the OS × (H4 P=0.025). Close never kills. Exit always does.
 
-Plan frozen in `PLAN_CLOSE_X_DIALOG.md`.
+Plan frozen in [`../plan/PLAN_CLOSE_X_DIALOG.md`](../plan/PLAN_CLOSE_X_DIALOG.md).

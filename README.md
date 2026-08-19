@@ -294,6 +294,16 @@ make
 sudo make install PREFIX=/usr
 ```
 
+## Docs
+
+Plans and research live under `docs/`. Do not leave `PLAN_*.md` or `RESEARCH*.md` at the repo root.
+
+| Kind | Path |
+|------|------|
+| Plans | [`docs/plan/`](docs/plan/) |
+| Research | [`docs/research/`](docs/research/) |
+| `pass` | [`docs/pass-integration.md`](docs/pass-integration.md) |
+
 ## Skills for Goose
 
 Core skills in `.goose/skills/`:

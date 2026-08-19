@@ -309,6 +309,6 @@ group, and will not restart-on-install automatically.
 - Live process table and pidfile on port 10555 quoted above.
 - Prior Close/Exit research still valid for the Close vs Exit split.
 
-References: `RESEARCH_EXIT_CLOSE.md`, `UI_SPEC.md` §§4,10,12–14,
+References: `RESEARCH_EXIT_CLOSE.md` (this directory), `UI_SPEC.md` §§4,10,12–14,
 `hush-c/demo/index.html`, `hush-c/src/hush_relay.c`,
 `hush-c/src/hush_provider.c`, `hush-c/src/hush_turn.c`.
