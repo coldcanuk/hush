@@ -55,7 +55,8 @@ OAuth the matching provider box shows authenticated (Grok needs
 `~/.grok/auth.json`, Codex needs `~/.codex/auth.json` or `config.toml`)
 and tells you to close the extra windows. Mention a Grok Build robot
 to start a thread; a thinking chip shows while it works, a Thread
-button opens a resizable hive chat (1:1 or 1:n). The tool rail is a
+button opens a resizable hive chat (1:1 or 1:n). In a 1:1 pane a
+follow-up without a new `@` still addresses that sole robot. The tool rail is a
 free-drag hamburger (no docks); double-click parks it left of the
 brand. The reply is one short `grok -p` note from an empty cwd (no
 desktop AGENTS.md).
