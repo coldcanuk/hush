@@ -222,7 +222,8 @@ not a radio this slice.
 | `POST /api/provider/login` | `{provider}` starts the official CLI login. `grok-build` → `grok login --oauth`. `codex` → `codex login`. Goose and unknown ids return `{ok:false,error}`. Does not wait. With `DISPLAY`, spawn `xterm -hold -e` (not `x-terminal-emulator`: COSMIC Term ignores `-e`). Tests set `HUSH_PROVIDER_TERM`. |
 | `POST /api/channel` | `{action:"create"\|"delete"\|"group"\|"ungroup"\|"manage", name?, slug?, group?, group_id?, human_0…human_7?, robot_0…robot_7?}`. Create needs `name`. Delete/group/ungroup/manage need `slug`. |
 | `POST /api/group` | `{name}` creates a parent group with its own UUID. |
-| `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags. Content may contain `nostr:npub1…`. |
+| `GET /api/events` | notes plus `reply_to` (first `e` tag; empty when the note is not a reply). |
+| `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags. Content may contain `nostr:npub1…`. Mentions dispatch `hush_agent`. |
 | `GET /avatar/<64-hex>` | stored picture bytes |
 
 Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
@@ -231,9 +232,14 @@ Session `channels[]` now include `id` (32-hex UUID), `group_id`,
 
 ### 12. OAuth signed-in (Grok Build / Codex)
 
-`has_home` is the authenticated signal. `use_home` and `configured` are
-not enough — login sets `use_home` before the CLI writes the home file.
+`has_home` is the authenticated signal, and it is **per provider**.
+`use_home` and `configured` are not enough — login sets `use_home`
+before the CLI writes the home file. A leftover sibling home directory
+must not light up another radio.
 
+- Grok Build `has_home`: nonempty regular file `~/.grok/auth.json`.
+- Codex `has_home`: nonempty regular file `~/.codex/auth.json` or
+  `~/.codex/config.toml`. `stat(~/.codex)` on the directory is not auth.
 - After **Log in with OAuth**, poll `GET /api/provider` every 2s for 90s.
 - While waiting: “A terminal is running the official login. Finish
   sign-in in that window (a browser should open).”
@@ -256,8 +262,11 @@ pill (`.composer-pill`). The input never displays `nostr:npub1…`.
 Submit serializes each pill to `nostr:<npub>` in the posted content
 and records that pubkey as `mention_N`. Render replaces
 `nostr:npub1…` with `@Name`. Backspace at the start of leftover text
-removes the last pill. Mentioning a robot addresses it; this slice
-does not spawn a live reply.
+removes the last pill. Mentioning a robot starts a thread. A Grok Build
+robot with `has_home` is invoked via `grok -p` and replies as that
+robot (kind 1, `e` parent, `p` human). Other mentioned robots post a
+short on-deck note so the thread still appears. The stream indents
+`.note.reply` when `reply_to` is set.
 
 ### 14. Channel groups + manage (NIP-29 parent)
 
@@ -294,8 +303,12 @@ channel. Delete only when the room is done.”
 ### 15. Tool rail
 
 `#tool-rail` is a `position:fixed` strip the human can drag by
-`#rail-grip`. Collapse (`#rail-toggle`) shrinks it to a hamburger.
-`localStorage.hush-rail` stores `{x,y,collapsed}`.
+`#rail-grip` (≥44px, `touch-action:none`). Pointer tracking is on
+`window`, not the grip alone. Collapse (`#rail-toggle`) shrinks it to
+a hamburger. `#rail-docks` shows six snap targets (tl, tr, bl, br,
+ml, mr) while dragging. Release within 48px snaps; otherwise the free
+position is kept and clamped on screen. `localStorage.hush-rail`
+stores `{x,y,collapsed,anchor}`. Resize reapplies `anchor`.
 
 Buttons, in order: **Install**, **Profile**, **Settings**, **Call**
 (when `session.ready`), **Close**, **Exit**. All ≥44px.
