@@ -1,5 +1,5 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups + Channel Policy
-Version: 2026-08-19 (RDAP M2, gb/code-canvas-json)
+Version: 2026-08-19 (RDAP M2, gb/one-joke-snip)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec, the onboard raise-form notes, the oauth-mention-groups
 header/mention/manage rows, the oauth-mention-rail indent-only thread,
@@ -354,12 +354,17 @@ A Grok Build robot with `has_home` is invoked via `grok -p` in an
 empty `--cwd` (no `AGENTS.md`), `--max-turns 2`
 (named `HUSH_AGENT_GROK_TURNS`; one turn was enough for a joke and
 not enough for a multi-part ask), `--reasoning-effort low` (named
-`HUSH_AGENT_GROK_EFFORT`; grok 1.0.4 rejects `none`), `--no-subagents`,
-`--disable-web-search`, and `--disallowed-tools` covering shell / web /
-files / Agent. The override plus `--rules` demand the note fulfill the
-last human ask (include any asked code; no preamble-only replies),
-address the human by profile first name (else “you”), and forbid
-status banners, thoughts, and npubs. Still one job → one kind-1 note.
+`HUSH_AGENT_GROK_EFFORT`; grok 1.0.4 rejects `none`), `--no-memory`,
+`--no-subagents`, `--disable-web-search`, and `--disallowed-tools`
+covering shell / web / files / Agent. The override plus `--rules`
+demand the note fulfill the last human ask (include any asked code;
+no preamble-only replies), address the human by profile first name
+(else “you”), and forbid status banners, thoughts, and npubs. If the
+last human ask is a joke, reply with exactly one joke. The thread
+transcript passed as `-p` is built by `hush_agent_snip_line`: each
+prior note is flattened (space / tab / CR / LF → one space, 160
+visible chars) so a second joke after a newline is still visible to
+“Do not repeat a prior joke.” Still one job → one kind-1 note.
 The reply is kind 1, `e` = **root** (the triggering note’s `e` if
 already set, else that note’s id), `p` human. Other mentioned robots
 post a short on-deck note so the thread still appears.

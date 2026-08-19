@@ -30,14 +30,14 @@ repeat a joke already in that thread.
 ## Phase 1 — Research gate
 
 ### M1.1 Research
-- [ ] Task 1: `docs/research/RESEARCH_ONE_JOKE_SNIP.md` (this slice).
+- [x] Task 1: `docs/research/RESEARCH_ONE_JOKE_SNIP.md` (this slice).
 - Verify: four-minds, Bayes H1 0.579 / H2 0.350, architecture lock.
 - Commit: `Milestone 1.1: research one-joke snip`
 
 ## Phase 2 — Spec
 
 ### M2.1 UI_SPEC
-- [ ] Task 1: `UI_SPEC.md` §13: snip flattens whitespace; one joke
+- [x] Task 1: `UI_SPEC.md` §13: snip flattens whitespace; one joke
       when asked for a joke; `--no-memory`.
 - Verify: `rg -n 'exactly one joke|snip_line|--no-memory' UI_SPEC.md`.
 - Commit: `Milestone 2.1: spec one joke and flattened snip`
