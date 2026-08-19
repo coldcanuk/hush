@@ -1,5 +1,5 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups + Channel Policy
-Version: 2026-08-19 (RDAP M2, gb/rail-win)
+Version: 2026-08-19 (RDAP M2, gb/canvas-fim)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec, the onboard raise-form notes, the oauth-mention-groups
 header/mention/manage rows, the oauth-mention-rail indent-only thread,
@@ -7,8 +7,8 @@ the thread-think-hygiene Close/Exit paragraph, the oauth-mention-rail
 six-dock tool-rail paragraph, the membership-only Manage Channel
 paragraph, the Deepseek radio slice, the 1:1 follow-up inherit
 slice, the Payne provider-order slice, the one-joke-snip
-paragraph, and the thread-ux rail/minimize paragraph where they
-conflict.
+paragraph, the thread-ux rail/minimize paragraph, and the
+rail-win canvas paragraph where they conflict.
 Quinn + Parker + Payne. No feline.
 
 ## Core Principles (Quinn)
@@ -280,6 +280,8 @@ wire id `deepseek-api`, family `api`, same drawer as OpenAI.
 | `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id). Content may contain `nostr:npub1…`. Mentions enter `hush_intel` (burst / policy) before `hush_agent`. |
 | `POST /api/canvas` | `{project, path, content}` writes `content` to `path` under that launch project's directory. `project` is a slug. `path` is a relative file (no `..`, no absolute). Missing project, empty content, or a path that escapes the project → `{ok:false,error}`. |
 | `POST /api/fixup` | `{instruction, text}` runs a one-shot `grok -p` and returns `{ok:true,text}` or `{ok:false,error}`. Does **not** insert a hive note. Instruction max 500. Text max `HUSH_EVENT_MAX_CONTENT`. |
+| `POST /api/complete` | `{prefix, suffix}` starts a Fill-in-the-Middle job and returns `{ok:true,token}` immediately. Does **not** wait on Grok. Does **not** insert a hive note. A new start replaces any in-flight job. |
+| `GET /api/complete?t=` | `{ok:true,pending:true}` while the token is busy, `{ok:true,text}` when ready (max `HUSH_CANVAS_PRED_MAX` = 512), or `{ok:false,error}`. |
 | `POST /api/window` | `{action:"minimize"\|"maximize"}`. Iconify or toggle WM maximize on the `--app` window (`WM_CLASS=hush-relay`). Does **not** insert a note and does **not** shut down. No window / no X11 → `{ok:false,error}`. |
 | `GET /avatar/<64-hex>` | stored picture bytes |
 
@@ -425,6 +427,19 @@ instruction box over the selection. Apply POSTs `/api/fixup`
 replaces that span with the returned `text`. Esc / Cancel closes.
 `/api/fixup` runs a one-shot `grok -p` (`HUSH_AGENT_FIXUP_TURNS` =
 `"1"`) and must **not** insert a kind-1 hive note.
+
+Pause on `#code-canvas-edit` (`CANVAS_FIM_MS` = 300) POSTs
+`/api/complete` `{prefix, suffix}` (text before / after the caret)
+and polls `GET /api/complete?t=` until a ghost is ready. State is
+`activePrediction` + `predictionPos`. While the request is in
+flight, `pre#code-canvas-hi` paints a `.fim-caret` pulse at the
+caret using `var(--accent)` and `var(--accent-dim)`. The returned
+middle paints as `.tok-ghost` (`var(--faint)`). Tab inserts the
+ghost at `predictionPos`, moves the caret, and clears state. Tab
+with no prediction is left to the textarea. Escape clears. A range
+selection does not start FIM. The pump must not `nanosleep` on
+this path (`hush_canvas_poll` next to `hush_agent_poll`). No
+in-process libcurl.
 
 ### 14. Channel groups + manage (NIP-29 parent)
 
