@@ -65,6 +65,15 @@ wait_down() {
 grep -q 'hush_relay_watch_app' src/hush_relay.c || fail "relay missing last-window watch"
 grep -q 'g_leave_ack' src/hush_relay.c || fail "relay missing leave ack"
 grep -q 'hush_relay_note_leave' src/hush_http.c || fail "http missing leave ack"
+if awk '
+    /static void hush_open_app_window/ { in_fn = 1 }
+    in_fn && /g_saw_app[[:space:]]*=[[:space:]]*1/ { found = 1 }
+    in_fn && /^static / && !/hush_open_app_window/ { in_fn = 0 }
+    END { exit found ? 0 : 1 }
+' src/hush_relay.c; then
+    fail "launcher must not latch g_saw_app"
+fi
+grep -q 'hush_leave_app_alive()' src/hush_relay.c || fail "watch missing live --app latch"
 "$bin" --close "$port" >/dev/null
 test "$?" -eq 0 || fail "--close must exit 0"
 
@@ -115,5 +124,28 @@ wait "$pid"
 test "$?" -eq 0 || fail "--quit child must be code 0"
 test ! -f "$(pidfile_path)" || fail "pidfile left after --quit"
 pid=""
+
+# Launch must not treat the dying launcher fork as last-window-gone.
+stubs=$(mktemp -d)
+zenlog="$stubs/zenity.log"
+printf '#!/bin/sh\necho ZENITY_RAN >> "%s"\necho "Close the window"\nexit 1\n' \
+    "$zenlog" >"$stubs/zenity"
+chmod +x "$stubs/zenity"
+PATH="$stubs" "$bin" --open "$port" >"$log" 2>&1 &
+pid=$!
+wait_up || fail "open start failed"
+i=0
+while [ "$i" -lt 6 ]; do
+    sleep 0.05
+    i=$((i + 1))
+done
+if [ -s "$zenlog" ]; then
+    fail "launch invoked zenity"
+fi
+"$bin" --quit "$port"
+wait_down "$pid" || fail "open quit did not stop"
+wait "$pid" || true
+pid=""
+rm -rf "$stubs"
 
 echo "exit routes ok"
