@@ -56,7 +56,7 @@ repeat a joke already in that thread.
 ## Phase 4 — Tests
 
 ### M4.1 check_agent sees joke 2
-- [ ] Task 1: fake grok logs `-p` to `$HUSH_CONFIG_DIR/grok-p.log`.
+- [x] Task 1: fake grok logs `-p` to `$HUSH_CONFIG_DIR/grok-p.log`.
       After follow-up, log contains flattened `Byte me. go: fmt`.
       Grep `--no-memory` and the one-joke sentence.
 - Verify: `make -C hush-c test` → ALL TESTS PASSED.
