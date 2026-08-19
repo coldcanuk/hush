@@ -42,18 +42,23 @@ enum {
 #define HUSH_AGENT_TMP_FALLBACK "/tmp"
 #define HUSH_AGENT_PROMPT_FALLBACK \
     "You are a robot in the Hush hive. Fulfill the last human ask in one note."
+#define HUSH_AGENT_ONE_JOKE \
+    "If the last human ask is a joke, reply with exactly one joke."
 #define HUSH_AGENT_HYGIENE \
     " Fulfill the last human ask in this note. Include any asked code. " \
-    "No preamble-only replies. No status, no thoughts, no host facts, no npub."
+    "No preamble-only replies. No status, no thoughts, no host facts, no npub. " \
+    HUSH_AGENT_ONE_JOKE
 #define HUSH_AGENT_DISALLOWED \
     "run_terminal_cmd,web_search,web_fetch,read_file,search_replace,list_dir,grep,todo_write,task,Agent"
 #define HUSH_AGENT_RULES \
     "Fulfill the last human ask as the named robot. Include asked code. " \
     "No preamble-only replies. Address the human by first name. " \
-    "No tools. No status. No npub."
+    "No tools. No status. No npub. " \
+    HUSH_AGENT_ONE_JOKE
 #define HUSH_AGENT_HUMAN_FALLBACK "you"
 #define HUSH_AGENT_GROK_EFFORT "low"
 #define HUSH_AGENT_GROK_TURNS "2"
+#define HUSH_AGENT_GROK_NOMEM "--no-memory"
 #define HUSH_AGENT_THREAD_HEAD \
     "Thread so far. Do not repeat a prior joke. " \
     "Fulfill the last human line in this note.\n"
@@ -144,6 +149,11 @@ static hush_status_t hush_agent_start_grok(const hush_agent_job_in_t *in);
 static void hush_agent_fill_job(hush_agent_job_t *job,
                                 const hush_agent_job_in_t *in);
 static int hush_agent_event_is_root(const hush_event_t *ev, const char *root);
+/* True when ch is space, tab, CR, or LF. Pure. */
+static int hush_agent_is_space(char ch);
+/* Writes one space at o when room remains. Returns the next index. */
+static size_t hush_agent_put_gap(char *out, size_t o, size_t cap);
+/* Copies src into out, collapsing whitespace to one space, up to SNIP_MAX. */
 static void hush_agent_snip_line(char *out, size_t outsz, const char *src);
 static void hush_agent_append_turn(char *out, size_t outsz,
                                    const hush_event_t *ev, const char *who);
@@ -593,10 +603,26 @@ static int hush_agent_event_is_root(const hush_event_t *ev, const char *root)
     return 0;
 }
 
+static int hush_agent_is_space(char ch)
+{
+    return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
+}
+
+static size_t hush_agent_put_gap(char *out, size_t o, size_t cap)
+{
+    assert(out != NULL);
+    if (o >= cap)
+        return o;
+    out[o] = ' ';
+    return o + 1;
+}
+
 static void hush_agent_snip_line(char *out, size_t outsz, const char *src)
 {
     size_t i;
+    size_t o;
     size_t cap;
+    int gap;
 
     assert(out != NULL);
     assert(outsz > 0);
@@ -605,9 +631,23 @@ static void hush_agent_snip_line(char *out, size_t outsz, const char *src)
     cap = outsz - 1;
     if (cap > (size_t)HUSH_AGENT_SNIP_MAX)
         cap = (size_t)HUSH_AGENT_SNIP_MAX;
-    for (i = 0; i < cap && src[i] != '\0' && src[i] != '\n'; i++)
-        out[i] = src[i];
-    out[i] = '\0';
+    o = 0;
+    gap = 0;
+    for (i = 0; src[i] != '\0' && o < cap &&
+         i < (size_t)HUSH_EVENT_MAX_CONTENT; i++) {
+        if (hush_agent_is_space(src[i])) {
+            gap = 1;
+            continue;
+        }
+        if (gap && o > 0)
+            o = hush_agent_put_gap(out, o, cap);
+        if (o >= cap)
+            break;
+        gap = 0;
+        out[o] = src[i];
+        o++;
+    }
+    out[o] = '\0';
 }
 
 static void hush_agent_append_turn(char *out, size_t outsz,
@@ -779,7 +819,8 @@ static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job)
     argv[18] = (char *)HUSH_AGENT_DISALLOWED;
     argv[19] = (char *)"--rules";
     argv[20] = (char *)job->rules;
-    argv[21] = NULL;
+    argv[21] = (char *)HUSH_AGENT_GROK_NOMEM;
+    argv[22] = NULL;
     execvp(HUSH_AGENT_GROK_BIN, argv);
     _exit(127);
 }

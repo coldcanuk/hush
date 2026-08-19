@@ -36,7 +36,14 @@ export HOME="$home"
 export HUSH_CONFIG_DIR="$home/.config/hush"
 unset XDG_CONFIG_HOME
 mkdir -p "$home/bin" "$home/.grok" "$home/.codex" "$home/.config/hush"
-printf '%s\n' '#!/bin/sh' 'printf "%s\n" "Why did the robot laugh? Byte me."' \
+printf '%s\n' '#!/bin/sh' \
+    'log="${HUSH_CONFIG_DIR}/grok-p.log"' \
+    'prev=""' \
+    'for a in "$@"; do' \
+    '  if [ "$prev" = "-p" ]; then printf "%s\n" "$a" >> "$log"; fi' \
+    '  prev="$a"' \
+    'done' \
+    'printf "%s\n" "Why did the robot laugh? Byte me."' \
     'printf "go:\tfmt\n"' \
     > "$home/bin/grok"
 chmod 0755 "$home/bin/grok"
@@ -105,6 +112,7 @@ printf '%s' "$got" | grep -q "\"reply_to\":\"${root}\"" || fail "follow-up missi
 grep -q -- '--cwd' src/hush_agent.c || fail "grok argv missing --cwd"
 grep -q -- '--max-turns' src/hush_agent.c || fail "grok argv missing --max-turns"
 grep -q 'HUSH_AGENT_GROK_TURNS "2"' src/hush_agent.c || fail "grok turns must be 2"
+grep -q -- '--no-memory' src/hush_agent.c || fail "grok argv missing --no-memory"
 grep -q -- '--disallowed-tools' src/hush_agent.c || fail "grok argv missing denylist"
 grep -q -- '--reasoning-effort' src/hush_agent.c || fail "grok argv missing reasoning"
 grep -q 'HUSH_AGENT_GROK_EFFORT "low"' src/hush_agent.c || fail "grok effort must be low"
@@ -112,7 +120,18 @@ grep -q 'HUSH_AGENT_THREAD_HEAD' src/hush_agent.c || fail "grok must receive a t
 grep -q 'hush_agent_fill_thread' src/hush_agent.c || fail "missing thread transcript fill"
 grep -q 'No preamble-only replies' src/hush_agent.c || fail "hygiene must forbid preamble-only replies"
 grep -q 'Fulfill the last human ask' src/hush_agent.c || fail "hygiene must fulfill the last human ask"
+grep -q 'exactly one joke' src/hush_agent.c || fail "hygiene must demand one joke"
 grep -q 'hush_agent_robot_busy' src/hush_agent.c || fail "must refuse a second job for a busy robot"
+i=0
+while [ "$i" -lt 40 ]; do
+    if grep -q 'Byte me. go: fmt' "$HUSH_CONFIG_DIR/grok-p.log" 2>/dev/null; then
+        break
+    fi
+    i=$((i + 1))
+    sleep 0.05
+done
+grep -q 'Byte me. go: fmt' "$HUSH_CONFIG_DIR/grok-p.log" \
+    || fail "follow-up -p must flatten the prior tabbed reply"
 
 got=$(curl -sf "http://127.0.0.1:${port}/api/events")
 printf '%s' "$got" | python3 -c 'import json,sys; json.loads(sys.stdin.read())' \
