@@ -302,10 +302,14 @@ Default size `min(42rem, 92vw)` × `min(70vh, 640px)`. `#thread-resize`
 
 The pane supports **1:1** (you + one robot) and **1:n** (you + every
 robot that was mentioned on the root or that authored a descendant).
-Title: `Thread · Happy` or `Thread · Happy, Payne`. Subline lists
-every participant including the signed-in human (`you · Happy` /
-`you · Happy, Payne`). Stream: the root plus descendants from any
-of those participants, painted with the same `.note` chrome as `#stream`.
+Title: `Thread · Happy` or `Thread · Happy, Payne`. Subline is
+`1:1 with Happy` or `1:n · you + Happy, Payne` — not a Payne voice
+line and not a chat bubble. Stream: the root plus descendants from
+any of those participants. Notes in `#thread-stream` are sided
+bubbles (`.note.mine` for the signed-in human, other notes left).
+`who()` matches event hex pubkeys to roster `pubkey` / `npub`.
+A Grok follow-up receives the last few thread turns so it does not
+repeat a prior joke.
 
 Composer inside the pane reuses the hive `.composer-box`:
 `#thread-pills` + `#thread-msg` leftover + `#thread-mention` `@`

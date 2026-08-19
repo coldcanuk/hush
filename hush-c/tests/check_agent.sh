@@ -106,5 +106,7 @@ grep -q -- '--max-turns' src/hush_agent.c || fail "grok argv missing --max-turns
 grep -q -- '--disallowed-tools' src/hush_agent.c || fail "grok argv missing denylist"
 grep -q -- '--reasoning-effort' src/hush_agent.c || fail "grok argv missing reasoning"
 grep -q 'HUSH_AGENT_GROK_EFFORT "low"' src/hush_agent.c || fail "grok effort must be low"
+grep -q 'HUSH_AGENT_THREAD_HEAD' src/hush_agent.c || fail "grok must receive a thread transcript"
+grep -q 'hush_agent_fill_thread' src/hush_agent.c || fail "missing thread transcript fill"
 
 echo "agent mention reply ok"

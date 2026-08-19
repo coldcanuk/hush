@@ -403,10 +403,12 @@ static hush_status_t hush_roster_format_agents(const hush_roster_t *roster,
         hush_roster_json_escape(preview, esc_prompt, sizeof(esc_prompt));
         n = snprintf(out + *off, outsz - *off,
                      "%s{\"name\":\"%s\",\"slug\":\"%s\",\"npub\":\"%s\","
-                     "\"provider\":\"%s\",\"prompt\":\"%s\",\"ncontext\":%zu}",
+                     "\"pubkey\":\"%s\",\"provider\":\"%s\",\"prompt\":\"%s\","
+                     "\"ncontext\":%zu}",
                      (i == 0) ? "" : ",",
                      esc, roster->agents[i].slug,
                      roster->agents[i].id.npub,
+                     roster->agents[i].id.pubkey_hex,
                      roster->agents[i].provider,
                      esc_prompt,
                      roster->agents[i].ncontext);
@@ -435,9 +437,10 @@ static hush_status_t hush_roster_format_members(const hush_roster_t *roster,
     for (i = 0; i < roster->nmembers; ++i) {
         hush_roster_json_escape(roster->members[i].name, esc, sizeof(esc));
         n = snprintf(out + *off, outsz - *off,
-                     "%s{\"name\":\"%s\",\"npub\":\"%s\"}",
+                     "%s{\"name\":\"%s\",\"npub\":\"%s\",\"pubkey\":\"%s\"}",
                      (i == 0) ? "" : ",",
-                     esc, roster->members[i].npub);
+                     esc, roster->members[i].npub,
+                     roster->members[i].pubkey_hex);
         if (n < 0 || *off + (size_t)n >= outsz)
             return HUSH_ERR_FULL;
         *off += (size_t)n;

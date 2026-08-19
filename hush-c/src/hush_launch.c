@@ -1009,7 +1009,7 @@ static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
                  "\"visibility\":\"%s\",\"discoverable\":%s,"
                  "\"join_token\":\"%s\"},"
                  "\"payne\":{\"name\":\"%s\",\"npub\":\"%s\","
-                 "\"about\":\"%s\"},\"channels\":[",
+                 "\"pubkey\":\"%s\",\"about\":\"%s\"},\"channels\":[",
                  launch->logged_in ? "true" : "false",
                  launch->backup_acked ? "true" : "false",
                  launch->has_vibe ? "true" : "false",
@@ -1028,6 +1028,7 @@ static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
                  launch->has_vibe ? launch->vibe_token : "",
                  launch->has_vibe ? HUSH_LAUNCH_PAYNE_NAME : "",
                  launch->has_vibe ? launch->payne.npub : "",
+                 launch->has_vibe ? launch->payne.pubkey_hex : "",
                  launch->has_vibe ? HUSH_LAUNCH_PAYNE_ABOUT : "");
     if (n < 0 || (size_t)n >= outsz)
         return HUSH_ERR_FULL;

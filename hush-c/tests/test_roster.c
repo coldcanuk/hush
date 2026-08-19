@@ -105,6 +105,7 @@ int main(void)
     expect(strstr(json, "\"theme\":\"desert\"") != NULL, "theme json");
     expect(strstr(json, "\"first_name\":\"Ada\"") != NULL, "first json");
     expect(strstr(json, "\"slug\":\"sentry\"") != NULL, "sentry json");
+    expect(strstr(json, "\"pubkey\":\"") != NULL, "agent pubkey json");
     expect(strstr(json, "\"provider\":\"goose\"") != NULL, "provider json");
     expect(strstr(json, "Alice") != NULL, "alice json");
     expect(hush_roster_remove_agent(&roster, HUSH_ROSTER_PAYNE_SLUG) ==
