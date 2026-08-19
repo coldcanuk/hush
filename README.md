@@ -50,7 +50,10 @@ show a Voice icon; mute any tile in the conference. After Grok/Codex
 OAuth the matching provider box shows authenticated (Grok needs
 `~/.grok/auth.json`, Codex needs `~/.codex/auth.json` or `config.toml`)
 and tells you to close the extra windows. Mention a Grok Build robot
-to start a thread; that robot replies with `grok -p`. Hive metadata persists in `~/.config/hush/vibe.json` so
+to start a thread; a thinking chip shows while it works, a Thread
+button opens a dialogue of only you and that robot, and the reply is
+one short `grok -p` note from an empty cwd (no desktop AGENTS.md).
+Click **relay live** for stored / projects / sockets. Hive metadata persists in `~/.config/hush/vibe.json` so
 `make clean && make install` or Exit does not force a new vibe after
 you import the same nsec. **Exit** (`--quit`) stops the relay and the
 browser / login children it forked. **Close** leaves the hive standing.

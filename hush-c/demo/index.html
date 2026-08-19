@@ -133,7 +133,37 @@
     .composer { position: relative; }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
     .chan.on .dot { background: var(--accent); }
-    .stats { margin-top: auto; font-size: 0.75rem; color: var(--muted); padding: 8px; line-height: 1.6; }
+    .stats {
+      margin-top: auto; font-size: 0.75rem; color: var(--muted); padding: 8px;
+      line-height: 1.6; min-height: 44px; border-radius: 8px; text-align: left;
+      background: transparent; border: 0; width: 100%; font: inherit;
+    }
+    .stats:hover, .stats:focus { background: var(--surface-2); color: var(--fg); outline: none; }
+    .think {
+      display: inline-flex; align-items: center; gap: 6px; margin-top: 6px;
+      font-size: 0.72rem; color: var(--muted);
+    }
+    .think-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+      animation: think-pulse 1.1s ease-in-out infinite;
+    }
+    @keyframes think-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+    .thread-btn {
+      margin-top: 8px; min-height: 32px; padding: 4px 10px; border-radius: 999px;
+      border: 1px solid var(--accent-dim); background: transparent; color: var(--accent);
+      font-size: 0.72rem; font-weight: 650;
+    }
+    .thread-btn:hover { background: var(--accent-dim); }
+    .drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .drawer-head h2 { margin: 0; }
+    .drawer-x {
+      min-width: 44px; min-height: 44px; border: 0; background: transparent;
+      color: var(--muted); font-size: 1.2rem; line-height: 1; border-radius: 8px;
+    }
+    .drawer-x:hover { background: var(--surface-2); color: var(--fg); }
+    #thread-stream { max-height: 50vh; overflow: auto; display: flex; flex-direction: column; gap: 10px; margin: 8px 0 12px; }
+    #thread-form { display: flex; gap: 8px; }
+    #thread-form input { flex: 1; }
     main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
     .room {
       padding: 12px 18px; border-bottom: 1px solid var(--line);
@@ -454,7 +484,8 @@
         <button class="mini" id="invite-human" type="button">Invite human</button>
       </div>
       <div class="robots" id="robot-list" aria-label="Robots"></div>
-      <div class="stats" id="stats">waiting for relay</div>
+      <button class="stats" id="stats" type="button" role="button" tabindex="0"
+              aria-label="Relay details">waiting for relay</button>
     </nav>
     <main>
       <div class="room">
@@ -520,6 +551,30 @@
         <button class="btn ghost" id="call-leave" type="button">Leave</button>
         <button class="btn ghost" id="call-close" type="button">Close</button>
       </div>
+    </div>
+  </div>
+  <div class="drawer" id="thread-pane" role="dialog" aria-label="Thread">
+    <div class="panel">
+      <div class="drawer-head">
+        <h2 id="thread-title">Thread</h2>
+        <button class="drawer-x" id="thread-close" type="button" aria-label="Close thread">×</button>
+      </div>
+      <p class="help" id="thread-help">You and this robot. At ease.</p>
+      <div id="thread-stream"></div>
+      <form id="thread-form">
+        <input id="thread-msg" autocomplete="off" maxlength="2000" placeholder="Write in this thread…">
+        <button class="btn" id="thread-send" type="submit">Send</button>
+      </form>
+    </div>
+  </div>
+  <div class="drawer" id="relay-drawer" role="dialog" aria-label="Relay live">
+    <div class="panel">
+      <div class="drawer-head">
+        <h2>Relay live</h2>
+        <button class="drawer-x" id="relay-close" type="button" aria-label="Close relay details">×</button>
+      </div>
+      <p class="help">Stored notes, projects, and sockets on this hive.</p>
+      <div id="relay-body" class="help"></div>
     </div>
   </div>
   <div class="drawer" id="profile" role="dialog" aria-label="Profile">
@@ -776,6 +831,9 @@
     let manageRobotPills = [];
     let whisperReady = false;
     let railDrag = null;
+    let lastEvents = [];
+    let lastStatus = {};
+    let openThread = null;
 
     function $(id) { return document.getElementById(id); }
 
@@ -2044,6 +2102,37 @@
       }
     });
 
+    $("thread-close").addEventListener("click", closeThreadPane);
+    $("thread-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!openThread) return;
+      const leftover = $("thread-msg").value.trim();
+      if (!leftover) return;
+      $("thread-msg").value = "";
+      const root = lastEvents.find((ev) => ev.id === openThread);
+      const bots = threadMembers(root || {}, repliesTo(lastEvents, openThread));
+      const body = {
+        content: leftover,
+        kind: 1,
+        channel: channel,
+        reply_to: openThread
+      };
+      bots.slice(0, 8).forEach((b, i) => { body["mention_" + i] = b.npub; });
+      try {
+        await api("/api/event", body);
+        await tick();
+      } catch (err) {
+        badge(false, "send failed");
+      }
+    });
+    $("stats").addEventListener("click", () => {
+      paintRelayDrawer(lastStatus);
+      $("relay-drawer").classList.add("show");
+    });
+    $("relay-close").addEventListener("click", () => {
+      $("relay-drawer").classList.remove("show");
+    });
+
     const selfId = "p" + Math.random().toString(16).slice(2, 10);
     const PEER_MAX = 8;
     let iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
@@ -2354,43 +2443,157 @@
       el.className = ok ? "ok" : "bad";
     }
 
+    function channelNotes(events) {
+      return (events || []).filter((e) =>
+        (e.channel || "general") === channel && e.kind !== 25000);
+    }
+
+    function thinkingFor(id, status) {
+      return ((status && status.thinking) || []).filter((t) => t && t.parent === id);
+    }
+
+    function repliesTo(events, rootId) {
+      return channelNotes(events).filter((e) => e.reply_to === rootId);
+    }
+
+    function mentionedRobots(ev) {
+      const text = String((ev && ev.content) || "");
+      const found = [];
+      mentionRoster().forEach((h) => {
+        if (!h || !h.npub) return;
+        if (h.kind === "human") return;
+        if (text.indexOf("nostr:" + h.npub) !== -1) found.push(h);
+      });
+      return found;
+    }
+
+    function threadMembers(root, kids) {
+      const bots = mentionedRobots(root);
+      kids.forEach((k) => {
+        const named = mentionRoster().find((h) =>
+          h.npub === k.pubkey ||
+          (k.pubkey && h.npub && h.npub.indexOf(String(k.pubkey).slice(0, 8)) !== -1)
+        );
+        if (named && named.kind !== "human" && !bots.some((b) => b.npub === named.npub))
+          bots.push(named);
+      });
+      return bots;
+    }
+
+    function paintThink(node, jobs) {
+      if (!jobs.length) return;
+      const chip = document.createElement("div");
+      chip.className = "think";
+      chip.setAttribute("aria-live", "polite");
+      const dot = document.createElement("span");
+      dot.className = "think-dot";
+      chip.appendChild(dot);
+      chip.appendChild(document.createTextNode(
+        jobs.map((j) => j.name || "robot").join(", ") + " is thinking"
+      ));
+      node.appendChild(chip);
+    }
+
+    function paintNote(e, extra) {
+      const n = document.createElement("div");
+      n.className = e.reply_to ? "note reply" : "note";
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = who(e.pubkey) + " · " + ago(e.created_at);
+      const body = document.createElement("div");
+      body.className = "body";
+      body.textContent = prettyMentions(e.content || "");
+      n.appendChild(meta);
+      n.appendChild(body);
+      if (extra) extra(n, e);
+      return n;
+    }
+
+    function openThreadPane(rootId) {
+      const root = lastEvents.find((e) => e.id === rootId);
+      if (!root) return;
+      openThread = rootId;
+      const kids = repliesTo(lastEvents, rootId);
+      const bots = threadMembers(root, kids);
+      const names = bots.map((b) => b.name).filter(Boolean);
+      $("thread-title").textContent = names.length ? ("Thread · " + names.join(", ")) : "Thread";
+      $("thread-help").textContent = names.length
+        ? ("You and " + names.join(", ") + ". At ease.")
+        : "You and this robot. At ease.";
+      const box = $("thread-stream");
+      box.innerHTML = "";
+      box.appendChild(paintNote(root, (n) => paintThink(n, thinkingFor(root.id, lastStatus))));
+      kids.forEach((k) => box.appendChild(paintNote(k)));
+      box.scrollTop = box.scrollHeight;
+      $("thread-pane").classList.add("show");
+    }
+
+    function closeThreadPane() {
+      $("thread-pane").classList.remove("show");
+    }
+
+    function paintRelayDrawer(status) {
+      const proj = (session.projects || []);
+      const lines = [
+        "Version " + (status.version || "0.0.1"),
+        "Port " + (status.port || "—"),
+        (status.events || 0) + " stored",
+        proj.length ? (proj.map((p) => p.name || p.slug).join(", ")) : "no projects",
+        (status.clients || 0) + " sockets",
+        "Whisper " + (status.whisper ? "ready" : "off"),
+        "TURN " + (status.turn_running ? "running" : "off")
+      ];
+      $("relay-body").textContent = lines.join("\n");
+    }
+
     function render(events, status) {
       events.forEach((e) => { handleSig(e); });
-      const mine = events.filter((e) =>
-        (e.channel || "general") === channel && e.kind !== 25000);
-      $("count").textContent = mine.length + (mine.length === 1 ? " note" : " notes");
+      lastEvents = events || [];
+      lastStatus = status || {};
+      const mine = channelNotes(lastEvents);
+      const roots = mine.filter((e) => !e.reply_to);
+      $("count").textContent = roots.length + (roots.length === 1 ? " note" : " notes");
       const projN = (session.projects || []).length;
       $("stats").innerHTML =
         (status.ok ? "relay live" : "relay down") + "<br>" +
         status.events + " stored<br>" +
         projN + " project" + (projN === 1 ? "" : "s") + "<br>" +
         status.clients + " sockets";
-      const key = mine.map((e) => e.id).join(",");
-      if (key === seen) return;
-      seen = key;
-      const s = $("stream");
-      s.innerHTML = "";
-      if (!mine.length) {
-        const d = document.createElement("div");
-        d.className = "empty";
-        d.innerHTML = "<strong>The hive is quiet.</strong> At ease. State the mission for #" + channel + ". — Sgt Major Payne";
-        s.appendChild(d);
-        return;
+      paintRelayDrawer(status);
+      const thinkKey = ((status.thinking || []).map((t) => t.parent + ":" + t.name).join(","));
+      const key = roots.map((e) => e.id).join(",") + "|" +
+        mine.filter((e) => e.reply_to).map((e) => e.id).join(",") + "|" + thinkKey;
+      if (key !== seen) {
+        seen = key;
+        const s = $("stream");
+        s.innerHTML = "";
+        if (!roots.length) {
+          const d = document.createElement("div");
+          d.className = "empty";
+          d.innerHTML = "<strong>The hive is quiet.</strong> At ease. State the mission for #" + channel + ". — Sgt Major Payne";
+          s.appendChild(d);
+        } else {
+          roots.forEach((e) => {
+            const kids = repliesTo(lastEvents, e.id);
+            const jobs = thinkingFor(e.id, status);
+            const n = paintNote(e, (node) => {
+              paintThink(node, jobs);
+              if (kids.length || jobs.length) {
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "thread-btn";
+                btn.textContent = "Thread · " + (kids.length || "live");
+                btn.addEventListener("click", () => openThreadPane(e.id));
+                node.appendChild(btn);
+              }
+            });
+            s.appendChild(n);
+          });
+          s.scrollTop = s.scrollHeight;
+        }
       }
-      mine.forEach((e) => {
-        const n = document.createElement("div");
-        n.className = e.reply_to ? "note reply" : "note";
-        const meta = document.createElement("div");
-        meta.className = "meta";
-        meta.textContent = who(e.pubkey) + " · " + ago(e.created_at);
-        const body = document.createElement("div");
-        body.className = "body";
-        body.textContent = prettyMentions(e.content || "");
-        n.appendChild(meta);
-        n.appendChild(body);
-        s.appendChild(n);
-      });
-      s.scrollTop = s.scrollHeight;
+      if (openThread && $("thread-pane").classList.contains("show"))
+        openThreadPane(openThread);
     }
 
     function who(pk) {

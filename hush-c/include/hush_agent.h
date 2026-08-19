@@ -21,4 +21,7 @@ void hush_agent_consider(hush_store_t *store, hush_launch_t *launch,
 /* Reaps finished Grok jobs and inserts their notes. store may be NULL. */
 void hush_agent_poll(hush_store_t *store);
 
+/* Writes a JSON array of busy jobs into out. No-op if out is NULL. */
+void hush_agent_status(char *out, size_t outsz);
+
 #endif /* HUSH_AGENT_H */

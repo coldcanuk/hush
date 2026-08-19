@@ -22,7 +22,9 @@ enum {
     HUSH_HTTP_KIND_SIGNAL = 25000,
     HUSH_HTTP_LOGIN_REPLY_MAX = 384,
     HUSH_HTTP_MENTIONS_MAX = 8,
-    HUSH_HTTP_CHAN_LIST_MAX = 8
+    HUSH_HTTP_CHAN_LIST_MAX = 8,
+    HUSH_HTTP_STATUS_MAX = 2048,
+    HUSH_HTTP_THINKING_MAX = 1024
 };
 
 #define HUSH_HTTP_CLOSE_JSON "{\"ok\":true,\"action\":\"close\"}\n"
@@ -83,6 +85,7 @@ static void hush_http_collect_indexed(const char *body, const char *stem,
                                       char (*out)[HUSH_IDENTITY_NPUB_MAX],
                                       size_t *out_n, size_t maxn);
 static void hush_http_add_mentions(hush_event_t *out, const char *body);
+static void hush_http_add_reply_to(hush_event_t *out, const char *body);
 static void hush_http_event_reply_to(char *out, size_t outsz,
                                      const hush_event_t *ev);
 static hush_status_t hush_http_serve_project(int fd, const char *body,
@@ -438,7 +441,8 @@ static void hush_make_event_id(char *out65)
 
 static void hush_http_serve_status(int fd, const hush_store_t *store)
 {
-    char body[384];
+    char body[HUSH_HTTP_STATUS_MAX];
+    char thinking[HUSH_HTTP_THINKING_MAX];
     hush_event_t tmp[HUSH_HTTP_EVENTS_MAX];
     size_t n;
     int w;
@@ -450,14 +454,16 @@ static void hush_http_serve_status(int fd, const hush_store_t *store)
     whisper = hush_turn_whisper_available();
     turn_on = (g_turn != NULL && g_turn->running);
     vibe_pub = (g_launch == NULL || !g_launch->has_vibe || g_launch->vibe_public);
+    hush_agent_status(thinking, sizeof(thinking));
     w = snprintf(body, sizeof(body),
                  "{\"ok\":true,\"version\":\"0.0.1\",\"events\":%zu,"
                  "\"clients\":%d,\"port\":%u,\"whisper\":%s,"
-                 "\"turn_running\":%s,\"vibe_public\":%s}\n",
+                 "\"turn_running\":%s,\"vibe_public\":%s,\"thinking\":%s}\n",
                  n, g_client_count, (unsigned)g_listen_port,
                  whisper ? "true" : "false",
                  turn_on ? "true" : "false",
-                 vibe_pub ? "true" : "false");
+                 vibe_pub ? "true" : "false",
+                 thinking[0] ? thinking : "[]");
     if (w < 0)
         w = 0;
     hush_http_reply(fd, "200 OK", "application/json", body, (size_t)w);
@@ -534,6 +540,7 @@ static hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
     out->tag_count = 1;
     memcpy(out->tags[0][0], "h", 2);
     memcpy(out->tags[0][1], channel, strlen(channel) + 1);
+    hush_http_add_reply_to(out, body);
     hush_http_add_mentions(out, body);
     if (hush_store_insert(store, out) != HUSH_OK) {
         hush_http_reply(fd, "507 Insufficient Storage", "text/plain", "full\n", 5);
@@ -886,6 +893,24 @@ static void hush_http_collect_indexed(const char *body, const char *stem,
             continue;
         (*out_n)++;
     }
+}
+
+static void hush_http_add_reply_to(hush_event_t *out, const char *body)
+{
+    char reply_to[HUSH_EVENT_ID_HEX_LEN + 1];
+
+    assert(out != NULL);
+    if (body == NULL)
+        return;
+    if (out->tag_count >= (size_t)HUSH_EVENT_MAX_TAGS)
+        return;
+    if (!hush_json_field(body, "reply_to", reply_to, sizeof(reply_to)))
+        return;
+    if (reply_to[0] == '\0')
+        return;
+    memcpy(out->tags[out->tag_count][0], "e", 2);
+    memcpy(out->tags[out->tag_count][1], reply_to, strlen(reply_to) + 1);
+    out->tag_count++;
 }
 
 static void hush_http_add_mentions(hush_event_t *out, const char *body)
