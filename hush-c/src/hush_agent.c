@@ -46,6 +46,7 @@ enum {
 #define HUSH_AGENT_RULES \
     "One short note as the named robot. Address the human by first name. No tools. No status. No npub."
 #define HUSH_AGENT_HUMAN_FALLBACK "you"
+#define HUSH_AGENT_GROK_EFFORT "low"
 
 typedef struct {
     int busy;
@@ -595,7 +596,7 @@ static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job)
     argv[11] = (char *)"--max-turns";
     argv[12] = (char *)"1";
     argv[13] = (char *)"--reasoning-effort";
-    argv[14] = (char *)"none";
+    argv[14] = (char *)HUSH_AGENT_GROK_EFFORT;
     argv[15] = (char *)"--cwd";
     argv[16] = (char *)job->cwd;
     argv[17] = (char *)"--disallowed-tools";
