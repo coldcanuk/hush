@@ -1023,6 +1023,7 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
 
 static hush_status_t hush_http_serve_close(int fd)
 {
+    hush_relay_note_leave(0);
     hush_http_reply(fd, "200 OK", "application/json",
                     HUSH_HTTP_CLOSE_JSON, sizeof(HUSH_HTTP_CLOSE_JSON) - 1);
     return HUSH_OK;
@@ -1030,9 +1031,9 @@ static hush_status_t hush_http_serve_close(int fd)
 
 static hush_status_t hush_http_serve_exit(int fd)
 {
+    hush_relay_note_leave(1);
     hush_http_reply(fd, "200 OK", "application/json",
                     HUSH_HTTP_EXIT_JSON, sizeof(HUSH_HTTP_EXIT_JSON) - 1);
-    hush_relay_request_shutdown();
     return HUSH_OK;
 }
 

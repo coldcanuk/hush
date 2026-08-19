@@ -26,6 +26,10 @@ hush_status_t hush_relay_quit(uint16_t port);
 /* Remember a forked UI or login child so Exit can stop it. pid <= 0 is ignored. */
 void hush_relay_track_child(pid_t pid);
 
+/* Close (is_exit=0) or Exit (is_exit!=0). Exit also requests shutdown.
+ * Either one silences the last-window zenity follow-up. */
+void hush_relay_note_leave(int is_exit);
+
 /* SIGTERM then SIGKILL tracked children. Linux also sweeps leftover --app windows. */
 void hush_relay_reap_children(void);
 
