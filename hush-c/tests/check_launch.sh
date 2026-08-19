@@ -112,6 +112,11 @@ echo "$html" | grep -q 'Delete Robot' || fail "HTML missing delete robot"
 echo "$html" | grep -q 'Raise Robot' || fail "HTML missing raise robot"
 echo "$html" | grep -q 'Save Robot' || fail "HTML missing save robot"
 echo "$html" | grep -q 'value="deepseek-api"' || fail "HTML missing deepseek radio"
+echo "$html" | grep -q 'Edit Sgt Major Payne' || fail "HTML missing Payne edit title"
+echo "$html" | grep -q 'id="payne-provider-pills"' || fail "HTML missing Payne provider pills"
+echo "$html" | grep -q 'id="agent-identity"' || fail "HTML missing lockable identity block"
+echo "$html" | grep -q 'PAYNE_PROVIDERS_MAX = 4' || fail "HTML missing Payne provider cap"
+echo "$html" | grep -q 'First on deck speaks first' || fail "HTML missing Payne order copy"
 echo "$html" | grep -q 'Delete this robot?' || fail "HTML missing delete confirm"
 echo "$html" | grep -q 'CONTEXT_MAX = 3' || fail "HTML missing 3-file cap"
 echo "$html" | grep -q 'id="hive-close"' || fail "HTML missing Close button"
@@ -149,6 +154,7 @@ vibe=$(curl -sf -X POST "http://127.0.0.1:${port}/api/vibe" \
 echo "$vibe" | grep -q '"ready":true' || fail "vibe should ready the hive"
 echo "$vibe" | grep -q '"visibility":"public"' || fail "vibe default public"
 echo "$vibe" | grep -q 'Sgt Major Payne' || fail "Payne missing"
+echo "$vibe" | grep -F '"providers":["goose"]' || fail "Payne default providers"
 echo "$vibe" | grep -q '"slug":"welcome"' || fail "welcome channel missing"
 echo "$vibe" | grep -q '"theme":"dark"' || fail "default theme missing"
 prof=$(curl -sf -X POST "http://127.0.0.1:${port}/api/profile" \
@@ -215,6 +221,16 @@ gone=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"action":"delete","slug":"sentry"}')
 echo "$gone" | grep -q '"slug":"sentry"' && fail "deleted agent still listed"
+payne=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"slug":"sgt-major-payne","provider_0":"grok-build","provider_1":"goose","name":"Nope","system_prompt":"Nope"}')
+echo "$payne" | grep -F '"providers":["grok-build","goose"]' || fail "Payne provider order"
+echo "$payne" | grep -q 'Sgt Major Payne' || fail "Payne name stays locked"
+echo "$payne" | grep -q 'Nope' && fail "Payne name must ignore posted rename"
+stay=$(curl -s -o /tmp/hush-payne-del -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"delete","slug":"sgt-major-payne"}')
+test "$stay" != "200" || fail "Payne must not delete"
 logged=$(curl -sf -X POST "http://127.0.0.1:${port}/api/identity" \
     -H 'Content-Type: application/json' \
     -d '{"action":"logout"}')
