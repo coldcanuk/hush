@@ -177,6 +177,9 @@
       flex: 1; overflow: auto; padding: 8px 16px 12px;
       display: flex; flex-direction: column; gap: 12px; min-height: 0;
     }
+    #thread-think {
+      flex: 0 0 auto; min-height: 1.4rem; padding: 0 16px 6px;
+    }
     #thread-form { position: relative; flex: 0 0 auto; }
     #thread-resize {
       position: absolute; right: 2px; bottom: 2px; width: 24px; height: 24px;
@@ -585,6 +588,7 @@
       </div>
       <p class="help" id="thread-help">1:1 thread</p>
       <div id="thread-stream"></div>
+      <div id="thread-think" aria-live="polite"></div>
       <form class="composer" id="thread-form">
         <div class="mention-box" id="thread-mention" hidden></div>
         <div class="composer-box">
@@ -2170,6 +2174,7 @@
     $("thread-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       if (!openThread || threadMentionOpen) return;
+      if (thinkingFor(openThread, lastStatus).length) return;
       const leftover = $("thread-msg").value.trim();
       const bits = threadPills.map((p) => "nostr:" + p.npub);
       if (leftover) bits.push(leftover);
@@ -2677,6 +2682,12 @@
       paintThreadMentionBox();
     }
 
+    function thinkLabel(jobs) {
+      const names = (jobs || []).map((j) => j.name || "robot");
+      if (!names.length) return "";
+      return names.join(", ") + (names.length === 1 ? " is thinking" : " are thinking");
+    }
+
     function paintThink(node, jobs) {
       if (!jobs.length) return;
       const chip = document.createElement("div");
@@ -2685,10 +2696,20 @@
       const dot = document.createElement("span");
       dot.className = "think-dot";
       chip.appendChild(dot);
-      chip.appendChild(document.createTextNode(
-        jobs.map((j) => j.name || "robot").join(", ") + " is thinking"
-      ));
+      chip.appendChild(document.createTextNode(thinkLabel(jobs)));
       node.appendChild(chip);
+    }
+
+    function paintThreadThink(jobs) {
+      const box = $("thread-think");
+      const send = $("thread-send");
+      if (!box) return;
+      box.innerHTML = "";
+      if (jobs.length) paintThink(box, jobs);
+      if (send) {
+        send.disabled = jobs.length > 0;
+        send.title = jobs.length ? thinkLabel(jobs) : "";
+      }
     }
 
     function paintNote(e, extra) {
@@ -2719,10 +2740,12 @@
       $("thread-help").textContent = names.length
         ? (names.length === 1 ? ("1:1 with " + names[0]) : ("1:n · you + " + names.join(", ")))
         : "1:1 thread";
+      const jobs = thinkingFor(root.id, lastStatus);
       const box = $("thread-stream");
       box.innerHTML = "";
-      box.appendChild(paintNote(root, (n) => paintThink(n, thinkingFor(root.id, lastStatus))));
+      box.appendChild(paintNote(root));
       kids.forEach((k) => box.appendChild(paintNote(k)));
+      paintThreadThink(jobs);
       box.scrollTop = box.scrollHeight;
       $("thread-pane").classList.add("show");
       applyThreadSize();

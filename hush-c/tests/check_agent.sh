@@ -111,5 +111,6 @@ grep -q 'HUSH_AGENT_THREAD_HEAD' src/hush_agent.c || fail "grok must receive a t
 grep -q 'hush_agent_fill_thread' src/hush_agent.c || fail "missing thread transcript fill"
 grep -q 'No preamble-only replies' src/hush_agent.c || fail "hygiene must forbid preamble-only replies"
 grep -q 'Fulfill the last human ask' src/hush_agent.c || fail "hygiene must fulfill the last human ask"
+grep -q 'hush_agent_robot_busy' src/hush_agent.c || fail "must refuse a second job for a busy robot"
 
 echo "agent mention reply ok"
