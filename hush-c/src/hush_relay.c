@@ -281,7 +281,6 @@ static void hush_open_app_window(uint16_t port)
         return;
     if (pid > 0) {
         hush_relay_track_child(pid);
-        g_saw_app = 1;
         return;
     }
     hush_exec_app_browser(url, app_arg);
@@ -984,9 +983,11 @@ static void hush_relay_watch_app(void)
 {
     hush_leave_forget_dead();
     hush_leave_poll();
-    if (g_shutdown || g_leave_ack || g_leave_pid > 0)
+    if (hush_leave_app_alive()) {
+        g_saw_app = 1;
         return;
-    if (hush_leave_app_alive())
+    }
+    if (g_shutdown || g_leave_ack || g_leave_pid > 0)
         return;
     if (!g_saw_app)
         return;
