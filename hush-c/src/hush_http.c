@@ -10,6 +10,7 @@
 #include "hush_agent.h"
 #include "hush_http.h"
 #include "hush_intel.h"
+#include "hush_json.h"
 #include "hush_provider.h"
 #include "hush_relay.h"
 #include "hush_ui_html.h"
@@ -25,11 +26,13 @@ enum {
     HUSH_HTTP_MENTIONS_MAX = 8,
     HUSH_HTTP_CHAN_LIST_MAX = 8,
     HUSH_HTTP_STATUS_MAX = 2048,
-    HUSH_HTTP_THINKING_MAX = 1024
+    HUSH_HTTP_THINKING_MAX = 1024,
+    HUSH_HTTP_CANVAS_PATH_MAX = 384
 };
 
 #define HUSH_HTTP_CLOSE_JSON "{\"ok\":true,\"action\":\"close\"}\n"
 #define HUSH_HTTP_EXIT_JSON  "{\"ok\":true,\"action\":\"exit\"}\n"
+#define HUSH_HTTP_CANVAS_OK "{\"ok\":true}\n"
 
 typedef struct {
     char api_key[HUSH_PROVIDER_KEY_MAX];
@@ -56,7 +59,6 @@ static void hush_json_unescape_copy(const char *src, char *dst, size_t dstsz);
 static int hush_json_field(const char *body, const char *key, char *out, size_t outsz);
 static int hush_json_bare_field(const char *body, const char *key,
                                 char *out, size_t outsz);
-static size_t hush_json_escape(const char *in, char *out, size_t outsz);
 static void hush_make_event_id(char *out65);
 static void hush_http_serve_status(int fd, const hush_store_t *store);
 static void hush_http_serve_events(int fd, const hush_store_t *store);
@@ -103,6 +105,13 @@ static void hush_http_event_reply_to(char *out, size_t outsz,
                                      const hush_event_t *ev);
 static hush_status_t hush_http_serve_project(int fd, const char *body,
                                              hush_store_t *store);
+static const hush_launch_project_t *hush_http_find_project(const char *slug);
+static int hush_http_canvas_rel_ok(const char *rel);
+static hush_status_t hush_http_canvas_join(char *out, size_t outsz,
+                                           const char *root, const char *rel);
+static hush_status_t hush_http_canvas_write(const char *path,
+                                            const char *content);
+static hush_status_t hush_http_serve_canvas(int fd, const char *body);
 static hush_status_t hush_http_serve_turn_post(int fd, const char *body);
 static void hush_http_serve_turn_get(int fd);
 static void hush_http_serve_ice(int fd);
@@ -412,28 +421,6 @@ static int hush_json_bare_field(const char *body, const char *key,
         out[i++] = *p++;
     out[i] = '\0';
     return out[0] != '\0';
-}
-
-static size_t hush_json_escape(const char *in, char *out, size_t outsz)
-{
-    size_t o = 0;
-
-    if (outsz == 0)
-        return 0;
-    while (*in != '\0' && o + 2 < outsz) {
-        if (*in == '"' || *in == '\\') {
-            out[o++] = '\\';
-            out[o++] = *in++;
-        } else if (*in == '\n') {
-            out[o++] = '\\';
-            out[o++] = 'n';
-            in++;
-        } else {
-            out[o++] = *in++;
-        }
-    }
-    out[o] = '\0';
-    return o;
 }
 
 static void hush_make_event_id(char *out65)
@@ -1101,6 +1088,93 @@ static hush_status_t hush_http_serve_project(int fd, const char *body,
                                                            name, path, init_git));
 }
 
+static const hush_launch_project_t *hush_http_find_project(const char *slug)
+{
+    size_t i;
+
+    if (g_launch == NULL || slug == NULL || slug[0] == '\0')
+        return NULL;
+    for (i = 0; i < g_launch->nprojects; i++) {
+        if (strcmp(g_launch->projects[i].slug, slug) == 0)
+            return &g_launch->projects[i];
+    }
+    return NULL;
+}
+
+static int hush_http_canvas_rel_ok(const char *rel)
+{
+    if (rel == NULL || rel[0] == '\0' || rel[0] == '/' || rel[0] == '\\')
+        return 0;
+    if (strstr(rel, "..") != NULL)
+        return 0;
+    return 1;
+}
+
+static hush_status_t hush_http_canvas_join(char *out, size_t outsz,
+                                          const char *root, const char *rel)
+{
+    int n;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    if (root == NULL || root[0] == '\0' || !hush_http_canvas_rel_ok(rel))
+        return HUSH_ERR_DENIED;
+    n = snprintf(out, outsz, "%s/%s", root, rel);
+    if (n < 0 || (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_http_canvas_write(const char *path,
+                                           const char *content)
+{
+    FILE *fp;
+    size_t n;
+    size_t wr;
+
+    assert(path != NULL);
+    assert(content != NULL);
+    fp = fopen(path, "w");
+    if (fp == NULL)
+        return HUSH_ERR_IO;
+    n = strlen(content);
+    wr = fwrite(content, 1, n, fp);
+    if (fclose(fp) != 0 || wr != n)
+        return HUSH_ERR_IO;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_http_serve_canvas(int fd, const char *body)
+{
+    char slug[HUSH_LAUNCH_NAME_MAX];
+    char rel[HUSH_LAUNCH_PATH_MAX];
+    char content[HUSH_EVENT_MAX_CONTENT + 1];
+    char path[HUSH_HTTP_CANVAS_PATH_MAX];
+    const hush_launch_project_t *proj;
+    hush_status_t st;
+
+    if (g_launch == NULL || body == NULL)
+        return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    if (!hush_json_field(body, "project", slug, sizeof(slug)))
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    if (!hush_json_field(body, "path", rel, sizeof(rel)))
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    if (!hush_json_field(body, "content", content, sizeof(content)))
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    proj = hush_http_find_project(slug);
+    if (proj == NULL)
+        return hush_http_reply_session(fd, HUSH_ERR_NOT_FOUND);
+    st = hush_http_canvas_join(path, sizeof(path), proj->path, rel);
+    if (st != HUSH_OK)
+        return hush_http_reply_session(fd, st);
+    st = hush_http_canvas_write(path, content);
+    if (st != HUSH_OK)
+        return hush_http_reply_session(fd, st);
+    hush_http_reply(fd, "200 OK", "application/json",
+                    HUSH_HTTP_CANVAS_OK, sizeof(HUSH_HTTP_CANVAS_OK) - 1);
+    return HUSH_OK;
+}
+
 static hush_status_t hush_http_serve_api_post(int fd, const char *path,
                                               const char *req, size_t len,
                                               hush_store_t *store,
@@ -1124,6 +1198,8 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_group(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/project") == 0)
         return hush_http_serve_project(fd, hush_http_body(req, len), store);
+    if (strcmp(path, "/api/canvas") == 0)
+        return hush_http_serve_canvas(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/turn") == 0)
         return hush_http_serve_turn_post(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/signal") == 0)

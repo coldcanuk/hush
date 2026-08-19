@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "hush_event.h"
+#include "hush_json.h"
 #include "hush_launch.h"
 #include "hush_pass.h"
 
@@ -1563,26 +1564,7 @@ static void hush_launch_try_save(hush_launch_t *launch, const char *path,
 
 static size_t hush_launch_json_escape(const char *src, char *dst, size_t dstsz)
 {
-    size_t o = 0;
-
-    assert(dst != NULL);
-    assert(dstsz > 0);
-    if (src == NULL)
-        src = "";
-    while (*src != '\0' && o + 2 < dstsz) {
-        if (*src == '"' || *src == '\\') {
-            dst[o++] = '\\';
-            dst[o++] = *src++;
-        } else if (*src == '\n') {
-            dst[o++] = '\\';
-            dst[o++] = 'n';
-            src++;
-        } else {
-            dst[o++] = *src++;
-        }
-    }
-    dst[o] = '\0';
-    return o;
+    return hush_json_escape(src, dst, dstsz);
 }
 
 static hush_status_t hush_launch_make_token(char *out, size_t outsz)
