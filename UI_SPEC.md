@@ -94,9 +94,13 @@ The hive ships two labeled buttons on `#tool-rail`, always reachable
 - Drawer "Close" / `[x]` buttons on Settings / Profile / Raise / Thread /
   Relay-live stay local. They never open `#hive-leave` and never quit.
 - Last `--app` child gone: the relay notices with `kill(pid, 0)` in the
-  poll pump (`SIGCHLD` stays ignored). If no `/api/close` or `/api/exit`
-  ran this session (`g_leave_ack` clear) and `g_shutdown` is clear, it
-  forks `zenity --question` (non-blocking) with the same three verbs.
+  poll pump (`SIGCHLD` stays ignored). `g_saw_app` latches only after a
+  tracked child is a live `--app` cmdline (`--class=hush-relay` plus
+  `--app=http://127.0.0.1:<port>/`). The launcher fork is not that
+  window. Launch must not raise zenity. If the latch was set, no
+  `/api/close` or `/api/exit` ran this session (`g_leave_ack` clear),
+  and `g_shutdown` is clear, the pump forks `zenity --question`
+  (non-blocking) with the same three verbs.
   Missing zenity: print the attach hint and leave the hive standing.
   Zenity **Exit the application** sets shutdown. **Close the window**
   acks and stays. **Cancel** re-opens the `--app` window.

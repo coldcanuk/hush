@@ -154,9 +154,10 @@ also speaks the newline-delimited Nostr JSON protocol (see
 These are two different verbs. Rail **Close** and **Exit** open one
 chooser: **Exit the application**, **Close the window**, or **Cancel**.
 The OS/PWA window `×` belongs to the `--app` window. Hush cannot put
-those three buttons on that close-box. Closing it raises a follow-up
-(`zenity` when present): the same three verbs. Cancel re-opens the
-window. Close leaves the hive standing.
+those three buttons on that close-box. Closing the last live `--app`
+window raises a follow-up (`zenity` when present): the same three
+verbs. Launch does not raise that dialog. Cancel re-opens the window.
+Close leaves the hive standing.
 
 | Verb | In the hive | CLI | What happens |
 |---|---|---|---|
