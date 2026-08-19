@@ -122,10 +122,10 @@ Verify: files exist under `docs/`.
 
 ### M4.1 Tests
 
-- [ ] Task 1 of M4.1: `check_pwa.sh` greps `/api/window`,
+- [x] Task 1 of M4.1: `check_pwa.sh` greps `/api/window`,
       `ozone-platform=x11` is in `hush_relay.c`, no
       `class="create"`, `id="invite-info"`. Drop `blank-btn`.
-- [ ] Task 2 of M4.1: `make -C hush-c test`.
+- [x] Task 2 of M4.1: `make -C hush-c test`.
 - Commit: `Milestone 4.1: window and rail v2 checks`.
 
 ## Phase 5 — Land
