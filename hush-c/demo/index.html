@@ -257,15 +257,18 @@
     #thread-help { color: var(--muted); font-size: 0.78rem; }
     .composer { display: flex; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--line); background: var(--surface); align-items: flex-end; }
     .composer-box {
-      flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+      flex: 1; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px;
       background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
       padding: 6px 8px; min-height: 44px;
     }
-    #composer-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+    #composer-pills, #thread-pills { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
     .composer-pill { margin: 0; }
     #msg, #thread-msg {
-      flex: 1; min-width: 8rem; background: transparent; color: var(--fg); border: 0;
+      flex: 1 1 100%; min-width: 8rem; background: transparent; color: var(--fg); border: 0;
       padding: 6px 6px; font: inherit; outline: none;
+      resize: none; overflow-y: auto; line-height: 1.4;
+      height: calc(1.4em * 6 + 12px); max-height: calc(1.4em * 6 + 12px);
+      white-space: pre-wrap; word-break: break-word;
     }
     .composer-box:focus-within { border-color: var(--accent-dim); }
     #send, #thread-send {
@@ -577,7 +580,7 @@
         <div class="mention-box" id="mention-box" hidden></div>
         <div class="composer-box">
           <div id="composer-pills"></div>
-          <input id="msg" autocomplete="off" maxlength="2000" placeholder="Write to the hive… @ a human or robot">
+          <textarea id="msg" rows="6" maxlength="2000" placeholder="Write to the hive… @ a human or robot"></textarea>
         </div>
         <button id="send" type="submit">Send</button>
       </form>
@@ -645,7 +648,7 @@
         <div class="mention-box" id="thread-mention" hidden></div>
         <div class="composer-box">
           <div id="thread-pills"></div>
-          <input id="thread-msg" autocomplete="off" maxlength="2000" placeholder="Write in this thread… @ to add someone">
+          <textarea id="thread-msg" rows="6" maxlength="2000" placeholder="Write in this thread… @ to add someone"></textarea>
         </div>
         <button id="thread-send" type="submit">Send</button>
       </form>
@@ -926,6 +929,8 @@
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
     let channel = "welcome";
     let seen = "";
+    let threadSeen = "";
+    const THREAD_PIN_PX = 48;
     let session = { logged_in: false, ready: false, channels: [] };
     let page = "splash"; // splash detects, shows Payne branding, then advances to gate or hive
     let pendingNsec = "";
@@ -2363,6 +2368,11 @@
         paintComposerPills();
         return;
       }
+      if (ev.key === "Enter" && !ev.shiftKey && !mentionOpen) {
+        ev.preventDefault();
+        $("form").requestSubmit();
+        return;
+      }
       if (!mentionOpen) return;
       if (ev.key === "ArrowDown") {
         ev.preventDefault();
@@ -3144,11 +3154,19 @@
       return n;
     }
 
-    function openThreadPane(rootId) {
+    function threadKeyOf(root, kids, jobs) {
+      const ids = [root.id].concat(kids.map((k) => k.id));
+      const think = (jobs || []).map((t) => t.parent + ":" + t.name).join(",");
+      return ids.join(",") + "|" + think;
+    }
+
+    function threadNearBottom(box) {
+      return box.scrollHeight - box.scrollTop - box.clientHeight < THREAD_PIN_PX;
+    }
+
+    function paintThreadStream(rootId, forcePin) {
       const root = lastEvents.find((e) => e.id === rootId);
       if (!root) return;
-      const wasOpen = $("thread-pane").classList.contains("show");
-      openThread = rootId;
       const kids = repliesTo(lastEvents, rootId);
       const bots = threadMembers(root, kids);
       const names = bots.map((b) => b.name).filter(Boolean);
@@ -3157,12 +3175,28 @@
         ? (names.length === 1 ? ("1:1 with " + names[0]) : ("1:n · you + " + names.join(", ")))
         : "1:1 thread";
       const jobs = thinkingFor(root.id, lastStatus);
+      const key = threadKeyOf(root, kids, jobs);
       const box = $("thread-stream");
+      const shown = $("thread-pane").classList.contains("show");
+      if (shown && key === threadSeen) {
+        paintThreadThink(jobs);
+        return;
+      }
+      const near = !shown || forcePin || threadNearBottom(box);
+      const keep = box.scrollTop;
       box.innerHTML = "";
       box.appendChild(paintNote(root));
       kids.forEach((k) => box.appendChild(paintNote(k)));
       paintThreadThink(jobs);
-      box.scrollTop = box.scrollHeight;
+      threadSeen = key;
+      if (near) box.scrollTop = box.scrollHeight;
+      else box.scrollTop = keep;
+    }
+
+    function openThreadPane(rootId) {
+      const wasOpen = $("thread-pane").classList.contains("show");
+      openThread = rootId;
+      paintThreadStream(rootId, !wasOpen);
       $("thread-pane").classList.add("show");
       applyThreadSize();
       if (!wasOpen) parkRailForThread();
@@ -3171,6 +3205,7 @@
     function closeThreadPane() {
       $("thread-pane").classList.remove("show");
       openThread = null;
+      threadSeen = "";
       threadPills = [];
       paintThreadPills();
       hideThreadMentions();
@@ -3244,7 +3279,7 @@
           localThink = localThink.filter((t) => t.parent !== openThread);
       }
       if (openThread && $("thread-pane").classList.contains("show"))
-        openThreadPane(openThread);
+        paintThreadStream(openThread, false);
     }
 
     function who(pk) {
@@ -3508,6 +3543,11 @@
         ev.preventDefault();
         threadPills.pop();
         paintThreadPills();
+        return;
+      }
+      if (ev.key === "Enter" && !ev.shiftKey && !threadMentionOpen) {
+        ev.preventDefault();
+        $("thread-form").requestSubmit();
         return;
       }
       if (!threadMentionOpen) return;

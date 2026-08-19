@@ -91,9 +91,9 @@ normal button size.
 ## Phase 3 — Implementation
 
 ### M3.1 Thread paint + composer
-- [ ] Task 1 of M3.1: `paintThreadStream` + `THREAD_PIN_PX` in
+- [x] Task 1 of M3.1: `paintThreadStream` + `THREAD_PIN_PX` in
       `hush-c/demo/index.html`. `render` must not force-pin.
-- [ ] Task 2 of M3.1: `#msg` and `#thread-msg` → textarea rows=6,
+- [x] Task 2 of M3.1: `#msg` and `#thread-msg` → textarea rows=6,
       wrap, overflow-y auto. Enter submit, Shift+Enter newline.
       Mention handlers keep working.
 - Verify: `rg -n 'THREAD_PIN_PX|rows=\"6\"' hush-c/demo/index.html`.
