@@ -239,12 +239,40 @@
     }
     #canvas-file { min-height: 36px; background: var(--bg); color: var(--fg);
       border: 1px solid var(--line); border-radius: 8px; font: inherit; }
-    #code-canvas-edit {
-      flex: 1; min-height: 0; margin: 0 14px 14px; padding: 10px 12px;
-      background: var(--bg); color: var(--fg); border: 1px solid var(--line);
-      border-radius: 8px; font-family: var(--mono); font-size: 0.82rem;
-      line-height: 1.45; resize: none; white-space: pre-wrap;
+    #code-canvas-wrap {
+      position: relative; flex: 1; min-height: 0; margin: 0 14px 14px;
     }
+    #code-canvas-hi, #code-canvas-edit {
+      position: absolute; inset: 0; margin: 0; padding: 10px 12px;
+      border: 1px solid var(--line); border-radius: 8px;
+      font-family: var(--mono); font-size: 0.82rem; line-height: 1.45;
+      white-space: pre-wrap; word-break: break-word; overflow: auto;
+      tab-size: 4;
+    }
+    #code-canvas-hi {
+      background: var(--bg); color: var(--fg); pointer-events: none;
+      z-index: 0;
+    }
+    #code-canvas-edit {
+      background: transparent; color: transparent; caret-color: var(--fg);
+      resize: none; z-index: 1;
+    }
+    #code-canvas-hi .tok-kw { color: #7dd3fc; }
+    #code-canvas-hi .tok-str { color: #86efac; }
+    #code-canvas-hi .tok-cmt { color: var(--faint); font-style: italic; }
+    #code-canvas-hi .tok-num { color: #fbbf24; }
+    #canvas-k {
+      display: none; position: absolute; z-index: 2; left: 12px; top: 12px;
+      width: min(22rem, 90%); background: var(--surface); border: 1px solid var(--line);
+      border-radius: 8px; padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    }
+    #canvas-k.show { display: block; }
+    #canvas-k-ask {
+      width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+      border-radius: 6px; padding: 6px 8px; font: inherit; outline: none;
+    }
+    #canvas-k .row { display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end; }
+    #canvas-k .row button { min-height: 32px; padding: 4px 10px; border-radius: 6px; font-size: 0.78rem; }
     #thread-stream .note {
       max-width: min(78%, 28rem); border-radius: 16px 16px 16px 6px;
       background: var(--surface-2);
@@ -257,15 +285,18 @@
     #thread-help { color: var(--muted); font-size: 0.78rem; }
     .composer { display: flex; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--line); background: var(--surface); align-items: flex-end; }
     .composer-box {
-      flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+      flex: 1; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px;
       background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
       padding: 6px 8px; min-height: 44px;
     }
-    #composer-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+    #composer-pills, #thread-pills { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
     .composer-pill { margin: 0; }
     #msg, #thread-msg {
-      flex: 1; min-width: 8rem; background: transparent; color: var(--fg); border: 0;
+      flex: 1 1 100%; min-width: 8rem; background: transparent; color: var(--fg); border: 0;
       padding: 6px 6px; font: inherit; outline: none;
+      resize: none; overflow-y: auto; line-height: 1.4;
+      height: calc(1.4em * 6 + 12px); max-height: calc(1.4em * 6 + 12px);
+      white-space: pre-wrap; word-break: break-word;
     }
     .composer-box:focus-within { border-color: var(--accent-dim); }
     #send, #thread-send {
@@ -422,13 +453,30 @@
     .panel textarea { min-height: 88px; resize: vertical; }
     .iconbtn {
       background: var(--bg); color: var(--fg); border: 1px solid var(--line);
-      border-radius: 999px; padding: 6px 10px; font-size: 0.78rem; font-weight: 650;
-      min-width: 44px; min-height: 44px;
+      border-radius: 8px; padding: 4px 8px; font-size: 0.78rem; font-weight: 650;
+      min-width: 0; min-height: 32px;
     }
     .iconbtn.on { border-color: var(--accent-dim); color: var(--accent); }
     .iconbtn.danger {
       background: var(--warn); color: #fff; border-color: var(--warn);
     }
+    .rail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .rail-rule { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+    .rail-info-row { display: flex; align-items: flex-start; gap: 6px; position: relative; }
+    #rail-info {
+      width: 22px; height: 22px; border-radius: 999px; border: 1px solid var(--line);
+      background: var(--bg); color: var(--muted); font: italic 0.78rem/1 Georgia, serif;
+      padding: 0; flex: 0 0 22px;
+    }
+    #rail-info[aria-expanded="true"] { color: var(--accent); border-color: var(--accent-dim); }
+    #install-help {
+      display: none; position: absolute; left: 28px; top: 0; z-index: 2;
+      font-size: 0.72rem; color: var(--fg); max-width: 14rem; line-height: 1.4;
+      margin: 0; padding: 6px 8px; background: var(--surface); border: 1px solid var(--line);
+      border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+    }
+    #install-help.show { display: block; }
+    #install { width: 100%; }
     #hive-banner {
       display: none; padding: 8px 18px; font-size: 0.82rem; color: var(--muted);
       border-bottom: 1px solid var(--line); background: var(--surface);
@@ -503,7 +551,7 @@
       background: var(--bg); color: var(--fg); font-size: 1.2rem; line-height: 1;
     }
     .rail-body { display: flex; flex-direction: column; gap: 6px; }
-    #install-help { font-size: 0.72rem; color: var(--faint); max-width: 14rem; line-height: 1.4; margin: 0; }
+    /* #install-help popover styles live with the rail grid */
     .pool-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
     .pool-row span { flex: 1; font-size: 0.86rem; }
     @media (max-width: 640px) {
@@ -536,14 +584,26 @@
     </div>
     <div class="rail-body" id="rail-body">
       <button id="install" type="button" title="Install puts Hush on your app launcher as its own window. It does not start a second hive.">Install</button>
-      <p id="install-help">Install puts Hush on your app launcher as its own window. It does not start a second hive.</p>
-      <button class="iconbtn" id="profile-btn" type="button">Profile</button>
-      <button class="iconbtn" id="settings-btn" type="button">Settings</button>
-      <button class="iconbtn" id="call-btn" type="button" hidden>Call</button>
-      <button class="iconbtn" id="hive-close" type="button"
-              title="Close the window. Hive stays standing.">Close</button>
-      <button class="iconbtn danger" id="hive-exit" type="button"
-              title="Quit the hive. Every process stops.">Exit</button>
+      <div class="rail-info-row">
+        <button id="rail-info" type="button" aria-expanded="false" aria-controls="install-help" title="Install help">i</button>
+        <p id="install-help">Install puts Hush on your app launcher as its own window. It does not start a second hive.</p>
+      </div>
+      <hr class="rail-rule">
+      <div class="rail-grid">
+        <button class="iconbtn" id="profile-btn" type="button">Profile</button>
+        <button class="iconbtn" id="settings-btn" type="button">Settings</button>
+        <button class="iconbtn" id="call-btn" type="button" hidden>Call</button>
+        <button class="iconbtn" id="blank-btn" type="button" disabled title="Reserved">Blank</button>
+      </div>
+      <hr class="rail-rule">
+      <div class="rail-grid">
+        <button class="iconbtn" id="rail-min" type="button">Minimize</button>
+        <button class="iconbtn" id="rail-max" type="button">Maximize</button>
+        <button class="iconbtn" id="hive-close" type="button"
+                title="Close the window. Hive stays standing.">Close</button>
+        <button class="iconbtn danger" id="hive-exit" type="button"
+                title="Quit the hive. Every process stops.">Exit</button>
+      </div>
     </div>
   </aside>
   <div id="hive-banner" role="status">Window stays open here. Close this window. The hive is still standing.</div>
@@ -577,7 +637,7 @@
         <div class="mention-box" id="mention-box" hidden></div>
         <div class="composer-box">
           <div id="composer-pills"></div>
-          <input id="msg" autocomplete="off" maxlength="2000" placeholder="Write to the hive… @ a human or robot">
+          <textarea id="msg" rows="6" maxlength="2000" placeholder="Write to the hive… @ a human or robot"></textarea>
         </div>
         <button id="send" type="submit">Send</button>
       </form>
@@ -645,7 +705,7 @@
         <div class="mention-box" id="thread-mention" hidden></div>
         <div class="composer-box">
           <div id="thread-pills"></div>
-          <input id="thread-msg" autocomplete="off" maxlength="2000" placeholder="Write in this thread… @ to add someone">
+          <textarea id="thread-msg" rows="6" maxlength="2000" placeholder="Write in this thread… @ to add someone"></textarea>
         </div>
         <button id="thread-send" type="submit">Send</button>
       </form>
@@ -662,8 +722,18 @@
       <button class="btn ghost" id="canvas-download" type="button">Download</button>
       <button class="btn ghost" id="canvas-save" type="button">Save to project</button>
     </div>
-    <p class="help" id="canvas-help" style="margin:0 14px 8px">Word wrap is on. Edit, then download or save into a recorded project.</p>
-    <textarea id="code-canvas-edit" spellcheck="false" wrap="soft"></textarea>
+    <p class="help" id="canvas-help" style="margin:0 14px 8px">Word wrap is on. Edit, then download or save into a recorded project. Ctrl+K rewrites a selection.</p>
+    <div id="code-canvas-wrap">
+      <pre id="code-canvas-hi" aria-hidden="true"></pre>
+      <textarea id="code-canvas-edit" spellcheck="false" wrap="soft"></textarea>
+      <div id="canvas-k" role="dialog" aria-label="Fix selection">
+        <input id="canvas-k-ask" maxlength="500" placeholder="Fix up this selection…">
+        <div class="row">
+          <button class="btn ghost" id="canvas-k-cancel" type="button">Cancel</button>
+          <button class="btn" id="canvas-k-apply" type="button">Apply</button>
+        </div>
+      </div>
+    </div>
   </div>
   <div class="drawer" id="relay-drawer" role="dialog" aria-label="Relay live">
     <div class="panel">
@@ -926,6 +996,8 @@
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
     let channel = "welcome";
     let seen = "";
+    let threadSeen = "";
+    const THREAD_PIN_PX = 48;
     let session = { logged_in: false, ready: false, channels: [] };
     let page = "splash"; // splash detects, shows Payne branding, then advances to gate or hive
     let pendingNsec = "";
@@ -2363,6 +2435,11 @@
         paintComposerPills();
         return;
       }
+      if (ev.key === "Enter" && !ev.shiftKey && !mentionOpen) {
+        ev.preventDefault();
+        $("form").requestSubmit();
+        return;
+      }
       if (!mentionOpen) return;
       if (ev.key === "ArrowDown") {
         ev.preventDefault();
@@ -2517,6 +2594,26 @@
     };
     $("hive-close").addEventListener("click", openLeave);
     $("hive-exit").addEventListener("click", openLeave);
+    $("rail-info").addEventListener("click", () => {
+      const help = $("install-help");
+      const btn = $("rail-info");
+      const on = !help.classList.contains("show");
+      help.classList.toggle("show", on);
+      btn.setAttribute("aria-expanded", on ? "true" : "false");
+    });
+    $("rail-min").addEventListener("click", () => {
+      if (railParked) return;
+      setRailCollapsed(true);
+      saveRail();
+    });
+    $("rail-max").addEventListener("click", async () => {
+      try {
+        if (document.fullscreenElement)
+          await document.exitFullscreen();
+        else
+          await document.documentElement.requestFullscreen();
+      } catch (err) { /* some --open browsers refuse fullscreen */ }
+    });
     $("leave-cancel").addEventListener("click", hideLeave);
     $("leave-close").addEventListener("click", async () => {
       hideLeave();
@@ -2974,11 +3071,138 @@
     }
 
     function fenceName(lang, idx) {
-      const map = { python: "py", py: "py", go: "go", javascript: "js", js: "js",
-        typescript: "ts", ts: "ts", c: "c", bash: "sh", sh: "sh", rust: "rs",
-        json: "json", html: "html", css: "css", basic: "bas" };
+      const map = { python: "py", py: "py", go: "go", golang: "go",
+        javascript: "js", js: "js", typescript: "ts", ts: "ts", c: "c",
+        cpp: "cpp", bash: "sh", sh: "sh", zsh: "zsh", rust: "rs",
+        json: "json", html: "html", css: "css", ruby: "rb", php: "php",
+        markdown: "md", md: "md", r: "r", latex: "tex", tex: "tex",
+        powershell: "ps1", ps1: "ps1", react: "jsx", jsx: "jsx",
+        tsx: "tsx", node: "js", nodejs: "js", plaintext: "txt" };
       const ext = map[lang] || "txt";
       return "snippet-" + (idx + 1) + "." + ext;
+    }
+
+    const HI_LANG = {
+      go: "go", golang: "go",
+      python: "py", py: "py",
+      javascript: "js", js: "js", node: "js", nodejs: "js",
+      typescript: "js", ts: "js", react: "js", jsx: "js", tsx: "js",
+      c: "c", cpp: "c", cc: "c", cxx: "c", h: "c", hpp: "c",
+      rust: "rs", rs: "rs",
+      ruby: "rb", rb: "rb",
+      php: "php",
+      bash: "sh", sh: "sh", zsh: "sh",
+      powershell: "ps", ps1: "ps",
+      r: "r",
+      latex: "tex", tex: "tex",
+      markdown: "md", md: "md",
+      html: "html", htm: "html", xml: "html",
+      plaintext: "txt", text: "txt", txt: "txt"
+    };
+    const HI_WORDS = {
+      go: "package import func return var const type struct interface map chan if else for range switch case default go defer select break continue fallthrough goto nil true false",
+      py: "def class return import from as if elif else for while try except finally with yield lambda pass break continue True False None and or not in is async await",
+      js: "function return const let var if else for while class import export default from async await try catch finally new this typeof instanceof true false null undefined",
+      c: "int void char long short unsigned signed const struct enum typedef return if else for while switch case default break continue sizeof include static inline bool true false NULL",
+      rs: "fn let mut pub struct enum impl trait use crate mod return if else for while match loop break continue true false self Self",
+      rb: "def class module return if elsif else unless for while do end begin rescue ensure yield true false nil self attr_reader attr_writer attr_accessor",
+      php: "function class return if else elseif foreach for while try catch finally echo public private protected static new true false null",
+      sh: "if then else elif fi for in do done while case esac function return export local true false",
+      ps: "function param if else elseif foreach for while return switch begin process end true false",
+      r: "function if else for while repeat next break TRUE FALSE NULL NA library",
+      tex: "begin end documentclass usepackage section subsection label ref cite",
+      md: "",
+      html: "html head body div span script style link meta title",
+      txt: ""
+    };
+
+    function hiEsc(s) {
+      return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function hiWrap(cls, raw) {
+      return "<span class=\"" + cls + "\">" + hiEsc(raw) + "</span>";
+    }
+
+    function highlightLang(lang) {
+      return HI_LANG[String(lang || "").toLowerCase()] || "txt";
+    }
+
+    function highlightCode(src, lang) {
+      const id = highlightLang(lang);
+      const words = (HI_WORDS[id] || "").split(/\s+/).filter(Boolean);
+      const set = {};
+      words.forEach((w) => { set[w] = 1; });
+      let out = "";
+      let i = 0;
+      const s = String(src || "");
+      const n = s.length;
+      const lineCmt = (id === "py" || id === "sh" || id === "ps" || id === "r" || id === "tex") ? "#"
+        : (id === "html" || id === "md" || id === "txt") ? "" : "/";
+      while (i < n) {
+        const ch = s.charAt(i);
+        if (lineCmt === "#" && ch === "#") {
+          let j = i + 1;
+          while (j < n && s.charAt(j) !== "\n") j++;
+          out += hiWrap("tok-cmt", s.slice(i, j));
+          i = j;
+          continue;
+        }
+        if (lineCmt === "/" && ch === "/" && s.charAt(i + 1) === "/") {
+          let j = i + 2;
+          while (j < n && s.charAt(j) !== "\n") j++;
+          out += hiWrap("tok-cmt", s.slice(i, j));
+          i = j;
+          continue;
+        }
+        if (lineCmt === "/" && ch === "/" && s.charAt(i + 1) === "*") {
+          let j = i + 2;
+          while (j + 1 < n && !(s.charAt(j) === "*" && s.charAt(j + 1) === "/")) j++;
+          j = Math.min(n, j + 2);
+          out += hiWrap("tok-cmt", s.slice(i, j));
+          i = j;
+          continue;
+        }
+        if (ch === "\"" || ch === "'" || ch === "`") {
+          let j = i + 1;
+          while (j < n && s.charAt(j) !== ch) {
+            if (s.charAt(j) === "\\") j++;
+            j++;
+          }
+          if (j < n) j++;
+          out += hiWrap("tok-str", s.slice(i, j));
+          i = j;
+          continue;
+        }
+        if (/[0-9]/.test(ch)) {
+          let j = i + 1;
+          while (j < n && /[0-9a-fxA-FX.]/.test(s.charAt(j))) j++;
+          out += hiWrap("tok-num", s.slice(i, j));
+          i = j;
+          continue;
+        }
+        if (/[A-Za-z_]/.test(ch)) {
+          let j = i + 1;
+          while (j < n && /[A-Za-z0-9_]/.test(s.charAt(j))) j++;
+          const w = s.slice(i, j);
+          out += set[w] ? hiWrap("tok-kw", w) : hiEsc(w);
+          i = j;
+          continue;
+        }
+        out += hiEsc(ch);
+        i++;
+      }
+      return out;
+    }
+
+    function paintCanvasHi() {
+      const edit = $("code-canvas-edit");
+      const hi = $("code-canvas-hi");
+      if (!edit || !hi) return;
+      const lang = edit.getAttribute("data-lang") || "txt";
+      hi.innerHTML = highlightCode(edit.value, lang) + "\n";
+      hi.scrollTop = edit.scrollTop;
+      hi.scrollLeft = edit.scrollLeft;
     }
 
     function splitFences(text) {
@@ -3034,6 +3258,7 @@
       edit.setAttribute("data-lang", f.lang || "txt");
       $("canvas-title").textContent = f.name;
       paintCanvasSelect();
+      paintCanvasHi();
     }
 
     function openCodeCanvas(files, idx) {
@@ -3056,6 +3281,52 @@
 
     function closeCodeCanvas() {
       $("code-canvas").classList.remove("show");
+      hideCanvasK();
+    }
+
+    let canvasKFrom = 0;
+    let canvasKTo = 0;
+
+    function hideCanvasK() {
+      const box = $("canvas-k");
+      if (box) box.classList.remove("show");
+    }
+
+    function showCanvasK() {
+      const edit = $("code-canvas-edit");
+      const box = $("canvas-k");
+      const ask = $("canvas-k-ask");
+      if (!edit || !box || !ask) return;
+      canvasKFrom = edit.selectionStart || 0;
+      canvasKTo = edit.selectionEnd || 0;
+      if (canvasKFrom === canvasKTo) {
+        canvasKFrom = 0;
+        canvasKTo = edit.value.length;
+      }
+      box.classList.add("show");
+      ask.value = "";
+      ask.focus();
+    }
+
+    async function applyCanvasK() {
+      const edit = $("code-canvas-edit");
+      const ask = $("canvas-k-ask");
+      if (!edit || !ask) return;
+      const instruction = (ask.value || "").trim();
+      if (!instruction) return;
+      const text = edit.value.slice(canvasKFrom, canvasKTo);
+      try {
+        const res = await api("/api/fixup", { instruction: instruction, text: text });
+        if (!res || !res.ok || typeof res.text !== "string")
+          throw new Error("fixup");
+        edit.value = edit.value.slice(0, canvasKFrom) + res.text + edit.value.slice(canvasKTo);
+        const f = canvasFiles[canvasIdx];
+        if (f) f.text = edit.value;
+        paintCanvasHi();
+        hideCanvasK();
+      } catch (err) {
+        badge(false, "fixup failed");
+      }
     }
 
     $("canvas-close").addEventListener("click", closeCodeCanvas);
@@ -3068,6 +3339,25 @@
     $("code-canvas-edit").addEventListener("input", () => {
       const f = canvasFiles[canvasIdx];
       if (f) f.text = $("code-canvas-edit").value;
+      paintCanvasHi();
+    });
+    $("code-canvas-edit").addEventListener("scroll", paintCanvasHi);
+    $("code-canvas-edit").addEventListener("keydown", (ev) => {
+      if ((ev.ctrlKey || ev.metaKey) && (ev.key === "k" || ev.key === "K")) {
+        ev.preventDefault();
+        showCanvasK();
+      }
+    });
+    $("canvas-k-cancel").addEventListener("click", hideCanvasK);
+    $("canvas-k-apply").addEventListener("click", applyCanvasK);
+    $("canvas-k-ask").addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        hideCanvasK();
+      } else if (ev.key === "Enter") {
+        ev.preventDefault();
+        applyCanvasK();
+      }
     });
     $("canvas-download").addEventListener("click", () => {
       const f = canvasFiles[canvasIdx];
@@ -3144,11 +3434,19 @@
       return n;
     }
 
-    function openThreadPane(rootId) {
+    function threadKeyOf(root, kids, jobs) {
+      const ids = [root.id].concat(kids.map((k) => k.id));
+      const think = (jobs || []).map((t) => t.parent + ":" + t.name).join(",");
+      return ids.join(",") + "|" + think;
+    }
+
+    function threadNearBottom(box) {
+      return box.scrollHeight - box.scrollTop - box.clientHeight < THREAD_PIN_PX;
+    }
+
+    function paintThreadStream(rootId, forcePin) {
       const root = lastEvents.find((e) => e.id === rootId);
       if (!root) return;
-      const wasOpen = $("thread-pane").classList.contains("show");
-      openThread = rootId;
       const kids = repliesTo(lastEvents, rootId);
       const bots = threadMembers(root, kids);
       const names = bots.map((b) => b.name).filter(Boolean);
@@ -3157,12 +3455,28 @@
         ? (names.length === 1 ? ("1:1 with " + names[0]) : ("1:n · you + " + names.join(", ")))
         : "1:1 thread";
       const jobs = thinkingFor(root.id, lastStatus);
+      const key = threadKeyOf(root, kids, jobs);
       const box = $("thread-stream");
+      const shown = $("thread-pane").classList.contains("show");
+      if (shown && key === threadSeen) {
+        paintThreadThink(jobs);
+        return;
+      }
+      const near = !shown || forcePin || threadNearBottom(box);
+      const keep = box.scrollTop;
       box.innerHTML = "";
       box.appendChild(paintNote(root));
       kids.forEach((k) => box.appendChild(paintNote(k)));
       paintThreadThink(jobs);
-      box.scrollTop = box.scrollHeight;
+      threadSeen = key;
+      if (near) box.scrollTop = box.scrollHeight;
+      else box.scrollTop = keep;
+    }
+
+    function openThreadPane(rootId) {
+      const wasOpen = $("thread-pane").classList.contains("show");
+      openThread = rootId;
+      paintThreadStream(rootId, !wasOpen);
       $("thread-pane").classList.add("show");
       applyThreadSize();
       if (!wasOpen) parkRailForThread();
@@ -3171,6 +3485,7 @@
     function closeThreadPane() {
       $("thread-pane").classList.remove("show");
       openThread = null;
+      threadSeen = "";
       threadPills = [];
       paintThreadPills();
       hideThreadMentions();
@@ -3244,7 +3559,7 @@
           localThink = localThink.filter((t) => t.parent !== openThread);
       }
       if (openThread && $("thread-pane").classList.contains("show"))
-        openThreadPane(openThread);
+        paintThreadStream(openThread, false);
     }
 
     function who(pk) {
@@ -3508,6 +3823,11 @@
         ev.preventDefault();
         threadPills.pop();
         paintThreadPills();
+        return;
+      }
+      if (ev.key === "Enter" && !ev.shiftKey && !threadMentionOpen) {
+        ev.preventDefault();
+        $("thread-form").requestSubmit();
         return;
       }
       if (!threadMentionOpen) return;
