@@ -51,6 +51,7 @@ test: $(TEST_BINS) hush-relay
 	@sh tests/check_launch.sh
 	@sh tests/check_exit.sh
 	@sh tests/check_provider.sh
+	@sh tests/check_agent.sh
 	@sh tests/check_turn.sh
 	@echo "ALL TESTS PASSED"
 

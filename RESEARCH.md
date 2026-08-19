@@ -1822,8 +1822,8 @@ Grok-specific read:
 Codex-specific read:
 
 - `codex` on PATH → `has_binary`.
-- `~/.codex` directory exists → `has_home`.
-- `~/.codex/auth.json` or `config.toml` present → `configured`.
+- nonempty `~/.codex/auth.json` or `~/.codex/config.toml` → `has_home`.
+- A leftover `~/.codex` directory alone is not authenticated.
 
 ### Family B — HTTP APIs (Gemini, xAI, OpenAI, Anthropic)
 

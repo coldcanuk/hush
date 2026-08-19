@@ -50,6 +50,17 @@ wait_up || fail "relay did not start"
 
 got=$(curl -sf "http://127.0.0.1:${port}/api/provider")
 echo "$got" | grep -q '"goose"' || fail "GET missing goose"
+printf '%s' "$got" | grep -q '"grok-build":{[^}]*"has_home":false' \
+    || fail "bare HOME grok-build must not be authenticated"
+printf '%s' "$got" | grep -q '"codex":{[^}]*"has_home":false' \
+    || fail "bare HOME codex must not be authenticated"
+mkdir -p "$home/.codex"
+printf '%s\n' '{}' > "$home/.codex/auth.json"
+got=$(curl -sf "http://127.0.0.1:${port}/api/provider")
+printf '%s' "$got" | grep -q '"codex":{[^}]*"has_home":true' \
+    || fail "codex auth.json must authenticate only Codex"
+printf '%s' "$got" | grep -q '"grok-build":{[^}]*"has_home":false' \
+    || fail "codex auth.json must not authenticate Grok"
 echo "$got" | grep -q '"openai-api"' || fail "GET missing openai"
 echo "$got" | grep -q '"family":"home"' || fail "GET missing home family"
 echo "$got" | grep -q '"family":"api"' || fail "GET missing api family"

@@ -150,6 +150,9 @@
     }
     .note .meta { font-size: 0.7rem; color: var(--faint); font-family: var(--mono); margin-bottom: 4px; }
     .note .body { white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
+    .note.reply {
+      margin-left: 1.4rem; border-left: 2px solid var(--accent-dim); padding-left: 10px;
+    }
     .composer { display: flex; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--line); background: var(--surface); align-items: flex-end; }
     .composer-box {
       flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
@@ -371,9 +374,20 @@
     #tool-rail.collapsed .rail-body { display: none; }
     .rail-bar { display: flex; align-items: center; gap: 6px; }
     #rail-grip {
-      flex: 1; height: 18px; cursor: grab; border-radius: 6px;
+      flex: 1; min-height: 44px; cursor: grab; border-radius: 6px;
+      touch-action: none;
       background: repeating-linear-gradient(90deg, var(--line), var(--line) 2px, transparent 2px, transparent 6px);
     }
+    #rail-grip:active { cursor: grabbing; }
+    #rail-docks {
+      display: none; position: fixed; inset: 0; z-index: 29; pointer-events: none;
+    }
+    #rail-docks.show { display: block; }
+    .rail-dock {
+      position: absolute; width: 44px; height: 44px; border-radius: 12px;
+      border: 2px dashed var(--accent); background: var(--accent-dim); opacity: 0.55;
+    }
+    .rail-dock.on { opacity: 1; background: var(--accent); }
     #rail-toggle {
       width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line);
       background: var(--bg); color: var(--fg); font-size: 1.2rem; line-height: 1;
@@ -405,6 +419,7 @@
     </div>
     <div id="badge">connecting…</div>
   </header>
+  <div id="rail-docks" hidden aria-hidden="true"></div>
   <aside id="tool-rail" aria-label="Tools">
     <div class="rail-bar">
       <div id="rail-grip" title="Move the tool rail"></div>
@@ -2364,7 +2379,7 @@
       }
       mine.forEach((e) => {
         const n = document.createElement("div");
-        n.className = "note";
+        n.className = e.reply_to ? "note reply" : "note";
         const meta = document.createElement("div");
         meta.className = "meta";
         meta.textContent = who(e.pubkey) + " · " + ago(e.created_at);
@@ -2465,20 +2480,93 @@
       }
     });
 
+    const RAIL_SNAP = 48;
+    const RAIL_PAD = 10;
+    let railAnchor = "tr";
+    function railDocks() {
+      const rail = $("tool-rail");
+      const w = rail.offsetWidth || 160;
+      const h = rail.offsetHeight || 220;
+      const maxX = Math.max(0, window.innerWidth - w);
+      const maxY = Math.max(0, window.innerHeight - h);
+      return [
+        { id: "tl", x: RAIL_PAD, y: RAIL_PAD },
+        { id: "tr", x: maxX - RAIL_PAD, y: RAIL_PAD },
+        { id: "bl", x: RAIL_PAD, y: maxY - RAIL_PAD },
+        { id: "br", x: maxX - RAIL_PAD, y: maxY - RAIL_PAD },
+        { id: "ml", x: RAIL_PAD, y: Math.round(maxY / 2) },
+        { id: "mr", x: maxX - RAIL_PAD, y: Math.round(maxY / 2) }
+      ];
+    }
+    function placeRail(x, y, anchor) {
+      const rail = $("tool-rail");
+      const w = rail.offsetWidth || 160;
+      const h = rail.offsetHeight || 220;
+      const maxX = Math.max(0, window.innerWidth - w);
+      const maxY = Math.max(0, window.innerHeight - h);
+      const nx = Math.max(0, Math.min(maxX, x));
+      const ny = Math.max(0, Math.min(maxY, y));
+      rail.style.left = nx + "px";
+      rail.style.top = ny + "px";
+      rail.style.right = "auto";
+      rail.style.bottom = "auto";
+      railAnchor = anchor || "";
+    }
+    function applyRailAnchor(id) {
+      const dock = railDocks().find((d) => d.id === id);
+      if (!dock) return false;
+      placeRail(dock.x, dock.y, id);
+      return true;
+    }
+    function nearestRailDock(x, y) {
+      let best = null;
+      let bestD = RAIL_SNAP + 1;
+      railDocks().forEach((d) => {
+        const dx = d.x - x;
+        const dy = d.y - y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < bestD) {
+          bestD = dist;
+          best = d;
+        }
+      });
+      return bestD <= RAIL_SNAP ? best : null;
+    }
+    function paintRailDocks(active) {
+      const box = $("rail-docks");
+      if (!box) return;
+      box.innerHTML = "";
+      railDocks().forEach((d) => {
+        const el = document.createElement("div");
+        el.className = "rail-dock" + (active && active.id === d.id ? " on" : "");
+        el.style.left = d.x + "px";
+        el.style.top = d.y + "px";
+        box.appendChild(el);
+      });
+    }
+    function showRailDocks(on) {
+      const box = $("rail-docks");
+      if (!box) return;
+      box.hidden = !on;
+      box.classList.toggle("show", !!on);
+      if (on) paintRailDocks(null);
+      else box.innerHTML = "";
+    }
     function loadRail() {
       const rail = $("tool-rail");
       let saved = {};
       try { saved = JSON.parse(localStorage.getItem("hush-rail") || "{}"); } catch (e) { saved = {}; }
-      if (typeof saved.x === "number" && typeof saved.y === "number") {
-        rail.style.left = saved.x + "px";
-        rail.style.top = saved.y + "px";
-        rail.style.right = "auto";
-      }
       if (saved.collapsed) {
         rail.classList.add("collapsed");
         $("rail-toggle").setAttribute("aria-expanded", "false");
         $("rail-toggle").setAttribute("aria-label", "Expand tools");
       }
+      if (saved.anchor && applyRailAnchor(saved.anchor))
+        return;
+      if (typeof saved.x === "number" && typeof saved.y === "number")
+        placeRail(saved.x, saved.y, "");
+      else
+        applyRailAnchor("tr");
     }
     function saveRail() {
       const rail = $("tool-rail");
@@ -2486,7 +2574,8 @@
       localStorage.setItem("hush-rail", JSON.stringify({
         x: rect.left,
         y: rect.top,
-        collapsed: rail.classList.contains("collapsed")
+        collapsed: rail.classList.contains("collapsed"),
+        anchor: railAnchor
       }));
     }
     $("rail-toggle").addEventListener("click", () => {
@@ -2494,25 +2583,47 @@
       const on = rail.classList.toggle("collapsed");
       $("rail-toggle").setAttribute("aria-expanded", on ? "false" : "true");
       $("rail-toggle").setAttribute("aria-label", on ? "Expand tools" : "Collapse tools");
+      if (railAnchor) applyRailAnchor(railAnchor);
       saveRail();
     });
     $("rail-grip").addEventListener("pointerdown", (ev) => {
       const rail = $("tool-rail");
       const rect = rail.getBoundingClientRect();
       railDrag = { dx: ev.clientX - rect.left, dy: ev.clientY - rect.top };
-      $("rail-grip").setPointerCapture(ev.pointerId);
+      railAnchor = "";
+      showRailDocks(true);
+      ev.preventDefault();
     });
-    $("rail-grip").addEventListener("pointermove", (ev) => {
+    window.addEventListener("pointermove", (ev) => {
+      if (!railDrag) return;
+      const x = ev.clientX - railDrag.dx;
+      const y = ev.clientY - railDrag.dy;
+      placeRail(x, y, "");
+      paintRailDocks(nearestRailDock(x, y));
+    });
+    window.addEventListener("pointerup", () => {
       if (!railDrag) return;
       const rail = $("tool-rail");
-      const x = Math.max(0, ev.clientX - railDrag.dx);
-      const y = Math.max(0, ev.clientY - railDrag.dy);
-      rail.style.left = x + "px";
-      rail.style.top = y + "px";
-      rail.style.right = "auto";
-    });
-    $("rail-grip").addEventListener("pointerup", () => {
+      const rect = rail.getBoundingClientRect();
+      const dock = nearestRailDock(rect.left, rect.top);
+      if (dock) placeRail(dock.x, dock.y, dock.id);
       railDrag = null;
+      showRailDocks(false);
+      saveRail();
+    });
+    window.addEventListener("pointercancel", () => {
+      if (!railDrag) return;
+      railDrag = null;
+      showRailDocks(false);
+      saveRail();
+    });
+    window.addEventListener("resize", () => {
+      if (railAnchor) applyRailAnchor(railAnchor);
+      else {
+        const rail = $("tool-rail");
+        const rect = rail.getBoundingClientRect();
+        placeRail(rect.left, rect.top, "");
+      }
       saveRail();
     });
     loadRail();

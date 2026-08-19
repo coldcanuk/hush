@@ -18,6 +18,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "hush_agent.h"
 #include "hush_http.h"
 #include "hush_launch.h"
 #include "hush_proto.h"
@@ -488,6 +489,7 @@ static void hush_relay_prepare(uint16_t port)
     hush_http_set_launch(&g_launch);
     hush_turn_init(&g_turn);
     hush_http_set_turn(&g_turn);
+    hush_agent_init();
 }
 
 static hush_status_t hush_relay_bind(uint16_t port, int open_ui, int *out_ls)
@@ -569,6 +571,7 @@ static void hush_relay_pump(int ls)
             break;
         hush_http_set_client_count(hush_active_clients());
         hush_turn_refresh(&g_turn);
+        hush_agent_poll(g_store);
         nf = hush_fill_pollfds(fds, ls);
         pr = poll(fds, (nfds_t)nf, HUSH_POLL_TIMEOUT_MS);
         if (hush_poll_should_stop(pr))
@@ -584,6 +587,7 @@ static void hush_relay_pump(int ls)
 static void hush_relay_cleanup(int ls)
 {
     hush_relay_reap_children();
+    hush_agent_shutdown();
     hush_turn_shutdown(&g_turn);
     hush_store_destroy(g_store);
     close(ls);
