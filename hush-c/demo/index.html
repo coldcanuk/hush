@@ -365,6 +365,13 @@
       background: var(--warn); color: #fff; width: 100%; margin-top: 8px;
     }
     .btn.danger:disabled { opacity: 0.4; }
+    #agent-drawer .actions {
+      flex-wrap: nowrap; gap: 6px; margin-top: 12px;
+    }
+    #agent-drawer .actions .btn {
+      flex: 1 1 0; padding: 6px 8px; font-size: 0.78rem; min-height: 36px;
+    }
+    #agent-drawer .actions .btn.danger { width: auto; margin-top: 0; }
     .panel input[type="text"], .panel textarea, .panel input[type="email"] {
       width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
       border-radius: 10px; padding: 10px 12px; font: inherit; outline: none;
@@ -684,6 +691,7 @@
         <label><input type="radio" name="agent-provider" value="xai-api"> xAI API</label>
         <label><input type="radio" name="agent-provider" value="openai-api"> OpenAI API</label>
         <label><input type="radio" name="agent-provider" value="anthropic-api"> Anthropic API</label>
+        <label><input type="radio" name="agent-provider" value="deepseek-api"> Deepseek API</label>
       </div>
       <button class="cfg" id="provider-cfg" type="button" hidden
               title="Configure this provider.">✎</button>
@@ -691,10 +699,10 @@
         Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
       <p class="warn" id="agent-err"></p>
       <div class="actions">
-        <button class="btn" id="agent-save" type="button">Raise this robot</button>
+        <button class="btn" id="agent-save" type="button">Raise Robot</button>
         <button class="btn ghost" id="agent-close" type="button">Close</button>
+        <button class="btn danger" id="agent-delete" type="button" disabled>Delete Robot</button>
       </div>
-      <button class="btn danger" id="agent-delete" type="button" disabled>Delete this robot</button>
     </div>
   </div>
   <div class="drawer" id="provider-drawer" role="dialog" aria-label="Configure provider">
@@ -873,7 +881,8 @@
       "gemini-api": "Gemini API",
       "xai-api": "xAI API",
       "openai-api": "OpenAI API",
-      "anthropic-api": "Anthropic API"
+      "anthropic-api": "Anthropic API",
+      "deepseek-api": "Deepseek API"
     };
     const CONTEXT_MAX = 3;
     const HOME_CMDS = {
@@ -1552,7 +1561,7 @@
         el.checked = false;
       });
       if ($("agent-title")) $("agent-title").textContent = "Raise a robot";
-      if ($("agent-save")) $("agent-save").textContent = "Raise this robot";
+      if ($("agent-save")) $("agent-save").textContent = "Raise Robot";
       if ($("agent-delete")) $("agent-delete").disabled = true;
       if ($("agent-err")) $("agent-err").textContent = "";
       paintNamePill();
@@ -1801,7 +1810,7 @@
         draftName = bot.name || "";
         draftPrompt = bot.prompt || "";
         $("agent-title").textContent = "Edit robot";
-        $("agent-save").textContent = "Save this robot";
+        $("agent-save").textContent = "Save Robot";
         $("agent-delete").disabled = false;
         document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
           el.checked = el.value === bot.provider;
