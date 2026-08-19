@@ -355,11 +355,6 @@
     dialog.secret::backdrop { background: rgba(0, 0, 0, 0.62); }
     .hive { display: none; flex: 1; min-height: 0; }
     .hive.show { display: grid; }
-    .create { display: flex; flex-direction: column; gap: 8px; padding: 0 8px; }
-    .create input {
-      width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
-      border-radius: 8px; padding: 8px 10px; font: inherit;
-    }
     .mini {
       background: var(--surface-2); color: var(--fg); border: 0; border-radius: 8px;
       padding: 8px 10px; font-size: 0.8rem;
@@ -463,20 +458,25 @@
     .rail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .rail-rule { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
     .rail-info-row { display: flex; align-items: flex-start; gap: 6px; position: relative; }
-    #rail-info {
+    .rail-i {
       width: 22px; height: 22px; border-radius: 999px; border: 1px solid var(--line);
       background: var(--bg); color: var(--muted); font: italic 0.78rem/1 Georgia, serif;
       padding: 0; flex: 0 0 22px;
     }
-    #rail-info[aria-expanded="true"] { color: var(--accent); border-color: var(--accent-dim); }
-    #install-help {
-      display: none; position: absolute; left: 28px; top: 0; z-index: 2;
-      font-size: 0.72rem; color: var(--fg); max-width: 14rem; line-height: 1.4;
+    .rail-i[aria-expanded="true"] { color: var(--accent); border-color: var(--accent-dim); }
+    .rail-pop {
+      display: none; position: absolute; left: 0; top: 28px; z-index: 2;
+      font-size: 0.72rem; color: var(--fg); width: 14rem; line-height: 1.4;
       margin: 0; padding: 6px 8px; background: var(--surface); border: 1px solid var(--line);
       border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,0.35);
     }
-    #install-help.show { display: block; }
-    #install { width: 100%; }
+    .rail-pop.show { display: block; }
+    .rail-pop p { margin: 0 0 6px; }
+    .rail-pop input {
+      width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+      border-radius: 8px; padding: 6px 8px; font: inherit;
+    }
+    #install { flex: 1; min-width: 0; }
     #hive-banner {
       display: none; padding: 8px 18px; font-size: 0.82rem; color: var(--muted);
       border-bottom: 1px solid var(--line); background: var(--surface);
@@ -583,17 +583,48 @@
       <button id="rail-toggle" type="button" aria-expanded="true" aria-label="Collapse tools">☰</button>
     </div>
     <div class="rail-body" id="rail-body">
-      <button id="install" type="button" title="Install puts Hush on your app launcher as its own window. It does not start a second hive.">Install</button>
       <div class="rail-info-row">
-        <button id="rail-info" type="button" aria-expanded="false" aria-controls="install-help" title="Install help">i</button>
-        <p id="install-help">Install puts Hush on your app launcher as its own window. It does not start a second hive.</p>
+        <button id="install" type="button" title="Install puts Hush on your app launcher as its own window. It does not start a second hive.">Install</button>
+        <button class="rail-i" id="rail-info" type="button" aria-expanded="false" aria-controls="install-help" title="Install help">i</button>
+        <p class="rail-pop" id="install-help">Install puts Hush on your app launcher as its own window. It does not start a second hive.</p>
       </div>
       <hr class="rail-rule">
       <div class="rail-grid">
         <button class="iconbtn" id="profile-btn" type="button">Profile</button>
         <button class="iconbtn" id="settings-btn" type="button">Settings</button>
+      </div>
+      <div class="rail-grid">
         <button class="iconbtn" id="call-btn" type="button" hidden>Call</button>
-        <button class="iconbtn" id="blank-btn" type="button" disabled title="Reserved">Blank</button>
+        <div class="rail-info-row">
+          <button class="iconbtn" id="invite-human" type="button">Invite</button>
+          <button class="rail-i" id="invite-info" type="button" aria-expanded="false" aria-controls="invite-help" title="Invite help">i</button>
+          <p class="rail-pop" id="invite-help">Click to invite a human to your vibe.</p>
+        </div>
+      </div>
+      <hr class="rail-rule">
+      <div class="rail-info-row">
+        <button class="iconbtn" id="add-chan" type="button">Add Channel</button>
+        <button class="rail-i" id="chan-info" type="button" aria-expanded="false" aria-controls="chan-help" title="Channel help">i</button>
+        <div class="rail-pop" id="chan-help">
+          <p>A channel is a named room in this hive. Notes you post there stay on that channel.</p>
+          <input id="new-chan" maxlength="48" placeholder="new channel">
+        </div>
+      </div>
+      <hr class="rail-rule">
+      <div class="rail-grid">
+        <div class="rail-info-row">
+          <button class="iconbtn" id="raise-agent" type="button">New Robot</button>
+          <button class="rail-i" id="robot-info" type="button" aria-expanded="false" aria-controls="robot-help" title="Robot help">i</button>
+          <p class="rail-pop" id="robot-help">Raise a new robot. It gets its own name, provider, and standing orders.</p>
+        </div>
+        <div class="rail-info-row">
+          <button class="iconbtn" id="add-proj" type="button">New Project</button>
+          <button class="rail-i" id="proj-info" type="button" aria-expanded="false" aria-controls="proj-help" title="Project help">i</button>
+          <div class="rail-pop" id="proj-help">
+            <p>A project is a folder the hive can write to. Create one to open files in the canvas.</p>
+            <input id="new-proj" maxlength="48" placeholder="new project">
+          </div>
+        </div>
       </div>
       <hr class="rail-rule">
       <div class="rail-grid">
@@ -612,15 +643,6 @@
     <nav>
       <div id="chan-list">
         <div class="lbl">Channels</div>
-      </div>
-      <div class="create">
-        <div class="lbl">Create</div>
-        <input id="new-chan" maxlength="48" placeholder="new channel">
-        <button class="mini" id="add-chan" type="button">Add channel</button>
-        <input id="new-proj" maxlength="48" placeholder="new project">
-        <button class="mini" id="add-proj" type="button">Create project</button>
-        <button class="mini" id="raise-agent" type="button">Raise a robot</button>
-        <button class="mini" id="invite-human" type="button">Invite human</button>
       </div>
       <div class="robots" id="robot-list" aria-label="Robots"></div>
       <button class="stats" id="stats" type="button" role="button" tabindex="0"
@@ -1686,9 +1708,19 @@
 
     $("add-chan").addEventListener("click", async () => {
       const name = $("new-chan").value.trim();
-      if (!name) return;
+      if (!name) {
+        openRailPop("chan-info");
+        $("new-chan").focus();
+        return;
+      }
       $("new-chan").value = "";
       await postJson("/api/channel", { name: name });
+    });
+    $("new-chan").addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        $("add-chan").click();
+      }
     });
     function isContextFile(file) {
       if (!file) return false;
@@ -2307,7 +2339,11 @@
     });
     $("add-proj").addEventListener("click", async () => {
       const name = $("new-proj").value.trim();
-      if (!name) return;
+      if (!name) {
+        openRailPop("proj-info");
+        $("new-proj").focus();
+        return;
+      }
       $("new-proj").value = "";
       const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project";
       await postJson("/api/project", {
@@ -2315,6 +2351,12 @@
         path: "/tmp/hush-projects/" + slug,
         git: "true"
       });
+    });
+    $("new-proj").addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        $("add-proj").click();
+      }
     });
 
     function mentionRoster() {
@@ -2594,25 +2636,38 @@
     };
     $("hive-close").addEventListener("click", openLeave);
     $("hive-exit").addEventListener("click", openLeave);
-    $("rail-info").addEventListener("click", () => {
-      const help = $("install-help");
-      const btn = $("rail-info");
-      const on = !help.classList.contains("show");
-      help.classList.toggle("show", on);
-      btn.setAttribute("aria-expanded", on ? "true" : "false");
+    function hideRailPops() {
+      document.querySelectorAll(".rail-pop").forEach((el) => el.classList.remove("show"));
+      document.querySelectorAll(".rail-i").forEach((el) => el.setAttribute("aria-expanded", "false"));
+    }
+    function openRailPop(infoId) {
+      const btn = $(infoId);
+      const id = btn && btn.getAttribute("aria-controls");
+      const pop = id ? $(id) : null;
+      if (!btn || !pop) return;
+      hideRailPops();
+      pop.classList.add("show");
+      btn.setAttribute("aria-expanded", "true");
+    }
+    document.querySelectorAll(".rail-i").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const id = btn.getAttribute("aria-controls");
+        const pop = id ? $(id) : null;
+        if (!pop) return;
+        const on = !pop.classList.contains("show");
+        hideRailPops();
+        if (on) {
+          pop.classList.add("show");
+          btn.setAttribute("aria-expanded", "true");
+        }
+      });
     });
-    $("rail-min").addEventListener("click", () => {
-      if (railParked) return;
-      setRailCollapsed(true);
-      saveRail();
+    $("rail-min").addEventListener("click", async () => {
+      try { await api("/api/window", { action: "minimize" }); } catch (err) {}
     });
     $("rail-max").addEventListener("click", async () => {
-      try {
-        if (document.fullscreenElement)
-          await document.exitFullscreen();
-        else
-          await document.documentElement.requestFullscreen();
-      } catch (err) { /* some --open browsers refuse fullscreen */ }
+      try { await api("/api/window", { action: "maximize" }); } catch (err) {}
     });
     $("leave-cancel").addEventListener("click", hideLeave);
     $("leave-close").addEventListener("click", async () => {
