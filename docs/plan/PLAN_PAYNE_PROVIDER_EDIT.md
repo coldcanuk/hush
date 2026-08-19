@@ -110,7 +110,7 @@ undeletable. No live API spawn. No fallback walk at job time.
 
 ### Phase 7 — Verify + land
 
-- [ ] Task 1 of M7.1: `./configure && make && make test`.
+- [x] Task 1 of M7.1: `./configure && make && make test`.
 - [ ] Task 2 of M7.1: push, `gh pr create`,
       `gh pr merge --auto --merge`, wait MERGED.
 - [ ] Task 3 of M7.1: on main checkout pull, remove worktree,
