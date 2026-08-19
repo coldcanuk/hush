@@ -40,18 +40,18 @@ undeletable. No live API spawn. No fallback walk at job time.
 
 ### Phase 1 — Research (GATE)
 
-- [ ] Task 1 of M1.1: research file
+- [x] Task 1 of M1.1: research file
       `docs/research/RESEARCH_PAYNE_PROVIDER_EDIT.md`.
-- [ ] Task 2 of M1.1: this plan.
+- [x] Task 2 of M1.1: this plan.
 - Verify: both files exist on the branch.
 - Commit: `Milestone 1.1: research + plan for Payne provider edit`
 
 ### Phase 2 — Spec
 
-- [ ] Task 1 of M2.1: UI_SPEC §9 — Payne Edit exception:
+- [x] Task 1 of M2.1: UI_SPEC §9 — Payne Edit exception:
       name/prompt locked; ranked providers 1…4; Delete stays
       disabled; session `payne.providers`.
-- [ ] Task 2 of M2.1: README one sentence that Payne's
+- [x] Task 2 of M2.1: README one sentence that Payne's
       runtime order is editable.
 - Verify: `rg "Edit Sgt Major Payne|payne.providers|ranked" UI_SPEC.md README.md`.
 - Commit: `Milestone 2.1: spec Payne provider edit`

@@ -1,11 +1,12 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups + Channel Policy
-Version: 2026-08-19 (RDAP M2, gb/thread-1to1-follow)
+Version: 2026-08-19 (RDAP M2, gb/payne-provider-edit)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec, the onboard raise-form notes, the oauth-mention-groups
 header/mention/manage rows, the oauth-mention-rail indent-only thread,
 the thread-think-hygiene Close/Exit paragraph, the oauth-mention-rail
 six-dock tool-rail paragraph, the membership-only Manage Channel
-paragraph, and the Deepseek radio slice where they conflict.
+paragraph, the Deepseek radio slice, and the 1:1 follow-up inherit
+slice where they conflict.
 Quinn + Parker + Payne. No feline.
 
 ## Core Principles (Quinn)
@@ -174,11 +175,26 @@ and a pencil to edit it again.
   existing non-Payne robot. Payne cannot be deleted. Confirm stays
   `Delete this robot?`. Compact min-height 36px in this drawer only.
 
+**Payne Edit exception.** The Payne card shows **Edit**. The drawer
+title is `Edit Sgt Major Payne`. Name, slug, and standing orders stay
+locked (`HUSH_LAUNCH_PAYNE_NAME` / `HUSH_LAUNCH_PAYNE_ABOUT`). Hide
+the name, system-prompt, context-file, and pass rows. Delete stays
+disabled. The human ranks 1…4 distinct provider ids
+(`HUSH_LAUNCH_PAYNE_PROVIDERS_MAX`). Radios add an id to
+`#payne-provider-pills`; each pill has `−` and ▲ / ▼. Primary is
+index 0. Card subtitle is that primary, plus `+N` when more follow.
+Copy: “Choose the runtime. First on deck speaks first.”
+`POST /api/agent {slug:"sgt-major-payne", provider_0, … provider_N}`
+updates the list and ignores name / `system_prompt`. Session
+`payne.provider` is `providers[0]`; `payne.providers` is the full
+array. Missing list restores to `["goose"]`.
+
 Client rejects other MIME. Server re-checks. Max 3 files, 4096 bytes each.
 
 `POST /api/agent {name, system_prompt, provider, save_pass, picture?, context_name_0, context_mime_0, context_text_0, …_2}`.
+Payne update: `POST /api/agent {slug:"sgt-major-payne", provider_0…N}`.
 
-Delete: `POST /api/agent {action:"delete", slug}`.
+Delete: `POST /api/agent {action:"delete", slug}`. Payne slug is refused.
 
 Goose/Payne skill: `.goose/skills/agent-create/SKILL.md`.
 
