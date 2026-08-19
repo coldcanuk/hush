@@ -91,13 +91,17 @@ int main(void)
 
     expect(hush_provider_is_id("goose"), "goose id");
     expect(hush_provider_is_id("openai-api"), "openai id");
-    expect(!hush_provider_is_id("deepseek-api"), "deepseek not yet");
+    expect(hush_provider_is_id("deepseek-api"), "deepseek id");
     hush_provider_default_host(host, sizeof(host), "openai-api");
     expect(strcmp(host, HUSH_PROVIDER_HOST_OPENAI) == 0, "openai host");
+    hush_provider_default_host(host, sizeof(host), "deepseek-api");
+    expect(strcmp(host, HUSH_PROVIDER_HOST_DEEPSEEK) == 0, "deepseek host");
     hush_provider_family(family, sizeof(family), "goose");
     expect(strcmp(family, HUSH_PROVIDER_FAMILY_HOME) == 0, "goose family");
     hush_provider_family(family, sizeof(family), "gemini-api");
     expect(strcmp(family, HUSH_PROVIDER_FAMILY_API) == 0, "gemini family");
+    hush_provider_family(family, sizeof(family), "deepseek-api");
+    expect(strcmp(family, HUSH_PROVIDER_FAMILY_API) == 0, "deepseek family");
     hush_provider_family(family, sizeof(family), "cline");
     expect(strcmp(family, HUSH_PROVIDER_FAMILY_EDITOR) == 0, "cline family");
 
@@ -164,7 +168,7 @@ int main(void)
     expect_overlay_clean(home);
 
     expect(hush_provider_status_all(all, &n) == HUSH_OK, "all");
-    expect(n == (size_t)HUSH_PROVIDER_COUNT, "eight");
+    expect(n == (size_t)HUSH_PROVIDER_COUNT, "nine");
 
     snprintf(bindir, sizeof(bindir), "%s/bin", home);
     snprintf(path, sizeof(path), "%s/curl", bindir);

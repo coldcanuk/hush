@@ -62,6 +62,7 @@ printf '%s' "$got" | grep -q '"codex":{[^}]*"has_home":true' \
 printf '%s' "$got" | grep -q '"grok-build":{[^}]*"has_home":false' \
     || fail "codex auth.json must not authenticate Grok"
 echo "$got" | grep -q '"openai-api"' || fail "GET missing openai"
+echo "$got" | grep -q '"deepseek-api"' || fail "GET missing deepseek"
 echo "$got" | grep -q '"family":"home"' || fail "GET missing home family"
 echo "$got" | grep -q '"family":"api"' || fail "GET missing api family"
 echo "$got" | grep -q '"api_key"' && fail "GET leaked api_key field"
@@ -106,6 +107,14 @@ grep -q 'pk-secret' "$overlay" && fail "overlay stored passkey"
 sess=$(curl -sf "http://127.0.0.1:${port}/api/session")
 echo "$sess" | grep -q 'sk-secret-test' && fail "session leaked api_key"
 echo "$sess" | grep -q 'pw-secret' && fail "session leaked password"
+
+ds=$(curl -sf -X POST "http://127.0.0.1:${port}/api/provider" \
+    -H 'Content-Type: application/json' \
+    -d '{"provider":"deepseek-api","host":"https://api.deepseek.com","model":"deepseek-v4-pro","api_key":"sk-deepseek-secret"}')
+echo "$ds" | grep -q '"model":"deepseek-v4-pro"' || fail "POST did not save deepseek model"
+echo "$ds" | grep -q 'sk-deepseek-secret' && fail "POST echoed deepseek key"
+echo "$ds" | grep -q '"api_key"' && fail "deepseek POST leaked api_key field"
+grep -q 'sk-deepseek-secret' "$overlay" && fail "overlay stored deepseek key"
 
 home_save=$(curl -sf -X POST "http://127.0.0.1:${port}/api/provider" \
     -H 'Content-Type: application/json' \
