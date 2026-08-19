@@ -96,6 +96,35 @@ int main(void)
                "roster");
         expect(launch.channels[3].nhumans == 1, "one human");
         expect(launch.channels[3].nrobots == 1, "one robot");
+        expect(strcmp(launch.channels[3].kind, HUSH_LAUNCH_KIND_OPEN) == 0,
+               "default kind");
+        expect(strcmp(launch.channels[3].robot_reply,
+                      HUSH_LAUNCH_REPLY_MENTION) == 0,
+               "default reply");
+        expect(launch.channels[3].burst_ms == HUSH_LAUNCH_BURST_MS_DEFAULT,
+               "default burst");
+    }
+    {
+        hush_launch_policy_t policy;
+
+        memset(&policy, 0, sizeof(policy));
+        memcpy(policy.kind, HUSH_LAUNCH_KIND_HUMANS,
+               sizeof(HUSH_LAUNCH_KIND_HUMANS));
+        memcpy(policy.robot_reply, HUSH_LAUNCH_REPLY_OFF,
+               sizeof(HUSH_LAUNCH_REPLY_OFF));
+        policy.burst_ms = HUSH_LAUNCH_BURST_MS_SLOW;
+        policy.max_jobs = HUSH_LAUNCH_MAX_JOBS_MIN;
+        policy.cooldown_s = HUSH_LAUNCH_COOLDOWN_S_LONG;
+        expect(hush_launch_set_channel_policy(&launch, "incidents",
+                                              &policy) == HUSH_OK,
+               "policy");
+        expect(strcmp(launch.channels[3].kind, HUSH_LAUNCH_KIND_HUMANS) == 0,
+               "humans kind");
+        expect(strcmp(launch.channels[3].robot_reply,
+                      HUSH_LAUNCH_REPLY_OFF) == 0,
+               "reply off");
+        expect(launch.channels[3].burst_ms == HUSH_LAUNCH_BURST_MS_SLOW,
+               "slow burst");
     }
     expect(hush_launch_set_channel_group(&launch, "incidents", "") == HUSH_OK,
            "ungroup");
@@ -120,6 +149,8 @@ int main(void)
     expect(strstr(json, "Sgt Major Payne") != NULL, "payne name");
     expect(strstr(json, "\"pubkey\":\"") != NULL, "payne pubkey");
     expect(strstr(json, "\"slug\":\"incidents\"") != NULL, "incidents");
+    expect(strstr(json, "\"robot_reply\":\"mention\"") != NULL, "session reply");
+    expect(strstr(json, "\"burst_ms\":") != NULL, "session burst");
     expect(strstr(json, "\"slug\":\"alpha\"") != NULL, "alpha");
     expect(hush_launch_import_identity(
                &launch,

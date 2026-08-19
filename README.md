@@ -41,7 +41,10 @@ can create channels and projects, invite humans, and raise agents
 and robots as pills; the wire still uses NIP-27 `nostr:npub1…`.
 Channels carry a UUID, sit in optional Groups (NIP-29 parent), and can
 be deleted or managed from a right-click menu. Manage Channel adds and
-removes people with `+` / `−` pills. Install, Profile, Settings, Call,
+removes people with `+` / `−` pills and sets a **policy leash** (open /
+humans / robots / mixed; robots reply off, when mentioned, or confirm
+first). Chatty multi-send bursts coalesce; robots confirm they heard
+the ask before spending a Grok turn. Install, Profile, Settings, Call,
 Close, and Exit live on a movable tool rail that collapses to a
 hamburger. Install puts Hush on the app launcher as its own window; it
 does not start a second hive. When Whisper is on PATH (or

@@ -54,6 +54,10 @@ echo "$html" | grep -q 'composer-pill' || fail "HTML missing mention pills"
 echo "$html" | grep -q 'nostr:' || fail "HTML missing NIP-27 mention insert"
 echo "$html" | grep -q 'id="chan-menu"' || fail "HTML missing channel context menu"
 echo "$html" | grep -q 'id="manage-chan"' || fail "HTML missing manage channel"
+echo "$html" | grep -q 'id="manage-policy"' || fail "HTML missing manage policy"
+echo "$html" | grep -q 'id="manage-policy-more"' || fail "HTML missing policy advanced"
+echo "$html" | grep -q 'name="manage-reply"' || fail "HTML missing robot_reply radios"
+echo "$html" | grep -q 'name="manage-burst"' || fail "HTML missing burst_ms radios"
 echo "$html" | grep -q 'manage-invite-add' || fail "HTML missing manage + invite"
 echo "$html" | grep -q 'chan-del' || fail "HTML missing channel delete"
 echo "$html" | grep -q 'chan-voice' || fail "HTML missing channel voice"
@@ -83,6 +87,11 @@ echo "$html" | grep -q 'think-dot' || fail "HTML missing thinking chip"
 echo "$html" | grep -q 'id="thread-think"' || fail "HTML missing thread thinking strip"
 echo "$html" | grep -q 'paintThreadThink' || fail "HTML missing thread think painter"
 echo "$html" | grep -q 'send.disabled' || fail "HTML must disable send while thinking"
+if echo "$html" | grep -q 'bots.filter((b) => b.kind !== "human")'; then
+  fail "thread follow-up must not remention every member robot"
+fi
+echo "$html" | grep -q 'extra.filter((p) => p.kind !== "human")' \
+  || fail "thread follow-up must mention only new pills"
 echo "$html" | grep -q 'id="install-help"' || fail "HTML missing install help"
 echo "$html" | grep -q 'id="rail-toggle"' || fail "HTML missing rail hamburger"
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
@@ -156,8 +165,10 @@ grouped=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
 echo "$grouped" | grep -q "\"group_id\":\"$gid\"" || fail "channel group"
 managed=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
     -H 'Content-Type: application/json' \
-    -d '{"action":"manage","slug":"incidents","human_0":"npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg","robot_0":"sgt-major-payne"}')
+    -d '{"action":"manage","slug":"incidents","human_0":"npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg","robot_0":"sgt-major-payne","kind":"humans","robot_reply":"off","burst_ms":5000,"max_jobs":1,"cooldown_s":30}')
 echo "$managed" | grep -q 'sgt-major-payne' || fail "channel manage robots"
+echo "$managed" | grep -q '"kind":"humans"' || fail "channel manage kind"
+echo "$managed" | grep -q '"robot_reply":"off"' || fail "channel manage reply"
 ungrouped=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
     -H 'Content-Type: application/json' \
     -d '{"action":"ungroup","slug":"incidents"}')

@@ -21,8 +21,26 @@ enum {
     HUSH_LAUNCH_CHAN_HUMANS_MAX = 8,
     HUSH_LAUNCH_CHAN_ROBOTS_MAX = 8,
     HUSH_LAUNCH_ID_HEX = 32,
-    HUSH_LAUNCH_JSON_MAX = 32768
+    HUSH_LAUNCH_JSON_MAX = 32768,
+    HUSH_LAUNCH_POLICY_MAX = 16,
+    HUSH_LAUNCH_BURST_MS_FAST = 500,
+    HUSH_LAUNCH_BURST_MS_DEFAULT = 2000,
+    HUSH_LAUNCH_BURST_MS_SLOW = 5000,
+    HUSH_LAUNCH_MAX_JOBS_MIN = 1,
+    HUSH_LAUNCH_MAX_JOBS_DEFAULT = 2,
+    HUSH_LAUNCH_MAX_JOBS_MAX = 4,
+    HUSH_LAUNCH_COOLDOWN_S_OFF = 0,
+    HUSH_LAUNCH_COOLDOWN_S_DEFAULT = 10,
+    HUSH_LAUNCH_COOLDOWN_S_LONG = 30
 };
+
+#define HUSH_LAUNCH_KIND_OPEN "open"
+#define HUSH_LAUNCH_KIND_HUMANS "humans"
+#define HUSH_LAUNCH_KIND_ROBOTS "robots"
+#define HUSH_LAUNCH_KIND_MIXED "mixed"
+#define HUSH_LAUNCH_REPLY_OFF "off"
+#define HUSH_LAUNCH_REPLY_MENTION "mention"
+#define HUSH_LAUNCH_REPLY_CONFIRM "confirm"
 
 #define HUSH_LAUNCH_PASS_FAIL "pass helper failed"
 
@@ -40,7 +58,24 @@ typedef struct {
     size_t nhumans;
     char robots[HUSH_LAUNCH_CHAN_ROBOTS_MAX][HUSH_LAUNCH_NAME_MAX];
     size_t nrobots;
+    char kind[HUSH_LAUNCH_POLICY_MAX];
+    char robot_reply[HUSH_LAUNCH_POLICY_MAX];
+    int robot_talk;
+    int burst_ms;
+    int max_jobs;
+    int cooldown_s;
+    int robot_hops;
 } hush_launch_channel_t;
+
+typedef struct {
+    char kind[HUSH_LAUNCH_POLICY_MAX];
+    char robot_reply[HUSH_LAUNCH_POLICY_MAX];
+    int robot_talk;
+    int burst_ms;
+    int max_jobs;
+    int cooldown_s;
+    int robot_hops;
+} hush_launch_policy_t;
 
 typedef struct {
     char name[HUSH_LAUNCH_NAME_MAX];
@@ -152,6 +187,18 @@ hush_status_t hush_launch_set_channel_roster(hush_launch_t *launch,
                                              size_t nhumans,
                                              const char *const *robots,
                                              size_t nrobots);
+
+/* Writes default open/mention policy onto ch. Ignores NULL. */
+void hush_launch_policy_default(hush_launch_channel_t *ch);
+
+/* Copies ch policy into out. Fails HUSH_ERR_ARG on NULL. */
+hush_status_t hush_launch_policy_copy(hush_launch_policy_t *out,
+                                      const hush_launch_channel_t *ch);
+
+/* Replaces channel policy. Unknown kind/reply fail HUSH_ERR_PARSE. */
+hush_status_t hush_launch_set_channel_policy(hush_launch_t *launch,
+                                             const char *slug,
+                                             const hush_launch_policy_t *in);
 
 /* Records a project and optionally runs git init at path. */
 hush_status_t hush_launch_add_project(hush_launch_t *launch,
