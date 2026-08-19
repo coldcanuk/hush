@@ -230,6 +230,24 @@ static hush_status_t hush_launch_take_channels(hush_launch_t *launch,
 static void hush_launch_take_channel_lists(hush_launch_channel_t *ch,
                                            const char *json, size_t idx);
 
+/* True when kind is open/humans/robots/mixed. */
+static int hush_launch_kind_ok(const char *kind);
+
+/* True when reply is off/mention/confirm. */
+static int hush_launch_reply_ok(const char *reply);
+
+/* True when burst_ms is one of the three allowed waits. */
+static int hush_launch_burst_ok(int burst_ms);
+
+/* True when max_jobs is 1, 2, or 4. */
+static int hush_launch_jobs_ok(int max_jobs);
+
+/* True when cooldown_s is 0, 10, or 30. */
+static int hush_launch_cooldown_ok(int cooldown_s);
+
+/* Rejects unknown kind/reply/burst/jobs/cooldown/talk/hops. */
+static hush_status_t hush_launch_policy_check(const hush_launch_policy_t *in);
+
 /* Fills groups from json. */
 static hush_status_t hush_launch_take_groups(hush_launch_t *launch,
                                              const char *json);
@@ -613,6 +631,60 @@ hush_status_t hush_launch_set_channel_roster(hush_launch_t *launch,
     return hush_launch_save_vibe(launch);
 }
 
+void hush_launch_policy_default(hush_launch_channel_t *ch)
+{
+    if (ch == NULL)
+        return;
+    memcpy(ch->kind, HUSH_LAUNCH_KIND_OPEN, sizeof(HUSH_LAUNCH_KIND_OPEN));
+    memcpy(ch->robot_reply, HUSH_LAUNCH_REPLY_MENTION,
+           sizeof(HUSH_LAUNCH_REPLY_MENTION));
+    ch->robot_talk = 0;
+    ch->burst_ms = HUSH_LAUNCH_BURST_MS_DEFAULT;
+    ch->max_jobs = HUSH_LAUNCH_MAX_JOBS_DEFAULT;
+    ch->cooldown_s = HUSH_LAUNCH_COOLDOWN_S_DEFAULT;
+    ch->robot_hops = 0;
+}
+
+hush_status_t hush_launch_policy_copy(hush_launch_policy_t *out,
+                                      const hush_launch_channel_t *ch)
+{
+    if (out == NULL || ch == NULL)
+        return HUSH_ERR_ARG;
+    memset(out, 0, sizeof(*out));
+    memcpy(out->kind, ch->kind, sizeof(out->kind));
+    memcpy(out->robot_reply, ch->robot_reply, sizeof(out->robot_reply));
+    out->robot_talk = ch->robot_talk;
+    out->burst_ms = ch->burst_ms;
+    out->max_jobs = ch->max_jobs;
+    out->cooldown_s = ch->cooldown_s;
+    out->robot_hops = ch->robot_hops;
+    return HUSH_OK;
+}
+
+hush_status_t hush_launch_set_channel_policy(hush_launch_t *launch,
+                                             const char *slug,
+                                             const hush_launch_policy_t *in)
+{
+    hush_launch_channel_t *ch;
+
+    if (launch == NULL || slug == NULL || in == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe)
+        return HUSH_ERR_ARG;
+    HUSH_TRY(hush_launch_policy_check(in));
+    ch = hush_launch_find_channel(launch, slug);
+    if (ch == NULL)
+        return HUSH_ERR_NOT_FOUND;
+    memcpy(ch->kind, in->kind, sizeof(ch->kind));
+    memcpy(ch->robot_reply, in->robot_reply, sizeof(ch->robot_reply));
+    ch->robot_talk = in->robot_talk;
+    ch->burst_ms = in->burst_ms;
+    ch->max_jobs = in->max_jobs;
+    ch->cooldown_s = in->cooldown_s;
+    ch->robot_hops = in->robot_hops;
+    return hush_launch_save_vibe(launch);
+}
+
 hush_status_t hush_launch_add_project(hush_launch_t *launch,
                                       hush_store_t *store,
                                       const char *name,
@@ -859,6 +931,7 @@ static hush_status_t hush_launch_push_channel(hush_launch_t *launch,
     hush_launch_slugify(ch->slug, sizeof(ch->slug), ch->name);
     if (hush_launch_ensure_channel_id(ch) != HUSH_OK)
         return HUSH_ERR_IO;
+    hush_launch_policy_default(ch);
     launch->nchannels++;
     return HUSH_OK;
 }
@@ -1965,5 +2038,86 @@ static hush_status_t hush_launch_restore_payne(hush_launch_t *launch)
         return HUSH_ERR_CRYPTO;
     if (launch->save_pass)
         hush_launch_try_save(launch, HUSH_PASS_PAYNE_NSEC, launch->payne.nsec);
+    return HUSH_OK;
+}
+
+static int hush_launch_kind_ok(const char *kind)
+{
+    if (kind == NULL)
+        return 0;
+    if (strcmp(kind, HUSH_LAUNCH_KIND_OPEN) == 0)
+        return 1;
+    if (strcmp(kind, HUSH_LAUNCH_KIND_HUMANS) == 0)
+        return 1;
+    if (strcmp(kind, HUSH_LAUNCH_KIND_ROBOTS) == 0)
+        return 1;
+    if (strcmp(kind, HUSH_LAUNCH_KIND_MIXED) == 0)
+        return 1;
+    return 0;
+}
+
+static int hush_launch_reply_ok(const char *reply)
+{
+    if (reply == NULL)
+        return 0;
+    if (strcmp(reply, HUSH_LAUNCH_REPLY_OFF) == 0)
+        return 1;
+    if (strcmp(reply, HUSH_LAUNCH_REPLY_MENTION) == 0)
+        return 1;
+    if (strcmp(reply, HUSH_LAUNCH_REPLY_CONFIRM) == 0)
+        return 1;
+    return 0;
+}
+
+static int hush_launch_burst_ok(int burst_ms)
+{
+    if (burst_ms == HUSH_LAUNCH_BURST_MS_FAST)
+        return 1;
+    if (burst_ms == HUSH_LAUNCH_BURST_MS_DEFAULT)
+        return 1;
+    if (burst_ms == HUSH_LAUNCH_BURST_MS_SLOW)
+        return 1;
+    return 0;
+}
+
+static int hush_launch_jobs_ok(int max_jobs)
+{
+    if (max_jobs == HUSH_LAUNCH_MAX_JOBS_MIN)
+        return 1;
+    if (max_jobs == HUSH_LAUNCH_MAX_JOBS_DEFAULT)
+        return 1;
+    if (max_jobs == HUSH_LAUNCH_MAX_JOBS_MAX)
+        return 1;
+    return 0;
+}
+
+static int hush_launch_cooldown_ok(int cooldown_s)
+{
+    if (cooldown_s == HUSH_LAUNCH_COOLDOWN_S_OFF)
+        return 1;
+    if (cooldown_s == HUSH_LAUNCH_COOLDOWN_S_DEFAULT)
+        return 1;
+    if (cooldown_s == HUSH_LAUNCH_COOLDOWN_S_LONG)
+        return 1;
+    return 0;
+}
+
+static hush_status_t hush_launch_policy_check(const hush_launch_policy_t *in)
+{
+    assert(in != NULL);
+    if (!hush_launch_kind_ok(in->kind))
+        return HUSH_ERR_PARSE;
+    if (!hush_launch_reply_ok(in->robot_reply))
+        return HUSH_ERR_PARSE;
+    if (!hush_launch_burst_ok(in->burst_ms))
+        return HUSH_ERR_PARSE;
+    if (!hush_launch_jobs_ok(in->max_jobs))
+        return HUSH_ERR_PARSE;
+    if (!hush_launch_cooldown_ok(in->cooldown_s))
+        return HUSH_ERR_PARSE;
+    if (in->robot_talk != 0 && in->robot_talk != 1)
+        return HUSH_ERR_PARSE;
+    if (in->robot_hops != 0 && in->robot_hops != 1)
+        return HUSH_ERR_PARSE;
     return HUSH_OK;
 }
