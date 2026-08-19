@@ -1,9 +1,10 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups
-Version: 2026-08-18 (RDAP M2, gb/close-x-dialog)
+Version: 2026-08-18 (RDAP M2, gb/thread-chat-rail-ux)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec, the onboard raise-form notes, the oauth-mention-groups
 header/mention/manage rows, the oauth-mention-rail indent-only thread,
-and the thread-think-hygiene Close/Exit paragraph where they conflict.
+the thread-think-hygiene Close/Exit paragraph, and the oauth-mention-rail
+six-dock tool-rail paragraph where they conflict.
 Quinn + Parker + Payne. No feline.
 
 ## Core Principles (Quinn)
@@ -287,15 +288,36 @@ removes the last pill.
 
 Mentioning a robot starts a thread. The channel `#stream` lists **root**
 notes only (empty `reply_to`). A root with replies or a live job shows
-`.thread-btn` (“Thread · N”). Click opens `#thread-pane`: the root plus
-descendants authored by the signed-in human or that robot. Composer
-inside the pane posts `reply_to=<root id>` and `mention_0=<robot>`.
-`#thread-close` [x] returns to the channel. The same button reopens
+`.thread-btn` (“Thread · N”). Click opens `#thread-pane`.
+
+`#thread-pane` is a floating hive panel (same `--surface` / `--line` /
+`.note` / composer tokens as the channel), not a dimmed 28rem modal.
+Default size `min(42rem, 92vw)` × `min(70vh, 640px)`. `#thread-resize`
+(bottom-right, ≥24px) lets the human drag a new size. Persist
+`{w,h}` in `localStorage.hush-thread`. Clamp to the viewport.
+
+The pane supports **1:1** (you + one robot) and **1:n** (you + every
+robot that was mentioned on the root or that authored a descendant).
+Title: `Thread · Happy` or `Thread · Happy, Payne`. Subline lists
+every participant including the signed-in human (`you · Happy` /
+`you · Happy, Payne`). Stream: the root plus descendants from any
+of those participants, painted with the same `.note` chrome as `#stream`.
+
+Composer inside the pane reuses the hive `.composer-box`:
+`#thread-pills` + `#thread-msg` leftover + `#thread-mention` `@`
+box (full hive roster, so a 1:1 thread can become 1:n). Submit posts
+`reply_to=<root id>` and `mention_0…N` for every robot now in the
+member set plus any new pills. Do not mention the human. `#thread-close`
+[x] and Escape return to the channel. The same Thread button reopens
 the same root.
+
+While the pane is open the tool rail is forced to its hamburger and
+parked at the brand home (§15). It must not paint inside the pane.
 
 A Grok Build robot with `has_home` is invoked via `grok -p` in an
 empty `--cwd` (no `AGENTS.md`), `--max-turns 1`,
-`--reasoning-effort none`, `--no-subagents`, `--disable-web-search`,
+`--reasoning-effort low` (named `HUSH_AGENT_GROK_EFFORT`; grok 1.0.4
+rejects `none`), `--no-subagents`, `--disable-web-search`,
 and `--disallowed-tools` covering shell / web / files / Agent. The
 override plus `--rules` demand one short note, address the human by
 profile first name (else “you”), and forbid status banners, thoughts,
@@ -345,10 +367,19 @@ channel. Delete only when the room is done.”
 `#tool-rail` is a `position:fixed` strip the human can drag by
 `#rail-grip` (≥44px, `touch-action:none`). Pointer tracking is on
 `window`, not the grip alone. Collapse (`#rail-toggle`) shrinks it to
-a hamburger. `#rail-docks` shows six snap targets (tl, tr, bl, br,
-ml, mr) while dragging. Release within 48px snaps; otherwise the free
-position is kept and clamped on screen. `localStorage.hush-rail`
-stores `{x,y,collapsed,anchor}`. Resize reapplies `anchor`.
+a hamburger. There are **no docks**, no snap squares, and no
+`#rail-docks`. The rail stays where the human drops it and is clamped
+on screen. `localStorage.hush-rail` stores `{x,y,collapsed}` only.
+
+**Brand home.** `placeRailAtBrand()` puts the collapsed hamburger
+immediately to the left of `.brand` (`hush` / vibe name, e.g.
+`LOCAL HIVE`). Double-click `#rail-toggle` collapses (if needed) and
+homes there.
+
+**Thread park.** Opening `#thread-pane` forces collapsed + brand home
+so the rail never sits inside the thread chrome. Closing the pane
+restores the pre-thread `{x,y,collapsed}` unless the human dragged
+during the thread (then keep the new free position).
 
 Buttons, in order: **Install**, **Profile**, **Settings**, **Call**
 (when `session.ready`), **Close**, **Exit**. All ≥44px.
