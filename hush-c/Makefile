@@ -6,6 +6,8 @@
 CC := gcc
 CFLAGS := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2
 LDFLAGS := -lcrypto
+# Parent ./configure writes HUSH_HAVE_X11 and -lX11 when Xlib is present.
+-include ../config.mk
 
 # These can be overridden by top-level or configure
 PREFIX ?= $(HOME)/.local

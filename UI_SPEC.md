@@ -1,13 +1,14 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups + Channel Policy
-Version: 2026-08-19 (RDAP M2, gb/thread-ux)
+Version: 2026-08-19 (RDAP M2, gb/rail-win)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec, the onboard raise-form notes, the oauth-mention-groups
 header/mention/manage rows, the oauth-mention-rail indent-only thread,
 the thread-think-hygiene Close/Exit paragraph, the oauth-mention-rail
 six-dock tool-rail paragraph, the membership-only Manage Channel
 paragraph, the Deepseek radio slice, the 1:1 follow-up inherit
-slice, the Payne provider-order slice, and the one-joke-snip
-paragraph where they conflict.
+slice, the Payne provider-order slice, the one-joke-snip
+paragraph, and the thread-ux rail/minimize paragraph where they
+conflict.
 Quinn + Parker + Payne. No feline.
 
 ## Core Principles (Quinn)
@@ -62,9 +63,10 @@ holds an nsec or provider secret.
 
 ### 4. Hive
 - Header: hush + vibe name + badge. Actions live on `#tool-rail` (§15).
-- Sidebar: Channels; Create channel/project; **Raise a robot**;
-  **Invite human**; **Robots** list (Payne first, then raised agents).
+- Sidebar: Channels; **Robots** list (Payne first, then raised agents).
   Each robot is its own card with a compact 24px `+`/`-` expand/collapse.
+  Create (channel, project, robot, invite) lives on `#tool-rail` (§15).
+  There is no left-nav `.create` block.
 - Stream + composer unchanged in spirit. Empty: Payne directive.
 
 ### 10. Close vs Exit (process lifecycle)
@@ -72,7 +74,11 @@ holds an nsec or provider secret.
 The OS/PWA window `×` belongs to the Chromium-family `--app` window. It
 is **not** our chrome. Page JS cannot put three labeled buttons on that
 close-box (`beforeunload` is a two-button "Leave site?" at best, often
-suppressed).
+suppressed). `--open` launches with `--ozone-platform=x11` and the
+relay Motif-undecorates the `WM_CLASS=hush-relay` window so that bar
+is gone. Close and Exit stay on the rail. This is **frameless
+standalone `--app`**, not `display: fullscreen` and not a
+window-controls-overlay PWA. Manifest stays `"display": "standalone"`.
 
 The hive ships two labeled buttons on `#tool-rail`, always reachable
 (including splash/gate). Both open one chooser, `#hive-leave`.
@@ -274,6 +280,7 @@ wire id `deepseek-api`, family `api`, same drawer as OpenAI.
 | `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id). Content may contain `nostr:npub1…`. Mentions enter `hush_intel` (burst / policy) before `hush_agent`. |
 | `POST /api/canvas` | `{project, path, content}` writes `content` to `path` under that launch project's directory. `project` is a slug. `path` is a relative file (no `..`, no absolute). Missing project, empty content, or a path that escapes the project → `{ok:false,error}`. |
 | `POST /api/fixup` | `{instruction, text}` runs a one-shot `grok -p` and returns `{ok:true,text}` or `{ok:false,error}`. Does **not** insert a hive note. Instruction max 500. Text max `HUSH_EVENT_MAX_CONTENT`. |
+| `POST /api/window` | `{action:"minimize"\|"maximize"}`. Iconify or toggle WM maximize on the `--app` window (`WM_CLASS=hush-relay`). Does **not** insert a note and does **not** shut down. No window / no X11 → `{ok:false,error}`. |
 | `GET /avatar/<64-hex>` | stored picture bytes |
 
 Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
@@ -475,17 +482,26 @@ during the thread (then keep the new free position).
 Expanded rail, in order:
 
 1. **Install** — first, full width, current size. Position stays.
-2. `#rail-info` (`i` in a circle) toggles `#install-help` as a
-   popover. Help is hidden until the `i` is pressed.
-3. Divider.
-4. Two-column: **Profile** | **Settings**
-5. Two-column: **Call** (when `session.ready`) | **Blank**
-   (`#blank-btn`, disabled, reserved).
-6. Divider.
-7. Two-column: **Minimize** (`#rail-min`, collapses the rail to the
-   hamburger) | **Maximize** (`#rail-max`, Fullscreen API on
-   `document.documentElement`; second press exits fullscreen).
-8. Two-column: **Close** | **Exit** (same `#hive-leave` as today).
+   `#rail-info` (`i`) toggles `#install-help`.
+2. Divider.
+3. Two-column: **Profile** | **Settings**
+4. Two-column: **Call** (when `session.ready`) | **Invite**
+   (`#invite-human`) + `#invite-info` `i`.
+5. Divider.
+6. **Add Channel** (`#add-chan`) + `#chan-info` `i`. `#new-chan`
+   lives in that popover.
+7. Divider.
+8. Two-column: **New Robot** (`#raise-agent`) + `#robot-info` `i` |
+   **New Project** (`#add-proj`) + `#proj-info` `i`. `#new-proj`
+   lives in the project popover.
+9. Divider.
+10. Two-column: **Minimize** (`#rail-min`, `POST /api/window`
+    `{action:"minimize"}` — WM iconify) | **Maximize** (`#rail-max`,
+    `POST /api/window` `{action:"maximize"}` — toggle WM maximized).
+    Not rail-collapse. Not the Fullscreen API.
+11. Two-column: **Close** | **Exit** (same `#hive-leave` as today).
+
+There is no `#blank-btn`. There is no left-nav `.create` block.
 
 Pair buttons are normal size (32px tall, 8px radius), not 44px
 pills. `#install` and `#rail-toggle` stay ≥44px.
@@ -493,6 +509,14 @@ pills. `#install` and `#rail-toggle` stay ≥44px.
 `#install-help` copy (popover only):
 “Install puts Hush on your app launcher as its own window. It does
 not start a second hive.”
+
+`#invite-help`: “Click to invite a human to your vibe.”
+`#chan-help`: “A channel is a named room in this hive. Notes you
+post there stay on that channel.”
+`#robot-help`: “Raise a new robot. It gets its own name, provider,
+and standing orders.”
+`#proj-help`: “A project is a folder the hive can write to. Create
+one to open files in the canvas.”
 
 Header Hick: brand + badge only. Drawer Close buttons stay local.
 

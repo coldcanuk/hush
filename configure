@@ -158,6 +158,8 @@ fi
 
 OPENSSL_CFLAGS=""
 OPENSSL_LIBS="-lcrypto"
+X11_CFLAGS=""
+X11_LIBS=""
 if [ -f /usr/include/openssl/bn.h ]; then
     echo "FOUND:   openssl headers (/usr/include/openssl)"
 elif [ -f /usr/include/node/openssl/bn.h ]; then
@@ -170,6 +172,14 @@ elif [ -f /usr/include/node/openssl/bn.h ]; then
 else
     echo "MISSING: openssl headers (libssl-dev)"
     MISSING="$MISSING openssl"
+fi
+
+if [ -f /usr/include/X11/Xlib.h ]; then
+    X11_CFLAGS="-DHUSH_HAVE_X11=1"
+    X11_LIBS="-lX11"
+    echo "FOUND:   X11 headers (/usr/include/X11) — window min/max/undecorate on"
+else
+    echo "OPTIONAL: X11 headers not found (libx11-dev). Minimize/Maximize become no-ops."
 fi
 
 # Helpful output, especially for Pop!_OS
@@ -223,8 +233,8 @@ OS_UNAME := $OS_UNAME
 OS_ID    := ${OS_RELEASE_ID:-unknown}
 
 # Legible C11 flags (matching hush-c expectations)
-CFLAGS  := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2 -DHUSH_STUN_TURN=$ENABLE_STUN_TURN $OPENSSL_CFLAGS
-LDFLAGS := $OPENSSL_LIBS
+CFLAGS  := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2 -DHUSH_STUN_TURN=$ENABLE_STUN_TURN $OPENSSL_CFLAGS $X11_CFLAGS
+LDFLAGS := $OPENSSL_LIBS $X11_LIBS
 
 ENABLE_STUN_TURN := $ENABLE_STUN_TURN
 TURNSERVER := $TURNSERVER

@@ -40,7 +40,8 @@ may use (name and standing orders stay locked). Profile holds first/last name, e
 organization, theme (`dark` / `light` / `color-blind` / `dracula` /
 `desert` / `monochrome` / `christmas`), and Logout. From the hive you
 can create channels and projects, invite humans, and raise agents
-(plaintext/Markdown context only). Edit-robot actions sit on one
+from the tool rail (plaintext/Markdown context only). The left nav
+keeps channels and robot cards only. Edit-robot actions sit on one
 compact line (Save Robot / Close / Delete Robot). `@` in the composer mentions humans
 and robots as pills; the wire still uses NIP-27 `nostr:npub1…`.
 Channels carry a UUID, sit in optional Groups (NIP-29 parent), and can
@@ -62,8 +63,10 @@ button opens a resizable hive chat (1:1 or 1:n). In a 1:1 pane a
 follow-up without a new `@` still addresses that sole robot. The tool rail is a
 free-drag hamburger (no docks); double-click parks it left of the
 brand. Expanded, it is compact two-column pairs (Profile/Settings,
-Call/Blank, Minimize/Maximize, Close/Exit) under Install; the `i`
-next to Install pops the help. The composer is a six-line wrapping
+Call/Invite, New Robot/New Project, Minimize/Maximize, Close/Exit)
+under Install, plus Add Channel; each create verb has an `i` help
+popover. Minimize iconifies the window; Maximize toggles the WM
+maximized state. The composer is a six-line wrapping
 box that scrolls after that. A live thread you have scrolled up
 stays put across the 1 s poll. The reply is one short `grok -p` note
 from an empty cwd (no desktop AGENTS.md, `--no-memory`). A joke ask
@@ -163,9 +166,10 @@ signaling-only.
 
 The process is a server: it prints the listen URL and stays running until
 **Exit**, `--quit`, or Ctrl+C. `--open` (the default on a graphical session)
-launches a **standalone app window** (Chromium/Chrome/Brave/Edge `--app=`,
-or Epiphany application mode) with no browser tab strip or URL bar.
-Firefox-as-default is not used, because it cannot hide chrome. The same port
+launches a **frameless standalone app window** (Chromium/Chrome/Brave/Edge
+`--app=` plus `--ozone-platform=x11`, or Epiphany application mode) with
+no browser tab strip, URL bar, or OS title-bar `×`. Firefox-as-default
+is not used, because it cannot hide chrome. The same port
 also speaks the newline-delimited Nostr JSON protocol (see
 `.goose/skills/relay/SKILL.md`).
 
