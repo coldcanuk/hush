@@ -1,8 +1,9 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups
-Version: 2026-08-18 (RDAP M2, gb/pills-rail-voice-exit)
+Version: 2026-08-18 (RDAP M2, gb/thread-think-hygiene)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
-M2.1 splash spec, the onboard raise-form notes, and the oauth-mention-groups
-header/mention/manage rows where they conflict.
+M2.1 splash spec, the onboard raise-form notes, the oauth-mention-groups
+header/mention/manage rows, and the oauth-mention-rail indent-only thread
+where they conflict.
 Quinn + Parker + Payne. No feline.
 
 ## Core Principles (Quinn)
@@ -223,8 +224,9 @@ not a radio this slice.
 | `POST /api/provider/login` | `{provider}` starts the official CLI login. `grok-build` → `grok login --oauth`. `codex` → `codex login`. Goose and unknown ids return `{ok:false,error}`. Does not wait. With `DISPLAY`, spawn `xterm -hold -e` (not `x-terminal-emulator`: COSMIC Term ignores `-e`). Tests set `HUSH_PROVIDER_TERM`. |
 | `POST /api/channel` | `{action:"create"\|"delete"\|"group"\|"ungroup"\|"manage", name?, slug?, group?, group_id?, human_0…human_7?, robot_0…robot_7?}`. Create needs `name`. Delete/group/ungroup/manage need `slug`. |
 | `POST /api/group` | `{name}` creates a parent group with its own UUID. |
+| `GET /api/status` | existing + `thinking` (JSON array of `{name,parent}` for in-flight robot jobs). |
 | `GET /api/events` | notes plus `reply_to` (first `e` tag; empty when the note is not a reply). |
-| `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags. Content may contain `nostr:npub1…`. Mentions dispatch `hush_agent`. |
+| `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id). Content may contain `nostr:npub1…`. Mentions dispatch `hush_agent`. |
 | `GET /avatar/<64-hex>` | stored picture bytes |
 
 Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
@@ -254,7 +256,7 @@ must not light up another radio.
   Close extra windows when it says you are signed in, then reopen
   Configure.”
 
-### 13. @ mentions (NIP-27)
+### 13. @ mentions, thinking, thread pane
 
 Composer `@` after start-of-input or whitespace opens `#mention-box`.
 Roster: the signed-in human, Payne, raised robots, invited humans.
@@ -263,11 +265,30 @@ pill (`.composer-pill`). The input never displays `nostr:npub1…`.
 Submit serializes each pill to `nostr:<npub>` in the posted content
 and records that pubkey as `mention_N`. Render replaces
 `nostr:npub1…` with `@Name`. Backspace at the start of leftover text
-removes the last pill. Mentioning a robot starts a thread. A Grok Build
-robot with `has_home` is invoked via `grok -p` and replies as that
-robot (kind 1, `e` parent, `p` human). Other mentioned robots post a
-short on-deck note so the thread still appears. The stream indents
-`.note.reply` when `reply_to` is set.
+removes the last pill.
+
+Mentioning a robot starts a thread. The channel `#stream` lists **root**
+notes only (empty `reply_to`). A root with replies or a live job shows
+`.thread-btn` (“Thread · N”). Click opens `#thread-pane`: the root plus
+descendants authored by the signed-in human or that robot. Composer
+inside the pane posts `reply_to=<root id>` and `mention_0=<robot>`.
+`#thread-close` [x] returns to the channel. The same button reopens
+the same root.
+
+A Grok Build robot with `has_home` is invoked via `grok -p` in an
+empty `--cwd` (no `AGENTS.md`), `--max-turns 1`,
+`--reasoning-effort none`, `--no-subagents`, `--disable-web-search`,
+and `--disallowed-tools` covering shell / web / files / Agent. The
+override plus `--rules` demand one short note, address the human by
+profile first name (else “you”), and forbid status banners, thoughts,
+and npubs. The reply is kind 1, `e` = **root** (the triggering note’s
+`e` if already set, else that note’s id), `p` human. Other mentioned
+robots post a short on-deck note so the thread still appears.
+
+While a job is busy, `GET /api/status.thinking[]` lists
+`{name,parent}`. The matching root shows `.think`: an 8px pulsing
+accent dot and “\<name\> is thinking” (`aria-live="polite"`). The
+chip vanishes when the job leaves the array.
 
 ### 14. Channel groups + manage (NIP-29 parent)
 
@@ -358,6 +379,16 @@ Exit / `--quit` / SIGTERM call `hush_relay_reap_children()` from
 Close and attach never reap. Attach copy:
 “This is the process already listening. Exit or hush-relay --quit
 before a new install can take the port.”
+
+### 19. Relay-live details
+
+`#stats` (sidebar “relay live / N stored / N projects / N sockets”)
+is a control: `role="button"` `tabindex="0"`, Fitts ≥44px tall.
+Click or Enter opens `#relay-drawer`. The panel lists version, listen
+port, stored note count, project names (or “no projects”), socket
+count, whisper, and turn. `#relay-close` [x] sits at the right of the
+title row and dismisses the drawer. Nothing on `#stats` is a link
+off-hive.
 
 ## Visual language
 - Dark default tokens stay. Themes override CSS variables on `html[data-theme]`.
