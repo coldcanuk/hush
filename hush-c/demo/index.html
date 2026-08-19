@@ -361,6 +361,11 @@
       margin-left: auto; background: none; border: 0; color: inherit;
       min-width: 44px; min-height: 44px; font: inherit; cursor: pointer;
     }
+    #payne-provider-pills .pill { display: inline-flex; align-items: center; gap: 4px; }
+    #payne-provider-pills .pill button {
+      background: none; border: 0; color: inherit; min-width: 28px; min-height: 28px;
+      cursor: pointer; font: inherit;
+    }
     .btn.danger {
       background: var(--warn); color: #fff; width: 100%; margin-top: 8px;
     }
@@ -658,7 +663,8 @@
   <div class="drawer" id="agent-drawer" role="dialog" aria-label="Raise a robot">
     <div class="panel">
       <h2 id="agent-title">Raise a robot</h2>
-      <p class="help">Sgt Major Payne will walk you through it.</p>
+      <p class="help" id="agent-help">Sgt Major Payne will walk you through it.</p>
+      <div id="agent-identity">
       <label for="agent-name">Name</label>
       <div class="pill-row">
         <input id="agent-name" type="text" maxlength="48" placeholder="Sentry">
@@ -681,7 +687,9 @@
       </div>
       <div class="pills" id="agent-files"></div>
       <p class="help">Maximum 3 files. Plaintext and Markdown only.</p>
-      <p class="help">AI provider (required)</p>
+      </div>
+      <p class="help" id="agent-provider-help">AI provider (required)</p>
+      <div class="pills" id="payne-provider-pills" hidden></div>
       <div class="providers" id="agent-providers">
         <label><input type="radio" name="agent-provider" value="goose"> Goose</label>
         <label><input type="radio" name="agent-provider" value="grok-build"> Grok Build</label>
@@ -885,6 +893,8 @@
       "deepseek-api": "Deepseek API"
     };
     const CONTEXT_MAX = 3;
+    const PAYNE_PROVIDERS_MAX = 4;
+    const PAYNE_SLUG = "sgt-major-payne";
     const HOME_CMDS = {
       "goose": "goose configure",
       "grok-build": "grok login --oauth",
@@ -909,6 +919,8 @@
     let draftFiles = [];
     let draftFileSel = -1;
     let editSlug = "";
+    let payneOrder = [];
+    let editingPayne = false;
     let providerMap = {};
     let cfgId = "";
     let oauthPoll = 0;
@@ -1442,21 +1454,34 @@
       return PROVIDERS[id] || id || "no provider";
     }
 
+    function payneProviderList(p) {
+      const raw = (p && Array.isArray(p.providers) && p.providers.length)
+        ? p.providers : [(p && p.provider) || "goose"];
+      const out = [];
+      raw.forEach((id) => {
+        if (!id || !PROVIDERS[id] || out.indexOf(id) >= 0) return;
+        if (out.length < PAYNE_PROVIDERS_MAX) out.push(id);
+      });
+      return out.length ? out : ["goose"];
+    }
+
     function robotModels() {
       const p = session.payne || {};
+      const order = payneProviderList(p);
       const list = [{
-        slug: "sgt-major-payne",
+        slug: PAYNE_SLUG,
         name: p.name || "Sgt Major Payne",
         about: p.about || "Finds the right robot, or raises one.",
         npub: p.npub || "",
         pubkey: p.pubkey || "",
-        provider: "goose",
+        provider: order[0],
+        providers: order,
         prompt: p.about || "",
         ncontext: 0,
         locked: true
       }];
       (session.agents || []).forEach((a) => {
-        if (!a || a.slug === "sgt-major-payne") return;
+        if (!a || a.slug === PAYNE_SLUG) return;
         list.push({
           slug: a.slug,
           name: a.name || a.slug,
@@ -1483,9 +1508,11 @@
         card.dataset.slug = bot.slug;
         const head = document.createElement("div");
         head.className = "robot-head";
+        const extra = (bot.providers && bot.providers.length > 1)
+          ? " +" + (bot.providers.length - 1) : "";
         head.innerHTML =
           "<div class=\"robot-copy\"><strong>" + esc(bot.name) + "</strong>" +
-          "<span>" + esc(providerLabel(bot.provider)) + "</span></div>";
+          "<span>" + esc(providerLabel(bot.provider) + extra) + "</span></div>";
         const tog = document.createElement("button");
         tog.className = "toggle";
         tog.type = "button";
@@ -1520,14 +1547,12 @@
           (bot.ncontext === 1 ? "" : "s") + "</p>";
         const actions = document.createElement("div");
         actions.className = "robot-actions";
-        if (!bot.locked) {
-          const edit = document.createElement("button");
-          edit.className = "mini";
-          edit.type = "button";
-          edit.textContent = "Edit";
-          edit.addEventListener("click", () => openAgentDrawer(bot));
-          actions.appendChild(edit);
-        }
+        const edit = document.createElement("button");
+        edit.className = "mini";
+        edit.type = "button";
+        edit.textContent = "Edit";
+        edit.addEventListener("click", () => openAgentDrawer(bot));
+        actions.appendChild(edit);
         body.appendChild(actions);
         card.appendChild(body);
         box.appendChild(card);
@@ -1555,6 +1580,8 @@
       draftFiles = [];
       draftFileSel = -1;
       editSlug = "";
+      payneOrder = [];
+      editingPayne = false;
       if ($("agent-name")) $("agent-name").value = "";
       if ($("agent-prompt")) $("agent-prompt").value = "";
       if ($("agent-file")) $("agent-file").value = "";
@@ -1562,12 +1589,18 @@
         el.checked = false;
       });
       if ($("agent-title")) $("agent-title").textContent = "Raise a robot";
+      if ($("agent-help")) $("agent-help").textContent = "Sgt Major Payne will walk you through it.";
       if ($("agent-save")) $("agent-save").textContent = "Raise Robot";
       if ($("agent-delete")) $("agent-delete").disabled = true;
       if ($("agent-err")) $("agent-err").textContent = "";
+      if ($("agent-identity")) $("agent-identity").hidden = false;
+      if ($("agent-pass")) $("agent-pass").closest("label").hidden = false;
+      if ($("payne-provider-pills")) $("payne-provider-pills").hidden = true;
+      if ($("agent-provider-help")) $("agent-provider-help").textContent = "AI provider (required)";
       paintNamePill();
       paintPromptPill();
       paintFilePills();
+      paintPayneOrder();
     }
 
     function paintNamePill() {
@@ -1638,6 +1671,66 @@
     function chosenProvider() {
       const el = document.querySelector("input[name='agent-provider']:checked");
       return el ? el.value : "";
+    }
+
+    function paintPayneOrder() {
+      const box = $("payne-provider-pills");
+      if (!box) return;
+      box.hidden = !editingPayne;
+      box.innerHTML = "";
+      if (!editingPayne) return;
+      payneOrder.forEach((id, i) => {
+        const pill = document.createElement("span");
+        pill.className = "pill";
+        const rank = i === 0 ? "primary · " : "";
+        pill.innerHTML = "<em>" + rank + esc(providerLabel(id)) + "</em>";
+        const up = document.createElement("button");
+        up.type = "button";
+        up.textContent = "▲";
+        up.setAttribute("aria-label", "Move " + providerLabel(id) + " up");
+        up.disabled = i === 0;
+        up.addEventListener("click", () => movePayneProvider(i, -1));
+        const down = document.createElement("button");
+        down.type = "button";
+        down.textContent = "▼";
+        down.setAttribute("aria-label", "Move " + providerLabel(id) + " down");
+        down.disabled = i === payneOrder.length - 1;
+        down.addEventListener("click", () => movePayneProvider(i, 1));
+        const drop = document.createElement("button");
+        drop.type = "button";
+        drop.textContent = "−";
+        drop.setAttribute("aria-label", "Remove " + providerLabel(id));
+        drop.addEventListener("click", () => {
+          payneOrder.splice(i, 1);
+          if (!payneOrder.length) payneOrder = ["goose"];
+          paintPayneOrder();
+        });
+        pill.appendChild(up);
+        pill.appendChild(down);
+        pill.appendChild(drop);
+        box.appendChild(pill);
+      });
+    }
+
+    function movePayneProvider(idx, dir) {
+      const next = idx + dir;
+      if (next < 0 || next >= payneOrder.length) return;
+      const tmp = payneOrder[idx];
+      payneOrder[idx] = payneOrder[next];
+      payneOrder[next] = tmp;
+      paintPayneOrder();
+    }
+
+    function addPayneProvider(id) {
+      if (!id || !PROVIDERS[id]) return;
+      if (payneOrder.indexOf(id) >= 0) return;
+      if (payneOrder.length >= PAYNE_PROVIDERS_MAX) {
+        $("agent-err").textContent = "Four runtimes on deck. Drop one first.";
+        return;
+      }
+      payneOrder.push(id);
+      $("agent-err").textContent = "";
+      paintPayneOrder();
     }
 
     function paintProviderPencil() {
@@ -1806,7 +1899,24 @@
 
     function openAgentDrawer(bot) {
       resetAgentDraft();
-      if (bot && bot.slug && !bot.locked) {
+      if (bot && bot.slug === PAYNE_SLUG) {
+        editingPayne = true;
+        editSlug = PAYNE_SLUG;
+        payneOrder = (bot.providers && bot.providers.length)
+          ? bot.providers.slice() : ["goose"];
+        $("agent-title").textContent = "Edit Sgt Major Payne";
+        $("agent-help").textContent = "Choose the runtime. First on deck speaks first.";
+        $("agent-save").textContent = "Save Robot";
+        $("agent-delete").disabled = true;
+        $("agent-identity").hidden = true;
+        $("agent-pass").closest("label").hidden = true;
+        $("payne-provider-pills").hidden = false;
+        $("agent-provider-help").textContent = "Choose the runtime. First on deck speaks first.";
+        document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
+          el.checked = el.value === payneOrder[0];
+        });
+        paintPayneOrder();
+      } else if (bot && bot.slug && !bot.locked) {
         editSlug = bot.slug;
         draftName = bot.name || "";
         draftPrompt = bot.prompt || "";
@@ -1827,7 +1937,10 @@
     $("raise-agent").addEventListener("click", () => openAgentDrawer(null));
     $("agent-close").addEventListener("click", () => $("agent-drawer").classList.remove("show"));
     document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
-      el.addEventListener("change", paintProviderPencil);
+      el.addEventListener("change", () => {
+        if (editingPayne) addPayneProvider(el.value);
+        paintProviderPencil();
+      });
     });
     $("provider-cfg").addEventListener("click", (ev) => {
       ev.preventDefault();
@@ -2012,6 +2125,18 @@
       } catch (e) { $("member-err").textContent = "Could not add that human."; }
     });
     $("agent-save").addEventListener("click", async () => {
+      $("agent-err").textContent = "";
+      if (editingPayne) {
+        if (!payneOrder.length) payneOrder = ["goose"];
+        const body = { slug: PAYNE_SLUG };
+        payneOrder.forEach((id, i) => { body["provider_" + i] = id; });
+        try {
+          applySession(await api("/api/agent", body));
+          $("agent-drawer").classList.remove("show");
+          resetAgentDraft();
+        } catch (e) { $("agent-err").textContent = "Could not save Payne's runtimes."; }
+        return;
+      }
       const typedName = ($("agent-name") && $("agent-name").value || "").trim();
       const typedPrompt = ($("agent-prompt") && $("agent-prompt").value || "").trim();
       if (typedName) draftName = typedName;
@@ -2020,7 +2145,6 @@
       const prompt = draftPrompt;
       const provider = chosenProvider();
       const box = $("agent-pass");
-      $("agent-err").textContent = "";
       if (!prompt) { $("agent-err").textContent = "Write its system prompt."; return; }
       if (!provider) { $("agent-err").textContent = "Choose an AI provider."; return; }
       const body = {
@@ -2045,7 +2169,7 @@
         $("agent-err").textContent = "Raise the robot before you can delete it.";
         return;
       }
-      if (editSlug === "sgt-major-payne") {
+      if (editSlug === PAYNE_SLUG) {
         $("agent-err").textContent = "Payne stays on deck.";
         return;
       }
