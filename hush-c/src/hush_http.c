@@ -9,6 +9,7 @@
 
 #include "hush_agent.h"
 #include "hush_http.h"
+#include "hush_intel.h"
 #include "hush_provider.h"
 #include "hush_relay.h"
 #include "hush_ui_html.h"
@@ -556,7 +557,7 @@ static hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
         hush_http_reply(fd, "507 Insufficient Storage", "text/plain", "full\n", 5);
         return HUSH_ERR_FULL;
     }
-    hush_agent_consider(store, g_launch, out);
+    hush_intel_consider(store, g_launch, out);
     hush_http_reply(fd, "200 OK", "application/json", "{\"ok\":true}\n", 12);
     return HUSH_OK;
 }
