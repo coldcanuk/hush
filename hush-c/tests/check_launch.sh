@@ -156,8 +156,10 @@ grouped=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
 echo "$grouped" | grep -q "\"group_id\":\"$gid\"" || fail "channel group"
 managed=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
     -H 'Content-Type: application/json' \
-    -d '{"action":"manage","slug":"incidents","human_0":"npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg","robot_0":"sgt-major-payne"}')
+    -d '{"action":"manage","slug":"incidents","human_0":"npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg","robot_0":"sgt-major-payne","kind":"humans","robot_reply":"off","burst_ms":5000,"max_jobs":1,"cooldown_s":30}')
 echo "$managed" | grep -q 'sgt-major-payne' || fail "channel manage robots"
+echo "$managed" | grep -q '"kind":"humans"' || fail "channel manage kind"
+echo "$managed" | grep -q '"robot_reply":"off"' || fail "channel manage reply"
 ungrouped=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
     -H 'Content-Type: application/json' \
     -d '{"action":"ungroup","slug":"incidents"}')

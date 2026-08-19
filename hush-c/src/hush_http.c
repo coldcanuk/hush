@@ -81,6 +81,16 @@ static hush_status_t hush_http_serve_channel(int fd, const char *body);
 static hush_status_t hush_http_serve_group(int fd, const char *body);
 static hush_status_t hush_http_channel_manage(int fd, const char *body,
                                               const char *slug);
+static hush_status_t hush_http_channel_policy(const char *body,
+                                              const char *slug);
+static const hush_launch_channel_t *hush_http_find_channel(const char *slug);
+static int hush_http_read_int(const char *body, const char *key, int fallback);
+static void hush_http_fill_policy_text(hush_launch_policy_t *policy,
+                                       const hush_launch_channel_t *ch,
+                                       const char *body);
+static void hush_http_fill_policy_nums(hush_launch_policy_t *policy,
+                                       const hush_launch_channel_t *ch,
+                                       const char *body);
 static void hush_http_collect_indexed(const char *body, const char *stem,
                                       char (*out)[HUSH_IDENTITY_NPUB_MAX],
                                       size_t *out_n, size_t maxn);
@@ -859,6 +869,7 @@ static hush_status_t hush_http_channel_manage(int fd, const char *body,
     size_t nhumans = 0;
     size_t nrobots = 0;
     size_t i;
+    hush_status_t st;
 
     hush_http_collect_indexed(body, "human", humans, &nhumans,
                               (size_t)HUSH_HTTP_CHAN_LIST_MAX);
@@ -868,10 +879,79 @@ static hush_status_t hush_http_channel_manage(int fd, const char *body,
         human_ptrs[i] = humans[i];
     for (i = 0; i < nrobots; ++i)
         robot_ptrs[i] = robots[i];
-    return hush_http_reply_session(fd,
-                                   hush_launch_set_channel_roster(
-                                       g_launch, slug, human_ptrs, nhumans,
-                                       robot_ptrs, nrobots));
+    st = hush_launch_set_channel_roster(g_launch, slug, human_ptrs, nhumans,
+                                        robot_ptrs, nrobots);
+    if (st != HUSH_OK)
+        return hush_http_reply_session(fd, st);
+    return hush_http_reply_session(fd, hush_http_channel_policy(body, slug));
+}
+
+static const hush_launch_channel_t *hush_http_find_channel(const char *slug)
+{
+    size_t i;
+
+    if (g_launch == NULL || slug == NULL)
+        return NULL;
+    for (i = 0; i < g_launch->nchannels; ++i) {
+        if (strcmp(g_launch->channels[i].slug, slug) == 0)
+            return &g_launch->channels[i];
+    }
+    return NULL;
+}
+
+static int hush_http_read_int(const char *body, const char *key, int fallback)
+{
+    char text[HUSH_LAUNCH_POLICY_MAX];
+
+    if (!hush_json_field(body, key, text, sizeof(text)))
+        return fallback;
+    if (text[0] == '\0')
+        return fallback;
+    return atoi(text);
+}
+
+static void hush_http_fill_policy_text(hush_launch_policy_t *policy,
+                                       const hush_launch_channel_t *ch,
+                                       const char *body)
+{
+    assert(policy != NULL);
+    assert(ch != NULL);
+    if (!hush_json_field(body, "kind", policy->kind, sizeof(policy->kind))
+        || policy->kind[0] == '\0')
+        memcpy(policy->kind, ch->kind, sizeof(policy->kind));
+    if (!hush_json_field(body, "robot_reply", policy->robot_reply,
+                         sizeof(policy->robot_reply))
+        || policy->robot_reply[0] == '\0')
+        memcpy(policy->robot_reply, ch->robot_reply,
+               sizeof(policy->robot_reply));
+}
+
+static void hush_http_fill_policy_nums(hush_launch_policy_t *policy,
+                                       const hush_launch_channel_t *ch,
+                                       const char *body)
+{
+    assert(policy != NULL);
+    assert(ch != NULL);
+    policy->robot_talk = hush_http_read_int(body, "robot_talk", ch->robot_talk);
+    policy->burst_ms = hush_http_read_int(body, "burst_ms", ch->burst_ms);
+    policy->max_jobs = hush_http_read_int(body, "max_jobs", ch->max_jobs);
+    policy->cooldown_s = hush_http_read_int(body, "cooldown_s", ch->cooldown_s);
+    policy->robot_hops = hush_http_read_int(body, "robot_hops", ch->robot_hops);
+}
+
+static hush_status_t hush_http_channel_policy(const char *body,
+                                              const char *slug)
+{
+    const hush_launch_channel_t *ch;
+    hush_launch_policy_t policy;
+
+    ch = hush_http_find_channel(slug);
+    if (ch == NULL)
+        return HUSH_ERR_NOT_FOUND;
+    memset(&policy, 0, sizeof(policy));
+    hush_http_fill_policy_text(&policy, ch, body);
+    hush_http_fill_policy_nums(&policy, ch, body);
+    return hush_launch_set_channel_policy(g_launch, slug, &policy);
 }
 
 static void hush_http_collect_indexed(const char *body, const char *stem,
