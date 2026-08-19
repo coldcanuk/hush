@@ -70,6 +70,12 @@ if echo "$html" | grep -q 'railAnchor'; then fail "rail docks/anchors must be go
 echo "$html" | grep -q 'reply_to' || fail "HTML missing reply_to indent"
 echo "$html" | grep -q 'note reply' || fail "HTML missing reply class"
 echo "$html" | grep -q 'id="thread-pane"' || fail "HTML missing thread pane"
+echo "$html" | grep -q 'note.mine' || fail "HTML missing sided thread bubbles"
+echo "$html" | grep -q '1:1 with' || fail "HTML missing 1:1 thread help"
+echo "$html" | grep -q '1:n · you +' || fail "HTML missing 1:n thread help"
+if echo "$html" | grep -q 'you · this robot. At ease.'; then
+  fail "thread help must not be a Payne voice line"
+fi
 echo "$html" | grep -q 'thread-btn' || fail "HTML missing thread button"
 echo "$html" | grep -q 'id="relay-drawer"' || fail "HTML missing relay drawer"
 echo "$html" | grep -q 'id="relay-close"' || fail "HTML missing relay close"

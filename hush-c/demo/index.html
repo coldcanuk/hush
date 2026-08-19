@@ -204,6 +204,16 @@
     .note.reply {
       margin-left: 1.4rem; border-left: 2px solid var(--accent-dim); padding-left: 10px;
     }
+    #thread-stream .note {
+      max-width: min(78%, 28rem); border-radius: 16px 16px 16px 6px;
+      background: var(--surface-2);
+    }
+    #thread-stream .note.mine {
+      align-self: flex-end; border-radius: 16px 16px 6px 16px;
+      background: var(--accent-dim); border-color: var(--accent);
+    }
+    #thread-stream .note.reply { margin-left: 0; border-left: 0; padding-left: 12px; }
+    #thread-help { color: var(--muted); font-size: 0.78rem; }
     .composer { display: flex; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--line); background: var(--surface); align-items: flex-end; }
     .composer-box {
       flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
@@ -573,7 +583,7 @@
         <h2 id="thread-title">Thread</h2>
         <button class="drawer-x" id="thread-close" type="button" aria-label="Close thread">×</button>
       </div>
-      <p class="help" id="thread-help">you · this robot. At ease.</p>
+      <p class="help" id="thread-help">1:1 thread</p>
       <div id="thread-stream"></div>
       <form class="composer" id="thread-form">
         <div class="mention-box" id="thread-mention" hidden></div>
@@ -1367,6 +1377,7 @@
         name: p.name || "Sgt Major Payne",
         about: p.about || "Finds the right robot, or raises one.",
         npub: p.npub || "",
+        pubkey: p.pubkey || "",
         provider: "goose",
         prompt: p.about || "",
         ncontext: 0,
@@ -1379,6 +1390,7 @@
           name: a.name || a.slug,
           about: a.prompt || "",
           npub: a.npub || "",
+          pubkey: a.pubkey || "",
           provider: a.provider || "",
           prompt: a.prompt || "",
           ncontext: a.ncontext || 0,
@@ -1987,15 +1999,18 @@
     function mentionRoster() {
       const list = [];
       const seenKey = {};
-      function add(name, npub, kind) {
+      function add(name, npub, kind, pubkey) {
         if (!npub || seenKey[npub]) return;
         seenKey[npub] = true;
-        list.push({ name: name, npub: npub, kind: kind });
+        list.push({ name: name, npub: npub, kind: kind, pubkey: pubkey || "" });
       }
-      if (session.npub) add("you", session.npub, "human");
-      robotModels().forEach((bot) => add(bot.name, bot.npub, "robot"));
+      if (session.npub)
+        add("you", session.npub, "human", session.pubkey || "");
+      robotModels().forEach((bot) =>
+        add(bot.name, bot.npub, "robot", bot.pubkey || "")
+      );
       (session.members || []).forEach((m) => {
-        if (m) add(m.name || "human", m.npub, "human");
+        if (m) add(m.name || "human", m.npub, "human", m.pubkey || "");
       });
       return list;
     }
@@ -2546,13 +2561,29 @@
       return found;
     }
 
+    function sameKey(a, b) {
+      if (!a || !b) return false;
+      if (a === b) return true;
+      if (a.length >= 8 && b.indexOf(a.slice(0, 8)) === 0) return true;
+      if (b.length >= 8 && a.indexOf(b.slice(0, 8)) === 0) return true;
+      return false;
+    }
+
+    function rosterHit(pk) {
+      return mentionRoster().find((h) =>
+        sameKey(h.npub, pk) || sameKey(h.pubkey, pk)
+      ) || null;
+    }
+
+    function isMineNote(e) {
+      const pk = e && e.pubkey;
+      return !!(pk && (pk === session.pubkey || sameKey(session.npub, pk)));
+    }
+
     function threadMembers(root, kids) {
       const bots = mentionedRobots(root);
       kids.forEach((k) => {
-        const named = mentionRoster().find((h) =>
-          h.npub === k.pubkey ||
-          (k.pubkey && h.npub && h.npub.indexOf(String(k.pubkey).slice(0, 8)) !== -1)
-        );
+        const named = rosterHit(k.pubkey);
         if (named && named.kind !== "human" && !bots.some((b) => b.npub === named.npub))
           bots.push(named);
       });
@@ -2662,7 +2693,8 @@
 
     function paintNote(e, extra) {
       const n = document.createElement("div");
-      n.className = e.reply_to ? "note reply" : "note";
+      const mine = isMineNote(e);
+      n.className = (e.reply_to ? "note reply" : "note") + (mine ? " mine" : "");
       const meta = document.createElement("div");
       meta.className = "meta";
       meta.textContent = who(e.pubkey) + " · " + ago(e.created_at);
@@ -2685,8 +2717,8 @@
       const names = bots.map((b) => b.name).filter(Boolean);
       $("thread-title").textContent = names.length ? ("Thread · " + names.join(", ")) : "Thread";
       $("thread-help").textContent = names.length
-        ? ("you · " + names.join(", ") + ". At ease.")
-        : "you · this robot. At ease.";
+        ? (names.length === 1 ? ("1:1 with " + names[0]) : ("1:n · you + " + names.join(", ")))
+        : "1:1 thread";
       const box = $("thread-stream");
       box.innerHTML = "";
       box.appendChild(paintNote(root, (n) => paintThink(n, thinkingFor(root.id, lastStatus))));
@@ -2772,10 +2804,9 @@
 
     function who(pk) {
       if (session.pubkey && pk === session.pubkey) return "you";
-      const named = mentionRoster().find((h) =>
-        h.npub === pk || (pk && h.npub.indexOf(pk.slice(0, 8)) !== -1)
-      );
-      if (named) return named.name;
+      if (session.npub && sameKey(session.npub, pk)) return "you";
+      const named = rosterHit(pk);
+      if (named) return named.name === "you" ? "you" : named.name;
       if (!pk || /^0+1$/.test(pk) || pk === "local") return "local";
       return pk.slice(0, 8);
     }

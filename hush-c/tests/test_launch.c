@@ -118,6 +118,7 @@ int main(void)
                                       &n) == HUSH_OK,
            "final session");
     expect(strstr(json, "Sgt Major Payne") != NULL, "payne name");
+    expect(strstr(json, "\"pubkey\":\"") != NULL, "payne pubkey");
     expect(strstr(json, "\"slug\":\"incidents\"") != NULL, "incidents");
     expect(strstr(json, "\"slug\":\"alpha\"") != NULL, "alpha");
     expect(hush_launch_import_identity(
