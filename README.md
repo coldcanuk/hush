@@ -47,8 +47,10 @@ hamburger. Install puts Hush on the app launcher as its own window; it
 does not start a second hive. When Whisper is on PATH (or
 `HUSH_WHISPER` is set), robot cards show a 1:1 Call icon and channels
 show a Voice icon; mute any tile in the conference. After Grok/Codex
-OAuth the provider box shows authenticated and tells you to close the
-extra windows. Hive metadata persists in `~/.config/hush/vibe.json` so
+OAuth the matching provider box shows authenticated (Grok needs
+`~/.grok/auth.json`, Codex needs `~/.codex/auth.json` or `config.toml`)
+and tells you to close the extra windows. Mention a Grok Build robot
+to start a thread; that robot replies with `grok -p`. Hive metadata persists in `~/.config/hush/vibe.json` so
 `make clean && make install` or Exit does not force a new vibe after
 you import the same nsec. **Exit** (`--quit`) stops the relay and the
 browser / login children it forked. **Close** leaves the hive standing.
@@ -161,9 +163,10 @@ Selecting an AI provider on **Raise a robot** reveals a pencil. That
 opens a tailored drawer:
 
 - Grok Build and Codex are OAuth-only: **Log in with OAuth** starts
-  `grok login --oauth` or `codex login` in a terminal. Hush does not
-  implement the browser dance and does not write `~/.grok` or
-  `~/.codex`.
+  `grok login --oauth` or `codex login` in a terminal. Authenticated
+  means that provider’s own auth file exists — a leftover `~/.codex`
+  directory does not count. Hush does not implement the browser dance
+  and does not write `~/.grok` or `~/.codex`.
 - Goose reuses `~/.config/goose` or accepts an override key.
 - Gemini / xAI / OpenAI / Anthropic take an API key, host URL, and a
   scanned or typed model. Those fields use the same `+` / `−` pills as

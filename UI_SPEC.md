@@ -175,7 +175,8 @@ from `GET /api/provider`. Save is `POST /api/provider`. Scan is
 
 Goose home is `~/.config/goose/config.yaml` (official). Legacy
 `~/.goose` is probed and mentioned only if it exists.
-Grok home is `~/.grok/auth.json`. Codex home is `~/.codex`.
+Grok home is nonempty `~/.grok/auth.json`. Codex home is nonempty
+`~/.codex/auth.json` or `~/.codex/config.toml`.
 
 Payne copy:
 
