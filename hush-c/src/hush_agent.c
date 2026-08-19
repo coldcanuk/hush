@@ -41,17 +41,22 @@ enum {
 #define HUSH_AGENT_CWD_TMP "hush-agent-cwd"
 #define HUSH_AGENT_TMP_FALLBACK "/tmp"
 #define HUSH_AGENT_PROMPT_FALLBACK \
-    "You are a robot in the Hush hive. Reply in one short note."
+    "You are a robot in the Hush hive. Fulfill the last human ask in one note."
 #define HUSH_AGENT_HYGIENE \
-    " Write one short chat note only. No status, no thoughts, no host facts, no npub."
+    " Fulfill the last human ask in this note. Include any asked code. " \
+    "No preamble-only replies. No status, no thoughts, no host facts, no npub."
 #define HUSH_AGENT_DISALLOWED \
     "run_terminal_cmd,web_search,web_fetch,read_file,search_replace,list_dir,grep,todo_write,task,Agent"
 #define HUSH_AGENT_RULES \
-    "One short note as the named robot. Address the human by first name. No tools. No status. No npub."
+    "Fulfill the last human ask as the named robot. Include asked code. " \
+    "No preamble-only replies. Address the human by first name. " \
+    "No tools. No status. No npub."
 #define HUSH_AGENT_HUMAN_FALLBACK "you"
 #define HUSH_AGENT_GROK_EFFORT "low"
+#define HUSH_AGENT_GROK_TURNS "2"
 #define HUSH_AGENT_THREAD_HEAD \
-    "Thread so far. Do not repeat a prior joke. Answer the last human line.\n"
+    "Thread so far. Do not repeat a prior joke. " \
+    "Fulfill the last human line in this note.\n"
 
 typedef struct {
     int busy;
@@ -762,7 +767,7 @@ static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job)
     argv[9] = (char *)"--no-subagents";
     argv[10] = (char *)"--disable-web-search";
     argv[11] = (char *)"--max-turns";
-    argv[12] = (char *)"1";
+    argv[12] = (char *)HUSH_AGENT_GROK_TURNS;
     argv[13] = (char *)"--reasoning-effort";
     argv[14] = (char *)HUSH_AGENT_GROK_EFFORT;
     argv[15] = (char *)"--cwd";

@@ -103,10 +103,13 @@ printf '%s' "$got" | grep -q "\"content\":\"another\"" || fail "follow-up conten
 printf '%s' "$got" | grep -q "\"reply_to\":\"${root}\"" || fail "follow-up missing root e tag"
 grep -q -- '--cwd' src/hush_agent.c || fail "grok argv missing --cwd"
 grep -q -- '--max-turns' src/hush_agent.c || fail "grok argv missing --max-turns"
+grep -q 'HUSH_AGENT_GROK_TURNS "2"' src/hush_agent.c || fail "grok turns must be 2"
 grep -q -- '--disallowed-tools' src/hush_agent.c || fail "grok argv missing denylist"
 grep -q -- '--reasoning-effort' src/hush_agent.c || fail "grok argv missing reasoning"
 grep -q 'HUSH_AGENT_GROK_EFFORT "low"' src/hush_agent.c || fail "grok effort must be low"
 grep -q 'HUSH_AGENT_THREAD_HEAD' src/hush_agent.c || fail "grok must receive a thread transcript"
 grep -q 'hush_agent_fill_thread' src/hush_agent.c || fail "missing thread transcript fill"
+grep -q 'No preamble-only replies' src/hush_agent.c || fail "hygiene must forbid preamble-only replies"
+grep -q 'Fulfill the last human ask' src/hush_agent.c || fail "hygiene must fulfill the last human ask"
 
 echo "agent mention reply ok"
