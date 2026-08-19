@@ -348,6 +348,8 @@
       border-bottom: 1px solid var(--line); background: var(--surface);
     }
     #hive-banner.show { display: block; }
+    .leave-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+    .leave-actions .btn { min-height: 44px; width: 100%; }
     .drawer, .stage {
       display: none; position: fixed; inset: 0; background: rgba(9,9,11,0.72);
       z-index: 20; align-items: flex-start; justify-content: center; padding: 48px 16px 16px;
@@ -575,6 +577,17 @@
       </div>
       <p class="help">Stored notes, projects, and sockets on this hive.</p>
       <div id="relay-body" class="help"></div>
+    </div>
+  </div>
+  <div class="drawer" id="hive-leave" role="dialog" aria-label="Leave the hive">
+    <div class="panel">
+      <h2>Leave the hive?</h2>
+      <p class="help">Exit stops every process. Close leaves the hive standing. Cancel stays.</p>
+      <div class="leave-actions">
+        <button class="btn danger" id="leave-exit" type="button">Exit the application</button>
+        <button class="btn" id="leave-close" type="button">Close the window</button>
+        <button class="btn ghost" id="leave-cancel" type="button">Cancel</button>
+      </div>
     </div>
   </div>
   <div class="drawer" id="profile" role="dialog" aria-label="Profile">
@@ -2175,16 +2188,33 @@
         }));
       } catch (e) {}
     });
-    $("hive-close").addEventListener("click", async () => {
+    const openLeave = () => {
+      const d = $("hive-leave");
+      if (d) d.classList.add("show");
+    };
+    const hideLeave = () => {
+      const d = $("hive-leave");
+      if (d) d.classList.remove("show");
+    };
+    $("hive-close").addEventListener("click", openLeave);
+    $("hive-exit").addEventListener("click", openLeave);
+    $("leave-cancel").addEventListener("click", hideLeave);
+    $("leave-close").addEventListener("click", async () => {
+      hideLeave();
       try { await api("/api/close", {}); } catch (err) { /* still close the window */ }
       window.close();
       const banner = $("hive-banner");
       if (banner) banner.classList.add("show");
     });
-    $("hive-exit").addEventListener("click", async () => {
-      if (!confirm("Quit the hive? Every process stops.")) return;
+    $("leave-exit").addEventListener("click", async () => {
+      hideLeave();
       try { await api("/api/exit", {}); } catch (err) { /* process may already be gone */ }
       window.close();
+    });
+    window.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Escape") return;
+      const d = $("hive-leave");
+      if (d && d.classList.contains("show")) hideLeave();
     });
     $("profile-logout").addEventListener("click", async () => {
       if (!confirm("Logout and use a different key?")) return;
