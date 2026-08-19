@@ -77,10 +77,17 @@ make test
 
 Follow RDAP (research first, synthesis gate at end of Phase 1, small atomic Milestones, commit per M **on the worktree branch**).
 
+Plans and research live under `docs/`. Do **not** drop `PLAN_*.md` or `RESEARCH*.md` at the repo root.
+
+| Kind | Path |
+|------|------|
+| Plans | [`docs/plan/`](docs/plan/) |
+| Research | [`docs/research/`](docs/research/) |
+
 See:
 
 - [PRIME_DIRECTIVE.md](PRIME_DIRECTIVE.md)
 - [README.md](README.md)
-- [RESEARCH.md](RESEARCH.md)
+- [docs/research/RESEARCH.md](docs/research/RESEARCH.md)
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) (SQLite Code of Ethics / Rule of St. Benedict)
 - `hush-c/` for the implementation

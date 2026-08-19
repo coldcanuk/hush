@@ -6,7 +6,7 @@ Base: `main` `e30cb1bef`
 
 ## 1. Methodology
 
-RDAP. Four-minds gate is recorded in `RESEARCH_OAUTH_MENTION_RAIL.md`.
+RDAP. Four-minds gate is recorded in [`../research/RESEARCH_OAUTH_MENTION_RAIL.md`](../research/RESEARCH_OAUTH_MENTION_RAIL.md).
 Commit after every Milestone on this branch. Land only via PR.
 
 ## 2. Scope

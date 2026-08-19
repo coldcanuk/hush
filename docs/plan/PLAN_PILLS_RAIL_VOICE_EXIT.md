@@ -11,7 +11,7 @@ Milestone on this branch. Land only via PR.
 
 ## 2. Scope
 
-See `RESEARCH_PILLS_RAIL_VOICE_EXIT.md`. Primary goal, non-goals, DoD,
+See [`../research/RESEARCH_PILLS_RAIL_VOICE_EXIT.md`](../research/RESEARCH_PILLS_RAIL_VOICE_EXIT.md). Primary goal, non-goals, DoD,
 constraints, assumptions, and risks are locked there.
 
 **Primary Goal**

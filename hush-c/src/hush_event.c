@@ -81,7 +81,7 @@ static void hush_event_serialize_for_id(const hush_event_t *ev,
 static void hush_sha256_hex(const unsigned char *data, size_t len, char *out_hex64)
 {
 #if defined(HUSH_USE_OPENSSL)
-    /* DEVIATION: real SHA256 omitted in MVP; see RESEARCH.md. */
+    /* DEVIATION: real SHA256 omitted in MVP; see docs/research/RESEARCH.md. */
     (void)data;
     (void)len;
     memset(out_hex64, '0', HUSH_EVENT_ID_HEX_LEN);

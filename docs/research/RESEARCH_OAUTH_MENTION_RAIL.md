@@ -220,7 +220,7 @@ Cross-examination: Sherlock challenged Data’s earlier paraphrase of A1 as a UI
 
 ### Phase 6 — Plan pointer
 
-See `PLAN_OAUTH_MENTION_RAIL.md`.
+See [`../plan/PLAN_OAUTH_MENTION_RAIL.md`](../plan/PLAN_OAUTH_MENTION_RAIL.md).
 
 ### Unanimous agreement gate (recorded)
 

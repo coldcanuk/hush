@@ -4,7 +4,7 @@ Branch: `gb/close-x-dialog`
 Worktree: `worktrees/close-x-dialog`
 Base: `main` `b41b7f71c`
 Date: 2026-08-18
-Gate: `RESEARCH_CLOSE_X_DIALOG.md` (H1 cause P=0.663, H5 lever P=0.311)
+Gate: [`../research/RESEARCH_CLOSE_X_DIALOG.md`](../research/RESEARCH_CLOSE_X_DIALOG.md) (H1 cause P=0.663, H5 lever P=0.311)
 
 ## 1. Methodology
 
@@ -96,8 +96,8 @@ flight, a native zenity follow-up asks the same three verbs.
 ### Phase 1 — Research & Discovery (GATE, this commit)
 
 - Task 1 of M1.1: four-minds evidence E1–E14, A1–A5, H1–H5, Bayes.
-  File: `RESEARCH_CLOSE_X_DIALOG.md`.
-- Task 2 of M1.1: freeze this plan. File: `PLAN_CLOSE_X_DIALOG.md`.
+  File: `docs/research/RESEARCH_CLOSE_X_DIALOG.md`.
+- Task 2 of M1.1: freeze this plan. File: `docs/plan/PLAN_CLOSE_X_DIALOG.md`.
 - Task 3 of M1.1: commit.
 
 ```bash

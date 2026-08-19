@@ -4,7 +4,7 @@ Branch: `gb/leave-launch-zenity`
 Worktree: `worktrees/leave-launch-zenity`
 Base: `main` `9cf2406a8`
 Date: 2026-08-18
-Gate: `RESEARCH_LEAVE_LAUNCH_ZENITY.md` (H1 P=0.947)
+Gate: [`../research/RESEARCH_LEAVE_LAUNCH_ZENITY.md`](../research/RESEARCH_LEAVE_LAUNCH_ZENITY.md) (H1 P=0.947)
 
 ## 1. Methodology
 
@@ -55,7 +55,7 @@ that died without `/api/close` or `/api/exit`.
 
 ### Phase 1 — Research & Discovery (GATE)
 
-- Task 1 of M1.1: four-minds file `RESEARCH_LEAVE_LAUNCH_ZENITY.md`.
+- Task 1 of M1.1: four-minds file `docs/research/RESEARCH_LEAVE_LAUNCH_ZENITY.md`.
 - Task 2 of M1.1: freeze this plan.
 - Task 3 of M1.1: commit.
 

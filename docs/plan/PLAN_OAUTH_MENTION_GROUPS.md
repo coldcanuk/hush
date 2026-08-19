@@ -20,7 +20,7 @@ managed from a right-click menu.
 
 ## Success Criteria / DoD
 
-See RESEARCH_OAUTH_MENTION_GROUPS.md. Tests + embed + PR + cleanup.
+See [`../research/RESEARCH_OAUTH_MENTION_GROUPS.md`](../research/RESEARCH_OAUTH_MENTION_GROUPS.md). Tests + embed + PR + cleanup.
 
 ## Constraints
 

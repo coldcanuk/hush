@@ -779,7 +779,7 @@ Existing RESEARCH opted Tailwind out of C. Current `index.html` is hand-written 
 
 ## Remaining plan
 
-See `PLAN_PWA.md`.
+See [`../plan/PLAN_PWA.md`](../plan/PLAN_PWA.md).
 
 ---
 
@@ -898,7 +898,7 @@ Still opted out of C. First-launch UI continues hand-written CSS to match the ex
 
 ## Remaining plan
 
-See `PLAN_FIRST_LAUNCH.md`.
+See [`../plan/PLAN_FIRST_LAUNCH.md`](../plan/PLAN_FIRST_LAUNCH.md).
 
 ---
 
@@ -1004,7 +1004,7 @@ Tests:
 
 ## Remaining plan
 
-See `PLAN_PASS_IDENTITY.md`.
+See [`../plan/PLAN_PASS_IDENTITY.md`](../plan/PLAN_PASS_IDENTITY.md).
 
 ---
 
@@ -1123,7 +1123,7 @@ Do **not** add Tailwind. Hand CSS matching the existing PWA.
 
 ## Remaining plan
 
-See `PLAN_STUN_TURN.md`.
+See [`../plan/PLAN_STUN_TURN.md`](../plan/PLAN_STUN_TURN.md).
 
 
 ---
@@ -1418,7 +1418,7 @@ Logout: `hush_launch_logout` clears `logged_in`, `backup_acked`, human identity 
 
 ## Updated plan
 
-See `PLAN_ONBOARD_PROFILE_AGENTS.md` (frozen after this gate).
+See [`../plan/PLAN_ONBOARD_PROFILE_AGENTS.md`](../plan/PLAN_ONBOARD_PROFILE_AGENTS.md) (frozen after this gate).
 
 
 ---
@@ -1560,7 +1560,7 @@ Provider allowlist (one definition site):
 
 ## Updated plan
 
-See `PLAN_ROBOT_CARDS_UX.md` (frozen after this gate).
+See [`../plan/PLAN_ROBOT_CARDS_UX.md`](../plan/PLAN_ROBOT_CARDS_UX.md) (frozen after this gate).
 
 ---
 
@@ -1695,7 +1695,7 @@ Close, Exit. Install remains opportunistic. Badge is status, not a choice.
 - Desktop file, current help text, launch behavior from user report.
 - Unix patterns for long-lived server + detachable GUI confirmed.
 - Re-read hive header on current main (75d52f238): no Close/Exit buttons.
-- Re-read leftover PLAN_EXIT_CLOSE.md: CLI-only; that is why the user
+- Re-read leftover `docs/plan/PLAN_EXIT_CLOSE.md`: CLI-only; that is why the user
   still cannot see an Exit button.
 
 ---
