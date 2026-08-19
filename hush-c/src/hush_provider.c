@@ -75,6 +75,7 @@ static void hush_provider_copy(char *dst, size_t dstsz, const char *src);
 static hush_status_t hush_provider_fail(const char *msg);
 static const hush_provider_meta_t *hush_provider_meta_of(const char *id);
 static int hush_provider_path_exists(const char *path);
+static int hush_provider_file_nonempty(const char *path);
 static int hush_provider_has_binary(const char *name);
 static void hush_provider_config_dir(char *out, size_t outsz);
 static void hush_provider_file_path(char *out, size_t outsz);
@@ -88,6 +89,8 @@ static int hush_provider_json_object(const char *json, const char *id,
 static void hush_provider_load_overlay(hush_provider_status_t *st,
                                        const char *json);
 static void hush_provider_detect_home(hush_provider_status_t *st);
+static void hush_provider_detect_oauth_home(hush_provider_status_t *st,
+                                           const char *home);
 static void hush_provider_home_path(char *out, size_t outsz, const char *id);
 static void hush_provider_read_goose_model(char *out, size_t outsz);
 static void hush_provider_trim_yaml(char *text);
@@ -349,6 +352,43 @@ static int hush_provider_path_exists(const char *path)
     return stat(path, &st) == 0;
 }
 
+static int hush_provider_file_nonempty(const char *path)
+{
+    struct stat st;
+
+    if (path == NULL || path[0] == '\0')
+        return 0;
+    if (stat(path, &st) != 0)
+        return 0;
+    if (!S_ISREG(st.st_mode))
+        return 0;
+    return st.st_size > 0;
+}
+
+static void hush_provider_detect_oauth_home(hush_provider_status_t *st,
+                                           const char *home)
+{
+    char path[HUSH_PROVIDER_PATH_MAX];
+
+    assert(st != NULL);
+    assert(home != NULL);
+    st->has_home = 0;
+    if (strcmp(st->id, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0) {
+        snprintf(path, sizeof(path), "%s/.grok/auth.json", home);
+        st->has_home = hush_provider_file_nonempty(path);
+        return;
+    }
+    if (strcmp(st->id, HUSH_ROSTER_PROVIDER_CODEX) == 0) {
+        snprintf(path, sizeof(path), "%s/.codex/auth.json", home);
+        if (hush_provider_file_nonempty(path)) {
+            st->has_home = 1;
+            return;
+        }
+        snprintf(path, sizeof(path), "%s/.codex/config.toml", home);
+        st->has_home = hush_provider_file_nonempty(path);
+    }
+}
+
 static int hush_provider_has_binary(const char *name)
 {
     char *path;
@@ -565,11 +605,7 @@ static void hush_provider_home_path(char *out, size_t outsz, const char *id)
             snprintf(out, outsz, "%s/.config/goose/config.yaml", home);
         return;
     }
-    if (strcmp(id, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0)
-        snprintf(out, outsz, "%s/.grok/auth.json", home);
-    else if (strcmp(id, HUSH_ROSTER_PROVIDER_CODEX) == 0)
-        snprintf(out, outsz, "%s/.codex", home);
-    else if (strcmp(id, HUSH_ROSTER_PROVIDER_CLINE) == 0)
+    if (strcmp(id, HUSH_ROSTER_PROVIDER_CLINE) == 0)
         snprintf(out, outsz, "%s/Documents/Cline", home);
 }
 
@@ -585,6 +621,14 @@ static void hush_provider_detect_home(hush_provider_status_t *st)
         return;
     if (meta->binary[0] != '\0')
         st->has_binary = hush_provider_has_binary(meta->binary);
+    home = getenv("HOME");
+    if (home == NULL)
+        home = "";
+    if (strcmp(st->id, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0 ||
+        strcmp(st->id, HUSH_ROSTER_PROVIDER_CODEX) == 0) {
+        hush_provider_detect_oauth_home(st, home);
+        return;
+    }
     hush_provider_home_path(path, sizeof(path), st->id);
     st->has_home = hush_provider_path_exists(path);
     if (!st->has_home && strcmp(st->id, HUSH_ROSTER_PROVIDER_GOOSE) == 0) {

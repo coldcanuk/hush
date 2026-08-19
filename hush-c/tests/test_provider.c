@@ -112,6 +112,29 @@ int main(void)
     expect(st.has_home, "goose home present");
     expect(strcmp(st.home_model, "grok-4.6") == 0, "goose model");
 
+    expect(hush_provider_status(&st, "grok-build") == HUSH_OK, "grok status");
+    expect(!st.has_home, "grok home absent");
+    expect(hush_provider_status(&st, "codex") == HUSH_OK, "codex status");
+    expect(!st.has_home, "codex home absent");
+    snprintf(path, sizeof(path), "%s/.codex", home);
+    if (mkdir(path, 0755) != 0)
+        return 1;
+    expect(hush_provider_status(&st, "codex") == HUSH_OK, "codex dir only");
+    expect(!st.has_home, "codex dir is not auth");
+    snprintf(path, sizeof(path), "%s/.codex/auth.json", home);
+    write_file(path, "{\"token\":\"x\"}\n");
+    expect(hush_provider_status(&st, "codex") == HUSH_OK, "codex auth file");
+    expect(st.has_home, "codex auth is home");
+    snprintf(path, sizeof(path), "%s/.grok", home);
+    if (mkdir(path, 0755) != 0)
+        return 1;
+    snprintf(path, sizeof(path), "%s/.grok/auth.json", home);
+    write_file(path, "{\"token\":\"g\"}\n");
+    expect(hush_provider_status(&st, "grok-build") == HUSH_OK, "grok auth file");
+    expect(st.has_home, "grok auth is home");
+    expect(hush_provider_status(&st, "codex") == HUSH_OK, "codex still own file");
+    expect(st.has_home, "codex not flipped by grok");
+
     memset(&in, 0, sizeof(in));
     memcpy(in.id, "openai-api", 11);
     memcpy(in.host, "https://api.openai.com", 23);
