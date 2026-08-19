@@ -161,9 +161,30 @@
       color: var(--muted); font-size: 1.2rem; line-height: 1; border-radius: 8px;
     }
     .drawer-x:hover { background: var(--surface-2); color: var(--fg); }
-    #thread-stream { max-height: 50vh; overflow: auto; display: flex; flex-direction: column; gap: 10px; margin: 8px 0 12px; }
-    #thread-form { display: flex; gap: 8px; }
-    #thread-form input { flex: 1; }
+    #thread-pane {
+      display: none; position: fixed; z-index: 25;
+      left: 50%; top: 56px; transform: translateX(-50%);
+      width: min(42rem, 92vw); height: min(70vh, 640px);
+      background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+      flex-direction: column; min-width: 280px; min-height: 240px; overflow: hidden;
+    }
+    #thread-pane.show { display: flex; }
+    .thread-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+    #thread-pane .drawer-head { padding: 14px 16px 0; flex: 0 0 auto; }
+    #thread-help { margin: 4px 16px 8px; }
+    #thread-stream {
+      flex: 1; overflow: auto; padding: 8px 16px 12px;
+      display: flex; flex-direction: column; gap: 12px; min-height: 0;
+    }
+    #thread-form { position: relative; flex: 0 0 auto; }
+    #thread-resize {
+      position: absolute; right: 2px; bottom: 2px; width: 24px; height: 24px;
+      cursor: nwse-resize; touch-action: none;
+      background:
+        linear-gradient(135deg, transparent 40%, var(--line) 40%, var(--line) 50%, transparent 50%),
+        linear-gradient(135deg, transparent 65%, var(--muted) 65%, var(--muted) 75%, transparent 75%);
+    }
     main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
     .room {
       padding: 12px 18px; border-bottom: 1px solid var(--line);
@@ -191,16 +212,16 @@
     }
     #composer-pills { display: flex; flex-wrap: wrap; gap: 6px; }
     .composer-pill { margin: 0; }
-    #msg {
+    #msg, #thread-msg {
       flex: 1; min-width: 8rem; background: transparent; color: var(--fg); border: 0;
       padding: 6px 6px; font: inherit; outline: none;
     }
     .composer-box:focus-within { border-color: var(--accent-dim); }
-    #send {
+    #send, #thread-send {
       background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 10px;
-      padding: 0 18px; font-weight: 650; min-width: 88px;
+      padding: 0 18px; font-weight: 650; min-width: 88px; min-height: 44px;
     }
-    #send:hover { filter: brightness(1.05); }
+    #send:hover, #thread-send:hover { filter: brightness(1.05); }
     .gate {
       display: none; flex: 1; align-items: center; justify-content: center;
       padding: 32px 18px;
@@ -404,6 +425,7 @@
     }
     #tool-rail.collapsed { padding: 6px; }
     #tool-rail.collapsed .rail-body { display: none; }
+    #tool-rail.collapsed #rail-grip { min-width: 16px; flex: 0 0 16px; }
     .rail-bar { display: flex; align-items: center; gap: 6px; }
     #rail-grip {
       flex: 1; min-height: 44px; cursor: grab; border-radius: 6px;
@@ -411,15 +433,6 @@
       background: repeating-linear-gradient(90deg, var(--line), var(--line) 2px, transparent 2px, transparent 6px);
     }
     #rail-grip:active { cursor: grabbing; }
-    #rail-docks {
-      display: none; position: fixed; inset: 0; z-index: 29; pointer-events: none;
-    }
-    #rail-docks.show { display: block; }
-    .rail-dock {
-      position: absolute; width: 44px; height: 44px; border-radius: 12px;
-      border: 2px dashed var(--accent); background: var(--accent-dim); opacity: 0.55;
-    }
-    .rail-dock.on { opacity: 1; background: var(--accent); }
     #rail-toggle {
       width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line);
       background: var(--bg); color: var(--fg); font-size: 1.2rem; line-height: 1;
@@ -451,7 +464,6 @@
     </div>
     <div id="badge">connecting…</div>
   </header>
-  <div id="rail-docks" hidden aria-hidden="true"></div>
   <aside id="tool-rail" aria-label="Tools">
     <div class="rail-bar">
       <div id="rail-grip" title="Move the tool rail"></div>
@@ -555,18 +567,23 @@
       </div>
     </div>
   </div>
-  <div class="drawer" id="thread-pane" role="dialog" aria-label="Thread">
-    <div class="panel">
+  <div id="thread-pane" role="dialog" aria-label="Thread">
+    <div class="thread-shell">
       <div class="drawer-head">
         <h2 id="thread-title">Thread</h2>
         <button class="drawer-x" id="thread-close" type="button" aria-label="Close thread">×</button>
       </div>
-      <p class="help" id="thread-help">You and this robot. At ease.</p>
+      <p class="help" id="thread-help">you · this robot. At ease.</p>
       <div id="thread-stream"></div>
-      <form id="thread-form">
-        <input id="thread-msg" autocomplete="off" maxlength="2000" placeholder="Write in this thread…">
-        <button class="btn" id="thread-send" type="submit">Send</button>
+      <form class="composer" id="thread-form">
+        <div class="mention-box" id="thread-mention" hidden></div>
+        <div class="composer-box">
+          <div id="thread-pills"></div>
+          <input id="thread-msg" autocomplete="off" maxlength="2000" placeholder="Write in this thread… @ to add someone">
+        </div>
+        <button id="thread-send" type="submit">Send</button>
       </form>
+      <div id="thread-resize" title="Resize thread" aria-hidden="true"></div>
     </div>
   </div>
   <div class="drawer" id="relay-drawer" role="dialog" aria-label="Relay live">
@@ -844,9 +861,19 @@
     let manageRobotPills = [];
     let whisperReady = false;
     let railDrag = null;
+    let railSaved = null;
+    let railParked = false;
+    let railHomed = false;
+    let railClickTimer = 0;
+    let threadDrag = null;
     let lastEvents = [];
     let lastStatus = {};
     let openThread = null;
+    let threadPills = [];
+    let threadMentionOpen = false;
+    let threadMentionHits = [];
+    let threadMentionIdx = 0;
+    let threadMentionStart = -1;
 
     function $(id) { return document.getElementById(id); }
 
@@ -2116,21 +2143,43 @@
     });
 
     $("thread-close").addEventListener("click", closeThreadPane);
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && $("thread-pane").classList.contains("show")) {
+        if (threadMentionOpen) {
+          hideThreadMentions();
+          return;
+        }
+        closeThreadPane();
+      }
+    });
     $("thread-form").addEventListener("submit", async (e) => {
       e.preventDefault();
-      if (!openThread) return;
+      if (!openThread || threadMentionOpen) return;
       const leftover = $("thread-msg").value.trim();
-      if (!leftover) return;
+      const bits = threadPills.map((p) => "nostr:" + p.npub);
+      if (leftover) bits.push(leftover);
+      const text = bits.join(" ").trim();
+      if (!text) return;
       $("thread-msg").value = "";
+      const extra = threadPills.slice();
+      threadPills = [];
+      paintThreadPills();
       const root = lastEvents.find((ev) => ev.id === openThread);
       const bots = threadMembers(root || {}, repliesTo(lastEvents, openThread));
+      extra.forEach((p) => {
+        if (p.kind === "human") return;
+        if (!bots.some((b) => b.npub === p.npub))
+          bots.push({ name: p.name, npub: p.npub, kind: "robot" });
+      });
       const body = {
-        content: leftover,
+        content: text,
         kind: 1,
         channel: channel,
         reply_to: openThread
       };
-      bots.slice(0, 8).forEach((b, i) => { body["mention_" + i] = b.npub; });
+      bots.filter((b) => b.kind !== "human").slice(0, 8).forEach((b, i) => {
+        body["mention_" + i] = b.npub;
+      });
       try {
         await api("/api/event", body);
         await tick();
@@ -2510,6 +2559,93 @@
       return bots;
     }
 
+    function hideThreadMentions() {
+      threadMentionOpen = false;
+      threadMentionHits = [];
+      threadMentionIdx = 0;
+      threadMentionStart = -1;
+      const box = $("thread-mention");
+      if (!box) return;
+      box.classList.remove("show");
+      box.hidden = true;
+      box.innerHTML = "";
+    }
+
+    function paintThreadPills() {
+      const box = $("thread-pills");
+      if (!box) return;
+      box.innerHTML = "";
+      threadPills.forEach((p, i) => {
+        const pill = document.createElement("span");
+        pill.className = "pill composer-pill";
+        pill.innerHTML = "<em>@" + esc(p.name) + "</em>";
+        const minus = document.createElement("button");
+        minus.type = "button";
+        minus.setAttribute("aria-label", "Remove @" + p.name);
+        minus.textContent = "−";
+        minus.addEventListener("click", () => {
+          threadPills.splice(i, 1);
+          paintThreadPills();
+        });
+        pill.appendChild(minus);
+        box.appendChild(pill);
+      });
+    }
+
+    function paintThreadMentionBox() {
+      const box = $("thread-mention");
+      if (!box) return;
+      box.innerHTML = "";
+      threadMentionHits.forEach((hit, i) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = i === threadMentionIdx ? "on" : "";
+        b.textContent = "@" + hit.name + " · " + hit.kind;
+        b.addEventListener("click", () => applyThreadMention(hit));
+        box.appendChild(b);
+      });
+      box.hidden = !threadMentionHits.length;
+      box.classList.toggle("show", threadMentionHits.length > 0);
+      threadMentionOpen = threadMentionHits.length > 0;
+    }
+
+    function applyThreadMention(hit) {
+      const input = $("thread-msg");
+      if (!input || threadMentionStart < 0) return;
+      const before = input.value.slice(0, threadMentionStart);
+      const after = input.value.slice(input.selectionStart);
+      input.value = (before + after).replace(/^\s+/, "");
+      if (!threadPills.some((p) => p.npub === hit.npub))
+        threadPills.push({ name: hit.name, npub: hit.npub, kind: hit.kind });
+      paintThreadPills();
+      hideThreadMentions();
+      input.focus();
+    }
+
+    function scanThreadMention() {
+      const input = $("thread-msg");
+      if (!input) return;
+      const pos = input.selectionStart || 0;
+      const text = input.value.slice(0, pos);
+      const at = text.lastIndexOf("@");
+      if (at < 0 || (at > 0 && !/\s/.test(text.charAt(at - 1)))) {
+        hideThreadMentions();
+        return;
+      }
+      const q = text.slice(at + 1).toLowerCase();
+      if (q.indexOf(" ") >= 0 || q.indexOf("\n") >= 0) {
+        hideThreadMentions();
+        return;
+      }
+      threadMentionStart = at;
+      threadMentionHits = mentionRoster().filter((h) =>
+        h.name.toLowerCase().indexOf(q) >= 0 ||
+        h.npub.toLowerCase().indexOf(q) >= 0
+      );
+      threadMentionIdx = 0;
+      paintThreadMentionBox();
+    }
+
     function paintThink(node, jobs) {
       if (!jobs.length) return;
       const chip = document.createElement("div");
@@ -2542,24 +2678,32 @@
     function openThreadPane(rootId) {
       const root = lastEvents.find((e) => e.id === rootId);
       if (!root) return;
+      const wasOpen = $("thread-pane").classList.contains("show");
       openThread = rootId;
       const kids = repliesTo(lastEvents, rootId);
       const bots = threadMembers(root, kids);
       const names = bots.map((b) => b.name).filter(Boolean);
       $("thread-title").textContent = names.length ? ("Thread · " + names.join(", ")) : "Thread";
       $("thread-help").textContent = names.length
-        ? ("You and " + names.join(", ") + ". At ease.")
-        : "You and this robot. At ease.";
+        ? ("you · " + names.join(", ") + ". At ease.")
+        : "you · this robot. At ease.";
       const box = $("thread-stream");
       box.innerHTML = "";
       box.appendChild(paintNote(root, (n) => paintThink(n, thinkingFor(root.id, lastStatus))));
       kids.forEach((k) => box.appendChild(paintNote(k)));
       box.scrollTop = box.scrollHeight;
       $("thread-pane").classList.add("show");
+      applyThreadSize();
+      if (!wasOpen) parkRailForThread();
     }
 
     function closeThreadPane() {
       $("thread-pane").classList.remove("show");
+      openThread = null;
+      threadPills = [];
+      paintThreadPills();
+      hideThreadMentions();
+      restoreRailAfterThread();
     }
 
     function paintRelayDrawer(status) {
@@ -2713,25 +2857,10 @@
       }
     });
 
-    const RAIL_SNAP = 48;
     const RAIL_PAD = 10;
-    let railAnchor = "tr";
-    function railDocks() {
-      const rail = $("tool-rail");
-      const w = rail.offsetWidth || 160;
-      const h = rail.offsetHeight || 220;
-      const maxX = Math.max(0, window.innerWidth - w);
-      const maxY = Math.max(0, window.innerHeight - h);
-      return [
-        { id: "tl", x: RAIL_PAD, y: RAIL_PAD },
-        { id: "tr", x: maxX - RAIL_PAD, y: RAIL_PAD },
-        { id: "bl", x: RAIL_PAD, y: maxY - RAIL_PAD },
-        { id: "br", x: maxX - RAIL_PAD, y: maxY - RAIL_PAD },
-        { id: "ml", x: RAIL_PAD, y: Math.round(maxY / 2) },
-        { id: "mr", x: maxX - RAIL_PAD, y: Math.round(maxY / 2) }
-      ];
-    }
-    function placeRail(x, y, anchor) {
+    const THREAD_MIN_W = 280;
+    const THREAD_MIN_H = 240;
+    function placeRail(x, y) {
       const rail = $("tool-rail");
       const w = rail.offsetWidth || 160;
       const h = rail.offsetHeight || 220;
@@ -2743,121 +2872,211 @@
       rail.style.top = ny + "px";
       rail.style.right = "auto";
       rail.style.bottom = "auto";
-      railAnchor = anchor || "";
     }
-    function applyRailAnchor(id) {
-      const dock = railDocks().find((d) => d.id === id);
-      if (!dock) return false;
-      placeRail(dock.x, dock.y, id);
-      return true;
+    function setRailCollapsed(on) {
+      const rail = $("tool-rail");
+      rail.classList.toggle("collapsed", !!on);
+      $("rail-toggle").setAttribute("aria-expanded", on ? "false" : "true");
+      $("rail-toggle").setAttribute("aria-label", on ? "Expand tools" : "Collapse tools");
     }
-    function nearestRailDock(x, y) {
-      let best = null;
-      let bestD = RAIL_SNAP + 1;
-      railDocks().forEach((d) => {
-        const dx = d.x - x;
-        const dy = d.y - y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < bestD) {
-          bestD = dist;
-          best = d;
-        }
-      });
-      return bestD <= RAIL_SNAP ? best : null;
+    function releaseBrandPad() {
+      const head = document.querySelector("header");
+      if (head) head.style.paddingLeft = "";
+      railHomed = false;
     }
-    function paintRailDocks(active) {
-      const box = $("rail-docks");
-      if (!box) return;
-      box.innerHTML = "";
-      railDocks().forEach((d) => {
-        const el = document.createElement("div");
-        el.className = "rail-dock" + (active && active.id === d.id ? " on" : "");
-        el.style.left = d.x + "px";
-        el.style.top = d.y + "px";
-        box.appendChild(el);
-      });
+    function placeRailAtBrand() {
+      const brand = document.querySelector("header .brand");
+      const head = document.querySelector("header");
+      const rail = $("tool-rail");
+      if (!brand || !rail) return;
+      setRailCollapsed(true);
+      const w = rail.offsetWidth || 56;
+      if (head) head.style.paddingLeft = (w + 16) + "px";
+      const b = brand.getBoundingClientRect();
+      const y = Math.max(4, b.top + (b.height - (rail.offsetHeight || 56)) / 2);
+      placeRail(8, y);
+      railHomed = true;
     }
-    function showRailDocks(on) {
-      const box = $("rail-docks");
-      if (!box) return;
-      box.hidden = !on;
-      box.classList.toggle("show", !!on);
-      if (on) paintRailDocks(null);
-      else box.innerHTML = "";
+    function parkRailForThread() {
+      if (railParked) return;
+      const rail = $("tool-rail");
+      const rect = rail.getBoundingClientRect();
+      railSaved = {
+        x: rect.left,
+        y: rect.top,
+        collapsed: rail.classList.contains("collapsed"),
+        homed: railHomed
+      };
+      railParked = true;
+      placeRailAtBrand();
+    }
+    function restoreRailAfterThread() {
+      if (!railParked) return;
+      railParked = false;
+      const saved = railSaved;
+      railSaved = null;
+      if (saved && saved.homed) {
+        placeRailAtBrand();
+        saveRail();
+        return;
+      }
+      releaseBrandPad();
+      if (!saved) return;
+      setRailCollapsed(!!saved.collapsed);
+      placeRail(saved.x, saved.y);
+      saveRail();
     }
     function loadRail() {
       const rail = $("tool-rail");
       let saved = {};
       try { saved = JSON.parse(localStorage.getItem("hush-rail") || "{}"); } catch (e) { saved = {}; }
-      if (saved.collapsed) {
-        rail.classList.add("collapsed");
-        $("rail-toggle").setAttribute("aria-expanded", "false");
-        $("rail-toggle").setAttribute("aria-label", "Expand tools");
-      }
-      if (saved.anchor && applyRailAnchor(saved.anchor))
+      if (saved.homed) {
+        placeRailAtBrand();
         return;
+      }
+      if (saved.collapsed) setRailCollapsed(true);
       if (typeof saved.x === "number" && typeof saved.y === "number")
-        placeRail(saved.x, saved.y, "");
-      else
-        applyRailAnchor("tr");
+        placeRail(saved.x, saved.y);
+      else {
+        const w = rail.offsetWidth || 160;
+        placeRail(Math.max(0, window.innerWidth - w - RAIL_PAD), RAIL_PAD);
+      }
     }
     function saveRail() {
+      if (railParked) return;
       const rail = $("tool-rail");
       const rect = rail.getBoundingClientRect();
       localStorage.setItem("hush-rail", JSON.stringify({
         x: rect.left,
         y: rect.top,
         collapsed: rail.classList.contains("collapsed"),
-        anchor: railAnchor
+        homed: railHomed
       }));
     }
+    function applyThreadSize() {
+      const pane = $("thread-pane");
+      let saved = {};
+      try { saved = JSON.parse(localStorage.getItem("hush-thread") || "{}"); } catch (e) { saved = {}; }
+      const maxW = Math.max(THREAD_MIN_W, window.innerWidth - 24);
+      const maxH = Math.max(THREAD_MIN_H, window.innerHeight - 72);
+      const w = typeof saved.w === "number" ? saved.w : Math.min(672, maxW);
+      const h = typeof saved.h === "number" ? saved.h : Math.min(640, Math.round(window.innerHeight * 0.7));
+      pane.style.width = Math.max(THREAD_MIN_W, Math.min(maxW, w)) + "px";
+      pane.style.height = Math.max(THREAD_MIN_H, Math.min(maxH, h)) + "px";
+    }
+    function saveThreadSize() {
+      const pane = $("thread-pane");
+      const rect = pane.getBoundingClientRect();
+      localStorage.setItem("hush-thread", JSON.stringify({ w: rect.width, h: rect.height }));
+    }
     $("rail-toggle").addEventListener("click", () => {
-      const rail = $("tool-rail");
-      const on = rail.classList.toggle("collapsed");
-      $("rail-toggle").setAttribute("aria-expanded", on ? "false" : "true");
-      $("rail-toggle").setAttribute("aria-label", on ? "Expand tools" : "Collapse tools");
-      if (railAnchor) applyRailAnchor(railAnchor);
-      saveRail();
+      if (railParked) return;
+      clearTimeout(railClickTimer);
+      railClickTimer = setTimeout(() => {
+        const rail = $("tool-rail");
+        setRailCollapsed(!rail.classList.contains("collapsed"));
+        if (railHomed) {
+          const brand = document.querySelector("header .brand");
+          const head = document.querySelector("header");
+          const w = rail.offsetWidth || 56;
+          if (head) head.style.paddingLeft = (w + 16) + "px";
+          if (brand) {
+            const b = brand.getBoundingClientRect();
+            const y = Math.max(4, b.top + (b.height - (rail.offsetHeight || 56)) / 2);
+            placeRail(8, y);
+          }
+        }
+        saveRail();
+      }, 220);
+    });
+    $("rail-toggle").addEventListener("dblclick", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      clearTimeout(railClickTimer);
+      placeRailAtBrand();
+      if (!railParked) saveRail();
     });
     $("rail-grip").addEventListener("pointerdown", (ev) => {
       const rail = $("tool-rail");
       const rect = rail.getBoundingClientRect();
       railDrag = { dx: ev.clientX - rect.left, dy: ev.clientY - rect.top };
-      railAnchor = "";
-      showRailDocks(true);
+      if (railParked) {
+        railParked = false;
+        railSaved = null;
+      }
+      releaseBrandPad();
       ev.preventDefault();
     });
+    $("thread-resize").addEventListener("pointerdown", (ev) => {
+      const pane = $("thread-pane");
+      const rect = pane.getBoundingClientRect();
+      threadDrag = { x: ev.clientX, y: ev.clientY, w: rect.width, h: rect.height };
+      ev.preventDefault();
+    });
+    $("thread-msg").addEventListener("input", scanThreadMention);
+    $("thread-msg").addEventListener("keydown", (ev) => {
+      if (ev.key === "Backspace" && $("thread-msg").selectionStart === 0 &&
+          $("thread-msg").selectionEnd === 0 && threadPills.length) {
+        ev.preventDefault();
+        threadPills.pop();
+        paintThreadPills();
+        return;
+      }
+      if (!threadMentionOpen) return;
+      if (ev.key === "ArrowDown") {
+        ev.preventDefault();
+        threadMentionIdx = (threadMentionIdx + 1) % threadMentionHits.length;
+        paintThreadMentionBox();
+      } else if (ev.key === "ArrowUp") {
+        ev.preventDefault();
+        threadMentionIdx = (threadMentionIdx - 1 + threadMentionHits.length) % threadMentionHits.length;
+        paintThreadMentionBox();
+      } else if (ev.key === "Enter" || ev.key === "Tab") {
+        if (threadMentionHits[threadMentionIdx]) {
+          ev.preventDefault();
+          applyThreadMention(threadMentionHits[threadMentionIdx]);
+        }
+      } else if (ev.key === "Escape") {
+        hideThreadMentions();
+      }
+    });
     window.addEventListener("pointermove", (ev) => {
-      if (!railDrag) return;
-      const x = ev.clientX - railDrag.dx;
-      const y = ev.clientY - railDrag.dy;
-      placeRail(x, y, "");
-      paintRailDocks(nearestRailDock(x, y));
+      if (railDrag) {
+        placeRail(ev.clientX - railDrag.dx, ev.clientY - railDrag.dy);
+        return;
+      }
+      if (!threadDrag) return;
+      const maxW = Math.max(THREAD_MIN_W, window.innerWidth - 24);
+      const maxH = Math.max(THREAD_MIN_H, window.innerHeight - 72);
+      const w = Math.max(THREAD_MIN_W, Math.min(maxW, threadDrag.w + (ev.clientX - threadDrag.x)));
+      const h = Math.max(THREAD_MIN_H, Math.min(maxH, threadDrag.h + (ev.clientY - threadDrag.y)));
+      const pane = $("thread-pane");
+      pane.style.width = w + "px";
+      pane.style.height = h + "px";
     });
     window.addEventListener("pointerup", () => {
-      if (!railDrag) return;
-      const rail = $("tool-rail");
-      const rect = rail.getBoundingClientRect();
-      const dock = nearestRailDock(rect.left, rect.top);
-      if (dock) placeRail(dock.x, dock.y, dock.id);
-      railDrag = null;
-      showRailDocks(false);
-      saveRail();
+      if (railDrag) {
+        railDrag = null;
+        saveRail();
+      }
+      if (threadDrag) {
+        threadDrag = null;
+        saveThreadSize();
+      }
     });
     window.addEventListener("pointercancel", () => {
-      if (!railDrag) return;
       railDrag = null;
-      showRailDocks(false);
-      saveRail();
+      threadDrag = null;
     });
     window.addEventListener("resize", () => {
-      if (railAnchor) applyRailAnchor(railAnchor);
+      if (railParked) placeRailAtBrand();
       else {
         const rail = $("tool-rail");
         const rect = rail.getBoundingClientRect();
-        placeRail(rect.left, rect.top, "");
+        placeRail(rect.left, rect.top);
+        saveRail();
       }
-      saveRail();
+      if ($("thread-pane").classList.contains("show")) applyThreadSize();
     });
     loadRail();
 
