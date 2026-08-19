@@ -16,7 +16,7 @@ enum {
     HUSH_PROVIDER_MODELS_MAX = 32,
     HUSH_PROVIDER_JSON_MAX = 8192,
     HUSH_PROVIDER_ERR_MAX = 160,
-    HUSH_PROVIDER_COUNT = 8,
+    HUSH_PROVIDER_COUNT = 9,
     HUSH_PROVIDER_KEY_MAX = 512,
     HUSH_PROVIDER_URL_MAX = 1024,
     HUSH_PROVIDER_SECRET_COUNT = 5
@@ -36,6 +36,7 @@ enum {
 #define HUSH_PROVIDER_HOST_XAI "https://api.x.ai"
 #define HUSH_PROVIDER_HOST_ANTHROPIC "https://api.anthropic.com"
 #define HUSH_PROVIDER_HOST_GEMINI "https://generativelanguage.googleapis.com"
+#define HUSH_PROVIDER_HOST_DEEPSEEK "https://api.deepseek.com"
 
 #define HUSH_PROVIDER_FILE_NAME "providers.json"
 
@@ -75,7 +76,7 @@ typedef struct {
     char error[HUSH_PROVIDER_ERR_MAX];
 } hush_provider_scan_t;
 
-/* True when id is one of the eight named runtimes. */
+/* True when id is one of the nine named runtimes. */
 int hush_provider_is_id(const char *id);
 
 /* Copies the default host for id. Empty for home and editor families. */

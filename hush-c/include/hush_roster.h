@@ -37,6 +37,7 @@ enum {
 #define HUSH_ROSTER_PROVIDER_XAI "xai-api"
 #define HUSH_ROSTER_PROVIDER_OPENAI "openai-api"
 #define HUSH_ROSTER_PROVIDER_ANTHROPIC "anthropic-api"
+#define HUSH_ROSTER_PROVIDER_DEEPSEEK "deepseek-api"
 
 typedef struct {
     char name[HUSH_ROSTER_NAME_MAX];
@@ -87,7 +88,7 @@ int hush_roster_is_context_mime(const char *mime, const char *filename);
 /* True when theme is one of the seven named palettes. */
 int hush_roster_is_theme(const char *theme);
 
-/* True when provider is one of the eight named runtimes. */
+/* True when provider is one of the nine named runtimes. */
 int hush_roster_is_provider(const char *provider);
 
 /* Copies profile fields. Rejects a bad theme. */
