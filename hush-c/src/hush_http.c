@@ -7,6 +7,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "hush_agent.h"
 #include "hush_http.h"
 #include "hush_provider.h"
 #include "hush_relay.h"
@@ -82,6 +83,8 @@ static void hush_http_collect_indexed(const char *body, const char *stem,
                                       char (*out)[HUSH_IDENTITY_NPUB_MAX],
                                       size_t *out_n, size_t maxn);
 static void hush_http_add_mentions(hush_event_t *out, const char *body);
+static void hush_http_event_reply_to(char *out, size_t outsz,
+                                     const hush_event_t *ev);
 static hush_status_t hush_http_serve_project(int fd, const char *body,
                                              hush_store_t *store);
 static hush_status_t hush_http_serve_turn_post(int fd, const char *body);
@@ -465,6 +468,7 @@ static void hush_http_serve_events(int fd, const hush_store_t *store)
     static char body[HUSH_HTTP_JSON_MAX];
     hush_event_t evs[HUSH_HTTP_EVENTS_MAX];
     char esc[HUSH_EVENT_MAX_CONTENT + 8];
+    char reply_to[HUSH_EVENT_ID_HEX_LEN + 1];
     size_t n;
     size_t i;
     size_t off;
@@ -474,13 +478,16 @@ static void hush_http_serve_events(int fd, const hush_store_t *store)
     off = (size_t)snprintf(body, sizeof(body), "{\"events\":[");
     for (i = 0; i < n && off + 64 < sizeof(body); ++i) {
         hush_json_escape(evs[i].content, esc, sizeof(esc));
+        hush_http_event_reply_to(reply_to, sizeof(reply_to), &evs[i]);
         w = snprintf(body + off, sizeof(body) - off,
                      "%s{\"id\":\"%s\",\"pubkey\":\"%s\",\"kind\":%u,"
-                     "\"created_at\":%lld,\"content\":\"%s\",\"channel\":\"%s\"}",
+                     "\"created_at\":%lld,\"content\":\"%s\",\"channel\":\"%s\","
+                     "\"reply_to\":\"%s\"}",
                      (i == 0) ? "" : ",",
                      evs[i].id, evs[i].pubkey, evs[i].kind,
                      (long long)evs[i].created_at, esc,
-                     evs[i].tags[0][1][0] ? evs[i].tags[0][1] : "general");
+                     evs[i].tags[0][1][0] ? evs[i].tags[0][1] : "general",
+                     reply_to);
         if (w < 0)
             break;
         off += (size_t)w;
@@ -532,6 +539,7 @@ static hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
         hush_http_reply(fd, "507 Insufficient Storage", "text/plain", "full\n", 5);
         return HUSH_ERR_FULL;
     }
+    hush_agent_consider(store, g_launch, out);
     hush_http_reply(fd, "200 OK", "application/json", "{\"ok\":true}\n", 12);
     return HUSH_OK;
 }
@@ -899,6 +907,28 @@ static void hush_http_add_mentions(hush_event_t *out, const char *body)
         memcpy(out->tags[out->tag_count][0], "p", 2);
         memcpy(out->tags[out->tag_count][1], mention, strlen(mention) + 1);
         out->tag_count++;
+    }
+}
+
+static void hush_http_event_reply_to(char *out, size_t outsz,
+                                     const hush_event_t *ev)
+{
+    size_t i;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    out[0] = '\0';
+    if (ev == NULL)
+        return;
+    for (i = 0; i < ev->tag_count; i++) {
+        if (strcmp(ev->tags[i][0], "e") != 0)
+            continue;
+        if (ev->tags[i][1][0] == '\0')
+            continue;
+        if (strlen(ev->tags[i][1]) >= outsz)
+            return;
+        memcpy(out, ev->tags[i][1], strlen(ev->tags[i][1]) + 1);
+        return;
     }
 }
 
