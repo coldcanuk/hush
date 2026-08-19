@@ -1,11 +1,11 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups + Channel Policy
-Version: 2026-08-19 (RDAP M2, gb/deepseek-robot-btns)
+Version: 2026-08-19 (RDAP M2, gb/thread-1to1-follow)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec, the onboard raise-form notes, the oauth-mention-groups
 header/mention/manage rows, the oauth-mention-rail indent-only thread,
 the thread-think-hygiene Close/Exit paragraph, the oauth-mention-rail
-six-dock tool-rail paragraph, and the membership-only Manage Channel
-paragraph where they conflict.
+six-dock tool-rail paragraph, the membership-only Manage Channel
+paragraph, and the Deepseek radio slice where they conflict.
 Quinn + Parker + Payne. No feline.
 
 ## Core Principles (Quinn)
@@ -319,9 +319,14 @@ repeat a prior joke.
 Composer inside the pane reuses the hive `.composer-box`:
 `#thread-pills` + `#thread-msg` leftover + `#thread-mention` `@`
 box (full hive roster, so a 1:1 thread can become 1:n). Submit posts
-`reply_to=<root id>` and `mention_0…N` only for **new** pills typed in
-this send. Do not re-mention every robot already in the member set.
-Do not mention the human. `#thread-close`
+`reply_to=<root id>` and `mention_0…N` for **new** pills typed in
+this send. **1:1 inherit:** when this send has no robot pill and
+`threadMembers` is exactly one robot, attach that sole member as
+`mention_0` (and prefix `nostr:<npub>` so the bubble reads `@Happy`).
+Do not re-mention every robot already in a 1:n member set.
+Do not mention the human. After a send that attached a mention, paint
+an optimistic `#thread-think` chip until live `status.thinking` or a
+new robot reply arrives. `#thread-close`
 [x] and Escape return to the channel. The same Thread button reopens
 the same root.
 
