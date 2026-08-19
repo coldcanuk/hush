@@ -62,6 +62,9 @@ wait_down() {
 
 "$bin" --help | grep -q -- '--quit' || fail "help missing --quit"
 "$bin" --help | grep -q -- '--close' || fail "help missing --close"
+grep -q 'hush_relay_watch_app' src/hush_relay.c || fail "relay missing last-window watch"
+grep -q 'g_leave_ack' src/hush_relay.c || fail "relay missing leave ack"
+grep -q 'hush_relay_note_leave' src/hush_http.c || fail "http missing leave ack"
 "$bin" --close "$port" >/dev/null
 test "$?" -eq 0 || fail "--close must exit 0"
 

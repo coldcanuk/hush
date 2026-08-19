@@ -1,9 +1,9 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups
-Version: 2026-08-18 (RDAP M2, gb/thread-think-hygiene)
+Version: 2026-08-18 (RDAP M2, gb/close-x-dialog)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec, the onboard raise-form notes, the oauth-mention-groups
-header/mention/manage rows, and the oauth-mention-rail indent-only thread
-where they conflict.
+header/mention/manage rows, the oauth-mention-rail indent-only thread,
+and the thread-think-hygiene Close/Exit paragraph where they conflict.
 Quinn + Parker + Payne. No feline.
 
 ## Core Principles (Quinn)
@@ -64,25 +64,43 @@ holds an nsec or provider secret.
 
 ### 10. Close vs Exit (process lifecycle)
 
-The OS/PWA window `×` is **not** our Close and **not** our Exit.
+The OS/PWA window `×` belongs to the Chromium-family `--app` window. It
+is **not** our chrome. Page JS cannot put three labeled buttons on that
+close-box (`beforeunload` is a two-button "Leave site?" at best, often
+suppressed).
+
 The hive ships two labeled buttons on `#tool-rail`, always reachable
-(including splash/gate).
+(including splash/gate). Both open one chooser, `#hive-leave`.
 
-| Button | Id | Meaning |
+| Control | Id | Meaning |
 |---|---|---|
-| **Close** | `#hive-close` | Detach the GUI. Relay stays up. Next launcher click re-attaches. |
-| **Exit** | `#hive-exit` | Quit. Every process stops. Exit code 0. |
+| **Close** (rail) | `#hive-close` | Open `#hive-leave`. Does not detach by itself. |
+| **Exit** (rail) | `#hive-exit` | Open `#hive-leave`. Does not quit by itself. |
+| **Exit the application** | `#leave-exit` | `POST /api/exit` then `window.close()`. No second confirm. Every process stops. Exit code 0. |
+| **Close the window** | `#leave-close` | `POST /api/close` then `window.close()`. Relay stays. Next launcher click re-attaches. |
+| **Cancel** | `#leave-cancel` | Hide `#hive-leave`. Window stays. Relay stays. |
 
-- Close: `POST /api/close` then `window.close()`. If the window stays
-  (a tab the script did not open), show `#hive-banner`:
+- `#hive-leave` is a `.drawer` / `.panel` titled "Leave the hive?".
+  Help: "Exit stops every process. Close leaves the hive standing. Cancel stays."
+  The three action buttons stack, each Fitts ≥44px. Exit is `.btn.danger`.
+  Close is `.btn`. Cancel is `.btn.ghost`. Escape = Cancel.
+- `#leave-close`: if `window.close()` leaves the document up (a tab the
+  script did not open), show `#hive-banner`:
   "Window stays open here. Close this window. The hive is still standing."
-- Exit: confirm "Quit the hive? Every process stops." then
-  `POST /api/exit` then `window.close()`.
-- Close is ghost `iconbtn`. Exit is danger `iconbtn`. Both ≥44px.
-- Titles: Close = "Close the window. Hive stays standing."
+- Rail Close is ghost `iconbtn`. Rail Exit is danger `iconbtn`. Both ≥44px.
+  Titles: Close = "Close the window. Hive stays standing."
   Exit = "Quit the hive. Every process stops."
-- Drawer "Close" buttons stay local (Settings / Profile / Raise).
-  They never quit the process.
+- Drawer "Close" / `[x]` buttons on Settings / Profile / Raise / Thread /
+  Relay-live stay local. They never open `#hive-leave` and never quit.
+- Last `--app` child gone: the relay notices with `kill(pid, 0)` in the
+  poll pump (`SIGCHLD` stays ignored). If no `/api/close` or `/api/exit`
+  ran this session (`g_leave_ack` clear) and `g_shutdown` is clear, it
+  forks `zenity --question` (non-blocking) with the same three verbs.
+  Missing zenity: print the attach hint and leave the hive standing.
+  Zenity **Exit the application** sets shutdown. **Close the window**
+  acks and stays. **Cancel** re-opens the `--app` window.
+- Close never kills the relay. Exit always does. Attach on EADDRINUSE
+  stays. Do not use `beforeunload` as this UI.
 
 ### 5. Profile (always reachable)
 Drawer fields:
@@ -423,7 +441,9 @@ off-hive.
 - A robot cannot be raised without a system prompt and an AI provider.
 - Provider secrets live only in `pass` (`hush/providers/<id>/{api_key,username,password,token,passkey}`).
 - Hush never writes `~/.config/goose`, `~/.grok`, or `~/.codex`.
-- Close and Exit are distinct labeled hive buttons. The OS `×` is neither.
+- Close and Exit are distinct verbs. Rail buttons open `#hive-leave`
+  (Exit the application / Close the window / Cancel). The OS `×` is
+  the `--app` window's; last `--app` child gone raises the zenity follow-up.
 - Close never kills the relay. Exit always does, with exit code 0.
 - No catfu / Griffe / Scout / Brave / feline words.
 - Embed after every HTML change:

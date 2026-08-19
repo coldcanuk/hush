@@ -15,6 +15,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -42,10 +43,18 @@ enum {
     HUSH_QUIT_WAIT_MS = 100,
     HUSH_CHILD_MAX = 8,
     HUSH_CHILD_CMDLINE_MAX = 512,
-    HUSH_PROC_PATH_MAX = 64
+    HUSH_PROC_PATH_MAX = 64,
+    HUSH_LEAVE_OUT_MAX = 256,
+    HUSH_LEAVE_MISSING = 127
 };
 
 #define HUSH_PIDFILE_NAME_FMT "relay-%u.pid"
+#define HUSH_LEAVE_BIN        "zenity"
+#define HUSH_LEAVE_TITLE      "Leave the hive?"
+#define HUSH_LEAVE_TEXT       "The window closed. The hive is still standing."
+#define HUSH_LEAVE_OK         "Exit the application"
+#define HUSH_LEAVE_EXTRA      "Close the window"
+#define HUSH_LEAVE_CANCEL     "Cancel"
 
 struct client {
     int fd;
@@ -67,6 +76,10 @@ static int g_pidfile_ready = 0;
 static pid_t g_children[HUSH_CHILD_MAX];
 static int g_nchildren = 0;
 static uint16_t g_listen_port = 0;
+static int g_leave_ack = 0;
+static int g_saw_app = 0;
+static pid_t g_leave_pid = 0;
+static int g_leave_rd = HUSH_FD_NONE;
 
 static void hush_clients_reset(void);
 static int hush_listen_on(uint16_t port);
@@ -99,6 +112,21 @@ static void hush_relay_announce(uint16_t port, int open_ui);
 static void hush_relay_pump(int ls);
 static void hush_child_reset(void);
 static void hush_child_stop_one(pid_t pid);
+static int hush_child_is_app(pid_t pid);
+static int hush_leave_app_alive(void);
+static void hush_leave_forget_dead(void);
+static void hush_leave_print_hint(void);
+static void hush_leave_write_result(int wr, int status, const char *out);
+static void hush_leave_exec_dialog(int wr);
+static void hush_leave_run_zenity(int wr);
+static void hush_leave_apply(int status, const char *out);
+static void hush_leave_close_rd(void);
+static void hush_leave_finish(int status, const char *out);
+static int hush_leave_parse_status(const char *buf);
+static const char *hush_leave_parse_out(const char *buf);
+static void hush_leave_poll(void);
+static void hush_leave_spawn(void);
+static void hush_relay_watch_app(void);
 static int hush_child_cmdline_matches(pid_t pid, uint16_t port);
 static void hush_child_sweep_proc(uint16_t port);
 static void hush_child_sweep_entry(const char *name, uint16_t port);
@@ -127,6 +155,13 @@ void hush_relay_track_child(pid_t pid)
         return;
     g_children[g_nchildren] = pid;
     g_nchildren++;
+}
+
+void hush_relay_note_leave(int is_exit)
+{
+    g_leave_ack = 1;
+    if (is_exit)
+        hush_relay_request_shutdown();
 }
 
 void hush_relay_reap_children(void)
@@ -246,6 +281,7 @@ static void hush_open_app_window(uint16_t port)
         return;
     if (pid > 0) {
         hush_relay_track_child(pid);
+        g_saw_app = 1;
         return;
     }
     hush_exec_app_browser(url, app_arg);
@@ -477,6 +513,10 @@ static void hush_relay_prepare(uint16_t port)
     g_pidfile_ready = 0;
     g_pidfile_path[0] = '\0';
     g_listen_port = port;
+    g_leave_ack = 0;
+    g_saw_app = 0;
+    g_leave_pid = 0;
+    g_leave_rd = HUSH_FD_NONE;
     hush_child_reset();
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
@@ -572,6 +612,7 @@ static void hush_relay_pump(int ls)
         hush_http_set_client_count(hush_active_clients());
         hush_turn_refresh(&g_turn);
         hush_agent_poll(g_store);
+        hush_relay_watch_app();
         nf = hush_fill_pollfds(fds, ls);
         pr = poll(fds, (nfds_t)nf, HUSH_POLL_TIMEOUT_MS);
         if (hush_poll_should_stop(pr))
@@ -586,6 +627,7 @@ static void hush_relay_pump(int ls)
 
 static void hush_relay_cleanup(int ls)
 {
+    hush_leave_close_rd();
     hush_relay_reap_children();
     hush_agent_shutdown();
     hush_turn_shutdown(&g_turn);
@@ -720,6 +762,236 @@ static void hush_wait_pid_gone(pid_t pid)
         pause.tv_nsec = (long)HUSH_QUIT_WAIT_MS * 1000000L;
         nanosleep(&pause, NULL);
     }
+}
+
+static int hush_child_is_app(pid_t pid)
+{
+    if (pid <= 1)
+        return 0;
+    if (pid == g_leave_pid)
+        return 0;
+    return hush_child_cmdline_matches(pid, g_listen_port);
+}
+
+static int hush_leave_app_alive(void)
+{
+    int i;
+    int alive = 0;
+
+    for (i = 0; i < g_nchildren; ++i) {
+        if (!hush_child_is_app(g_children[i]))
+            continue;
+        if (hush_pid_is_alive(g_children[i]))
+            alive = 1;
+    }
+    return alive;
+}
+
+static void hush_leave_forget_dead(void)
+{
+    int i;
+    int n = 0;
+
+    for (i = 0; i < g_nchildren; ++i) {
+        if (g_children[i] <= 0)
+            continue;
+        if (!hush_pid_is_alive(g_children[i]))
+            continue;
+        g_children[n] = g_children[i];
+        n++;
+    }
+    g_nchildren = n;
+}
+
+static void hush_leave_print_hint(void)
+{
+    fprintf(stdout,
+            "The --app window closed. Hive stays standing. "
+            "Exit or hush-relay --quit before a new install can take the port.\n");
+    fflush(stdout);
+}
+
+static void hush_leave_write_result(int wr, int status, const char *out)
+{
+    char line[HUSH_LEAVE_OUT_MAX];
+    int n;
+
+    assert(out != NULL);
+    n = snprintf(line, sizeof(line), "%d\n%s", status, out);
+    if (n < 0)
+        return;
+    if ((size_t)n >= sizeof(line))
+        n = (int)sizeof(line) - 1;
+    if (write(wr, line, (size_t)n) < 0)
+        return;
+}
+
+static void hush_leave_exec_dialog(int wr)
+{
+    dup2(wr, STDOUT_FILENO);
+    close(wr);
+    execlp(HUSH_LEAVE_BIN, HUSH_LEAVE_BIN,
+           "--question",
+           "--title=" HUSH_LEAVE_TITLE,
+           "--text=" HUSH_LEAVE_TEXT,
+           "--ok-label=" HUSH_LEAVE_OK,
+           "--extra-button=" HUSH_LEAVE_EXTRA,
+           "--cancel-label=" HUSH_LEAVE_CANCEL,
+           (char *)NULL);
+    _exit(HUSH_LEAVE_MISSING);
+}
+
+/* Waiter: SIGCHLD default so waitpid can reap zenity.
+ * zenity 4: OK=0 empty; extra-button=1 + label; Cancel=1 empty. */
+static void hush_leave_run_zenity(int wr)
+{
+    int out[2];
+    pid_t pid;
+    char buf[HUSH_LEAVE_OUT_MAX];
+    ssize_t n;
+    int st = 0;
+
+    signal(SIGCHLD, SIG_DFL);
+    if (pipe(out) != 0) {
+        hush_leave_write_result(wr, HUSH_LEAVE_MISSING, "");
+        _exit(0);
+    }
+    pid = fork();
+    if (pid < 0) {
+        hush_leave_write_result(wr, HUSH_LEAVE_MISSING, "");
+        _exit(0);
+    }
+    if (pid == 0) {
+        close(out[0]);
+        hush_leave_exec_dialog(out[1]);
+    }
+    close(out[1]);
+    n = read(out[0], buf, sizeof(buf) - 1);
+    close(out[0]);
+    if (n < 0)
+        n = 0;
+    buf[n] = '\0';
+    (void)waitpid(pid, &st, 0);
+    hush_leave_write_result(wr, WIFEXITED(st) ? WEXITSTATUS(st) : HUSH_LEAVE_MISSING,
+                            buf);
+    _exit(0);
+}
+
+static void hush_leave_apply(int status, const char *out)
+{
+    assert(out != NULL);
+    if (status == HUSH_LEAVE_MISSING) {
+        hush_leave_print_hint();
+        g_leave_ack = 1;
+        return;
+    }
+    if (strstr(out, HUSH_LEAVE_EXTRA) != NULL) {
+        g_leave_ack = 1;
+        return;
+    }
+    if (status == 0) {
+        g_leave_ack = 1;
+        hush_relay_request_shutdown();
+        return;
+    }
+    g_leave_ack = 0;
+    hush_open_app_window(g_listen_port);
+}
+
+static void hush_leave_close_rd(void)
+{
+    if (g_leave_rd == HUSH_FD_NONE)
+        return;
+    close(g_leave_rd);
+    g_leave_rd = HUSH_FD_NONE;
+}
+
+static void hush_leave_finish(int status, const char *out)
+{
+    hush_leave_close_rd();
+    g_leave_pid = 0;
+    hush_leave_apply(status, out);
+}
+
+static int hush_leave_parse_status(const char *buf)
+{
+    assert(buf != NULL);
+    if (buf[0] == '\0')
+        return HUSH_LEAVE_MISSING;
+    return atoi(buf);
+}
+
+static const char *hush_leave_parse_out(const char *buf)
+{
+    const char *nl;
+
+    assert(buf != NULL);
+    nl = strchr(buf, '\n');
+    if (nl == NULL)
+        return "";
+    return nl + 1;
+}
+
+static void hush_leave_poll(void)
+{
+    char buf[HUSH_LEAVE_OUT_MAX];
+    ssize_t n;
+
+    if (g_leave_pid <= 0)
+        return;
+    if (hush_pid_is_alive(g_leave_pid))
+        return;
+    n = 0;
+    if (g_leave_rd != HUSH_FD_NONE)
+        n = read(g_leave_rd, buf, sizeof(buf) - 1);
+    if (n < 0)
+        n = 0;
+    buf[n] = '\0';
+    hush_leave_finish(hush_leave_parse_status(buf), hush_leave_parse_out(buf));
+}
+
+static void hush_leave_spawn(void)
+{
+    int pfd[2];
+    pid_t pid;
+
+    if (g_leave_pid > 0)
+        return;
+    if (pipe(pfd) != 0) {
+        hush_leave_print_hint();
+        g_leave_ack = 1;
+        return;
+    }
+    pid = fork();
+    if (pid < 0) {
+        close(pfd[0]);
+        close(pfd[1]);
+        hush_leave_print_hint();
+        g_leave_ack = 1;
+        return;
+    }
+    if (pid == 0) {
+        close(pfd[0]);
+        hush_leave_run_zenity(pfd[1]);
+    }
+    close(pfd[1]);
+    g_leave_rd = pfd[0];
+    g_leave_pid = pid;
+    hush_relay_track_child(pid);
+}
+
+static void hush_relay_watch_app(void)
+{
+    hush_leave_forget_dead();
+    hush_leave_poll();
+    if (g_shutdown || g_leave_ack || g_leave_pid > 0)
+        return;
+    if (hush_leave_app_alive())
+        return;
+    if (!g_saw_app)
+        return;
+    g_saw_app = 0;
+    hush_leave_spawn();
 }
 
 static void hush_child_reset(void)
