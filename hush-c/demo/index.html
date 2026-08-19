@@ -937,6 +937,7 @@
     let threadMentionHits = [];
     let threadMentionIdx = 0;
     let threadMentionStart = -1;
+    let localThink = [];
 
     function $(id) { return document.getElementById(id); }
 
@@ -2243,12 +2244,18 @@
       if (!openThread || threadMentionOpen) return;
       if (thinkingFor(openThread, lastStatus).length) return;
       const leftover = $("thread-msg").value.trim();
-      const bits = threadPills.map((p) => "nostr:" + p.npub);
+      const extra = threadPills.slice();
+      const root = lastEvents.find((ev) => ev.id === openThread);
+      const kids = repliesTo(lastEvents, openThread);
+      const sole = threadMembers(root, kids);
+      if (!extra.filter((p) => p.kind !== "human").length &&
+          sole.length === 1 && sole[0] && sole[0].npub)
+        extra.push({ name: sole[0].name, npub: sole[0].npub, kind: "robot" });
+      const bits = extra.map((p) => "nostr:" + p.npub);
       if (leftover) bits.push(leftover);
       const text = bits.join(" ").trim();
       if (!text) return;
       $("thread-msg").value = "";
-      const extra = threadPills.slice();
       threadPills = [];
       paintThreadPills();
       const body = {
@@ -2260,10 +2267,16 @@
       extra.filter((p) => p.kind !== "human").slice(0, 8).forEach((p, i) => {
         body["mention_" + i] = p.npub;
       });
+      if (body.mention_0) {
+        const named = extra.find((p) => p.kind !== "human") || extra[0];
+        localThink = [{ name: (named && named.name) || "robot", parent: openThread }];
+        paintThreadThink(localThink);
+      }
       try {
         await api("/api/event", body);
         await tick();
       } catch (err) {
+        localThink = [];
         badge(false, "send failed");
       }
     });
@@ -2608,7 +2621,12 @@
     }
 
     function thinkingFor(id, status) {
-      return ((status && status.thinking) || []).filter((t) => t && t.parent === id);
+      const live = ((status && status.thinking) || []).filter((t) => t && t.parent === id);
+      if (live.length) {
+        localThink = localThink.filter((t) => t && t.parent !== id);
+        return live;
+      }
+      return localThink.filter((t) => t && t.parent === id);
     }
 
     function repliesTo(events, rootId) {
@@ -2880,6 +2898,12 @@
           });
           s.scrollTop = s.scrollHeight;
         }
+      }
+      if (openThread && localThink.length) {
+        const kids = repliesTo(lastEvents, openThread);
+        const last = kids.length ? kids[kids.length - 1] : null;
+        if (last && !isMineNote(last))
+          localThink = localThink.filter((t) => t.parent !== openThread);
       }
       if (openThread && $("thread-pane").classList.contains("show"))
         openThreadPane(openThread);
