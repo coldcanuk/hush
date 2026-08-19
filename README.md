@@ -149,12 +149,18 @@ also speaks the newline-delimited Nostr JSON protocol (see
 
 ### Close vs Exit
 
-These are two different verbs. The OS/PWA window `×` is neither of them.
+These are two different verbs. Rail **Close** and **Exit** open one
+chooser: **Exit the application**, **Close the window**, or **Cancel**.
+The OS/PWA window `×` belongs to the `--app` window. Hush cannot put
+those three buttons on that close-box. Closing it raises a follow-up
+(`zenity` when present): the same three verbs. Cancel re-opens the
+window. Close leaves the hive standing.
 
 | Verb | In the hive | CLI | What happens |
 |---|---|---|---|
-| **Close** | header **Close** | `hush-relay --close` | GUI goes away. The relay keeps listening. |
-| **Exit** | header **Exit** | `hush-relay --quit` or Ctrl+C | Every process stops. Exit code 0. |
+| **Close** | chooser **Close the window** | `hush-relay --close` | GUI goes away. The relay keeps listening. |
+| **Exit** | chooser **Exit the application** | `hush-relay --quit` or Ctrl+C | Every process stops. Exit code 0. |
+| **Cancel** | chooser **Cancel** | — | Stay, or re-attach if the `--app` window already closed. |
 
 Click the launcher (`hush-relay --open`) while the hive is already up to
 re-attach a window. `POST /api/close` acknowledges Close and does not stop
