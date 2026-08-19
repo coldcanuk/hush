@@ -337,9 +337,12 @@ already set, else that note’s id), `p` human. Other mentioned robots
 post a short on-deck note so the thread still appears.
 
 While a job is busy, `GET /api/status.thinking[]` lists
-`{name,parent}`. The matching root shows `.think`: an 8px pulsing
-accent dot and “\<name\> is thinking” (`aria-live="polite"`). The
-chip vanishes when the job leaves the array.
+`{name,parent}`. The matching hive root shows `.think`: an 8px pulsing
+accent dot and “\<name\> is thinking” (`aria-live="polite"`). Inside
+`#thread-pane` the same chip sits in `#thread-think` above the
+composer — not on the scrolled-away root — and Send is disabled until
+the job leaves the array. A second mention of that robot on the same
+root while the job is busy does not start another grok child.
 
 ### 14. Channel groups + manage (NIP-29 parent)
 

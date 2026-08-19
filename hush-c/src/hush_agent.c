@@ -167,6 +167,8 @@ static void hush_agent_handle_mention(hush_store_t *store,
                                       const hush_event_t *ev,
                                       const char *mention);
 static int hush_agent_job_timed_out(const hush_agent_job_t *job, time_t now);
+static int hush_agent_robot_busy(const hush_agent_robot_t *bot,
+                                 const hush_event_t *parent);
 
 void hush_agent_init(void)
 {
@@ -921,6 +923,30 @@ static int hush_agent_job_timed_out(const hush_agent_job_t *job, time_t now)
     return now >= job->started + (time_t)HUSH_AGENT_TIMEOUT_S;
 }
 
+static int hush_agent_robot_busy(const hush_agent_robot_t *bot,
+                                 const hush_event_t *parent)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+    const char *hex;
+    size_t i;
+
+    assert(bot != NULL);
+    assert(parent != NULL);
+    hex = bot->hex != NULL ? bot->hex : "";
+    if (hex[0] == '\0')
+        return 0;
+    hush_agent_event_root(root, sizeof(root), parent);
+    for (i = 0; i < (size_t)HUSH_AGENT_JOBS_MAX; i++) {
+        if (!g_jobs[i].busy)
+            continue;
+        if (strcmp(g_jobs[i].robot_pub, hex) != 0)
+            continue;
+        if (strcmp(g_jobs[i].parent_id, root) == 0)
+            return 1;
+    }
+    return 0;
+}
+
 static void hush_agent_handle_mention(hush_store_t *store,
                                       const hush_launch_t *launch,
                                       const hush_event_t *ev,
@@ -936,6 +962,8 @@ static void hush_agent_handle_mention(hush_store_t *store,
     if (hush_agent_is_human(launch, mention))
         return;
     if (!hush_agent_lookup_robot(&bot, launch, mention))
+        return;
+    if (hush_agent_robot_busy(&bot, ev))
         return;
     if (strcmp(bot.provider, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0 &&
         hush_agent_grok_ready()) {
