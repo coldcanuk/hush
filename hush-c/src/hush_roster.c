@@ -16,7 +16,7 @@ enum {
     HUSH_ROSTER_ID_WIDTH = 16,
     HUSH_ROSTER_SLUG_FALLBACK = 'a',
     HUSH_ROSTER_THEME_COUNT = 7,
-    HUSH_ROSTER_PROVIDER_COUNT = 8
+    HUSH_ROSTER_PROVIDER_COUNT = 9
 };
 
 #define HUSH_ROSTER_CHAN_AGENTS "agents"
@@ -39,7 +39,8 @@ static const char *const hush_roster_providers[HUSH_ROSTER_PROVIDER_COUNT] = {
     HUSH_ROSTER_PROVIDER_GEMINI,
     HUSH_ROSTER_PROVIDER_XAI,
     HUSH_ROSTER_PROVIDER_OPENAI,
-    HUSH_ROSTER_PROVIDER_ANTHROPIC
+    HUSH_ROSTER_PROVIDER_ANTHROPIC,
+    HUSH_ROSTER_PROVIDER_DEEPSEEK
 };
 
 /* Copies trimmed text into dst. Empty becomes fallback (may be ""). */

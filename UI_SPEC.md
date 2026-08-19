@@ -1,5 +1,5 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups + Channel Policy
-Version: 2026-08-19 (RDAP M2, gb/conv-intel-policy)
+Version: 2026-08-19 (RDAP M2, gb/deepseek-robot-btns)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec, the onboard raise-form notes, the oauth-mention-groups
 header/mention/manage rows, the oauth-mention-rail indent-only thread,
@@ -159,17 +159,20 @@ and a pencil to edit it again.
   “Attach only plain text or Markdown. I will refuse the rest.”
 - **AI provider** (required). One of:
   Goose, Grok Build, Codex, Cline, Gemini API, xAI API,
-  OpenAI API, Anthropic API.
+  OpenAI API, Anthropic API, Deepseek API.
   Wire ids: `goose`, `grok-build`, `codex`, `cline`,
-  `gemini-api`, `xai-api`, `openai-api`, `anthropic-api`.
+  `gemini-api`, `xai-api`, `openai-api`, `anthropic-api`,
+  `deepseek-api`.
   Selecting a radio reveals a 44px pencil (`#provider-cfg`) on that
   row. Pencil opens `#provider-drawer` (see §11). Configure is
   optional for Raise — the robot still stores only the provider id.
 - pass checkbox default-on:
   `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/agents/<slug>/nsec`
-- CTA: **Raise this robot**.
-- Red **Delete this robot** at the bottom. Disabled on a fresh raise.
-  Enabled when editing an existing non-Payne robot. Payne cannot be deleted.
+- Footer `#agent-drawer .actions` is one compact line (no wrap):
+  **Raise Robot** (edit: **Save Robot**), **Close**, **Delete Robot**.
+  Delete is disabled on a fresh raise. Enabled when editing an
+  existing non-Payne robot. Payne cannot be deleted. Confirm stays
+  `Delete this robot?`. Compact min-height 36px in this drawer only.
 
 Client rejects other MIME. Server re-checks. Max 3 files, 4096 bytes each.
 
@@ -195,7 +198,7 @@ from `GET /api/provider`. Save is `POST /api/provider`. Scan is
 |---|---|---|
 | OAuth CLI | `grok-build`, `codex` | Status + one **Log in with OAuth** button. No API-key dump, no Save. The button `POST`s `/api/provider/login` then records `use_home`. Grok runs `grok login --oauth`. Codex runs `codex login`. Hush never writes `~/.grok` or `~/.codex`. |
 | Home-config CLI | `goose` | Status (binary / home config / active model). Primary: **Use existing configuration**. Secondary: optional API key + host + model as `+`/`−` pills. Copy: `goose configure`. Never write Goose homes. |
-| HTTP API | `gemini-api`, `xai-api`, `openai-api`, `anthropic-api` | API key, username, password, token, passkey, host, and model as `+`/`−` pill rows (same pattern as Raise-robot name / system prompt). Host URL defaulted. **Scan models** then type-in. |
+| HTTP API | `gemini-api`, `xai-api`, `openai-api`, `anthropic-api`, `deepseek-api` | API key, username, password, token, passkey, host, and model as `+`/`−` pill rows (same pattern as Raise-robot name / system prompt). Host URL defaulted. **Scan models** then type-in. Deepseek host `https://api.deepseek.com`. Models `deepseek-v4-pro` / `deepseek-v4-flash`. |
 | Editor agent | `cline` | Honest empty state if Cline is missing. Cline authenticates with **ClinePass**, usage billing, or **bring-your-own provider key** — not a Grok/Codex-style OAuth-first CLI. Optional credentials as the same `+`/`−` pills. |
 
 Goose home is `~/.config/goose/config.yaml` (official). Legacy
@@ -229,7 +232,7 @@ Foreign homes (`~/.config/goose/secrets.yaml`, `~/.grok/auth.json`,
 Keys never appear in `GET /api/session` or `GET /api/provider`.
 `has_key`, `has_username`, `has_password`, `has_token`, `has_passkey`
 are booleans. Secret kind names are never GET JSON keys. Deepseek is
-not a radio this slice.
+wire id `deepseek-api`, family `api`, same drawer as OpenAI.
 
 ## Data / API (additive)
 

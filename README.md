@@ -37,7 +37,8 @@ retrieve with `pass show hush/identity/nsec`) → Vibe (public or private)
 organization, theme (`dark` / `light` / `color-blind` / `dracula` /
 `desert` / `monochrome` / `christmas`), and Logout. From the hive you
 can create channels and projects, invite humans, and raise agents
-(plaintext/Markdown context only). `@` in the composer mentions humans
+(plaintext/Markdown context only). Edit-robot actions sit on one
+compact line (Save Robot / Close / Delete Robot). `@` in the composer mentions humans
 and robots as pills; the wire still uses NIP-27 `nostr:npub1…`.
 Channels carry a UUID, sit in optional Groups (NIP-29 parent), and can
 be deleted or managed from a right-click menu. Manage Channel adds and
@@ -183,9 +184,10 @@ opens a tailored drawer:
   directory does not count. Hush does not implement the browser dance
   and does not write `~/.grok` or `~/.codex`.
 - Goose reuses `~/.config/goose` or accepts an override key.
-- Gemini / xAI / OpenAI / Anthropic take an API key, host URL, and a
-  scanned or typed model. Those fields use the same `+` / `−` pills as
-  the robot name and system prompt.
+- Gemini / xAI / OpenAI / Anthropic / Deepseek take an API key, host
+  URL, and a scanned or typed model. Those fields use the same `+` /
+  `−` pills as the robot name and system prompt. Deepseek host is
+  `https://api.deepseek.com`.
 - Cline shows an honest empty state if the editor extension is missing.
 
 Secrets Hush accepts for a provider (API key, username, password,
