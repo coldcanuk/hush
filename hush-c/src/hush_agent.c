@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -23,15 +24,28 @@ enum {
     HUSH_AGENT_TIMEOUT_S = 90,
     HUSH_AGENT_KIND_NOTE = 1,
     HUSH_AGENT_ID_WIDTH = 16,
-    HUSH_AGENT_ARGV_MAX = 12,
-    HUSH_AGENT_FD_NONE = -1
+    HUSH_AGENT_ARGV_MAX = 28,
+    HUSH_AGENT_PATH_MAX = 256,
+    HUSH_AGENT_FD_NONE = -1,
+    HUSH_AGENT_CWD_MODE = 0700
 };
 
 #define HUSH_AGENT_GROK_BIN "grok"
 #define HUSH_AGENT_DEVNULL "/dev/null"
 #define HUSH_AGENT_CHAN_FALLBACK "general"
+#define HUSH_AGENT_ENV_CONFIG "HUSH_CONFIG_DIR"
+#define HUSH_AGENT_CWD_LEAF "agent-cwd"
+#define HUSH_AGENT_CWD_TMP "hush-agent-cwd"
+#define HUSH_AGENT_TMP_FALLBACK "/tmp"
 #define HUSH_AGENT_PROMPT_FALLBACK \
     "You are a robot in the Hush hive. Reply in one short note."
+#define HUSH_AGENT_HYGIENE \
+    " Write one short chat note only. No status, no thoughts, no host facts, no npub."
+#define HUSH_AGENT_DISALLOWED \
+    "run_terminal_cmd,web_search,web_fetch,read_file,search_replace,list_dir,grep,todo_write,task,Agent"
+#define HUSH_AGENT_RULES \
+    "One short note as the named robot. Address the human by first name. No tools. No status. No npub."
+#define HUSH_AGENT_HUMAN_FALLBACK "you"
 
 typedef struct {
     int busy;
@@ -43,7 +57,10 @@ typedef struct {
     char human_pub[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
     char robot_pub[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
     char robot_name[HUSH_ROSTER_NAME_MAX];
+    char human_name[HUSH_ROSTER_NAME_MAX];
     char prompt[HUSH_ROSTER_PROMPT_MAX];
+    char rules[HUSH_ROSTER_PROMPT_MAX];
+    char cwd[HUSH_AGENT_PATH_MAX];
     char note[HUSH_EVENT_MAX_CONTENT + 1];
     char out[HUSH_EVENT_MAX_CONTENT + 1];
     size_t out_n;
@@ -81,15 +98,28 @@ static int hush_agent_lookup_robot(hush_agent_robot_t *out,
                                    const char *mention);
 static void hush_agent_event_channel(char *out, size_t outsz,
                                      const hush_event_t *ev);
+static void hush_agent_event_root(char *out, size_t outsz,
+                                  const hush_event_t *ev);
+static void hush_agent_human_name(char *out, size_t outsz,
+                                  const hush_launch_t *launch);
+static void hush_agent_fill_prompt(char *out, size_t outsz,
+                                   const hush_agent_robot_t *bot,
+                                   const char *human);
+static void hush_agent_fill_rules(char *out, size_t outsz, const char *human);
+static void hush_agent_prepare_cwd(char *out, size_t outsz);
+static int hush_agent_status_append(char *out, size_t outsz, size_t *off,
+                                    const hush_agent_job_t *job);
 static void hush_agent_fill_note(hush_event_t *ev, const hush_agent_note_in_t *in);
 static hush_status_t hush_agent_insert_note(hush_store_t *store,
                                             const hush_agent_note_in_t *in);
 static void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bot,
                                const hush_event_t *parent, const char *why);
 static int hush_agent_grok_ready(void);
-static hush_status_t hush_agent_start_grok(const hush_agent_robot_t *bot,
+static hush_status_t hush_agent_start_grok(const hush_launch_t *launch,
+                                           const hush_agent_robot_t *bot,
                                            const hush_event_t *parent);
 static void hush_agent_fill_job(hush_agent_job_t *job,
+                                const hush_launch_t *launch,
                                 const hush_agent_robot_t *bot,
                                 const hush_event_t *parent);
 static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job);
@@ -140,6 +170,32 @@ void hush_agent_consider(hush_store_t *store, hush_launch_t *launch,
             continue;
         hush_agent_handle_mention(store, launch, ev, ev->tags[i][1]);
     }
+}
+
+void hush_agent_status(char *out, size_t outsz)
+{
+    size_t i;
+    size_t off;
+
+    if (out == NULL || outsz < 3)
+        return;
+    out[0] = '[';
+    out[1] = '\0';
+    off = 1;
+    for (i = 0; i < (size_t)HUSH_AGENT_JOBS_MAX && off + 8 < outsz; i++) {
+        if (!g_jobs[i].busy)
+            continue;
+        if (!hush_agent_status_append(out, outsz, &off, &g_jobs[i]))
+            break;
+    }
+    if (off + 1 < outsz) {
+        out[off] = ']';
+        out[off + 1] = '\0';
+        return;
+    }
+    out[0] = '[';
+    out[1] = ']';
+    out[2] = '\0';
 }
 
 void hush_agent_poll(hush_store_t *store)
@@ -292,6 +348,115 @@ static void hush_agent_event_channel(char *out, size_t outsz,
     }
 }
 
+static void hush_agent_event_root(char *out, size_t outsz,
+                                 const hush_event_t *ev)
+{
+    size_t i;
+
+    assert(out != NULL);
+    assert(ev != NULL);
+    hush_agent_copy(out, outsz, ev->id);
+    for (i = 0; i < ev->tag_count; i++) {
+        if (strcmp(ev->tags[i][0], "e") == 0 && ev->tags[i][1][0] != '\0') {
+            hush_agent_copy(out, outsz, ev->tags[i][1]);
+            return;
+        }
+    }
+}
+
+static void hush_agent_human_name(char *out, size_t outsz,
+                                 const hush_launch_t *launch)
+{
+    const char *name;
+
+    assert(out != NULL);
+    name = HUSH_AGENT_HUMAN_FALLBACK;
+    if (launch != NULL && launch->roster.profile.first_name[0] != '\0')
+        name = launch->roster.profile.first_name;
+    hush_agent_copy(out, outsz, name);
+}
+
+static void hush_agent_fill_prompt(char *out, size_t outsz,
+                                  const hush_agent_robot_t *bot,
+                                  const char *human)
+{
+    const char *base;
+    const char *who;
+    int n;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    assert(bot != NULL);
+    base = (bot->prompt != NULL && bot->prompt[0] != '\0')
+        ? bot->prompt : HUSH_AGENT_PROMPT_FALLBACK;
+    who = (human != NULL && human[0] != '\0') ? human : HUSH_AGENT_HUMAN_FALLBACK;
+    n = snprintf(out, outsz, "%s You are speaking to %s.%s",
+                 base, who, HUSH_AGENT_HYGIENE);
+    if (n < 0 || (size_t)n >= outsz)
+        hush_agent_copy(out, outsz, HUSH_AGENT_PROMPT_FALLBACK);
+}
+
+static void hush_agent_fill_rules(char *out, size_t outsz, const char *human)
+{
+    const char *who;
+    int n;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    who = (human != NULL && human[0] != '\0') ? human : HUSH_AGENT_HUMAN_FALLBACK;
+    n = snprintf(out, outsz, "%s Speak to %s.", HUSH_AGENT_RULES, who);
+    if (n < 0 || (size_t)n >= outsz)
+        hush_agent_copy(out, outsz, HUSH_AGENT_RULES);
+}
+
+static void hush_agent_prepare_cwd(char *out, size_t outsz)
+{
+    const char *cfg;
+    const char *base;
+    const char *leaf;
+    int n;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    out[0] = '\0';
+    cfg = getenv(HUSH_AGENT_ENV_CONFIG);
+    base = getenv("TMPDIR");
+    leaf = HUSH_AGENT_CWD_TMP;
+    if (base == NULL || base[0] == '\0')
+        base = HUSH_AGENT_TMP_FALLBACK;
+    if (cfg != NULL && cfg[0] != '\0') {
+        base = cfg;
+        leaf = HUSH_AGENT_CWD_LEAF;
+    }
+    n = snprintf(out, outsz, "%s/%s", base, leaf);
+    if (n < 0 || (size_t)n >= outsz) {
+        hush_agent_copy(out, outsz, HUSH_AGENT_TMP_FALLBACK);
+        return;
+    }
+    (void)mkdir(out, (mode_t)HUSH_AGENT_CWD_MODE);
+}
+
+static int hush_agent_status_append(char *out, size_t outsz, size_t *off,
+                                   const hush_agent_job_t *job)
+{
+    const char *name;
+    const char *sep;
+    int n;
+
+    assert(out != NULL);
+    assert(off != NULL);
+    assert(job != NULL);
+    name = job->robot_name[0] ? job->robot_name : "robot";
+    sep = (*off > 1) ? "," : "";
+    n = snprintf(out + *off, outsz - *off,
+                 "%s{\"name\":\"%s\",\"parent\":\"%s\"}",
+                 sep, name, job->parent_id);
+    if (n < 0 || (size_t)n >= outsz - *off)
+        return 0;
+    *off += (size_t)n;
+    return 1;
+}
+
 static void hush_agent_fill_note(hush_event_t *ev, const hush_agent_note_in_t *in)
 {
     assert(ev != NULL);
@@ -353,14 +518,15 @@ static void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bo
         hush_agent_copy(content, sizeof(content), line);
     hush_agent_event_channel(channel, sizeof(channel), parent);
     {
-        hush_agent_note_in_t in = {
-            .pubkey = bot->hex != NULL ? bot->hex : "",
-            .content = content,
-            .channel = channel,
-            .parent_id = parent->id,
-            .human_pub = parent->pubkey
-        };
+        char root[HUSH_EVENT_ID_HEX_LEN + 1];
+        hush_agent_note_in_t in;
 
+        hush_agent_event_root(root, sizeof(root), parent);
+        in.pubkey = bot->hex != NULL ? bot->hex : "";
+        in.content = content;
+        in.channel = channel;
+        in.parent_id = root;
+        in.human_pub = parent->pubkey;
         (void)hush_agent_insert_note(store, &in);
     }
 }
@@ -375,6 +541,7 @@ static int hush_agent_grok_ready(void)
 }
 
 static void hush_agent_fill_job(hush_agent_job_t *job,
+                                const hush_launch_t *launch,
                                 const hush_agent_robot_t *bot,
                                 const hush_event_t *parent)
 {
@@ -385,18 +552,17 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
     job->fd = HUSH_AGENT_FD_NONE;
     job->busy = 1;
     job->started = time(NULL);
-    hush_agent_copy(job->parent_id, sizeof(job->parent_id), parent->id);
+    hush_agent_event_root(job->parent_id, sizeof(job->parent_id), parent);
     hush_agent_event_channel(job->channel, sizeof(job->channel), parent);
     hush_agent_copy(job->human_pub, sizeof(job->human_pub), parent->pubkey);
     hush_agent_copy(job->robot_pub, sizeof(job->robot_pub),
                     bot->hex != NULL ? bot->hex : "");
     hush_agent_copy(job->robot_name, sizeof(job->robot_name),
                     bot->name != NULL ? bot->name : "robot");
-    if (bot->prompt != NULL && bot->prompt[0] != '\0')
-        hush_agent_copy(job->prompt, sizeof(job->prompt), bot->prompt);
-    else
-        hush_agent_copy(job->prompt, sizeof(job->prompt),
-                        HUSH_AGENT_PROMPT_FALLBACK);
+    hush_agent_human_name(job->human_name, sizeof(job->human_name), launch);
+    hush_agent_fill_prompt(job->prompt, sizeof(job->prompt), bot, job->human_name);
+    hush_agent_fill_rules(job->rules, sizeof(job->rules), job->human_name);
+    hush_agent_prepare_cwd(job->cwd, sizeof(job->cwd));
     hush_agent_copy(job->note, sizeof(job->note), parent->content);
 }
 
@@ -424,12 +590,25 @@ static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job)
     argv[6] = (char *)"plain";
     argv[7] = (char *)"--always-approve";
     argv[8] = (char *)"--no-plan";
-    argv[9] = NULL;
+    argv[9] = (char *)"--no-subagents";
+    argv[10] = (char *)"--disable-web-search";
+    argv[11] = (char *)"--max-turns";
+    argv[12] = (char *)"1";
+    argv[13] = (char *)"--reasoning-effort";
+    argv[14] = (char *)"none";
+    argv[15] = (char *)"--cwd";
+    argv[16] = (char *)job->cwd;
+    argv[17] = (char *)"--disallowed-tools";
+    argv[18] = (char *)HUSH_AGENT_DISALLOWED;
+    argv[19] = (char *)"--rules";
+    argv[20] = (char *)job->rules;
+    argv[21] = NULL;
     execvp(HUSH_AGENT_GROK_BIN, argv);
     _exit(127);
 }
 
-static hush_status_t hush_agent_start_grok(const hush_agent_robot_t *bot,
+static hush_status_t hush_agent_start_grok(const hush_launch_t *launch,
+                                           const hush_agent_robot_t *bot,
                                            const hush_event_t *parent)
 {
     hush_agent_job_t *job;
@@ -442,7 +621,7 @@ static hush_status_t hush_agent_start_grok(const hush_agent_robot_t *bot,
     job = hush_agent_find_slot();
     if (job == NULL)
         return HUSH_ERR_FULL;
-    hush_agent_fill_job(job, bot, parent);
+    hush_agent_fill_job(job, launch, bot, parent);
     if (pipe(fds) != 0) {
         job->busy = 0;
         return HUSH_ERR_IO;
@@ -587,7 +766,7 @@ static void hush_agent_handle_mention(hush_store_t *store,
         return;
     if (strcmp(bot.provider, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0 &&
         hush_agent_grok_ready()) {
-        if (hush_agent_start_grok(&bot, ev) == HUSH_OK)
+        if (hush_agent_start_grok(launch, &bot, ev) == HUSH_OK)
             return;
     }
     hush_agent_on_deck(store, &bot, ev, "I am on deck. Standing orders are noted.");
