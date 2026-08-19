@@ -261,6 +261,18 @@
     #code-canvas-hi .tok-str { color: #86efac; }
     #code-canvas-hi .tok-cmt { color: var(--faint); font-style: italic; }
     #code-canvas-hi .tok-num { color: #fbbf24; }
+    #code-canvas-hi .tok-ghost { color: var(--faint); opacity: 0.75; }
+    #code-canvas-hi .fim-caret {
+      display: inline-block; width: 0.55ch; height: 1.1em;
+      margin: 0 1px -0.15em; vertical-align: text-bottom;
+      border-radius: 2px; background: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-dim);
+      animation: fim-pulse 0.7s ease-in-out infinite alternate;
+    }
+    @keyframes fim-pulse {
+      from { background: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+      to { background: var(--accent-dim); box-shadow: 0 0 8px 2px var(--accent); }
+    }
     #canvas-k {
       display: none; position: absolute; z-index: 2; left: 12px; top: 12px;
       width: min(22rem, 90%); background: var(--surface); border: 1px solid var(--line);
@@ -1097,6 +1109,12 @@
     let localThink = [];
     let canvasFiles = [];
     let canvasIdx = 0;
+    let activePrediction = "";
+    let predictionPos = 0;
+    let canvasFimTimer = 0;
+    let canvasFimGen = 0;
+    let canvasFimBusy = false;
+    const CANVAS_FIM_MS = 300;
 
     function $(id) { return document.getElementById(id); }
 
@@ -3255,9 +3273,111 @@
       const hi = $("code-canvas-hi");
       if (!edit || !hi) return;
       const lang = edit.getAttribute("data-lang") || "txt";
-      hi.innerHTML = highlightCode(edit.value, lang) + "\n";
+      const src = edit.value;
+      const pos = (typeof edit.selectionStart === "number")
+        ? edit.selectionStart : src.length;
+      let html = "";
+      if (activePrediction && pos === predictionPos) {
+        html = highlightCode(src.slice(0, pos), lang) +
+          hiWrap("tok-ghost", activePrediction) +
+          highlightCode(src.slice(pos), lang);
+      } else {
+        html = highlightCode(src, lang);
+      }
+      if (canvasFimBusy)
+        html = highlightCode(src.slice(0, pos), lang) +
+          "<span class=\"fim-caret\"></span>" +
+          highlightCode(src.slice(pos), lang);
+      hi.innerHTML = html + "\n";
       hi.scrollTop = edit.scrollTop;
       hi.scrollLeft = edit.scrollLeft;
+    }
+
+    function clearCanvasFim() {
+      activePrediction = "";
+      predictionPos = 0;
+      canvasFimBusy = false;
+      canvasFimGen += 1;
+      if (canvasFimTimer) {
+        clearTimeout(canvasFimTimer);
+        canvasFimTimer = 0;
+      }
+    }
+
+    function sleepMs(ms) {
+      return new Promise((resolve) => { setTimeout(resolve, ms); });
+    }
+
+    async function pollCanvasFim(token, gen) {
+      let i = 0;
+      while (i < 40 && gen === canvasFimGen) {
+        const res = await fetch(API + "/api/complete?t=" + encodeURIComponent(token));
+        if (!res.ok) throw new Error("complete");
+        const body = await res.json();
+        if (body && body.ok && typeof body.text === "string")
+          return body.text;
+        if (body && body.ok && body.pending) {
+          await sleepMs(200);
+          i += 1;
+          continue;
+        }
+        throw new Error("complete");
+      }
+      throw new Error("complete");
+    }
+
+    async function requestCanvasFim() {
+      const edit = $("code-canvas-edit");
+      if (!edit) return;
+      if (edit.selectionStart !== edit.selectionEnd) return;
+      const pos = edit.selectionStart || 0;
+      const prefix = edit.value.slice(0, pos);
+      const suffix = edit.value.slice(pos);
+      const gen = canvasFimGen + 1;
+      canvasFimGen = gen;
+      activePrediction = "";
+      predictionPos = pos;
+      canvasFimBusy = true;
+      paintCanvasHi();
+      try {
+        const start = await api("/api/complete", { prefix: prefix, suffix: suffix });
+        if (gen !== canvasFimGen) return;
+        if (!start || !start.ok || !start.token) throw new Error("complete");
+        const text = await pollCanvasFim(start.token, gen);
+        if (gen !== canvasFimGen) return;
+        activePrediction = text;
+        predictionPos = pos;
+      } catch (err) {
+        if (gen === canvasFimGen) activePrediction = "";
+      }
+      if (gen === canvasFimGen) canvasFimBusy = false;
+      paintCanvasHi();
+    }
+
+    function scheduleCanvasFim() {
+      if (canvasFimTimer) clearTimeout(canvasFimTimer);
+      canvasFimBusy = false;
+      activePrediction = "";
+      canvasFimTimer = setTimeout(() => {
+        canvasFimTimer = 0;
+        requestCanvasFim();
+      }, CANVAS_FIM_MS);
+    }
+
+    function acceptCanvasFim() {
+      const edit = $("code-canvas-edit");
+      if (!edit || !activePrediction) return false;
+      const pos = predictionPos;
+      const mid = activePrediction;
+      edit.value = edit.value.slice(0, pos) + mid + edit.value.slice(pos);
+      const next = pos + mid.length;
+      edit.selectionStart = next;
+      edit.selectionEnd = next;
+      const f = canvasFiles[canvasIdx];
+      if (f) f.text = edit.value;
+      clearCanvasFim();
+      paintCanvasHi();
+      return true;
     }
 
     function splitFences(text) {
@@ -3337,6 +3457,7 @@
     function closeCodeCanvas() {
       $("code-canvas").classList.remove("show");
       hideCanvasK();
+      clearCanvasFim();
     }
 
     let canvasKFrom = 0;
@@ -3394,10 +3515,22 @@
     $("code-canvas-edit").addEventListener("input", () => {
       const f = canvasFiles[canvasIdx];
       if (f) f.text = $("code-canvas-edit").value;
+      scheduleCanvasFim();
       paintCanvasHi();
     });
     $("code-canvas-edit").addEventListener("scroll", paintCanvasHi);
     $("code-canvas-edit").addEventListener("keydown", (ev) => {
+      if (ev.key === "Tab" && activePrediction) {
+        ev.preventDefault();
+        acceptCanvasFim();
+        return;
+      }
+      if (ev.key === "Escape" && (activePrediction || canvasFimBusy)) {
+        ev.preventDefault();
+        clearCanvasFim();
+        paintCanvasHi();
+        return;
+      }
       if ((ev.ctrlKey || ev.metaKey) && (ev.key === "k" || ev.key === "K")) {
         ev.preventDefault();
         showCanvasK();
