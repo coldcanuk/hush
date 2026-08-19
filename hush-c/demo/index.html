@@ -2184,21 +2184,14 @@
       const extra = threadPills.slice();
       threadPills = [];
       paintThreadPills();
-      const root = lastEvents.find((ev) => ev.id === openThread);
-      const bots = threadMembers(root || {}, repliesTo(lastEvents, openThread));
-      extra.forEach((p) => {
-        if (p.kind === "human") return;
-        if (!bots.some((b) => b.npub === p.npub))
-          bots.push({ name: p.name, npub: p.npub, kind: "robot" });
-      });
       const body = {
         content: text,
         kind: 1,
         channel: channel,
         reply_to: openThread
       };
-      bots.filter((b) => b.kind !== "human").slice(0, 8).forEach((b, i) => {
-        body["mention_" + i] = b.npub;
+      extra.filter((p) => p.kind !== "human").slice(0, 8).forEach((p, i) => {
+        body["mention_" + i] = p.npub;
       });
       try {
         await api("/api/event", body);

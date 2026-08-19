@@ -83,6 +83,11 @@ echo "$html" | grep -q 'think-dot' || fail "HTML missing thinking chip"
 echo "$html" | grep -q 'id="thread-think"' || fail "HTML missing thread thinking strip"
 echo "$html" | grep -q 'paintThreadThink' || fail "HTML missing thread think painter"
 echo "$html" | grep -q 'send.disabled' || fail "HTML must disable send while thinking"
+if echo "$html" | grep -q 'bots.filter((b) => b.kind !== "human")'; then
+  fail "thread follow-up must not remention every member robot"
+fi
+echo "$html" | grep -q 'extra.filter((p) => p.kind !== "human")' \
+  || fail "thread follow-up must mention only new pills"
 echo "$html" | grep -q 'id="install-help"' || fail "HTML missing install help"
 echo "$html" | grep -q 'id="rail-toggle"' || fail "HTML missing rail hamburger"
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
