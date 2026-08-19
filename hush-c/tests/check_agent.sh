@@ -36,7 +36,8 @@ export HOME="$home"
 export HUSH_CONFIG_DIR="$home/.config/hush"
 unset XDG_CONFIG_HOME
 mkdir -p "$home/bin" "$home/.grok" "$home/.codex" "$home/.config/hush"
-printf '%s\n' '#!/bin/sh' 'echo "Why did the robot laugh? Byte me."' \
+printf '%s\n' '#!/bin/sh' 'printf "%s\n" "Why did the robot laugh? Byte me."' \
+    'printf "go:\tfmt\n"' \
     > "$home/bin/grok"
 chmod 0755 "$home/bin/grok"
 PATH="$home/bin:$PATH"
@@ -112,5 +113,10 @@ grep -q 'hush_agent_fill_thread' src/hush_agent.c || fail "missing thread transc
 grep -q 'No preamble-only replies' src/hush_agent.c || fail "hygiene must forbid preamble-only replies"
 grep -q 'Fulfill the last human ask' src/hush_agent.c || fail "hygiene must fulfill the last human ask"
 grep -q 'hush_agent_robot_busy' src/hush_agent.c || fail "must refuse a second job for a busy robot"
+
+got=$(curl -sf "http://127.0.0.1:${port}/api/events")
+printf '%s' "$got" | python3 -c 'import json,sys; json.loads(sys.stdin.read())' \
+    || fail "events JSON must parse with a tabbed grok reply"
+printf '%s' "$got" | grep -q '\\tfmt' || fail "tab must be escaped as \\\\t"
 
 echo "agent mention reply ok"

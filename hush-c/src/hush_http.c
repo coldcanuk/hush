@@ -10,6 +10,7 @@
 #include "hush_agent.h"
 #include "hush_http.h"
 #include "hush_intel.h"
+#include "hush_json.h"
 #include "hush_provider.h"
 #include "hush_relay.h"
 #include "hush_ui_html.h"
@@ -56,7 +57,6 @@ static void hush_json_unescape_copy(const char *src, char *dst, size_t dstsz);
 static int hush_json_field(const char *body, const char *key, char *out, size_t outsz);
 static int hush_json_bare_field(const char *body, const char *key,
                                 char *out, size_t outsz);
-static size_t hush_json_escape(const char *in, char *out, size_t outsz);
 static void hush_make_event_id(char *out65);
 static void hush_http_serve_status(int fd, const hush_store_t *store);
 static void hush_http_serve_events(int fd, const hush_store_t *store);
@@ -412,28 +412,6 @@ static int hush_json_bare_field(const char *body, const char *key,
         out[i++] = *p++;
     out[i] = '\0';
     return out[0] != '\0';
-}
-
-static size_t hush_json_escape(const char *in, char *out, size_t outsz)
-{
-    size_t o = 0;
-
-    if (outsz == 0)
-        return 0;
-    while (*in != '\0' && o + 2 < outsz) {
-        if (*in == '"' || *in == '\\') {
-            out[o++] = '\\';
-            out[o++] = *in++;
-        } else if (*in == '\n') {
-            out[o++] = '\\';
-            out[o++] = 'n';
-            in++;
-        } else {
-            out[o++] = *in++;
-        }
-    }
-    out[o] = '\0';
-    return o;
 }
 
 static void hush_make_event_id(char *out65)
