@@ -58,16 +58,16 @@ undeletable. No live API spawn. No fallback walk at job time.
 
 ### Phase 3 — Persist + HTTP
 
-- [ ] Task 1 of M3.1: `hush_launch.h` — named
+- [x] Task 1 of M3.1: `hush_launch.h` — named
       `HUSH_LAUNCH_PAYNE_PROVIDERS_MAX = 4`, fields
       `payne_providers` / `npayne_providers`, prototype
       `hush_launch_set_payne_providers`.
-- [ ] Task 2 of M3.1: `hush_launch.c` — default `[goose]` on
+- [x] Task 2 of M3.1: `hush_launch.c` — default `[goose]` on
       seed / missing vibe keys; put/take
       `npayne_providers` + `payne_provider_N`; session
       `payne.provider` + `payne.providers` array via a helper
       (do not grow `hush_launch_format_head` past 40 lines).
-- [ ] Task 3 of M3.1: `hush_http.c` — `POST /api/agent` with
+- [x] Task 3 of M3.1: `hush_http.c` — `POST /api/agent` with
       `slug == sgt-major-payne` updates the list; ignores
       name/prompt; delete still denied. New leaf
       `hush_http_update_payne`.
@@ -76,7 +76,7 @@ undeletable. No live API spawn. No fallback walk at job time.
 
 ### Phase 4 — Dispatch
 
-- [ ] Task 1 of M4.1: `hush_agent_lookup_robot` uses
+- [x] Task 1 of M4.1: `hush_agent_lookup_robot` uses
       `launch->payne_providers[0]` when `npayne_providers > 0`,
       else Goose. Prompt stays `HUSH_LAUNCH_PAYNE_ABOUT`.
 - Verify: `rg "payne_providers" hush-c/src/hush_agent.c`.
@@ -84,27 +84,27 @@ undeletable. No live API spawn. No fallback walk at job time.
 
 ### Phase 5 — UI
 
-- [ ] Task 1 of M5.1: `robotModels` reads
+- [x] Task 1 of M5.1: `robotModels` reads
       `session.payne.providers` (fallback `["goose"]`);
       `locked` stays true for name/prompt/delete, but Edit
       paints for Payne too.
-- [ ] Task 2 of M5.1: `openAgentDrawer` accepts Payne. Hide
+- [x] Task 2 of M5.1: `openAgentDrawer` accepts Payne. Hide
       name, prompt, files, pass. Show order pills + radios.
       Save posts `slug` + `provider_N`. Delete stays disabled.
-- [ ] Task 3 of M5.1: card subtitle shows primary + `+N`.
+- [x] Task 3 of M5.1: card subtitle shows primary + `+N`.
 - Verify: `rg "Edit Sgt Major Payne|payne-provider-pills|sgt-major-payne" hush-c/demo/index.html`.
 - Commit: `Milestone 5.1: Payne Edit drawer for provider order`
 
 ### Phase 6 — Tests
 
-- [ ] Task 1 of M6.1: `test_launch.c` — set two providers,
+- [x] Task 1 of M6.1: `test_launch.c` — set two providers,
       format session contains both, vibe.json has
       `payne_provider_0`, restore keeps order, name constant
       unchanged.
-- [ ] Task 2 of M6.1: `check_launch.sh` greps Edit on Payne
+- [x] Task 2 of M6.1: `check_launch.sh` greps Edit on Payne
       path (`openAgentDrawer(bot)` for locked, order pills,
       `payne-provider`). POST update + GET session.
-- [ ] Task 3 of M6.1: roster still refuses Payne delete.
+- [x] Task 3 of M6.1: roster still refuses Payne delete.
 - Verify: later full suite.
 - Commit: `Milestone 6.1: tests for Payne provider order`
 

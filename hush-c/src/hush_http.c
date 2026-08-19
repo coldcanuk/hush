@@ -70,6 +70,8 @@ static hush_status_t hush_http_serve_member(int fd, const char *body);
 static hush_status_t hush_http_serve_agent(int fd, const char *body,
                                            hush_store_t *store);
 static hush_status_t hush_http_delete_agent(int fd, const char *body);
+static hush_status_t hush_http_update_payne(int fd, const char *body);
+static int hush_http_is_payne_slug(const char *body);
 static hush_status_t hush_http_fill_agent_context(hush_roster_agent_in_t *in,
                                                   const char *body);
 static hush_status_t hush_http_read_context_slot(hush_roster_context_in_t *slot,
@@ -680,6 +682,8 @@ static hush_status_t hush_http_serve_agent(int fd, const char *body,
     if (hush_json_field(body, "action", action, sizeof(action)) &&
         strcmp(action, "delete") == 0)
         return hush_http_delete_agent(fd, body);
+    if (hush_http_is_payne_slug(body))
+        return hush_http_update_payne(fd, body);
     memset(&in, 0, sizeof(in));
     if (!hush_json_field(body, "name", in.name, sizeof(in.name)))
         return hush_http_reply_session(fd, HUSH_ERR_PARSE);
@@ -703,6 +707,43 @@ static hush_status_t hush_http_delete_agent(int fd, const char *body)
     if (!hush_json_field(body, "slug", slug, sizeof(slug)))
         return hush_http_reply_session(fd, HUSH_ERR_PARSE);
     return hush_http_reply_session(fd, hush_launch_remove_agent(g_launch, slug));
+}
+
+static int hush_http_is_payne_slug(const char *body)
+{
+    char slug[HUSH_ROSTER_NAME_MAX];
+
+    if (body == NULL)
+        return 0;
+    if (!hush_json_field(body, "slug", slug, sizeof(slug)))
+        return 0;
+    return strcmp(slug, HUSH_LAUNCH_PAYNE_SLUG) == 0;
+}
+
+static hush_status_t hush_http_update_payne(int fd, const char *body)
+{
+    char ids[HUSH_LAUNCH_PAYNE_PROVIDERS_MAX][HUSH_ROSTER_PROVIDER_MAX];
+    const char *ptrs[HUSH_LAUNCH_PAYNE_PROVIDERS_MAX];
+    char key[24];
+    size_t n = 0;
+    size_t i;
+
+    if (g_launch == NULL || body == NULL)
+        return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    memset(ids, 0, sizeof(ids));
+    for (i = 0; i < (size_t)HUSH_LAUNCH_PAYNE_PROVIDERS_MAX; ++i) {
+        if (snprintf(key, sizeof(key), "provider_%zu", i) >= (int)sizeof(key))
+            return hush_http_reply_session(fd, HUSH_ERR_FULL);
+        if (!hush_json_field(body, key, ids[n], sizeof(ids[n])))
+            continue;
+        if (ids[n][0] == '\0')
+            continue;
+        ptrs[n] = ids[n];
+        n++;
+    }
+    return hush_http_reply_session(fd,
+                                   hush_launch_set_payne_providers(g_launch,
+                                                                   ptrs, n));
 }
 
 static hush_status_t hush_http_fill_agent_context(hush_roster_agent_in_t *in,

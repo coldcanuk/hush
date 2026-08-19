@@ -31,7 +31,8 @@ enum {
     HUSH_LAUNCH_MAX_JOBS_MAX = 4,
     HUSH_LAUNCH_COOLDOWN_S_OFF = 0,
     HUSH_LAUNCH_COOLDOWN_S_DEFAULT = 10,
-    HUSH_LAUNCH_COOLDOWN_S_LONG = 30
+    HUSH_LAUNCH_COOLDOWN_S_LONG = 30,
+    HUSH_LAUNCH_PAYNE_PROVIDERS_MAX = 4
 };
 
 #define HUSH_LAUNCH_KIND_OPEN "open"
@@ -97,6 +98,8 @@ typedef struct {
     char pass_error[HUSH_PASS_ERR_MAX];
     hush_identity_t human;
     hush_identity_t payne;
+    char payne_providers[HUSH_LAUNCH_PAYNE_PROVIDERS_MAX][HUSH_ROSTER_PROVIDER_MAX];
+    size_t npayne_providers;
     char vibe_name[HUSH_LAUNCH_NAME_MAX];
     char vibe_about[HUSH_LAUNCH_ABOUT_MAX];
     int vibe_public;
@@ -153,6 +156,12 @@ hush_status_t hush_launch_add_agent(hush_launch_t *launch,
 
 /* Drops a raised agent by slug. Payne is refused. */
 hush_status_t hush_launch_remove_agent(hush_launch_t *launch, const char *slug);
+
+/* Replaces Payne's ranked provider list. Name and about stay locked.
+ * Empty or all-invalid ids restore to goose. Requires a vibe. */
+hush_status_t hush_launch_set_payne_providers(hush_launch_t *launch,
+                                              const char *const *ids,
+                                              size_t nids);
 
 /* Names this relay and seeds starter channels + Payne. */
 hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
