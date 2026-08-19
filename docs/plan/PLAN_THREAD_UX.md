@@ -123,7 +123,7 @@ normal button size.
 ## Phase 4 — Tests
 
 ### M4.1 PWA + HTTP greps
-- [ ] Task 1 of M4.1: `check_pwa.sh` asserts composer textarea,
+- [x] Task 1 of M4.1: `check_pwa.sh` asserts composer textarea,
       `THREAD_PIN_PX`, `code-canvas-hi`, `canvas-k`, `rail-info`,
       `blank-btn`. New `check_fixup.sh` (or extend an existing
       check) POSTs `/api/fixup` against a fake grok and expects
