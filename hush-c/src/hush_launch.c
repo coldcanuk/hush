@@ -116,6 +116,12 @@ static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
                                              char *out, size_t outsz,
                                              size_t *off);
 
+/* Writes logged_in through vibe, then opens the payne object.
+ * Returns bytes written, or -1 on overflow. */
+static int hush_launch_write_session_open(const hush_launch_t *launch,
+                                          uint16_t port,
+                                          char *out, size_t outsz);
+
 /* Appends the channels array body. */
 static hush_status_t hush_launch_format_channels(const hush_launch_t *launch,
                                                  char *out, size_t outsz,
@@ -305,6 +311,30 @@ static hush_status_t hush_launch_take_members(hush_launch_t *launch,
 /* Restores Payne from pass or generates a fresh key. */
 static hush_status_t hush_launch_restore_payne(hush_launch_t *launch);
 
+/* Writes one Goose slot when the ranked list is empty. */
+static void hush_launch_default_payne_providers(hush_launch_t *launch);
+
+/* True when id is already in the ranked list. */
+static int hush_launch_has_payne_provider(const hush_launch_t *launch,
+                                          const char *id);
+
+/* Appends a valid unused id. Ignores full, unknown, or duplicate. */
+static void hush_launch_push_payne_provider(hush_launch_t *launch,
+                                            const char *id);
+
+/* Appends payne_provider_N persist fields. */
+static hush_status_t hush_launch_put_payne_providers(const hush_launch_t *launch,
+                                                     char *out, size_t outsz,
+                                                     size_t *off);
+
+/* Restores the ranked list. Missing keys become one Goose slot. */
+static void hush_launch_take_payne_providers(hush_launch_t *launch,
+                                             const char *json);
+
+/* Appends session payne.provider plus the providers array. */
+static hush_status_t hush_launch_format_payne_providers(
+    const hush_launch_t *launch, char *out, size_t outsz, size_t *off);
+
 void hush_launch_init(hush_launch_t *launch)
 {
     if (launch == NULL)
@@ -312,6 +342,7 @@ void hush_launch_init(hush_launch_t *launch)
     memset(launch, 0, sizeof(*launch));
     launch->vibe_public = 1;
     hush_roster_init(&launch->roster);
+    hush_launch_default_payne_providers(launch);
 }
 
 hush_status_t hush_launch_create_identity(hush_launch_t *launch)
@@ -399,6 +430,7 @@ hush_status_t hush_launch_save_vibe(const hush_launch_t *launch)
     json[1] = '\0';
     off = 1;
     HUSH_TRY(hush_launch_put_vibe_head(launch, json, sizeof(json), &off));
+    HUSH_TRY(hush_launch_put_payne_providers(launch, json, sizeof(json), &off));
     HUSH_TRY(hush_launch_put_channels(launch, json, sizeof(json), &off));
     HUSH_TRY(hush_launch_put_groups(launch, json, sizeof(json), &off));
     HUSH_TRY(hush_launch_put_projects(launch, json, sizeof(json), &off));
@@ -422,6 +454,7 @@ hush_status_t hush_launch_restore_vibe(hush_launch_t *launch)
         return HUSH_OK;
     if (hush_launch_take_vibe_head(launch, json) != HUSH_OK)
         return HUSH_OK;
+    hush_launch_take_payne_providers(launch, json);
     (void)hush_launch_take_channels(launch, json);
     (void)hush_launch_take_groups(launch, json);
     (void)hush_launch_take_projects(launch, json);
@@ -489,6 +522,26 @@ hush_status_t hush_launch_remove_agent(hush_launch_t *launch, const char *slug)
     if (!launch->has_vibe || !launch->logged_in)
         return HUSH_ERR_ARG;
     HUSH_TRY(hush_roster_remove_agent(&launch->roster, slug));
+    return hush_launch_save_vibe(launch);
+}
+
+hush_status_t hush_launch_set_payne_providers(hush_launch_t *launch,
+                                              const char *const *ids,
+                                              size_t nids)
+{
+    size_t i;
+
+    if (launch == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe || !launch->logged_in)
+        return HUSH_ERR_ARG;
+    if (nids > 0 && ids == NULL)
+        return HUSH_ERR_ARG;
+    launch->npayne_providers = 0;
+    memset(launch->payne_providers, 0, sizeof(launch->payne_providers));
+    for (i = 0; i < nids && i < (size_t)HUSH_LAUNCH_PAYNE_PROVIDERS_MAX; ++i)
+        hush_launch_push_payne_provider(launch, ids[i]);
+    hush_launch_default_payne_providers(launch);
     return hush_launch_save_vibe(launch);
 }
 
@@ -1093,10 +1146,134 @@ static void hush_launch_make_id(char *out65)
                    HUSH_LAUNCH_ID_WIDTH, seq * 3u);
 }
 
-static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
-                                             uint16_t port,
-                                             char *out, size_t outsz,
-                                             size_t *off)
+static void hush_launch_default_payne_providers(hush_launch_t *launch)
+{
+    assert(launch != NULL);
+    if (launch->npayne_providers > 0)
+        return;
+    memcpy(launch->payne_providers[0], HUSH_ROSTER_PROVIDER_GOOSE,
+           sizeof(HUSH_ROSTER_PROVIDER_GOOSE));
+    launch->npayne_providers = 1;
+}
+
+static int hush_launch_has_payne_provider(const hush_launch_t *launch,
+                                          const char *id)
+{
+    size_t i;
+
+    assert(launch != NULL);
+    assert(id != NULL);
+    for (i = 0; i < launch->npayne_providers; ++i) {
+        if (strcmp(launch->payne_providers[i], id) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static void hush_launch_push_payne_provider(hush_launch_t *launch,
+                                            const char *id)
+{
+    assert(launch != NULL);
+    if (id == NULL || id[0] == '\0')
+        return;
+    if (!hush_roster_is_provider(id))
+        return;
+    if (hush_launch_has_payne_provider(launch, id))
+        return;
+    if (launch->npayne_providers >= (size_t)HUSH_LAUNCH_PAYNE_PROVIDERS_MAX)
+        return;
+    hush_launch_copy_name(launch->payne_providers[launch->npayne_providers],
+                          sizeof(launch->payne_providers[0]), id, "");
+    launch->npayne_providers++;
+}
+
+static hush_status_t hush_launch_put_payne_providers(const hush_launch_t *launch,
+                                                     char *out, size_t outsz,
+                                                     size_t *off)
+{
+    char key[HUSH_LAUNCH_KEY_MAX];
+    char count[HUSH_LAUNCH_COUNT_MAX];
+    size_t i;
+
+    assert(launch != NULL);
+    if (snprintf(count, sizeof(count), "%zu", launch->npayne_providers)
+        >= (int)sizeof(count))
+        return HUSH_ERR_FULL;
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "npayne_providers", count));
+    for (i = 0; i < launch->npayne_providers; ++i) {
+        hush_launch_index_key(key, sizeof(key), "payne_provider", i);
+        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                       launch->payne_providers[i]));
+    }
+    return HUSH_OK;
+}
+
+static void hush_launch_take_payne_providers(hush_launch_t *launch,
+                                             const char *json)
+{
+    char key[HUSH_LAUNCH_KEY_MAX];
+    char id[HUSH_ROSTER_PROVIDER_MAX];
+    size_t i;
+    size_t n;
+
+    assert(launch != NULL);
+    assert(json != NULL);
+    launch->npayne_providers = 0;
+    memset(launch->payne_providers, 0, sizeof(launch->payne_providers));
+    n = hush_launch_json_count(json, "npayne_providers",
+                               (size_t)HUSH_LAUNCH_PAYNE_PROVIDERS_MAX);
+    for (i = 0; i < n; ++i) {
+        hush_launch_index_key(key, sizeof(key), "payne_provider", i);
+        if (!hush_launch_json_string(json, key, id, sizeof(id)))
+            continue;
+        hush_launch_push_payne_provider(launch, id);
+    }
+    hush_launch_default_payne_providers(launch);
+}
+
+static hush_status_t hush_launch_format_payne_providers(
+    const hush_launch_t *launch, char *out, size_t outsz, size_t *off)
+{
+    const char *name;
+    const char *npub;
+    const char *hex;
+    const char *about;
+    const char *primary;
+    size_t i;
+    int n;
+
+    assert(launch != NULL);
+    assert(out != NULL);
+    assert(off != NULL);
+    name = launch->has_vibe ? HUSH_LAUNCH_PAYNE_NAME : "";
+    npub = launch->has_vibe ? launch->payne.npub : "";
+    hex = launch->has_vibe ? launch->payne.pubkey_hex : "";
+    about = launch->has_vibe ? HUSH_LAUNCH_PAYNE_ABOUT : "";
+    primary = launch->npayne_providers > 0 ? launch->payne_providers[0] : "";
+    n = snprintf(out + *off, outsz - *off,
+                 "\"name\":\"%s\",\"npub\":\"%s\",\"pubkey\":\"%s\","
+                 "\"about\":\"%s\",\"provider\":\"%s\",\"providers\":[",
+                 name, npub, hex, about, primary);
+    if (n < 0 || *off + (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    *off += (size_t)n;
+    for (i = 0; i < launch->npayne_providers; ++i) {
+        n = snprintf(out + *off, outsz - *off, "%s\"%s\"",
+                     (i == 0) ? "" : ",", launch->payne_providers[i]);
+        if (n < 0 || *off + (size_t)n >= outsz)
+            return HUSH_ERR_FULL;
+        *off += (size_t)n;
+    }
+    n = snprintf(out + *off, outsz - *off, "]},\"channels\":[");
+    if (n < 0 || *off + (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    *off += (size_t)n;
+    return HUSH_OK;
+}
+
+static int hush_launch_write_session_open(const hush_launch_t *launch,
+                                          uint16_t port,
+                                          char *out, size_t outsz)
 {
     char esc_vibe[HUSH_LAUNCH_NAME_MAX * 2];
     char esc_about[HUSH_LAUNCH_ABOUT_MAX * 2];
@@ -1104,7 +1281,6 @@ static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
 
     assert(launch != NULL);
     assert(out != NULL);
-    assert(off != NULL);
     hush_launch_json_escape(launch->vibe_name, esc_vibe, sizeof(esc_vibe));
     hush_launch_json_escape(launch->vibe_about, esc_about, sizeof(esc_about));
     n = snprintf(out, outsz,
@@ -1114,9 +1290,7 @@ static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
                  "\"npub\":\"%s\",\"pubkey\":\"%s\",\"nsec\":\"%s\","
                  "\"vibe\":{\"name\":\"%s\",\"about\":\"%s\","
                  "\"visibility\":\"%s\",\"discoverable\":%s,"
-                 "\"join_token\":\"%s\"},"
-                 "\"payne\":{\"name\":\"%s\",\"npub\":\"%s\","
-                 "\"pubkey\":\"%s\",\"about\":\"%s\"},\"channels\":[",
+                 "\"join_token\":\"%s\"},\"payne\":{",
                  launch->logged_in ? "true" : "false",
                  launch->backup_acked ? "true" : "false",
                  launch->has_vibe ? "true" : "false",
@@ -1132,15 +1306,27 @@ static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
                  esc_vibe, esc_about,
                  launch->vibe_public ? "public" : "private",
                  launch->vibe_public ? "true" : "false",
-                 launch->has_vibe ? launch->vibe_token : "",
-                 launch->has_vibe ? HUSH_LAUNCH_PAYNE_NAME : "",
-                 launch->has_vibe ? launch->payne.npub : "",
-                 launch->has_vibe ? launch->payne.pubkey_hex : "",
-                 launch->has_vibe ? HUSH_LAUNCH_PAYNE_ABOUT : "");
+                 launch->has_vibe ? launch->vibe_token : "");
     if (n < 0 || (size_t)n >= outsz)
+        return -1;
+    return n;
+}
+
+static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
+                                             uint16_t port,
+                                             char *out, size_t outsz,
+                                             size_t *off)
+{
+    int n;
+
+    assert(launch != NULL);
+    assert(out != NULL);
+    assert(off != NULL);
+    n = hush_launch_write_session_open(launch, port, out, outsz);
+    if (n < 0)
         return HUSH_ERR_FULL;
     *off = (size_t)n;
-    return HUSH_OK;
+    return hush_launch_format_payne_providers(launch, out, outsz, off);
 }
 
 static hush_status_t hush_launch_format_channels(const hush_launch_t *launch,

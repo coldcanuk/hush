@@ -349,7 +349,8 @@ static int hush_agent_lookup_robot(hush_agent_robot_t *out,
         out->name = HUSH_LAUNCH_PAYNE_NAME;
         out->npub = launch->payne.npub;
         out->hex = launch->payne.pubkey_hex;
-        out->provider = HUSH_ROSTER_PROVIDER_GOOSE;
+        out->provider = (launch->npayne_providers > 0)
+            ? launch->payne_providers[0] : HUSH_ROSTER_PROVIDER_GOOSE;
         out->prompt = HUSH_LAUNCH_PAYNE_ABOUT;
         return 1;
     }

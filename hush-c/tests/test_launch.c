@@ -72,6 +72,35 @@ int main(void)
     expect(hush_launch_set_vibe_visibility(&launch, 1) == HUSH_OK, "public");
     expect(launch.nchannels == 3, "starter channels");
     expect(strncmp(launch.payne.npub, "npub1", 5) == 0, "payne");
+    expect(launch.npayne_providers == 1, "default one provider");
+    expect(strcmp(launch.payne_providers[0], HUSH_ROSTER_PROVIDER_GOOSE) == 0,
+           "default goose");
+    {
+        const char *ids[] = {
+            HUSH_ROSTER_PROVIDER_GROK_BUILD,
+            HUSH_ROSTER_PROVIDER_GOOSE,
+            HUSH_ROSTER_PROVIDER_GROK_BUILD,
+            "not-a-provider"
+        };
+
+        expect(hush_launch_set_payne_providers(&launch, ids, 4) == HUSH_OK,
+               "set payne providers");
+        expect(launch.npayne_providers == 2, "deduped two");
+        expect(strcmp(launch.payne_providers[0],
+                      HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0,
+               "primary grok");
+        expect(strcmp(launch.payne_providers[1],
+                      HUSH_ROSTER_PROVIDER_GOOSE) == 0,
+               "fallback goose");
+    }
+    expect(hush_launch_format_session(&launch, 10555, json, sizeof(json),
+                                      &n) == HUSH_OK,
+           "session payne providers");
+    expect(strstr(json, "\"provider\":\"grok-build\"") != NULL,
+           "session primary");
+    expect(strstr(json, "\"providers\":[\"grok-build\",\"goose\"]") != NULL,
+           "session order");
+    expect(strstr(json, HUSH_LAUNCH_PAYNE_NAME) != NULL, "name locked");
     expect(hush_launch_add_channel(&launch, "incidents") == HUSH_OK, "channel");
     expect(launch.nchannels == 4, "four channels");
     expect(strlen(launch.channels[0].id) == (size_t)HUSH_LAUNCH_ID_HEX,
@@ -209,6 +238,11 @@ int main(void)
         expect(strlen(again.channels[0].id) == (size_t)HUSH_LAUNCH_ID_HEX,
                "restored channel uuid");
         expect(strncmp(again.payne.npub, "npub1", 5) == 0, "restored payne");
+        expect(again.npayne_providers == 2, "restored two providers");
+        expect(strcmp(again.payne_providers[0],
+                      HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0,
+               "restored primary");
+        expect(strstr(body, "payne_provider_0") != NULL, "vibe has payne_provider");
     }
     hush_store_destroy(store);
     hush_pass_set_helper(NULL);

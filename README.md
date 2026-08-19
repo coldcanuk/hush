@@ -33,7 +33,8 @@ The chat UI is a Progressive Web App served by the relay itself
 On first launch a feather splash detects identity and vibe, then a
 numbered wizard walks Identity → Backup (`pass` **checked by default**;
 retrieve with `pass show hush/identity/nsec`) → Vibe (public or private)
-→ Meet **Sgt Major Payne**. Profile holds first/last name, email,
+→ Meet **Sgt Major Payne**. Edit on his card ranks the runtimes he
+may use (name and standing orders stay locked). Profile holds first/last name, email,
 organization, theme (`dark` / `light` / `color-blind` / `dracula` /
 `desert` / `monochrome` / `christmas`), and Logout. From the hive you
 can create channels and projects, invite humans, and raise agents
