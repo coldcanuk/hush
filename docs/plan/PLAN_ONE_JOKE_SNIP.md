@@ -45,11 +45,11 @@ repeat a joke already in that thread.
 ## Phase 3 — Agent
 
 ### M3.1 Flatten snip + hygiene + no-memory
-- [ ] Task 1: `hush_agent_snip_line` collapses space/tab/CR/LF to one
+- [x] Task 1: `hush_agent_snip_line` collapses space/tab/CR/LF to one
       space, keeps 160 visible chars, no first-newline cut.
-- [ ] Task 2: hygiene + rules sentence
+- [x] Task 2: hygiene + rules sentence
       `If the last human ask is a joke, reply with exactly one joke.`
-- [ ] Task 3: `--no-memory` in `hush_agent_exec_grok`. ARGV_MAX stays 28.
+- [x] Task 3: `--no-memory` in `hush_agent_exec_grok`. ARGV_MAX stays 28.
 - Verify: `make -C hush-c` compiles. §14 checklist on touched C.
 - Commit: `Milestone 3.1: flatten snip, one-joke hygiene, no-memory`
 
