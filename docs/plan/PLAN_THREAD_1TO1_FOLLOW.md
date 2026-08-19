@@ -34,15 +34,15 @@ without a `p` tag stay silent.
 
 ### Phase 1 — Research (GATE)
 
-- [ ] Task 1 of M1.1: four-minds file
+- [x] Task 1 of M1.1: four-minds file
       `docs/research/RESEARCH_THREAD_1TO1_FOLLOW.md`.
-- [ ] Task 2 of M1.1: this plan.
+- [x] Task 2 of M1.1: this plan.
 - Verify: both files exist on the branch.
 - Commit: `Milestone 1.1: research + plan for 1:1 follow-up`
 
 ### Phase 2 — Architecture
 
-- [ ] Task 1 of M2.1: UI_SPEC §13: 1:1 inherit exception.
+- [x] Task 1 of M2.1: UI_SPEC §13: 1:1 inherit exception.
       README one sentence if the thread paragraph exists.
 - Verify: `rg "1:1 inherit|sole member" UI_SPEC.md`.
 - Commit: `Milestone 2.1: spec 1:1 thread inherit`

@@ -92,6 +92,10 @@ if echo "$html" | grep -q 'bots.filter((b) => b.kind !== "human")'; then
 fi
 echo "$html" | grep -q 'extra.filter((p) => p.kind !== "human")' \
   || fail "thread follow-up must mention only new pills"
+echo "$html" | grep -q 'sole.length === 1' \
+  || fail "1:1 follow-up must inherit the sole member robot"
+echo "$html" | grep -q 'localThink' \
+  || fail "HTML missing optimistic thread think"
 echo "$html" | grep -q 'id="install-help"' || fail "HTML missing install help"
 echo "$html" | grep -q 'id="rail-toggle"' || fail "HTML missing rail hamburger"
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
