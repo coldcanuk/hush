@@ -1,18 +1,20 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups + Channel Policy
-Version: 2026-08-19 (RDAP M2, gb/one-joke-snip)
+Version: 2026-08-19 (RDAP M2, gb/thread-ux)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec, the onboard raise-form notes, the oauth-mention-groups
 header/mention/manage rows, the oauth-mention-rail indent-only thread,
 the thread-think-hygiene Close/Exit paragraph, the oauth-mention-rail
 six-dock tool-rail paragraph, the membership-only Manage Channel
 paragraph, the Deepseek radio slice, the 1:1 follow-up inherit
-slice, and the Payne provider-order slice where they conflict.
+slice, the Payne provider-order slice, and the one-joke-snip
+paragraph where they conflict.
 Quinn + Parker + Payne. No feline.
 
 ## Core Principles (Quinn)
 - Cognitive Load Index ≤ 3/10. Gestalt Clarity ≥ 85/100.
 - Hick: ≤5 primary visible choices. Themes live in Settings, not header.
-- Fitts: min 44px tap, 10px padding.
+- Fitts: min 44px tap on `#install` and `#rail-toggle`. Compact rail
+  pair buttons may be 32px tall. 10px padding.
 - Recognition > recall. One primary CTA per onboard step.
 - Error prevention: confirm logout; nsec never in the DOM after ack;
   context files re-checked on the server.
@@ -271,6 +273,7 @@ wire id `deepseek-api`, family `api`, same drawer as OpenAI.
 | `GET /api/events` | notes plus `reply_to` (first `e` tag; empty when the note is not a reply). |
 | `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id). Content may contain `nostr:npub1…`. Mentions enter `hush_intel` (burst / policy) before `hush_agent`. |
 | `POST /api/canvas` | `{project, path, content}` writes `content` to `path` under that launch project's directory. `project` is a slug. `path` is a relative file (no `..`, no absolute). Missing project, empty content, or a path that escapes the project → `{ok:false,error}`. |
+| `POST /api/fixup` | `{instruction, text}` runs a one-shot `grok -p` and returns `{ok:true,text}` or `{ok:false,error}`. Does **not** insert a hive note. Instruction max 500. Text max `HUSH_EVENT_MAX_CONTENT`. |
 | `GET /avatar/<64-hex>` | stored picture bytes |
 
 Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
@@ -303,6 +306,12 @@ must not light up another radio.
 
 ### 13. @ mentions, thinking, thread pane
 
+`#msg` and `#thread-msg` are `<textarea rows="6">` (not a one-line
+`<input>`). They word-wrap. Height is six line-boxes; overflow-y
+scrolls after that. `resize: none`. Enter submits. Shift+Enter
+inserts a newline. Mention Enter still applies while `#mention-box`
+/ `#thread-mention` is open.
+
 Composer `@` after start-of-input or whitespace opens `#mention-box`.
 Roster: the signed-in human, Payne, raised robots, invited humans.
 Arrow keys + Enter or click. The visible composer shows an `@Name`
@@ -330,6 +339,10 @@ line and not a chat bubble. Stream: the root plus descendants from
 any of those participants. Notes in `#thread-stream` are sided
 bubbles (`.note.mine` for the signed-in human, other notes left).
 `who()` matches event hex pubkeys to roster `pubkey` / `npub`.
+`paintThreadStream` rebuilds the stream only when the note/think key
+changes. It pins `scrollTop` to the bottom only when the pane just
+opened or the human is already within `THREAD_PIN_PX` (48) of the
+bottom. A 1 s `tick()` must not yank a scrolled-up thread back down.
 A Grok follow-up receives the last few thread turns so it does not
 repeat a prior joke.
 
@@ -389,10 +402,22 @@ paints as `<pre class="code-block" data-lang><code>`. Prose stays a
 `.body` node. A note with one or more fences grows Download and
 Canvas actions. `#code-canvas` is a right-hand pane
 (`min(36rem, 46vw)` × full height): file `<select>` when there are
-two or more fences, a wrapping monospace textarea, Download, Save to
-project (first recorded `session.projects[]` path), and [x]. Save
-POSTs `/api/canvas`. No highlighter library. Persist `{w}` in
-`localStorage.hush-canvas`.
+two or more fences, a wrapping monospace textarea (`#code-canvas-edit`)
+with a read-only `pre#code-canvas-hi` highlight overlay behind it,
+Download, Save to project (first recorded `session.projects[]` path),
+and [x]. Save POSTs `/api/canvas`. No CDN highlighter (no Highlight.js,
+no Prism). An in-page scanner colors strings, comments, numbers, and
+keywords for: LaTeX, R, Bash, Zsh, PowerShell, Plaintext, Markdown, C,
+C++, Rust, PHP, Python, Go, Ruby, HTML, JavaScript, TypeScript, React,
+Node.js. Fence aliases `go` / `golang` use the Go keyword set.
+Persist `{w}` in `localStorage.hush-canvas`.
+
+Ctrl+K (also Cmd+K) on the canvas opens `#canvas-k`: a small
+instruction box over the selection. Apply POSTs `/api/fixup`
+`{instruction, text}` (selection, or the whole buffer if empty) and
+replaces that span with the returned `text`. Esc / Cancel closes.
+`/api/fixup` runs a one-shot `grok -p` (`HUSH_AGENT_FIXUP_TURNS` =
+`"1"`) and must **not** insert a kind-1 hive note.
 
 ### 14. Channel groups + manage (NIP-29 parent)
 
@@ -447,10 +472,25 @@ so the rail never sits inside the thread chrome. Closing the pane
 restores the pre-thread `{x,y,collapsed}` unless the human dragged
 during the thread (then keep the new free position).
 
-Buttons, in order: **Install**, **Profile**, **Settings**, **Call**
-(when `session.ready`), **Close**, **Exit**. All ≥44px.
+Expanded rail, in order:
 
-`#install-help` (title + visible help when the rail is open):
+1. **Install** — first, full width, current size. Position stays.
+2. `#rail-info` (`i` in a circle) toggles `#install-help` as a
+   popover. Help is hidden until the `i` is pressed.
+3. Divider.
+4. Two-column: **Profile** | **Settings**
+5. Two-column: **Call** (when `session.ready`) | **Blank**
+   (`#blank-btn`, disabled, reserved).
+6. Divider.
+7. Two-column: **Minimize** (`#rail-min`, collapses the rail to the
+   hamburger) | **Maximize** (`#rail-max`, Fullscreen API on
+   `document.documentElement`; second press exits fullscreen).
+8. Two-column: **Close** | **Exit** (same `#hive-leave` as today).
+
+Pair buttons are normal size (32px tall, 8px radius), not 44px
+pills. `#install` and `#rail-toggle` stay ≥44px.
+
+`#install-help` copy (popover only):
 “Install puts Hush on your app launcher as its own window. It does
 not start a second hive.”
 

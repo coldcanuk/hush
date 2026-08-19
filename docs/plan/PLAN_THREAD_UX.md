@@ -71,19 +71,19 @@ normal button size.
 ## Phase 1 — Research gate
 
 ### M1.1 Research
-- [ ] Task 1 of M1.1: `docs/research/RESEARCH_THREAD_UX.md` (this
+- [x] Task 1 of M1.1: `docs/research/RESEARCH_THREAD_UX.md` (this
       slice). Four-minds, Bayes H1 0.950, architecture lock.
-- [ ] Task 2 of M1.1: this plan file. Commit both.
+- [x] Task 2 of M1.1: this plan file. Commit both.
 - Verify: files exist under `docs/research` and `docs/plan`.
 - Commit: `Milestone 1.1: research thread ux snap-back`
 
 ## Phase 2 — Define
 
 ### M2.1 Spec + README
-- [ ] Task 1 of M2.1: `UI_SPEC.md` version line `gb/thread-ux`.
+- [x] Task 1 of M2.1: `UI_SPEC.md` version line `gb/thread-ux`.
       §13 composer 6-line textarea; thread paint pin rule; canvas
       overlay highlighter + Ctrl+K / `/api/fixup`. §15 rail mock-up.
-- [ ] Task 2 of M2.1: README one paragraph (composer, sticky
+- [x] Task 2 of M2.1: README one paragraph (composer, sticky
       thread scroll, canvas color + Ctrl+K, compact rail).
 - Verify: `rg -n 'THREAD_PIN_PX|rows=\"6\"|/api/fixup|rail-info' UI_SPEC.md`.
 - Commit: `Milestone 2.1: spec thread ux`
