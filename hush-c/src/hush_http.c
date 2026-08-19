@@ -16,6 +16,7 @@
 #include "hush_provider.h"
 #include "hush_relay.h"
 #include "hush_ui_html.h"
+#include "hush_win.h"
 
 enum {
     HUSH_HTTP_JSON_MAX = 65536,
@@ -34,13 +35,19 @@ enum {
     HUSH_HTTP_FIXUP_JSON_MAX = 16384,
     HUSH_HTTP_FIXUP_SLEEP_NS = 50000000,
     HUSH_HTTP_FIXUP_WAIT_MAX = 1800,
-    HUSH_HTTP_FIXUP_TOKEN_MAX = 16
+    HUSH_HTTP_FIXUP_TOKEN_MAX = 16,
+    HUSH_HTTP_WINDOW_ACT_MAX = 16
 };
 
 #define HUSH_HTTP_CLOSE_JSON "{\"ok\":true,\"action\":\"close\"}\n"
 #define HUSH_HTTP_EXIT_JSON  "{\"ok\":true,\"action\":\"exit\"}\n"
 #define HUSH_HTTP_CANVAS_OK "{\"ok\":true}\n"
 #define HUSH_HTTP_FIXUP_FAIL "{\"ok\":false,\"error\":\"fixup failed\"}\n"
+#define HUSH_HTTP_WINDOW_MIN_JSON "{\"ok\":true,\"action\":\"minimize\"}\n"
+#define HUSH_HTTP_WINDOW_MAX_JSON "{\"ok\":true,\"action\":\"maximize\"}\n"
+#define HUSH_HTTP_WINDOW_FAIL "{\"ok\":false,\"error\":\"window failed\"}\n"
+#define HUSH_HTTP_WINDOW_MIN "minimize"
+#define HUSH_HTTP_WINDOW_MAX "maximize"
 
 typedef struct {
     char api_key[HUSH_PROVIDER_KEY_MAX];
@@ -138,6 +145,9 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
 static const char *hush_http_body(const char *req, size_t len);
 static hush_status_t hush_http_serve_close(int fd);
 static hush_status_t hush_http_serve_exit(int fd);
+static hush_status_t hush_http_serve_window(int fd, const char *body);
+static hush_status_t hush_http_window_run(const char *action);
+static void hush_http_reply_window(int fd, const char *action);
 static void hush_http_append_provider(char *body, size_t bodysz, size_t *n,
                                       const hush_provider_status_t *st,
                                       int first);
@@ -1296,6 +1306,8 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_close(fd);
     if (strcmp(path, "/api/exit") == 0)
         return hush_http_serve_exit(fd);
+    if (strcmp(path, "/api/window") == 0)
+        return hush_http_serve_window(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/provider") == 0)
         return hush_http_serve_provider_post(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/provider/scan") == 0)
@@ -1320,6 +1332,55 @@ static hush_status_t hush_http_serve_exit(int fd)
     hush_http_reply(fd, "200 OK", "application/json",
                     HUSH_HTTP_EXIT_JSON, sizeof(HUSH_HTTP_EXIT_JSON) - 1);
     return HUSH_OK;
+}
+
+static hush_status_t hush_http_serve_window(int fd, const char *body)
+{
+    char action[HUSH_HTTP_WINDOW_ACT_MAX];
+    hush_status_t st;
+
+    if (!hush_json_field(body, "action", action, sizeof(action))) {
+        hush_http_reply(fd, "400 Bad Request", "application/json",
+                        HUSH_HTTP_WINDOW_FAIL, sizeof(HUSH_HTTP_WINDOW_FAIL) - 1);
+        return HUSH_ERR_PARSE;
+    }
+    st = hush_http_window_run(action);
+    if (st == HUSH_ERR_ARG) {
+        hush_http_reply(fd, "400 Bad Request", "application/json",
+                        HUSH_HTTP_WINDOW_FAIL, sizeof(HUSH_HTTP_WINDOW_FAIL) - 1);
+        return st;
+    }
+    if (st != HUSH_OK) {
+        hush_http_reply(fd, "200 OK", "application/json",
+                        HUSH_HTTP_WINDOW_FAIL, sizeof(HUSH_HTTP_WINDOW_FAIL) - 1);
+        return st;
+    }
+    hush_http_reply_window(fd, action);
+    return HUSH_OK;
+}
+
+static hush_status_t hush_http_window_run(const char *action)
+{
+    assert(action != NULL);
+    if (strcmp(action, HUSH_HTTP_WINDOW_MIN) == 0)
+        return hush_win_minimize();
+    if (strcmp(action, HUSH_HTTP_WINDOW_MAX) == 0)
+        return hush_win_maximize();
+    return HUSH_ERR_ARG;
+}
+
+static void hush_http_reply_window(int fd, const char *action)
+{
+    assert(action != NULL);
+    if (strcmp(action, HUSH_HTTP_WINDOW_MIN) == 0) {
+        hush_http_reply(fd, "200 OK", "application/json",
+                        HUSH_HTTP_WINDOW_MIN_JSON,
+                        sizeof(HUSH_HTTP_WINDOW_MIN_JSON) - 1);
+        return;
+    }
+    hush_http_reply(fd, "200 OK", "application/json",
+                    HUSH_HTTP_WINDOW_MAX_JSON,
+                    sizeof(HUSH_HTTP_WINDOW_MAX_JSON) - 1);
 }
 
 static void hush_http_append_provider(char *body, size_t bodysz, size_t *n,

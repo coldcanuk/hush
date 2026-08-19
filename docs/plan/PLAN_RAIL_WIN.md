@@ -76,7 +76,7 @@ new mock-up. Create is gone from the left nav.
 ### M1.1 Research lock
 
 - [x] Task 1 of M1.1: write `docs/research/RESEARCH_RAIL_WIN.md`.
-- [ ] Task 2 of M1.1: write this plan; commit both.
+- [x] Task 2 of M1.1: write this plan; commit both.
 
 ```
 git add docs/research/RESEARCH_RAIL_WIN.md docs/plan/PLAN_RAIL_WIN.md
@@ -89,9 +89,9 @@ Verify: files exist under `docs/`.
 
 ### M2.1 Spec + README
 
-- [ ] Task 1 of M2.1: update `UI_SPEC.md` §4 sidebar, §10 chrome
+- [x] Task 1 of M2.1: update `UI_SPEC.md` §4 sidebar, §10 chrome
       note, §15 rail mock-up, API table `POST /api/window`.
-- [ ] Task 2 of M2.1: update `README.md` rail paragraph and
+- [x] Task 2 of M2.1: update `README.md` rail paragraph and
       `--open` chrome sentence (frameless, not "windowless PWA").
 - Commit: `Milestone 2.1: spec rail v2 and frameless --app`.
 
@@ -99,21 +99,21 @@ Verify: files exist under `docs/`.
 
 ### M3.1 Rail markup + Create gone
 
-- [ ] Task 1 of M3.1: replace `#tool-rail` body with v2 mock-up;
+- [x] Task 1 of M3.1: replace `#tool-rail` body with v2 mock-up;
       delete `<div class="create">`; keep hidden `#new-chan` /
       `#new-proj` inside popovers; rewire `#invite-human`,
       `#add-chan`, `#raise-agent`, `#add-proj` (ids stay).
-- [ ] Task 2 of M3.1: `#rail-min` / `#rail-max` POST `/api/window`.
+- [x] Task 2 of M3.1: `#rail-min` / `#rail-max` POST `/api/window`.
 - Commit: `Milestone 3.1: rail v2 and window POST from UI`.
 
 ### M3.2 hush_win + HTTP + launch
 
-- [ ] Task 1 of M3.2: add `hush_win.h` / `hush_win.c` (optional
+- [x] Task 1 of M3.2: add `hush_win.h` / `hush_win.c` (optional
       X11). Public minimize / maximize / undecorate.
-- [ ] Task 2 of M3.2: `POST /api/window` in `hush_http.c`.
+- [x] Task 2 of M3.2: `POST /api/window` in `hush_http.c`.
       `hush_exec_app_browser` adds `--ozone-platform=x11`.
       `hush_relay_watch_app` calls `hush_win_undecorate` on latch.
-- [ ] Task 3 of M3.2: `configure` probes `X11/Xlib.h`; writes
+- [x] Task 3 of M3.2: `configure` probes `X11/Xlib.h`; writes
       `HUSH_HAVE_X11` + `-lX11` into `config.mk` when present.
       `hush-c/Makefile` honors it.
 - Commit: `Milestone 3.2: X11 window controls and ozone-x11 launch`.

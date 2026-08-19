@@ -28,6 +28,7 @@
 #include "hush_status.h"
 #include "hush_store.h"
 #include "hush_turn.h"
+#include "hush_win.h"
 
 enum {
     HUSH_MAX_CLIENTS = 16,
@@ -305,15 +306,16 @@ static void hush_exec_app_browser(const char *url, const char *app_arg)
 
     for (i = 0; browsers[i] != NULL; ++i) {
         execlp(browsers[i], browsers[i],
-               "--class=hush-relay", "--name=Hush", app_arg, (char *)NULL);
+               "--class=hush-relay", "--name=Hush",
+               "--ozone-platform=x11", app_arg, (char *)NULL);
     }
     execlp("epiphany", "epiphany", "--application-mode", url, (char *)NULL);
     execlp("flatpak", "flatpak", "run", "com.brave.Browser",
-           "--class=hush-relay", app_arg, (char *)NULL);
+           "--class=hush-relay", "--ozone-platform=x11", app_arg, (char *)NULL);
     execlp("flatpak", "flatpak", "run", "org.chromium.Chromium",
-           "--class=hush-relay", app_arg, (char *)NULL);
+           "--class=hush-relay", "--ozone-platform=x11", app_arg, (char *)NULL);
     execlp("flatpak", "flatpak", "run", "com.google.Chrome",
-           "--class=hush-relay", app_arg, (char *)NULL);
+           "--class=hush-relay", "--ozone-platform=x11", app_arg, (char *)NULL);
     execlp("xdg-open", "xdg-open", url, (char *)NULL);
 }
 
@@ -561,7 +563,7 @@ static hush_status_t hush_relay_bind(uint16_t port, int open_ui, int *out_ls)
 static void hush_relay_announce(uint16_t port, int open_ui)
 {
     fprintf(stdout, "listening on http://127.0.0.1:%u/\n", (unsigned)port);
-    fprintf(stdout, "  chat UI:  standalone app window (no browser chrome)\n");
+    fprintf(stdout, "  chat UI:  frameless standalone app window\n");
     fprintf(stdout, "  nostr:    newline JSON on the same port\n");
     fprintf(stdout, "  close:    Close in the hive (GUI gone, hive stays)\n");
     fprintf(stdout, "  exit:     Exit in the hive, --quit, or Ctrl+C\n");
@@ -987,6 +989,8 @@ static void hush_relay_watch_app(void)
     hush_leave_forget_dead();
     hush_leave_poll();
     if (hush_leave_app_alive()) {
+        if (!g_saw_app)
+            (void)hush_win_undecorate();
         g_saw_app = 1;
         return;
     }
