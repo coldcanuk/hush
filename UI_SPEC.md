@@ -1,12 +1,12 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups + Channel Policy
-Version: 2026-08-19 (RDAP M2, gb/payne-provider-edit)
+Version: 2026-08-19 (RDAP M2, gb/code-canvas-json)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec, the onboard raise-form notes, the oauth-mention-groups
 header/mention/manage rows, the oauth-mention-rail indent-only thread,
 the thread-think-hygiene Close/Exit paragraph, the oauth-mention-rail
 six-dock tool-rail paragraph, the membership-only Manage Channel
-paragraph, the Deepseek radio slice, and the 1:1 follow-up inherit
-slice where they conflict.
+paragraph, the Deepseek radio slice, the 1:1 follow-up inherit
+slice, and the Payne provider-order slice where they conflict.
 Quinn + Parker + Payne. No feline.
 
 ## Core Principles (Quinn)
@@ -270,6 +270,7 @@ wire id `deepseek-api`, family `api`, same drawer as OpenAI.
 | `GET /api/status` | existing + `thinking` (JSON array of `{name,parent}` for in-flight robot jobs). |
 | `GET /api/events` | notes plus `reply_to` (first `e` tag; empty when the note is not a reply). |
 | `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id). Content may contain `nostr:npub1…`. Mentions enter `hush_intel` (burst / policy) before `hush_agent`. |
+| `POST /api/canvas` | `{project, path, content}` writes `content` to `path` under that launch project's directory. `project` is a slug. `path` is a relative file (no `..`, no absolute). Missing project, empty content, or a path that escapes the project → `{ok:false,error}`. |
 | `GET /avatar/<64-hex>` | stored picture bytes |
 
 Session `ready` unchanged: `logged_in && backup_acked && has_vibe`.
@@ -370,6 +371,23 @@ accent dot and “\<name\> is thinking” (`aria-live="polite"`). Inside
 composer — not on the scrolled-away root — and Send is disabled until
 the job leaves the array. A second mention of that robot on the same
 root while the job is busy does not start another grok child.
+
+JSON strings on `GET /api/events` (and every other `hush_json_escape`
+site) must be RFC 8259: `"`, `\`, `\n`, `\r`, `\t`, and every other
+C0 byte as `\u00HH`. A raw TAB in a Go snippet must not break
+`Response.json()`. A failed events parse must not leave the thinking
+chip stuck (the chip keys on `status.thinking` plus a successful
+events tick).
+
+Fenced code in a note (` ```lang ` at line start … closing fence)
+paints as `<pre class="code-block" data-lang><code>`. Prose stays a
+`.body` node. A note with one or more fences grows Download and
+Canvas actions. `#code-canvas` is a right-hand pane
+(`min(36rem, 46vw)` × full height): file `<select>` when there are
+two or more fences, a wrapping monospace textarea, Download, Save to
+project (first recorded `session.projects[]` path), and [x]. Save
+POSTs `/api/canvas`. No highlighter library. Persist `{w}` in
+`localStorage.hush-canvas`.
 
 ### 14. Channel groups + manage (NIP-29 parent)
 

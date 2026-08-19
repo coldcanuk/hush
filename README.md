@@ -6,6 +6,8 @@
 
 **Hush** is a lightweight, legible C11 implementation of core Nostr relay functionality.
 
+Hush began as a fork of [Buzz](https://github.com/block/buzz). It is now a standalone C11 relay and hive. We do not track, fetch, or sync Buzz. One-way import notes live in [IMPORT.md](IMPORT.md).
+
 Optimized for the Goose AI agent. All development uses worktrees **inside this repository** (`worktrees/<slug>`), never under `/opt/repo/worktrees` or other external paths.
 
 - Written in strict C11 following the machine-legibility standard (write-legible-c).
