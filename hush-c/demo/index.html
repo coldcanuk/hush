@@ -3736,6 +3736,33 @@
         applyCanvasK();
       }
     });
+
+    // Tab trap for canvas: glowing cursor (FIM) or sensible edit.
+    // Prevents browser selection/focus move when #code-canvas is open.
+    document.addEventListener("keydown", (ev) => {
+      const canvas = $("code-canvas");
+      if (!canvas || !canvas.classList.contains("show")) return;
+      if (ev.key !== "Tab") return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const edit = $("code-canvas-edit");
+      if (!edit) return;
+      if (activePrediction) {
+        acceptCanvasFim();
+        return;
+      }
+      // No prediction: insert a tab (4 spaces for legibility in most contexts)
+      const pos = (typeof edit.selectionStart === "number") ? edit.selectionStart : edit.value.length;
+      const val = edit.value;
+      const insert = "    ";
+      edit.value = val.slice(0, pos) + insert + val.slice(pos);
+      const next = pos + insert.length;
+      edit.selectionStart = edit.selectionEnd = next;
+      // notify listeners
+      edit.dispatchEvent(new Event("input"));
+      paintCanvasHi();
+    }, true);
+
     $("canvas-download").addEventListener("click", () => {
       const f = canvasFiles[canvasIdx];
       if (f) downloadBlob(f.name, $("code-canvas-edit").value);
