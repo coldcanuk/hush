@@ -437,6 +437,21 @@
       margin-left: auto; background: none; border: 0; color: inherit;
       min-width: 44px; min-height: 44px; font: inherit; cursor: pointer;
     }
+    #providers-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+    .prov-row {
+      display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+      border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px;
+      background: var(--bg); color: inherit; text-align: left; font: inherit; width: 100%;
+    }
+    .prov-row:hover { border-color: var(--accent-dim); }
+    .prov-row.ready { border-color: var(--accent); background: var(--accent-dim); }
+    .prov-row strong { display: block; font-size: 0.86rem; color: var(--fg); }
+    .prov-row .prov-meta { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+    .prov-row .prov-used { display: block; font-size: 0.7rem; color: var(--faint); margin-top: 2px; }
+    .prov-row .cfg {
+      background: none; border: 0; color: inherit;
+      min-width: 44px; min-height: 44px; font: inherit; cursor: pointer;
+    }
     #payne-provider-pills .pill { display: inline-flex; align-items: center; gap: 4px; }
     #payne-provider-pills .pill button {
       background: none; border: 0; color: inherit; min-width: 28px; min-height: 28px;
@@ -602,11 +617,23 @@
       </div>
       <hr class="rail-rule">
       <div class="rail-grid">
-        <button class="iconbtn" id="profile-btn" type="button">Profile</button>
-        <button class="iconbtn" id="settings-btn" type="button">Settings</button>
+        <div class="rail-info-row">
+          <button class="iconbtn" id="profile-btn" type="button">Profile</button>
+          <button class="rail-i" id="profile-info" type="button" aria-expanded="false" aria-controls="profile-help" title="Profile help">i</button>
+          <p class="rail-pop" id="profile-help">Your name, npub, and logout. This is you, not a robot.</p>
+        </div>
+        <div class="rail-info-row">
+          <button class="iconbtn" id="settings-btn" type="button">Settings</button>
+          <button class="rail-i" id="settings-info" type="button" aria-expanded="false" aria-controls="settings-help" title="Settings help">i</button>
+          <p class="rail-pop" id="settings-help">Theme, vibe visibility, and the local STUN/TURN server for calls.</p>
+        </div>
       </div>
       <div class="rail-grid">
-        <button class="iconbtn" id="call-btn" type="button" hidden>Call</button>
+        <div class="rail-info-row">
+          <button class="iconbtn" id="call-btn" type="button" hidden>Call</button>
+          <button class="rail-i" id="call-info" type="button" aria-expanded="false" aria-controls="call-help-pop" title="Call help">i</button>
+          <p class="rail-pop" id="call-help-pop">Start a mesh conference on this channel. Agents need Whisper to hear.</p>
+        </div>
         <div class="rail-info-row">
           <button class="iconbtn" id="invite-human" type="button">Invite</button>
           <button class="rail-i" id="invite-info" type="button" aria-expanded="false" aria-controls="invite-help" title="Invite help">i</button>
@@ -614,12 +641,19 @@
         </div>
       </div>
       <hr class="rail-rule">
-      <div class="rail-info-row">
-        <button class="iconbtn" id="add-chan" type="button">Add Channel</button>
-        <button class="rail-i" id="chan-info" type="button" aria-expanded="false" aria-controls="chan-help" title="Channel help">i</button>
-        <div class="rail-pop" id="chan-help">
-          <p>A channel is a named room in this hive. Notes you post there stay on that channel.</p>
-          <input id="new-chan" maxlength="48" placeholder="new channel">
+      <div class="rail-grid">
+        <div class="rail-info-row">
+          <button class="iconbtn" id="add-chan" type="button">Add Channel</button>
+          <button class="rail-i" id="chan-info" type="button" aria-expanded="false" aria-controls="chan-help" title="Channel help">i</button>
+          <div class="rail-pop" id="chan-help">
+            <p>A channel is a named room in this hive. Notes you post there stay on that channel.</p>
+            <input id="new-chan" maxlength="48" placeholder="new channel">
+          </div>
+        </div>
+        <div class="rail-info-row">
+          <button class="iconbtn" id="providers-btn" type="button">Configure Providers</button>
+          <button class="rail-i" id="prov-info" type="button" aria-expanded="false" aria-controls="prov-help" title="Provider help">i</button>
+          <p class="rail-pop" id="prov-help">Hive-wide credentials and OAuth for every runtime. Robots pick which one they use; secrets live once, here.</p>
         </div>
       </div>
       <hr class="rail-rule">
@@ -642,6 +676,8 @@
       <div class="rail-grid">
         <button class="iconbtn" id="rail-min" type="button">Minimize</button>
         <button class="iconbtn" id="rail-max" type="button">Maximize</button>
+      </div>
+      <div class="rail-grid">
         <button class="iconbtn" id="hive-close" type="button"
                 title="Close the window. Hive stays standing.">Close</button>
         <button class="iconbtn danger" id="hive-exit" type="button"
@@ -865,6 +901,17 @@
         <button class="btn" id="agent-save" type="button">Raise Robot</button>
         <button class="btn ghost" id="agent-close" type="button">Close</button>
         <button class="btn danger" id="agent-delete" type="button" disabled>Delete Robot</button>
+      </div>
+    </div>
+  </div>
+  <div class="drawer" id="providers-hub" role="dialog" aria-label="Configure Providers">
+    <div class="panel">
+      <h2>Configure Providers</h2>
+      <p class="help">Credentials are hive-wide. Each robot still picks which runtime it uses. Left-nav Edit is that pick.</p>
+      <div id="providers-list"></div>
+      <p class="warn" id="providers-hub-err"></p>
+      <div class="actions">
+        <button class="btn ghost" id="providers-hub-close" type="button">Close</button>
       </div>
     </div>
   </div>
@@ -1166,6 +1213,7 @@
       $("profile-btn").hidden = false;
       $("settings-btn").hidden = false;
       $("call-btn").hidden = !ready;
+      if ($("call-info")) $("call-info").hidden = !ready;
       if (session.vibe && session.vibe.name)
         $("vibe-sub").textContent = session.vibe.name;
       if (session.vibe && session.vibe.visibility)
@@ -1949,6 +1997,70 @@
         providerMap = {};
       }
       paintProviderPencil();
+      paintProvidersHub();
+    }
+
+    function robotsUsingProvider(id) {
+      const names = [];
+      robotModels().forEach((bot) => {
+        const ids = (bot.providers && bot.providers.length)
+          ? bot.providers : [bot.provider];
+        if (ids.indexOf(id) >= 0) names.push(bot.name || bot.slug);
+      });
+      return names;
+    }
+
+    function paintProvidersHub() {
+      const box = $("providers-list");
+      if (!box) return;
+      box.innerHTML = "";
+      Object.keys(PROVIDERS).forEach((id) => {
+        const st = providerMap[id] || {};
+        const ready = !!(OAUTH_PROVIDERS[id] && st.has_home);
+        const used = robotsUsingProvider(id);
+        const row = document.createElement("div");
+        row.className = "prov-row" + (ready ? " ready" : "");
+        row.setAttribute("role", "button");
+        row.tabIndex = 0;
+        row.dataset.provider = id;
+        const copy = document.createElement("div");
+        const family = st.family || "";
+        const usedLine = used.length
+          ? ("Used by " + used.join(", "))
+          : "No robot uses this yet.";
+        copy.innerHTML = "<strong>" + esc(PROVIDERS[id]) +
+          (ready ? " ✓" : "") + "</strong>" +
+          "<span class=\"prov-meta\">" + esc(providerStatusLine(st)) +
+          (family ? " · " + esc(family) : "") + "</span>" +
+          "<span class=\"prov-used\">" + esc(usedLine) + "</span>";
+        const pencil = document.createElement("button");
+        pencil.className = "cfg";
+        pencil.type = "button";
+        pencil.title = "Configure this provider.";
+        pencil.textContent = "✎";
+        const open = (ev) => {
+          if (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+          }
+          openProviderDrawer(id);
+        };
+        pencil.addEventListener("click", open);
+        row.addEventListener("click", open);
+        row.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter" || ev.key === " ") open(ev);
+        });
+        row.appendChild(copy);
+        row.appendChild(pencil);
+        box.appendChild(row);
+      });
+    }
+
+    async function openProvidersHub() {
+      const err = $("providers-hub-err");
+      if (err) err.textContent = "";
+      await loadProviders();
+      $("providers-hub").classList.add("show");
     }
 
     function providerStatusLine(st) {
@@ -2058,8 +2170,8 @@
       $("provider-model-list").innerHTML = "";
     }
 
-    async function openProviderDrawer() {
-      const id = chosenProvider();
+    async function openProviderDrawer(want) {
+      const id = want || chosenProvider();
       if (!id) return;
       cfgId = id;
       await loadProviders();
@@ -2122,6 +2234,8 @@
       ev.stopPropagation();
       openProviderDrawer();
     });
+    $("providers-btn").addEventListener("click", () => { openProvidersHub(); });
+    $("providers-hub-close").addEventListener("click", () => $("providers-hub").classList.remove("show"));
     $("provider-close").addEventListener("click", () => $("provider-drawer").classList.remove("show"));
     bindSecretFields();
     $("provider-oauth").addEventListener("click", async () => {
@@ -2193,6 +2307,7 @@
         const data = await api("/api/provider", body);
         providerMap = Object.assign(providerMap, (data && data.providers) || {});
         fillProviderDrawer(cfgId);
+        paintProvidersHub();
         $("provider-err").textContent = "";
         $("provider-status").textContent = providerStatusLine(providerMap[cfgId]) + " Saved.";
       } catch (e) {
