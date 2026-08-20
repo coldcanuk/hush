@@ -69,7 +69,7 @@ never sleeps on that request.
 ### M1.1 Research lock
 
 - [x] Task 1 of M1.1: write `docs/research/RESEARCH_CANVAS_FIM.md`.
-- [ ] Task 2 of M1.1: write this plan; commit both.
+- [x] Task 2 of M1.1: write this plan; commit both.
 
 ```
 git add docs/research/RESEARCH_CANVAS_FIM.md docs/plan/PLAN_CANVAS_FIM.md
@@ -82,9 +82,9 @@ git commit -m "Milestone 1.1: research lock canvas FIM"
 
 ### M2.1 Spec + README
 
-- [ ] Task 1 of M2.1: UI_SPEC §13 + API table: Tab FIM, pulse,
+- [x] Task 1 of M2.1: UI_SPEC §13 + API table: Tab FIM, pulse,
       ghost, `/api/complete` start+take. Version line `gb/canvas-fim`.
-- [ ] Task 2 of M2.1: README canvas paragraph: Tab completes a
+- [x] Task 2 of M2.1: README canvas paragraph: Tab completes a
       ghost; does not mention libcurl.
 - Verify: `rg -n 'api/complete|tok-ghost|CANVAS_FIM' UI_SPEC.md README.md`.
 - Commit: `Milestone 2.1: spec canvas FIM`
@@ -93,18 +93,18 @@ git commit -m "Milestone 1.1: research lock canvas FIM"
 
 ### M3.1 Frontend
 
-- [ ] Task 1 of M3.1: CSS `.fim-caret` pulse (`--accent` /
+- [x] Task 1 of M3.1: CSS `.fim-caret` pulse (`--accent` /
       `--accent-dim`) and `.tok-ghost` (`--faint`).
-- [ ] Task 2 of M3.1: state, 300 ms debounce, prefix/suffix,
+- [x] Task 2 of M3.1: state, 300 ms debounce, prefix/suffix,
       start+poll `/api/complete`, paint ghost + caret, Tab/Esc.
 - Verify: `rg -n 'activePrediction|predictionPos|CANVAS_FIM_MS|tok-ghost|fim-caret|/api/complete' hush-c/demo/index.html`.
 - Commit: `Milestone 3.1: canvas FIM ghost and Tab`
 
 ### M3.2 hush_canvas + HTTP
 
-- [ ] Task 1 of M3.2: `hush_canvas.h` + `hush_canvas.c` (one
+- [x] Task 1 of M3.2: `hush_canvas.h` + `hush_canvas.c` (one
       slot, fork grok FIM prompt, poll, take ≤512).
-- [ ] Task 2 of M3.2: `hush_http` POST start / GET take. No
+- [x] Task 2 of M3.2: `hush_http` POST start / GET take. No
       nanosleep. Pump calls `hush_canvas_poll`. Init/shutdown
       next to agent.
 - Verify: `rg -n 'hush_canvas_start|hush_canvas_poll|/api/complete' hush-c/src hush-c/include`.
@@ -115,9 +115,9 @@ git commit -m "Milestone 1.1: research lock canvas FIM"
 
 ### M4.1 Checks
 
-- [ ] Task 1 of M4.1: `check_pwa.sh` greps `tok-ghost`,
+- [x] Task 1 of M4.1: `check_pwa.sh` greps `tok-ghost`,
       `fim-caret`, `/api/complete`.
-- [ ] Task 2 of M4.1: `check_complete.sh` — fake grok prints
+- [x] Task 2 of M4.1: `check_complete.sh` — fake grok prints
       `int x;`. POST returns token. GET eventually has that
       text. Event count unchanged. No `curl.h` in sources.
 - Verify: `make -C hush-c test` → ALL TESTS PASSED.
