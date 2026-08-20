@@ -792,6 +792,15 @@ static void hush_provider_mark_configured(hush_provider_status_t *st)
         st->configured = 1;
         return;
     }
+    /* API and EDITOR families (Deepseek API, OpenAI, xAI, Gemini, Anthropic, Cline)
+     * are configured with api_key alone. Host is optional for scan.
+     * Fixes "incorrectly shows ... not configured yet". */
+    if ((strcmp(st->family, HUSH_PROVIDER_FAMILY_API) == 0 ||
+         strcmp(st->family, HUSH_PROVIDER_FAMILY_EDITOR) == 0) &&
+        st->has_key) {
+        st->configured = 1;
+        return;
+    }
     if (st->has_key && st->host[0] != '\0') {
         st->configured = 1;
         return;
