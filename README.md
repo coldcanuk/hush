@@ -75,7 +75,8 @@ multi-line note so Happy cannot repeat a joke it already told.
 Fenced code paints as a block; Canvas opens a right-hand editor
 that colors popular languages (including Go), downloads, or saves
 into a recorded project. Ctrl+K on a canvas selection asks Grok to
-rewrite just that span (no extra hive note). JSON event bodies
+rewrite just that span (no extra hive note). Pause while typing
+and Tab accepts a dim ghost completion at the caret. JSON event bodies
 escape TAB and other C0 so a Go snippet cannot freeze the thinking
 chip.
 Click **relay live** for stored / projects / sockets. Hive metadata persists in `~/.config/hush/vibe.json` so
