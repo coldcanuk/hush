@@ -306,9 +306,14 @@ static void hush_exec_app_browser(const char *url, const char *app_arg)
     size_t i;
 
     for (i = 0; browsers[i] != NULL; ++i) {
+        /* --app + extra flags to suppress browser title/tab bar in standalone mode.
+         * Combined with Motif undecorate (hush_win_undecorate) and manifest "standalone".
+         * This addresses the request to remove the standard browser bar ("windowless"). */
         execlp(browsers[i], browsers[i],
                "--class=hush-relay", "--name=Hush",
-               "--ozone-platform=x11", app_arg, (char *)NULL);
+               "--ozone-platform=x11",
+               "--disable-features=TabStrip,WindowControlsOverlay",
+               app_arg, (char *)NULL);
     }
     execlp("epiphany", "epiphany", "--application-mode", url, (char *)NULL);
     execlp("flatpak", "flatpak", "run", "com.brave.Browser",
