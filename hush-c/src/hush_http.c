@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "hush_agent.h"
+#include "hush_canvas.h"
 #include "hush_http.h"
 #include "hush_intel.h"
 #include "hush_json.h"
@@ -36,13 +37,16 @@ enum {
     HUSH_HTTP_FIXUP_SLEEP_NS = 50000000,
     HUSH_HTTP_FIXUP_WAIT_MAX = 1800,
     HUSH_HTTP_FIXUP_TOKEN_MAX = 16,
-    HUSH_HTTP_WINDOW_ACT_MAX = 16
+    HUSH_HTTP_WINDOW_ACT_MAX = 16,
+    HUSH_HTTP_COMPLETE_JSON_MAX = 1536
 };
 
 #define HUSH_HTTP_CLOSE_JSON "{\"ok\":true,\"action\":\"close\"}\n"
 #define HUSH_HTTP_EXIT_JSON  "{\"ok\":true,\"action\":\"exit\"}\n"
 #define HUSH_HTTP_CANVAS_OK "{\"ok\":true}\n"
 #define HUSH_HTTP_FIXUP_FAIL "{\"ok\":false,\"error\":\"fixup failed\"}\n"
+#define HUSH_HTTP_COMPLETE_FAIL "{\"ok\":false,\"error\":\"complete failed\"}\n"
+#define HUSH_HTTP_COMPLETE_PEND "{\"ok\":true,\"pending\":true}\n"
 #define HUSH_HTTP_WINDOW_MIN_JSON "{\"ok\":true,\"action\":\"minimize\"}\n"
 #define HUSH_HTTP_WINDOW_MAX_JSON "{\"ok\":true,\"action\":\"maximize\"}\n"
 #define HUSH_HTTP_WINDOW_FAIL "{\"ok\":false,\"error\":\"window failed\"}\n"
@@ -129,6 +133,11 @@ static hush_status_t hush_http_canvas_write(const char *path,
 static hush_status_t hush_http_serve_canvas(int fd, const char *body);
 static hush_status_t hush_http_serve_fixup(int fd, const char *body);
 static void hush_http_reply_fixup_ok(int fd, const char *text);
+static hush_status_t hush_http_serve_complete_post(int fd, const char *body);
+static hush_status_t hush_http_serve_complete_get(int fd, const char *req);
+static void hush_http_complete_token(char *out, size_t outsz, const char *req);
+static void hush_http_reply_complete_token(int fd, const char *token);
+static void hush_http_reply_complete_text(int fd, const char *text);
 static hush_status_t hush_http_wait_fixup(const char *token, char *out,
                                           size_t outsz);
 static void hush_http_pause_fixup(void);
@@ -256,6 +265,8 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
     }
     if (strcmp(path, "/api/provider") == 0 && memcmp(req, "GET", 3) == 0)
         return hush_http_serve_provider_get(fd);
+    if (strcmp(path, "/api/complete") == 0 && memcmp(req, "GET", 3) == 0)
+        return hush_http_serve_complete_get(fd, req);
     if (memcmp(req, "POST", 4) == 0)
         return hush_http_serve_api_post(fd, path, req, len, store, out_posted);
     hush_http_reply(fd, "404 Not Found", "text/plain", "not found\n", 10);
@@ -1270,6 +1281,113 @@ static hush_status_t hush_http_serve_fixup(int fd, const char *body)
     return HUSH_OK;
 }
 
+static void hush_http_reply_complete_token(int fd, const char *token)
+{
+    char esc[HUSH_CANVAS_TOKEN_MAX * 2];
+    char body[HUSH_HTTP_COMPLETE_JSON_MAX];
+    int n;
+
+    hush_json_escape(token != NULL ? token : "", esc, sizeof(esc));
+    n = snprintf(body, sizeof(body), "{\"ok\":true,\"token\":\"%s\"}\n", esc);
+    if (n < 0 || (size_t)n >= sizeof(body)) {
+        hush_http_reply(fd, "200 OK", "application/json",
+                        HUSH_HTTP_COMPLETE_FAIL,
+                        sizeof(HUSH_HTTP_COMPLETE_FAIL) - 1);
+        return;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", body, (size_t)n);
+}
+
+static void hush_http_reply_complete_text(int fd, const char *text)
+{
+    char esc[HUSH_CANVAS_PRED_MAX * 2 + 8];
+    char body[HUSH_HTTP_COMPLETE_JSON_MAX];
+    int n;
+
+    hush_json_escape(text != NULL ? text : "", esc, sizeof(esc));
+    n = snprintf(body, sizeof(body), "{\"ok\":true,\"text\":\"%s\"}\n", esc);
+    if (n < 0 || (size_t)n >= sizeof(body)) {
+        hush_http_reply(fd, "200 OK", "application/json",
+                        HUSH_HTTP_COMPLETE_FAIL,
+                        sizeof(HUSH_HTTP_COMPLETE_FAIL) - 1);
+        return;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", body, (size_t)n);
+}
+
+static void hush_http_complete_token(char *out, size_t outsz, const char *req)
+{
+    const char *q;
+    size_t i;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    out[0] = '\0';
+    if (req == NULL)
+        return;
+    q = strstr(req, "?t=");
+    if (q == NULL)
+        return;
+    q += 3;
+    i = 0;
+    while (q[i] != '\0' && q[i] != ' ' && q[i] != '&' && i + 1 < outsz) {
+        out[i] = q[i];
+        i++;
+    }
+    out[i] = '\0';
+}
+
+static hush_status_t hush_http_serve_complete_post(int fd, const char *body)
+{
+    char prefix[HUSH_EVENT_MAX_CONTENT + 1];
+    char suffix[HUSH_EVENT_MAX_CONTENT + 1];
+    char token[HUSH_CANVAS_TOKEN_MAX];
+    hush_status_t st;
+
+    if (body == NULL)
+        return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    prefix[0] = '\0';
+    suffix[0] = '\0';
+    (void)hush_json_field(body, "prefix", prefix, sizeof(prefix));
+    (void)hush_json_field(body, "suffix", suffix, sizeof(suffix));
+    st = hush_canvas_start(token, sizeof(token), prefix, suffix);
+    if (st != HUSH_OK) {
+        hush_http_reply(fd, "200 OK", "application/json",
+                        HUSH_HTTP_COMPLETE_FAIL,
+                        sizeof(HUSH_HTTP_COMPLETE_FAIL) - 1);
+        return st;
+    }
+    hush_http_reply_complete_token(fd, token);
+    return HUSH_OK;
+}
+
+static hush_status_t hush_http_serve_complete_get(int fd, const char *req)
+{
+    char token[HUSH_CANVAS_TOKEN_MAX];
+    char out[HUSH_CANVAS_PRED_MAX + 1];
+    hush_status_t st;
+
+    hush_http_complete_token(token, sizeof(token), req);
+    if (token[0] == '\0')
+        return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    hush_canvas_poll();
+    if (hush_canvas_is_busy(token)) {
+        hush_http_reply(fd, "200 OK", "application/json",
+                        HUSH_HTTP_COMPLETE_PEND,
+                        sizeof(HUSH_HTTP_COMPLETE_PEND) - 1);
+        return HUSH_OK;
+    }
+    st = hush_canvas_take(token, out, sizeof(out));
+    if (st == HUSH_OK) {
+        hush_http_reply_complete_text(fd, out);
+        return HUSH_OK;
+    }
+    hush_http_reply(fd, "200 OK", "application/json",
+                    HUSH_HTTP_COMPLETE_FAIL,
+                    sizeof(HUSH_HTTP_COMPLETE_FAIL) - 1);
+    return st;
+}
+
 static hush_status_t hush_http_serve_api_post(int fd, const char *path,
                                               const char *req, size_t len,
                                               hush_store_t *store,
@@ -1297,6 +1415,8 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_canvas(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/fixup") == 0)
         return hush_http_serve_fixup(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/complete") == 0)
+        return hush_http_serve_complete_post(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/turn") == 0)
         return hush_http_serve_turn_post(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/signal") == 0)
