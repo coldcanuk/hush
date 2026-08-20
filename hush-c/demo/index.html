@@ -2150,9 +2150,19 @@
           ? (PROVIDERS[id] + " is authenticated. Close the login browser and the terminal. Carry on.")
           : ("This starts " + HOME_CMDS[id] + " on the command line.");
       }
+      const isPureApi = family === "api";
       SECRET_FIELDS.forEach((field) => {
         const input = $(field.id);
         if (!input) return;
+        const row = input.closest("label") || input.parentElement;
+        // For pure API providers (Deepseek etc), only show api_key + optional host/model.
+        // Hide username/password etc.
+        if (isPureApi && ["username","password","token","passkey"].indexOf(field.kind) >= 0) {
+          if (row && row.style) row.style.display = "none";
+          return;
+        } else if (row && row.style) {
+          row.style.display = "";
+        }
         if (field.kind === "host")
           input.value = st.host || "";
         else if (field.kind === "model")
