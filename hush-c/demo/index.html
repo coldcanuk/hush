@@ -1453,19 +1453,18 @@
         ev.preventDefault();
         openChanMenu(c.slug, ev.clientX, ev.clientY);
       });
-      if (whisperReady) {
-        const voice = document.createElement("button");
-        voice.className = "chan-voice";
-        voice.type = "button";
-        voice.setAttribute("aria-label", "Voice in #" + c.slug);
-        voice.textContent = "♫";
-        voice.title = "Talk on this channel";
-        voice.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          openChannelVoice(c);
-        });
-        row.appendChild(voice);
-      }
+      // Voice control on every channel (1:n conference). Always present for audio/video controls.
+      const voice = document.createElement("button");
+      voice.className = "chan-voice";
+      voice.type = "button";
+      voice.setAttribute("aria-label", "Voice in #" + c.slug);
+      voice.textContent = "♫";
+      voice.title = "Talk on this channel (audio/video)";
+      voice.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        openChannelVoice(c);
+      });
+      row.appendChild(voice);
       const del = document.createElement("button");
       del.className = "chan-del";
       del.type = "button";
@@ -3126,6 +3125,13 @@
         $("call-help").textContent = "Camera/mic blocked or ICE unavailable.";
       }
     });
+
+    $("call-mute-all").addEventListener("click", () => {
+      document.querySelectorAll("#tiles video").forEach((v) => { v.muted = true; });
+      const help = $("call-help");
+      if (help) help.textContent = "All tiles muted. Click individual Mute to toggle.";
+    });
+
     $("call-leave").addEventListener("click", async () => {
       inCall = false;
       Object.keys(peers).forEach((id) => { peers[id].close(); delete peers[id]; });
