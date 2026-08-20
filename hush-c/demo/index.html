@@ -2010,6 +2010,25 @@
       return names;
     }
 
+
+    async function assignProviderToRobot(providerId, slug, on) {
+      if (!slug) return;
+      const bot = robotModels().find((b) => b.slug === slug);
+      if (!bot) return;
+      let provs = (bot.providers && bot.providers.length) ? bot.providers.slice() : (bot.provider ? [bot.provider] : []);
+      if (on) {
+        if (provs.indexOf(providerId) < 0) provs.push(providerId);
+      } else {
+        provs = provs.filter((p) => p !== providerId);
+      }
+      const body = { slug: slug };
+      provs.forEach((p, i) => { body["provider_" + i] = p; });
+      if (provs.length === 0) body.provider = "goose";
+      try { await api("/api/agent", body); } catch (e) {}
+      await loadProviders();
+      paintProvidersHub();
+    }
+
     function paintProvidersHub() {
       const box = $("providers-list");
       if (!box) return;
@@ -2052,6 +2071,43 @@
         });
         row.appendChild(copy);
         row.appendChild(pencil);
+
+        // + / - robot assignment (pill form) — configure robots from provider hub
+        const assignWrap = document.createElement("div");
+        assignWrap.className = "prov-assign";
+        const used = robotsUsingProvider(id);
+        used.forEach((nm) => {
+          const pill = document.createElement("span");
+          pill.className = "pill";
+          pill.innerHTML = "<em>" + esc(nm) + "</em>";
+          const minus = document.createElement("button");
+          minus.textContent = "−";
+          minus.addEventListener("click", async (ev) => {
+            ev.stopPropagation();
+            const b = robotModels().find((bb) => (bb.name||bb.slug) === nm);
+            if (b) await assignProviderToRobot(id, b.slug, false);
+          });
+          pill.appendChild(minus);
+          assignWrap.appendChild(pill);
+        });
+        const plus = document.createElement("button");
+        plus.className = "icon-plus";
+        plus.textContent = "+";
+        plus.title = "Add a robot to this provider";
+        plus.addEventListener("click", async (ev) => {
+          ev.stopPropagation();
+          // pick a robot not yet using it
+          const candidates = robotModels().filter((b) => {
+            const ids = (b.providers && b.providers.length) ? b.providers : [b.provider];
+            return ids.indexOf(id) < 0;
+          });
+          if (candidates.length === 0) { alert("All robots already use this provider."); return; }
+          // simple: pick first, or could prompt; for now use first unused
+          await assignProviderToRobot(id, candidates[0].slug, true);
+        });
+        assignWrap.appendChild(plus);
+        row.appendChild(assignWrap);
+
         box.appendChild(row);
       });
     }
