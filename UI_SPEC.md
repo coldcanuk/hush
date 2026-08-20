@@ -1,5 +1,5 @@
 # Hush UI Spec — Onboard + Profile + Vibe Members + Agent Create + Close/Exit + Provider Configure + Mentions + Channel Groups + Channel Policy
-Version: 2026-08-19 (RDAP M2, gb/canvas-fim)
+Version: 2026-08-19 (RDAP M2, gb/rail-prov)
 Authoritative for this slice. Supersedes splash-only notes in the 2026-08-18
 M2.1 splash spec, the onboard raise-form notes, the oauth-mention-groups
 header/mention/manage rows, the oauth-mention-rail indent-only thread,
@@ -7,8 +7,9 @@ the thread-think-hygiene Close/Exit paragraph, the oauth-mention-rail
 six-dock tool-rail paragraph, the membership-only Manage Channel
 paragraph, the Deepseek radio slice, the 1:1 follow-up inherit
 slice, the Payne provider-order slice, the one-joke-snip
-paragraph, the thread-ux rail/minimize paragraph, and the
-rail-win canvas paragraph where they conflict.
+paragraph, the thread-ux rail/minimize paragraph, the
+rail-win canvas paragraph, and the canvas-fim rail paragraph
+where they conflict.
 Quinn + Parker + Payne. No feline.
 
 ## Core Principles (Quinn)
@@ -206,17 +207,34 @@ Delete: `POST /api/agent {action:"delete", slug}`. Payne slug is refused.
 
 Goose/Payne skill: `.goose/skills/agent-create/SKILL.md`.
 
-### 11. Provider configure (pencil per runtime)
+### 11. Provider configure (hive-wide desk + pencil)
 
 The OS/PWA `×` is not Configure. Drawer Close on this panel only
 dismisses it. Hive Close/Exit stay in the header.
 
-Selecting a provider radio shows `#provider-cfg` (pencil ✎, ≥44px,
-title “Configure this provider.”) next to that label. Click opens
-`#provider-drawer`. Fields depend on the family. Status is loaded
-from `GET /api/provider`. Save is `POST /api/provider`. Scan is
-`POST /api/provider/scan`. Official CLI login is
-`POST /api/provider/login`.
+**Two surfaces, one secret store.** Credentials, OAuth, host, and
+model are hive-global (`providers.json` + `pass` + home detect).
+A robot stores only a provider id (Payne stores a ranked list).
+There is no per-robot secret overlay this slice.
+
+**Central desk.** `#providers-btn` on the rail opens `#providers-hub`.
+The hub lists every named runtime from `GET /api/provider`. Each row
+shows label, family, `providerStatusLine`, OAuth `ready` when
+`has_home`, and the robots (including Payne) that currently point at
+that id. Row click or the row ✎ calls `openProviderDrawer(id)` and
+opens the existing `#provider-drawer` for that id. The hub stays
+under the detail drawer (hub earlier in the DOM). Close on the
+detail returns to the hub.
+
+**Per-robot pick.** Left-nav Edit / Raise still chooses which id a
+robot uses. Selecting a provider radio shows `#provider-cfg` (pencil
+✎, ≥44px, title “Configure this provider.”) next to that label.
+Click opens the same `#provider-drawer`. Configure is optional for
+Raise — the robot still stores only the provider id.
+
+Fields depend on the family. Status is loaded from `GET /api/provider`.
+Save is `POST /api/provider`. Scan is `POST /api/provider/scan`.
+Official CLI login is `POST /api/provider/login`.
 
 | Family | Ids | Drawer |
 |---|---|---|
@@ -499,12 +517,15 @@ Expanded rail, in order:
 1. **Install** — first, full width, current size. Position stays.
    `#rail-info` (`i`) toggles `#install-help`.
 2. Divider.
-3. Two-column: **Profile** | **Settings**
-4. Two-column: **Call** (when `session.ready`) | **Invite**
-   (`#invite-human`) + `#invite-info` `i`.
+3. Two-column: **Profile** (`#profile-btn`) + `#profile-info` `i` |
+   **Settings** (`#settings-btn`) + `#settings-info` `i`.
+4. Two-column: **Call** (`#call-btn`, when `session.ready`) +
+   `#call-info` `i` | **Invite** (`#invite-human`) + `#invite-info` `i`.
 5. Divider.
-6. **Add Channel** (`#add-chan`) + `#chan-info` `i`. `#new-chan`
-   lives in that popover.
+6. Two-column: **Add Channel** (`#add-chan`) + `#chan-info` `i` |
+   **Configure Providers** (`#providers-btn`) + `#prov-info` `i`.
+   `#new-chan` lives in the channel popover. `#providers-btn`
+   opens `#providers-hub` (§11).
 7. Divider.
 8. Two-column: **New Robot** (`#raise-agent`) + `#robot-info` `i` |
    **New Project** (`#add-proj`) + `#proj-info` `i`. `#new-proj`
@@ -515,6 +536,7 @@ Expanded rail, in order:
     `POST /api/window` `{action:"maximize"}` — toggle WM maximized).
     Not rail-collapse. Not the Fullscreen API.
 11. Two-column: **Close** | **Exit** (same `#hive-leave` as today).
+    Min/Max and Close/Exit are two separate `.rail-grid`s.
 
 There is no `#blank-btn`. There is no left-nav `.create` block.
 
@@ -525,9 +547,14 @@ pills. `#install` and `#rail-toggle` stay ≥44px.
 “Install puts Hush on your app launcher as its own window. It does
 not start a second hive.”
 
+`#profile-help`: “Your name, npub, and logout. This is you, not a robot.”
+`#settings-help`: “Theme, vibe visibility, and the local STUN/TURN server for calls.”
+`#call-help-pop`: “Start a mesh conference on this channel. Agents need Whisper to hear.”
+  (id is not `#call-help` — that string already labels the stage.)
 `#invite-help`: “Click to invite a human to your vibe.”
 `#chan-help`: “A channel is a named room in this hive. Notes you
 post there stay on that channel.”
+`#prov-help`: “Hive-wide credentials and OAuth for every runtime. Robots pick which one they use; secrets live once, here.”
 `#robot-help`: “Raise a new robot. It gets its own name, provider,
 and standing orders.”
 `#proj-help`: “A project is a folder the hive can write to. Create

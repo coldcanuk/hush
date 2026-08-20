@@ -63,10 +63,13 @@ button opens a resizable hive chat (1:1 or 1:n). In a 1:1 pane a
 follow-up without a new `@` still addresses that sole robot. The tool rail is a
 free-drag hamburger (no docks); double-click parks it left of the
 brand. Expanded, it is compact two-column pairs (Profile/Settings,
-Call/Invite, New Robot/New Project, Minimize/Maximize, Close/Exit)
-under Install, plus Add Channel; each create verb has an `i` help
-popover. Minimize iconifies the window; Maximize toggles the WM
-maximized state. The composer is a six-line wrapping
+Call/Invite, Add Channel/Configure Providers, New Robot/New Project,
+Minimize/Maximize, Close/Exit) under Install; Profile, Settings,
+Call, Invite, Channel, Providers, Robot, and Project each have an
+`i` help popover. **Configure Providers** is the hive-wide desk
+for credentials and OAuth; each robot still picks which runtime
+it uses from left-nav Edit. Minimize iconifies the window;
+Maximize toggles the WM maximized state. The composer is a six-line wrapping
 box that scrolls after that. A live thread you have scrolled up
 stays put across the 1 s poll. The reply is one short `grok -p` note
 from an empty cwd (no desktop AGENTS.md, `--no-memory`). A joke ask
@@ -196,8 +199,13 @@ the process. `POST /api/exit` sets the same shutdown flag as SIGTERM.
 
 ### Provider configure
 
-Selecting an AI provider on **Raise a robot** reveals a pencil. That
-opens a tailored drawer:
+**Configure Providers** on the tool rail is the hive-wide desk.
+It lists every runtime, who uses it, and opens the same tailored
+drawer the Raise-robot pencil does. Credentials are global; a
+robot only stores which id it uses.
+
+Selecting an AI provider on **Raise a robot** still reveals a pencil.
+That opens the same tailored drawer:
 
 - Grok Build and Codex are OAuth-only: **Log in with OAuth** starts
   `grok login --oauth` or `codex login` in a terminal. Authenticated
