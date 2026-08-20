@@ -78,10 +78,10 @@ Verify: files exist under `docs/`.
 
 ### M2.1 Spec + README
 
-- [ ] Task 1 of M2.1: update `UI_SPEC.md` §11 (hub + per-robot
+- [x] Task 1 of M2.1: update `UI_SPEC.md` §11 (hub + per-robot
       split) and §15 (rail order + new help copy). Version
       `gb/rail-prov`.
-- [ ] Task 2 of M2.1: update `README.md` rail sentence to name
+- [x] Task 2 of M2.1: update `README.md` rail sentence to name
       Configure Providers as the hive-wide desk.
 - Commit: `Milestone 2.1: spec rail help and providers hub`.
 - Verify: `rg -n "providers-hub|Configure Providers|#profile-info" UI_SPEC.md README.md`.
@@ -90,10 +90,10 @@ Verify: files exist under `docs/`.
 
 ### M3.1 Rail markup + hub drawer
 
-- [ ] Task 1 of M3.1: wrap Profile / Settings / Call with
+- [x] Task 1 of M3.1: wrap Profile / Settings / Call with
       `.rail-info-row` + `i` + popovers. Insert Configure
       Providers next to Add Channel. Split Min/Max vs Close/Exit.
-- [ ] Task 2 of M3.1: add `#providers-hub` before
+- [x] Task 2 of M3.1: add `#providers-hub` before
       `#provider-drawer`. List nine runtimes + used-by. Click / ✎
       calls `openProviderDrawer(id)`. `#providers-btn` opens the
       hub. `openProviderDrawer` takes an optional id.
@@ -104,10 +104,10 @@ Verify: files exist under `docs/`.
 
 ### M4.1 Tests
 
-- [ ] Task 1 of M4.1: `check_pwa.sh` greps `#providers-btn`,
+- [x] Task 1 of M4.1: `check_pwa.sh` greps `#providers-btn`,
       `#providers-hub`, `#profile-info`, `#settings-info`,
       `#call-info`, `#prov-info`.
-- [ ] Task 2 of M4.1: `make -C hush-c test`.
+- [x] Task 2 of M4.1: `make -C hush-c test`.
 - Commit: `Milestone 4.1: providers hub checks`.
 
 ## Phase 5 — Land
