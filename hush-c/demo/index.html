@@ -2797,10 +2797,18 @@
       });
     });
     $("rail-min").addEventListener("click", async () => {
+      const btn = $("rail-min");
+      const old = btn ? btn.textContent : "";
+      if (btn) btn.textContent = "…";
       try { await api("/api/window", { action: "minimize" }); } catch (err) {}
+      if (btn) setTimeout(() => { btn.textContent = old || "Minimize"; }, 600);
     });
     $("rail-max").addEventListener("click", async () => {
+      const btn = $("rail-max");
+      const old = btn ? btn.textContent : "";
+      if (btn) btn.textContent = "…";
       try { await api("/api/window", { action: "maximize" }); } catch (err) {}
+      if (btn) setTimeout(() => { btn.textContent = old || "Maximize"; }, 600);
     });
     $("leave-cancel").addEventListener("click", hideLeave);
     $("leave-close").addEventListener("click", async () => {
@@ -4036,7 +4044,8 @@
       const rail = $("tool-rail");
       let saved = {};
       try { saved = JSON.parse(localStorage.getItem("hush-rail") || "{}"); } catch (e) { saved = {}; }
-      if (saved.homed) {
+      /* First launch (no saved state) or homed: dock minimized at brand per requirement. */
+      if (saved.homed || Object.keys(saved).length === 0) {
         placeRailAtBrand();
         return;
       }
