@@ -224,6 +224,18 @@
       font-size: 0.72rem; font-weight: 650;
     }
     .note-files button:hover { background: var(--surface-2); }
+
+    /* Robot mention acks (Discord-like reactions) */
+    .robot-acks {
+      display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;
+    }
+    .robot-ack {
+      font-size: 0.78rem; padding: 1px 6px; border-radius: 999px;
+      background: var(--surface-2); border: 1px solid var(--line); color: var(--muted);
+      white-space: nowrap;
+    }
+    .robot-ack .emoji { margin-right: 3px; }
+
     #code-canvas {
       display: none; position: fixed; z-index: 28; right: 0; top: 0;
       width: min(36rem, 46vw); height: 100%;
@@ -3734,6 +3746,24 @@
         n.appendChild(bar);
       }
       if (extra) extra(n, e);
+
+      // Render robot acks (👍 🎯 🏆) for p-mentions on this note
+      try {
+        const acks = mentionedRobots(e);
+        if (acks && acks.length) {
+          const ackBar = document.createElement("div");
+          ackBar.className = "robot-acks";
+          acks.forEach((bot) => {
+            const pill = document.createElement("span");
+            pill.className = "robot-ack";
+            // Use stable emoji set: thumbs up for ack, bullseye for targeted, trophy for done
+            pill.innerHTML = '<span class="emoji">👍</span>' + esc(bot.name || "robot");
+            ackBar.appendChild(pill);
+          });
+          n.appendChild(ackBar);
+        }
+      } catch (eAck) { /* never break render on ack */ }
+
       return n;
     }
 
