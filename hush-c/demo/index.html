@@ -3753,11 +3753,12 @@
         if (acks && acks.length) {
           const ackBar = document.createElement("div");
           ackBar.className = "robot-acks";
-          acks.forEach((bot) => {
+          const emojiSet = ["👍", "🎯", "🏆"];
+          acks.forEach((bot, i) => {
             const pill = document.createElement("span");
             pill.className = "robot-ack";
-            // Use stable emoji set: thumbs up for ack, bullseye for targeted, trophy for done
-            pill.innerHTML = '<span class="emoji">👍</span>' + esc(bot.name || "robot");
+            const emoji = emojiSet[i % emojiSet.length];
+            pill.innerHTML = '<span class="emoji">' + emoji + '</span>' + esc(bot.name || "robot");
             ackBar.appendChild(pill);
           });
           n.appendChild(ackBar);
