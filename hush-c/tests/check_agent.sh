@@ -99,6 +99,22 @@ done
 printf '%s' "$got" | grep -q '"reply_to":"' || fail "no threaded reply"
 printf '%s' "$got" | grep -q 'Byte me' || fail "grok reply missing"
 
+# Proof for M1 ack slice: server must emit the p-tag as authoritative "mentions" array
+# so UI can render truthful Discord-style acks instead of content heuristic only.
+printf '%s' "$got" | python3 -c '
+import json, sys
+npub = sys.argv[1]
+data = json.loads(sys.stdin.read())
+for e in (data.get("events") or []):
+    c = e.get("content") or ""
+    if "Hello. Tell me a joke" in c:
+        ments = e.get("mentions") or []
+        if npub in ments:
+            sys.exit(0)
+print("MISSING_MENTIONS_IN_ROOT")
+sys.exit(1)
+' "${npub}" || fail "root event must include authoritative mentions array for the p-tag"
+
 root=$(printf '%s' "$got" | sed -n 's/.*"id":"\([^"]*\)","pubkey":"[^"]*","kind":1,"created_at":[0-9]*,"content":"nostr:[^"]* Hello. Tell me a joke".*/\1/p')
 test -n "$root" || root=$(printf '%s' "$got" | sed -n 's/.*"reply_to":"\([^"]*\)".*/\1/p')
 test -n "$root" || fail "root id missing"

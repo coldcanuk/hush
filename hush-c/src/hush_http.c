@@ -521,33 +521,33 @@ static void hush_http_serve_events(int fd, const hush_store_t *store)
         hush_http_event_reply_to(reply_to, sizeof(reply_to), &evs[i]);
 
         /* Collect p-mentions (the authoritative tags that triggered robot dispatch).
-         * This lets the UI show real per-robot acks instead of only content heuristic.
+         * Produces a valid JSON array (or empty) so UI acks are truthful.
+         * Never emits a trailing comma even on truncation.
          */
         char ment[1024];
         ment[0] = '\0';
         size_t mentoff = 0;
-        int mfirst = 1;
+        int has_mention = 0;
         for (size_t t = 0; t < evs[i].tag_count && t < HUSH_EVENT_MAX_TAGS; ++t) {
-            if (strcmp(evs[i].tags[t][0], "p") == 0 && evs[i].tags[t][1][0] != '\0') {
-                if (!mfirst && mentoff + 2 < sizeof(ment))
-                    ment[mentoff++] = ',';
-                mfirst = 0;
-                size_t remain = (mentoff < sizeof(ment)) ? (sizeof(ment) - mentoff) : 0;
-                /* Properly escape the npub value for JSON safety (defense in depth) */
-                char mval[256];
-                hush_json_escape(evs[i].tags[t][1], mval, sizeof(mval));
-                int nwritten = snprintf(ment + mentoff, remain,
-                                        "\"%s\"", mval);
-                if (nwritten > 0 && (size_t)nwritten < remain)
-                    mentoff += (size_t)nwritten;
-                else if (remain > 0) {
-                    /* truncated — close the array early */
-                    break;
-                }
+            if (strcmp(evs[i].tags[t][0], "p") != 0 || evs[i].tags[t][1][0] == '\0')
+                continue;
+            char mval[256];
+            hush_json_escape(evs[i].tags[t][1], mval, sizeof(mval));
+            size_t need = strlen(mval) + 3; /* quote + quote + optional leading comma */
+            if (mentoff + need + 1 >= sizeof(ment))
+                break; /* stop; array so far is valid */
+            if (has_mention) {
+                ment[mentoff++] = ',';
             }
+            int nw = snprintf(ment + mentoff, sizeof(ment) - mentoff,
+                              "\"%s\"", mval);
+            if (nw < 0 || (size_t)nw >= (sizeof(ment) - mentoff))
+                break;
+            mentoff += (size_t)nw;
+            has_mention = 1;
         }
-        if (mentoff == 0)
-            strcpy(ment, "");
+        if (!has_mention)
+            ment[0] = '\0';
 
         w = snprintf(body + off, sizeof(body) - off,
                      "%s{\"id\":\"%s\",\"pubkey\":\"%s\",\"kind\":%u,"
