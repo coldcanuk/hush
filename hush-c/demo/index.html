@@ -3775,6 +3775,8 @@
             const pill = document.createElement("span");
             pill.className = "robot-ack";
             const emoji = emojiSet[i % emojiSet.length];
+            pill.title = "Mention acknowledged by " + (bot.name || "robot");
+            pill.setAttribute("aria-label", "Mentioned " + (bot.name || "robot"));
             pill.innerHTML = '<span class="emoji">' + emoji + '</span>' + esc(bot.name || "robot");
             ackBar.appendChild(pill);
           });

@@ -516,7 +516,7 @@ static void hush_http_serve_events(int fd, const hush_store_t *store)
 
     n = hush_store_query(store, NULL, 0, evs, HUSH_HTTP_EVENTS_MAX);
     off = (size_t)snprintf(body, sizeof(body), "{\"events\":[");
-    for (i = 0; i < n && off + 64 < sizeof(body); ++i) {
+    for (i = 0; i < n && off + 512 < sizeof(body); ++i) {
         hush_json_escape(evs[i].content, esc, sizeof(esc));
         hush_http_event_reply_to(reply_to, sizeof(reply_to), &evs[i]);
 
@@ -532,10 +532,18 @@ static void hush_http_serve_events(int fd, const hush_store_t *store)
                 if (!mfirst && mentoff + 2 < sizeof(ment))
                     ment[mentoff++] = ',';
                 mfirst = 0;
-                int nwritten = snprintf(ment + mentoff, sizeof(ment) - mentoff,
-                                        "\"%s\"", evs[i].tags[t][1]);
-                if (nwritten > 0)
+                size_t remain = (mentoff < sizeof(ment)) ? (sizeof(ment) - mentoff) : 0;
+                /* Properly escape the npub value for JSON safety (defense in depth) */
+                char mval[256];
+                hush_json_escape(evs[i].tags[t][1], mval, sizeof(mval));
+                int nwritten = snprintf(ment + mentoff, remain,
+                                        "\"%s\"", mval);
+                if (nwritten > 0 && (size_t)nwritten < remain)
                     mentoff += (size_t)nwritten;
+                else if (remain > 0) {
+                    /* truncated — close the array early */
+                    break;
+                }
             }
         }
         if (mentoff == 0)
