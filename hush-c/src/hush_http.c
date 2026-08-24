@@ -519,15 +519,37 @@ static void hush_http_serve_events(int fd, const hush_store_t *store)
     for (i = 0; i < n && off + 64 < sizeof(body); ++i) {
         hush_json_escape(evs[i].content, esc, sizeof(esc));
         hush_http_event_reply_to(reply_to, sizeof(reply_to), &evs[i]);
+
+        /* Collect p-mentions (the authoritative tags that triggered robot dispatch).
+         * This lets the UI show real per-robot acks instead of only content heuristic.
+         */
+        char ment[1024];
+        ment[0] = '\0';
+        size_t mentoff = 0;
+        int mfirst = 1;
+        for (size_t t = 0; t < evs[i].tag_count && t < HUSH_EVENT_MAX_TAGS; ++t) {
+            if (strcmp(evs[i].tags[t][0], "p") == 0 && evs[i].tags[t][1][0] != '\0') {
+                if (!mfirst && mentoff + 2 < sizeof(ment))
+                    ment[mentoff++] = ',';
+                mfirst = 0;
+                int nwritten = snprintf(ment + mentoff, sizeof(ment) - mentoff,
+                                        "\"%s\"", evs[i].tags[t][1]);
+                if (nwritten > 0)
+                    mentoff += (size_t)nwritten;
+            }
+        }
+        if (mentoff == 0)
+            strcpy(ment, "");
+
         w = snprintf(body + off, sizeof(body) - off,
                      "%s{\"id\":\"%s\",\"pubkey\":\"%s\",\"kind\":%u,"
                      "\"created_at\":%lld,\"content\":\"%s\",\"channel\":\"%s\","
-                     "\"reply_to\":\"%s\"}",
+                     "\"reply_to\":\"%s\",\"mentions\":[%s]}",
                      (i == 0) ? "" : ",",
                      evs[i].id, evs[i].pubkey, evs[i].kind,
                      (long long)evs[i].created_at, esc,
                      evs[i].tags[0][1][0] ? evs[i].tags[0][1] : "general",
-                     reply_to);
+                     reply_to, ment);
         if (w < 0)
             break;
         off += (size_t)w;

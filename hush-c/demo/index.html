@@ -3108,12 +3108,29 @@
     }
 
     function mentionedRobots(ev) {
-      const text = String((ev && ev.content) || "");
       const found = [];
+      // Prefer authoritative p-tags emitted by server (from M1.3 JSON change)
+      if (ev && Array.isArray(ev.mentions) && ev.mentions.length) {
+        ev.mentions.forEach((np) => {
+          if (!np) return;
+          const hit = mentionRoster().find((h) =>
+            h && h.npub && (h.npub === np || sameKey(h.npub, np))
+          );
+          if (hit && hit.kind !== "human" && !found.some((f) => f.npub === hit.npub)) {
+            found.push(hit);
+          }
+        });
+        if (found.length) return found;
+      }
+      // Fallback: content scan (for older events or direct content mentions)
+      const text = String((ev && ev.content) || "");
       mentionRoster().forEach((h) => {
         if (!h || !h.npub) return;
         if (h.kind === "human") return;
-        if (text.indexOf("nostr:" + h.npub) !== -1) found.push(h);
+        if (text.indexOf("nostr:" + h.npub) !== -1 &&
+            !found.some((f) => f.npub === h.npub)) {
+          found.push(h);
+        }
       });
       return found;
     }
