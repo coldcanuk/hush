@@ -236,6 +236,17 @@
     }
     .robot-ack .emoji { margin-right: 3px; }
 
+    /* M3.3: mention pills keep original positions in text (fidelity) */
+    .mention-pill {
+      background: var(--accent-dim);
+      color: var(--fg);
+      border-radius: 999px;
+      padding: 1px 6px;
+      font-size: 0.78rem;
+      margin: 0 1px;
+      white-space: nowrap;
+    }
+
     #code-canvas {
       display: none; position: fixed; z-index: 28; right: 0; top: 0;
       width: min(36rem, 46vw); height: 100%;
@@ -599,7 +610,29 @@
       .stats { display: none; }
       .lbl { display: none; }
     }
-  </style>
+  
+/* M4.5 Inventory Grid (cyber/steampunk) */
+#robot-inventory { display:grid; grid-template-columns:repeat(8,36px); grid-auto-rows:36px; gap:2px; background:#0f1419; padding:6px; border:2px solid #3a4a55; border-radius:4px; min-height:120px; }
+.inv-cell { border:1px solid #2a3a45; background:#11171d; position:relative; }
+.inv-item { position:absolute; border:2px solid #0ff; background:rgba(0,255,255,0.1); color:#fff; font:700 8px/1 sans-serif; padding:1px 3px; cursor:grab; box-shadow:0 0 3px #0ff; overflow:hidden; white-space:nowrap; }
+.inv-item.dragging { opacity:.5; border-color:#fff; }
+
+
+/* M4.5 Full Inventory Grid - cyberpunk/steampunk, drag-snap-occupancy */
+#robot-inventory { display:grid; grid-template-columns:repeat(8, 38px); grid-auto-rows:38px; gap:2px; background:#0f1419; padding:6px; border:2px solid #3a4a55; border-radius:4px; min-height:160px; position:relative; }
+.inv-cell { border:1px solid #2a3a45; background:#11171d; position:relative; }
+.inv-item { position:absolute; border:2px solid #0ff; background:rgba(0,255,255,0.12); color:#fff; font:700 8px/1 sans-serif; padding:2px 4px; cursor:grab; box-shadow:0 0 4px #0ff; overflow:hidden; white-space:nowrap; display:flex; align-items:center; justify-content:center; }
+.inv-item.dragging { opacity:0.5; border-color:#fff; box-shadow:0 0 8px #fff; z-index:20; }
+.inv-item.size-1x1 { width:36px; height:36px; }
+.inv-item.size-1x3 { width:36px; height:116px; }
+.inv-item.size-2x2 { width:76px; height:76px; }
+.inv-item.size-2x3 { width:76px; height:116px; }
+.inv-item .nm { font-size:7px; color:#0ff; text-shadow:0 0 2px #000; }
+
+
+/* M4.1 progressive mention states (thinking -> reacting -> emoji) */
+
+</style>
 </head>
 <body>
   <header>
@@ -705,6 +738,9 @@
         <div class="lbl">Channels</div>
       </div>
       <div class="robots" id="robot-list" aria-label="Robots"></div>
+      <div style="margin:8px 0 4px 8px;font-size:0.65rem;color:#8a9;">INVENTORY GRID (drag-drop prototype)</div>
+      <div id="robot-inventory" aria-label="Robot Inventory Grid"></div>
+
       <button class="stats" id="stats" type="button" role="button" tabindex="0"
               aria-label="Relay details">waiting for relay</button>
     </nav>
@@ -745,6 +781,12 @@
         <label class="switch"><input id="vibe-public" type="checkbox" checked><span class="slider"></span></label>
       </div>
       <p id="vibe-token" class="help"></p>
+      <div class="row">
+        <label for="dev-log">Developer Logging (syslog panel; default off)</label>
+        <label class="switch"><input id="dev-log" type="checkbox"><span class="slider"></span></label>
+      </div>
+      <p class="help">When enabled, logs go to separate Developer Log drawer (not main chat).</p>
+
       <p class="help">Theme</p>
       <div class="vis" id="theme-list">
         <label><input type="radio" name="theme" value="dark" checked> dark</label>
@@ -3740,7 +3782,8 @@
         if (!part.text) return;
         const body = document.createElement("div");
         body.className = "body";
-        body.textContent = part.text;
+        /* M3.3 fidelity: preserve original @mention positions/order */
+        renderPreservingMentions(part.text, body);
         n.appendChild(body);
       });
       if (files.length) {
@@ -3923,10 +3966,39 @@
     }
 
     function prettyMentions(text) {
+      /* Legacy string form (order-destroying). Kept for compatibility. */
       return String(text).replace(/nostr:(npub1[0-9a-z]+)/gi, (_, npub) => {
         const hit = mentionRoster().find((h) => h.npub === npub);
         return hit ? ("@" + hit.name) : ("@" + npub.slice(0, 12));
       });
+    }
+
+    /* M3.3: Non-destructive mention renderer.
+     * Preserves exact original text positions and order of @mentions.
+     * Mentions become inline spans at the precise location they appeared.
+     * This keeps sentence intent (e.g. "@Happy tell joke. @Sgt was it funny?").
+     */
+    function renderPreservingMentions(text, container) {
+      if (!container) return;
+      const re = /nostr:(npub1[0-9a-z]+)/gi;
+      let last = 0;
+      let m;
+      while ((m = re.exec(text || "")) !== null) {
+        if (m.index > last) {
+          container.appendChild(document.createTextNode(text.slice(last, m.index)));
+        }
+        const npub = m[1];
+        const hit = mentionRoster().find((h) => h.npub === npub);
+        const span = document.createElement("span");
+        span.className = "mention-pill";
+        span.textContent = "@" + (hit ? hit.name : npub.slice(0, 12));
+        span.title = npub;
+        container.appendChild(span);
+        last = re.lastIndex;
+      }
+      if (last < (text || "").length) {
+        container.appendChild(document.createTextNode(text.slice(last)));
+      }
     }
 
     function ago(ts) {
@@ -4266,6 +4338,22 @@
       installBtn.classList.remove("show");
     });
   </script>
+
+
+  <div class="drawer" id="dev-log-drawer" role="dialog" aria-label="Developer Log">
+    <div class="panel wide">
+      <div class="drawer-head">
+        <h2>Developer Log</h2>
+        <button class="drawer-x" id="dev-log-close" type="button" aria-label="Close dev log">×</button>
+      </div>
+      <p class="help">Syslog stream (mentions, intros, debug). Visible only when Developer Logging enabled in Settings.</p>
+      <pre id="dev-log-body" style="background:#000;color:#0f0;font:0.78rem/1.3 ui-monospace,monospace;height:320px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:8px;white-space:pre-wrap;"></pre>
+      <div class="actions">
+        <button class="btn ghost" id="dev-log-clear" type="button">Clear</button>
+        <button class="btn" id="dev-log-close2" type="button">Close</button>
+      </div>
+    </div>
+  </div>
 
 </body>
 </html>

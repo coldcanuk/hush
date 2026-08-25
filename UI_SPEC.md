@@ -64,10 +64,14 @@ holds an nsec or provider secret.
 
 ### 4. Hive
 - Header: hush + vibe name + badge. Actions live on `#tool-rail` (§15).
-- Sidebar: Channels; **Robots** list (Payne first, then raised agents).
-  Each robot is its own card with a compact 24px `+`/`-` expand/collapse.
-  Create (channel, project, robot, invite) lives on `#tool-rail` (§15).
-  There is no left-nav `.create` block.
+- Sidebar: Channels; **Robots inventory** (Diablo/Vein style spatial grid).
+  Openable inventory grid (default 10 cols × 5 rows, CELL_SIZE ~48–64px).
+  Drag-and-drop agents of variable sizes (1×1, 1×3, 2×2, 2×3 etc.).
+  Grid snap + occupancy/collision detection. Neon/brass cyberpunk-steampunk theme
+  (dark industrial bg, glowing borders, name overlays). Create/raise from rail or
+  inventory header populates first free slot(s). Payne is pinned or first.
+  Built robots go into inventory slots. Persist slot layout (roster + local for prototype).
+  Create lives on `#tool-rail` (§15) and inside inventory.
 - Stream + composer unchanged in spirit. Empty: Payne directive.
 
 ### 10. Close vs Exit (process lifecycle)
@@ -139,6 +143,12 @@ Kind 0 for the human:
   `dark` | `light` | `color-blind` | `dracula` | `desert` |
   `monochrome` | `christmas`
 - Persist `localStorage.hush-theme` immediately and `POST /api/profile {theme}`.
+- **Developer Logging** switch (default: off/disabled).
+  When enabled: opens a separate "Developer Log" drawer/panel (syslog format: `timestamp [robot-or-system] message`).
+  All "Mention received.", on-deck intros, debug/ack lines, internal notes route exclusively here.
+  Main chat and threads never show these when disabled.
+  Toggle persisted in session/profile; separate window-like drawer (similar to `#thread-pane` or `#code-canvas`).
+  "Mention received" and robot intros are **never** normal chat notes.
 
 ### 7. Manage vibe
 This process **is** the vibe. No second relay.
@@ -276,6 +286,32 @@ Keys never appear in `GET /api/session` or `GET /api/provider`.
 are booleans. Secret kind names are never GET JSON keys. Deepseek is
 wire id `deepseek-api`, family `api`, same drawer as OpenAI.
 
+**Channel topics & per-channel system pointers:** Channels store
+an `about` / topic string (set via pills or manage-chan). This is
+injected into every robot prompt on that channel as a short "Channel
+topic: ..." pointer (quick context for the LLM). Topics are first-class
+pills in the UI. Per-channel `robot_reply` / `robot_talk` policy also
+lives here and affects deliberation.
+
+**Inventory robots decision (M2):** Primary implementation is a web
+/CSS/JS grid inside the existing embed (compatible with current
+single-binary model, no new native deps). Aesthetic and interaction
+exactly match the provided Raylib reference (dark industrial,
+neon/brass borders, drag-snap-occupancy, variable sizes, names).
+Optional: `examples/inventory-raylib/` standalone prototype (only
+built if raylib present; copies user atlases from ~/Pictures for
+demo). No Raylib dependency on the main hush-relay.
+
+## M2 Architecture Decisions (locked for this feature)
+- **Mention fidelity & UX**: Original @ positions preserved in render (non-destructive). Progressive states ("thinking" → "reacting" → emoji ack only). "Mention received" and repeated intros are developer logs only.
+- **Developer Logging**: Dedicated toggle (default off) + separate panel. Syslog format. Suppresses log notes from main chat.
+- **Multi-robot deliberation**: Co-mention prompt + hygiene + peer p-mention support. Robots decide strategy (individual/coop/split/convo).
+- **Channel topics**: `about` string injected as "Channel topic: ..." quick pointer. Pills in UI.
+- **Tool rail**: Micro UX (grip affordance, consistent i buttons, labels, progressive disclosure).
+- **Robots inventory**: Web grid primary (CSS/JS 2D spatial, drag-snap-occupancy, variable sizes, cyber/steampunk). Matches Gemini/Raylib spec. Raylib optional standalone example only (no dep on core relay). Create/raise populates slots.
+- **Progressive acks**: Reuse/extend existing `status.thinking` + client transient chips before final emoji.
+- Decision rationale: Preserve embed model (no new hard deps for core), maximize compatibility, follow RDAP small atomic wins + user "Diablo/Vein" + "natural conversation flow" requirements.
+
 ## Data / API (additive)
 
 | Route | Role |
@@ -344,9 +380,29 @@ Roster: the signed-in human, Payne, raised robots, invited humans.
 Arrow keys + Enter or click. The visible composer shows an `@Name`
 pill (`.composer-pill`). The input never displays `nostr:npub1…`.
 Submit serializes each pill to `nostr:<npub>` in the posted content
-and records that pubkey as `mention_N`. Render replaces
-`nostr:npub1…` with `@Name`. Backspace at the start of leftover text
-removes the last pill.
+and records that pubkey as `mention_N`.
+
+**Mention fidelity (order & position critical):** The original text
+positions of `@Name` (or raw `nostr:npub`) in the human's sentence are
+preserved in rendering. Pills are non-destructive overlays or styled
+spans; they do not globally replace and reorder the source content.
+E.g. "@Happy tell me a joke. @Sgt Major Payne was it funny?" keeps
+the exact sequence and locations so intent ("tell Happy the joke,
+then ask Sgt about it") is not lost. `prettyMentions` or equivalent
+must be order-preserving; `paintNote` / `paintThreadStream` render
+the original text flow with mention markers in place.
+
+**Progressive mention acknowledgment UX:** On mention dispatch:
+1. Immediate visual "Happy is thinking..." (or per-robot status chip)
+   using existing `status.thinking` + client transient state.
+2. "Happy is reacting..." when job starts producing.
+3. Final robot-ack only via emoji pill (👍 🎯 etc.) in `.robot-acks`.
+   "Mention received." text is **never** a visible chat note (see
+   Developer Logging).
+
+Robot intros ("At ease...") appear at most once per robot per session
+or thread root (single on-deck guard). Subsequent mentions use only
+emoji ack + normal reply.
 
 Mentioning a robot starts a thread. The channel `#stream` lists **root**
 notes only (empty `reply_to`). A root with replies or a live job shows
@@ -501,6 +557,15 @@ Payne: “Leash the robots. They speak when mentioned, or not at all.”
 a hamburger. There are **no docks**, no snap squares, and no
 `#rail-docks`. The rail stays where the human drops it and is clamped
 on screen. `localStorage.hush-rail` stores `{x,y,collapsed}` only.
+
+**Micro-UX iterations (human-friendly tweaks):** Grip has visible
+"drag handle" pattern + title="Drag to move". All rail-i info buttons
+use consistent 22px, high-contrast. Popovers have 1-line summaries
+first. "New Robot" and inventory openers are clearly labeled. Collapse
+state + position restored per-vibe where possible. 44px minimum on
+primary actions. Progressive disclosure for advanced (STUN host,
+policy details). Small labels/hints added for first-time users without
+increasing cognitive load.
 
 **Brand home.** `placeRailAtBrand()` puts the collapsed hamburger
 immediately to the left of `.brand` (`hush` / vibe name, e.g.

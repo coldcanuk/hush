@@ -107,6 +107,11 @@ typedef struct {
     char vibe_about[HUSH_LAUNCH_ABOUT_MAX];
     int vibe_public;
     char vibe_token[HUSH_LAUNCH_NAME_MAX];
+    /* Developer Logging (default 0 = off/disabled).
+     * When 1: "Mention received.", on-deck intros, internal debug route to
+     * a separate panel (syslog format). Suppressed from main chat stream.
+     * See M3.1, UI_SPEC §6, and PLAN_CHAT_ROBOTS_INVENTORY.md. */
+    int dev_log_enabled;
     hush_launch_channel_t channels[HUSH_LAUNCH_CHANNELS_MAX];
     size_t nchannels;
     hush_launch_group_t groups[HUSH_LAUNCH_GROUPS_MAX];
@@ -233,3 +238,14 @@ int hush_launch_is_ready(const hush_launch_t *launch);
 const char *hush_launch_channel_about(const hush_launch_t *launch, const char *slug);
 
 #endif /* HUSH_LAUNCH_H */
+/* M2 Architecture lock (chat-robots-inventory-ui):
+ * - Developer Logging: new toggle (default 0/off). When on, "Mention received.",
+ *   on-deck intros, and debug lines go to a separate panel (syslog fmt).
+ *   Suppressed from main chat stream when disabled.
+ * - Robots inventory: web grid primary (CSS/JS 2D spatial in embed).
+ *   Raylib reference only in examples/inventory-raylib (optional, no dep).
+ * - Mention fidelity: original @ positions preserved (non-destructive render).
+ * - Progressive acks: thinking/reacting states → emoji-only final ack.
+ * - Single robot intro guard + multi-robot deliberation via co_npubs + prompt.
+ * See PLAN_CHAT_ROBOTS_INVENTORY.md and UI_SPEC.md §M2.
+ */

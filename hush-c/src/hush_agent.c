@@ -644,6 +644,7 @@ static void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bo
     char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
     const char *name;
     const char *line;
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
 
     assert(store != NULL);
     assert(bot != NULL);
@@ -651,15 +652,31 @@ static void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bo
     name = (bot->name != NULL && bot->name[0] != '\0') ? bot->name : "robot";
     line = (why != NULL && why[0] != '\0') ? why
         : "I am on deck. Standing orders are noted.";
+
+    /* Single intro guard (M3.2): only the very first "standing orders"
+     * on-deck per (robot, root). Subsequent mentions get emoji ack only.
+     * Keeps chat clean; one intro per conversation thread. */
+    hush_agent_event_root(root, sizeof(root), parent);
+    {
+        static char last_hex[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+        static char last_root[HUSH_EVENT_ID_HEX_LEN + 1];
+        if (bot->hex && strcmp(bot->hex, last_hex) == 0 &&
+            strcmp(root, last_root) == 0) {
+            return; /* already introduced once for this robot+thread */
+        }
+        if (bot->hex) {
+            hush_agent_copy(last_hex, sizeof(last_hex), bot->hex);
+        }
+        hush_agent_copy(last_root, sizeof(last_root), root);
+    }
+
     if (snprintf(content, sizeof(content),
                  "At ease. %s — %s", line, name) >= (int)sizeof(content))
         hush_agent_copy(content, sizeof(content), line);
     hush_agent_event_channel(channel, sizeof(channel), parent);
     {
-        char root[HUSH_EVENT_ID_HEX_LEN + 1];
         hush_agent_note_in_t in;
 
-        hush_agent_event_root(root, sizeof(root), parent);
         in.pubkey = bot->hex != NULL ? bot->hex : "";
         in.content = content;
         in.channel = channel;
@@ -891,10 +908,11 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
 
     hush_agent_fill_prompt(job->prompt, sizeof(job->prompt), bot, job->human_name);
 
-    /* Group mention seam: if co-robots, tell this robot they can address peers.
-     * LLM may emit "nostr:npub..." in content to target them; we will turn
-     * those into real p-tags on the reply note. */
-    if (job->n_co_robots > 0 && strlen(job->prompt) + 64 < sizeof(job->prompt)) {
+    /* Group mention seam + deliberation (M3.4):
+     * Co-mentioned robots must decide: own reply? cooperate? split? full convo?
+     * They can mention peers via nostr:npub (turned into p-tags by finish).
+     * Prompt hygiene + existing hop limits prevent runaway loops. */
+    if (job->n_co_robots > 0 && strlen(job->prompt) + 160 < sizeof(job->prompt)) {
         size_t off = strlen(job->prompt);
         const char *g = " Other robots mentioned: ";
         size_t glen = strlen(g);
@@ -911,12 +929,10 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
                 memcpy(job->prompt + off, np, nlen);
                 off += nlen;
             }
-            if (off + 60 < sizeof(job->prompt)) {
-                const char *tail = ". Address them by writing their full nostr:npub in your reply.";
-                memcpy(job->prompt + off, tail, strlen(tail));
-                off += strlen(tail);
-                job->prompt[off] = '\0';
-            }
+        }
+        const char *delib = " You + these peers were mentioned together. Decide strategy (own reply / cooperate on one / split / full convo among us). Call peers by emitting their nostr:npub in content.";
+        if (off + strlen(delib) < sizeof(job->prompt)) {
+            memcpy(job->prompt + off, delib, strlen(delib));
         }
     }
 
@@ -1161,9 +1177,10 @@ static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
         memcpy(parent.tags[0][0], "h", 2);
         hush_agent_copy(parent.tags[0][1], sizeof(parent.tags[0][1]),
                         job->channel);
-        hush_agent_on_deck(store, &bot, &parent,
-                           ok ? "Grok Build returned nothing."
-                              : "Grok Build did not answer in time.");
+        /* M3.1 dev log gate: this error on_deck path is internal.
+         * Suppress to keep main chat clean (main intros gated at dispatch).
+         * When dev logging is later wired to a panel we can surface here. */
+        (void)store; (void)&bot; (void)&parent; (void)ok; /* no-op for now */
     }
     hush_agent_close_job(job);
 }
@@ -1262,5 +1279,7 @@ static void hush_agent_handle_mention(hush_store_t *store,
         if (hush_agent_start_grok(&in) == HUSH_OK)
             return;
     }
-    hush_agent_on_deck(store, &bot, ev, "I am on deck. Standing orders are noted.");
+    if (launch == NULL || launch->dev_log_enabled) {
+        hush_agent_on_deck(store, &bot, ev, "I am on deck. Standing orders are noted.");
+    }
 }

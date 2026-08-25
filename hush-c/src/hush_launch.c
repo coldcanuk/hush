@@ -342,6 +342,7 @@ void hush_launch_init(hush_launch_t *launch)
         return;
     memset(launch, 0, sizeof(*launch));
     launch->vibe_public = 1;
+    launch->dev_log_enabled = 0; /* default: disabled (see M3.1) */
     hush_roster_init(&launch->roster);
     hush_launch_default_payne_providers(launch);
 }
@@ -1309,7 +1310,8 @@ static int hush_launch_write_session_open(const hush_launch_t *launch,
                  "\"npub\":\"%s\",\"pubkey\":\"%s\",\"nsec\":\"%s\","
                  "\"vibe\":{\"name\":\"%s\",\"about\":\"%s\","
                  "\"visibility\":\"%s\",\"discoverable\":%s,"
-                 "\"join_token\":\"%s\"},\"payne\":{",
+                 "\"join_token\":\"%s\"},"
+                 "\"dev_log_enabled\":%s,\"payne\":{",
                  launch->logged_in ? "true" : "false",
                  launch->backup_acked ? "true" : "false",
                  launch->has_vibe ? "true" : "false",
@@ -1325,7 +1327,8 @@ static int hush_launch_write_session_open(const hush_launch_t *launch,
                  esc_vibe, esc_about,
                  launch->vibe_public ? "public" : "private",
                  launch->vibe_public ? "true" : "false",
-                 launch->has_vibe ? launch->vibe_token : "");
+                 launch->has_vibe ? launch->vibe_token : "",
+                 launch->dev_log_enabled ? "true" : "false");
     if (n < 0 || (size_t)n >= outsz)
         return -1;
     return n;
@@ -1833,6 +1836,8 @@ static hush_status_t hush_launch_put_vibe_head(const hush_launch_t *launch,
     HUSH_TRY(hush_launch_put_field(out, outsz, off, "vibe_about",
                                    launch->vibe_about));
     HUSH_TRY(hush_launch_put_field(out, outsz, off, "vibe_public", flag));
+    flag[0] = launch->dev_log_enabled ? '1' : '0';
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "dev_log_enabled", flag));
     return hush_launch_put_field(out, outsz, off, "vibe_token",
                                  launch->vibe_token);
 }
@@ -2096,6 +2101,10 @@ static hush_status_t hush_launch_take_vibe_head(hush_launch_t *launch,
     if (hush_launch_json_string(json, "vibe_public", flag, sizeof(flag))
         && flag[0] == '0')
         launch->vibe_public = 0;
+    launch->dev_log_enabled = 0;
+    if (hush_launch_json_string(json, "dev_log_enabled", flag, sizeof(flag))
+        && flag[0] == '1')
+        launch->dev_log_enabled = 1;
     return HUSH_OK;
 }
 
