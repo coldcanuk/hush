@@ -76,3 +76,4 @@ Ready for M6.1 commits + PR lifecycle.
 M2.1 verified on base: UI_SPEC canvas contract + README Buzz origin sentence present and grepped.
 M3.1 C0 escape verified on base: hush_json_escape covers TAB/CR/other C0 with 6-byte guard; hush_launch delegates; test_json ctrl case passes; make compiles -Werror.
 M4.1 Fences + pane + POST /api/canvas verified on base: #code-canvas, .code-block CSS+select, splitFences/paintNote, canvas actions, hush_http_serve_canvas project-scoped write, route registered, embed not needed (pre-landed), greps + check_launch pass.
+M5.1 Checks verified: make clean/make/make test → ALL PASS; check_launch.sh greps for code-canvas, code-block, /api/canvas, splitFences, canvas-file pass; live canvas POST exercised in check; no new changes needed.
