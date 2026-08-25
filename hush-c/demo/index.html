@@ -4482,16 +4482,24 @@
       let saved = {};
       try { saved = JSON.parse(localStorage.getItem("hush-rail") || "{}"); } catch (e) { saved = {}; }
       if (saved.homed) {
-        placeRailAtBrand();
+        // Defer to allow full layout (brand rects, fonts, inventory grid etc.)
+        requestAnimationFrame(() => placeRailAtBrand());
         return;
       }
       if (saved.collapsed) setRailCollapsed(true);
-      if (typeof saved.x === "number" && typeof saved.y === "number")
-        placeRail(saved.x, saved.y);
-      else {
-        const w = rail.offsetWidth || 160;
-        placeRail(Math.max(0, window.innerWidth - w - RAIL_PAD), RAIL_PAD);
-      }
+      const doPlace = () => {
+        if (typeof saved.x === "number" && typeof saved.y === "number") {
+          placeRail(saved.x, saved.y);
+        } else {
+          // Prefer a left-inset initial position so it feels immediately draggable
+          // and not "pinned" by the CSS right rule. Users can drag or dblclick to home.
+          const w = rail.offsetWidth || 160;
+          const preferredX = 12;
+          placeRail(preferredX, RAIL_PAD);
+        }
+      };
+      // Defer one frame so offsetWidth/brand measurements are accurate after paint().
+      requestAnimationFrame(doPlace);
     }
     function saveRail() {
       if (railParked) return;
@@ -4557,6 +4565,16 @@
       }
       releaseBrandPad();
       ev.preventDefault();
+    });
+    /* Double-click the grip (striped drag handle) or the toggle to home the rail.
+     * Previously dblclick was only on the button, making the rail feel rigid/unresponsive
+     * when users naturally double-clicked the visible grip. */
+    $("rail-grip").addEventListener("dblclick", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      clearTimeout(railClickTimer);
+      placeRailAtBrand();
+      if (!railParked) saveRail();
     });
     $("thread-resize").addEventListener("pointerdown", (ev) => {
       const pane = $("thread-pane");
