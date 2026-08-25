@@ -236,6 +236,17 @@
     }
     .robot-ack .emoji { margin-right: 3px; }
 
+    /* M3.3: mention pills keep original positions in text (fidelity) */
+    .mention-pill {
+      background: var(--accent-dim);
+      color: var(--fg);
+      border-radius: 999px;
+      padding: 1px 6px;
+      font-size: 0.78rem;
+      margin: 0 1px;
+      white-space: nowrap;
+    }
+
     #code-canvas {
       display: none; position: fixed; z-index: 28; right: 0; top: 0;
       width: min(36rem, 46vw); height: 100%;
@@ -3740,7 +3751,8 @@
         if (!part.text) return;
         const body = document.createElement("div");
         body.className = "body";
-        body.textContent = part.text;
+        /* M3.3 fidelity: preserve original @mention positions/order */
+        renderPreservingMentions(part.text, body);
         n.appendChild(body);
       });
       if (files.length) {
@@ -3923,10 +3935,39 @@
     }
 
     function prettyMentions(text) {
+      /* Legacy string form (order-destroying). Kept for compatibility. */
       return String(text).replace(/nostr:(npub1[0-9a-z]+)/gi, (_, npub) => {
         const hit = mentionRoster().find((h) => h.npub === npub);
         return hit ? ("@" + hit.name) : ("@" + npub.slice(0, 12));
       });
+    }
+
+    /* M3.3: Non-destructive mention renderer.
+     * Preserves exact original text positions and order of @mentions.
+     * Mentions become inline spans at the precise location they appeared.
+     * This keeps sentence intent (e.g. "@Happy tell joke. @Sgt was it funny?").
+     */
+    function renderPreservingMentions(text, container) {
+      if (!container) return;
+      const re = /nostr:(npub1[0-9a-z]+)/gi;
+      let last = 0;
+      let m;
+      while ((m = re.exec(text || "")) !== null) {
+        if (m.index > last) {
+          container.appendChild(document.createTextNode(text.slice(last, m.index)));
+        }
+        const npub = m[1];
+        const hit = mentionRoster().find((h) => h.npub === npub);
+        const span = document.createElement("span");
+        span.className = "mention-pill";
+        span.textContent = "@" + (hit ? hit.name : npub.slice(0, 12));
+        span.title = npub;
+        container.appendChild(span);
+        last = re.lastIndex;
+      }
+      if (last < (text || "").length) {
+        container.appendChild(document.createTextNode(text.slice(last)));
+      }
     }
 
     function ago(ts) {
