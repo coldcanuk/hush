@@ -1,56 +1,37 @@
-# RESEARCH: Thread UX (current base audit) - gb/thread-ux
+# RESEARCH: Thread UX (current base) - gb/thread-ux
 
-Base: cce2d81fb (post pills-rail-voice-exit PR #58)
+Base: e8d7f8c30 (post rail-win PR #61)
 
-## Audit vs PLAN_THREAD_UX.md DoD / Milestones
+## Audit vs PLAN_THREAD_UX.md DoD
+
+**Thread scroll (H1, M3.1)**
+- THREAD_PIN_PX = 48
+- threadNearBottom + keep/near logic in paintThreadStream
+- openThreadPane uses forcePin on first open
+- Matches "does not assign scrollTop unless near bottom or just opened"
 
 **Composer (M3.1)**
-- `#msg` and `#thread-msg` are `<textarea rows="6">` — present.
-- Shift+Enter newline, Enter submit logic present in form handlers.
-- Mention pills work with the textareas.
+- #msg and #thread-msg are <textarea rows="6">
+- Shift+Enter newline, Enter submit
 
-**Thread scroll / snap-back (H1, M3.1)**
-- `THREAD_PIN_PX = 48`
-- `threadNearBottom(box)`
-- `paintThreadStream`:
-  - `const near = !shown || forcePin || threadNearBottom(box);`
-  - `const keep = box.scrollTop;`
-  - ... render ...
-  - `if (near) box.scrollTop = box.scrollHeight; else box.scrollTop = keep;`
-- `openThreadPane` calls with `!wasOpen` for forcePin on first open.
-- This matches the required behavior: does not force scrollTop unless near bottom or just opening.
+**Canvas (M3.2)**
+- #code-canvas-hi with tok- classes (golang/Go keywords present)
+- #canvas-k popover, Ctrl+K, POST /api/fixup
 
-**Canvas highlight + Ctrl+K (M3.2)**
-- `#code-canvas-hi` overlay with tok- classes (kw, str, cmt, num, ghost)
-- Language map includes golang/Go keywords.
-- `#canvas-k` popover, Ctrl/Cmd+K handling.
-- `POST /api/fixup` path exists (canvas FIM / fixup routes already in http + agent).
-- Scroll sync between edit and hi.
+**Rail (M3.3)**
+- rail-info, rail-min, rail-max, blank-btn references present from prior rail work
 
-**Tool rail (M3.3)**
-- Rail elements: `rail-info`, `blank-btn` references in plan, `rail-min`, `rail-max` present in current HTML from prior rail work.
-- Install first, `i` help popovers, two-col grids.
-- Matches the compact rail from previous slices.
-
-**Fixup API (M3.4)**
-- `/api/fixup` is implemented (from canvas-fim and prior work).
-- Uses agent job flavor, no hive note.
-- Tests exist (`check_fixup.sh` or integrated).
+**Fixup (M3.4)**
+- /api/fixup implemented, no hive note for canvas fixup
+- Agent fixup flavor exists
 
 **Tests (M4.1)**
-- `check_pwa.sh`, `check_fixup.sh`, `check_launch.sh` contain required greps.
-- Baseline: ALL TESTS PASSED.
+- check_pwa.sh, check_fixup.sh contain the greps
+- Baseline: ALL TESTS PASSED on this worktree
 
-## Current state on this base
-Most of the plan (M2, M3, M4) is already implemented from prior atomic PRs (thread-ux, rail, canvas-fim, etc.).
+## Conclusion
+All DoD items are present on the current base. Features delivered in prior atomic PRs (thread-ux, canvas-fim, rail slices).
 
-The plan document itself has many [x] marks, indicating it was largely delivered.
+This worktree: verification gate + close per RDAP + PRIME_DIRECTIVE.
 
-## Atomic work for this worktree
-- M1.1: Research gate + current-base audit (this file).
-- Verify no regression on current main.
-- Run full make test + checks.
-- If any small hygiene, do it as M4/M5.
-- Then PR + full PRIME_DIRECTIVE lifecycle.
-
-No large missing features found. This is primarily verification + closing the plan on the latest base.
+No new code changes required.
