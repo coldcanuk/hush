@@ -663,6 +663,12 @@ static void hush_intel_handle_robot(hush_store_t *store, hush_launch_t *launch,
         return;
     if (hush_intel_policy_blocks(store, ch, launch, ev, hex))
         return;
+
+    /* Server ack note (M5): durable receipt authored by the robot.
+     * Threaded via h/e; T=confirm prevents intel_consider re-dispatch.
+     * Emitted before hold/release so receipt is visible even on burst paths. */
+    hush_intel_post_line(store, ev, hex, "Mention received.");
+
     hush_intel_event_channel(channel, sizeof(channel), ev);
     hush_intel_event_root(root, sizeof(root), ev);
     hold = hush_intel_find_hold(channel, root, hex);

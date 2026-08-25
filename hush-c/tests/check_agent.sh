@@ -76,6 +76,8 @@ ag=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
 echo "$ag" | grep -q '"slug":"happy"' || fail "happy not raised"
 npub=$(printf '%s' "$ag" | sed -n 's/.*"slug":"happy"[^}]*"npub":"\([^"]*\)".*/\1/p')
 test -n "$npub" || fail "happy npub missing"
+hex=$(printf '%s' "$ag" | sed -n 's/.*"slug":"happy"[^}]*"pubkey":"\([^"]*\)".*/\1/p')
+test -n "$hex" || fail "happy pubkey missing"
 
 st=$(curl -sf "http://127.0.0.1:${port}/api/status")
 printf '%s' "$st" | grep -q '"thinking"' || fail "status missing thinking"
@@ -84,6 +86,23 @@ sent=$(curl -sf -X POST "http://127.0.0.1:${port}/api/event" \
     -H 'Content-Type: application/json' \
     -d "{\"content\":\"nostr:${npub} Hello. Tell me a joke\",\"kind\":1,\"channel\":\"general\",\"mention_0\":\"${npub}\"}")
 echo "$sent" | grep -q '"ok":true' || fail "mention event not stored"
+
+# M5 server ack note proof (atomic): after a successful mention dispatch,
+# the server emits a real kind-1 note authored by the robot pubkey (hex)
+# with content "Mention received." (threaded via h/e, T=confirm to avoid loops).
+# This is the durable server-side receipt instead of pure client render.
+got_ack=$(curl -sf "http://127.0.0.1:${port}/api/events")
+printf '%s' "$got_ack" | python3 -c '
+import json, sys
+hexp = sys.argv[1]
+data = json.loads(sys.stdin.read())
+for e in (data.get("events") or []):
+    if (e.get("pubkey") or "") == hexp:
+        if "Mention received" in (e.get("content") or ""):
+            sys.exit(0)
+print("MISSING_SERVER_ACK_NOTE_FROM_ROBOT")
+sys.exit(1)
+' "${hex}" || fail "server must emit ack note authored by the mentioned robot"
 
 got=""
 i=0
