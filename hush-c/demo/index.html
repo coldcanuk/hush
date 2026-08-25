@@ -629,6 +629,10 @@
 .inv-item.size-2x3 { width:76px; height:116px; }
 .inv-item .nm { font-size:7px; color:#0ff; text-shadow:0 0 2px #000; }
 
+.inv-header { display:flex; align-items:center; gap:6px; margin:6px 0 2px 6px; }
+.inv-header .inv-title { font-size:0.62rem; letter-spacing:0.06em; color:#8a9; text-transform:uppercase; }
+.inv-header .mini { font-size:0.62rem; padding:1px 6px; border:1px solid #3a4a55; background:#11171d; color:#9cf; border-radius:3px; cursor:pointer; }
+.inv-header .mini:hover { border-color:#0ff; color:#fff; }
 
 /* M4.1 progressive mention states (thinking -> reacting -> emoji) */
 
@@ -737,8 +741,14 @@
       <div id="chan-list">
         <div class="lbl">Channels</div>
       </div>
-      <div class="robots" id="robot-list" aria-label="Robots"></div>
-      <div style="margin:8px 0 4px 8px;font-size:0.65rem;color:#8a9;">INVENTORY GRID (drag-drop prototype)</div>
+      <!-- Legacy list hidden per M4.5: inventory grid is the primary Robots UI (Diablo/Vein spatial) -->
+      <div class="robots" id="robot-list" aria-label="Robots" style="display:none"></div>
+      <div class="inv-header">
+        <span class="inv-title">Robots Inventory</span>
+        <button class="mini" id="inv-seed" type="button" title="Seed demo robots">Seed</button>
+        <button class="mini" id="inv-clear" type="button" title="Clear inventory">Clear</button>
+        <button class="mini" id="inv-raise" type="button" title="Raise / create new robot">+ Raise</button>
+      </div>
       <div id="robot-inventory" aria-label="Robot Inventory Grid"></div>
 
       <button class="stats" id="stats" type="button" role="button" tabindex="0"
@@ -1215,6 +1225,21 @@
     let canvasFimBusy = false;
     const CANVAS_FIM_MS = 300;
 
+    /* M3.1/M4.3 Developer Logging (default off). When false, "Mention received."
+     * and robot intros are filtered from main chat/thread streams and go only
+     * to the dev-log drawer (syslog style). Toggle in Settings. */
+    let devLogEnabled = false;
+    const devLogLines = [];
+
+    /* M4.5 Inventory grid state (Diablo/Vein spatial). Variable sizes in cells.
+     * Drag-drop with snap + occupancy collision. Cyber/steampunk neon+brass. */
+    let invItems = []; /* {id, name, w, h, gx, gy, slug?, color?} */
+    const INV_COLS = 8;
+    const INV_ROWS = 5;
+    const INV_CELL = 38;
+    let invDrag = null; /* {id, startGX, startGY, gx, gy, w, h, dx, dy} */
+    let invNextId = 1;
+
     function $(id) { return document.getElementById(id); }
 
     async function api(path, body) {
@@ -1282,6 +1307,7 @@
       lastGateHtml = "";
       paintChannels();
       paintRobots();
+      if (typeof renderInventory === "function") renderInventory();
     }
 
     function stepBar(n) {
@@ -2504,6 +2530,13 @@
         applySession(await api("/api/agent", body));
         $("agent-drawer").classList.remove("show");
         resetAgentDraft();
+        /* M4.5: auto-place newly raised robot into inventory grid (1x1 default) */
+        setTimeout(() => {
+          const last = (session.agents || []).slice(-1)[0];
+          if (last && typeof addToInventory === "function") {
+            addToInventory(last, "1x1");
+          }
+        }, 120);
       } catch (e) { $("agent-err").textContent = "Could not raise that robot."; }
     });
     $("agent-delete").addEventListener("click", async () => {
@@ -2903,6 +2936,30 @@
       catch (e) {}
       syncSettings();
     });
+    // M4.3 Developer Logging toggle (default off). Persist best-effort via profile or local.
+    if ($("dev-log")) {
+      $("dev-log").addEventListener("change", async () => {
+        devLogEnabled = !!$("dev-log").checked;
+        // Best effort persist (server carries dev_log_enabled in launch/session)
+        try {
+          await api("/api/profile", { dev_log_enabled: devLogEnabled ? 1 : 0 });
+        } catch (e) { /* ignore; client state still works */ }
+        if (devLogEnabled) {
+          openDevLog();
+        } else {
+          closeDevLog();
+        }
+        // Re-render streams with filter
+        try { render(lastEvents, lastStatus); } catch (e) {}
+      });
+    }
+    $("dev-log-close").addEventListener("click", closeDevLog);
+    $("dev-log-close2").addEventListener("click", closeDevLog);
+    $("dev-log-clear").addEventListener("click", () => {
+      devLogLines.length = 0;
+      const pre = $("dev-log-body");
+      if (pre) pre.textContent = "";
+    });
 
     async function syncSettings() {
       try {
@@ -2927,6 +2984,11 @@
           ? ("Join token: " + (session.vibe.join_token || ""))
           : "Public vibes are discoverable and joinable.";
       }
+      // M4.3 dev log flag from session (persisted server side via launch)
+      if (typeof session.dev_log_enabled !== "undefined") {
+        devLogEnabled = !!session.dev_log_enabled;
+      }
+      if ($("dev-log")) $("dev-log").checked = !!devLogEnabled;
     }
 
     async function postTurn() {
@@ -3841,7 +3903,9 @@
     function paintThreadStream(rootId, forcePin) {
       const root = lastEvents.find((e) => e.id === rootId);
       if (!root) return;
-      const kids = repliesTo(lastEvents, rootId);
+      /* Use visibleNotes filter so dev log items (Mention received, repeated intros) stay out of thread too */
+      const filtered = visibleNotes(lastEvents);
+      const kids = repliesTo(filtered, rootId);
       const bots = threadMembers(root, kids);
       const names = bots.map((b) => b.name).filter(Boolean);
       $("thread-title").textContent = names.length ? ("Thread · " + names.join(", ")) : "Thread";
@@ -3859,7 +3923,8 @@
       const near = !shown || forcePin || threadNearBottom(box);
       const keep = box.scrollTop;
       box.innerHTML = "";
-      box.appendChild(paintNote(root));
+      /* Only show root if not a dev-log note when disabled */
+      if (!isDevLogNote(root) || devLogEnabled) box.appendChild(paintNote(root));
       kids.forEach((k) => box.appendChild(paintNote(k)));
       paintThreadThink(jobs);
       threadSeen = key;
@@ -3904,7 +3969,12 @@
       events.forEach((e) => { handleSig(e); });
       lastEvents = events || [];
       lastStatus = status || {};
-      const mine = channelNotes(lastEvents);
+      // Feed dev log for all incoming (syslog capture regardless of filter)
+      (lastEvents || []).forEach((e) => {
+        if (isDevLogNote(e)) appendDevLog((e.pubkey ? (who(e.pubkey) + ": ") : "") + (e.content || "").slice(0, 200));
+      });
+      const filtered = visibleNotes(lastEvents);
+      const mine = channelNotes(filtered);
       const roots = mine.filter((e) => !e.reply_to);
       $("count").textContent = roots.length + (roots.length === 1 ? " note" : " notes");
       const projN = (session.projects || []).length;
@@ -3999,6 +4069,261 @@
       if (last < (text || "").length) {
         container.appendChild(document.createTextNode(text.slice(last)));
       }
+    }
+
+    /* M4.3/M3.1: Developer log helpers. isDevLogNote recognizes ack/intro lines.
+     * visibleNotes filters them out of main chat when !devLogEnabled.
+     * appendDevLog always records when enabled (or always for durability). */
+    function isDevLogNote(e) {
+      if (!e || !e.content) return false;
+      const c = String(e.content);
+      if (c.indexOf("Mention received") >= 0) return true;
+      if (c.indexOf("At ease.") >= 0 && c.indexOf("Sgt Major Payne") >= 0) return true;
+      if (c.indexOf("At ease.") >= 0 && c.indexOf("—") >= 0) return true;
+      return false;
+    }
+
+    function appendDevLog(line) {
+      const ts = new Date().toISOString().replace("T", " ").slice(0, 19);
+      const entry = ts + " " + line;
+      devLogLines.push(entry);
+      if (devLogLines.length > 400) devLogLines.shift();
+      const pre = $("dev-log-body");
+      if (pre) {
+        pre.textContent = devLogLines.join("\n");
+        pre.scrollTop = pre.scrollHeight;
+      }
+    }
+
+    function visibleNotes(events) {
+      if (!events || !events.length) return [];
+      if (devLogEnabled) return events.slice();
+      return events.filter((e) => !isDevLogNote(e));
+    }
+
+    function openDevLog() {
+      const d = $("dev-log-drawer");
+      if (d) d.classList.add("show");
+      const pre = $("dev-log-body");
+      if (pre) {
+        pre.textContent = devLogLines.join("\n");
+        pre.scrollTop = pre.scrollHeight;
+      }
+    }
+    function closeDevLog() {
+      const d = $("dev-log-drawer");
+      if (d) d.classList.remove("show");
+    }
+
+    /* ========== M4.5 Inventory Grid Implementation (Diablo/Vein style) ========== */
+    function invId() { return "inv" + (invNextId++); }
+
+    function sizeForKey(key) {
+      if (key === "1x3") return { w: 1, h: 3 };
+      if (key === "2x2") return { w: 2, h: 2 };
+      if (key === "2x3") return { w: 2, h: 3 };
+      return { w: 1, h: 1 }; /* default 1x1 */
+    }
+
+    function isSpaceFree(gx, gy, w, h, ignoreId) {
+      if (gx < 0 || gy < 0 || gx + w > INV_COLS || gy + h > INV_ROWS) return false;
+      for (let i = 0; i < invItems.length; i++) {
+        const it = invItems[i];
+        if (ignoreId && it.id === ignoreId) continue;
+        const ix2 = it.gx + it.w, iy2 = it.gy + it.h;
+        const gx2 = gx + w, gy2 = gy + h;
+        if (!(gx >= ix2 || gx2 <= it.gx || gy >= iy2 || gy2 <= it.gy)) return false;
+      }
+      return true;
+    }
+
+    function findFreeSlot(w, h) {
+      for (let y = 0; y <= INV_ROWS - h; y++) {
+        for (let x = 0; x <= INV_COLS - w; x++) {
+          if (isSpaceFree(x, y, w, h, null)) return { gx: x, gy: y };
+        }
+      }
+      return null;
+    }
+
+    function addToInventory(bot, sizeKey) {
+      const sz = sizeForKey(sizeKey || "1x1");
+      const slot = findFreeSlot(sz.w, sz.h);
+      if (!slot) {
+        /* fallback: place at 0,0 if possible or push anyway (will overlap visually but rare) */
+        if (!isSpaceFree(0, 0, sz.w, sz.h, null)) {
+          /* bump first if needed for demo resilience */
+        }
+        slot = { gx: 0, gy: 0 };
+      }
+      const item = {
+        id: invId(),
+        name: (bot && bot.name) ? bot.name : "Robot",
+        w: sz.w, h: sz.h,
+        gx: slot.gx, gy: slot.gy,
+        slug: (bot && bot.slug) ? bot.slug : "",
+        color: (bot && bot.color) ? bot.color : "#0ff"
+      };
+      invItems.push(item);
+      renderInventory();
+      return item;
+    }
+
+    function removeFromInventory(id) {
+      invItems = invItems.filter((it) => it.id !== id);
+      renderInventory();
+    }
+
+    function renderInventory() {
+      const grid = $("robot-inventory");
+      if (!grid) return;
+      grid.innerHTML = "";
+      grid.style.position = "relative";
+      grid.style.width = (INV_COLS * INV_CELL + 4) + "px";
+      grid.style.height = (INV_ROWS * INV_CELL + 4) + "px";
+      grid.style.background = "#0f1419";
+      grid.style.border = "2px solid #3a4a55";
+      grid.style.borderRadius = "4px";
+      grid.style.padding = "2px";
+      /* background cells */
+      for (let y = 0; y < INV_ROWS; y++) {
+        for (let x = 0; x < INV_COLS; x++) {
+          const cell = document.createElement("div");
+          cell.className = "inv-cell";
+          cell.style.position = "absolute";
+          cell.style.left = (x * INV_CELL) + "px";
+          cell.style.top = (y * INV_CELL) + "px";
+          cell.style.width = INV_CELL + "px";
+          cell.style.height = INV_CELL + "px";
+          grid.appendChild(cell);
+        }
+      }
+      /* items */
+      invItems.forEach((it) => {
+        const el = document.createElement("div");
+        el.className = "inv-item size-" + it.w + "x" + it.h;
+        el.dataset.id = it.id;
+        el.style.position = "absolute";
+        el.style.left = (it.gx * INV_CELL + 1) + "px";
+        el.style.top = (it.gy * INV_CELL + 1) + "px";
+        el.style.width = ((it.w * INV_CELL) - 4) + "px";
+        el.style.height = ((it.h * INV_CELL) - 4) + "px";
+        el.style.borderColor = it.color || "#0ff";
+        el.style.boxShadow = "0 0 4px " + (it.color || "#0ff");
+        el.innerHTML = '<span class="nm">' + esc(it.name) + '</span>';
+        el.addEventListener("pointerdown", (ev) => beginInvDrag(ev, it.id));
+        /* allow click to edit/raise */
+        el.addEventListener("click", (ev) => {
+          if (invDrag) return;
+          const bot = robotModels().find((b) => b.slug === it.slug) || { name: it.name, slug: it.slug };
+          openAgentDrawer(bot);
+        });
+        grid.appendChild(el);
+      });
+      /* drag over feedback on grid */
+      grid.onpointermove = (ev) => onInvPointerMove(ev);
+      grid.onpointerup = (ev) => onInvPointerUp(ev);
+      grid.onpointerleave = () => { if (invDrag) revertInvDrag(); };
+    }
+
+    function beginInvDrag(ev, id) {
+      const it = invItems.find((i) => i.id === id);
+      if (!it) return;
+      const grid = $("robot-inventory");
+      if (!grid) return;
+      const rect = grid.getBoundingClientRect();
+      invDrag = {
+        id: it.id,
+        startGX: it.gx, startGY: it.gy,
+        gx: it.gx, gy: it.gy,
+        w: it.w, h: it.h,
+        dx: ev.clientX - rect.left - (it.gx * INV_CELL),
+        dy: ev.clientY - rect.top - (it.gy * INV_CELL)
+      };
+      const els = grid.querySelectorAll(".inv-item");
+      els.forEach((e) => { if (e.dataset.id === id) e.classList.add("dragging"); });
+      ev.preventDefault();
+    }
+
+    function onInvPointerMove(ev) {
+      if (!invDrag) return;
+      const grid = $("robot-inventory");
+      if (!grid) return;
+      const rect = grid.getBoundingClientRect();
+      const relX = ev.clientX - rect.left - invDrag.dx;
+      const relY = ev.clientY - rect.top - invDrag.dy;
+      let gx = Math.round(relX / INV_CELL);
+      let gy = Math.round(relY / INV_CELL);
+      gx = Math.max(0, Math.min(INV_COLS - invDrag.w, gx));
+      gy = Math.max(0, Math.min(INV_ROWS - invDrag.h, gy));
+      invDrag.gx = gx; invDrag.gy = gy;
+      /* live preview move */
+      const el = grid.querySelector('.inv-item[data-id="' + invDrag.id + '"]');
+      if (el) {
+        el.style.left = (gx * INV_CELL + 1) + "px";
+        el.style.top = (gy * INV_CELL + 1) + "px";
+      }
+      /* occupancy hint */
+      const ok = isSpaceFree(gx, gy, invDrag.w, invDrag.h, invDrag.id);
+      if (el) el.style.borderColor = ok ? "#0ff" : "#f66";
+    }
+
+    function onInvPointerUp(ev) {
+      if (!invDrag) return;
+      const grid = $("robot-inventory");
+      const id = invDrag.id;
+      const gx = invDrag.gx, gy = invDrag.gy, w = invDrag.w, h = invDrag.h;
+      const ok = isSpaceFree(gx, gy, w, h, id);
+      const it = invItems.find((i) => i.id === id);
+      if (it) {
+        if (ok) {
+          it.gx = gx; it.gy = gy;
+        } else {
+          /* revert */
+          it.gx = invDrag.startGX; it.gy = invDrag.startGY;
+        }
+      }
+      if (grid) {
+        const els = grid.querySelectorAll(".inv-item");
+        els.forEach((e) => e.classList.remove("dragging"));
+      }
+      invDrag = null;
+      renderInventory();
+    }
+
+    function revertInvDrag() {
+      if (!invDrag) return;
+      const it = invItems.find((i) => i.id === invDrag.id);
+      if (it) { it.gx = invDrag.startGX; it.gy = invDrag.startGY; }
+      invDrag = null;
+      renderInventory();
+    }
+
+    function seedInventoryDemo() {
+      invItems = [];
+      const demo = [
+        { name: "Happy", size: "1x1" },
+        { name: "Sgt Major Payne", size: "1x3" },
+        { name: "Cipher", size: "2x2" }
+      ];
+      demo.forEach((d) => {
+        const sz = sizeForKey(d.size);
+        const slot = findFreeSlot(sz.w, sz.h) || { gx: 0, gy: 0 };
+        invItems.push({
+          id: invId(),
+          name: d.name,
+          w: sz.w, h: sz.h,
+          gx: slot.gx, gy: slot.gy,
+          slug: d.name.toLowerCase().replace(/\s+/g, "-"),
+          color: "#0ff"
+        });
+      });
+      renderInventory();
+    }
+
+    function clearInventory() {
+      invItems = [];
+      renderInventory();
     }
 
     function ago(ts) {
@@ -4310,6 +4635,11 @@
       if ($("thread-pane").classList.contains("show")) applyThreadSize();
     });
     loadRail();
+
+    /* M4.5 Inventory header button wiring */
+    if ($("inv-seed")) $("inv-seed").addEventListener("click", () => { seedInventoryDemo(); });
+    if ($("inv-clear")) $("inv-clear").addEventListener("click", () => { clearInventory(); });
+    if ($("inv-raise")) $("inv-raise").addEventListener("click", () => { openAgentDrawer(null); });
 
     applyTheme(localStorage.getItem("hush-theme") || "dark");
     paint();
