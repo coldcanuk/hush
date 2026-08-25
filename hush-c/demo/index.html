@@ -224,6 +224,18 @@
       font-size: 0.72rem; font-weight: 650;
     }
     .note-files button:hover { background: var(--surface-2); }
+
+    /* Robot mention acks (Discord-like reactions) */
+    .robot-acks {
+      display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;
+    }
+    .robot-ack {
+      font-size: 0.78rem; padding: 1px 6px; border-radius: 999px;
+      background: var(--surface-2); border: 1px solid var(--line); color: var(--muted);
+      white-space: nowrap;
+    }
+    .robot-ack .emoji { margin-right: 3px; }
+
     #code-canvas {
       display: none; position: fixed; z-index: 28; right: 0; top: 0;
       width: min(36rem, 46vw); height: 100%;
@@ -3096,12 +3108,29 @@
     }
 
     function mentionedRobots(ev) {
-      const text = String((ev && ev.content) || "");
       const found = [];
+      // Prefer authoritative p-tags emitted by server (from M1.3 JSON change)
+      if (ev && Array.isArray(ev.mentions) && ev.mentions.length) {
+        ev.mentions.forEach((np) => {
+          if (!np) return;
+          const hit = mentionRoster().find((h) =>
+            h && h.npub && (h.npub === np || sameKey(h.npub, np))
+          );
+          if (hit && hit.kind !== "human" && !found.some((f) => f.npub === hit.npub)) {
+            found.push(hit);
+          }
+        });
+        if (found.length) return found;
+      }
+      // Fallback: content scan (for older events or direct content mentions)
+      const text = String((ev && ev.content) || "");
       mentionRoster().forEach((h) => {
         if (!h || !h.npub) return;
         if (h.kind === "human") return;
-        if (text.indexOf("nostr:" + h.npub) !== -1) found.push(h);
+        if (text.indexOf("nostr:" + h.npub) !== -1 &&
+            !found.some((f) => f.npub === h.npub)) {
+          found.push(h);
+        }
       });
       return found;
     }
@@ -3734,6 +3763,27 @@
         n.appendChild(bar);
       }
       if (extra) extra(n, e);
+
+      // Render robot acks (👍 🎯 🏆) for p-mentions on this note
+      try {
+        const acks = mentionedRobots(e);
+        if (acks && acks.length) {
+          const ackBar = document.createElement("div");
+          ackBar.className = "robot-acks";
+          const emojiSet = ["👍", "🎯", "🏆"];
+          acks.forEach((bot, i) => {
+            const pill = document.createElement("span");
+            pill.className = "robot-ack";
+            const emoji = emojiSet[i % emojiSet.length];
+            pill.title = "Mention acknowledged by " + (bot.name || "robot");
+            pill.setAttribute("aria-label", "Mentioned " + (bot.name || "robot"));
+            pill.innerHTML = '<span class="emoji">' + emoji + '</span>' + esc(bot.name || "robot");
+            ackBar.appendChild(pill);
+          });
+          n.appendChild(ackBar);
+        }
+      } catch (eAck) { /* never break render on ack */ }
+
       return n;
     }
 

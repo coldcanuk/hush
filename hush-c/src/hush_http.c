@@ -516,18 +516,48 @@ static void hush_http_serve_events(int fd, const hush_store_t *store)
 
     n = hush_store_query(store, NULL, 0, evs, HUSH_HTTP_EVENTS_MAX);
     off = (size_t)snprintf(body, sizeof(body), "{\"events\":[");
-    for (i = 0; i < n && off + 64 < sizeof(body); ++i) {
+    for (i = 0; i < n && off + 512 < sizeof(body); ++i) {
         hush_json_escape(evs[i].content, esc, sizeof(esc));
         hush_http_event_reply_to(reply_to, sizeof(reply_to), &evs[i]);
+
+        /* Collect p-mentions (the authoritative tags that triggered robot dispatch).
+         * Produces a valid JSON array (or empty) so UI acks are truthful.
+         * Never emits a trailing comma even on truncation.
+         */
+        char ment[1024];
+        ment[0] = '\0';
+        size_t mentoff = 0;
+        int has_mention = 0;
+        for (size_t t = 0; t < evs[i].tag_count && t < HUSH_EVENT_MAX_TAGS; ++t) {
+            if (strcmp(evs[i].tags[t][0], "p") != 0 || evs[i].tags[t][1][0] == '\0')
+                continue;
+            char mval[256];
+            hush_json_escape(evs[i].tags[t][1], mval, sizeof(mval));
+            size_t need = strlen(mval) + 3; /* quote + quote + optional leading comma */
+            if (mentoff + need + 1 >= sizeof(ment))
+                break; /* stop; array so far is valid */
+            if (has_mention) {
+                ment[mentoff++] = ',';
+            }
+            int nw = snprintf(ment + mentoff, sizeof(ment) - mentoff,
+                              "\"%s\"", mval);
+            if (nw < 0 || (size_t)nw >= (sizeof(ment) - mentoff))
+                break;
+            mentoff += (size_t)nw;
+            has_mention = 1;
+        }
+        if (!has_mention)
+            ment[0] = '\0';
+
         w = snprintf(body + off, sizeof(body) - off,
                      "%s{\"id\":\"%s\",\"pubkey\":\"%s\",\"kind\":%u,"
                      "\"created_at\":%lld,\"content\":\"%s\",\"channel\":\"%s\","
-                     "\"reply_to\":\"%s\"}",
+                     "\"reply_to\":\"%s\",\"mentions\":[%s]}",
                      (i == 0) ? "" : ",",
                      evs[i].id, evs[i].pubkey, evs[i].kind,
                      (long long)evs[i].created_at, esc,
                      evs[i].tags[0][1][0] ? evs[i].tags[0][1] : "general",
-                     reply_to);
+                     reply_to, ment);
         if (w < 0)
             break;
         off += (size_t)w;
