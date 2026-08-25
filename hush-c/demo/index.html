@@ -580,7 +580,7 @@
     .wide { width: min(52rem, 100%); }
     .badge-vis { font-size: 0.7rem; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
     #tool-rail {
-      position: fixed; z-index: 30; top: 10px; left: 140px; right: auto;
+      position: fixed; z-index: 30; top: 10px; left: 360px; right: auto;
       display: flex; flex-direction: column; gap: 8px;
       background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
       padding: 8px; box-shadow: 0 10px 28px rgba(0,0,0,0.35); min-width: 44px;
@@ -588,7 +588,7 @@
     }
     #tool-rail.collapsed { padding: 6px; }
     #tool-rail.collapsed .rail-body { display: none; }
-    #tool-rail.collapsed #rail-grip { min-width: 36px; flex: 0 0 36px; }
+    #tool-rail.collapsed #rail-grip { min-width: 72px; flex: 0 0 72px; }
     .rail-bar { display: flex; align-items: center; gap: 6px; }
     #rail-grip {
       flex: 1; min-height: 44px; cursor: grab; border-radius: 6px;
@@ -4446,7 +4446,7 @@
       const b = brand.getBoundingClientRect();
       const y = Math.max(4, b.top + (b.height - (rail.offsetHeight || 56)) / 2);
       // Use comfortable inset so "home" position also looks draggable, not glued to brand
-      placeRail(180, y);
+      placeRail(360, y);
       railHomed = true;
     }
     function parkRailForThread() {
@@ -4482,30 +4482,104 @@
       const rail = $("tool-rail");
       let saved = {};
       try { saved = JSON.parse(localStorage.getItem("hush-rail") || "{}"); } catch (e) { saved = {}; }
-      // Sanitize stale positions from earlier builds (right edge, hard-left 8/12, or homed at brand edge).
-      // Old "hush-rail" with small x or homed:true made the rail appear anchored to upper-left.
-      if (typeof saved.x === "number" && saved.x > ((window.innerWidth || 1400) - 280)) {
-        saved.x = 180;
-      }
-      if (typeof saved.x === "number" && saved.x < 140) {
-        saved.x = 180;
+      // NUCLEAR SANITIZE: on every single load, if the persisted value is not a "reasonable user-dragged position",
+      // force 360px inset and persist it immediately. This defeats every previous "left default" or "homed at 8" value.
+      const GOOD = 360;
+      if (!saved || typeof saved.x !== "number" || saved.x < 300 || saved.homed === true) {
+        saved = saved || {};
+        saved.x = GOOD;
         saved.homed = false;
+        if (typeof saved.y !== "number" || saved.y < 10) saved.y = 10;
+        try {
+          localStorage.setItem("hush-rail", JSON.stringify({
+            x: GOOD, y: saved.y,
+            collapsed: !!saved.collapsed,
+            homed: false
+          }));
+        } catch(e){}
       }
-      if (saved.homed && typeof saved.x === "number" && saved.x < 300) {
-        saved.homed = false;
+      // Force the DOM element right now, before any layout or paint.
+      try {
+        const r = $("tool-rail");
+        if (r) {
+          r.style.left = GOOD + "px";
+          r.style.right = "auto";
+        }
+      } catch(e) {}
+
+
+      // === EARLY UNCONDITIONAL FORCE ===
+      // On every load, if the saved value is bad or missing, slam to 360 and persist.
+      // This defeats any stale "hush-rail" from previous anchored-left builds.
+      const _good = 360;
+      let _s = saved || {};
+      if (typeof _s.x !== "number" || _s.x < 200 || _s.homed) {
+        _s.x = _good;
+        _s.homed = false;
+        saved = _s;
+        try { localStorage.setItem("hush-rail", JSON.stringify({x: _good, y: (typeof _s.y==="number"?_s.y:10), collapsed: !!_s.collapsed, homed: false})); } catch(e){}
       }
-      if (typeof saved.x === "number" && saved.x < 100) {
-        saved.x = 180;
+      // Also force the element style immediately (before any paint or rAF).
+      try {
+        const _r = $("tool-rail");
+        if (_r) {
+          _r.style.left = _good + "px";
+          _r.style.right = "auto";
+        }
+      } catch(e) {}
+
+      // Bulletproof sanitize: any old/stale/homed/hard-left/hard-right value is reset to comfortable inset.
+      // We also rewrite localStorage immediately so it never comes back.
+      const goodX = 320;
+      const w = (window.innerWidth || 1400);
+      const bad = (typeof saved.x !== "number") || saved.homed || (saved.x < 200) || (saved.x > (w - 280));
+      if (bad) {
+        saved.x = goodX;
         saved.homed = false;
-      }
-      if (saved.homed && typeof saved.x === "number" && saved.x < 200) {
-        saved.homed = false;
+        if (typeof saved.y !== "number" || saved.y < 4) saved.y = 10;
+        try { localStorage.setItem("hush-rail", JSON.stringify({x: goodX, y: saved.y, collapsed: !!saved.collapsed, homed: false})); } catch(e){}
       }
       if (saved.homed) {
         // Defer to allow full layout (brand rects, fonts, inventory grid etc.)
         requestAnimationFrame(() => placeRailAtBrand());
         return;
       }
+
+      // Force good position synchronously for the very first paint (defeats any race with inventory/brand).
+      try {
+        const r = $("tool-rail");
+        if (r && (bad || !saved || !saved.x || saved.x < 140)) {
+          r.style.left = "360px";
+          r.style.right = "auto";
+        }
+      } catch(e) {}
+
+      
+      // Hard minimum: never allow the rail to be left of 200px on first layout.
+      try {
+        const r = $("tool-rail");
+        if (r) {
+          const cur = parseInt(r.style.left || "0", 10) || 0;
+          if (cur < 200 || (saved && (saved.homed || saved.x < 200))) {
+            r.style.left = "320px";
+            r.style.right = "auto";
+          }
+        }
+      } catch(e) {}
+
+      
+      // Nuclear option: after any previous logic, if the rail element is still too far left, slam it to 360.
+      try {
+        const r = $("tool-rail");
+        if (r) {
+          const leftNow = parseInt(r.style.left || getComputedStyle(r).left || "0", 10) || 0;
+          if (leftNow < 200) {
+            r.style.left = "360px";
+            r.style.right = "auto";
+          }
+        }
+      } catch(e) {}
+
       if (saved.collapsed) setRailCollapsed(true);
       const doPlace = () => {
         if (typeof saved.x === "number" && typeof saved.y === "number") {
@@ -4513,7 +4587,7 @@
         } else {
           // Default to a comfortable inset. Dblclick the grip to toggle minimize/collapse in place.
           const w = rail.offsetWidth || 160;
-          const preferredX = 180;
+          const preferredX = 360;
           // Force synchronously so the very first layout pass (before any rAF) sees left.
           rail.style.left = preferredX + "px";
           rail.style.right = "auto";
@@ -4568,8 +4642,9 @@
           if (brand) {
             const b = brand.getBoundingClientRect();
             const y = Math.max(4, b.top + (b.height - (rail.offsetHeight || 56)) / 2);
-            placeRail(8, y);
+            placeRail(360, y);
           }
+          railHomed = false;
         }
         saveRail();
       }, 220);
@@ -4578,7 +4653,12 @@
       ev.preventDefault();
       ev.stopPropagation();
       clearTimeout(railClickTimer);
-      placeRailAtBrand();
+      railDrag = null;
+      // Pure toggle minimize/expand in current spot. Dblclick grip or ☰ does the same thing.
+      const rail = $("tool-rail");
+      const willCollapse = !rail.classList.contains("collapsed");
+      railHomed = false;
+      setRailCollapsed(willCollapse);
       if (!railParked) saveRail();
     });
     $("rail-grip").addEventListener("pointerdown", (ev) => {
@@ -4599,13 +4679,37 @@
       ev.preventDefault();
       ev.stopPropagation();
       clearTimeout(railClickTimer);
-      // Toggle minimize/collapse in current position. This is the primary "minimize" affordance.
+      railDrag = null;
+      railClickTimer = 0;
+      releaseBrandPad();
+      // Pure toggle in current x. rAF so collapsed class applies visibly.
       const rail = $("tool-rail");
       const willCollapse = !rail.classList.contains("collapsed");
-      setRailCollapsed(willCollapse);
-      if (!railParked) saveRail();
+      requestAnimationFrame(() => {
+        setRailCollapsed(willCollapse);
+        if (!railParked) saveRail();
+      });
     });
-    $("thread-resize").addEventListener("pointerdown", (ev) => {
+
+    // rail-bar is always visible; dblclick anywhere on it (except the ☰ button) toggles.
+    const _railBar = document.querySelector(".rail-bar");
+    if (_railBar) {
+      _railBar.addEventListener("dblclick", (ev) => {
+        if (ev.target && ev.target.id === "rail-toggle") return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        clearTimeout(railClickTimer);
+        railDrag = null;
+        const rail = $("tool-rail");
+        const will = !rail.classList.contains("collapsed");
+        requestAnimationFrame(() => {
+          setRailCollapsed(will);
+          if (!railParked) saveRail();
+        });
+      });
+    }
+
+        $("thread-resize").addEventListener("pointerdown", (ev) => {
       const pane = $("thread-pane");
       const rect = pane.getBoundingClientRect();
       threadDrag = { x: ev.clientX, y: ev.clientY, w: rect.width, h: rect.height };
@@ -4676,7 +4780,9 @@
       else {
         const rail = $("tool-rail");
         const rect = rail.getBoundingClientRect();
-        placeRail(rect.left, rect.top);
+        let nx = rect.left;
+        if (nx < 200) nx = 360;
+        placeRail(nx, rect.top);
         saveRail();
       }
       if ($("thread-pane").classList.contains("show")) applyThreadSize();
@@ -4693,6 +4799,20 @@
     setInterval(tick, 1000);
 
     loadRail();
+
+    // One more safety net right before the first paint/tick: if rail is still too far left, move it.
+    setTimeout(() => {
+      try {
+        const r = $("tool-rail");
+        if (r) {
+          const l = parseInt(r.style.left || "0", 10) || 0;
+          if (l < 200) {
+            r.style.left = "360px";
+            r.style.right = "auto";
+          }
+        }
+      } catch(e) {}
+    }, 0);
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
