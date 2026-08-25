@@ -588,7 +588,7 @@
     }
     #tool-rail.collapsed { padding: 6px; }
     #tool-rail.collapsed .rail-body { display: none; }
-    #tool-rail.collapsed #rail-grip { min-width: 16px; flex: 0 0 16px; }
+    #tool-rail.collapsed #rail-grip { min-width: 36px; flex: 0 0 36px; }
     .rail-bar { display: flex; align-items: center; gap: 6px; }
     #rail-grip {
       flex: 1; min-height: 44px; cursor: grab; border-radius: 6px;
@@ -4445,7 +4445,8 @@
       if (head) head.style.paddingLeft = (w + 16) + "px";
       const b = brand.getBoundingClientRect();
       const y = Math.max(4, b.top + (b.height - (rail.offsetHeight || 56)) / 2);
-      placeRail(8, y);
+      // Use comfortable inset so "home" position also looks draggable, not glued to brand
+      placeRail(180, y);
       railHomed = true;
     }
     function parkRailForThread() {
@@ -4481,11 +4482,24 @@
       const rail = $("tool-rail");
       let saved = {};
       try { saved = JSON.parse(localStorage.getItem("hush-rail") || "{}"); } catch (e) { saved = {}; }
-      // Sanitize stale right-side saved positions from pre-left-default builds.
-      // Old localStorage "hush-rail" with x near right edge made the rail appear rigidly anchored
-      // even after the JS fix. Treat such positions as "first run" and use left inset.
+      // Sanitize stale positions from earlier builds (right edge, hard-left 8/12, or homed at brand edge).
+      // Old "hush-rail" with small x or homed:true made the rail appear anchored to upper-left.
       if (typeof saved.x === "number" && saved.x > ((window.innerWidth || 1400) - 280)) {
-        saved.x = 12;
+        saved.x = 180;
+      }
+      if (typeof saved.x === "number" && saved.x < 140) {
+        saved.x = 180;
+        saved.homed = false;
+      }
+      if (saved.homed && typeof saved.x === "number" && saved.x < 300) {
+        saved.homed = false;
+      }
+      if (typeof saved.x === "number" && saved.x < 100) {
+        saved.x = 180;
+        saved.homed = false;
+      }
+      if (saved.homed && typeof saved.x === "number" && saved.x < 200) {
+        saved.homed = false;
       }
       if (saved.homed) {
         // Defer to allow full layout (brand rects, fonts, inventory grid etc.)
