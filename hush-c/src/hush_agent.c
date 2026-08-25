@@ -95,6 +95,10 @@ typedef struct {
     char note[HUSH_EVENT_MAX_CONTENT + 1];
     char out[HUSH_EVENT_MAX_CONTENT + 1];
     size_t out_n;
+    /* Co-robots mentioned together with this one on the triggering note.
+     * Enables group negotiation: robots can see peers and p-mention back. */
+    char co_npubs[4][HUSH_IDENTITY_NPUB_MAX];
+    int n_co_robots;
 } hush_agent_job_t;
 
 typedef struct {
@@ -111,6 +115,9 @@ typedef struct {
     const char *channel;
     const char *parent_id;
     const char *human_pub;
+    /* Optional additional p-npubs (for group mention seam: robots addressing peers).
+     * Null-terminated list or up to 4. Values are npub strings. */
+    const char *extra_p[4];
 } hush_agent_note_in_t;
 
 typedef struct {
@@ -604,6 +611,20 @@ static void hush_agent_fill_note(hush_event_t *ev, const hush_agent_note_in_t *i
                         sizeof(ev->tags[ev->tag_count][1]), in->human_pub);
         ev->tag_count++;
     }
+    /* Group seam: extra p-npubs (peer robots addressed by nostr: in reply).
+     * These become real p-tags so the peer gets dispatch + acks. */
+    for (int i = 0; i < 4 && in->extra_p[i] != NULL && ev->tag_count < (size_t)HUSH_EVENT_MAX_TAGS; ++i) {
+        const char *np = in->extra_p[i];
+        if (np[0] == '\0')
+            continue;
+        /* avoid dups with human */
+        if (in->human_pub && strcmp(np, in->human_pub) == 0)
+            continue;
+        memcpy(ev->tags[ev->tag_count][0], "p", 2);
+        hush_agent_copy(ev->tags[ev->tag_count][1],
+                        sizeof(ev->tags[ev->tag_count][1]), np);
+        ev->tag_count++;
+    }
 }
 
 static hush_status_t hush_agent_insert_note(hush_store_t *store,
@@ -842,7 +863,63 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
     hush_agent_copy(job->robot_name, sizeof(job->robot_name),
                     bot->name != NULL ? bot->name : "robot");
     hush_agent_human_name(job->human_name, sizeof(job->human_name), in->launch);
+
+    /* Collect co-robots from parent p-tags (for group mention negotiation seam).
+     * Skip self and humans. These are passed into prompt and may become p-tags
+     * on our reply if we address them with nostr:npub in content. */
+    job->n_co_robots = 0;
+    for (size_t t = 0;
+         t < parent->tag_count && t < (size_t)HUSH_EVENT_MAX_TAGS &&
+         job->n_co_robots < 4;
+         ++t) {
+        if (strcmp(parent->tags[t][0], "p") != 0)
+            continue;
+        const char *np = parent->tags[t][1];
+        if (np == NULL || np[0] == '\0')
+            continue;
+        if (bot->npub && strcmp(np, bot->npub) == 0)
+            continue; /* self */
+        if (hush_agent_is_human(in->launch, np))
+            continue;
+        hush_agent_robot_t tmp;
+        if (!hush_agent_lookup_robot(&tmp, in->launch, np))
+            continue;
+        hush_agent_copy(job->co_npubs[job->n_co_robots],
+                        sizeof(job->co_npubs[0]), np);
+        job->n_co_robots++;
+    }
+
     hush_agent_fill_prompt(job->prompt, sizeof(job->prompt), bot, job->human_name);
+
+    /* Group mention seam: if co-robots, tell this robot they can address peers.
+     * LLM may emit "nostr:npub..." in content to target them; we will turn
+     * those into real p-tags on the reply note. */
+    if (job->n_co_robots > 0 && strlen(job->prompt) + 64 < sizeof(job->prompt)) {
+        size_t off = strlen(job->prompt);
+        const char *g = " Other robots mentioned: ";
+        size_t glen = strlen(g);
+        if (off + glen < sizeof(job->prompt)) {
+            memcpy(job->prompt + off, g, glen);
+            off += glen;
+            for (int c = 0; c < job->n_co_robots && off + 70 < sizeof(job->prompt); ++c) {
+                if (c > 0 && off + 1 < sizeof(job->prompt)) job->prompt[off++] = ' ';
+                const char *np = job->co_npubs[c];
+                size_t nlen = strlen(np);
+                if (off + 6 + nlen + 1 >= sizeof(job->prompt)) break;
+                memcpy(job->prompt + off, "nostr:", 6);
+                off += 6;
+                memcpy(job->prompt + off, np, nlen);
+                off += nlen;
+            }
+            if (off + 60 < sizeof(job->prompt)) {
+                const char *tail = ". Address them by writing their full nostr:npub in your reply.";
+                memcpy(job->prompt + off, tail, strlen(tail));
+                off += strlen(tail);
+                job->prompt[off] = '\0';
+            }
+        }
+    }
+
     hush_agent_fill_rules(job->rules, sizeof(job->rules), job->human_name);
     hush_agent_prepare_cwd(job->cwd, sizeof(job->cwd));
     memset(&names, 0, sizeof(names));
@@ -1038,6 +1115,16 @@ static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
             .parent_id = job->parent_id,
             .human_pub = job->human_pub
         };
+        /* Group mention seam: if this robot addressed a co-mentioned peer by
+         * writing the peer's nostr:npub (or the npub appears) in its reply,
+         * emit a real p-tag for it. This makes the peer receive dispatch + ack.
+         * Co-npubs live in this job until after insert. */
+        int ei = 0;
+        for (int c = 0; c < job->n_co_robots && ei < 3; ++c) {
+            if (strstr(job->out, job->co_npubs[c])) {
+                in.extra_p[ei++] = job->co_npubs[c];
+            }
+        }
 
         (void)hush_agent_insert_note(store, &in);
         hush_agent_close_job(job);
