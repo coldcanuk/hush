@@ -4800,6 +4800,21 @@
 
     loadRail();
 
+    // Nanny: every 2s, if the rail is too far left and we are not dragging, force it to the comfortable inset.
+    // This catches any race or old code path that we missed.
+    setInterval(() => {
+      try {
+        if (railDrag) return;
+        const r = $("tool-rail");
+        if (!r) return;
+        const l = parseInt(r.style.left || "0", 10) || 0;
+        if (l < 200) {
+          r.style.left = "360px";
+          r.style.right = "auto";
+        }
+      } catch(e) {}
+    }, 2000);
+
     // One more safety net right before the first paint/tick: if rail is still too far left, move it.
     setTimeout(() => {
       try {
