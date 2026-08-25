@@ -580,7 +580,7 @@
     .wide { width: min(52rem, 100%); }
     .badge-vis { font-size: 0.7rem; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
     #tool-rail {
-      position: fixed; z-index: 30; top: 10px; left: 12px; right: auto;
+      position: fixed; z-index: 30; top: 10px; left: 140px; right: auto;
       display: flex; flex-direction: column; gap: 8px;
       background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
       padding: 8px; box-shadow: 0 10px 28px rgba(0,0,0,0.35); min-width: 44px;
@@ -4497,10 +4497,9 @@
         if (typeof saved.x === "number" && typeof saved.y === "number") {
           placeRail(saved.x, saved.y);
         } else {
-          // Prefer a left-inset initial position so it feels immediately draggable
-          // and not "pinned" by the CSS right rule. Users can drag or dblclick to home.
+          // Default to a comfortable inset. Dblclick the grip to toggle minimize/collapse in place.
           const w = rail.offsetWidth || 160;
-          const preferredX = 12;
+          const preferredX = 180;
           // Force synchronously so the very first layout pass (before any rAF) sees left.
           rail.style.left = preferredX + "px";
           rail.style.right = "auto";
@@ -4586,7 +4585,10 @@
       ev.preventDefault();
       ev.stopPropagation();
       clearTimeout(railClickTimer);
-      placeRailAtBrand();
+      // Toggle minimize/collapse in current position. This is the primary "minimize" affordance.
+      const rail = $("tool-rail");
+      const willCollapse = !rail.classList.contains("collapsed");
+      setRailCollapsed(willCollapse);
       if (!railParked) saveRail();
     });
     $("thread-resize").addEventListener("pointerdown", (ev) => {
