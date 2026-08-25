@@ -908,10 +908,11 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
 
     hush_agent_fill_prompt(job->prompt, sizeof(job->prompt), bot, job->human_name);
 
-    /* Group mention seam: if co-robots, tell this robot they can address peers.
-     * LLM may emit "nostr:npub..." in content to target them; we will turn
-     * those into real p-tags on the reply note. */
-    if (job->n_co_robots > 0 && strlen(job->prompt) + 64 < sizeof(job->prompt)) {
+    /* Group mention seam + deliberation (M3.4):
+     * Co-mentioned robots must decide: own reply? cooperate? split? full convo?
+     * They can mention peers via nostr:npub (turned into p-tags by finish).
+     * Prompt hygiene + existing hop limits prevent runaway loops. */
+    if (job->n_co_robots > 0 && strlen(job->prompt) + 160 < sizeof(job->prompt)) {
         size_t off = strlen(job->prompt);
         const char *g = " Other robots mentioned: ";
         size_t glen = strlen(g);
@@ -928,12 +929,10 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
                 memcpy(job->prompt + off, np, nlen);
                 off += nlen;
             }
-            if (off + 60 < sizeof(job->prompt)) {
-                const char *tail = ". Address them by writing their full nostr:npub in your reply.";
-                memcpy(job->prompt + off, tail, strlen(tail));
-                off += strlen(tail);
-                job->prompt[off] = '\0';
-            }
+        }
+        const char *delib = " You + these peers were mentioned together. Decide strategy (own reply / cooperate on one / split / full convo among us). Call peers by emitting their nostr:npub in content.";
+        if (off + strlen(delib) < sizeof(job->prompt)) {
+            memcpy(job->prompt + off, delib, strlen(delib));
         }
     }
 
