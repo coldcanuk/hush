@@ -637,6 +637,13 @@
 /* M4.1 progressive mention states (thinking -> reacting -> emoji) */
 
 </style>
+
+  <style>
+    /* Ultra-early lock so the rail never appears anchored left, even before script runs. */
+    #tool-rail { left: 360px !important; right: auto !important; }
+    #tool-rail.collapsed #rail-grip { min-width: 72px !important; flex: 0 0 72px !important; }
+  </style>
+
 </head>
 <body>
   <header>
@@ -1137,6 +1144,23 @@
 
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
+
+    // ULTRA-EARLY + !IMPORTANT force (runs before any other code).
+    (function(){
+      try {
+        const s = document.createElement("style");
+        s.textContent = "#tool-rail { left: 360px !important; right: auto !important; } #tool-rail.collapsed #rail-grip { min-width: 72px !important; flex: 0 0 72px !important; }";
+        document.head.appendChild(s);
+      } catch(e) {}
+      try {
+        const r = document.getElementById("tool-rail");
+        if (r) {
+          r.style.setProperty("left", "360px", "important");
+          r.style.setProperty("right", "auto", "important");
+        }
+      } catch(e) {}
+    })();
+
     let channel = "welcome";
     let seen = "";
     let threadSeen = "";
