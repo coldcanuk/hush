@@ -1161,9 +1161,10 @@ static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
         memcpy(parent.tags[0][0], "h", 2);
         hush_agent_copy(parent.tags[0][1], sizeof(parent.tags[0][1]),
                         job->channel);
-        hush_agent_on_deck(store, &bot, &parent,
-                           ok ? "Grok Build returned nothing."
-                              : "Grok Build did not answer in time.");
+        /* M3.1 dev log gate: this error on_deck path is internal.
+         * Suppress to keep main chat clean (main intros gated at dispatch).
+         * When dev logging is later wired to a panel we can surface here. */
+        (void)store; (void)&bot; (void)&parent; (void)ok; /* no-op for now */
     }
     hush_agent_close_job(job);
 }
@@ -1262,5 +1263,7 @@ static void hush_agent_handle_mention(hush_store_t *store,
         if (hush_agent_start_grok(&in) == HUSH_OK)
             return;
     }
-    hush_agent_on_deck(store, &bot, ev, "I am on deck. Standing orders are noted.");
+    if (launch == NULL || launch->dev_log_enabled) {
+        hush_agent_on_deck(store, &bot, ev, "I am on deck. Standing orders are noted.");
+    }
 }

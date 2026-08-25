@@ -107,6 +107,11 @@ typedef struct {
     char vibe_about[HUSH_LAUNCH_ABOUT_MAX];
     int vibe_public;
     char vibe_token[HUSH_LAUNCH_NAME_MAX];
+    /* Developer Logging (default 0 = off/disabled).
+     * When 1: "Mention received.", on-deck intros, internal debug route to
+     * a separate panel (syslog format). Suppressed from main chat stream.
+     * See M3.1, UI_SPEC §6, and PLAN_CHAT_ROBOTS_INVENTORY.md. */
+    int dev_log_enabled;
     hush_launch_channel_t channels[HUSH_LAUNCH_CHANNELS_MAX];
     size_t nchannels;
     hush_launch_group_t groups[HUSH_LAUNCH_GROUPS_MAX];

@@ -664,9 +664,11 @@ static void hush_intel_handle_robot(hush_store_t *store, hush_launch_t *launch,
     if (hush_intel_policy_blocks(store, ch, launch, ev, hex))
         return;
 
-    /* Server ack note (M5): durable receipt authored by the robot.
-     * Threaded via h/e; T=confirm prevents intel_consider re-dispatch.
-     * Emitted before hold/release so receipt is visible even on burst paths. */
+    /* Always emit the durable server ack note (protocol + existing checks expect it).
+     * "Mention received." is treated as a log receipt.
+     * UI (M4) will suppress it from main chat stream when dev_log_enabled==0.
+     * Emoji reaction is the user-visible ack. When dev logging enabled,
+     * it surfaces in the developer panel. */
     hush_intel_post_line(store, ev, hex, "Mention received.");
 
     hush_intel_event_channel(channel, sizeof(channel), ev);
