@@ -1138,6 +1138,24 @@
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
 
+    // ULTRA-EARLY + !IMPORTANT: inject a style rule that forces the rail inset
+    // before any other layout. This wins over almost anything.
+    (function(){
+      try {
+        const s = document.createElement("style");
+        s.textContent = "#tool-rail { left: 360px !important; right: auto !important; }";
+        document.head.appendChild(s);
+      } catch(e) {}
+      try {
+        const r = document.getElementById("tool-rail");
+        if (r) {
+          r.style.setProperty("left", "360px", "important");
+          r.style.setProperty("right", "auto", "important");
+        }
+      } catch(e) {}
+    })();
+
+
     // ULTRA-EARLY FORCE: run as soon as the script tag is parsed.
     // This moves the rail before paint(), before loadRail(), before any other code can touch it.
     (function forceRailEarly(){
@@ -4546,7 +4564,7 @@
 
       // Bulletproof sanitize: any old/stale/homed/hard-left/hard-right value is reset to comfortable inset.
       // We also rewrite localStorage immediately so it never comes back.
-      const goodX = 320;
+      const goodX = 360;
       const w = (window.innerWidth || 1400);
       const bad = (typeof saved.x !== "number") || saved.homed || (saved.x < 200) || (saved.x > (w - 280));
       if (bad) {
@@ -4577,7 +4595,7 @@
         if (r) {
           const cur = parseInt(r.style.left || "0", 10) || 0;
           if (cur < 200 || (saved && (saved.homed || saved.x < 200))) {
-            r.style.left = "320px";
+            r.style.left = "360px";
             r.style.right = "auto";
           }
         }
@@ -4876,7 +4894,7 @@
         <button class="drawer-x" id="dev-log-close" type="button" aria-label="Close dev log">×</button>
       </div>
       <p class="help">Syslog stream (mentions, intros, debug). Visible only when Developer Logging enabled in Settings.</p>
-      <pre id="dev-log-body" style="background:#000;color:#0f0;font:0.78rem/1.3 ui-monospace,monospace;height:320px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:8px;white-space:pre-wrap;"></pre>
+      <pre id="dev-log-body" style="background:#000;color:#0f0;font:0.78rem/1.3 ui-monospace,monospace;height:360px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:8px;white-space:pre-wrap;"></pre>
       <div class="actions">
         <button class="btn ghost" id="dev-log-clear" type="button">Clear</button>
         <button class="btn" id="dev-log-close2" type="button">Close</button>
