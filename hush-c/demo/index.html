@@ -580,7 +580,7 @@
     .wide { width: min(52rem, 100%); }
     .badge-vis { font-size: 0.7rem; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
     #tool-rail {
-      position: fixed; z-index: 30; top: 10px; right: 12px;
+      position: fixed; z-index: 30; top: 10px; left: 12px; right: auto;
       display: flex; flex-direction: column; gap: 8px;
       background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
       padding: 8px; box-shadow: 0 10px 28px rgba(0,0,0,0.35); min-width: 44px;
@@ -4481,6 +4481,12 @@
       const rail = $("tool-rail");
       let saved = {};
       try { saved = JSON.parse(localStorage.getItem("hush-rail") || "{}"); } catch (e) { saved = {}; }
+      // Sanitize stale right-side saved positions from pre-left-default builds.
+      // Old localStorage "hush-rail" with x near right edge made the rail appear rigidly anchored
+      // even after the JS fix. Treat such positions as "first run" and use left inset.
+      if (typeof saved.x === "number" && saved.x > ((window.innerWidth || 1400) - 280)) {
+        saved.x = 12;
+      }
       if (saved.homed) {
         // Defer to allow full layout (brand rects, fonts, inventory grid etc.)
         requestAnimationFrame(() => placeRailAtBrand());
@@ -4495,6 +4501,9 @@
           // and not "pinned" by the CSS right rule. Users can drag or dblclick to home.
           const w = rail.offsetWidth || 160;
           const preferredX = 12;
+          // Force synchronously so the very first layout pass (before any rAF) sees left.
+          rail.style.left = preferredX + "px";
+          rail.style.right = "auto";
           placeRail(preferredX, RAIL_PAD);
         }
       };
@@ -4505,6 +4514,10 @@
       if (railParked) return;
       const rail = $("tool-rail");
       const rect = rail.getBoundingClientRect();
+      // Never persist a right-anchored position. This prevents old or race-captured
+      // right values from being written back and making the rail appear rigid on next load.
+      const half = (window.innerWidth || 1400) / 2;
+      if (rect.left > half) return;
       localStorage.setItem("hush-rail", JSON.stringify({
         x: rect.left,
         y: rect.top,
