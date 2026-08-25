@@ -73,3 +73,4 @@ RDAP verification gate. Features pre-landed on base from prior slices. This work
 M0.1–M5.1 verified on base + this gate.
 All DoD greps, builds, and tests pass.
 Ready for M6.1 commits + PR lifecycle.
+M2.1 verified on base: UI_SPEC canvas contract + README Buzz origin sentence present and grepped.
