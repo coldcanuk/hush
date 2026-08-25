@@ -1137,6 +1137,22 @@
 
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
+
+    // ULTRA-EARLY FORCE: run as soon as the script tag is parsed.
+    // This moves the rail before paint(), before loadRail(), before any other code can touch it.
+    (function forceRailEarly(){
+      try {
+        const r = document.getElementById("tool-rail");
+        if (r) {
+          const l = parseInt(r.style.left || "0", 10) || 0;
+          if (l < 200) {
+            r.style.left = "360px";
+            r.style.right = "auto";
+          }
+        }
+      } catch(e) {}
+    })();
+
     let channel = "welcome";
     let seen = "";
     let threadSeen = "";
