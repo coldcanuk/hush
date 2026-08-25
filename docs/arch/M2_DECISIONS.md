@@ -32,3 +32,19 @@ See also: UI_SPEC.md (updated with inventory, dev logging, mention fidelity, del
 - UI_SPEC.md updated and reviewed.
 - Decision artifacts present (header comment, examples/README, this file).
 - Plan references match.
+
+## M2.2 Risk Register + Test Strategy (locked)
+
+Updated risks (post M2.1):
+1. Mention position fidelity in paintNote/prettyMentions — high. Mitigation: new preserveMentions() path that returns spans + original text; unit tests in browser console + manual "@A tell @B X?" cases.
+2. Dev log panel vs embed model — medium. Mitigation: reuse drawer pattern (#thread-pane style); no new windows.
+3. Inventory grid perf/collision on many agents — low. Mitigation: small fixed grid (10x5), O(n) checks fine.
+4. Multi-robot deliberation prompt bloat/loops — medium. Mitigation: existing hygiene + hop limits + "decide strategy once" instruction.
+5. Raylib optional only — low (no dep risk).
+
+Test strategy (per milestone):
+- Every M: make test + relevant check_*.sh
+- Manual scenarios in plan (M5.2): progressive flow, co-mention, dev log on/off, mention order preservation, inventory drag 3 sizes no overlap.
+- After C changes: legible-c checklist + rebuild + test.
+- UI changes: embed rebuild, manual thread + grid interactions.
+- End-to-end: full plan M F.2 + F.3.
