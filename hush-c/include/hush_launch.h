@@ -66,6 +66,9 @@ typedef struct {
     int max_jobs;
     int cooldown_s;
     int robot_hops;
+    /* Optional topic/about for this channel. When set, injected into robot
+     * system prompts for jobs on this channel (quick LLM context pointer). */
+    char about[HUSH_LAUNCH_ABOUT_MAX];
 } hush_launch_channel_t;
 
 typedef struct {
@@ -224,5 +227,9 @@ hush_status_t hush_launch_format_session(const hush_launch_t *launch,
 
 /* True when the hive UI may render (logged in + vibe). */
 int hush_launch_is_ready(const hush_launch_t *launch);
+
+/* Returns the about/topic string for a channel slug, or empty string if none.
+ * Safe on NULL launch or unknown slug. */
+const char *hush_launch_channel_about(const hush_launch_t *launch, const char *slug);
 
 #endif /* HUSH_LAUNCH_H */

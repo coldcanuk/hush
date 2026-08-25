@@ -929,6 +929,26 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
                            &names);
     if (job->note[0] == '\0')
         hush_agent_copy(job->note, sizeof(job->note), parent->content);
+
+    /* Pills / channel topic -> system prompt injection.
+     * If the channel has an "about" (topic), append a short pointer so the
+     * robot's behavior is channel-aware without changing its base prompt. */
+    if (in->launch != NULL && job->channel[0] != '\0') {
+        const char *ab = hush_launch_channel_about(in->launch, job->channel);
+        if (ab && ab[0] != '\0' &&
+            strlen(job->prompt) + 24 + strlen(ab) < sizeof(job->prompt)) {
+            size_t off = strlen(job->prompt);
+            const char *pre = " Channel topic: ";
+            size_t plen = strlen(pre);
+            if (off + plen + strlen(ab) < sizeof(job->prompt)) {
+                memcpy(job->prompt + off, pre, plen);
+                off += plen;
+                memcpy(job->prompt + off, ab, strlen(ab));
+                off += strlen(ab);
+                job->prompt[off] = '\0';
+            }
+        }
+    }
 }
 
 static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job)
