@@ -4516,120 +4516,32 @@
       const rail = $("tool-rail");
       let saved = {};
       try { saved = JSON.parse(localStorage.getItem("hush-rail") || "{}"); } catch (e) { saved = {}; }
-      // NUCLEAR SANITIZE: on every single load, if the persisted value is not a "reasonable user-dragged position",
-      // force 360px inset and persist it immediately. This defeats every previous "left default" or "homed at 8" value.
+
+      // CONSOLIDATED (final defense): always launch at a comfortable left inset (360px).
+      // This stops all drift from prior iterative layering (right-12, left-140/180, middle from half-viewport saves,
+      // homed paths, stale LS across PRs). We honor only the collapsed state from saved so the user isn't
+      // surprised by expansion. Position is canonical on cold start; drag to taste after launch.
+      // Dblclick grip/☰ toggles collapse in place without anchoring.
       const GOOD = 360;
-      if (!saved || typeof saved.x !== "number" || saved.x < 300 || saved.homed === true) {
-        saved = saved || {};
-        saved.x = GOOD;
-        saved.homed = false;
-        if (typeof saved.y !== "number" || saved.y < 10) saved.y = 10;
-        try {
-          localStorage.setItem("hush-rail", JSON.stringify({
-            x: GOOD, y: saved.y,
-            collapsed: !!saved.collapsed,
-            homed: false
-          }));
-        } catch(e){}
-      }
-      // Force the DOM element right now, before any layout or paint.
+      let y = (typeof saved.y === "number" && saved.y >= 4) ? saved.y : 10;
+      const startCollapsed = !!saved.collapsed;
+
+      // Immediate DOM force before any layout/paint/inventory (wins over CSS, early styles, old saves).
       try {
-        const r = $("tool-rail");
-        if (r) {
-          r.style.left = GOOD + "px";
-          r.style.right = "auto";
-        }
-      } catch(e) {}
-
-
-      // === EARLY UNCONDITIONAL FORCE ===
-      // On every load, if the saved value is bad or missing, slam to 360 and persist.
-      // This defeats any stale "hush-rail" from previous anchored-left builds.
-      const _good = 360;
-      let _s = saved || {};
-      if (typeof _s.x !== "number" || _s.x < 200 || _s.homed) {
-        _s.x = _good;
-        _s.homed = false;
-        saved = _s;
-        try { localStorage.setItem("hush-rail", JSON.stringify({x: _good, y: (typeof _s.y==="number"?_s.y:10), collapsed: !!_s.collapsed, homed: false})); } catch(e){}
-      }
-      // Also force the element style immediately (before any paint or rAF).
-      try {
-        const _r = $("tool-rail");
-        if (_r) {
-          _r.style.left = _good + "px";
-          _r.style.right = "auto";
-        }
-      } catch(e) {}
-
-      // Bulletproof sanitize: any old/stale/homed/hard-left/hard-right value is reset to comfortable inset.
-      // We also rewrite localStorage immediately so it never comes back.
-      const goodX = 360;
-      const w = (window.innerWidth || 1400);
-      const bad = (typeof saved.x !== "number") || saved.homed || (saved.x < 200) || (saved.x > (w - 280));
-      if (bad) {
-        saved.x = goodX;
-        saved.homed = false;
-        if (typeof saved.y !== "number" || saved.y < 4) saved.y = 10;
-        try { localStorage.setItem("hush-rail", JSON.stringify({x: goodX, y: saved.y, collapsed: !!saved.collapsed, homed: false})); } catch(e){}
-      }
-      if (saved.homed) {
-        // Defer to allow full layout (brand rects, fonts, inventory grid etc.)
-        requestAnimationFrame(() => placeRailAtBrand());
-        return;
-      }
-
-      // Force good position synchronously for the very first paint (defeats any race with inventory/brand).
-      try {
-        const r = $("tool-rail");
-        if (r && (bad || !saved || !saved.x || saved.x < 140)) {
-          r.style.left = "360px";
-          r.style.right = "auto";
-        }
-      } catch(e) {}
-
-      
-      // Hard minimum: never allow the rail to be left of 200px on first layout.
-      try {
-        const r = $("tool-rail");
-        if (r) {
-          const cur = parseInt(r.style.left || "0", 10) || 0;
-          if (cur < 200 || (saved && (saved.homed || saved.x < 200))) {
-            r.style.left = "360px";
-            r.style.right = "auto";
-          }
-        }
-      } catch(e) {}
-
-      
-      // Nuclear option: after any previous logic, if the rail element is still too far left, slam it to 360.
-      try {
-        const r = $("tool-rail");
-        if (r) {
-          const leftNow = parseInt(r.style.left || getComputedStyle(r).left || "0", 10) || 0;
-          if (leftNow < 200) {
-            r.style.left = "360px";
-            r.style.right = "auto";
-          }
-        }
-      } catch(e) {}
-
-      if (saved.collapsed) setRailCollapsed(true);
-      const doPlace = () => {
-        if (typeof saved.x === "number" && typeof saved.y === "number") {
-          placeRail(saved.x, saved.y);
-        } else {
-          // Default to a comfortable inset. Dblclick the grip to toggle minimize/collapse in place.
-          const w = rail.offsetWidth || 160;
-          const preferredX = 360;
-          // Force synchronously so the very first layout pass (before any rAF) sees left.
-          rail.style.left = preferredX + "px";
+        if (rail) {
+          rail.style.setProperty("left", GOOD + "px", "important");
           rail.style.right = "auto";
-          placeRail(preferredX, RAIL_PAD);
+          rail.style.top = y + "px";
         }
+      } catch(e) {}
+
+      if (startCollapsed) setRailCollapsed(true);
+
+      const doPlace = () => {
+        placeRail(GOOD, y);
       };
-      // Defer one frame so offsetWidth/brand measurements are accurate after paint().
-      requestAnimationFrame(doPlace);
+      // Double rAF to ensure after full layout (large inventory grid etc.).
+      requestAnimationFrame(() => requestAnimationFrame(doPlace));
     }
     function saveRail() {
       if (railParked) return;
@@ -4687,13 +4599,25 @@
       ev.preventDefault();
       ev.stopPropagation();
       clearTimeout(railClickTimer);
+      railClickTimer = 0;
       railDrag = null;
-      // Pure toggle minimize/expand in current spot. Dblclick grip or ☰ does the same thing.
-      const rail = $("tool-rail");
-      const willCollapse = !rail.classList.contains("collapsed");
       railHomed = false;
-      setRailCollapsed(willCollapse);
-      if (!railParked) saveRail();
+      const railEl = $("tool-rail");
+      if (!railEl) return;
+      // Re-assert canonical inset after any prior drift.
+      const curLeft = parseInt(railEl.style.left || "0", 10) || 0;
+      if (curLeft < 200 || curLeft > (window.innerWidth - 200)) {
+        railEl.style.setProperty("left", "360px", "important");
+        railEl.style.right = "auto";
+      }
+      const willCollapse = !railEl.classList.contains("collapsed");
+      // Double rAF to ensure the class change is visible even with large DOM (inventory).
+      requestAnimationFrame(() => {
+        setRailCollapsed(willCollapse);
+        requestAnimationFrame(() => {
+          if (!railParked) saveRail();
+        });
+      });
     });
     $("rail-grip").addEventListener("pointerdown", (ev) => {
       const rail = $("tool-rail");
@@ -4716,12 +4640,19 @@
       railDrag = null;
       railClickTimer = 0;
       releaseBrandPad();
-      // Pure toggle in current x. rAF so collapsed class applies visibly.
+      // Pure toggle in current x. Double rAF + re-assert inset so it is visible even after large inventory paint.
       const rail = $("tool-rail");
       const willCollapse = !rail.classList.contains("collapsed");
+      const cur = parseInt(rail.style.left || "0", 10) || 0;
+      if (cur < 200 || cur > (window.innerWidth - 200)) {
+        rail.style.setProperty("left", "360px", "important");
+        rail.style.right = "auto";
+      }
       requestAnimationFrame(() => {
         setRailCollapsed(willCollapse);
-        if (!railParked) saveRail();
+        requestAnimationFrame(() => {
+          if (!railParked) saveRail();
+        });
       });
     });
 
