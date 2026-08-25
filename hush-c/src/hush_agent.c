@@ -644,6 +644,7 @@ static void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bo
     char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
     const char *name;
     const char *line;
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
 
     assert(store != NULL);
     assert(bot != NULL);
@@ -651,15 +652,31 @@ static void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bo
     name = (bot->name != NULL && bot->name[0] != '\0') ? bot->name : "robot";
     line = (why != NULL && why[0] != '\0') ? why
         : "I am on deck. Standing orders are noted.";
+
+    /* Single intro guard (M3.2): only the very first "standing orders"
+     * on-deck per (robot, root). Subsequent mentions get emoji ack only.
+     * Keeps chat clean; one intro per conversation thread. */
+    hush_agent_event_root(root, sizeof(root), parent);
+    {
+        static char last_hex[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+        static char last_root[HUSH_EVENT_ID_HEX_LEN + 1];
+        if (bot->hex && strcmp(bot->hex, last_hex) == 0 &&
+            strcmp(root, last_root) == 0) {
+            return; /* already introduced once for this robot+thread */
+        }
+        if (bot->hex) {
+            hush_agent_copy(last_hex, sizeof(last_hex), bot->hex);
+        }
+        hush_agent_copy(last_root, sizeof(last_root), root);
+    }
+
     if (snprintf(content, sizeof(content),
                  "At ease. %s — %s", line, name) >= (int)sizeof(content))
         hush_agent_copy(content, sizeof(content), line);
     hush_agent_event_channel(channel, sizeof(channel), parent);
     {
-        char root[HUSH_EVENT_ID_HEX_LEN + 1];
         hush_agent_note_in_t in;
 
-        hush_agent_event_root(root, sizeof(root), parent);
         in.pubkey = bot->hex != NULL ? bot->hex : "";
         in.content = content;
         in.channel = channel;
