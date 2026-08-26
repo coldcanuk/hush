@@ -91,6 +91,21 @@ echo "$html" | grep -q 'function assembleMentionContent' || fail "HTML missing i
 if echo "$html" | grep -q 'composerPills.map((p) => "nostr:"'; then
     fail "composer must not prepend all pills before leftover text"
 fi
+echo "$html" | grep -q 'function dropMentionFromInput' || fail "HTML missing dropMentionFromInput"
+comp_pills=$(printf '%s' "$html" | awk '/function paintComposerPills/,/function applyMention/')
+echo "$comp_pills" | grep -q 'dropMentionFromInput' || fail "composer minus must strip @Name from textarea"
+thr_pills=$(printf '%s' "$html" | awk '/function paintThreadPills/,/function paintThreadMentionBox/')
+echo "$thr_pills" | grep -q 'dropMentionFromInput' || fail "thread minus must strip @Name from textarea"
+if echo "$html" | grep -q 'composerPills.pop()'; then
+    fail "composer Backspace-at-0 must not pop pills"
+fi
+if echo "$html" | grep -q 'threadPills.pop()'; then
+    fail "thread Backspace-at-0 must not pop pills"
+fi
+grep -q 'hush_json_has_key' src/hush_http.c || fail "manage about must use hush_json_has_key"
+manage=$(sed -n '/static hush_status_t hush_http_channel_manage/,/hush_http_find_channel/p' src/hush_http.c)
+echo "$manage" | grep -q 'hush_json_has_key(body, "about")' \
+    || fail "manage must no-op about when the field is absent"
 if echo "$html" | grep -q 'splitFences(prettyMentions'; then
     fail "paintNote must not run prettyMentions before in-sentence pills"
 fi
