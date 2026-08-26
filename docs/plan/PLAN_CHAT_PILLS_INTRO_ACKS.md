@@ -38,11 +38,13 @@ protocol note; structured co-mention vote protocol.
 ### Phase 0 COMPLETE
 Worktree `worktrees/chat-pills-intro-acks`.
 
-### Phase 1 / 2
+### Phase 1 / 2 COMPLETE
 This file. No JPEG re-research.
 
-### Phase 3 Implementation
+### Phase 3 COMPLETE
 JS paint + C intro gate + tests + embed.
 
-### Phase 4 Verify
-`make test`; mention-order capture; HTML greps that fail the old paint path.
+### Phase 4 Verify COMPLETE
+`make test` ALL TESTS PASSED. Mention-order capture: in-place `nostr:` with
+`mention_0`/`mention_1`. Playwright: two in-sentence pills; old notes skip to
+emoji; new notes start thinking.
