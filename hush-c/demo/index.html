@@ -646,6 +646,18 @@
   font-size: 0.62rem; background: none; border: 0; color: var(--accent);
   cursor: pointer; padding: 0;
 }
+.agent-pic-picker {
+  display: grid; grid-template-columns: repeat(8, 32px); gap: 4px;
+  margin: 8px 0 12px; max-height: 9rem; overflow: auto;
+}
+.agent-pic-cell {
+  width: 32px; height: 32px; padding: 0; border: 1px solid var(--line);
+  background-image: url("/agent-atlas.png"); background-size: 256px 128px;
+  background-repeat: no-repeat; cursor: pointer; border-radius: 4px;
+}
+.agent-pic-cell.on { border-color: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.robot-ack.thinking, .robot-ack.reacting { opacity: 0.9; font-size: 0.78rem; }
+.inv-item.has-pic { background-size: cover; background-position: center; }
 
 /* M4.1 progressive mention states (thinking -> reacting -> emoji) */
 
@@ -976,6 +988,9 @@
       </div>
       <button class="cfg" id="provider-cfg" type="button" hidden
               title="Configure this provider.">✎</button>
+      <p class="help" id="agent-pic-help">Robot picture (optional). Pick a tile from the equipment atlas.</p>
+      <div id="agent-pic-picker" class="agent-pic-picker" role="listbox" aria-label="Robot picture picker"></div>
+      <input id="agent-picture" type="hidden" value="">
       <label class="passbox"><input id="agent-pass" type="checkbox" checked>
         Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
       <p class="warn" id="agent-err"></p>
@@ -1116,6 +1131,14 @@
           <label><input type="radio" name="manage-reply" value="mention"> When mentioned</label>
           <label><input type="radio" name="manage-reply" value="confirm"> Confirm first</label>
         </div>
+        <p class="help">Channel topics</p>
+        <div class="pill-row">
+          <input id="manage-topic" type="text" maxlength="48" placeholder="topic">
+          <button class="icon-plus" id="manage-topic-add" type="button" aria-label="Add topic">+</button>
+        </div>
+        <div class="pills" id="manage-topic-pills"></div>
+        <label for="manage-prompt">Channel prompt</label>
+        <textarea id="manage-prompt" maxlength="240" placeholder="Standing orders for this channel"></textarea>
         <details id="manage-policy-more">
           <summary>Advanced leash</summary>
           <label class="check"><input type="checkbox" id="manage-talk"> Robots may talk to robots</label>
@@ -1316,6 +1339,9 @@
     const INV_EXPAND_CELL = 44;
     let invDrag = null; /* {id, startGX, startGY, gx, gy, w, h, dx, dy} */
     let invNextId = 1;
+    let ackClock = {};
+    let manageTopics = [];
+    let draftPicture = "";
 
     function $(id) { return document.getElementById(id); }
 
@@ -1815,7 +1841,47 @@
       });
       fillManagePolicy(ch);
       paintManageLists();
+      fillManageTopics(ch.about || "");
       $("manage-chan").classList.add("show");
+    }
+
+    function fillManageTopics(about) {
+      manageTopics = [];
+      let prompt = about || "";
+      const pipe = prompt.indexOf(" | ");
+      if (pipe >= 0) {
+        manageTopics = prompt.slice(0, pipe).split(",").map((s) => s.trim()).filter(Boolean);
+        prompt = prompt.slice(pipe + 3);
+      }
+      if ($("manage-prompt")) $("manage-prompt").value = prompt;
+      paintManageTopicPills();
+    }
+
+    function paintManageTopicPills() {
+      const box = $("manage-topic-pills");
+      if (!box) return;
+      box.innerHTML = "";
+      manageTopics.forEach((t, i) => {
+        const pill = document.createElement("span");
+        pill.className = "pill";
+        pill.innerHTML = "<em>" + esc(t) + "</em>";
+        const minus = document.createElement("button");
+        minus.type = "button";
+        minus.textContent = "−";
+        minus.addEventListener("click", () => {
+          manageTopics.splice(i, 1);
+          paintManageTopicPills();
+        });
+        pill.appendChild(minus);
+        box.appendChild(pill);
+      });
+    }
+
+    function manageAboutValue() {
+      const prompt = ($("manage-prompt") && $("manage-prompt").value || "").trim();
+      const head = manageTopics.join(", ");
+      if (head && prompt) return head + " | " + prompt;
+      return head || prompt;
     }
 
     function providerLabel(id) {
@@ -1833,6 +1899,55 @@
       return out.length ? out : ["goose"];
     }
 
+    function picIdFor(slug, fallback) {
+      try {
+        const o = JSON.parse(localStorage.getItem("hush-agent-pic") || "{}");
+        if (slug && o[slug]) return o[slug];
+      } catch (e) {}
+      return fallback || "";
+    }
+
+    function savePicId(slug, id) {
+      if (!slug) return;
+      let o = {};
+      try { o = JSON.parse(localStorage.getItem("hush-agent-pic") || "{}"); } catch (e) { o = {}; }
+      o[slug] = id;
+      try { localStorage.setItem("hush-agent-pic", JSON.stringify(o)); } catch (e) {}
+    }
+
+    function atlasCellStyle(i, displayPx) {
+      const col = i % 8;
+      const row = Math.floor(i / 8);
+      const scale = displayPx / 64;
+      const sheetW = 512 * scale;
+      const sheetH = 256 * scale;
+      return "background-image:url(/agent-atlas.png);background-size:" +
+        sheetW + "px " + sheetH + "px;background-position:" +
+        (-col * displayPx) + "px " + (-row * displayPx) + "px;background-repeat:no-repeat";
+    }
+
+    function paintAgentPicPicker() {
+      const box = $("agent-pic-picker");
+      if (!box) return;
+      box.innerHTML = "";
+      const ATLAS_N = 31;
+      for (let i = 0; i < ATLAS_N; i++) {
+        const id = "atlas:" + i;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "agent-pic-cell" + (draftPicture === id ? " on" : "");
+        btn.setAttribute("aria-label", "Picture " + i);
+        btn.setAttribute("style", atlasCellStyle(i, 32));
+        btn.addEventListener("click", () => {
+          draftPicture = id;
+          if ($("agent-picture")) $("agent-picture").value = id;
+          if (editSlug) savePicId(editSlug, id);
+          paintAgentPicPicker();
+        });
+        box.appendChild(btn);
+      }
+    }
+
     function robotModels() {
       const p = session.payne || {};
       const order = payneProviderList(p);
@@ -1840,6 +1955,7 @@
         slug: PAYNE_SLUG,
         name: p.name || "Sgt Major Payne",
         about: p.about || "Finds the right robot, or raises one.",
+        picture: picIdFor(PAYNE_SLUG, ""),
         npub: p.npub || "",
         pubkey: p.pubkey || "",
         provider: order[0],
@@ -1858,6 +1974,7 @@
           pubkey: a.pubkey || "",
           provider: a.provider || "",
           prompt: a.prompt || "",
+          picture: picIdFor(a.slug, a.picture || ""),
           ncontext: a.ncontext || 0,
           locked: false
         });
@@ -1979,6 +2096,9 @@
       paintPromptPill();
       paintFilePills();
       paintPayneOrder();
+      draftPicture = "";
+      if ($("agent-picture")) $("agent-picture").value = "";
+      paintAgentPicPicker();
     }
 
     function paintNamePill() {
@@ -2371,6 +2491,9 @@
         paintNamePill();
         paintPromptPill();
       }
+      draftPicture = (bot && bot.picture) ? bot.picture : "";
+      if ($("agent-picture")) $("agent-picture").value = draftPicture;
+      paintAgentPicPicker();
       paintProviderPencil();
       loadProviders();
       $("agent-drawer").classList.add("show");
@@ -2596,6 +2719,7 @@
         name: name,
         system_prompt: prompt,
         provider: provider,
+        picture: draftPicture || ($("agent-picture") && $("agent-picture").value) || "",
         save_pass: !box || box.checked
       };
       draftFiles.forEach((f, i) => {
@@ -2605,6 +2729,8 @@
       });
       try {
         applySession(await api("/api/agent", body));
+        const last = (session.agents || []).slice(-1)[0];
+        if (last && last.slug && draftPicture) savePicId(last.slug, draftPicture);
         $("agent-drawer").classList.remove("show");
         resetAgentDraft();
         if (typeof syncInventoryFromRoster === "function") syncInventoryFromRoster();
@@ -2724,8 +2850,9 @@
       if (!input || mentionStart < 0) return;
       const before = input.value.slice(0, mentionStart);
       const after = input.value.slice(input.selectionStart);
-      input.value = (before + after).replace(/^\s+/, "");
-      composerPills.push({ name: hit.name, npub: hit.npub });
+      input.value = before + "@" + hit.name + " " + after.replace(/^\s+/, "");
+      if (!composerPills.some((p) => p.npub === hit.npub))
+        composerPills.push({ name: hit.name, npub: hit.npub });
       pendingMentions = composerPills.map((x) => x.npub);
       paintComposerPills();
       hideMentions();
@@ -2793,16 +2920,14 @@
     $("form").addEventListener("submit", async (e) => {
       e.preventDefault();
       if (mentionOpen) return;
-      const leftover = $("msg").value.trim();
-      const bits = composerPills.map((p) => "nostr:" + p.npub);
-      if (leftover) bits.push(leftover);
-      const text = bits.join(" ").trim();
+      const assembled = assembleMentionContent($("msg").value, mentionRoster());
+      const text = assembled.content;
       if (!text) return;
       $("msg").value = "";
       composerPills = [];
       paintComposerPills();
       const body = { content: text, kind: 1, channel: channel };
-      pendingMentions.slice(0, 8).forEach((np, i) => {
+      assembled.mentions.forEach((np, i) => {
         body["mention_" + i] = np;
       });
       pendingMentions = [];
@@ -2828,17 +2953,22 @@
       e.preventDefault();
       if (!openThread || threadMentionOpen) return;
       if (thinkingFor(openThread, lastStatus).length) return;
-      const leftover = $("thread-msg").value.trim();
+      let raw = $("thread-msg").value;
       const extra = threadPills.slice();
       const root = lastEvents.find((ev) => ev.id === openThread);
       const kids = repliesTo(lastEvents, openThread);
       const sole = threadMembers(root, kids);
       if (!extra.filter((p) => p.kind !== "human").length &&
-          sole.length === 1 && sole[0] && sole[0].npub)
-        extra.push({ name: sole[0].name, npub: sole[0].npub, kind: "robot" });
-      const bits = extra.map((p) => "nostr:" + p.npub);
-      if (leftover) bits.push(leftover);
-      const text = bits.join(" ").trim();
+          sole.length === 1 && sole[0] && sole[0].npub &&
+          raw.indexOf("@" + sole[0].name) < 0 &&
+          raw.indexOf("nostr:" + sole[0].npub) < 0)
+        raw = "@" + sole[0].name + " " + raw;
+      extra.forEach((p) => {
+        if (p.name && raw.indexOf("@" + p.name) < 0)
+          raw = raw + " @" + p.name;
+      });
+      const assembled = assembleMentionContent(raw, mentionRoster());
+      const text = assembled.content;
       if (!text) return;
       $("thread-msg").value = "";
       threadPills = [];
@@ -2849,8 +2979,8 @@
         channel: channel,
         reply_to: openThread
       };
-      extra.filter((p) => p.kind !== "human").slice(0, 8).forEach((p, i) => {
-        body["mention_" + i] = p.npub;
+      assembled.mentions.forEach((np, i) => {
+        body["mention_" + i] = np;
       });
       if (body.mention_0) {
         const named = extra.find((p) => p.kind !== "human") || extra[0];
@@ -3392,7 +3522,7 @@
       if (!input || threadMentionStart < 0) return;
       const before = input.value.slice(0, threadMentionStart);
       const after = input.value.slice(input.selectionStart);
-      input.value = (before + after).replace(/^\s+/, "");
+      input.value = before + "@" + hit.name + " " + after.replace(/^\s+/, "");
       if (!threadPills.some((p) => p.npub === hit.npub))
         threadPills.push({ name: hit.name, npub: hit.npub, kind: hit.kind });
       paintThreadPills();
@@ -3428,6 +3558,18 @@
       const names = (jobs || []).map((j) => j.name || "robot");
       if (!names.length) return "";
       return names.join(", ") + (names.length === 1 ? " is thinking" : " are thinking");
+    }
+
+    function mentionAckPhase(parentId, bot, jobs) {
+      const key = String(parentId || "") + ":" + (bot && (bot.slug || bot.npub) || "");
+      const now = Date.now();
+      if (!ackClock[key]) ackClock[key] = now;
+      const dt = now - ackClock[key];
+      const live = (jobs || []).some((j) => j && bot && j.name === bot.name);
+      if (live) return dt < 1200 ? "thinking" : "reacting";
+      if (dt < 1000) return "thinking";
+      if (dt < 2000) return "reacting";
+      return "emoji";
     }
 
     function paintThink(node, jobs) {
@@ -3938,20 +4080,27 @@
       }
       if (extra) extra(n, e);
 
-      // Render robot acks (👍 🎯 🏆) for p-mentions on this note
+      // Progressive ack: thinking → reacting → emoji (not instant 👍).
       try {
         const acks = mentionedRobots(e);
         if (acks && acks.length) {
           const ackBar = document.createElement("div");
           ackBar.className = "robot-acks";
+          const jobs = thinkingFor(e.id, lastStatus);
           const emojiSet = ["👍", "🎯", "🏆"];
           acks.forEach((bot, i) => {
             const pill = document.createElement("span");
-            pill.className = "robot-ack";
-            const emoji = emojiSet[i % emojiSet.length];
-            pill.title = "Mention acknowledged by " + (bot.name || "robot");
-            pill.setAttribute("aria-label", "Mentioned " + (bot.name || "robot"));
-            pill.innerHTML = '<span class="emoji">' + emoji + '</span>' + esc(bot.name || "robot");
+            const phase = mentionAckPhase(e.id, bot, jobs);
+            pill.className = "robot-ack " + phase;
+            pill.title = (bot.name || "robot") + " is " + phase;
+            if (phase === "thinking")
+              pill.textContent = (bot.name || "robot") + " is thinking";
+            else if (phase === "reacting")
+              pill.textContent = (bot.name || "robot") + " is reacting";
+            else {
+              const emoji = emojiSet[i % emojiSet.length];
+              pill.innerHTML = '<span class="emoji">' + emoji + '</span>' + esc(bot.name || "robot");
+            }
             ackBar.appendChild(pill);
           });
           n.appendChild(ackBar);
@@ -4114,6 +4263,27 @@
       });
     }
 
+    /* In-place mention assembly: keep each @Name where it was typed.
+     * Pills are a roster of who is in the bubble, not a prepend buffer. */
+    function assembleMentionContent(raw, roster) {
+      let content = String(raw || "");
+      const list = (roster || []).slice().sort((a, b) =>
+        (b.name || "").length - (a.name || "").length);
+      list.forEach((h) => {
+        if (!h || !h.name || !h.npub) return;
+        const token = "@" + h.name;
+        const re = new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+        content = content.replace(re, "nostr:" + h.npub);
+      });
+      const mentions = [];
+      const orderRe = /nostr:(npub1[0-9a-z]+)/gi;
+      let m;
+      while ((m = orderRe.exec(content)) !== null) {
+        if (mentions.indexOf(m[1]) < 0) mentions.push(m[1]);
+      }
+      return { content: content.trim(), mentions: mentions.slice(0, 8) };
+    }
+
     /* M3.3: Non-destructive mention renderer.
      * Preserves exact original text positions and order of @mentions.
      * Mentions become inline spans at the precise location they appeared.
@@ -4261,6 +4431,7 @@
         let it = invItems.find((x) => x.slug === bot.slug);
         if (it) {
           it.name = bot.name;
+          it.picture = bot.picture || it.picture;
           return;
         }
         const sizeKey = bot.slug === PAYNE_SLUG ? "1x3" : "1x1";
@@ -4282,6 +4453,7 @@
           name: bot.name,
           w: w, h: h, gx: gx, gy: gy,
           slug: bot.slug,
+          picture: bot.picture || "",
           color: bot.locked ? "#d4a017" : "#0ff"
         });
       });
@@ -4329,6 +4501,13 @@
         el.style.height = ((it.h * cell) - 4) + "px";
         el.style.borderColor = it.color || "#0ff";
         el.style.boxShadow = "0 0 4px " + (it.color || "#0ff");
+        if (it.picture && it.picture.indexOf("atlas:") === 0) {
+          const idx = parseInt(it.picture.slice(6), 10);
+          if (!isNaN(idx)) {
+            el.classList.add("has-pic");
+            el.setAttribute("style", el.getAttribute("style") + ";" + atlasCellStyle(idx, Math.min(it.w, it.h) * (compact ? INV_CELL : INV_EXPAND_CELL)));
+          }
+        }
         el.innerHTML = '<span class="nm">' + esc(it.name) + "</span>";
         el.addEventListener("pointerdown", (ev) => beginInvDrag(ev, it.id, compact));
         el.addEventListener("click", () => {
@@ -4616,6 +4795,13 @@
       $("manage-invite").value = "";
       paintManageLists();
     });
+    if ($("manage-topic-add")) $("manage-topic-add").addEventListener("click", () => {
+      const t = ($("manage-topic") && $("manage-topic").value || "").trim();
+      if (!t) return;
+      if (manageTopics.indexOf(t) < 0) manageTopics.push(t);
+      $("manage-topic").value = "";
+      paintManageTopicPills();
+    });
     $("manage-save").addEventListener("click", async () => {
       if (!manageSlug) return;
       const body = { action: "manage", slug: manageSlug };
@@ -4632,6 +4818,7 @@
       body.max_jobs = parseInt(radioValue("manage-jobs", "2"), 10);
       body.cooldown_s = parseInt(radioValue("manage-cool", "10"), 10);
       body.robot_hops = body.robot_talk ? 1 : 0;
+      body.about = manageAboutValue();
       try {
         applySession(await api("/api/channel", body));
         $("manage-chan").classList.remove("show");

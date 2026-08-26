@@ -340,7 +340,9 @@ static int hush_http_serve_asset(int fd, const char *path)
         { "/icon-512.png", "image/png",
           (const char *)HUSH_UI_ICON_512, (size_t)HUSH_UI_ICON_512_LEN },
         { "/apple-touch-icon.png", "image/png",
-          (const char *)HUSH_UI_ICON_180, (size_t)HUSH_UI_ICON_180_LEN }
+          (const char *)HUSH_UI_ICON_180, (size_t)HUSH_UI_ICON_180_LEN },
+        { "/agent-atlas.png", "image/png",
+          (const char *)HUSH_UI_AGENT_ATLAS, (size_t)HUSH_UI_AGENT_ATLAS_LEN }
     };
     size_t i;
     size_t n;
@@ -976,7 +978,19 @@ static hush_status_t hush_http_channel_manage(int fd, const char *body,
                                         robot_ptrs, nrobots);
     if (st != HUSH_OK)
         return hush_http_reply_session(fd, st);
-    return hush_http_reply_session(fd, hush_http_channel_policy(body, slug));
+    st = hush_http_channel_policy(body, slug);
+    if (st != HUSH_OK)
+        return hush_http_reply_session(fd, st);
+    {
+        char about[HUSH_LAUNCH_ABOUT_MAX];
+
+        about[0] = '\0';
+        (void)hush_json_field(body, "about", about, sizeof(about));
+        st = hush_launch_set_channel_about(g_launch, slug, about);
+        if (st != HUSH_OK)
+            return hush_http_reply_session(fd, st);
+    }
+    return hush_http_reply_session(fd, HUSH_OK);
 }
 
 static const hush_launch_channel_t *hush_http_find_channel(const char *slug)

@@ -941,6 +941,24 @@ const char *hush_launch_channel_about(const hush_launch_t *launch, const char *s
     return "";
 }
 
+hush_status_t hush_launch_set_channel_about(hush_launch_t *launch,
+                                            const char *slug,
+                                            const char *about)
+{
+    hush_launch_channel_t *ch;
+
+    if (launch == NULL || slug == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe)
+        return HUSH_ERR_ARG;
+    ch = hush_launch_find_channel(launch, slug);
+    if (ch == NULL)
+        return HUSH_ERR_NOT_FOUND;
+    hush_launch_copy_name(ch->about, sizeof(ch->about),
+                          about != NULL ? about : "", "");
+    return hush_launch_save_vibe(launch);
+}
+
 static int hush_launch_has_group_id(const hush_launch_t *launch,
                                     const char *group_id)
 {
