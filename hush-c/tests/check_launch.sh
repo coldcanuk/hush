@@ -63,6 +63,30 @@ echo "$html" | grep -q 'Raise a robot' || fail "HTML missing raise-agent"
 echo "$html" | grep -q 'Invite human' || fail "HTML missing invite-human"
 echo "$html" | grep -q 'id="robot-list"' || fail "HTML missing robot list"
 echo "$html" | grep -q 'paintRobots' || fail "HTML missing robot cards"
+echo "$html" | grep -q 'INV_COLS = 4' || fail "compact inventory must be 4 cols"
+echo "$html" | grep -q 'INV_ROWS = 3' || fail "compact inventory must be 3 rows"
+if echo "$html" | grep -q 'INV_COLS = 8'; then
+    fail "compact default must not be 8 cols"
+fi
+echo "$html" | grep -q 'class="inv-btn"' || fail "Seed/Clear/Raise must share inv-btn"
+echo "$html" | grep -q 'syncInventoryFromRoster' || fail "inventory must bind live roster"
+echo "$html" | grep -q 'id="seed-drawer"' || fail "HTML missing seed wizard"
+echo "$html" | grep -q 'id="seed-actions"' || fail "HTML missing seed actions"
+echo "$html" | grep -q 'id="seed-skills"' || fail "HTML missing seed skills"
+echo "$html" | grep -q 'id="seed-project"' || fail "HTML missing seed project"
+echo "$html" | grep -q 'id="seed-channel-new"' || fail "HTML missing seed new-channel choice"
+echo "$html" | grep -q 'id="seed-channel-existing"' || fail "HTML missing seed existing-channel choice"
+echo "$html" | grep -q 'function buildSeedPrompt' || fail "HTML missing buildSeedPrompt"
+echo "$html" | grep -q 'function payneCanReply' || fail "HTML missing Payne seed gate"
+echo "$html" | grep -q 'function seedTeam' || fail "HTML missing seedTeam"
+echo "$html" | grep -q 'id="inv-expand"' || fail "HTML missing inventory expand"
+echo "$html" | grep -q 'INV_EXPAND_COLS = 8' || fail "expanded inventory must be 8 cols"
+if echo "$html" | grep -q 'seedInventoryDemo'; then
+    fail "Seed must not be fake seedInventoryDemo tiles"
+fi
+seed_at=$(printf '%s' "$html" | awk 'index($0, "id=\"seed-drawer\""){print NR; exit}')
+test -n "$seed_at" && test "$seed_at" -lt "$script_at" \
+    || fail "seed drawer must precede boot script"
 echo "$html" | grep -q 'System Prompt' || fail "HTML missing system prompt"
 echo "$html" | grep -q 'agent-provider' || fail "HTML missing AI provider"
 echo "$html" | grep -q 'id="provider-cfg"' || fail "HTML missing provider pencil"
