@@ -1157,16 +1157,14 @@
 
 
     // ULTRA-EARLY FORCE: run as soon as the script tag is parsed.
-    // This moves the rail before paint(), before loadRail(), before any other code can touch it.
+    // ALWAYS force canonical inset on startup to defeat any old style, CSS, cached, or
+    // previous-run middle value that survived from before the canonical era.
     (function forceRailEarly(){
       try {
         const r = document.getElementById("tool-rail");
         if (r) {
-          const l = parseInt(r.style.left || "0", 10) || 0;
-          if (l < 200) {
-            r.style.left = "360px";
-            r.style.right = "auto";
-          }
+          r.style.setProperty("left", "360px", "important");
+          r.style.right = "auto";
         }
       } catch(e) {}
     })();
@@ -4451,8 +4449,14 @@
       const h = rail.offsetHeight || 220;
       const maxX = Math.max(0, window.innerWidth - w);
       const maxY = Math.max(0, window.innerHeight - h);
-      const nx = Math.max(0, Math.min(maxX, x));
+      let nx = Math.max(0, Math.min(maxX, x));
       const ny = Math.max(0, Math.min(maxY, y));
+      // Canonical poison defense: any call that would place outside the comfortable safe band
+      // is forced to the canonical inset. This catches restore, resize, old saved, drag-end races, etc.
+      const GOOD = 360;
+      if (nx < 200 || nx > (window.innerWidth - 280) || (nx > 180 && nx < 340)) {
+        nx = GOOD;
+      }
       rail.style.left = nx + "px";
       rail.style.top = ny + "px";
       rail.style.right = "auto";
@@ -4501,16 +4505,29 @@
       railParked = false;
       const saved = railSaved;
       railSaved = null;
-      if (saved && saved.homed) {
-        placeRailAtBrand();
-        saveRail();
-        return;
-      }
+      // Poison prevention: thread park/restore used to capture and replay arbitrary
+      // rect.left (including middle values from prior drift or user drag before canonical era).
+      // Always return to the comfortable 360px inset. Only carry the collapsed preference.
+      const GOOD = 360;
+      let y = (saved && typeof saved.y === "number" && saved.y >= 4) ? saved.y : 10;
       releaseBrandPad();
-      if (!saved) return;
-      setRailCollapsed(!!saved.collapsed);
-      placeRail(saved.x, saved.y);
-      saveRail();
+      if (saved && saved.collapsed) setRailCollapsed(true);
+      try {
+        const r = $("tool-rail");
+        if (r) {
+          r.style.setProperty("left", GOOD + "px", "important");
+          r.style.right = "auto";
+          r.style.top = y + "px";
+        }
+      } catch(e) {}
+      placeRail(GOOD, y);
+      try {
+        localStorage.setItem("hush-rail", JSON.stringify({
+          x: GOOD, y: y,
+          collapsed: !!(saved && saved.collapsed),
+          homed: false
+        }));
+      } catch(e) {}
     }
     function loadRail() {
       const rail = $("tool-rail");
@@ -4542,20 +4559,36 @@
       };
       // Double rAF to ensure after full layout (large inventory grid etc.).
       requestAnimationFrame(() => requestAnimationFrame(doPlace));
+
+      // Always evict any poison from prior runs (old middle values, homed, etc.)
+      // by writing a clean canonical record immediately.
+      try {
+        localStorage.setItem("hush-rail", JSON.stringify({
+          x: GOOD, y: y,
+          collapsed: startCollapsed,
+          homed: false
+        }));
+      } catch(e) {}
     }
     function saveRail() {
       if (railParked) return;
       const rail = $("tool-rail");
       const rect = rail.getBoundingClientRect();
-      // Never persist a right-anchored position. This prevents old or race-captured
-      // right values from being written back and making the rail appear rigid on next load.
+      const GOOD = 360;
+      // Canonical defense: never persist anything except the comfortable inset or a deliberate user drag
+      // that is still in the safe zone. If it looks drifted or middle from old state, force GOOD.
+      // This stops saveRail from re-poisoning localStorage with pre-canonical middle values.
       const half = (window.innerWidth || 1400) / 2;
-      if (rect.left > half) return;
+      let x = rect.left;
+      if (x < 200 || x > (half + 50) || x > (window.innerWidth - 280)) {
+        x = GOOD;
+      }
+      if (x > half) return; // still never right-anchored
       localStorage.setItem("hush-rail", JSON.stringify({
-        x: rect.left,
+        x: x,
         y: rect.top,
         collapsed: rail.classList.contains("collapsed"),
-        homed: railHomed
+        homed: false
       }));
     }
     function applyThreadSize() {
@@ -4746,7 +4779,8 @@
         const rail = $("tool-rail");
         const rect = rail.getBoundingClientRect();
         let nx = rect.left;
-        if (nx < 200) nx = 360;
+        // Resize must not re-introduce middle drift. Snap to canonical if it wandered.
+        if (nx < 200 || nx > (window.innerWidth - 280) || (nx > 200 && nx < 340)) nx = 360;
         placeRail(nx, rect.top);
         saveRail();
       }
