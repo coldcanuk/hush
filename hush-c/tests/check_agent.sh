@@ -109,7 +109,7 @@ hexp = sys.argv[1]
 data = json.loads(sys.stdin.read())
 n = 0
 for e in (data.get("events") or []):
-    if (e.get("pubkey") or "") == hexp and "At ease." in (e.get("content") or ""):
+    if (e.get("pubkey") or "") == hexp and "Standing orders are noted." in (e.get("content") or ""):
         n += 1
 if n == 1:
     sys.exit(0)
@@ -163,7 +163,7 @@ hexp = sys.argv[1]
 data = json.loads(sys.stdin.read())
 n = 0
 for e in (data.get("events") or []):
-    if (e.get("pubkey") or "") == hexp and "At ease." in (e.get("content") or ""):
+    if (e.get("pubkey") or "") == hexp and "Standing orders are noted." in (e.get("content") or ""):
         n += 1
 if n == 1:
     sys.exit(0)
