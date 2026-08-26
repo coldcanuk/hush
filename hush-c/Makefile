@@ -8,6 +8,7 @@ CFLAGS := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2
 LDFLAGS := -lcrypto
 # Parent ./configure writes HUSH_HAVE_X11 and -lX11 when Xlib is present.
 -include ../config.mk
+LDFLAGS += -Wl,-z,noexecstack
 
 # These can be overridden by top-level or configure
 PREFIX ?= $(HOME)/.local
@@ -21,6 +22,8 @@ HUSHSHARE ?= $(DATADIR)/hush
 
 SRCS := $(wildcard src/*.c)
 OBJS := $(SRCS:.c=.o)
+ICON_PANELS := dogs cats sheep virus robots angevin
+ICON_PANEL_OBJS := $(foreach s,$(ICON_PANELS),src/hush_icon_panel_$(s).o)
 TESTS := $(wildcard tests/test_*.c)
 TEST_BINS := $(TESTS:.c=)
 
@@ -28,8 +31,11 @@ TEST_BINS := $(TESTS:.c=)
 
 all: libhush.a hush-relay
 
-libhush.a: $(OBJS)
+libhush.a: $(OBJS) $(ICON_PANEL_OBJS)
 	ar rcs $@ $^
+
+src/hush_icon_panel_%.o: demo/icons/icon_panel_%.png
+	ld -r -b binary -o $@ $<
 
 hush-relay: src/hush_relay_main.o libhush.a
 	$(CC) -o $@ $^ $(LDFLAGS)
@@ -61,7 +67,7 @@ test: $(TEST_BINS) hush-relay
 	@echo "ALL TESTS PASSED"
 
 clean:
-	rm -f $(OBJS) libhush.a hush-relay $(TEST_BINS) src/hush_relay_main.o src/hush_ui_html.h
+	rm -f $(OBJS) $(ICON_PANEL_OBJS) libhush.a hush-relay $(TEST_BINS) src/hush_relay_main.o src/hush_ui_html.h
 
 demo:
 	@echo "See hush-c/demo/ for the chat UI (also served by hush-relay on /)"

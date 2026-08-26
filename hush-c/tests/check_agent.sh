@@ -72,8 +72,9 @@ curl -sf -X POST "http://127.0.0.1:${port}/api/vibe" \
     -d '{"name":"HQ","about":"primary endpoint"}' >/dev/null
 ag=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
-    -d '{"name":"Happy","system_prompt":"Tell short jokes.","provider":"grok-build","save_pass":false}')
+    -d '{"name":"Happy","system_prompt":"Tell short jokes.","provider":"grok-build","save_pass":false,"picture":"panel:dogs:4"}')
 echo "$ag" | grep -q '"slug":"happy"' || fail "happy not raised"
+echo "$ag" | grep -q 'panel:dogs:4' || fail "happy picture id not stored"
 npub=$(printf '%s' "$ag" | sed -n 's/.*"slug":"happy"[^}]*"npub":"\([^"]*\)".*/\1/p')
 test -n "$npub" || fail "happy npub missing"
 hex=$(printf '%s' "$ag" | sed -n 's/.*"slug":"happy"[^}]*"pubkey":"\([^"]*\)".*/\1/p')
@@ -273,8 +274,20 @@ echo "$handle" | grep -q 'hush_agent_on_deck' || fail "one intro must precede gr
 if echo "$handle" | grep -q 'dev_log_enabled'; then
     fail "intro must not be dest-log gated"
 fi
-atlas=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/agent-atlas.png")
-test "$atlas" = "200" || fail "agent atlas not served"
+if echo "$html" | grep -q 'ATLAS_N = 31'; then
+    fail "served UI picker must not be exclusive 31-tile atlas"
+fi
+echo "$html" | grep -q '/icons/icon_panel_dogs.png' || fail "served UI missing dogs sheet"
+sess=$(curl -sf "http://127.0.0.1:${port}/api/session")
+echo "$sess" | grep -q 'panel:dogs:4' || fail "session missing panel picture id"
+for sheet in dogs cats sheep virus robots angevin; do
+    code=$(curl -s -o "$home/sheet.png" -w '%{http_code}' \
+        "http://127.0.0.1:${port}/icons/icon_panel_${sheet}.png")
+    test "$code" = "200" || fail "served sheet ${sheet} HTTP ${code}"
+    python3 -c 'import sys; d=open(sys.argv[1],"rb").read(8)
+sys.exit(0 if d.startswith(b"\x89PNG\r\n\x1a\n") else 1)' "$home/sheet.png" \
+        || fail "served sheet ${sheet} is not PNG"
+done
 about=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
     -H 'Content-Type: application/json' \
     -d '{"action":"manage","slug":"general","about":"jokes | keep it short","kind":"open","robot_reply":"mention"}')

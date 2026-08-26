@@ -10,7 +10,8 @@ slice, the Payne provider-order slice, the one-joke-snip
 paragraph, the thread-ux rail/minimize paragraph, the
 rail-win canvas paragraph, and the canvas-fim rail paragraph
 where they conflict.
-Quinn + Parker + Payne. No feline.
+Quinn + Parker + Payne. Robot pictures may use the shipped cats sheet
+(`icon_panel_cats.png`); other UI chrome stays non-feline.
 
 ## Core Principles (Quinn)
 - Cognitive Load Index ≤ 3/10. Gestalt Clarity ≥ 85/100.
