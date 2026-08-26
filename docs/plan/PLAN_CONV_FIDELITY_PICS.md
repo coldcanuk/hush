@@ -17,7 +17,7 @@ unbounded HRI essays; local merge to main.
 
 **Success.** Goal criteria 1–5 + `make test` + PR.
 
-## Architecture (frozen)
+## Architecture (frozen 2026-08-26)
 
 1. `assembleMentionContent(raw, roster)` is the only writer of stored
    mention text: replace `@Name` in place with `nostr:<npub>`;
