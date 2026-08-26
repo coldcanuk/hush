@@ -173,4 +173,46 @@ printf '%s' "$got" | python3 -c 'import json,sys; json.loads(sys.stdin.read())' 
     || fail "events JSON must parse with a tabbed grok reply"
 printf '%s' "$got" | grep -q '\\tfmt' || fail "tab must be escaped as \\\\t"
 
+echo "$ag" | grep -q '"name":"Happy"' || fail "happy name missing from raise"
+sess=$(curl -sf "http://127.0.0.1:${port}/api/session")
+echo "$sess" | grep -q 'Sgt Major Payne' || fail "session must include Sgt Major Payne"
+echo "$sess" | grep -q '"slug":"happy"' || fail "session must include raised Happy"
+
+# Payne seed path uses existing /api/agent (wizard JS). Put Payne on grok-build
+# so payneCanReply would pass (has_home from fake grok), then raise ≥2 teammates
+# with the seeder prompt and a dedicated channel.
+payne=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"slug":"sgt-major-payne","provider_0":"grok-build"}')
+echo "$payne" | grep -F '"providers":["grok-build"]' || fail "Payne seed provider grok-build"
+prompt='You are a specialist on a team seeded by Sgt Major Payne, Chief of Staff. Cooperate with sibling robots.'
+scout=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d "{\"name\":\"Scout\",\"system_prompt\":\"$prompt Your station is: Scout.\",\"provider\":\"grok-build\",\"save_pass\":false}")
+echo "$scout" | grep -q '"slug":"scout"' || fail "seed scout not raised"
+builder=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d "{\"name\":\"Builder\",\"system_prompt\":\"$prompt Your station is: Builder.\",\"provider\":\"grok-build\",\"save_pass\":false}")
+echo "$builder" | grep -q '"slug":"builder"' || fail "seed builder not raised"
+team=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
+    -H 'Content-Type: application/json' \
+    -d '{"name":"seeded-team"}')
+echo "$team" | grep -q '"slug":"seeded-team"' || fail "seed channel missing"
+managed=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"manage","slug":"seeded-team","robot_0":"scout","robot_1":"builder","robot_2":"sgt-major-payne","kind":"robots","robot_reply":"mention"}')
+echo "$managed" | grep -q 'scout' || fail "seed channel missing scout"
+echo "$managed" | grep -q 'builder' || fail "seed channel missing builder"
+echo "$managed" | grep -q 'sgt-major-payne' || fail "seed channel missing Payne"
+sess=$(curl -sf "http://127.0.0.1:${port}/api/session")
+echo "$sess" | grep -q '"slug":"scout"' || fail "session missing seeded scout"
+echo "$sess" | grep -q '"slug":"builder"' || fail "session missing seeded builder"
+echo "$sess" | grep -q 'Sgt Major Payne' || fail "Payne still on deck after seed"
+html=$(curl -sf "http://127.0.0.1:${port}/")
+echo "$html" | grep -q 'function seedTeam' || fail "served UI missing seedTeam"
+echo "$html" | grep -q 'INV_COLS = 4' || fail "served UI compact grid not 4 cols"
+if echo "$html" | grep -q 'seedInventoryDemo'; then
+    fail "served UI still has fake seedInventoryDemo"
+fi
+
 echo "agent mention reply ok"

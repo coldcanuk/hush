@@ -65,12 +65,16 @@ holds an nsec or provider secret.
 ### 4. Hive
 - Header: hush + vibe name + badge. Actions live on `#tool-rail` (§15).
 - Sidebar: Channels; **Robots inventory** (Diablo/Vein style spatial grid).
-  Openable inventory grid (default 10 cols × 5 rows, CELL_SIZE ~48–64px).
+  Compact default is **4 cols × 3 rows**, centered, and must not exceed
+  the sidebar/nav width. Expand opens a larger 8×5 grid in a drawer.
   Drag-and-drop agents of variable sizes (1×1, 1×3, 2×2, 2×3 etc.).
   Grid snap + occupancy/collision detection. Neon/brass cyberpunk-steampunk theme
   (dark industrial bg, glowing borders, name overlays). Create/raise from rail or
-  inventory header populates first free slot(s). Payne is pinned or first.
-  Built robots go into inventory slots. Persist slot layout (roster + local for prototype).
+  inventory header populates first free slot(s). Payne is pinned or first and
+  is a live roster tile (not a Seed demo fake). Built robots go into inventory
+  slots. Persist slot layout (roster + local for prototype).
+  Seed / Clear / Raise are one equal button class. Seed is a Payne-gated
+  team briefing (not local Cosplay tiles).
   Create lives on `#tool-rail` (§15) and inside inventory.
 - Stream + composer unchanged in spirit. Empty: Payne directive.
 

@@ -545,6 +545,7 @@
     }
     .panel h2 { margin: 0 0 6px; font-size: 1.1rem; }
     .panel p { margin: 0 0 12px; color: var(--muted); font-size: 0.86rem; line-height: 1.45; }
+    .panel label { display: block; font-size: 0.8rem; color: var(--muted); margin: 10px 0 4px; }
     .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
     .row label { font-size: 0.9rem; }
     .switch { position: relative; width: 42px; height: 24px; flex: 0 0 auto; }
@@ -611,28 +612,40 @@
       .lbl { display: none; }
     }
   
-/* M4.5 Inventory Grid (cyber/steampunk) */
-#robot-inventory { display:grid; grid-template-columns:repeat(8,36px); grid-auto-rows:36px; gap:2px; background:#0f1419; padding:6px; border:2px solid #3a4a55; border-radius:4px; min-height:120px; }
-.inv-cell { border:1px solid #2a3a45; background:#11171d; position:relative; }
-.inv-item { position:absolute; border:2px solid #0ff; background:rgba(0,255,255,0.1); color:#fff; font:700 8px/1 sans-serif; padding:1px 3px; cursor:grab; box-shadow:0 0 3px #0ff; overflow:hidden; white-space:nowrap; }
-.inv-item.dragging { opacity:.5; border-color:#fff; }
-
-
-/* M4.5 Full Inventory Grid - cyberpunk/steampunk, drag-snap-occupancy */
-#robot-inventory { display:grid; grid-template-columns:repeat(8, 38px); grid-auto-rows:38px; gap:2px; background:#0f1419; padding:6px; border:2px solid #3a4a55; border-radius:4px; min-height:160px; position:relative; }
-.inv-cell { border:1px solid #2a3a45; background:#11171d; position:relative; }
-.inv-item { position:absolute; border:2px solid #0ff; background:rgba(0,255,255,0.12); color:#fff; font:700 8px/1 sans-serif; padding:2px 4px; cursor:grab; box-shadow:0 0 4px #0ff; overflow:hidden; white-space:nowrap; display:flex; align-items:center; justify-content:center; }
-.inv-item.dragging { opacity:0.5; border-color:#fff; box-shadow:0 0 8px #fff; z-index:20; }
-.inv-item.size-1x1 { width:36px; height:36px; }
-.inv-item.size-1x3 { width:36px; height:116px; }
-.inv-item.size-2x2 { width:76px; height:76px; }
-.inv-item.size-2x3 { width:76px; height:116px; }
-.inv-item .nm { font-size:7px; color:#0ff; text-shadow:0 0 2px #000; }
-
-.inv-header { display:flex; align-items:center; gap:6px; margin:6px 0 2px 6px; }
-.inv-header .inv-title { font-size:0.62rem; letter-spacing:0.06em; color:#8a9; text-transform:uppercase; }
-.inv-header .mini { font-size:0.62rem; padding:1px 6px; border:1px solid #3a4a55; background:#11171d; color:#9cf; border-radius:3px; cursor:pointer; }
-.inv-header .mini:hover { border-color:#0ff; color:#fff; }
+/* Compact robots inventory: 4x3, must not exceed nav (~220px). */
+#robot-inventory {
+  display: block; position: relative; margin: 0 auto;
+  max-width: 100%;
+  background: #0f1419; padding: 4px; border: 2px solid #3a4a55; border-radius: 4px;
+}
+#robot-inventory-full {
+  display: block; position: relative; margin: 0 auto;
+  background: #0f1419; padding: 4px; border: 2px solid #3a4a55; border-radius: 4px;
+}
+.inv-cell { border: 1px solid #2a3a45; background: #11171d; box-sizing: border-box; }
+.inv-item {
+  position: absolute; border: 2px solid #0ff; background: rgba(0,255,255,0.12);
+  color: #fff; font: 700 8px/1 sans-serif; padding: 2px 4px; cursor: grab;
+  box-shadow: 0 0 4px #0ff; overflow: hidden; white-space: nowrap;
+  display: flex; align-items: center; justify-content: center; touch-action: none;
+}
+.inv-item.dragging { opacity: 0.5; border-color: #fff; box-shadow: 0 0 8px #fff; z-index: 20; }
+.inv-item .nm { font-size: 7px; color: #0ff; text-shadow: 0 0 2px #000; }
+.inv-header { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
+.inv-header .inv-title-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.inv-header .inv-title { font-size: 0.62rem; letter-spacing: 0.06em; color: #8a9; text-transform: uppercase; }
+.inv-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; width: 100%; }
+.inv-btn {
+  min-height: 32px; width: 100%; box-sizing: border-box;
+  font: 650 0.72rem/1 var(--sans); padding: 6px 0; margin: 0;
+  border: 1px solid #3a4a55; background: #11171d; color: #9cf;
+  border-radius: 3px; cursor: pointer;
+}
+.inv-btn:hover { border-color: #0ff; color: #fff; }
+.inv-expand-link {
+  font-size: 0.62rem; background: none; border: 0; color: var(--accent);
+  cursor: pointer; padding: 0;
+}
 
 /* M4.1 progressive mention states (thinking -> reacting -> emoji) */
 
@@ -744,10 +757,15 @@
       <!-- Legacy list hidden per M4.5: inventory grid is the primary Robots UI (Diablo/Vein spatial) -->
       <div class="robots" id="robot-list" aria-label="Robots" style="display:none"></div>
       <div class="inv-header">
-        <span class="inv-title">Robots Inventory</span>
-        <button class="mini" id="inv-seed" type="button" title="Seed demo robots">Seed</button>
-        <button class="mini" id="inv-clear" type="button" title="Clear inventory">Clear</button>
-        <button class="mini" id="inv-raise" type="button" title="Raise / create new robot">+ Raise</button>
+        <div class="inv-title-row">
+          <span class="inv-title">Robots Inventory</span>
+          <button class="inv-expand-link" id="inv-expand" type="button">Expand</button>
+        </div>
+        <div class="inv-btns">
+          <button class="inv-btn" id="inv-seed" type="button" title="Brief Payne to seed a team">Seed</button>
+          <button class="inv-btn" id="inv-clear" type="button" title="Reset inventory layout">Clear</button>
+          <button class="inv-btn" id="inv-raise" type="button" title="Raise a robot">Raise</button>
+        </div>
       </div>
       <div id="robot-inventory" aria-label="Robot Inventory Grid"></div>
 
@@ -1148,6 +1166,47 @@
       </div>
     </div>
   </div>
+  <div class="drawer" id="inv-expand-drawer" role="dialog" aria-label="Expanded robot inventory">
+    <div class="panel wide">
+      <div class="drawer-head">
+        <h2>Robots inventory</h2>
+        <button class="drawer-x" id="inv-expand-close" type="button" aria-label="Close expanded inventory">×</button>
+      </div>
+      <p class="help">Expanded 8×5 grid. Compact sidebar stays 4×3.</p>
+      <div id="robot-inventory-full" aria-label="Expanded robot inventory"></div>
+    </div>
+  </div>
+  <div class="drawer" id="seed-drawer" role="dialog" aria-label="Seed a team">
+    <div class="panel">
+      <div class="drawer-head">
+        <h2>Seed a team</h2>
+        <button class="drawer-x" id="seed-close" type="button" aria-label="Close seed">×</button>
+      </div>
+      <p class="help">Sgt Major Payne raises a cooperating team from this briefing. He needs a working AI provider first.</p>
+      <p class="warn" id="seed-err"></p>
+      <label for="seed-actions">This team should do</label>
+      <textarea id="seed-actions" maxlength="400" placeholder="action 1, action 2, action 3"></textarea>
+      <label for="seed-skills">Skilled at</label>
+      <textarea id="seed-skills" maxlength="400" placeholder="skill 1, skill 2, skill 3"></textarea>
+      <label for="seed-project">The project</label>
+      <input id="seed-project" type="text" maxlength="120" placeholder="I need a team to help me build …">
+      <p class="help">Deploy the team in</p>
+      <div class="radio-col">
+        <label><input type="radio" name="seed-chan-mode" id="seed-channel-existing" value="existing" checked> An existing channel</label>
+        <label><input type="radio" name="seed-chan-mode" id="seed-channel-new" value="new"> A new channel for this team</label>
+      </div>
+      <label for="seed-channel-slug">Existing channel</label>
+      <select id="seed-channel-slug"></select>
+      <label for="seed-channel-name">New channel name</label>
+      <input id="seed-channel-name" type="text" maxlength="48" placeholder="team-ops">
+      <p class="help">Prompt Payne will use</p>
+      <textarea id="seed-preview" maxlength="2000" readonly></textarea>
+      <div class="actions">
+        <button class="btn" id="seed-submit" type="button">Seed team</button>
+        <button class="btn ghost" id="seed-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
@@ -1249,9 +1308,12 @@
     /* M4.5 Inventory grid state (Diablo/Vein spatial). Variable sizes in cells.
      * Drag-drop with snap + occupancy collision. Cyber/steampunk neon+brass. */
     let invItems = []; /* {id, name, w, h, gx, gy, slug?, color?} */
-    const INV_COLS = 8;
-    const INV_ROWS = 5;
-    const INV_CELL = 38;
+    const INV_COLS = 4;
+    const INV_ROWS = 3;
+    const INV_CELL = 40;
+    const INV_EXPAND_COLS = 8;
+    const INV_EXPAND_ROWS = 5;
+    const INV_EXPAND_CELL = 44;
     let invDrag = null; /* {id, startGX, startGY, gx, gy, w, h, dx, dy} */
     let invNextId = 1;
 
@@ -1322,7 +1384,7 @@
       lastGateHtml = "";
       paintChannels();
       paintRobots();
-      if (typeof renderInventory === "function") renderInventory();
+      if (typeof syncInventoryFromRoster === "function") syncInventoryFromRoster();
     }
 
     function stepBar(n) {
@@ -2545,13 +2607,7 @@
         applySession(await api("/api/agent", body));
         $("agent-drawer").classList.remove("show");
         resetAgentDraft();
-        /* M4.5: auto-place newly raised robot into inventory grid (1x1 default) */
-        setTimeout(() => {
-          const last = (session.agents || []).slice(-1)[0];
-          if (last && typeof addToInventory === "function") {
-            addToInventory(last, "1x1");
-          }
-        }, 120);
+        if (typeof syncInventoryFromRoster === "function") syncInventoryFromRoster();
       } catch (e) { $("agent-err").textContent = "Could not raise that robot."; }
     });
     $("agent-delete").addEventListener("click", async () => {
@@ -4130,18 +4186,32 @@
       if (d) d.classList.remove("show");
     }
 
-    /* ========== M4.5 Inventory Grid Implementation (Diablo/Vein style) ========== */
+    /* ========== Inventory: live roster on compact 4x3, expand 8x5 ========== */
     function invId() { return "inv" + (invNextId++); }
 
     function sizeForKey(key) {
       if (key === "1x3") return { w: 1, h: 3 };
       if (key === "2x2") return { w: 2, h: 2 };
       if (key === "2x3") return { w: 2, h: 3 };
-      return { w: 1, h: 1 }; /* default 1x1 */
+      return { w: 1, h: 1 };
     }
 
-    function isSpaceFree(gx, gy, w, h, ignoreId) {
-      if (gx < 0 || gy < 0 || gx + w > INV_COLS || gy + h > INV_ROWS) return false;
+    function loadInvLayout() {
+      try { return JSON.parse(localStorage.getItem("hush-inv") || "{}"); }
+      catch (e) { return {}; }
+    }
+
+    function saveInvLayout() {
+      const o = {};
+      invItems.forEach((it) => {
+        if (it.slug) o[it.slug] = { gx: it.gx, gy: it.gy, w: it.w, h: it.h };
+      });
+      try { localStorage.setItem("hush-inv", JSON.stringify(o)); } catch (e) {}
+    }
+
+    function isSpaceFree(gx, gy, w, h, ignoreId, cols, rows) {
+      const c = cols || INV_COLS, r = rows || INV_ROWS;
+      if (gx < 0 || gy < 0 || gx + w > c || gy + h > r) return false;
       for (let i = 0; i < invItems.length; i++) {
         const it = invItems[i];
         if (ignoreId && it.id === ignoreId) continue;
@@ -4152,158 +4222,183 @@
       return true;
     }
 
-    function findFreeSlot(w, h) {
-      for (let y = 0; y <= INV_ROWS - h; y++) {
-        for (let x = 0; x <= INV_COLS - w; x++) {
-          if (isSpaceFree(x, y, w, h, null)) return { gx: x, gy: y };
+    function findFreeSlot(w, h, cols, rows) {
+      const c = cols || INV_COLS, r = rows || INV_ROWS;
+      for (let y = 0; y <= r - h; y++) {
+        for (let x = 0; x <= c - w; x++) {
+          if (isSpaceFree(x, y, w, h, null, c, r)) return { gx: x, gy: y };
         }
       }
       return null;
     }
 
     function addToInventory(bot, sizeKey) {
+      if (bot && bot.slug && invItems.some((it) => it.slug === bot.slug)) return null;
       const sz = sizeForKey(sizeKey || "1x1");
-      const slot = findFreeSlot(sz.w, sz.h);
-      if (!slot) {
-        /* fallback: place at 0,0 if possible or push anyway (will overlap visually but rare) */
-        if (!isSpaceFree(0, 0, sz.w, sz.h, null)) {
-          /* bump first if needed for demo resilience */
-        }
-        slot = { gx: 0, gy: 0 };
-      }
+      let slot = findFreeSlot(sz.w, sz.h, INV_COLS, INV_ROWS);
+      if (!slot) slot = findFreeSlot(sz.w, sz.h, INV_EXPAND_COLS, INV_EXPAND_ROWS);
+      if (!slot) slot = { gx: 0, gy: 0 };
       const item = {
         id: invId(),
         name: (bot && bot.name) ? bot.name : "Robot",
         w: sz.w, h: sz.h,
         gx: slot.gx, gy: slot.gy,
         slug: (bot && bot.slug) ? bot.slug : "",
-        color: (bot && bot.color) ? bot.color : "#0ff"
+        color: (bot && bot.locked) ? "#d4a017" : "#0ff"
       };
       invItems.push(item);
-      renderInventory();
+      saveInvLayout();
+      renderAllInventories();
       return item;
     }
 
-    function removeFromInventory(id) {
-      invItems = invItems.filter((it) => it.id !== id);
-      renderInventory();
+    function syncInventoryFromRoster() {
+      const bots = robotModels();
+      const layout = loadInvLayout();
+      const keep = {};
+      bots.forEach((bot) => {
+        keep[bot.slug] = true;
+        let it = invItems.find((x) => x.slug === bot.slug);
+        if (it) {
+          it.name = bot.name;
+          return;
+        }
+        const sizeKey = bot.slug === PAYNE_SLUG ? "1x3" : "1x1";
+        const sz = sizeForKey(sizeKey);
+        const saved = layout[bot.slug];
+        let gx = 0, gy = 0, w = sz.w, h = sz.h;
+        if (saved && typeof saved.gx === "number" && typeof saved.gy === "number") {
+          gx = saved.gx; gy = saved.gy;
+          if (typeof saved.w === "number") w = saved.w;
+          if (typeof saved.h === "number") h = saved.h;
+        } else {
+          const slot = findFreeSlot(sz.w, sz.h, INV_COLS, INV_ROWS)
+            || findFreeSlot(sz.w, sz.h, INV_EXPAND_COLS, INV_EXPAND_ROWS)
+            || { gx: 0, gy: 0 };
+          gx = slot.gx; gy = slot.gy;
+        }
+        invItems.push({
+          id: invId(),
+          name: bot.name,
+          w: w, h: h, gx: gx, gy: gy,
+          slug: bot.slug,
+          color: bot.locked ? "#d4a017" : "#0ff"
+        });
+      });
+      invItems = invItems.filter((it) => keep[it.slug]);
+      saveInvLayout();
+      renderAllInventories();
     }
 
-    function renderInventory() {
-      const grid = $("robot-inventory");
+    function renderAllInventories() {
+      renderInventory($("robot-inventory"), INV_COLS, INV_ROWS, INV_CELL, true);
+      const full = $("robot-inventory-full");
+      if (full) renderInventory(full, INV_EXPAND_COLS, INV_EXPAND_ROWS, INV_EXPAND_CELL, false);
+    }
+
+    function renderInventory(grid, cols, rows, cell, compact) {
       if (!grid) return;
       grid.innerHTML = "";
       grid.style.position = "relative";
-      grid.style.width = (INV_COLS * INV_CELL + 4) + "px";
-      grid.style.height = (INV_ROWS * INV_CELL + 4) + "px";
-      grid.style.background = "#0f1419";
-      grid.style.border = "2px solid #3a4a55";
-      grid.style.borderRadius = "4px";
-      grid.style.padding = "2px";
-      /* background cells */
-      for (let y = 0; y < INV_ROWS; y++) {
-        for (let x = 0; x < INV_COLS; x++) {
-          const cell = document.createElement("div");
-          cell.className = "inv-cell";
-          cell.style.position = "absolute";
-          cell.style.left = (x * INV_CELL) + "px";
-          cell.style.top = (y * INV_CELL) + "px";
-          cell.style.width = INV_CELL + "px";
-          cell.style.height = INV_CELL + "px";
-          grid.appendChild(cell);
+      grid.style.width = (cols * cell + 8) + "px";
+      grid.style.height = (rows * cell + 8) + "px";
+      grid.style.maxWidth = "100%";
+      grid.style.marginLeft = "auto";
+      grid.style.marginRight = "auto";
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const cellEl = document.createElement("div");
+          cellEl.className = "inv-cell";
+          cellEl.style.position = "absolute";
+          cellEl.style.left = (x * cell) + "px";
+          cellEl.style.top = (y * cell) + "px";
+          cellEl.style.width = cell + "px";
+          cellEl.style.height = cell + "px";
+          grid.appendChild(cellEl);
         }
       }
-      /* items */
       invItems.forEach((it) => {
+        if (compact && (it.gx + it.w > cols || it.gy + it.h > rows)) return;
         const el = document.createElement("div");
-        el.className = "inv-item size-" + it.w + "x" + it.h;
+        el.className = "inv-item";
         el.dataset.id = it.id;
-        el.style.position = "absolute";
-        el.style.left = (it.gx * INV_CELL + 1) + "px";
-        el.style.top = (it.gy * INV_CELL + 1) + "px";
-        el.style.width = ((it.w * INV_CELL) - 4) + "px";
-        el.style.height = ((it.h * INV_CELL) - 4) + "px";
+        el.dataset.grid = compact ? "compact" : "full";
+        el.style.left = (it.gx * cell + 1) + "px";
+        el.style.top = (it.gy * cell + 1) + "px";
+        el.style.width = ((it.w * cell) - 4) + "px";
+        el.style.height = ((it.h * cell) - 4) + "px";
         el.style.borderColor = it.color || "#0ff";
         el.style.boxShadow = "0 0 4px " + (it.color || "#0ff");
-        el.innerHTML = '<span class="nm">' + esc(it.name) + '</span>';
-        el.addEventListener("pointerdown", (ev) => beginInvDrag(ev, it.id));
-        /* allow click to edit/raise */
-        el.addEventListener("click", (ev) => {
+        el.innerHTML = '<span class="nm">' + esc(it.name) + "</span>";
+        el.addEventListener("pointerdown", (ev) => beginInvDrag(ev, it.id, compact));
+        el.addEventListener("click", () => {
           if (invDrag) return;
           const bot = robotModels().find((b) => b.slug === it.slug) || { name: it.name, slug: it.slug };
           openAgentDrawer(bot);
         });
         grid.appendChild(el);
       });
-      /* drag over feedback on grid */
-      grid.onpointermove = (ev) => onInvPointerMove(ev);
-      grid.onpointerup = (ev) => onInvPointerUp(ev);
+      grid.onpointermove = (ev) => onInvPointerMove(ev, compact);
+      grid.onpointerup = (ev) => onInvPointerUp(ev, compact);
       grid.onpointerleave = () => { if (invDrag) revertInvDrag(); };
     }
 
-    function beginInvDrag(ev, id) {
+    function beginInvDrag(ev, id, compact) {
       const it = invItems.find((i) => i.id === id);
       if (!it) return;
-      const grid = $("robot-inventory");
+      const cols = compact ? INV_COLS : INV_EXPAND_COLS;
+      const rows = compact ? INV_ROWS : INV_EXPAND_ROWS;
+      const cell = compact ? INV_CELL : INV_EXPAND_CELL;
+      const grid = compact ? $("robot-inventory") : $("robot-inventory-full");
       if (!grid) return;
       const rect = grid.getBoundingClientRect();
       invDrag = {
-        id: it.id,
+        id: it.id, compact: !!compact,
+        cols: cols, rows: rows, cell: cell,
         startGX: it.gx, startGY: it.gy,
-        gx: it.gx, gy: it.gy,
-        w: it.w, h: it.h,
-        dx: ev.clientX - rect.left - (it.gx * INV_CELL),
-        dy: ev.clientY - rect.top - (it.gy * INV_CELL)
+        gx: it.gx, gy: it.gy, w: it.w, h: it.h,
+        dx: ev.clientX - rect.left - (it.gx * cell),
+        dy: ev.clientY - rect.top - (it.gy * cell)
       };
-      const els = grid.querySelectorAll(".inv-item");
-      els.forEach((e) => { if (e.dataset.id === id) e.classList.add("dragging"); });
+      grid.querySelectorAll(".inv-item").forEach((e) => {
+        if (e.dataset.id === id) e.classList.add("dragging");
+      });
       ev.preventDefault();
     }
 
-    function onInvPointerMove(ev) {
+    function onInvPointerMove(ev, compact) {
       if (!invDrag) return;
-      const grid = $("robot-inventory");
+      const cell = invDrag.cell;
+      const grid = invDrag.compact ? $("robot-inventory") : $("robot-inventory-full");
       if (!grid) return;
       const rect = grid.getBoundingClientRect();
       const relX = ev.clientX - rect.left - invDrag.dx;
       const relY = ev.clientY - rect.top - invDrag.dy;
-      let gx = Math.round(relX / INV_CELL);
-      let gy = Math.round(relY / INV_CELL);
-      gx = Math.max(0, Math.min(INV_COLS - invDrag.w, gx));
-      gy = Math.max(0, Math.min(INV_ROWS - invDrag.h, gy));
+      let gx = Math.round(relX / cell);
+      let gy = Math.round(relY / cell);
+      gx = Math.max(0, Math.min(invDrag.cols - invDrag.w, gx));
+      gy = Math.max(0, Math.min(invDrag.rows - invDrag.h, gy));
       invDrag.gx = gx; invDrag.gy = gy;
-      /* live preview move */
       const el = grid.querySelector('.inv-item[data-id="' + invDrag.id + '"]');
       if (el) {
-        el.style.left = (gx * INV_CELL + 1) + "px";
-        el.style.top = (gy * INV_CELL + 1) + "px";
+        el.style.left = (gx * cell + 1) + "px";
+        el.style.top = (gy * cell + 1) + "px";
+        const ok = isSpaceFree(gx, gy, invDrag.w, invDrag.h, invDrag.id, invDrag.cols, invDrag.rows);
+        el.style.borderColor = ok ? "#0ff" : "#f66";
       }
-      /* occupancy hint */
-      const ok = isSpaceFree(gx, gy, invDrag.w, invDrag.h, invDrag.id);
-      if (el) el.style.borderColor = ok ? "#0ff" : "#f66";
     }
 
-    function onInvPointerUp(ev) {
+    function onInvPointerUp(ev, compact) {
       if (!invDrag) return;
-      const grid = $("robot-inventory");
-      const id = invDrag.id;
-      const gx = invDrag.gx, gy = invDrag.gy, w = invDrag.w, h = invDrag.h;
-      const ok = isSpaceFree(gx, gy, w, h, id);
-      const it = invItems.find((i) => i.id === id);
+      const ok = isSpaceFree(invDrag.gx, invDrag.gy, invDrag.w, invDrag.h, invDrag.id, invDrag.cols, invDrag.rows);
+      const it = invItems.find((i) => i.id === invDrag.id);
       if (it) {
-        if (ok) {
-          it.gx = gx; it.gy = gy;
-        } else {
-          /* revert */
-          it.gx = invDrag.startGX; it.gy = invDrag.startGY;
-        }
-      }
-      if (grid) {
-        const els = grid.querySelectorAll(".inv-item");
-        els.forEach((e) => e.classList.remove("dragging"));
+        if (ok) { it.gx = invDrag.gx; it.gy = invDrag.gy; }
+        else { it.gx = invDrag.startGX; it.gy = invDrag.startGY; }
       }
       invDrag = null;
-      renderInventory();
+      saveInvLayout();
+      renderAllInventories();
     }
 
     function revertInvDrag() {
@@ -4311,34 +4406,156 @@
       const it = invItems.find((i) => i.id === invDrag.id);
       if (it) { it.gx = invDrag.startGX; it.gy = invDrag.startGY; }
       invDrag = null;
-      renderInventory();
-    }
-
-    function seedInventoryDemo() {
-      invItems = [];
-      const demo = [
-        { name: "Happy", size: "1x1" },
-        { name: "Sgt Major Payne", size: "1x3" },
-        { name: "Cipher", size: "2x2" }
-      ];
-      demo.forEach((d) => {
-        const sz = sizeForKey(d.size);
-        const slot = findFreeSlot(sz.w, sz.h) || { gx: 0, gy: 0 };
-        invItems.push({
-          id: invId(),
-          name: d.name,
-          w: sz.w, h: sz.h,
-          gx: slot.gx, gy: slot.gy,
-          slug: d.name.toLowerCase().replace(/\s+/g, "-"),
-          color: "#0ff"
-        });
-      });
-      renderInventory();
+      renderAllInventories();
     }
 
     function clearInventory() {
-      invItems = [];
-      renderInventory();
+      invItems.forEach((it) => { it.gx = 0; it.gy = 0; });
+      const packed = [];
+      invItems.forEach((it) => {
+        const slot = findFreeSlot(it.w, it.h, INV_COLS, INV_ROWS)
+          || findFreeSlot(it.w, it.h, INV_EXPAND_COLS, INV_EXPAND_ROWS)
+          || { gx: 0, gy: 0 };
+        packed.push({ gx: slot.gx, gy: slot.gy, w: it.w, h: it.h, ignore: it.id });
+        it.gx = slot.gx; it.gy = slot.gy;
+      });
+      saveInvLayout();
+      renderAllInventories();
+    }
+
+    function splitSeedList(raw) {
+      return (raw || "").split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean).slice(0, 8);
+    }
+
+    function buildSeedPrompt(actions, skills, project) {
+      const act = actions.length ? actions.join(", ") : "cooperate on the stated mission";
+      const sk = skills.length ? skills.join(", ") : "clear hand-offs and tight reports";
+      const proj = (project || "").trim() || "the current hive mission";
+      return "You are a specialist on a team seeded by Sgt Major Payne, Chief of Staff. "
+        + "The team does: " + act + ". "
+        + "The team is skilled at: " + sk + ". "
+        + "The project is: " + proj + ". "
+        + "Cooperate with sibling robots. Hand off work. Do not work in isolation. "
+        + "Payne remains Chief of Staff. Speak when mentioned.";
+    }
+
+    function payneCanReply() {
+      const p = robotModels().find((b) => b.slug === PAYNE_SLUG) || {};
+      const ids = (p.providers && p.providers.length) ? p.providers : [p.provider];
+      return ids.some((id) => {
+        if (!id) return false;
+        const st = providerMap[id] || {};
+        return !!(st.has_home || st.has_binary || st.has_key || st.has_token);
+      });
+    }
+
+    function seedSlug(name, used) {
+      let slug = (name || "bot").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      if (!slug) slug = "bot";
+      let out = slug, n = 2;
+      while (used[out]) { out = slug + "-" + n; n++; }
+      used[out] = true;
+      return out;
+    }
+
+    function paintSeedPreview() {
+      const actions = splitSeedList($("seed-actions") && $("seed-actions").value);
+      const skills = splitSeedList($("seed-skills") && $("seed-skills").value);
+      const project = $("seed-project") ? $("seed-project").value : "";
+      if ($("seed-preview")) $("seed-preview").value = buildSeedPrompt(actions, skills, project);
+    }
+
+    function paintSeedChannels() {
+      const sel = $("seed-channel-slug");
+      if (!sel) return;
+      const cur = sel.value;
+      sel.innerHTML = "";
+      (session.channels || []).forEach((ch) => {
+        const opt = document.createElement("option");
+        opt.value = ch.slug;
+        opt.textContent = "#" + (ch.name || ch.slug);
+        sel.appendChild(opt);
+      });
+      if (cur) sel.value = cur;
+    }
+
+    async function openSeedDrawer() {
+      const err = $("seed-err");
+      if (err) err.textContent = "";
+      await loadProviders();
+      paintSeedChannels();
+      paintSeedPreview();
+      if (!payneCanReply()) {
+        if (err) err.textContent = "Payne needs a working AI provider before he can seed. Open Providers or edit Payne.";
+      }
+      $("seed-drawer").classList.add("show");
+    }
+
+    async function seedTeam() {
+      const err = $("seed-err");
+      if (err) err.textContent = "";
+      await loadProviders();
+      if (!payneCanReply()) {
+        if (err) err.textContent = "Payne needs a working AI provider before he can seed. Open Providers or edit Payne.";
+        return;
+      }
+      const actions = splitSeedList($("seed-actions") && $("seed-actions").value);
+      const skills = splitSeedList($("seed-skills") && $("seed-skills").value);
+      const project = ($("seed-project") && $("seed-project").value || "").trim();
+      if (!actions.length && !skills.length && !project) {
+        if (err) err.textContent = "Tell Payne what the team should do, their skills, or the project.";
+        return;
+      }
+      const prompt = buildSeedPrompt(actions, skills, project);
+      const names = [];
+      if (actions.length) actions.forEach((a) => names.push(a.slice(0, 24)));
+      else if (skills.length) skills.forEach((s) => names.push(s.slice(0, 24)));
+      else names.push("Scout", "Builder");
+      while (names.length < 2) names.push(names.length === 1 ? "Handoff" : "Scout");
+      const used = {};
+      robotModels().forEach((b) => { if (b.slug) used[b.slug] = true; });
+      const provider = (robotModels().find((b) => b.slug === PAYNE_SLUG) || {}).provider || "goose";
+      const created = [];
+      try {
+        for (let i = 0; i < names.length; i++) {
+          const name = names[i];
+          const body = {
+            name: name,
+            system_prompt: prompt + " Your station is: " + name + ".",
+            provider: provider,
+            save_pass: false
+          };
+          const sess = await api("/api/agent", body);
+          applySession(sess);
+          const last = (session.agents || []).slice(-1)[0];
+          if (last && last.slug) created.push(last.slug);
+        }
+        const mode = document.querySelector('input[name="seed-chan-mode"]:checked');
+        let slug = "";
+        if (mode && mode.value === "new") {
+          const nm = ($("seed-channel-name") && $("seed-channel-name").value || "").trim() || "seeded-team";
+          const ch = await api("/api/channel", { name: nm });
+          applySession(ch);
+          slug = (ch.channels || session.channels || []).slice(-1)[0];
+          slug = slug && slug.slug ? slug.slug : "";
+          if (!slug && session.channels) {
+            const hit = session.channels.find((c) => (c.name || "").toLowerCase() === nm.toLowerCase());
+            slug = hit ? hit.slug : (session.channels.slice(-1)[0] || {}).slug;
+          }
+        } else {
+          slug = $("seed-channel-slug") ? $("seed-channel-slug").value : "";
+        }
+        if (slug && created.length) {
+          const body = { action: "manage", slug: slug, robot_reply: "mention" };
+          created.forEach((s, i) => { body["robot_" + i] = s; });
+          body["robot_" + created.length] = PAYNE_SLUG;
+          applySession(await api("/api/channel", body));
+        }
+        $("seed-drawer").classList.remove("show");
+        syncInventoryFromRoster();
+      } catch (e) {
+        if (err) err.textContent = "Payne could not raise that team.";
+      }
     }
 
     function ago(ts) {
@@ -4655,10 +4872,23 @@
       if ($("thread-pane").classList.contains("show")) applyThreadSize();
     });
 
-    /* M4.5 Inventory header button wiring */
-    if ($("inv-seed")) $("inv-seed").addEventListener("click", () => { seedInventoryDemo(); });
+    /* Inventory header: Seed wizard, layout reset, raise, expand. */
+    if ($("inv-seed")) $("inv-seed").addEventListener("click", () => { openSeedDrawer(); });
     if ($("inv-clear")) $("inv-clear").addEventListener("click", () => { clearInventory(); });
     if ($("inv-raise")) $("inv-raise").addEventListener("click", () => { openAgentDrawer(null); });
+    if ($("inv-expand")) $("inv-expand").addEventListener("click", () => {
+      renderAllInventories();
+      $("inv-expand-drawer").classList.add("show");
+    });
+    if ($("inv-expand-close")) $("inv-expand-close").addEventListener("click", () => {
+      $("inv-expand-drawer").classList.remove("show");
+    });
+    if ($("seed-close")) $("seed-close").addEventListener("click", () => $("seed-drawer").classList.remove("show"));
+    if ($("seed-cancel")) $("seed-cancel").addEventListener("click", () => $("seed-drawer").classList.remove("show"));
+    if ($("seed-submit")) $("seed-submit").addEventListener("click", () => { seedTeam(); });
+    ["seed-actions", "seed-skills", "seed-project"].forEach((id) => {
+      if ($(id)) $(id).addEventListener("input", paintSeedPreview);
+    });
 
     applyTheme(localStorage.getItem("hush-theme") || "dark");
     paint();
