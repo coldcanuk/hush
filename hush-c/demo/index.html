@@ -1134,6 +1134,20 @@
     <button type="button" data-act="delete">Delete Channel</button>
     <button type="button" data-act="manage">Manage Channel</button>
   </div>
+  <div class="drawer" id="dev-log-drawer" role="dialog" aria-label="Developer Log">
+    <div class="panel wide">
+      <div class="drawer-head">
+        <h2>Developer Log</h2>
+        <button class="drawer-x" id="dev-log-close" type="button" aria-label="Close dev log">×</button>
+      </div>
+      <p class="help">Syslog stream (mentions, intros, debug). Visible only when Developer Logging enabled in Settings.</p>
+      <pre id="dev-log-body" style="background:#000;color:#0f0;font:0.78rem/1.3 ui-monospace,monospace;height:360px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:8px;white-space:pre-wrap;"></pre>
+      <div class="actions">
+        <button class="btn ghost" id="dev-log-clear" type="button">Clear</button>
+        <button class="btn" id="dev-log-close2" type="button">Close</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
@@ -2985,9 +2999,9 @@
         try { render(lastEvents, lastStatus); } catch (e) {}
       });
     }
-    $("dev-log-close").addEventListener("click", closeDevLog);
-    $("dev-log-close2").addEventListener("click", closeDevLog);
-    $("dev-log-clear").addEventListener("click", () => {
+    if ($("dev-log-close")) $("dev-log-close").addEventListener("click", closeDevLog);
+    if ($("dev-log-close2")) $("dev-log-close2").addEventListener("click", closeDevLog);
+    if ($("dev-log-clear")) $("dev-log-clear").addEventListener("click", () => {
       devLogLines.length = 0;
       const pre = $("dev-log-body");
       if (pre) pre.textContent = "";
@@ -4850,22 +4864,6 @@
       installBtn.classList.remove("show");
     });
   </script>
-
-
-  <div class="drawer" id="dev-log-drawer" role="dialog" aria-label="Developer Log">
-    <div class="panel wide">
-      <div class="drawer-head">
-        <h2>Developer Log</h2>
-        <button class="drawer-x" id="dev-log-close" type="button" aria-label="Close dev log">×</button>
-      </div>
-      <p class="help">Syslog stream (mentions, intros, debug). Visible only when Developer Logging enabled in Settings.</p>
-      <pre id="dev-log-body" style="background:#000;color:#0f0;font:0.78rem/1.3 ui-monospace,monospace;height:360px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:8px;white-space:pre-wrap;"></pre>
-      <div class="actions">
-        <button class="btn ghost" id="dev-log-clear" type="button">Clear</button>
-        <button class="btn" id="dev-log-close2" type="button">Close</button>
-      </div>
-    </div>
-  </div>
 
 </body>
 </html>
