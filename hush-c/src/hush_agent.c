@@ -20,6 +20,7 @@
 #include "hush_roster.h"
 
 enum {
+    HUSH_AGENT_INTRO_MAX = 32,
     HUSH_AGENT_JOBS_MAX = 4,
     HUSH_AGENT_TIMEOUT_S = 90,
     HUSH_AGENT_KIND_NOTE = 1,
@@ -47,17 +48,21 @@ enum {
     "You are a robot in the Hush hive. Fulfill the last human ask in one note."
 #define HUSH_AGENT_ONE_JOKE \
     "If the last human ask is a joke, reply with exactly one joke."
+#define HUSH_AGENT_PEER_STANDARD \
+    " Inter-robot standard: keep nostr:npub mentions in the same sentence " \
+    "order they were given. One short intro per thread, then work. " \
+    "To hand off, emit the peer nostr:npub in the note. Do not reorder mentions."
 #define HUSH_AGENT_HYGIENE \
     " Fulfill the last human ask in this note. Include any asked code. " \
     "No preamble-only replies. No status, no thoughts, no host facts, no npub. " \
-    HUSH_AGENT_ONE_JOKE
+    HUSH_AGENT_ONE_JOKE HUSH_AGENT_PEER_STANDARD
 #define HUSH_AGENT_DISALLOWED \
     "run_terminal_cmd,web_search,web_fetch,read_file,search_replace,list_dir,grep,todo_write,task,Agent"
 #define HUSH_AGENT_RULES \
     "Fulfill the last human ask as the named robot. Include asked code. " \
     "No preamble-only replies. Address the human by first name. " \
     "No tools. No status. No npub. " \
-    HUSH_AGENT_ONE_JOKE
+    HUSH_AGENT_ONE_JOKE HUSH_AGENT_PEER_STANDARD
 #define HUSH_AGENT_HUMAN_FALLBACK "you"
 #define HUSH_AGENT_GROK_EFFORT "low"
 #define HUSH_AGENT_GROK_TURNS "2"
@@ -136,6 +141,9 @@ typedef struct {
 
 static hush_agent_job_t g_jobs[HUSH_AGENT_JOBS_MAX];
 static unsigned g_id_seq;
+static char g_intro_hex[HUSH_AGENT_INTRO_MAX][HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+static char g_intro_root[HUSH_AGENT_INTRO_MAX][HUSH_EVENT_ID_HEX_LEN + 1];
+static size_t g_nintro;
 
 static void hush_agent_copy(char *dst, size_t dstsz, const char *src);
 static void hush_agent_trim(char *text);
@@ -207,6 +215,8 @@ static void hush_agent_handle_mention(hush_store_t *store,
 static int hush_agent_job_timed_out(const hush_agent_job_t *job, time_t now);
 static int hush_agent_robot_busy(const hush_agent_robot_t *bot,
                                  const hush_event_t *parent);
+static int hush_agent_intro_seen(const char *hex, const char *root);
+static void hush_agent_intro_remember(const char *hex, const char *root);
 
 void hush_agent_init(void)
 {
@@ -216,6 +226,9 @@ void hush_agent_init(void)
         memset(&g_jobs[i], 0, sizeof(g_jobs[i]));
         g_jobs[i].fd = HUSH_AGENT_FD_NONE;
     }
+    memset(g_intro_hex, 0, sizeof(g_intro_hex));
+    memset(g_intro_root, 0, sizeof(g_intro_root));
+    g_nintro = 0;
 }
 
 void hush_agent_shutdown(void)
@@ -637,6 +650,31 @@ static hush_status_t hush_agent_insert_note(hush_store_t *store,
     return hush_store_insert(store, &ev);
 }
 
+static int hush_agent_intro_seen(const char *hex, const char *root)
+{
+    size_t i;
+
+    if (hex == NULL || root == NULL)
+        return 0;
+    for (i = 0; i < g_nintro && i < (size_t)HUSH_AGENT_INTRO_MAX; i++) {
+        if (strcmp(g_intro_hex[i], hex) == 0 &&
+            strcmp(g_intro_root[i], root) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static void hush_agent_intro_remember(const char *hex, const char *root)
+{
+    if (hex == NULL || root == NULL)
+        return;
+    if (g_nintro >= (size_t)HUSH_AGENT_INTRO_MAX)
+        return;
+    hush_agent_copy(g_intro_hex[g_nintro], sizeof(g_intro_hex[0]), hex);
+    hush_agent_copy(g_intro_root[g_nintro], sizeof(g_intro_root[0]), root);
+    g_nintro++;
+}
+
 static void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bot,
                                const hush_event_t *parent, const char *why)
 {
@@ -653,22 +691,11 @@ static void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bo
     line = (why != NULL && why[0] != '\0') ? why
         : "I am on deck. Standing orders are noted.";
 
-    /* Single intro guard (M3.2): only the very first "standing orders"
-     * on-deck per (robot, root). Subsequent mentions get emoji ack only.
-     * Keeps chat clean; one intro per conversation thread. */
+    /* One intro per (robot hex, thread root). Table, not a single last-pair. */
     hush_agent_event_root(root, sizeof(root), parent);
-    {
-        static char last_hex[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
-        static char last_root[HUSH_EVENT_ID_HEX_LEN + 1];
-        if (bot->hex && strcmp(bot->hex, last_hex) == 0 &&
-            strcmp(root, last_root) == 0) {
-            return; /* already introduced once for this robot+thread */
-        }
-        if (bot->hex) {
-            hush_agent_copy(last_hex, sizeof(last_hex), bot->hex);
-        }
-        hush_agent_copy(last_root, sizeof(last_root), root);
-    }
+    if (hush_agent_intro_seen(bot->hex, root))
+        return;
+    hush_agent_intro_remember(bot->hex, root);
 
     if (snprintf(content, sizeof(content),
                  "At ease. %s — %s", line, name) >= (int)sizeof(content))

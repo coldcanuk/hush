@@ -215,4 +215,24 @@ if echo "$html" | grep -q 'seedInventoryDemo'; then
     fail "served UI still has fake seedInventoryDemo"
 fi
 
+# In-order mentions: content keeps nostr: tokens in sentence position.
+payne_npub=$(printf '%s' "$sess" | sed -n 's/.*"payne":{[^}]*"npub":"\([^"]*\)".*/\1/p')
+test -n "$payne_npub" || fail "payne npub missing for order test"
+ordered=$(curl -sf -X POST "http://127.0.0.1:${port}/api/event" \
+    -H 'Content-Type: application/json' \
+    -d "{\"content\":\"nostr:${npub} tell a joke. nostr:${payne_npub} was it funny?\",\"kind\":1,\"channel\":\"general\",\"mention_0\":\"${npub}\",\"mention_1\":\"${payne_npub}\"}")
+echo "$ordered" | grep -q '"ok":true' || fail "ordered mention event not stored"
+got_ord=$(curl -sf "http://127.0.0.1:${port}/api/events")
+printf '%s' "$got_ord" | grep -F "nostr:${npub} tell a joke. nostr:${payne_npub} was it funny?" \
+    || fail "stored content lost mention order"
+echo "$html" | grep -q 'function assembleMentionContent' || fail "UI missing assembleMentionContent"
+grep -q 'HUSH_AGENT_PEER_STANDARD' src/hush_agent.c || fail "missing inter-robot standard constant"
+grep -q 'hush_agent_intro_seen' src/hush_agent.c || fail "missing intro table"
+atlas=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/agent-atlas.png")
+test "$atlas" = "200" || fail "agent atlas not served"
+about=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"manage","slug":"general","about":"jokes | keep it short","kind":"open","robot_reply":"mention"}')
+echo "$about" | grep -q 'jokes' || fail "channel about not saved"
+
 echo "agent mention reply ok"

@@ -87,6 +87,17 @@ fi
 seed_at=$(printf '%s' "$html" | awk 'index($0, "id=\"seed-drawer\""){print NR; exit}')
 test -n "$seed_at" && test "$seed_at" -lt "$script_at" \
     || fail "seed drawer must precede boot script"
+echo "$html" | grep -q 'function assembleMentionContent' || fail "HTML missing in-place mention assembler"
+if echo "$html" | grep -q 'composerPills.map((p) => "nostr:"'; then
+    fail "composer must not prepend all pills before leftover text"
+fi
+echo "$html" | grep -q 'is reacting' || fail "HTML missing reacting ack phase"
+echo "$html" | grep -q 'mentionAckPhase' || fail "HTML missing progressive ack"
+echo "$html" | grep -q 'id="manage-topic-pills"' || fail "HTML missing channel topic pills"
+echo "$html" | grep -q 'id="manage-prompt"' || fail "HTML missing channel prompt"
+echo "$html" | grep -q 'id="agent-pic-picker"' || fail "HTML missing robot picture picker"
+echo "$html" | grep -q '/agent-atlas.png' || fail "HTML missing agent atlas"
+echo "$html" | grep -q 'function manageAboutValue' || fail "HTML missing channel about writer"
 echo "$html" | grep -q 'System Prompt' || fail "HTML missing system prompt"
 echo "$html" | grep -q 'agent-provider' || fail "HTML missing AI provider"
 echo "$html" | grep -q 'id="provider-cfg"' || fail "HTML missing provider pencil"

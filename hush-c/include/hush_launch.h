@@ -237,6 +237,11 @@ int hush_launch_is_ready(const hush_launch_t *launch);
  * Safe on NULL launch or unknown slug. */
 const char *hush_launch_channel_about(const hush_launch_t *launch, const char *slug);
 
+/* Replaces channel about/topic text. Empty about clears. Requires a vibe. */
+hush_status_t hush_launch_set_channel_about(hush_launch_t *launch,
+                                            const char *slug,
+                                            const char *about);
+
 #endif /* HUSH_LAUNCH_H */
 /* M2 Architecture lock (chat-robots-inventory-ui):
  * - Developer Logging: new toggle (default 0/off). When on, "Mention received.",
