@@ -20,3 +20,7 @@ Skeptic follow-up to PR #100.
 - HTML: minus handler calls `dropMentionFromInput`; no `composerPills.pop()`
   / `threadPills.pop()` on Backspace-at-0.
 - HTTP: set channel about, manage without `about`, session still has it.
+
+Verified: `make test` ALL TESTS PASSED. Playwright: minus on Happy leaves Payne
+in place and drops Happy's npub from assemble. HTTP keep-about: `jokes | keep
+it short` survives a manage POST without `about`.
