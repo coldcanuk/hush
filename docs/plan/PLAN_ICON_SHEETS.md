@@ -28,8 +28,10 @@ This file + research. Commit Milestone 1.1.
 Copy PNGs; embed/link; HTTP routes; picker tabs; inventory sprite; UI_SPEC;
 embed HTML; tests.
 
-### Phase 4 Verify
-`make test`; curl PNG magic; picture id round-trip; optional Playwright.
+### Phase 4 Verify COMPLETE
+`make test` ALL TESTS PASSED. Six `/icons/icon_panel_*.png` URLs return 200
+with PNG magic. `picture":"panel:robots:12"` round-trips. Playwright: 6
+sheet tabs, 64 cells, no `ATLAS_N`.
 
 ### Final
 PR to main; remove worktree.
