@@ -163,6 +163,11 @@ Architecture (frozen 2026-08-26):
   is not `connecting…`; `placeRail(80,80)` computed left is not
   `360px`; a grip drag changes computed left. Write `rail-verify.txt`
   in scratch. If Playwright cannot start, write that failure.
+- Verify (this session, Playwright vs `:18780`): HTTP 200; `PAGEERRORS []`;
+  badge `listening :18780`; `placeRail(80,80)` computed left `80px`;
+  grip drag computed left `260px` and LS `{"x":260,"y":120,"collapsed":false}`;
+  `placeRailAtBrand` `rectLeft=8` with `.brand` at 124. Log:
+  implementer scratch `rail-verify.txt`.
 - Commit: `Milestone 4.1: launch probe for zero pageerror and free rail X`
 
 ### Final Phase — Land
