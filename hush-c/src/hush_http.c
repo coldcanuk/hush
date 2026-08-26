@@ -76,6 +76,7 @@ static void hush_http_reply(int fd, const char *status, const char *ctype,
 static int hush_http_serve_asset(int fd, const char *path);
 static void hush_json_unescape_copy(const char *src, char *dst, size_t dstsz);
 static int hush_json_field(const char *body, const char *key, char *out, size_t outsz);
+static int hush_json_has_key(const char *body, const char *key);
 static int hush_json_bare_field(const char *body, const char *key,
                                 char *out, size_t outsz);
 static void hush_make_event_id(char *out65);
@@ -431,6 +432,24 @@ static int hush_json_field(const char *body, const char *key, char *out, size_t 
         return out[0] != '\0';
     }
     return hush_json_bare_field(body, key, out, outsz);
+}
+
+static int hush_json_has_key(const char *body, const char *key)
+{
+    char needle[64];
+    const char *p;
+
+    if (body == NULL || key == NULL || key[0] == '\0')
+        return 0;
+    if (snprintf(needle, sizeof(needle), "\"%s\":", key) >= (int)sizeof(needle))
+        return 0;
+    p = body;
+    while ((p = strstr(p, needle)) != NULL) {
+        if (p == body || p[-1] == '{' || p[-1] == ',' || p[-1] == ' ')
+            return 1;
+        p += 1;
+    }
+    return 0;
 }
 
 static int hush_json_bare_field(const char *body, const char *key,
@@ -981,7 +1000,7 @@ static hush_status_t hush_http_channel_manage(int fd, const char *body,
     st = hush_http_channel_policy(body, slug);
     if (st != HUSH_OK)
         return hush_http_reply_session(fd, st);
-    {
+    if (hush_json_has_key(body, "about")) {
         char about[HUSH_LAUNCH_ABOUT_MAX];
 
         about[0] = '\0';

@@ -252,6 +252,12 @@ got_ord=$(curl -sf "http://127.0.0.1:${port}/api/events")
 printf '%s' "$got_ord" | grep -F "nostr:${npub} tell a joke. nostr:${payne_npub} was it funny?" \
     || fail "stored content lost mention order"
 echo "$html" | grep -q 'function assembleMentionContent' || fail "UI missing assembleMentionContent"
+echo "$html" | grep -q 'function dropMentionFromInput' || fail "served UI missing dropMentionFromInput"
+if echo "$html" | grep -q 'composerPills.pop()'; then
+    fail "served UI Backspace must not pop composer pills"
+fi
+comp_pills=$(printf '%s' "$html" | awk '/function paintComposerPills/,/function applyMention/')
+echo "$comp_pills" | grep -q 'dropMentionFromInput' || fail "served minus must strip @Name or submit still mentions"
 if echo "$html" | grep -q 'splitFences(prettyMentions'; then
     fail "served UI must not run prettyMentions before in-sentence pills"
 fi
@@ -273,5 +279,9 @@ about=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
     -H 'Content-Type: application/json' \
     -d '{"action":"manage","slug":"general","about":"jokes | keep it short","kind":"open","robot_reply":"mention"}')
 echo "$about" | grep -q 'jokes' || fail "channel about not saved"
+keep=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"manage","slug":"general","kind":"open","robot_reply":"mention"}')
+echo "$keep" | grep -q 'jokes' || fail "manage without about must not wipe topics"
 
 echo "agent mention reply ok"

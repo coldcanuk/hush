@@ -2824,11 +2824,18 @@
       mentionOpen = mentionHits.length > 0;
     }
 
+    function dropMentionFromInput(input, name) {
+      if (!input || !name) return;
+      const token = "@" + name;
+      const re = new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?:\\s)?", "gi");
+      input.value = input.value.replace(re, "");
+    }
+
     function paintComposerPills() {
       const box = $("composer-pills");
       if (!box) return;
       box.innerHTML = "";
-      composerPills.forEach((p, i) => {
+      composerPills.forEach((p) => {
         const pill = document.createElement("span");
         pill.className = "pill composer-pill";
         pill.innerHTML = "<em>@" + esc(p.name) + "</em>";
@@ -2837,7 +2844,8 @@
         minus.setAttribute("aria-label", "Remove @" + p.name);
         minus.textContent = "−";
         minus.addEventListener("click", () => {
-          composerPills.splice(i, 1);
+          dropMentionFromInput($("msg"), p.name);
+          composerPills = composerPills.filter((x) => x.npub !== p.npub);
           pendingMentions = composerPills.map((x) => x.npub);
           paintComposerPills();
         });
@@ -2886,14 +2894,6 @@
 
     $("msg").addEventListener("input", scanMention);
     $("msg").addEventListener("keydown", (ev) => {
-      if (ev.key === "Backspace" && $("msg").selectionStart === 0 &&
-          $("msg").selectionEnd === 0 && composerPills.length) {
-        ev.preventDefault();
-        composerPills.pop();
-        pendingMentions = composerPills.map((x) => x.npub);
-        paintComposerPills();
-        return;
-      }
       if (ev.key === "Enter" && !ev.shiftKey && !mentionOpen) {
         ev.preventDefault();
         $("form").requestSubmit();
@@ -3484,7 +3484,7 @@
       const box = $("thread-pills");
       if (!box) return;
       box.innerHTML = "";
-      threadPills.forEach((p, i) => {
+      threadPills.forEach((p) => {
         const pill = document.createElement("span");
         pill.className = "pill composer-pill";
         pill.innerHTML = "<em>@" + esc(p.name) + "</em>";
@@ -3493,7 +3493,8 @@
         minus.setAttribute("aria-label", "Remove @" + p.name);
         minus.textContent = "−";
         minus.addEventListener("click", () => {
-          threadPills.splice(i, 1);
+          dropMentionFromInput($("thread-msg"), p.name);
+          threadPills = threadPills.filter((x) => x.npub !== p.npub);
           paintThreadPills();
         });
         pill.appendChild(minus);
@@ -5004,13 +5005,6 @@
     });
     $("thread-msg").addEventListener("input", scanThreadMention);
     $("thread-msg").addEventListener("keydown", (ev) => {
-      if (ev.key === "Backspace" && $("thread-msg").selectionStart === 0 &&
-          $("thread-msg").selectionEnd === 0 && threadPills.length) {
-        ev.preventDefault();
-        threadPills.pop();
-        paintThreadPills();
-        return;
-      }
       if (ev.key === "Enter" && !ev.shiftKey && !threadMentionOpen) {
         ev.preventDefault();
         $("thread-form").requestSubmit();
