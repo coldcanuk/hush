@@ -43,7 +43,7 @@ job — `POST /api/agent` with wizard prompt.
 - [x] Task 2 of M1.1: this plan.
 - Commit: `Milestone 1.1: research + frozen plan for Payne inventory and Seed`
 
-### Phase 2 — Architecture (frozen)
+### Phase 2 — Architecture (frozen 2026-08-26)
 
 1. One occupancy unit: compact 4×3 constants + expand flag/drawer 8×5.
 2. Tiles from `session.payne` + `session.agents` (`syncInventoryFromRoster`).
