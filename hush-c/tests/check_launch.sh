@@ -30,6 +30,27 @@ prof_at=$(printf '%s' "$html" | awk 'index($0, "id=\"profile\""){print NR; exit}
 script_at=$(printf '%s' "$html" | awk 'index($0, "<script>"){print NR; exit}')
 test -n "$prof_at" && test -n "$script_at" && test "$prof_at" -lt "$script_at" \
     || fail "profile drawer must precede boot script"
+devlog_at=$(printf '%s' "$html" | awk 'index($0, "id=\"dev-log-close\""){print NR; exit}')
+test -n "$devlog_at" && test "$devlog_at" -lt "$script_at" \
+    || fail "dev-log-close must precede boot script"
+if echo "$html" | grep -q 'left: 360px !important'; then
+    fail "rail must not inject 360px !important"
+fi
+if echo "$html" | grep -q 'GOOD = 360'; then
+    fail "rail must not use canonical 360 lock"
+fi
+if echo "$html" | grep -F 'r.style.left = "360px"'; then
+    fail "rail nanny must be gone"
+fi
+echo "$html" | grep -q 'saved.x' || fail "loadRail must restore saved.x"
+echo "$html" | grep -q 'saved.y' || fail "loadRail must restore saved.y"
+echo "$html" | grep -q 'saved.collapsed' || fail "loadRail must restore saved.collapsed"
+echo "$html" | grep -q 'function saveRail' || fail "HTML missing saveRail"
+save_body=$(printf '%s' "$html" | awk '/function saveRail/,/function applyThreadSize/')
+echo "$save_body" | grep -q 'homed:' && fail "saveRail must persist {x,y,collapsed} only"
+echo "$html" | awk '/rail-toggle"\)\.addEventListener\("dblclick"/,/rail-grip"\)\.addEventListener\("pointerdown"/' \
+    | grep -q 'placeRailAtBrand' \
+    || fail "rail-toggle dblclick must home at brand"
 echo "$html" | grep -q 'class=\\\"feather\\\"' || fail "HTML missing feather splash"
 echo "$html" | grep -q '/icon-192.png' || fail "HTML missing feather src"
 echo "$html" | grep -q 'stepBar' || fail "HTML missing wizard progress"
