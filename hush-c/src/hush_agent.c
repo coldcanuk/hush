@@ -1295,6 +1295,9 @@ static void hush_agent_handle_mention(hush_store_t *store,
         return;
     if (hush_agent_robot_busy(&bot, ev))
         return;
+    /* One intro in chat per (robot, thread), then work. Not dest-log gated. */
+    hush_agent_on_deck(store, &bot, ev,
+                       "I am on deck. Standing orders are noted.");
     if (strcmp(bot.provider, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0 &&
         hush_agent_grok_ready()) {
         hush_agent_job_in_t in;
@@ -1305,8 +1308,5 @@ static void hush_agent_handle_mention(hush_store_t *store,
         in.parent = ev;
         if (hush_agent_start_grok(&in) == HUSH_OK)
             return;
-    }
-    if (launch == NULL || launch->dev_log_enabled) {
-        hush_agent_on_deck(store, &bot, ev, "I am on deck. Standing orders are noted.");
     }
 }

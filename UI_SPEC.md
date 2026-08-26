@@ -307,8 +307,8 @@ built if raylib present; copies user atlases from ~/Pictures for
 demo). No Raylib dependency on the main hush-relay.
 
 ## M2 Architecture Decisions (locked for this feature)
-- **Mention fidelity & UX**: Composer keeps `@Name` in the typed sentence (pills list who is in the bubble). Stored content uses `nostr:` at those offsets. Render is non-destructive. Progressive states ("thinking" → "reacting" → emoji). "Mention received" and repeated intros are developer logs only.
-- **Developer Logging**: Dedicated toggle (default off) + separate panel. Syslog format. Suppresses log notes from main chat.
+- **Mention fidelity & UX**: Composer keeps `@Name` in the typed sentence (pills list who is in the bubble). Stored content uses `nostr:` at those offsets. Render turns those tokens into in-sentence pills (do not run `prettyMentions` first). Progressive states ("thinking" → "reacting" → emoji); notes older than 2s skip to emoji unless a live job exists. One short intro per robot+thread is chat; repeats are not posted. "Mention received" is a developer log only.
+- **Developer Logging**: Dedicated toggle (default off) + separate panel. Syslog format. Log notes never appear in main chat or threads, even when the toggle is on.
 - **Multi-robot deliberation**: Co-mention prompt + hygiene + peer p-mention support. Robots decide strategy (individual/coop/split/convo).
 - **Channel topics**: `about` string injected as "Channel topic: ..." quick pointer. Pills in UI.
 - **Tool rail**: Micro UX (grip affordance, consistent i buttons, labels, progressive disclosure).
