@@ -125,7 +125,27 @@ echo "$html" | grep -q 'mentionAckPhase' || fail "HTML missing progressive ack"
 echo "$html" | grep -q 'id="manage-topic-pills"' || fail "HTML missing channel topic pills"
 echo "$html" | grep -q 'id="manage-prompt"' || fail "HTML missing channel prompt"
 echo "$html" | grep -q 'id="agent-pic-picker"' || fail "HTML missing robot picture picker"
-echo "$html" | grep -q '/agent-atlas.png' || fail "HTML missing agent atlas"
+echo "$html" | grep -q 'id="agent-pic-sheets"' || fail "HTML missing picture sheet tabs"
+echo "$html" | grep -q 'ICON_PANELS' || fail "HTML missing ICON_PANELS"
+echo "$html" | grep -q 'ICON_CELLS = 64' || fail "HTML missing 64-cell sheet math"
+if echo "$html" | grep -q 'ATLAS_N = 31'; then
+    fail "picker must not be exclusive 31-tile atlas"
+fi
+echo "$html" | grep -q '/icons/icon_panel_dogs.png' || fail "HTML missing dogs sheet"
+echo "$html" | grep -q '/icons/icon_panel_cats.png' || fail "HTML missing cats sheet"
+echo "$html" | grep -q '/icons/icon_panel_sheep.png' || fail "HTML missing sheep sheet"
+echo "$html" | grep -q '/icons/icon_panel_virus.png' || fail "HTML missing virus sheet"
+echo "$html" | grep -q '/icons/icon_panel_robots.png' || fail "HTML missing robots sheet"
+echo "$html" | grep -q '/icons/icon_panel_angevin.png' || fail "HTML missing angevin sheet"
+echo "$html" | grep -q 'panel:' || fail "HTML missing panel: picture ids"
+for sheet in dogs cats sheep virus robots angevin; do
+    code=$(curl -s -o "$cfg/sheet.png" -w '%{http_code}' \
+        "http://127.0.0.1:${port}/icons/icon_panel_${sheet}.png")
+    test "$code" = "200" || fail "sheet ${sheet} HTTP ${code}"
+    python3 -c 'import sys; d=open(sys.argv[1],"rb").read(8)
+sys.exit(0 if d.startswith(b"\x89PNG\r\n\x1a\n") else 1)' "$cfg/sheet.png" \
+        || fail "sheet ${sheet} is not PNG"
+done
 echo "$html" | grep -q 'function manageAboutValue' || fail "HTML missing channel about writer"
 echo "$html" | grep -q 'System Prompt' || fail "HTML missing system prompt"
 echo "$html" | grep -q 'agent-provider' || fail "HTML missing AI provider"

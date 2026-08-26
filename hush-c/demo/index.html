@@ -646,13 +646,19 @@
   font-size: 0.62rem; background: none; border: 0; color: var(--accent);
   cursor: pointer; padding: 0;
 }
+.agent-pic-sheets { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 6px; }
+.agent-pic-sheet {
+  font: 650 0.68rem/1 var(--sans); padding: 5px 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--fg);
+  border-radius: 4px;
+}
+.agent-pic-sheet.on { border-color: var(--accent); color: var(--accent); }
 .agent-pic-picker {
   display: grid; grid-template-columns: repeat(8, 32px); gap: 4px;
-  margin: 8px 0 12px; max-height: 9rem; overflow: auto;
+  margin: 0 0 12px; max-height: 16rem; overflow: auto;
 }
 .agent-pic-cell {
   width: 32px; height: 32px; padding: 0; border: 1px solid var(--line);
-  background-image: url("/agent-atlas.png"); background-size: 256px 128px;
   background-repeat: no-repeat; cursor: pointer; border-radius: 4px;
 }
 .agent-pic-cell.on { border-color: var(--accent); box-shadow: 0 0 6px var(--accent); }
@@ -988,7 +994,8 @@
       </div>
       <button class="cfg" id="provider-cfg" type="button" hidden
               title="Configure this provider.">✎</button>
-      <p class="help" id="agent-pic-help">Robot picture (optional). Pick a tile from the equipment atlas.</p>
+      <p class="help" id="agent-pic-help">Robot picture (optional). Pick a sheet, then a tile.</p>
+      <div id="agent-pic-sheets" class="agent-pic-sheets" role="tablist" aria-label="Picture sheets"></div>
       <div id="agent-pic-picker" class="agent-pic-picker" role="listbox" aria-label="Robot picture picker"></div>
       <input id="agent-picture" type="hidden" value="">
       <label class="passbox"><input id="agent-pass" type="checkbox" checked>
@@ -1916,6 +1923,31 @@
       try { localStorage.setItem("hush-agent-pic", JSON.stringify(o)); } catch (e) {}
     }
 
+    const ICON_PANELS = ["dogs", "cats", "sheep", "virus", "robots", "angevin"];
+    const ICON_PANEL_URL = {
+      dogs: "/icons/icon_panel_dogs.png",
+      cats: "/icons/icon_panel_cats.png",
+      sheep: "/icons/icon_panel_sheep.png",
+      virus: "/icons/icon_panel_virus.png",
+      robots: "/icons/icon_panel_robots.png",
+      angevin: "/icons/icon_panel_angevin.png"
+    };
+    const ICON_CELLS = 64;
+    let picSheet = "dogs";
+
+    function parsePicId(id) {
+      const s = String(id || "");
+      let m = s.match(/^panel:([a-z]+):(\d+)$/);
+      if (m && ICON_PANELS.indexOf(m[1]) >= 0) {
+        const idx = parseInt(m[2], 10);
+        if (idx >= 0 && idx < ICON_CELLS)
+          return { sheet: m[1], index: idx };
+      }
+      m = s.match(/^atlas:(\d+)$/);
+      if (m) return { sheet: "atlas", index: parseInt(m[1], 10) };
+      return null;
+    }
+
     function atlasCellStyle(i, displayPx) {
       const col = i % 8;
       const row = Math.floor(i / 8);
@@ -1927,18 +1959,50 @@
         (-col * displayPx) + "px " + (-row * displayPx) + "px;background-repeat:no-repeat";
     }
 
+    function panelCellStyle(sheet, index, displayPx) {
+      const col = index % 8;
+      const row = Math.floor(index / 8);
+      const sheetPx = 8 * displayPx;
+      return "background-image:url(" + ICON_PANEL_URL[sheet] +
+        ");background-size:" + sheetPx + "px " + sheetPx +
+        "px;background-position:" + (-col * displayPx) + "px " +
+        (-row * displayPx) + "px;background-repeat:no-repeat";
+    }
+
+    function picCellStyle(id, displayPx) {
+      const p = parsePicId(id);
+      if (!p) return "";
+      if (p.sheet === "atlas") return atlasCellStyle(p.index, displayPx);
+      return panelCellStyle(p.sheet, p.index, displayPx);
+    }
+
     function paintAgentPicPicker() {
+      const tabs = $("agent-pic-sheets");
       const box = $("agent-pic-picker");
+      if (tabs) {
+        tabs.innerHTML = "";
+        ICON_PANELS.forEach((sheet) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "agent-pic-sheet" + (picSheet === sheet ? " on" : "");
+          b.textContent = sheet;
+          b.setAttribute("aria-pressed", picSheet === sheet ? "true" : "false");
+          b.addEventListener("click", () => {
+            picSheet = sheet;
+            paintAgentPicPicker();
+          });
+          tabs.appendChild(b);
+        });
+      }
       if (!box) return;
       box.innerHTML = "";
-      const ATLAS_N = 31;
-      for (let i = 0; i < ATLAS_N; i++) {
-        const id = "atlas:" + i;
+      for (let i = 0; i < ICON_CELLS; i++) {
+        const id = "panel:" + picSheet + ":" + i;
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "agent-pic-cell" + (draftPicture === id ? " on" : "");
-        btn.setAttribute("aria-label", "Picture " + i);
-        btn.setAttribute("style", atlasCellStyle(i, 32));
+        btn.setAttribute("aria-label", picSheet + " " + i);
+        btn.setAttribute("style", panelCellStyle(picSheet, i, 32));
         btn.addEventListener("click", () => {
           draftPicture = id;
           if ($("agent-picture")) $("agent-picture").value = id;
@@ -2098,6 +2162,7 @@
       paintFilePills();
       paintPayneOrder();
       draftPicture = "";
+      picSheet = "dogs";
       if ($("agent-picture")) $("agent-picture").value = "";
       paintAgentPicPicker();
     }
@@ -2494,6 +2559,11 @@
       }
       draftPicture = (bot && bot.picture) ? bot.picture : "";
       if ($("agent-picture")) $("agent-picture").value = draftPicture;
+      {
+        const parsed = parsePicId(draftPicture);
+        if (parsed && parsed.sheet !== "atlas") picSheet = parsed.sheet;
+        else picSheet = "dogs";
+      }
       paintAgentPicPicker();
       paintProviderPencil();
       loadProviders();
@@ -4516,12 +4586,10 @@
         el.style.height = ((it.h * cell) - 4) + "px";
         el.style.borderColor = it.color || "#0ff";
         el.style.boxShadow = "0 0 4px " + (it.color || "#0ff");
-        if (it.picture && it.picture.indexOf("atlas:") === 0) {
-          const idx = parseInt(it.picture.slice(6), 10);
-          if (!isNaN(idx)) {
-            el.classList.add("has-pic");
-            el.setAttribute("style", el.getAttribute("style") + ";" + atlasCellStyle(idx, Math.min(it.w, it.h) * (compact ? INV_CELL : INV_EXPAND_CELL)));
-          }
+        const picCss = picCellStyle(it.picture, Math.min(it.w, it.h) * (compact ? INV_CELL : INV_EXPAND_CELL));
+        if (picCss) {
+          el.classList.add("has-pic");
+          el.setAttribute("style", el.getAttribute("style") + ";" + picCss);
         }
         el.innerHTML = '<span class="nm">' + esc(it.name) + "</span>";
         el.addEventListener("pointerdown", (ev) => beginInvDrag(ev, it.id, compact));

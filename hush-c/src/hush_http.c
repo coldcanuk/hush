@@ -18,6 +18,7 @@
 #include "hush_relay.h"
 #include "hush_ui_html.h"
 #include "hush_win.h"
+#include "hush_icon_panels.h"
 
 enum {
     HUSH_HTTP_JSON_MAX = 65536,
@@ -74,6 +75,7 @@ static void hush_http_write_all(int fd, const char *buf, size_t len);
 static void hush_http_reply(int fd, const char *status, const char *ctype,
                             const char *body, size_t blen);
 static int hush_http_serve_asset(int fd, const char *path);
+static int hush_http_serve_icon_panel(int fd, const char *path);
 static void hush_json_unescape_copy(const char *src, char *dst, size_t dstsz);
 static int hush_json_field(const char *body, const char *key, char *out, size_t outsz);
 static int hush_json_has_key(const char *body, const char *key);
@@ -355,6 +357,49 @@ static int hush_http_serve_asset(int fd, const char *path)
         body = assets[i].body;
         n = assets[i].len != 0 ? assets[i].len : strlen(body);
         hush_http_reply(fd, "200 OK", assets[i].ctype, body, n);
+        return 1;
+    }
+    return hush_http_serve_icon_panel(fd, path);
+}
+
+static int hush_http_serve_icon_panel(int fd, const char *path)
+{
+    struct hush_http_panel {
+        const char *path;
+        const unsigned char *start;
+        const unsigned char *end;
+    };
+    static const struct hush_http_panel panels[] = {
+        { "/icons/icon_panel_dogs.png",
+          _binary_demo_icons_icon_panel_dogs_png_start,
+          _binary_demo_icons_icon_panel_dogs_png_end },
+        { "/icons/icon_panel_cats.png",
+          _binary_demo_icons_icon_panel_cats_png_start,
+          _binary_demo_icons_icon_panel_cats_png_end },
+        { "/icons/icon_panel_sheep.png",
+          _binary_demo_icons_icon_panel_sheep_png_start,
+          _binary_demo_icons_icon_panel_sheep_png_end },
+        { "/icons/icon_panel_virus.png",
+          _binary_demo_icons_icon_panel_virus_png_start,
+          _binary_demo_icons_icon_panel_virus_png_end },
+        { "/icons/icon_panel_robots.png",
+          _binary_demo_icons_icon_panel_robots_png_start,
+          _binary_demo_icons_icon_panel_robots_png_end },
+        { "/icons/icon_panel_angevin.png",
+          _binary_demo_icons_icon_panel_angevin_png_start,
+          _binary_demo_icons_icon_panel_angevin_png_end }
+    };
+    size_t i;
+    size_t n;
+
+    if (path == NULL)
+        return 0;
+    for (i = 0; i < sizeof(panels) / sizeof(panels[0]); ++i) {
+        if (strcmp(path, panels[i].path) != 0)
+            continue;
+        n = (size_t)(panels[i].end - panels[i].start);
+        hush_http_reply(fd, "200 OK", "image/png",
+                        (const char *)panels[i].start, n);
         return 1;
     }
     return 0;
