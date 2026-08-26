@@ -94,10 +94,10 @@ merged + this worktree removed.
 - Verify: `rg -n "Abort first|one writer|placeRail\\(8" docs/plan/PLAN_RESTORE_LAUNCH_RAIL.md docs/research/RESEARCH_RESTORE_LAUNCH_RAIL.md`.
 - Commit: `Milestone 2.1: architecture lock abort-then-strip-to-§15`
 
-Architecture (frozen):
+Architecture (frozen 2026-08-26):
 
 1. **Abort first, then strip nanny.**
-2. **One writer:** clamp `placeRail` + persist `{x,y,collapsed}`.
+2. **one writer:** clamp `placeRail` + persist `{x,y,collapsed}`.
 3. **Home:** `placeRailAtBrand()` → `placeRail(8, y)` + header pad.
 4. **Leftover `gb/fix-tool-rail-*` are not the fix.**
 
