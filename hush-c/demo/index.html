@@ -580,7 +580,7 @@
     .wide { width: min(52rem, 100%); }
     .badge-vis { font-size: 0.7rem; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
     #tool-rail {
-      position: fixed; z-index: 30; top: 10px; left: 360px; right: auto;
+      position: fixed; z-index: 30; top: 10px; right: 12px;
       display: flex; flex-direction: column; gap: 8px;
       background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
       padding: 8px; box-shadow: 0 10px 28px rgba(0,0,0,0.35); min-width: 44px;
@@ -588,7 +588,7 @@
     }
     #tool-rail.collapsed { padding: 6px; }
     #tool-rail.collapsed .rail-body { display: none; }
-    #tool-rail.collapsed #rail-grip { min-width: 72px; flex: 0 0 72px; }
+    #tool-rail.collapsed #rail-grip { min-width: 44px; flex: 0 0 44px; }
     .rail-bar { display: flex; align-items: center; gap: 6px; }
     #rail-grip {
       flex: 1; min-height: 44px; cursor: grab; border-radius: 6px;
@@ -1134,40 +1134,23 @@
     <button type="button" data-act="delete">Delete Channel</button>
     <button type="button" data-act="manage">Manage Channel</button>
   </div>
+  <div class="drawer" id="dev-log-drawer" role="dialog" aria-label="Developer Log">
+    <div class="panel wide">
+      <div class="drawer-head">
+        <h2>Developer Log</h2>
+        <button class="drawer-x" id="dev-log-close" type="button" aria-label="Close dev log">×</button>
+      </div>
+      <p class="help">Syslog stream (mentions, intros, debug). Visible only when Developer Logging enabled in Settings.</p>
+      <pre id="dev-log-body" style="background:#000;color:#0f0;font:0.78rem/1.3 ui-monospace,monospace;height:360px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:8px;white-space:pre-wrap;"></pre>
+      <div class="actions">
+        <button class="btn ghost" id="dev-log-clear" type="button">Clear</button>
+        <button class="btn" id="dev-log-close2" type="button">Close</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
-
-    // ULTRA-EARLY + !IMPORTANT: inject a style rule that forces the rail inset
-    // before any other layout. This wins over almost anything.
-    (function(){
-      try {
-        const s = document.createElement("style");
-        s.textContent = "#tool-rail { left: 360px !important; right: auto !important; }";
-        document.head.appendChild(s);
-      } catch(e) {}
-      try {
-        const r = document.getElementById("tool-rail");
-        if (r) {
-          r.style.setProperty("left", "360px", "important");
-          r.style.setProperty("right", "auto", "important");
-        }
-      } catch(e) {}
-    })();
-
-
-    // ULTRA-EARLY FORCE: run as soon as the script tag is parsed.
-    // ALWAYS force canonical inset on startup to defeat any old style, CSS, cached, or
-    // previous-run middle value that survived from before the canonical era.
-    (function forceRailEarly(){
-      try {
-        const r = document.getElementById("tool-rail");
-        if (r) {
-          r.style.setProperty("left", "360px", "important");
-          r.style.right = "auto";
-        }
-      } catch(e) {}
-    })();
 
     let channel = "welcome";
     let seen = "";
@@ -2985,9 +2968,9 @@
         try { render(lastEvents, lastStatus); } catch (e) {}
       });
     }
-    $("dev-log-close").addEventListener("click", closeDevLog);
-    $("dev-log-close2").addEventListener("click", closeDevLog);
-    $("dev-log-clear").addEventListener("click", () => {
+    if ($("dev-log-close")) $("dev-log-close").addEventListener("click", closeDevLog);
+    if ($("dev-log-close2")) $("dev-log-close2").addEventListener("click", closeDevLog);
+    if ($("dev-log-clear")) $("dev-log-clear").addEventListener("click", () => {
       devLogLines.length = 0;
       const pre = $("dev-log-body");
       if (pre) pre.textContent = "";
@@ -4449,14 +4432,8 @@
       const h = rail.offsetHeight || 220;
       const maxX = Math.max(0, window.innerWidth - w);
       const maxY = Math.max(0, window.innerHeight - h);
-      let nx = Math.max(0, Math.min(maxX, x));
+      const nx = Math.max(0, Math.min(maxX, x));
       const ny = Math.max(0, Math.min(maxY, y));
-      // Canonical poison defense: any call that would place outside the comfortable safe band
-      // is forced to the canonical inset. This catches restore, resize, old saved, drag-end races, etc.
-      const GOOD = 360;
-      if (nx < 200 || nx > (window.innerWidth - 280) || (nx > 180 && nx < 340)) {
-        nx = GOOD;
-      }
       rail.style.left = nx + "px";
       rail.style.top = ny + "px";
       rail.style.right = "auto";
@@ -4483,8 +4460,7 @@
       if (head) head.style.paddingLeft = (w + 16) + "px";
       const b = brand.getBoundingClientRect();
       const y = Math.max(4, b.top + (b.height - (rail.offsetHeight || 56)) / 2);
-      // Use comfortable inset so "home" position also looks draggable, not glued to brand
-      placeRail(360, y);
+      placeRail(8, y);
       railHomed = true;
     }
     function parkRailForThread() {
@@ -4505,90 +4481,37 @@
       railParked = false;
       const saved = railSaved;
       railSaved = null;
-      // Poison prevention: thread park/restore used to capture and replay arbitrary
-      // rect.left (including middle values from prior drift or user drag before canonical era).
-      // Always return to the comfortable 360px inset. Only carry the collapsed preference.
-      const GOOD = 360;
-      let y = (saved && typeof saved.y === "number" && saved.y >= 4) ? saved.y : 10;
+      if (saved && saved.homed) {
+        placeRailAtBrand();
+        saveRail();
+        return;
+      }
       releaseBrandPad();
-      if (saved && saved.collapsed) setRailCollapsed(true);
-      try {
-        const r = $("tool-rail");
-        if (r) {
-          r.style.setProperty("left", GOOD + "px", "important");
-          r.style.right = "auto";
-          r.style.top = y + "px";
-        }
-      } catch(e) {}
-      placeRail(GOOD, y);
-      try {
-        localStorage.setItem("hush-rail", JSON.stringify({
-          x: GOOD, y: y,
-          collapsed: !!(saved && saved.collapsed),
-          homed: false
-        }));
-      } catch(e) {}
+      if (!saved) return;
+      setRailCollapsed(!!saved.collapsed);
+      placeRail(saved.x, saved.y);
+      saveRail();
     }
     function loadRail() {
       const rail = $("tool-rail");
       let saved = {};
       try { saved = JSON.parse(localStorage.getItem("hush-rail") || "{}"); } catch (e) { saved = {}; }
-
-      // CONSOLIDATED (final defense): always launch at a comfortable left inset (360px).
-      // This stops all drift from prior iterative layering (right-12, left-140/180, middle from half-viewport saves,
-      // homed paths, stale LS across PRs). We honor only the collapsed state from saved so the user isn't
-      // surprised by expansion. Position is canonical on cold start; drag to taste after launch.
-      // Dblclick grip/☰ toggles collapse in place without anchoring.
-      const GOOD = 360;
-      let y = (typeof saved.y === "number" && saved.y >= 4) ? saved.y : 10;
-      const startCollapsed = !!saved.collapsed;
-
-      // Immediate DOM force before any layout/paint/inventory (wins over CSS, early styles, old saves).
-      try {
-        if (rail) {
-          rail.style.setProperty("left", GOOD + "px", "important");
-          rail.style.right = "auto";
-          rail.style.top = y + "px";
-        }
-      } catch(e) {}
-
-      if (startCollapsed) setRailCollapsed(true);
-
-      const doPlace = () => {
-        placeRail(GOOD, y);
-      };
-      // Double rAF to ensure after full layout (large inventory grid etc.).
-      requestAnimationFrame(() => requestAnimationFrame(doPlace));
-
-      // Always evict any poison from prior runs (old middle values, homed, etc.)
-      // by writing a clean canonical record immediately.
-      try {
-        localStorage.setItem("hush-rail", JSON.stringify({
-          x: GOOD, y: y,
-          collapsed: startCollapsed,
-          homed: false
-        }));
-      } catch(e) {}
+      if (saved.collapsed) setRailCollapsed(true);
+      if (typeof saved.x === "number" && typeof saved.y === "number")
+        placeRail(saved.x, saved.y);
+      else {
+        const w = rail.offsetWidth || 160;
+        placeRail(Math.max(0, window.innerWidth - w - RAIL_PAD), RAIL_PAD);
+      }
     }
     function saveRail() {
       if (railParked) return;
       const rail = $("tool-rail");
       const rect = rail.getBoundingClientRect();
-      const GOOD = 360;
-      // Canonical defense: never persist anything except the comfortable inset or a deliberate user drag
-      // that is still in the safe zone. If it looks drifted or middle from old state, force GOOD.
-      // This stops saveRail from re-poisoning localStorage with pre-canonical middle values.
-      const half = (window.innerWidth || 1400) / 2;
-      let x = rect.left;
-      if (x < 200 || x > (half + 50) || x > (window.innerWidth - 280)) {
-        x = GOOD;
-      }
-      if (x > half) return; // still never right-anchored
       localStorage.setItem("hush-rail", JSON.stringify({
-        x: x,
+        x: rect.left,
         y: rect.top,
-        collapsed: rail.classList.contains("collapsed"),
-        homed: false
+        collapsed: rail.classList.contains("collapsed")
       }));
     }
     function applyThreadSize() {
@@ -4621,9 +4544,8 @@
           if (brand) {
             const b = brand.getBoundingClientRect();
             const y = Math.max(4, b.top + (b.height - (rail.offsetHeight || 56)) / 2);
-            placeRail(360, y);
+            placeRail(8, y);
           }
-          railHomed = false;
         }
         saveRail();
       }, 220);
@@ -4632,25 +4554,8 @@
       ev.preventDefault();
       ev.stopPropagation();
       clearTimeout(railClickTimer);
-      railClickTimer = 0;
-      railDrag = null;
-      railHomed = false;
-      const railEl = $("tool-rail");
-      if (!railEl) return;
-      // Re-assert canonical inset after any prior drift.
-      const curLeft = parseInt(railEl.style.left || "0", 10) || 0;
-      if (curLeft < 200 || curLeft > (window.innerWidth - 200)) {
-        railEl.style.setProperty("left", "360px", "important");
-        railEl.style.right = "auto";
-      }
-      const willCollapse = !railEl.classList.contains("collapsed");
-      // Double rAF to ensure the class change is visible even with large DOM (inventory).
-      requestAnimationFrame(() => {
-        setRailCollapsed(willCollapse);
-        requestAnimationFrame(() => {
-          if (!railParked) saveRail();
-        });
-      });
+      placeRailAtBrand();
+      if (!railParked) saveRail();
     });
     $("rail-grip").addEventListener("pointerdown", (ev) => {
       const rail = $("tool-rail");
@@ -4663,51 +4568,17 @@
       releaseBrandPad();
       ev.preventDefault();
     });
-    /* Double-click the grip (striped drag handle) or the toggle to home the rail.
-     * Previously dblclick was only on the button, making the rail feel rigid/unresponsive
-     * when users naturally double-clicked the visible grip. */
+    /* Double-click the grip or the ☰ to home the collapsed rail beside .brand. */
     $("rail-grip").addEventListener("dblclick", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
       clearTimeout(railClickTimer);
       railDrag = null;
-      railClickTimer = 0;
-      releaseBrandPad();
-      // Pure toggle in current x. Double rAF + re-assert inset so it is visible even after large inventory paint.
-      const rail = $("tool-rail");
-      const willCollapse = !rail.classList.contains("collapsed");
-      const cur = parseInt(rail.style.left || "0", 10) || 0;
-      if (cur < 200 || cur > (window.innerWidth - 200)) {
-        rail.style.setProperty("left", "360px", "important");
-        rail.style.right = "auto";
-      }
-      requestAnimationFrame(() => {
-        setRailCollapsed(willCollapse);
-        requestAnimationFrame(() => {
-          if (!railParked) saveRail();
-        });
-      });
+      placeRailAtBrand();
+      if (!railParked) saveRail();
     });
 
-    // rail-bar is always visible; dblclick anywhere on it (except the ☰ button) toggles.
-    const _railBar = document.querySelector(".rail-bar");
-    if (_railBar) {
-      _railBar.addEventListener("dblclick", (ev) => {
-        if (ev.target && ev.target.id === "rail-toggle") return;
-        ev.preventDefault();
-        ev.stopPropagation();
-        clearTimeout(railClickTimer);
-        railDrag = null;
-        const rail = $("tool-rail");
-        const will = !rail.classList.contains("collapsed");
-        requestAnimationFrame(() => {
-          setRailCollapsed(will);
-          if (!railParked) saveRail();
-        });
-      });
-    }
-
-        $("thread-resize").addEventListener("pointerdown", (ev) => {
+    $("thread-resize").addEventListener("pointerdown", (ev) => {
       const pane = $("thread-pane");
       const rect = pane.getBoundingClientRect();
       threadDrag = { x: ev.clientX, y: ev.clientY, w: rect.width, h: rect.height };
@@ -4778,10 +4649,7 @@
       else {
         const rail = $("tool-rail");
         const rect = rail.getBoundingClientRect();
-        let nx = rect.left;
-        // Resize must not re-introduce middle drift. Snap to canonical if it wandered.
-        if (nx < 200 || nx > (window.innerWidth - 280) || (nx > 200 && nx < 340)) nx = 360;
-        placeRail(nx, rect.top);
+        placeRail(rect.left, rect.top);
         saveRail();
       }
       if ($("thread-pane").classList.contains("show")) applyThreadSize();
@@ -4798,35 +4666,6 @@
     setInterval(tick, 1000);
 
     loadRail();
-
-    // Nanny: every 2s, if the rail is too far left and we are not dragging, force it to the comfortable inset.
-    // This catches any race or old code path that we missed.
-    setInterval(() => {
-      try {
-        if (railDrag) return;
-        const r = $("tool-rail");
-        if (!r) return;
-        const l = parseInt(r.style.left || "0", 10) || 0;
-        if (l < 200) {
-          r.style.left = "360px";
-          r.style.right = "auto";
-        }
-      } catch(e) {}
-    }, 2000);
-
-    // One more safety net right before the first paint/tick: if rail is still too far left, move it.
-    setTimeout(() => {
-      try {
-        const r = $("tool-rail");
-        if (r) {
-          const l = parseInt(r.style.left || "0", 10) || 0;
-          if (l < 200) {
-            r.style.left = "360px";
-            r.style.right = "auto";
-          }
-        }
-      } catch(e) {}
-    }, 0);
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -4850,22 +4689,6 @@
       installBtn.classList.remove("show");
     });
   </script>
-
-
-  <div class="drawer" id="dev-log-drawer" role="dialog" aria-label="Developer Log">
-    <div class="panel wide">
-      <div class="drawer-head">
-        <h2>Developer Log</h2>
-        <button class="drawer-x" id="dev-log-close" type="button" aria-label="Close dev log">×</button>
-      </div>
-      <p class="help">Syslog stream (mentions, intros, debug). Visible only when Developer Logging enabled in Settings.</p>
-      <pre id="dev-log-body" style="background:#000;color:#0f0;font:0.78rem/1.3 ui-monospace,monospace;height:360px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:8px;white-space:pre-wrap;"></pre>
-      <div class="actions">
-        <button class="btn ghost" id="dev-log-clear" type="button">Clear</button>
-        <button class="btn" id="dev-log-close2" type="button">Close</button>
-      </div>
-    </div>
-  </div>
 
 </body>
 </html>
