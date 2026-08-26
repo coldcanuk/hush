@@ -91,6 +91,20 @@ echo "$html" | grep -q 'function assembleMentionContent' || fail "HTML missing i
 if echo "$html" | grep -q 'composerPills.map((p) => "nostr:"'; then
     fail "composer must not prepend all pills before leftover text"
 fi
+if echo "$html" | grep -q 'splitFences(prettyMentions'; then
+    fail "paintNote must not run prettyMentions before in-sentence pills"
+fi
+echo "$html" | grep -q 'splitFences(e.content' || fail "paintNote must split raw content for pills"
+if echo "$html" | grep -q 'if (devLogEnabled) return events.slice()'; then
+    fail "visibleNotes must not un-hide logs when dest log is on"
+fi
+echo "$html" | grep -q '(now - created \* 1000) > 2000' || fail "ack must skip gradient on notes older than 2s"
+echo "$html" | grep -q 'function ackStampFor' || fail "HTML missing ack stamp so tick can advance phases"
+isdev=$(printf '%s' "$html" | awk '/function isDevLogNote/,/function appendDevLog/')
+echo "$isdev" | grep -q 'Mention received' || fail "isDevLogNote must filter Mention received"
+if echo "$isdev" | grep -q 'At ease'; then
+    fail "isDevLogNote must not hide At ease intros"
+fi
 echo "$html" | grep -q 'is reacting' || fail "HTML missing reacting ack phase"
 echo "$html" | grep -q 'mentionAckPhase' || fail "HTML missing progressive ack"
 echo "$html" | grep -q 'id="manage-topic-pills"' || fail "HTML missing channel topic pills"

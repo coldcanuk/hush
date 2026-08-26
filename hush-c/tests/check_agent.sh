@@ -103,6 +103,19 @@ for e in (data.get("events") or []):
 print("MISSING_SERVER_ACK_NOTE_FROM_ROBOT")
 sys.exit(1)
 ' "${hex}" || fail "server must emit ack note authored by the mentioned robot"
+printf '%s' "$got_ack" | python3 -c '
+import json, sys
+hexp = sys.argv[1]
+data = json.loads(sys.stdin.read())
+n = 0
+for e in (data.get("events") or []):
+    if (e.get("pubkey") or "") == hexp and "Standing orders are noted." in (e.get("content") or ""):
+        n += 1
+if n == 1:
+    sys.exit(0)
+print("INTRO_COUNT", n)
+sys.exit(1)
+' "${hex}" || fail "robot must emit exactly one on-deck intro in chat"
 
 got=""
 i=0
@@ -144,6 +157,19 @@ echo "$follow" | grep -q '"ok":true' || fail "follow-up not stored"
 got=$(curl -sf "http://127.0.0.1:${port}/api/events")
 printf '%s' "$got" | grep -q "\"content\":\"another\"" || fail "follow-up content missing"
 printf '%s' "$got" | grep -q "\"reply_to\":\"${root}\"" || fail "follow-up missing root e tag"
+printf '%s' "$got" | python3 -c '
+import json, sys
+hexp = sys.argv[1]
+data = json.loads(sys.stdin.read())
+n = 0
+for e in (data.get("events") or []):
+    if (e.get("pubkey") or "") == hexp and "Standing orders are noted." in (e.get("content") or ""):
+        n += 1
+if n == 1:
+    sys.exit(0)
+print("INTRO_COUNT_AFTER_FOLLOWUP", n)
+sys.exit(1)
+' "${hex}" || fail "follow-up must not emit a second intro"
 grep -q -- '--cwd' src/hush_agent.c || fail "grok argv missing --cwd"
 grep -q -- '--max-turns' src/hush_agent.c || fail "grok argv missing --max-turns"
 grep -q 'HUSH_AGENT_GROK_TURNS "2"' src/hush_agent.c || fail "grok turns must be 2"
@@ -226,8 +252,21 @@ got_ord=$(curl -sf "http://127.0.0.1:${port}/api/events")
 printf '%s' "$got_ord" | grep -F "nostr:${npub} tell a joke. nostr:${payne_npub} was it funny?" \
     || fail "stored content lost mention order"
 echo "$html" | grep -q 'function assembleMentionContent' || fail "UI missing assembleMentionContent"
+if echo "$html" | grep -q 'splitFences(prettyMentions'; then
+    fail "served UI must not run prettyMentions before in-sentence pills"
+fi
+echo "$html" | grep -q 'splitFences(e.content' || fail "served UI must split raw content for pills"
+if echo "$html" | grep -q 'if (devLogEnabled) return events.slice()'; then
+    fail "served UI must not un-hide logs when dest log is on"
+fi
+echo "$html" | grep -q '(now - created \* 1000) > 2000' || fail "served UI must skip ack gradient after 2s"
 grep -q 'HUSH_AGENT_PEER_STANDARD' src/hush_agent.c || fail "missing inter-robot standard constant"
 grep -q 'hush_agent_intro_seen' src/hush_agent.c || fail "missing intro table"
+handle=$(sed -n '/static void hush_agent_handle_mention/,/hush_agent_start_grok/p' src/hush_agent.c)
+echo "$handle" | grep -q 'hush_agent_on_deck' || fail "one intro must precede grok start"
+if echo "$handle" | grep -q 'dev_log_enabled'; then
+    fail "intro must not be dest-log gated"
+fi
 atlas=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/agent-atlas.png")
 test "$atlas" = "200" || fail "agent atlas not served"
 about=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \

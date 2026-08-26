@@ -1327,6 +1327,7 @@
      * to the dev-log drawer (syslog style). Toggle in Settings. */
     let devLogEnabled = false;
     const devLogLines = [];
+    const devLogSeen = {};
 
     /* M4.5 Inventory grid state (Diablo/Vein spatial). Variable sizes in cells.
      * Drag-drop with snap + occupancy collision. Cyber/steampunk neon+brass. */
@@ -3563,13 +3564,29 @@
     function mentionAckPhase(parentId, bot, jobs) {
       const key = String(parentId || "") + ":" + (bot && (bot.slug || bot.npub) || "");
       const now = Date.now();
+      const parent = (lastEvents || []).find((e) => e && e.id === parentId);
+      const created = parent && parent.created_at ? Number(parent.created_at) : 0;
+      const live = (jobs || []).some((j) => j && bot && j.name === bot.name);
+      if (created && (now - created * 1000) > 2000 && !live)
+        return "emoji";
       if (!ackClock[key]) ackClock[key] = now;
       const dt = now - ackClock[key];
-      const live = (jobs || []).some((j) => j && bot && j.name === bot.name);
       if (live) return dt < 1200 ? "thinking" : "reacting";
       if (dt < 1000) return "thinking";
       if (dt < 2000) return "reacting";
       return "emoji";
+    }
+
+    function ackStampFor(e, jobs) {
+      const acks = mentionedRobots(e);
+      if (!acks.length) return "e";
+      let stamp = "e";
+      acks.forEach((bot) => {
+        const p = mentionAckPhase(e.id, bot, jobs);
+        if (p === "thinking") stamp = "t";
+        else if (p === "reacting" && stamp !== "t") stamp = "r";
+      });
+      return stamp;
     }
 
     function paintThink(node, jobs) {
@@ -4036,7 +4053,7 @@
       meta.className = "meta";
       meta.textContent = who(e.pubkey) + " · " + ago(e.created_at);
       n.appendChild(meta);
-      const chunks = splitFences(prettyMentions(e.content || ""));
+      const chunks = splitFences(e.content || "");
       const files = [];
       chunks.forEach((part) => {
         if (part.kind === "code") {
@@ -4113,7 +4130,7 @@
     function threadKeyOf(root, kids, jobs) {
       const ids = [root.id].concat(kids.map((k) => k.id));
       const think = (jobs || []).map((t) => t.parent + ":" + t.name).join(",");
-      return ids.join(",") + "|" + think;
+      return ids.join(",") + "|" + think + "|" + ackStampFor(root, jobs);
     }
 
     function threadNearBottom(box) {
@@ -4123,7 +4140,7 @@
     function paintThreadStream(rootId, forcePin) {
       const root = lastEvents.find((e) => e.id === rootId);
       if (!root) return;
-      /* Use visibleNotes filter so dev log items (Mention received, repeated intros) stay out of thread too */
+      /* visibleNotes always drops Mention received. One intro stays in thread. */
       const filtered = visibleNotes(lastEvents);
       const kids = repliesTo(filtered, rootId);
       const bots = threadMembers(root, kids);
@@ -4143,8 +4160,7 @@
       const near = !shown || forcePin || threadNearBottom(box);
       const keep = box.scrollTop;
       box.innerHTML = "";
-      /* Only show root if not a dev-log note when disabled */
-      if (!isDevLogNote(root) || devLogEnabled) box.appendChild(paintNote(root));
+      if (!isDevLogNote(root)) box.appendChild(paintNote(root));
       kids.forEach((k) => box.appendChild(paintNote(k)));
       paintThreadThink(jobs);
       threadSeen = key;
@@ -4189,9 +4205,10 @@
       events.forEach((e) => { handleSig(e); });
       lastEvents = events || [];
       lastStatus = status || {};
-      // Feed dev log for all incoming (syslog capture regardless of filter)
       (lastEvents || []).forEach((e) => {
-        if (isDevLogNote(e)) appendDevLog((e.pubkey ? (who(e.pubkey) + ": ") : "") + (e.content || "").slice(0, 200));
+        if (!isDevLogNote(e) || !e.id || devLogSeen[e.id]) return;
+        devLogSeen[e.id] = 1;
+        appendDevLog((e.pubkey ? (who(e.pubkey) + ": ") : "") + (e.content || "").slice(0, 200));
       });
       const filtered = visibleNotes(lastEvents);
       const mine = channelNotes(filtered);
@@ -4205,8 +4222,9 @@
         status.clients + " sockets";
       paintRelayDrawer(status);
       const thinkKey = ((status.thinking || []).map((t) => t.parent + ":" + t.name).join(","));
+      const ackKey = roots.map((e) => ackStampFor(e, thinkingFor(e.id, status))).join("");
       const key = roots.map((e) => e.id).join(",") + "|" +
-        mine.filter((e) => e.reply_to).map((e) => e.id).join(",") + "|" + thinkKey;
+        mine.filter((e) => e.reply_to).map((e) => e.id).join(",") + "|" + thinkKey + "|" + ackKey;
       if (key !== seen) {
         seen = key;
         const s = $("stream");
@@ -4218,7 +4236,7 @@
           s.appendChild(d);
         } else {
           roots.forEach((e) => {
-            const kids = repliesTo(lastEvents, e.id);
+            const kids = repliesTo(filtered, e.id);
             const jobs = thinkingFor(e.id, status);
             const n = paintNote(e, (node) => {
               paintThink(node, jobs);
@@ -4256,7 +4274,8 @@
     }
 
     function prettyMentions(text) {
-      /* Legacy string form (order-destroying). Kept for compatibility. */
+      /* Legacy string form. paintNote must not use this: it strips nostr:
+       * tokens so renderPreservingMentions cannot place in-sentence pills. */
       return String(text).replace(/nostr:(npub1[0-9a-z]+)/gi, (_, npub) => {
         const hit = mentionRoster().find((h) => h.npub === npub);
         return hit ? ("@" + hit.name) : ("@" + npub.slice(0, 12));
@@ -4312,16 +4331,12 @@
       }
     }
 
-    /* M4.3/M3.1: Developer log helpers. isDevLogNote recognizes ack/intro lines.
-     * visibleNotes filters them out of main chat when !devLogEnabled.
-     * appendDevLog always records when enabled (or always for durability). */
+    /* Developer log helpers. isDevLogNote is receipts only ("Mention received.").
+     * One "At ease" intro per robot+thread is chat, not a log.
+     * visibleNotes always drops log notes; the drawer is the only log view. */
     function isDevLogNote(e) {
       if (!e || !e.content) return false;
-      const c = String(e.content);
-      if (c.indexOf("Mention received") >= 0) return true;
-      if (c.indexOf("At ease.") >= 0 && c.indexOf("Sgt Major Payne") >= 0) return true;
-      if (c.indexOf("At ease.") >= 0 && c.indexOf("—") >= 0) return true;
-      return false;
+      return String(e.content).indexOf("Mention received") >= 0;
     }
 
     function appendDevLog(line) {
@@ -4338,7 +4353,6 @@
 
     function visibleNotes(events) {
       if (!events || !events.length) return [];
-      if (devLogEnabled) return events.slice();
       return events.filter((e) => !isDevLogNote(e));
     }
 
