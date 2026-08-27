@@ -3016,7 +3016,7 @@
           enabled: enabled
         };
         payneOrder.forEach((id, i) => { body["provider_" + i] = id; });
-        equippedSkills.forEach((id, i) => { body["skill_" + i] = id; });
+        attachLoadout(body);
         try {
           applySession(await api("/api/agent", body));
           if (draftPicture) savePicId(PAYNE_SLUG, draftPicture);
@@ -3046,7 +3046,7 @@
         body.action = "update";
         body.slug = editSlug;
       }
-      equippedSkills.forEach((id, i) => { body["skill_" + i] = id; });
+      attachLoadout(body);
       draftFiles.forEach((f, i) => {
         body["context_name_" + i] = f.name;
         body["context_mime_" + i] = f.mime;
@@ -5017,6 +5017,13 @@
       if (skillCycleIdx >= list.length) skillCycleIdx = 0;
       if (skillCycleIdx < 0) skillCycleIdx = list.length - 1;
       box.appendChild(makeSkillChip(list[skillCycleIdx], false));
+    }
+
+    function attachLoadout(body) {
+      if (!body) return;
+      equippedSkills.forEach((id, i) => { body["skill_" + i] = id; });
+      if (!equippedSkills.length) body.skill_0 = "";
+      body.nskills = equippedSkills.length;
     }
 
     function makeSkillChip(skill, worn) {

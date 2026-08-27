@@ -141,6 +141,16 @@ int main(void)
     expect(hush_roster_format_json(&roster, json, sizeof(json), &n) == HUSH_OK,
            "json2");
     expect(strstr(json, "system:forge-skill") != NULL, "equipped skill");
+    memset(agent.skills, 0, sizeof(agent.skills));
+    agent.nskills = 0;
+    agent.has_skills = 1;
+    expect(hush_roster_update_agent(&roster, "sentry", &agent) == HUSH_OK,
+           "prune last skill");
+    expect(roster.agents[0].nskills == 0, "empty loadout");
+    expect(hush_roster_format_json(&roster, json, sizeof(json), &n) == HUSH_OK,
+           "json prune");
+    expect(strstr(json, "\"slug\":\"sentry\"") != NULL, "sentry after prune");
+    expect(strstr(json, "system:forge-skill") == NULL, "pruned skill gone");
     expect(strstr(json, "\"enabled\":false") != NULL, "disabled json");
     expect(strstr(json, "\"role\":\"chaperon\"") != NULL, "chaperon json");
     expect(hush_roster_remove_agent(&roster, HUSH_ROSTER_PAYNE_SLUG) ==
@@ -164,10 +174,13 @@ int main(void)
     memcpy(agent.name, "Coach", 6);
     memcpy(agent.prompt, "Coach hive jobs.", 17);
     memcpy(agent.provider, "goose", 6);
+    memcpy(agent.skills[0], "system:ai-engineering-coach", 28);
+    agent.nskills = 1;
     agent.locked = 1;
     expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
            "locked coach");
     expect(roster.agents[0].locked == 1, "coach locked");
+    expect(roster.agents[0].nskills == 1, "coach wears skill");
     memcpy(agent.name, "Nope", 5);
     memcpy(agent.prompt, "Nope prompt", 12);
     agent.has_enabled = 1;
@@ -180,6 +193,14 @@ int main(void)
            "clone locked");
     expect(roster.nagents == 2, "coach plus copy");
     expect(roster.agents[1].locked == 0, "clone unlocked");
+    expect(roster.agents[1].nskills == 1, "copy wears skill");
+    memset(&agent, 0, sizeof(agent));
+    agent.has_skills = 1;
+    agent.nskills = 0;
+    expect(hush_roster_update_agent(&roster, "coach-copy", &agent) == HUSH_OK,
+           "prune copy 1to0");
+    expect(roster.agents[1].nskills == 0, "copy empty loadout");
+    expect(roster.agents[0].nskills == 1, "locked original keeps skill");
     hush_store_destroy(store);
     hush_pass_set_helper(NULL);
     if (g_fail)

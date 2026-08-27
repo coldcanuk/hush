@@ -172,6 +172,16 @@ int main(void)
                                           &n) == HUSH_OK,
                "session payne extras");
         expect(strstr(json, "system:forge-skill") != NULL, "payne skill json");
+        memset(payne_in.skills, 0, sizeof(payne_in.skills));
+        payne_in.nskills = 0;
+        payne_in.has_skills = 1;
+        expect(hush_launch_update_payne_profile(&launch, &payne_in) == HUSH_OK,
+               "payne prune");
+        expect(launch.npayne_skills == 0, "payne empty loadout");
+        expect(hush_launch_format_session(&launch, 10555, json, sizeof(json),
+                                          &n) == HUSH_OK,
+               "session payne prune");
+        expect(strstr(json, "system:forge-skill") == NULL, "payne skill gone");
         expect(strstr(json, "\"voice\":\"alloy\"") != NULL, "payne voice json");
         expect(strstr(json, "\"enabled\":false") != NULL, "payne off json");
     }
