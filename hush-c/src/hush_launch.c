@@ -611,7 +611,7 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         memcpy(in.prompt, "Coach hive jobs toward small tested C changes.", 47);
         memcpy(in.provider, HUSH_ROSTER_PROVIDER_GROK_BUILD,
                sizeof(HUSH_ROSTER_PROVIDER_GROK_BUILD));
-        memcpy(in.skills[0], "system:ai-engineering-coach", 28);
+        memcpy(in.skills[0], "system:canvas-coach", 20);
         in.nskills = 1;
         in.has_skills = 1;
         in.locked = 1;
@@ -624,7 +624,7 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
                55);
         memcpy(in.provider, HUSH_ROSTER_PROVIDER_GROK_BUILD,
                sizeof(HUSH_ROSTER_PROVIDER_GROK_BUILD));
-        memcpy(in.skills[0], "system:security-audit", 22);
+        memcpy(in.skills[0], "system:hive-audit", 18);
         in.nskills = 1;
         in.has_skills = 1;
         in.locked = 1;

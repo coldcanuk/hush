@@ -1,11 +1,11 @@
 ---
-name: security-audit
+name: hive-audit
 description: Run a six-phase security audit of local C/hive code.
 role: worker
 category: security
 ---
 
-# security-audit
+# hive-audit
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 

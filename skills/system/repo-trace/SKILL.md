@@ -1,11 +1,11 @@
 ---
-name: repo-static-audit
+name: repo-trace
 description: Reverse-engineer a local tree: languages, entry points, secrets patterns.
 role: worker
 category: reverse-engineering
 ---
 
-# repo-static-audit
+# repo-trace
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 

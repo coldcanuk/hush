@@ -1,11 +1,11 @@
 ---
-name: social-voice
+name: hive-voice
 description: Draft social posts in a stored hive voice.
 role: worker
 category: social
 ---
 
-# social-voice
+# hive-voice
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 

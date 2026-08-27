@@ -174,7 +174,7 @@ int main(void)
     memcpy(agent.name, "Coach", 6);
     memcpy(agent.prompt, "Coach hive jobs.", 17);
     memcpy(agent.provider, "goose", 6);
-    memcpy(agent.skills[0], "system:ai-engineering-coach", 28);
+    memcpy(agent.skills[0], "system:canvas-coach", 20);
     agent.nskills = 1;
     agent.locked = 1;
     expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
