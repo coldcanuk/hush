@@ -817,8 +817,14 @@ static void hush_agent_intro_remember(const char *hex, const char *root)
 {
     if (hex == NULL || root == NULL)
         return;
-    if (g_nintro >= (size_t)HUSH_AGENT_INTRO_MAX)
-        return;
+    if (g_nintro >= (size_t)HUSH_AGENT_INTRO_MAX) {
+        size_t i;
+        for (i = 1; i < (size_t)HUSH_AGENT_INTRO_MAX; i++) {
+            hush_agent_copy(g_intro_hex[i - 1], sizeof(g_intro_hex[0]), g_intro_hex[i]);
+            hush_agent_copy(g_intro_root[i - 1], sizeof(g_intro_root[0]), g_intro_root[i]);
+        }
+        g_nintro = (size_t)HUSH_AGENT_INTRO_MAX - 1;
+    }
     hush_agent_copy(g_intro_hex[g_nintro], sizeof(g_intro_hex[0]), hex);
     hush_agent_copy(g_intro_root[g_nintro], sizeof(g_intro_root[0]), root);
     g_nintro++;
