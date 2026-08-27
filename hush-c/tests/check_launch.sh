@@ -79,6 +79,12 @@ if echo "$html" | grep -q 'INV_COLS = 8'; then
 fi
 echo "$html" | grep -q 'class="inv-btn"' || fail "Seed/Clear/Raise must share inv-btn"
 echo "$html" | grep -q 'syncInventoryFromRoster' || fail "inventory must bind live roster"
+if echo "$html" | grep -q 'locked: true}'; then
+    fail "robotModels extra brace would throw SyntaxError"
+fi
+js="$cfg/ui-script.js"
+printf '%s' "$html" | awk 'BEGIN{p=0} /<script>/{p=1; next} /<\/script>/{p=0} p' > "$js"
+node --check "$js" || fail "served inventory script failed node --check"
 echo "$html" | grep -q 'id="seed-drawer"' || fail "HTML missing seed wizard"
 echo "$html" | grep -q 'id="seed-actions"' || fail "HTML missing seed actions"
 echo "$html" | grep -q 'id="seed-skills"' || fail "HTML missing seed skills"
