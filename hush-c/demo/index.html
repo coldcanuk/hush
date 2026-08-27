@@ -5120,13 +5120,18 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       return ids.reduce((n, id) => n + ((skillById(id).complexity) || 0), 0);
     }
     function loadoutCanTake(ids, skill) {
+      return !loadoutRefuseReason(ids, skill);
+    }
+    function loadoutRefuseReason(ids, skill) {
       const marks = skillWatermarks || {};
       const worn = ids.filter(Boolean);
-      if (worn.indexOf(skill.id) >= 0) return false;
-      if (worn.length + 1 > (marks.slots_high || SKILL_SLOTS)) return false;
-      if (loadoutChars(worn) + (skill.chars || 0) > (marks.chars_high || 8000)) return false;
-      if (loadoutComplex(worn) + (skill.complexity || 0) > (marks.complex_high || 64)) return false;
-      return true;
+      if (worn.indexOf(skill.id) >= 0) return "Already worn on this robot.";
+      if (worn.length + 1 > (marks.slots_high || SKILL_SLOTS)) return "Loadout over watermark.";
+      if (loadoutChars(worn) + (skill.chars || 0) > (marks.chars_high || 8000))
+        return "Loadout over watermark.";
+      if (loadoutComplex(worn) + (skill.complexity || 0) > (marks.complex_high || 64))
+        return "Loadout over watermark.";
+      return "";
     }
     function skillNotice(msg) {
       if ($("hive-skill-help")) $("hive-skill-help").textContent = msg;
@@ -5360,9 +5365,9 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         skillNotice("That skill does not fit this robot.");
         return;
       }
-      if (!loadoutCanTake(equippedSkills, skill)) {
-        skillNotice("Loadout over watermark.");
-        return;
+      {
+        const why = loadoutRefuseReason(equippedSkills, skill);
+        if (why) { skillNotice(why); return; }
       }
       equippedSkills.push(skill.id);
       skillHeld = null;
@@ -5387,9 +5392,9 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         return;
       }
       const worn = (bot.skills || []).slice();
-      if (!loadoutCanTake(worn, skill)) {
-        skillNotice("Loadout over watermark.");
-        return;
+      {
+        const why = loadoutRefuseReason(worn, skill);
+        if (why) { skillNotice(why); return; }
       }
       worn.push(skill.id);
       const body = { slug: slug, nskills: worn.length };
