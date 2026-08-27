@@ -1562,7 +1562,11 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     let lastGateHtml = "";
 
     function paint() {
-      const ready = !!session.ready;
+      // "payne" (Meet Major) is a gate page even after the hive is ready:
+      // /api/vibe flips ready=true, but the user should still see the
+      // step-4 Major card before landing in the hive. Keep the gate up
+      // until "Carry on." sets page to "hive".
+      const ready = !!session.ready && page !== "payne";
       $("gate").classList.toggle("show", !ready);
       $("hive").classList.toggle("show", ready);
       // Always visible per spec (M2): Profile + Settings on splash/gate/hive

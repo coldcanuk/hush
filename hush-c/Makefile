@@ -76,6 +76,7 @@ demo:
 install: all
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 0755 hush-relay $(DESTDIR)$(BINDIR)/hush-relay
+	install -m 0755 ../scripts/hush-pass $(DESTDIR)$(BINDIR)/hush-pass
 	install -d $(DESTDIR)$(APPDIR)
 	install -m 0644 ../hush-relay.desktop $(DESTDIR)$(APPDIR)/hush-relay.desktop
 	@for size in $(ICON_SIZES); do \
@@ -86,6 +87,7 @@ install: all
 	@echo
 	@echo "Installed:"
 	@echo "  $(DESTDIR)$(BINDIR)/hush-relay"
+	@echo "  $(DESTDIR)$(BINDIR)/hush-pass"
 	@echo "  $(DESTDIR)$(APPDIR)/hush-relay.desktop"
 	@echo "  $(DESTDIR)$(ICONDIR)/{48,128,256}x{48,128,256}/apps/hush-relay.png"
 	@echo

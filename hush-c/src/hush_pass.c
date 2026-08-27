@@ -1,6 +1,7 @@
 /* hush_pass.c: owns the unix `pass` helper invocation for Hush secrets. */
 
 #include <assert.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -321,13 +322,27 @@ static hush_status_t hush_pass_run(char *out, size_t outsz,
     st = hush_pass_open_pipes(in_pipe, out_pipe);
     if (st != HUSH_OK)
         return st;
-    pid = fork();
-    if (pid < 0) {
-        hush_pass_close_pipes(in_pipe, out_pipe);
-        return hush_pass_fail("fork failed");
+    /* The relay ignores SIGCHLD (hush_relay.c) so background children never
+     * become zombies. An ignored SIGCHLD also makes the kernel auto-reap any
+     * child, so waitpid() would fail with ECHILD. Reset to SIG_DFL for the
+     * duration of this fork + waitpid so the helper can be reaped, then
+     * restore whatever was there before (SIG_IGN in the relay, SIG_DFL in
+     * unit tests). The server is single-threaded, so this is safe. */
+    {
+        void (*old_chld)(int) = signal(SIGCHLD, SIG_DFL);
+        pid = fork();
+        if (pid < 0) {
+            if (old_chld != SIG_ERR)
+                signal(SIGCHLD, old_chld);
+            hush_pass_close_pipes(in_pipe, out_pipe);
+            return hush_pass_fail("fork failed");
+        }
+        if (pid == 0)
+            hush_pass_exec_child(in_pipe, out_pipe, argv);
+        st = hush_pass_finish_parent(in_pipe, out_pipe, pid, out, outsz,
+                                     stdin_text);
+        if (old_chld != SIG_ERR)
+            signal(SIGCHLD, old_chld);
+        return st;
     }
-    if (pid == 0)
-        hush_pass_exec_child(in_pipe, out_pipe, argv);
-    return hush_pass_finish_parent(in_pipe, out_pipe, pid, out, outsz,
-                                   stdin_text);
 }

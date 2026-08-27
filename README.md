@@ -85,7 +85,10 @@ escape TAB and other C0 so a Go snippet cannot freeze the thinking
 chip.
 Click **relay live** for stored / projects / sockets. Hive metadata persists in `~/.hush/config/vibe.json` so
 `make clean && make install` or Exit does not force a new vibe after
-you import the same nsec. **Exit** (`--quit`) stops the relay and the
+you import the same nsec. (For upgrades from the older Buzz layout, the
+relay still reads a legacy copy at `~/.config/hush/vibe.json` as a
+fallback when the canonical file is absent — delete both to fully reset
+a hive.) **Exit** (`--quit`) stops the relay and the
 browser / login children it forked. **Close** leaves the hive standing.
 If `--open` attaches to a leftover listener, quit that process before a
 new install can take the port. Secrets stay in `pass`. See
