@@ -77,6 +77,12 @@ echo "$html" | grep -q 'saved.x' || fail "loadRail must restore saved.x"
 echo "$html" | grep -q 'saved.y' || fail "loadRail must restore saved.y"
 echo "$html" | grep -q 'saved.collapsed' || fail "loadRail must restore saved.collapsed"
 echo "$html" | grep -q 'function saveRail' || fail "HTML missing saveRail"
+echo "$html" | grep -q 'function presenceSlugFor' || fail "HTML missing presenceSlugFor"
+echo "$html" | grep -q '/api/presence' || fail "HTML missing /api/presence tick"
+pres=$(curl -sf "http://127.0.0.1:${port}/api/presence")
+echo "$pres" | grep -q '"ok":true' || fail "presence json"
+echo "$pres" | grep -q '"lines"' || fail "presence missing lines"
+echo "$html" | grep -q '30315' || fail "HTML missing NIP-38 kind filter"
 save_body=$(printf '%s' "$html" | awk '/function saveRail/,/function applyThreadSize/')
 echo "$save_body" | grep -q 'homed:' && fail "saveRail must persist {x,y,collapsed} only"
 echo "$html" | awk '/rail-toggle"\)\.addEventListener\("dblclick"/,/rail-grip"\)\.addEventListener\("pointerdown"/' \

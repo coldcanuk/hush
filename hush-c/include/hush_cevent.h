@@ -22,6 +22,8 @@ enum {
 #define HUSH_CEVENT_HOP_DENIED "hop_denied"
 #define HUSH_CEVENT_JOBS_HELD "jobs_held"
 #define HUSH_CEVENT_CHAPERON "chaperon"
+#define HUSH_CEVENT_PRESENCE "presence"
+#define HUSH_CEVENT_STUCK "stuck"
 
 typedef struct {
     uint32_t seq;

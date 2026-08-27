@@ -22,6 +22,7 @@
 #include "hush_agent.h"
 #include "hush_canvas.h"
 #include "hush_home.h"
+#include "hush_presence.h"
 #include "hush_http.h"
 #include "hush_intel.h"
 #include "hush_launch.h"
@@ -477,6 +478,8 @@ static void hush_handle_req_msg(struct client *c, const hush_client_msg_t *msg)
     c->has_sub = 1;
     n = hush_store_query(g_store, msg->filters, msg->nfilters, results, 64);
     for (i = 0; i < n; ++i) {
+        if (!hush_presence_req_ok(results[i].kind, g_launch.vibe_public))
+            continue;
         if (hush_proto_format_event(c->sub_id, &results[i], line, sizeof(line), NULL) == HUSH_OK)
             hush_send_str(c->fd, line);
     }
@@ -493,6 +496,8 @@ static void hush_fanout(const hush_event_t *ev)
         if (clients[i].fd == HUSH_FD_NONE || !clients[i].has_sub)
             continue;
         if (!hush_filter_match(&clients[i].filter, ev))
+            continue;
+        if (!hush_presence_req_ok(ev->kind, g_launch.vibe_public))
             continue;
         if (hush_proto_format_event(clients[i].sub_id, ev, line, sizeof(line), NULL) == HUSH_OK)
             hush_send_str(clients[i].fd, line);
