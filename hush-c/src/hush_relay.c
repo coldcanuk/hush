@@ -21,6 +21,7 @@
 
 #include "hush_agent.h"
 #include "hush_canvas.h"
+#include "hush_home.h"
 #include "hush_http.h"
 #include "hush_intel.h"
 #include "hush_launch.h"
@@ -526,6 +527,7 @@ static void hush_relay_prepare(uint16_t port)
     hush_install_shutdown_handlers();
     hush_clients_reset();
     hush_http_set_listen_port(port);
+    (void)hush_home_ensure();
     hush_launch_init(&g_launch);
     (void)hush_launch_restore_identity(&g_launch);
     (void)hush_launch_restore_vibe(&g_launch);

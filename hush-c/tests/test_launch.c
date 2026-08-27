@@ -100,7 +100,24 @@ int main(void)
            "session primary");
     expect(strstr(json, "\"providers\":[\"grok-build\",\"goose\"]") != NULL,
            "session order");
-    expect(strstr(json, HUSH_LAUNCH_PAYNE_NAME) != NULL, "name locked");
+    expect(strstr(json, HUSH_LAUNCH_PAYNE_NAME) != NULL, "payne Major");
+    {
+        hush_roster_agent_in_t payne_in;
+
+        memset(&payne_in, 0, sizeof(payne_in));
+        memcpy(payne_in.picture, "panel:robots:1", 15);
+        memcpy(payne_in.voice, "alloy", 6);
+        memcpy(payne_in.skills[0], "system:forge-skill", 19);
+        payne_in.nskills = 1;
+        expect(hush_launch_update_payne_profile(&launch, &payne_in) == HUSH_OK,
+               "payne profile");
+        expect(strcmp(launch.payne_picture, "panel:robots:1") == 0, "payne pic");
+        expect(hush_launch_format_session(&launch, 10555, json, sizeof(json),
+                                          &n) == HUSH_OK,
+               "session payne extras");
+        expect(strstr(json, "system:forge-skill") != NULL, "payne skill json");
+        expect(strstr(json, "\"voice\":\"alloy\"") != NULL, "payne voice json");
+    }
     expect(hush_launch_add_channel(&launch, "incidents") == HUSH_OK, "channel");
     expect(launch.nchannels == 4, "four channels");
     expect(strlen(launch.channels[0].id) == (size_t)HUSH_LAUNCH_ID_HEX,
@@ -175,7 +192,7 @@ int main(void)
     expect(hush_launch_format_session(&launch, 10555, json, sizeof(json),
                                       &n) == HUSH_OK,
            "final session");
-    expect(strstr(json, "Sgt Major Payne") != NULL, "payne name");
+    expect(strstr(json, "\"name\":\"Major\"") != NULL, "payne name");
     expect(strstr(json, "\"pubkey\":\"") != NULL, "payne pubkey");
     expect(strstr(json, "\"slug\":\"incidents\"") != NULL, "incidents");
     expect(strstr(json, "\"robot_reply\":\"mention\"") != NULL, "session reply");

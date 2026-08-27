@@ -33,9 +33,10 @@ wait_up() {
 }
 
 export HOME="$home"
+export HUSH_HOME="$home/.hush"
 export HUSH_CONFIG_DIR="$home/.config/hush"
 unset XDG_CONFIG_HOME
-mkdir -p "$home/bin" "$home/.grok" "$home/.codex" "$home/.config/hush"
+mkdir -p "$home/bin" "$home/.grok" "$home/.codex" "$home/.config/hush" "$home/.hush"
 printf '%s\n' '#!/bin/sh' \
     'log="${HUSH_CONFIG_DIR}/grok-p.log"' \
     'prev=""' \
@@ -202,7 +203,8 @@ printf '%s' "$got" | grep -q '\\tfmt' || fail "tab must be escaped as \\\\t"
 
 echo "$ag" | grep -q '"name":"Happy"' || fail "happy name missing from raise"
 sess=$(curl -sf "http://127.0.0.1:${port}/api/session")
-echo "$sess" | grep -q 'Sgt Major Payne' || fail "session must include Sgt Major Payne"
+echo "$sess" | grep -q '"name":"Major"' || fail "session must include Major"
+echo "$sess" | grep -q '"name":"Sgt Major Payne"' && fail "old Payne name must not ship"
 echo "$sess" | grep -q '"slug":"happy"' || fail "session must include raised Happy"
 
 # Payne seed path uses existing /api/agent (wizard JS). Put Payne on grok-build
@@ -234,7 +236,8 @@ echo "$managed" | grep -q 'sgt-major-payne' || fail "seed channel missing Payne"
 sess=$(curl -sf "http://127.0.0.1:${port}/api/session")
 echo "$sess" | grep -q '"slug":"scout"' || fail "session missing seeded scout"
 echo "$sess" | grep -q '"slug":"builder"' || fail "session missing seeded builder"
-echo "$sess" | grep -q 'Sgt Major Payne' || fail "Payne still on deck after seed"
+echo "$sess" | grep -q '"name":"Major"' || fail "Payne still on deck after seed"
+echo "$sess" | grep -q '"name":"Sgt Major Payne"' && fail "old Payne name after seed"
 html=$(curl -sf "http://127.0.0.1:${port}/")
 echo "$html" | grep -q 'function seedTeam' || fail "served UI missing seedTeam"
 echo "$html" | grep -q 'INV_COLS = 4' || fail "served UI compact grid not 4 cols"

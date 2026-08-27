@@ -45,7 +45,7 @@ enum {
 
 #define HUSH_LAUNCH_PASS_FAIL "pass helper failed"
 
-#define HUSH_LAUNCH_PAYNE_NAME "Sgt Major Payne"
+#define HUSH_LAUNCH_PAYNE_NAME "Major"
 #define HUSH_LAUNCH_PAYNE_SLUG "sgt-major-payne"
 #define HUSH_LAUNCH_PAYNE_ABOUT \
     "Organizes single agents, squads, teams, and swarms. Finds the right robot, or builds one."
@@ -103,6 +103,12 @@ typedef struct {
     hush_identity_t payne;
     char payne_providers[HUSH_LAUNCH_PAYNE_PROVIDERS_MAX][HUSH_ROSTER_PROVIDER_MAX];
     size_t npayne_providers;
+    char payne_name[HUSH_LAUNCH_NAME_MAX];
+    char payne_prompt[HUSH_ROSTER_PROMPT_MAX];
+    char payne_picture[HUSH_ROSTER_PATH_MAX];
+    char payne_voice[HUSH_SKILL_VOICE_MAX];
+    char payne_skills[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
+    size_t npayne_skills;
     char vibe_name[HUSH_LAUNCH_NAME_MAX];
     char vibe_about[HUSH_LAUNCH_ABOUT_MAX];
     int vibe_public;
@@ -164,6 +170,21 @@ hush_status_t hush_launch_add_agent(hush_launch_t *launch,
 
 /* Drops a raised agent by slug. Payne is refused. */
 hush_status_t hush_launch_remove_agent(hush_launch_t *launch, const char *slug);
+
+/* Updates a raised agent's name, prompt, picture, voice, and skills. */
+hush_status_t hush_launch_update_agent(hush_launch_t *launch, const char *slug,
+                                       const hush_roster_agent_in_t *in);
+
+/* Updates Payne's display name, prompt, picture, voice, and skills.
+ * Empty name/prompt keep the current values. */
+hush_status_t hush_launch_update_payne_profile(hush_launch_t *launch,
+                                               const hush_roster_agent_in_t *in);
+
+/* Stored Payne display name, or HUSH_LAUNCH_PAYNE_NAME. */
+const char *hush_launch_payne_name(const hush_launch_t *launch);
+
+/* Stored Payne system prompt, or HUSH_LAUNCH_PAYNE_ABOUT. */
+const char *hush_launch_payne_prompt(const hush_launch_t *launch);
 
 /* Replaces Payne's ranked provider list. Name and about stay locked.
  * Empty or all-invalid ids restore to goose. Requires a vibe. */

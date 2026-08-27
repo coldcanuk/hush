@@ -13,6 +13,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "hush_home.h"
 #include "hush_pass.h"
 #include "hush_provider.h"
 #include "hush_relay.h"
@@ -423,23 +424,11 @@ static int hush_provider_has_binary(const char *name)
 
 static void hush_provider_config_dir(char *out, size_t outsz)
 {
-    const char *xdg = getenv("XDG_CONFIG_HOME");
-    const char *home = getenv("HOME");
-    int n;
-
     assert(out != NULL);
     assert(outsz > 0);
-    if (xdg != NULL && xdg[0] != '\0') {
-        n = snprintf(out, outsz, "%s/hush", xdg);
-        if (n > 0 && (size_t)n < outsz)
-            return;
-    }
-    if (home != NULL && home[0] != '\0') {
-        n = snprintf(out, outsz, "%s/.config/hush", home);
-        if (n > 0 && (size_t)n < outsz)
-            return;
-    }
-    hush_provider_copy(out, outsz, "/tmp/hush");
+    hush_home_config_dir(out, outsz);
+    if (out[0] == '\0')
+        hush_provider_copy(out, outsz, "/tmp/hush");
 }
 
 static void hush_provider_file_path(char *out, size_t outsz)
@@ -457,6 +446,7 @@ static hush_status_t hush_provider_ensure_dir(void)
 {
     char dir[HUSH_PROVIDER_PATH_MAX];
 
+    (void)hush_home_ensure();
     hush_provider_config_dir(dir, sizeof(dir));
     if (dir[0] == '\0')
         return hush_provider_fail("config dir");

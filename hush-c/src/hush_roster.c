@@ -9,6 +9,7 @@
 #include "hush_event.h"
 #include "hush_pass.h"
 #include "hush_roster.h"
+#include "hush_skill.h"
 
 enum {
     HUSH_ROSTER_KIND_META = 0,
@@ -106,10 +107,32 @@ static hush_status_t hush_roster_format_members(const hush_roster_t *roster,
                                                 char *out, size_t outsz,
                                                 size_t *off);
 
-/* Copies name, slug, prompt, provider, picture from in. */
+/* Copies name, slug, prompt, provider, picture, voice, skills from in. */
 static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
                                             hush_roster_agent_t *agent,
                                             const hush_roster_agent_in_t *in);
+
+/* Copies equipped skill ids. Caps at HUSH_SKILL_EQUIP_MAX. */
+static hush_status_t hush_roster_copy_skills(hush_roster_agent_t *agent,
+                                             const hush_roster_agent_in_t *in);
+
+/* Finds an agent by slug. NULL when missing. */
+static hush_roster_agent_t *hush_roster_find_agent(hush_roster_t *roster,
+                                                   const char *slug);
+
+/* Applies update fields onto an existing agent. */
+static hush_status_t hush_roster_apply_update(hush_roster_agent_t *agent,
+                                              const hush_roster_agent_in_t *in);
+
+/* Appends one agent object. */
+static hush_status_t hush_roster_format_one_agent(const hush_roster_agent_t *agent,
+                                                  char *out, size_t outsz,
+                                                  size_t *off, int first);
+
+/* Appends the equipped skills array. */
+static hush_status_t hush_roster_format_skills(const hush_roster_agent_t *agent,
+                                               char *out, size_t outsz,
+                                               size_t *off);
 
 /* Writes a session-safe prompt preview into dst. */
 static void hush_roster_preview_prompt(char *dst, size_t dstsz,
@@ -288,6 +311,21 @@ hush_status_t hush_roster_remove_agent(hush_roster_t *roster, const char *slug)
     return HUSH_ERR_NOT_FOUND;
 }
 
+hush_status_t hush_roster_update_agent(hush_roster_t *roster, const char *slug,
+                                       const hush_roster_agent_in_t *in)
+{
+    hush_roster_agent_t *agent;
+
+    if (roster == NULL || slug == NULL || slug[0] == '\0' || in == NULL)
+        return HUSH_ERR_ARG;
+    if (hush_roster_is_payne_slug(slug))
+        return HUSH_ERR_DENIED;
+    agent = hush_roster_find_agent(roster, slug);
+    if (agent == NULL)
+        return HUSH_ERR_NOT_FOUND;
+    return hush_roster_apply_update(agent, in);
+}
+
 hush_status_t hush_roster_format_json(const hush_roster_t *roster,
                                       char *out, size_t outsz,
                                       size_t *out_len)
@@ -326,7 +364,10 @@ static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
         return HUSH_ERR_PARSE;
     hush_roster_copy_text(agent->picture, sizeof(agent->picture),
                           in->picture, "");
-    return HUSH_OK;
+    if (in->voice[0] != '\0' && !hush_skill_is_voice(in->voice))
+        return HUSH_ERR_PARSE;
+    hush_roster_copy_text(agent->voice, sizeof(agent->voice), in->voice, "");
+    return hush_roster_copy_skills(agent, in);
 }
 
 static hush_status_t hush_roster_fill_context(hush_roster_agent_t *agent,
@@ -388,35 +429,15 @@ static hush_status_t hush_roster_format_agents(const hush_roster_t *roster,
                                                char *out, size_t outsz,
                                                size_t *off)
 {
-    char esc[HUSH_ROSTER_NAME_MAX * 2];
-    char preview[HUSH_ROSTER_PROMPT_PREVIEW + 1];
-    char esc_prompt[HUSH_ROSTER_PROMPT_PREVIEW * 2];
     size_t i;
-    int n;
 
     assert(roster != NULL);
     assert(out != NULL);
     assert(off != NULL);
     for (i = 0; i < roster->nagents; ++i) {
-        hush_roster_json_escape(roster->agents[i].name, esc, sizeof(esc));
-        hush_roster_preview_prompt(preview, sizeof(preview),
-                                   roster->agents[i].prompt);
-        hush_roster_json_escape(preview, esc_prompt, sizeof(esc_prompt));
-        n = snprintf(out + *off, outsz - *off,
-                     "%s{\"name\":\"%s\",\"slug\":\"%s\",\"npub\":\"%s\","
-                     "\"pubkey\":\"%s\",\"provider\":\"%s\",\"prompt\":\"%s\","
-                     "\"picture\":\"%s\",\"ncontext\":%zu}",
-                     (i == 0) ? "" : ",",
-                     esc, roster->agents[i].slug,
-                     roster->agents[i].id.npub,
-                     roster->agents[i].id.pubkey_hex,
-                     roster->agents[i].provider,
-                     esc_prompt,
-                     roster->agents[i].picture,
-                     roster->agents[i].ncontext);
-        if (n < 0 || *off + (size_t)n >= outsz)
+        if (hush_roster_format_one_agent(&roster->agents[i], out, outsz, off,
+                                         i == 0) != HUSH_OK)
             return HUSH_ERR_FULL;
-        *off += (size_t)n;
     }
     return HUSH_OK;
 }
@@ -591,7 +612,7 @@ static hush_status_t hush_roster_store_agent_note(hush_store_t *store,
     assert(agent != NULL);
     hush_roster_json_escape(agent->name, esc_name, sizeof(esc_name));
     if (snprintf(content, sizeof(content),
-                 "At ease. Robot %s is on deck. — Sgt Major Payne",
+                 "At ease. Robot %s is on deck. — Major",
                  esc_name) >= (int)sizeof(content))
         return HUSH_ERR_FULL;
     hush_roster_fill_event(&ev, agent->id.pubkey_hex, HUSH_ROSTER_KIND_NOTE,
@@ -758,4 +779,121 @@ static void hush_roster_compact_agents(hush_roster_t *roster, size_t idx)
         roster->agents[i] = roster->agents[i + 1];
     memset(&roster->agents[roster->nagents - 1], 0, sizeof(roster->agents[0]));
     roster->nagents--;
+}
+
+static hush_status_t hush_roster_copy_skills(hush_roster_agent_t *agent,
+                                             const hush_roster_agent_in_t *in)
+{
+    size_t i;
+
+    assert(agent != NULL);
+    assert(in != NULL);
+    if (in->nskills > (size_t)HUSH_SKILL_EQUIP_MAX)
+        return HUSH_ERR_FULL;
+    memset(agent->skills, 0, sizeof(agent->skills));
+    agent->nskills = 0;
+    for (i = 0; i < in->nskills; ++i) {
+        if (in->skills[i][0] == '\0')
+            continue;
+        hush_roster_copy_text(agent->skills[agent->nskills],
+                              sizeof(agent->skills[0]), in->skills[i], "");
+        agent->nskills++;
+    }
+    return HUSH_OK;
+}
+
+static hush_roster_agent_t *hush_roster_find_agent(hush_roster_t *roster,
+                                                   const char *slug)
+{
+    size_t i;
+
+    assert(roster != NULL);
+    assert(slug != NULL);
+    for (i = 0; i < roster->nagents; ++i) {
+        if (strcmp(roster->agents[i].slug, slug) == 0)
+            return &roster->agents[i];
+    }
+    return NULL;
+}
+
+static hush_status_t hush_roster_apply_update(hush_roster_agent_t *agent,
+                                              const hush_roster_agent_in_t *in)
+{
+    assert(agent != NULL);
+    assert(in != NULL);
+    if (in->name[0] != '\0')
+        hush_roster_copy_text(agent->name, sizeof(agent->name), in->name, "");
+    if (in->prompt[0] != '\0')
+        hush_roster_copy_text(agent->prompt, sizeof(agent->prompt),
+                              in->prompt, "");
+    if (in->provider[0] != '\0') {
+        if (!hush_roster_is_provider(in->provider))
+            return HUSH_ERR_PARSE;
+        hush_roster_copy_text(agent->provider, sizeof(agent->provider),
+                              in->provider, "");
+    }
+    hush_roster_copy_text(agent->picture, sizeof(agent->picture),
+                          in->picture, "");
+    if (in->voice[0] != '\0' && !hush_skill_is_voice(in->voice))
+        return HUSH_ERR_PARSE;
+    hush_roster_copy_text(agent->voice, sizeof(agent->voice), in->voice, "");
+    return hush_roster_copy_skills(agent, in);
+}
+
+static hush_status_t hush_roster_format_one_agent(const hush_roster_agent_t *agent,
+                                                  char *out, size_t outsz,
+                                                  size_t *off, int first)
+{
+    char esc[HUSH_ROSTER_NAME_MAX * 2];
+    char preview[HUSH_ROSTER_PROMPT_PREVIEW + 1];
+    char esc_prompt[HUSH_ROSTER_PROMPT_PREVIEW * 2];
+    int n;
+
+    assert(agent != NULL);
+    assert(out != NULL);
+    assert(off != NULL);
+    hush_roster_json_escape(agent->name, esc, sizeof(esc));
+    hush_roster_preview_prompt(preview, sizeof(preview), agent->prompt);
+    hush_roster_json_escape(preview, esc_prompt, sizeof(esc_prompt));
+    n = snprintf(out + *off, outsz - *off,
+                 "%s{\"name\":\"%s\",\"slug\":\"%s\",\"npub\":\"%s\","
+                 "\"pubkey\":\"%s\",\"provider\":\"%s\",\"prompt\":\"%s\","
+                 "\"picture\":\"%s\",\"voice\":\"%s\",\"ncontext\":%zu,"
+                 "\"skills\":",
+                 first ? "" : ",",
+                 esc, agent->slug, agent->id.npub, agent->id.pubkey_hex,
+                 agent->provider, esc_prompt, agent->picture, agent->voice,
+                 agent->ncontext);
+    if (n < 0 || *off + (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    *off += (size_t)n;
+    return hush_roster_format_skills(agent, out, outsz, off);
+}
+
+static hush_status_t hush_roster_format_skills(const hush_roster_agent_t *agent,
+                                               char *out, size_t outsz,
+                                               size_t *off)
+{
+    size_t i;
+    int n;
+
+    assert(agent != NULL);
+    assert(out != NULL);
+    assert(off != NULL);
+    n = snprintf(out + *off, outsz - *off, "[");
+    if (n < 0 || *off + (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    *off += (size_t)n;
+    for (i = 0; i < agent->nskills; ++i) {
+        n = snprintf(out + *off, outsz - *off, "%s\"%s\"",
+                     (i == 0) ? "" : ",", agent->skills[i]);
+        if (n < 0 || *off + (size_t)n >= outsz)
+            return HUSH_ERR_FULL;
+        *off += (size_t)n;
+    }
+    n = snprintf(out + *off, outsz - *off, "]}");
+    if (n < 0 || *off + (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    *off += (size_t)n;
+    return HUSH_OK;
 }

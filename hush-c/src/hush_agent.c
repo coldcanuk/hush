@@ -444,12 +444,12 @@ static int hush_agent_lookup_robot(hush_agent_robot_t *out,
     if (launch->has_vibe &&
         hush_agent_key_matches(mention, launch->payne.npub,
                                launch->payne.pubkey_hex)) {
-        out->name = HUSH_LAUNCH_PAYNE_NAME;
+        out->name = hush_launch_payne_name(launch);
         out->npub = launch->payne.npub;
         out->hex = launch->payne.pubkey_hex;
         out->provider = (launch->npayne_providers > 0)
             ? launch->payne_providers[0] : HUSH_ROSTER_PROVIDER_GOOSE;
-        out->prompt = HUSH_LAUNCH_PAYNE_ABOUT;
+        out->prompt = hush_launch_payne_prompt(launch);
         return 1;
     }
     for (i = 0; i < launch->roster.nagents; i++) {

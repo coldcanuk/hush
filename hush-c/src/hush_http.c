@@ -11,11 +11,13 @@
 
 #include "hush_agent.h"
 #include "hush_canvas.h"
+#include "hush_home.h"
 #include "hush_http.h"
 #include "hush_intel.h"
 #include "hush_json.h"
 #include "hush_provider.h"
 #include "hush_relay.h"
+#include "hush_skill.h"
 #include "hush_ui_html.h"
 #include "hush_win.h"
 #include "hush_icon_panels.h"
@@ -95,7 +97,14 @@ static hush_status_t hush_http_serve_agent(int fd, const char *body,
                                            hush_store_t *store);
 static hush_status_t hush_http_delete_agent(int fd, const char *body);
 static hush_status_t hush_http_update_payne(int fd, const char *body);
+static hush_status_t hush_http_update_agent(int fd, const char *body);
 static int hush_http_is_payne_slug(const char *body);
+static void hush_http_fill_agent_extras(hush_roster_agent_in_t *in,
+                                        const char *body);
+static void hush_http_fill_agent_skills(hush_roster_agent_in_t *in,
+                                        const char *body);
+static void hush_http_serve_skills_get(int fd);
+static hush_status_t hush_http_serve_skill_post(int fd, const char *body);
 static hush_status_t hush_http_fill_agent_context(hush_roster_agent_in_t *in,
                                                   const char *body);
 static hush_status_t hush_http_read_context_slot(hush_roster_context_in_t *slot,
@@ -256,6 +265,10 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
     }
     if (strcmp(path, "/api/session") == 0) {
         hush_http_serve_session(fd);
+        return HUSH_OK;
+    }
+    if (strcmp(path, "/api/skills") == 0) {
+        hush_http_serve_skills_get(fd);
         return HUSH_OK;
     }
     if (strcmp(path, "/api/turn") == 0) {
@@ -801,6 +814,9 @@ static hush_status_t hush_http_serve_agent(int fd, const char *body,
         return hush_http_delete_agent(fd, body);
     if (hush_http_is_payne_slug(body))
         return hush_http_update_payne(fd, body);
+    if (hush_json_field(body, "action", action, sizeof(action)) &&
+        strcmp(action, "update") == 0)
+        return hush_http_update_agent(fd, body);
     memset(&in, 0, sizeof(in));
     if (!hush_json_field(body, "name", in.name, sizeof(in.name)))
         return hush_http_reply_session(fd, HUSH_ERR_PARSE);
@@ -808,7 +824,7 @@ static hush_status_t hush_http_serve_agent(int fd, const char *body,
         return hush_http_reply_session(fd, HUSH_ERR_PARSE);
     if (!hush_json_field(body, "provider", in.provider, sizeof(in.provider)))
         return hush_http_reply_session(fd, HUSH_ERR_PARSE);
-    (void)hush_json_field(body, "picture", in.picture, sizeof(in.picture));
+    hush_http_fill_agent_extras(&in, body);
     st = hush_http_fill_agent_context(&in, body);
     if (st != HUSH_OK)
         return hush_http_reply_session(fd, st);
@@ -841,9 +857,11 @@ static hush_status_t hush_http_update_payne(int fd, const char *body)
 {
     char ids[HUSH_LAUNCH_PAYNE_PROVIDERS_MAX][HUSH_ROSTER_PROVIDER_MAX];
     const char *ptrs[HUSH_LAUNCH_PAYNE_PROVIDERS_MAX];
+    hush_roster_agent_in_t in;
     char key[24];
     size_t n = 0;
     size_t i;
+    hush_status_t st;
 
     if (g_launch == NULL || body == NULL)
         return hush_http_reply_session(fd, HUSH_ERR_ARG);
@@ -858,9 +876,112 @@ static hush_status_t hush_http_update_payne(int fd, const char *body)
         ptrs[n] = ids[n];
         n++;
     }
+    st = hush_launch_set_payne_providers(g_launch, ptrs, n);
+    if (st != HUSH_OK)
+        return hush_http_reply_session(fd, st);
+    memset(&in, 0, sizeof(in));
+    (void)hush_json_field(body, "name", in.name, sizeof(in.name));
+    (void)hush_json_field(body, "system_prompt", in.prompt, sizeof(in.prompt));
+    hush_http_fill_agent_extras(&in, body);
+    if (in.name[0] != '\0' || in.prompt[0] != '\0' || in.picture[0] != '\0'
+        || in.voice[0] != '\0' || in.nskills > 0)
+        st = hush_launch_update_payne_profile(g_launch, &in);
+    return hush_http_reply_session(fd, st);
+}
+
+static hush_status_t hush_http_update_agent(int fd, const char *body)
+{
+    hush_roster_agent_in_t in;
+    char slug[HUSH_ROSTER_NAME_MAX];
+
+    if (g_launch == NULL || body == NULL)
+        return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    if (!hush_json_field(body, "slug", slug, sizeof(slug)))
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    memset(&in, 0, sizeof(in));
+    (void)hush_json_field(body, "name", in.name, sizeof(in.name));
+    (void)hush_json_field(body, "system_prompt", in.prompt, sizeof(in.prompt));
+    (void)hush_json_field(body, "provider", in.provider, sizeof(in.provider));
+    hush_http_fill_agent_extras(&in, body);
     return hush_http_reply_session(fd,
-                                   hush_launch_set_payne_providers(g_launch,
-                                                                   ptrs, n));
+                                   hush_launch_update_agent(g_launch, slug, &in));
+}
+
+static void hush_http_fill_agent_extras(hush_roster_agent_in_t *in,
+                                        const char *body)
+{
+    assert(in != NULL);
+    assert(body != NULL);
+    (void)hush_json_field(body, "picture", in->picture, sizeof(in->picture));
+    (void)hush_json_field(body, "voice", in->voice, sizeof(in->voice));
+    hush_http_fill_agent_skills(in, body);
+}
+
+static void hush_http_fill_agent_skills(hush_roster_agent_in_t *in,
+                                        const char *body)
+{
+    char key[24];
+    size_t i;
+
+    assert(in != NULL);
+    assert(body != NULL);
+    in->nskills = 0;
+    for (i = 0; i < (size_t)HUSH_SKILL_EQUIP_MAX; ++i) {
+        if (snprintf(key, sizeof(key), "skill_%zu", i) >= (int)sizeof(key))
+            return;
+        if (!hush_json_field(body, key, in->skills[in->nskills],
+                             sizeof(in->skills[0])))
+            continue;
+        if (in->skills[in->nskills][0] == '\0')
+            continue;
+        in->nskills++;
+    }
+}
+
+static void hush_http_serve_skills_get(int fd)
+{
+    hush_skill_catalog_t cat;
+    char body[HUSH_SKILL_JSON_MAX];
+    size_t n = 0;
+
+    hush_skill_init_catalog(&cat);
+    if (hush_skill_load_catalog(&cat) != HUSH_OK) {
+        hush_http_reply(fd, "500 Internal Server Error", "application/json",
+                        "{\"ok\":false}\n", 14);
+        return;
+    }
+    if (hush_skill_format_json(&cat, 1, body, sizeof(body), &n) != HUSH_OK) {
+        hush_http_reply(fd, "500 Internal Server Error", "application/json",
+                        "{\"ok\":false}\n", 14);
+        return;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", body, n);
+}
+
+static hush_status_t hush_http_serve_skill_post(int fd, const char *body)
+{
+    hush_skill_forge_in_t in;
+    char id[HUSH_SKILL_ID_MAX];
+    char reply[HUSH_SKILL_ID_MAX + 64];
+    int n;
+
+    if (body == NULL)
+        return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    memset(&in, 0, sizeof(in));
+    if (!hush_json_field(body, "name", in.name, sizeof(in.name)))
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    (void)hush_json_field(body, "summary", in.summary, sizeof(in.summary));
+    (void)hush_json_field(body, "body", in.body, sizeof(in.body));
+    if (!hush_json_field(body, "scope", in.scope, sizeof(in.scope)))
+        memcpy(in.scope, HUSH_SKILL_SCOPE_USER, sizeof(HUSH_SKILL_SCOPE_USER));
+    (void)hush_json_field(body, "robot", in.robot, sizeof(in.robot));
+    if (hush_skill_forge(&in, id, sizeof(id)) != HUSH_OK)
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    n = snprintf(reply, sizeof(reply), "{\"ok\":true,\"id\":\"%s\"}\n", id);
+    if (n < 0 || (size_t)n >= sizeof(reply))
+        return hush_http_reply_session(fd, HUSH_ERR_FULL);
+    hush_http_reply(fd, "200 OK", "application/json", reply, (size_t)n);
+    return HUSH_OK;
 }
 
 static hush_status_t hush_http_fill_agent_context(hush_roster_agent_in_t *in,
@@ -1511,6 +1632,8 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_member(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/agent") == 0)
         return hush_http_serve_agent(fd, hush_http_body(req, len), store);
+    if (strcmp(path, "/api/skill") == 0)
+        return hush_http_serve_skill_post(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/vibe") == 0)
         return hush_http_serve_vibe(fd, hush_http_body(req, len), store);
     if (strcmp(path, "/api/channel") == 0)

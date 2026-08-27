@@ -35,8 +35,9 @@ The chat UI is a Progressive Web App served by the relay itself
 On first launch a feather splash detects identity and vibe, then a
 numbered wizard walks Identity → Backup (`pass` **checked by default**;
 retrieve with `pass show hush/identity/nsec`) → Vibe (public or private)
-→ Meet **Sgt Major Payne**. Edit on his card ranks the runtimes he
-may use (name and standing orders stay locked). Profile holds first/last name, email,
+→ Meet **Major**. Right-click (macOS: meta+click) a robot in inventory
+and choose **edit** to change name, avatar, system prompt, optional
+voice, and equipped skills. Profile holds first/last name, email,
 organization, theme (`dark` / `light` / `color-blind` / `dracula` /
 `desert` / `monochrome` / `christmas`), and Logout. From the hive you
 can create channels and projects, invite humans, and raise agents
@@ -82,7 +83,7 @@ rewrite just that span (no extra hive note). Pause while typing
 and Tab accepts a dim ghost completion at the caret. JSON event bodies
 escape TAB and other C0 so a Go snippet cannot freeze the thinking
 chip.
-Click **relay live** for stored / projects / sockets. Hive metadata persists in `~/.config/hush/vibe.json` so
+Click **relay live** for stored / projects / sockets. Hive metadata persists in `~/.hush/config/vibe.json` so
 `make clean && make install` or Exit does not force a new vibe after
 you import the same nsec. **Exit** (`--quit`) stops the relay and the
 browser / login children it forked. **Close** leaves the hive standing.
@@ -230,11 +231,12 @@ pass show hush/providers/<id>/token
 pass show hush/providers/<id>/passkey
 ```
 
-Host and model live in `~/.config/hush/providers.json`.
+Host and model live in `~/.hush/config/providers.json`.
 The named vibe, channels, projects, profile (no email), members, and
-raised-robot labels live in `~/.config/hush/vibe.json` (0600).
-`make clean` only deletes build products; it does not touch that
-directory. Tests set `HUSH_CONFIG_DIR`.
+raised-robot labels live in `~/.hush/config/vibe.json` (0600).
+Skills live under `~/.hush/skills/`. `make clean` only deletes build
+products; it does not touch that tree. Tests set `HUSH_CONFIG_DIR`
+and/or `HUSH_HOME`.
 `GET /api/provider` never returns the values. Goose / Grok / Codex
 home secrets stay in those homes and are never copied.
 Cline authenticates with ClinePass or a bring-your-own provider key,

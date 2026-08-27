@@ -92,6 +92,19 @@ install: all
 	@echo "  update-desktop-database $(DESTDIR)$(APPDIR) || true"
 	@echo "  gtk-update-icon-cache -f $(DESTDIR)$(ICONDIR) || true"
 	@echo
+	@if [ -z "$(DESTDIR)" ] && [ -n "$(HOME)" ]; then \
+		mkdir -p "$(HOME)/.hush/config" "$(HOME)/.hush/agents" \
+			"$(HOME)/.hush/skills/system" "$(HOME)/.hush/skills/user" \
+			"$(HOME)/.hush/skills/robots"; \
+		if [ ! -f "$(HOME)/.hush/skills/system/forge-skill/SKILL.md" ]; then \
+			mkdir -p "$(HOME)/.hush/skills/system/forge-skill"; \
+			if [ -f ../skills/system/forge-skill/SKILL.md ]; then \
+				install -m 0644 ../skills/system/forge-skill/SKILL.md \
+					"$(HOME)/.hush/skills/system/forge-skill/SKILL.md"; \
+			fi; \
+		fi; \
+		echo "  $(HOME)/.hush/{config,agents,skills}"; \
+	fi
 	@echo "System-wide install: sudo make install PREFIX=/usr"
 ifneq ($(ENABLE_STUN_TURN),0)
 	install -d $(DESTDIR)$(HUSHSHARE)/systemd

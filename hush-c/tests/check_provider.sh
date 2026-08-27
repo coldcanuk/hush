@@ -96,7 +96,7 @@ echo "$again" | grep -q '"password"' && fail "later GET leaked password field"
 echo "$again" | grep -q '"token"' && fail "later GET leaked token field"
 echo "$again" | grep -q '"passkey"' && fail "later GET leaked passkey field"
 
-overlay="$home/.config/hush/providers.json"
+overlay="$home/.hush/config/providers.json"
 test -f "$overlay" || fail "overlay missing"
 grep -q 'sk-secret-test' "$overlay" && fail "overlay stored api_key"
 grep -q 'user-alice' "$overlay" && fail "overlay stored username"
