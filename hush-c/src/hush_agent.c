@@ -83,6 +83,7 @@ enum {
     "Fulfill the last human line in this note.\n"
 #define HUSH_AGENT_ASSIGN " YOUR assignment: "
 #define HUSH_AGENT_INTRO_PREFIX "At ease."
+#define HUSH_AGENT_ACK_LINE "Mention received."
 #define HUSH_AGENT_CHAPERON_LINE \
     "That's enough robot talk. Standing by for the human."
 
@@ -269,6 +270,8 @@ static const hush_launch_channel_t *hush_agent_channel(
 static size_t hush_agent_count_turns(hush_store_t *store,
                                      const hush_launch_t *launch,
                                      const char *root);
+/* True when content is a robot work note, not an ack, intro, or deny. */
+static int hush_agent_is_work_note(const char *content);
 static int hush_agent_turns_full(hush_store_t *store,
                                  const hush_launch_t *launch,
                                  const hush_event_t *ev);
@@ -1715,12 +1718,37 @@ static size_t hush_agent_count_turns(hush_store_t *store,
             continue;
         if (!hush_agent_lookup_robot(&bot, launch, evs[i].pubkey))
             continue;
-        if (strncmp(evs[i].content, HUSH_AGENT_INTRO_PREFIX,
-                    sizeof(HUSH_AGENT_INTRO_PREFIX) - 1) == 0)
+        if (!hush_agent_is_work_note(evs[i].content))
             continue;
         turns++;
     }
     return turns;
+}
+
+static int hush_agent_is_work_note(const char *content)
+{
+    static const char *const skip[] = {
+        HUSH_AGENT_INTRO_PREFIX,
+        HUSH_AGENT_ACK_LINE,
+        HUSH_AGENT_CHAPERON_LINE,
+        "Holding.",
+        "Robots do not chain",
+        "Not on this channel.",
+        "Say the ask.",
+        "I heard:",
+        "This channel is humans talking"
+    };
+    size_t i;
+    size_t n;
+
+    if (content == NULL || content[0] == '\0')
+        return 0;
+    for (i = 0; i < sizeof(skip) / sizeof(skip[0]); i++) {
+        n = strlen(skip[i]);
+        if (strncmp(content, skip[i], n) == 0)
+            return 0;
+    }
+    return 1;
 }
 
 static int hush_agent_turns_full(hush_store_t *store,
