@@ -1405,6 +1405,7 @@
     let threadDrag = null;
     let lastEvents = [];
     let lastStatus = {};
+    let lastPresence = [];
     let openThread = null;
     let threadPills = [];
     let threadMentionOpen = false;
@@ -2196,9 +2197,11 @@
         head.className = "robot-head";
         const extra = (bot.providers && bot.providers.length > 1)
           ? " +" + (bot.providers.length - 1) : "";
+        const slugLine = presenceSlugFor(bot.pubkey);
         head.innerHTML =
           "<div class=\"robot-copy\"><strong>" + esc(bot.name) + "</strong>" +
-          "<span>" + esc(providerLabel(bot.provider) + extra) + "</span></div>";
+          "<span>" + esc(providerLabel(bot.provider) + extra) +
+          (slugLine ? " · " + esc(slugLine) : "") + "</span></div>";
         const tog = document.createElement("button");
         tog.className = "toggle";
         tog.type = "button";
@@ -4435,13 +4438,18 @@
             const phase = mentionAckPhase(e.id, bot, jobs);
             pill.className = "robot-ack " + phase;
             pill.title = (bot.name || "robot") + " is " + phase;
+            const line = presenceSlugFor(bot.pubkey || bot.npub);
             if (phase === "thinking")
-              pill.textContent = (bot.name || "robot") + " is thinking";
+              pill.textContent = (bot.name || "robot") + " is thinking" +
+                (line ? " · " + line : "");
             else if (phase === "reacting")
-              pill.textContent = (bot.name || "robot") + " is reacting";
+              pill.textContent = (bot.name || "robot") + " is reacting" +
+                (line ? " · " + line : "");
             else {
               const emoji = emojiSet[i % emojiSet.length];
-              pill.innerHTML = '<span class="emoji">' + emoji + '</span>' + esc(bot.name || "robot");
+              pill.innerHTML = '<span class="emoji">' + emoji + '</span>' +
+                esc(bot.name || "robot") +
+                (line ? " · " + esc(line) : "");
             }
             ackBar.appendChild(pill);
           });
@@ -4660,8 +4668,17 @@
      * One "At ease" intro per robot+thread is chat, not a log.
      * visibleNotes always drops log notes; the drawer is the only log view. */
     function isDevLogNote(e) {
-      if (!e || !e.content) return false;
+      if (!e) return false;
+      if (e.kind === 30315 || e.kind === 1038) return true;
+      if (!e.content) return false;
       return String(e.content).indexOf("Mention received") >= 0;
+    }
+
+    function presenceSlugFor(pk) {
+      if (!pk || !lastPresence.length) return "";
+      const hit = lastPresence.find((ln) => ln &&
+        (ln.pubkey === pk || sameKey(ln.pubkey, pk)));
+      return (hit && hit.slug) ? hit.slug : "";
     }
 
     function appendDevLog(line) {
@@ -5232,11 +5249,14 @@
 
     async function tick() {
       try {
-        const [st, evRes, sess] = await Promise.all([
+        const [st, evRes, sess, pres] = await Promise.all([
           fetch(API + "/api/status").then((r) => r.json()),
           fetch(API + "/api/events"),
-          fetch(API + "/api/session").then((r) => r.json())
+          fetch(API + "/api/session").then((r) => r.json()),
+          fetch(API + "/api/presence").then((r) => r.json()).catch(() => null)
         ]);
+        if (pres && pres.lines)
+          lastPresence = pres.lines;
         session = sess;
         whisperReady = !!st.whisper;
         if (session.ready && page !== "payne") page = "hive";

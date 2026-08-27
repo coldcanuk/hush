@@ -32,10 +32,56 @@ void hush_store_destroy(hush_store_t *store)
     free(store);
 }
 
+static int hush_store_is_addressable(uint32_t kind)
+{
+    return kind >= 30000u && kind < 40000u;
+}
+
+static const char *hush_store_d_tag(const hush_event_t *ev)
+{
+    size_t i;
+
+    assert(ev != NULL);
+    for (i = 0; i < ev->tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; i++) {
+        if (strcmp(ev->tags[i][0], "d") == 0)
+            return ev->tags[i][1];
+    }
+    return "";
+}
+
+static int hush_store_replace_addressable(hush_store_t *store,
+                                          const hush_event_t *ev)
+{
+    size_t i;
+    size_t pos;
+    const char *d;
+
+    assert(store != NULL);
+    assert(ev != NULL);
+    if (!hush_store_is_addressable(ev->kind))
+        return 0;
+    d = hush_store_d_tag(ev);
+    for (i = 0; i < store->count; i++) {
+        pos = (store->head + HUSH_STORE_CAPACITY - store->count + i)
+            % HUSH_STORE_CAPACITY;
+        if (store->events[pos].kind != ev->kind)
+            continue;
+        if (strcmp(store->events[pos].pubkey, ev->pubkey) != 0)
+            continue;
+        if (strcmp(hush_store_d_tag(&store->events[pos]), d) != 0)
+            continue;
+        store->events[pos] = *ev;
+        return 1;
+    }
+    return 0;
+}
+
 hush_status_t hush_store_insert(hush_store_t *store, const hush_event_t *ev)
 {
     if (store == NULL || ev == NULL)
         return HUSH_ERR_ARG;
+    if (hush_store_replace_addressable(store, ev))
+        return HUSH_OK;
     hush_store_write(store, ev);
     return HUSH_OK;
 }

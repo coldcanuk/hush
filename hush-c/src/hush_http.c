@@ -16,6 +16,7 @@
 #include "hush_http.h"
 #include "hush_intel.h"
 #include "hush_json.h"
+#include "hush_presence.h"
 #include "hush_provider.h"
 #include "hush_relay.h"
 #include "hush_skill.h"
@@ -90,6 +91,9 @@ static void hush_http_serve_status(int fd, const hush_store_t *store);
 static void hush_http_serve_events(int fd, const hush_store_t *store);
 static void hush_http_serve_session(int fd);
 static void hush_http_serve_chan_events(int fd);
+static void hush_http_serve_presence_get(int fd);
+static hush_status_t hush_http_serve_presence_post(int fd, const char *body,
+                                                   hush_store_t *store);
 static hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
                                           hush_store_t *store, hush_event_t *out);
 static int hush_http_want_save_pass(const char *body);
@@ -277,6 +281,10 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
     }
     if (strcmp(path, "/api/chan-events") == 0) {
         hush_http_serve_chan_events(fd);
+        return HUSH_OK;
+    }
+    if (strcmp(path, "/api/presence") == 0 && memcmp(req, "GET", 3) == 0) {
+        hush_http_serve_presence_get(fd);
         return HUSH_OK;
     }
     if (strcmp(path, "/api/skills") == 0) {
@@ -604,10 +612,14 @@ static void hush_http_serve_events(int fd, const hush_store_t *store)
     size_t i;
     size_t off;
     int w;
+    int first = 1;
 
     n = hush_store_query(store, NULL, 0, evs, HUSH_HTTP_EVENTS_MAX);
     off = (size_t)snprintf(body, sizeof(body), "{\"events\":[");
     for (i = 0; i < n && off + 512 < sizeof(body); ++i) {
+        if (evs[i].kind == (uint32_t)HUSH_PRESENCE_KIND_LINE ||
+            evs[i].kind == (uint32_t)HUSH_PRESENCE_KIND_TRAIL)
+            continue;
         hush_json_escape(evs[i].content, esc, sizeof(esc));
         hush_http_event_reply_to(reply_to, sizeof(reply_to), &evs[i]);
 
@@ -644,7 +656,7 @@ static void hush_http_serve_events(int fd, const hush_store_t *store)
                      "%s{\"id\":\"%s\",\"pubkey\":\"%s\",\"kind\":%u,"
                      "\"created_at\":%lld,\"content\":\"%s\",\"channel\":\"%s\","
                      "\"reply_to\":\"%s\",\"mentions\":[%s]}",
-                     (i == 0) ? "" : ",",
+                     first ? "" : ",",
                      evs[i].id, evs[i].pubkey, evs[i].kind,
                      (long long)evs[i].created_at, esc,
                      evs[i].tags[0][1][0] ? evs[i].tags[0][1] : "general",
@@ -652,6 +664,7 @@ static void hush_http_serve_events(int fd, const hush_store_t *store)
         if (w < 0)
             break;
         off += (size_t)w;
+        first = 0;
     }
     if (off + 3 < sizeof(body)) {
         memcpy(body + off, "]}\n", 3);
@@ -702,6 +715,19 @@ static hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
         return HUSH_ERR_FULL;
     }
     hush_intel_consider(store, g_launch, out);
+    if (out->kind == 1 && g_launch != NULL && g_launch->logged_in) {
+        hush_presence_in_t pin;
+
+        memset(&pin, 0, sizeof(pin));
+        pin.pubkey = g_launch->human.pubkey_hex;
+        pin.role = NULL;
+        pin.token = "human";
+        pin.slug = HUSH_PRESENCE_SLUG_CONVERSING;
+        pin.channel = channel;
+        pin.root = out->id;
+        pin.now = time(NULL);
+        (void)hush_presence_publish(store, &pin);
+    }
     hush_http_reply(fd, "200 OK", "application/json", "{\"ok\":true}\n", 12);
     return HUSH_OK;
 }
@@ -736,6 +762,64 @@ static void hush_http_serve_chan_events(int fd)
         return;
     }
     hush_http_reply(fd, "200 OK", "application/json", body, n);
+}
+
+static void hush_http_serve_presence_get(int fd)
+{
+    static const char k_empty[] = "{\"ok\":true,\"lines\":[]}\n";
+    char body[HUSH_PRESENCE_JSON_MAX];
+    size_t n = 0;
+
+    if (hush_presence_format_json(body, sizeof(body), &n) != HUSH_OK) {
+        hush_http_reply(fd, "200 OK", "application/json",
+                        k_empty, sizeof(k_empty) - 1);
+        return;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", body, n);
+}
+
+static hush_status_t hush_http_serve_presence_post(int fd, const char *body,
+                                                   hush_store_t *store)
+{
+    char slug[HUSH_PRESENCE_SLUG_MAX];
+    char token[HUSH_PRESENCE_D_MAX];
+    char channel[64];
+    hush_presence_in_t in;
+    hush_status_t st;
+
+    if (body == NULL || store == NULL)
+        return HUSH_ERR_ARG;
+    if (g_launch == NULL || !g_launch->logged_in) {
+        hush_http_reply(fd, "401 Unauthorized", "text/plain", "login\n", 6);
+        return HUSH_ERR_DENIED;
+    }
+    if (!hush_json_field(body, "slug", slug, sizeof(slug))) {
+        hush_http_reply(fd, "400 Bad Request", "text/plain", "need slug\n", 10);
+        return HUSH_ERR_PARSE;
+    }
+    if (!hush_json_field(body, "token", token, sizeof(token)))
+        memcpy(token, "human", 6);
+    if (!hush_json_field(body, "channel", channel, sizeof(channel)))
+        memcpy(channel, "general", 8);
+    memset(&in, 0, sizeof(in));
+    in.pubkey = g_launch->human.pubkey_hex;
+    in.role = NULL;
+    in.token = token;
+    in.slug = slug;
+    in.channel = channel;
+    in.root = "";
+    in.now = time(NULL);
+    st = hush_presence_publish(store, &in);
+    if (st == HUSH_ERR_PARSE) {
+        hush_http_reply(fd, "400 Bad Request", "text/plain", "bad slug\n", 9);
+        return st;
+    }
+    if (st != HUSH_OK) {
+        hush_http_reply(fd, "400 Bad Request", "text/plain", "presence\n", 9);
+        return st;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", "{\"ok\":true}\n", 12);
+    return HUSH_OK;
 }
 
 static hush_status_t hush_http_reply_session(int fd, hush_status_t st)
@@ -1755,6 +1839,9 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
 {
     if (strcmp(path, "/api/event") == 0)
         return hush_http_serve_post(fd, req, len, store, out_posted);
+    if (strcmp(path, "/api/presence") == 0)
+        return hush_http_serve_presence_post(fd, hush_http_body(req, len),
+                                            store);
     if (strcmp(path, "/api/identity") == 0)
         return hush_http_serve_identity(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/profile") == 0)
