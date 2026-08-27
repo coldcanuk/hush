@@ -41,7 +41,8 @@ printf '%s\n' '#!/bin/sh' \
     'log="${HUSH_CONFIG_DIR}/grok-p.log"' \
     'prev=""' \
     'for a in "$@"; do' \
-    '  if [ "$prev" = "-p" ]; then printf "%s\n" "$a" >> "$log"; fi' \
+    '  if [ "$prev" = "-p" ]; then printf "P:%s\n" "$a" >> "$log"; fi' \
+    '  if [ "$prev" = "--system-prompt-override" ]; then printf "S:%s\n" "$a" >> "$log"; fi' \
     '  prev="$a"' \
     'done' \
     'printf "%s\n" "Why did the robot laugh? Byte me."' \
@@ -340,6 +341,30 @@ echo "$ordered" | grep -q '"ok":true' || fail "ordered mention event not stored"
 got_ord=$(curl -sf "http://127.0.0.1:${port}/api/events")
 printf '%s' "$got_ord" | grep -F "nostr:${npub} tell a joke. nostr:${payne_npub} was it funny?" \
     || fail "stored content lost mention order"
+
+# M3.1 strict scoping: in an explicit delegation each robot receives only its
+# own clause as the grok system prompt's "YOUR assignment", never the full ask.
+i=0
+while [ "$i" -lt 40 ]; do
+    if grep -q 'S:.*YOUR assignment: was it funny' "$HUSH_CONFIG_DIR/grok-p.log" 2>/dev/null; then
+        break
+    fi
+    i=$((i + 1))
+    sleep 0.05
+done
+grep -q 'S:.*YOUR assignment: tell a joke\.' "$HUSH_CONFIG_DIR/grok-p.log" \
+    || fail "Happy must receive only its own clause"
+grep -q 'S:.*YOUR assignment: was it funny' "$HUSH_CONFIG_DIR/grok-p.log" \
+    || fail "Payne must receive only its own clause"
+grep '^S:' "$HUSH_CONFIG_DIR/grok-p.log" | python3 -c '
+import sys
+bad = 0
+for line in sys.stdin:
+    if "tell a joke." in line and "was it funny" in line:
+        bad = 1
+sys.exit(bad)
+' || fail "a robot received the full ask instead of its own clause"
+
 echo "$html" | grep -q 'function assembleMentionContent' || fail "UI missing assembleMentionContent"
 echo "$html" | grep -q 'function dropMentionFromInput' || fail "served UI missing dropMentionFromInput"
 if echo "$html" | grep -q 'composerPills.pop()'; then
