@@ -203,6 +203,9 @@ static hush_status_t hush_agent_insert_note(hush_store_t *store,
 static void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bot,
                                const hush_event_t *parent, const char *why);
 static int hush_agent_grok_ready(void);
+/* True when this robot can start a grok job (own id or Payne ranked grok). */
+static int hush_agent_can_start_grok(const hush_launch_t *launch,
+                                     const hush_agent_robot_t *bot);
 static hush_status_t hush_agent_start_grok(const hush_agent_job_in_t *in);
 static void hush_agent_fill_job(hush_agent_job_t *job,
                                 const hush_agent_job_in_t *in);
@@ -864,6 +867,29 @@ static int hush_agent_grok_ready(void)
     return st.has_home && st.has_binary;
 }
 
+static int hush_agent_can_start_grok(const hush_launch_t *launch,
+                                     const hush_agent_robot_t *bot)
+{
+    size_t i;
+
+    assert(bot != NULL);
+    if (!hush_agent_grok_ready())
+        return 0;
+    if (bot->provider != NULL &&
+        strcmp(bot->provider, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0)
+        return 1;
+    if (launch == NULL || bot->slug == NULL)
+        return 0;
+    if (strcmp(bot->slug, HUSH_LAUNCH_PAYNE_SLUG) != 0)
+        return 0;
+    for (i = 0; i < launch->npayne_providers; i++) {
+        if (strcmp(launch->payne_providers[i], HUSH_ROSTER_PROVIDER_GROK_BUILD)
+            == 0)
+            return 1;
+    }
+    return 0;
+}
+
 static int hush_agent_event_is_root(const hush_event_t *ev, const char *root)
 {
     size_t i;
@@ -1478,6 +1504,14 @@ static void hush_agent_handle_mention(hush_store_t *store,
         nhex = hush_agent_collect_hexes(launch, ev, hexes,
                                         (size_t)HUSH_AGENT_FOLLOW_ROBOTS);
         for (idx = 0; idx < nhex; idx++) {
+            hush_agent_robot_t peer;
+
+            if (!hush_agent_lookup_robot(&peer, launch, hexes[idx]))
+                continue;
+            hush_agent_on_deck(store, &peer, ev,
+                               "I am on deck. Standing orders are noted.");
+        }
+        for (idx = 0; idx < nhex; idx++) {
             if (bot.hex != NULL && strcmp(hexes[idx], bot.hex) == 0)
                 break;
         }
@@ -1717,10 +1751,7 @@ static void hush_agent_begin_work(const hush_agent_job_in_t *in)
     hush_agent_event_channel(channel, sizeof(channel), in->parent);
     hush_agent_emit(HUSH_CEVENT_INTRO, channel, root, in->bot->hex,
                     in->bot->name);
-    if (in->bot->provider == NULL
-        || strcmp(in->bot->provider, HUSH_ROSTER_PROVIDER_GROK_BUILD) != 0)
-        return;
-    if (!hush_agent_grok_ready())
+    if (!hush_agent_can_start_grok(in->launch, in->bot))
         return;
     job = *in;
     if (hush_agent_start_grok(&job) == HUSH_OK)

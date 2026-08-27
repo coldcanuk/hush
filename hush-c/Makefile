@@ -19,6 +19,7 @@ ICONDIR ?= $(DATADIR)/icons/hicolor
 ICON_SIZES := 48 128 256
 ENABLE_STUN_TURN ?= 1
 HUSHSHARE ?= $(DATADIR)/hush
+override CFLAGS += -DHUSH_SKILL_PACK_SHARE=\"$(HUSHSHARE)/skills/system\"
 
 SRCS := $(wildcard src/*.c)
 OBJS := $(SRCS:.c=.o)
@@ -92,16 +93,29 @@ install: all
 	@echo "  update-desktop-database $(DESTDIR)$(APPDIR) || true"
 	@echo "  gtk-update-icon-cache -f $(DESTDIR)$(ICONDIR) || true"
 	@echo
+	@if [ -d ../skills/system ]; then \
+		for d in ../skills/system/*; do \
+			[ -f "$$d/SKILL.md" ] || continue; \
+			slug=$$(basename "$$d"); \
+			install -d "$(DESTDIR)$(HUSHSHARE)/skills/system/$$slug"; \
+			install -m 0644 "$$d/SKILL.md" \
+				"$(DESTDIR)$(HUSHSHARE)/skills/system/$$slug/SKILL.md"; \
+		done; \
+	fi
 	@if [ -z "$(DESTDIR)" ] && [ -n "$(HOME)" ]; then \
 		mkdir -p "$(HOME)/.hush/config" "$(HOME)/.hush/agents" \
 			"$(HOME)/.hush/skills/system" "$(HOME)/.hush/skills/user" \
 			"$(HOME)/.hush/skills/robots"; \
-		if [ ! -f "$(HOME)/.hush/skills/system/forge-skill/SKILL.md" ]; then \
-			mkdir -p "$(HOME)/.hush/skills/system/forge-skill"; \
-			if [ -f ../skills/system/forge-skill/SKILL.md ]; then \
-				install -m 0644 ../skills/system/forge-skill/SKILL.md \
-					"$(HOME)/.hush/skills/system/forge-skill/SKILL.md"; \
-			fi; \
+		if [ -d ../skills/system ]; then \
+			for d in ../skills/system/*; do \
+				[ -f "$$d/SKILL.md" ] || continue; \
+				slug=$$(basename "$$d"); \
+				mkdir -p "$(HOME)/.hush/skills/system/$$slug"; \
+				if [ ! -f "$(HOME)/.hush/skills/system/$$slug/SKILL.md" ]; then \
+					install -m 0644 "$$d/SKILL.md" \
+						"$(HOME)/.hush/skills/system/$$slug/SKILL.md"; \
+				fi; \
+			done; \
 		fi; \
 		echo "  $(HOME)/.hush/{config,agents,skills}"; \
 	fi
