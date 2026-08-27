@@ -38,6 +38,7 @@ enum {
     HUSH_AGENT_KIND_NOTE_JOB = 0,
     HUSH_AGENT_KIND_FIXUP = 1,
     HUSH_AGENT_KIND_PLAN = 2,
+    HUSH_AGENT_KIND_ELECT = 3,
     HUSH_AGENT_TOKEN_MAX = 16,
     HUSH_AGENT_FOLLOW_MAX = 8,
     HUSH_AGENT_FOLLOW_ROBOTS = 8
@@ -81,11 +82,19 @@ enum {
     "block and nothing else:\n" \
     "```plan\n" \
     "order: fifo\n" \
-    "parallel: no\n" \
-    "Name: sub-task\n" \
+    "1 Happy: generate a riddle\n" \
+    "2 Major: answer it\n" \
+    "2 Scout: verify it\n" \
+    "3 Builder: write a summary\n" \
     "```\n" \
-    "order is fifo or lifo; parallel is yes or no. One Name: line per other " \
-    "robot. Name each robot by its exact display name."
+    "order is fifo or lifo. Prefix each task with an integer wave number. " \
+    "Tasks sharing a wave number run in parallel; waves run in order. A task " \
+    "with no other task in its wave runs alone. Use parallel only when tasks " \
+    "are truly independent. Name each robot by its exact display name."
+#define HUSH_AGENT_ELECT_PROMPT \
+    " You are the election committee. Elect the single best leader for the " \
+    "task below from these candidates. Consider their skills and fit. Reply " \
+    "with exactly one candidate name and nothing else."
 #define HUSH_AGENT_PLAN_FENCE "```plan"
 #define HUSH_AGENT_PLAN_END "```"
 #define HUSH_AGENT_DISALLOWED \
@@ -159,10 +168,16 @@ typedef struct {
     /* Per-robot sub-task (explicit clause or leader plan task). Empty means
      * fall back to slot->ask. Indexed in parallel with next[]. */
     char next_ask[HUSH_AGENT_FOLLOW_ROBOTS][HUSH_AGENT_TASK_MAX];
+    /* Parallel wave (group) per task. Tasks sharing a group run in parallel;
+     * groups run in order. 0 = unassigned (serial). */
+    int group[HUSH_AGENT_FOLLOW_ROBOTS];
     int scoped;
     int mode;
     int order;    /* 0 = fifo, 1 = lifo */
-    int parallel; /* 0 = serial, 1 = parallel */
+    int parallel; /* 0 = serial, 1 = all-tasks-parallel (legacy plan-level) */
+    int inflight; /* tasks dispatched in the current group not yet finished */
+    int electing; /* 1 while waiting for the leader election to finish */
+    char convener[HUSH_EVENT_PUBKEY_HEX_LEN + 1]; /* runs election + fallback */
 } hush_agent_follow_t;
 
 /* How a human note is interpreted for the tagged robot group. */
@@ -225,6 +240,10 @@ typedef struct {
     int mode;
     /* True when this job is the leader's division-of-labor planning pass. */
     int leader;
+    /* True when this job is the leader-election pass. */
+    int elect;
+    /* Prebuilt system-prompt override (election prompt). May be NULL. */
+    const char *prompt_override;
 } hush_agent_job_in_t;
 
 static hush_agent_job_t g_jobs[HUSH_AGENT_JOBS_MAX];
@@ -327,10 +346,6 @@ static hush_agent_mode_t hush_agent_classify(
 static int hush_agent_is_leadership_skill(const char *id);
 static int hush_agent_leadership_score(const hush_launch_t *launch,
                                        const char *hex);
-static void hush_agent_elect_leader(
-    const hush_launch_t *launch,
-    const char hexes[][HUSH_EVENT_PUBKEY_HEX_LEN + 1], size_t nhex,
-    char *out, size_t outsz);
 static int hush_agent_lookup_hex_by_name(const hush_launch_t *launch,
                                          const char *name,
                                          char *out, size_t outsz);
@@ -338,6 +353,19 @@ static void hush_agent_parse_plan(const hush_launch_t *launch,
                                   const char *text,
                                   hush_agent_follow_t *slot);
 static void hush_agent_begin_plan(const hush_agent_job_in_t *in);
+static size_t hush_agent_leader_candidates(
+    const hush_launch_t *launch,
+    const char hexes[][HUSH_EVENT_PUBKEY_HEX_LEN + 1], size_t nhex,
+    char out[][HUSH_EVENT_PUBKEY_HEX_LEN + 1]);
+static void hush_agent_follow_remove(hush_agent_follow_t *slot,
+                                     const char *hex);
+static void hush_agent_begin_elect(
+    hush_store_t *store, const hush_launch_t *launch,
+    hush_agent_follow_t *slot, const hush_event_t *ev,
+    const char cands[][HUSH_EVENT_PUBKEY_HEX_LEN + 1], size_t ncand);
+static void hush_agent_start_plan_from_slot(
+    hush_store_t *store, const hush_launch_t *launch,
+    hush_agent_follow_t *slot, const char *leader_hex);
 static void hush_agent_follow_push_hex(hush_agent_follow_t *slot,
                                        const char *hex, const char *ask);
 static void hush_agent_follow_push(const hush_event_t *ev,
@@ -1221,7 +1249,12 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
         job->n_co_robots++;
     }
 
-    if (in->leader) {
+    if (in->elect) {
+        job->kind = HUSH_AGENT_KIND_ELECT;
+        hush_agent_copy(job->prompt, sizeof(job->prompt),
+                        in->prompt_override != NULL ? in->prompt_override
+                                                   : HUSH_AGENT_ELECT_PROMPT);
+    } else if (in->leader) {
         size_t off;
         job->kind = HUSH_AGENT_KIND_PLAN;
         hush_agent_copy(job->prompt, sizeof(job->prompt),
@@ -1521,6 +1554,42 @@ static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
         job->pid = 0;
         return;
     }
+    if (job->kind == HUSH_AGENT_KIND_ELECT) {
+        /* Internal leader-election result; not posted to chat. */
+        if (store != NULL && job->launch != NULL && ok && job->out[0] != '\0') {
+            hush_agent_follow_t *slot = hush_agent_follow_find(job->parent_id);
+            if (slot != NULL) {
+                char leader_hex[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+                char name[HUSH_ROSTER_NAME_MAX];
+                size_t nl = 0;
+                const char *s = job->out;
+
+                while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r')
+                    s++;
+                while (s[nl] != '\0' && !hush_agent_is_space(s[nl]) &&
+                       nl + 1 < sizeof(name)) {
+                    name[nl] = s[nl];
+                    nl++;
+                }
+                name[nl] = '\0';
+                while (nl > 0 && (name[nl - 1] == '.' || name[nl - 1] == ',' ||
+                                  name[nl - 1] == '!' || name[nl - 1] == '?'))
+                    name[--nl] = '\0';
+                if (!hush_agent_lookup_hex_by_name(job->launch, name,
+                                                   leader_hex,
+                                                   sizeof(leader_hex)))
+                    hush_agent_copy(leader_hex, sizeof(leader_hex),
+                                    slot->convener);
+                slot->electing = 0;
+                hush_agent_follow_remove(slot, leader_hex);
+                hush_agent_start_plan_from_slot(store, job->launch, slot,
+                                                leader_hex);
+            }
+        }
+        hush_agent_presence_put(store, job, HUSH_PRESENCE_SLUG_IDLE);
+        hush_agent_close_job(job);
+        return;
+    }
     if (store != NULL && ok && job->out[0] != '\0') {
         hush_agent_note_in_t in = {
             .pubkey = job->robot_pub,
@@ -1701,17 +1770,40 @@ static void hush_agent_handle_mention(hush_store_t *store,
         }
         scoped = (mode == HUSH_AGENT_MODE_EXPLICIT);
 
-        /* 3+ robot broadcast: elect a leader, which plans the division of
-         * labor; non-leader mentions stay quiet until the plan is ready. */
+        /* 3+ robot broadcast: elect a leader (Major, else leadership-skilled
+         * candidates elect via LLM, else all robots elect), which plans the
+         * division of labor. Non-leader mentions stay quiet until ready. */
         if (mode == HUSH_AGENT_MODE_BROADCAST && nhex >= 3) {
-            char leader_hex[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
-            hush_agent_elect_leader(launch, hexes, nhex, leader_hex,
-                                    sizeof(leader_hex));
-            if (bot.hex != NULL && leader_hex[0] != '\0' &&
-                strcmp(bot.hex, leader_hex) == 0) {
+            char cands[HUSH_AGENT_FOLLOW_ROBOTS][HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+            size_t ncand = hush_agent_leader_candidates(launch, hexes, nhex,
+                                                        cands);
+            size_t i;
+
+            if (ncand == 1) {
+                if (bot.hex != NULL && strcmp(bot.hex, cands[0]) == 0) {
+                    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+                    hush_agent_follow_t *slot;
+
+                    hush_agent_event_root(root, sizeof(root), ev);
+                    slot = hush_agent_follow_take(root);
+                    hush_agent_event_channel(slot->channel,
+                                             sizeof(slot->channel), ev);
+                    hush_agent_copy(slot->human_pub, sizeof(slot->human_pub),
+                                    ev->pubkey);
+                    hush_agent_copy(slot->ask, sizeof(slot->ask), ev->content);
+                    slot->mode = (int)mode;
+                    for (i = 0; i < nhex; i++)
+                        hush_agent_follow_push_hex(slot, hexes[i], NULL);
+                    hush_agent_follow_remove(slot, cands[0]);
+                    hush_agent_start_plan_from_slot(store, launch, slot,
+                                                    cands[0]);
+                }
+                return;
+            }
+
+            if (bot.hex != NULL && strcmp(bot.hex, cands[0]) == 0) {
                 char root[HUSH_EVENT_ID_HEX_LEN + 1];
                 hush_agent_follow_t *slot;
-                size_t i;
 
                 hush_agent_event_root(root, sizeof(root), ev);
                 slot = hush_agent_follow_take(root);
@@ -1721,24 +1813,13 @@ static void hush_agent_handle_mention(hush_store_t *store,
                                 ev->pubkey);
                 hush_agent_copy(slot->ask, sizeof(slot->ask), ev->content);
                 slot->mode = (int)mode;
-                for (i = 0; i < nhex; i++) {
-                    if (strcmp(hexes[i], leader_hex) == 0)
-                        continue;
+                for (i = 0; i < nhex; i++)
                     hush_agent_follow_push_hex(slot, hexes[i], NULL);
-                }
-                {
-                    hush_agent_job_in_t pin;
-
-                    memset(&pin, 0, sizeof(pin));
-                    pin.store = store;
-                    pin.launch = launch;
-                    pin.bot = &bot;
-                    pin.parent = ev;
-                    pin.ask = ev->content;
-                    pin.mode = (int)mode;
-                    pin.leader = 1;
-                    hush_agent_begin_plan(&pin);
-                }
+                hush_agent_copy(slot->convener, sizeof(slot->convener),
+                                cands[0]);
+                slot->electing = 1;
+                hush_agent_begin_elect(store, launch, slot, ev, cands,
+                                       ncand);
             }
             return;
         }
@@ -1868,6 +1949,10 @@ static hush_agent_mode_t hush_agent_classify(
             bot.npub != NULL && bot.npub[0] != '\0')
             assigns[i].has_ask = hush_agent_extract_clause(
                 assigns[i].ask, sizeof(assigns[i].ask), ev->content, bot.npub);
+        /* Ignore tiny filler clauses ("and", "to", "or") so a clustered
+         * broadcast with a trailing connector is not read as explicit. */
+        if (assigns[i].has_ask && strlen(assigns[i].ask) < 4)
+            assigns[i].has_ask = 0;
         if (assigns[i].has_ask)
             nhas++;
     }
@@ -1875,9 +1960,9 @@ static hush_agent_mode_t hush_agent_classify(
         return HUSH_AGENT_MODE_SOLO;
     if (nhas >= nhex)
         return HUSH_AGENT_MODE_EXPLICIT;
-    if (nhas <= 1)
-        return HUSH_AGENT_MODE_BROADCAST;
-    return HUSH_AGENT_MODE_AMBIGUOUS;
+    /* Everything not clearly explicit goes through the LLM (cooperate for a
+     * pair, leader election + planning for three or more robots). */
+    return HUSH_AGENT_MODE_BROADCAST;
 }
 
 /* Leadership/leadership-enhancing skill ids. Used to rank leader candidates
@@ -1930,43 +2015,33 @@ static int hush_agent_leadership_score(const hush_launch_t *launch,
     return 0;
 }
 
-/* Elects a leader for a 3+ robot broadcast. Major (Payne) leads when present;
- * otherwise the robot with the most leadership skills leads, ties falling to
- * the first-mentioned robot. */
-static void hush_agent_elect_leader(
+/* Builds the leader candidate pool for a 3+ robot group: Major is the sole
+ * candidate when present, else leadership-skilled robots, else all robots. */
+static size_t hush_agent_leader_candidates(
     const hush_launch_t *launch,
     const char hexes[][HUSH_EVENT_PUBKEY_HEX_LEN + 1], size_t nhex,
-    char *out, size_t outsz)
+    char out[][HUSH_EVENT_PUBKEY_HEX_LEN + 1])
 {
     size_t i;
-    size_t best;
-    int best_score;
-    int score;
+    size_t n = 0;
 
     assert(launch != NULL);
     assert(out != NULL);
-    assert(outsz > 0);
-    out[0] = '\0';
-    if (nhex == 0)
-        return;
-
     for (i = 0; i < nhex; i++) {
         if (strcmp(hexes[i], launch->payne.pubkey_hex) == 0) {
-            hush_agent_copy(out, outsz, hexes[i]);
-            return;
+            hush_agent_copy(out[0], sizeof(out[0]), hexes[i]);
+            return 1;
         }
     }
-
-    best = 0;
-    best_score = -1;
     for (i = 0; i < nhex; i++) {
-        score = hush_agent_leadership_score(launch, hexes[i]);
-        if (score > best_score) {
-            best_score = score;
-            best = i;
-        }
+        if (hush_agent_leadership_score(launch, hexes[i]) > 0)
+            hush_agent_copy(out[n++], sizeof(out[0]), hexes[i]);
     }
-    hush_agent_copy(out, outsz, hexes[best]);
+    if (n > 0)
+        return n;
+    for (i = 0; i < nhex; i++)
+        hush_agent_copy(out[n++], sizeof(out[0]), hexes[i]);
+    return n;
 }
 
 /* Maps a robot display name to its pubkey hex. Checks Payne then roster. */
@@ -1997,21 +2072,24 @@ static int hush_agent_lookup_hex_by_name(const hush_launch_t *launch,
     return 0;
 }
 
-/* Parses a leader's ```plan fence into slot->next[]/next_ask[]/order/parallel.
- * Task order is the plan's listed order (reversed when order is lifo). Any
- * worker already in slot->next[] but missing from the plan keeps an empty ask
- * and is appended at the end (falls back to the shared ask). */
+/* Parses a leader's ```plan fence into slot->next[]/next_ask[]/group[]/order.
+ * Each task line may carry an integer wave prefix; tasks sharing a wave run in
+ * parallel and waves run in order (fifo) or reverse order (lifo). A worker in
+ * slot->next[] missing from the plan is appended as its own sequential wave
+ * (falls back to the shared ask). */
 static void hush_agent_parse_plan(const hush_launch_t *launch,
                                   const char *text,
                                   hush_agent_follow_t *slot)
 {
     char tmp_hex[HUSH_AGENT_FOLLOW_ROBOTS][HUSH_EVENT_PUBKEY_HEX_LEN + 1];
     char tmp_ask[HUSH_AGENT_FOLLOW_ROBOTS][HUSH_AGENT_TASK_MAX];
+    int tmp_group[HUSH_AGENT_FOLLOW_ROBOTS];
     size_t ntmp = 0;
     size_t i;
     size_t j;
     const char *p;
     const char *end;
+    int next_auto = 1;
 
     assert(launch != NULL);
     assert(slot != NULL);
@@ -2035,7 +2113,6 @@ static void hush_agent_parse_plan(const hush_launch_t *launch,
             len = sizeof(line) - 1;
         memcpy(line, p, len);
         line[len] = '\0';
-        /* trim trailing \r */
         if (len > 0 && line[len - 1] == '\r')
             line[len - 1] = '\0';
 
@@ -2043,34 +2120,56 @@ static void hush_agent_parse_plan(const hush_launch_t *launch,
             const char *v = line + 6;
             while (*v == ' ' || *v == '\t')
                 v++;
-            if (strncmp(v, "lifo", 4) == 0 || strncmp(v, "filo", 4) == 0)
-                slot->order = 1;
-            else
-                slot->order = 0;
+            slot->order = (strncmp(v, "lifo", 4) == 0 ||
+                           strncmp(v, "filo", 4) == 0);
         } else if (strncmp(line, "parallel:", 9) == 0) {
             const char *v = line + 9;
             while (*v == ' ' || *v == '\t')
                 v++;
             slot->parallel = (v[0] == 'y' || v[0] == 'Y');
         } else {
-            const char *colon = strchr(line, ':');
-            if (colon != NULL && colon > line) {
-                char name[HUSH_ROSTER_NAME_MAX];
-                char hex[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
-                const char *task;
-                size_t nlen = (size_t)(colon - line);
-                if (nlen >= sizeof(name))
-                    nlen = sizeof(name) - 1;
-                memcpy(name, line, nlen);
-                name[nlen] = '\0';
+            const char *s = line;
+            const char *name;
+            const char *colon;
+            const char *task;
+            char namebuf[HUSH_ROSTER_NAME_MAX];
+            char hex[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+            size_t nlen;
+            int grp = 0;
+            int has_grp = 0;
+
+            while (*s == ' ' || *s == '\t')
+                s++;
+            if (*s >= '0' && *s <= '9') {
+                while (*s >= '0' && *s <= '9') {
+                    grp = grp * 10 + (*s - '0');
+                    s++;
+                }
+                has_grp = 1;
+                while (*s == ' ' || *s == '\t')
+                    s++;
+            }
+            if (!has_grp)
+                grp = next_auto;
+
+            name = s;
+            colon = strchr(name, ':');
+            if (colon != NULL && colon > name) {
+                nlen = (size_t)(colon - name);
+                if (nlen >= sizeof(namebuf))
+                    nlen = sizeof(namebuf) - 1;
+                memcpy(namebuf, name, nlen);
+                namebuf[nlen] = '\0';
                 task = colon + 1;
                 while (*task == ' ' || *task == '\t')
                     task++;
-                if (hush_agent_lookup_hex_by_name(launch, name, hex,
+                if (hush_agent_lookup_hex_by_name(launch, namebuf, hex,
                                                   sizeof(hex))) {
                     hush_agent_copy(tmp_hex[ntmp], sizeof(tmp_hex[0]), hex);
                     hush_agent_copy(tmp_ask[ntmp], sizeof(tmp_ask[0]), task);
+                    tmp_group[ntmp] = grp;
                     ntmp++;
+                    next_auto = grp + 1;
                 }
             }
         }
@@ -2079,30 +2178,58 @@ static void hush_agent_parse_plan(const hush_launch_t *launch,
         p = q + 1;
     }
 
+    /* Legacy plan-level `parallel: yes` -> one wave (everything parallel). */
+    if (slot->parallel) {
+        for (i = 0; i < ntmp; i++)
+            tmp_group[i] = 1;
+    }
+
+    /* Stable sort by wave number ascending. */
+    for (i = 1; i < ntmp; i++) {
+        char hx[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+        char tk[HUSH_AGENT_TASK_MAX];
+        int tg = tmp_group[i];
+        hush_agent_copy(hx, sizeof(hx), tmp_hex[i]);
+        hush_agent_copy(tk, sizeof(tk), tmp_ask[i]);
+        j = i;
+        while (j > 0 && tmp_group[j - 1] > tg) {
+            tmp_group[j] = tmp_group[j - 1];
+            hush_agent_copy(tmp_hex[j], sizeof(tmp_hex[0]), tmp_hex[j - 1]);
+            hush_agent_copy(tmp_ask[j], sizeof(tmp_ask[0]), tmp_ask[j - 1]);
+            j--;
+        }
+        tmp_group[j] = tg;
+        hush_agent_copy(tmp_hex[j], sizeof(tmp_hex[0]), hx);
+        hush_agent_copy(tmp_ask[j], sizeof(tmp_ask[0]), tk);
+    }
+
+    /* Reverse the whole array for lifo (reverses wave execution order). */
+    if (slot->order == 1) {
+        for (i = 0; i < ntmp / 2; i++) {
+            char hx[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+            char tk[HUSH_AGENT_TASK_MAX];
+            int tg;
+            hush_agent_copy(hx, sizeof(hx), tmp_hex[i]);
+            hush_agent_copy(tk, sizeof(tk), tmp_ask[i]);
+            tg = tmp_group[i];
+            hush_agent_copy(tmp_hex[i], sizeof(tmp_hex[i]),
+                            tmp_hex[ntmp - 1 - i]);
+            hush_agent_copy(tmp_ask[i], sizeof(tmp_ask[i]),
+                            tmp_ask[ntmp - 1 - i]);
+            tmp_group[i] = tmp_group[ntmp - 1 - i];
+            hush_agent_copy(tmp_hex[ntmp - 1 - i], sizeof(tmp_hex[0]), hx);
+            hush_agent_copy(tmp_ask[ntmp - 1 - i], sizeof(tmp_ask[0]), tk);
+            tmp_group[ntmp - 1 - i] = tg;
+        }
+    }
+
     /* Capture the original worker membership before rebuilding. */
     {
         char old_hex[HUSH_AGENT_FOLLOW_ROBOTS][HUSH_EVENT_PUBKEY_HEX_LEN + 1];
         size_t nold = slot->nnext;
+        int max_group = 0;
         for (i = 0; i < nold; i++)
             hush_agent_copy(old_hex[i], sizeof(old_hex[0]), slot->next[i]);
-
-        /* Reverse the parsed tasks for lifo. */
-        if (slot->order == 1) {
-            for (i = 0; i < ntmp / 2; i++) {
-                char hx[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
-                char tk[HUSH_AGENT_TASK_MAX];
-                hush_agent_copy(hx, sizeof(hx), tmp_hex[i]);
-                hush_agent_copy(tk, sizeof(tk), tmp_ask[i]);
-                hush_agent_copy(tmp_hex[i], sizeof(tmp_hex[i]),
-                                tmp_hex[ntmp - 1 - i]);
-                hush_agent_copy(tmp_ask[i], sizeof(tmp_ask[i]),
-                                tmp_ask[ntmp - 1 - i]);
-                hush_agent_copy(tmp_hex[ntmp - 1 - i], sizeof(tmp_hex[0]),
-                                hx);
-                hush_agent_copy(tmp_ask[ntmp - 1 - i], sizeof(tmp_ask[0]),
-                                tk);
-            }
-        }
 
         slot->nnext = 0;
         for (i = 0; i < ntmp; i++) {
@@ -2113,9 +2240,12 @@ static void hush_agent_parse_plan(const hush_launch_t *launch,
                                 sizeof(slot->next_ask[0]), tmp_ask[i]);
             else
                 slot->next_ask[slot->nnext][0] = '\0';
+            slot->group[slot->nnext] = tmp_group[i];
+            if (tmp_group[i] > max_group)
+                max_group = tmp_group[i];
             slot->nnext++;
         }
-        /* Append any worker the plan omitted, so nobody is dropped. */
+        /* Append any worker the plan omitted as its own sequential wave. */
         for (i = 0; i < nold; i++) {
             int already = 0;
             for (j = 0; j < slot->nnext; j++) {
@@ -2129,9 +2259,13 @@ static void hush_agent_parse_plan(const hush_launch_t *launch,
             hush_agent_copy(slot->next[slot->nnext], sizeof(slot->next[0]),
                             old_hex[i]);
             slot->next_ask[slot->nnext][0] = '\0';
+            slot->group[slot->nnext] = ++max_group;
             slot->nnext++;
         }
         slot->at = 0;
+        slot->inflight = 0;
+        if (ntmp > 0)
+            slot->scoped = 1; /* workers now have per-robot sub-tasks */
     }
 }
 
@@ -2233,7 +2367,35 @@ static void hush_agent_follow_push_hex(hush_agent_follow_t *slot,
                         sizeof(slot->next_ask[0]), ask);
     else
         slot->next_ask[slot->nnext][0] = '\0';
+    /* Default to a sequential wave (one task per group); parse_plan overrides
+     * these groups with the leader's chosen waves. */
+    slot->group[slot->nnext] = (int)slot->nnext + 1;
     slot->nnext++;
+}
+
+static void hush_agent_follow_remove(hush_agent_follow_t *slot,
+                                     const char *hex)
+{
+    size_t i;
+    size_t w;
+
+    assert(slot != NULL);
+    if (hex == NULL || hex[0] == '\0')
+        return;
+    w = 0;
+    for (i = 0; i < slot->nnext; i++) {
+        if (strcmp(slot->next[i], hex) == 0)
+            continue;
+        if (w != i) {
+            hush_agent_copy(slot->next[w], sizeof(slot->next[0]),
+                            slot->next[i]);
+            hush_agent_copy(slot->next_ask[w], sizeof(slot->next_ask[0]),
+                            slot->next_ask[i]);
+            slot->group[w] = slot->group[i];
+        }
+        w++;
+    }
+    slot->nnext = w;
 }
 
 static void hush_agent_follow_push(const hush_event_t *ev,
@@ -2370,6 +2532,114 @@ static void hush_agent_begin_plan(const hush_agent_job_in_t *in)
     hush_agent_begin_work(&plan);
 }
 
+/* Runs a one-shot leader-election pass. The convener (first candidate) hosts
+ * the grok call; the output is a single candidate name parsed in finish_job. */
+static void hush_agent_begin_elect(
+    hush_store_t *store, const hush_launch_t *launch,
+    hush_agent_follow_t *slot, const hush_event_t *ev,
+    const char cands[][HUSH_EVENT_PUBKEY_HEX_LEN + 1], size_t ncand)
+{
+    hush_agent_robot_t convener;
+    hush_agent_job_in_t in;
+    char prompt[HUSH_ROSTER_PROMPT_MAX];
+    size_t off;
+    size_t i;
+
+    assert(store != NULL);
+    assert(launch != NULL);
+    assert(slot != NULL);
+    assert(ev != NULL);
+    if (!hush_agent_lookup_robot(&convener, launch, slot->convener))
+        return;
+
+    hush_agent_copy(prompt, sizeof(prompt), HUSH_AGENT_ELECT_PROMPT);
+    off = strlen(prompt);
+    if (off + 14 < sizeof(prompt)) {
+        memcpy(prompt + off, " Candidates:", 12);
+        off += 12;
+    }
+    for (i = 0; i < ncand; i++) {
+        hush_agent_robot_t c;
+        int m;
+        if (!hush_agent_lookup_robot(&c, launch, cands[i]))
+            continue;
+        m = snprintf(prompt + off, sizeof(prompt) - off, " %s(skills:%d)",
+                     c.name != NULL ? c.name : "robot",
+                     hush_agent_leadership_score(launch, cands[i]));
+        if (m < 0 || (size_t)m >= sizeof(prompt) - off)
+            break;
+        off += (size_t)m;
+    }
+    if (slot->ask[0] != '\0' && off + 10 < sizeof(prompt)) {
+        char snip[HUSH_AGENT_SNIP_MAX + 1];
+        hush_agent_snip_line(snip, sizeof(snip), slot->ask);
+        (void)snprintf(prompt + off, sizeof(prompt) - off, " Task: %s", snip);
+    }
+
+    memset(&in, 0, sizeof(in));
+    in.store = store;
+    in.launch = launch;
+    in.bot = &convener;
+    in.parent = ev;
+    in.ask = slot->ask;
+    in.mode = slot->mode;
+    in.elect = 1;
+    in.prompt_override = prompt;
+    hush_agent_begin_work(&in);
+}
+
+/* Starts the leader's planning pass from the follow slot (used after an
+ * election, where we reconstruct the parent note from slot state). */
+static void hush_agent_start_plan_from_slot(
+    hush_store_t *store, const hush_launch_t *launch,
+    hush_agent_follow_t *slot, const char *leader_hex)
+{
+    hush_agent_robot_t leader;
+    hush_event_t parent;
+    hush_agent_job_in_t in;
+    size_t i;
+
+    assert(store != NULL);
+    assert(launch != NULL);
+    assert(slot != NULL);
+    if (!hush_agent_lookup_robot(&leader, launch, leader_hex))
+        return;
+
+    memset(&parent, 0, sizeof(parent));
+    hush_agent_copy(parent.id, sizeof(parent.id), slot->root);
+    hush_agent_copy(parent.pubkey, sizeof(parent.pubkey), slot->human_pub);
+    hush_agent_copy(parent.content, sizeof(parent.content), slot->ask);
+    parent.kind = (uint32_t)HUSH_AGENT_KIND_NOTE;
+    parent.tag_count = 1;
+    memcpy(parent.tags[0][0], "h", 2);
+    hush_agent_copy(parent.tags[0][1], sizeof(parent.tags[0][1]),
+                    slot->channel);
+    for (i = 0; i < slot->nnext && parent.tag_count < HUSH_EVENT_MAX_TAGS;
+         i++) {
+        hush_agent_robot_t w;
+        if (slot->next[i][0] == '\0')
+            continue;
+        if (!hush_agent_lookup_robot(&w, launch, slot->next[i]))
+            continue;
+        if (w.npub == NULL || w.npub[0] == '\0')
+            continue;
+        memcpy(parent.tags[parent.tag_count][0], "p", 2);
+        hush_agent_copy(parent.tags[parent.tag_count][1],
+                        sizeof(parent.tags[parent.tag_count][1]), w.npub);
+        parent.tag_count++;
+    }
+
+    memset(&in, 0, sizeof(in));
+    in.store = store;
+    in.launch = launch;
+    in.bot = &leader;
+    in.parent = &parent;
+    in.ask = slot->ask;
+    in.mode = slot->mode;
+    in.leader = 1;
+    hush_agent_begin_plan(&in);
+}
+
 static void hush_agent_follow_kick(hush_store_t *store,
                                    const hush_launch_t *launch,
                                    const hush_event_t *ev)
@@ -2379,17 +2649,30 @@ static void hush_agent_follow_kick(hush_store_t *store,
     hush_agent_job_in_t in;
     char root[HUSH_EVENT_ID_HEX_LEN + 1];
     const char *hex;
-    size_t n;
+    int cur_group;
 
     assert(store != NULL);
     assert(launch != NULL);
     assert(ev != NULL);
     hush_agent_event_root(root, sizeof(root), ev);
     slot = hush_agent_follow_find(root);
-    if (slot == NULL || slot->at >= slot->nnext)
+    if (slot == NULL)
         return;
-    for (n = 0; n < (size_t)HUSH_AGENT_FOLLOW_ROBOTS && slot->at < slot->nnext;
-         n++) {
+
+    /* A work note finished. If we are mid-wave, one parallel task completed;
+     * wait for the rest of the wave before starting the next one. */
+    if (slot->inflight > 0) {
+        slot->inflight--;
+        if (slot->inflight > 0)
+            return;
+    }
+    if (slot->at >= slot->nnext)
+        return;
+
+    /* Dispatch the next wave: every task sharing this group number. Tasks in
+     * a wave run in parallel; waves run in order. */
+    cur_group = slot->group[slot->at];
+    while (slot->at < slot->nnext && slot->group[slot->at] == cur_group) {
         size_t at = slot->at;
         hex = slot->next[at];
         slot->at++;
@@ -2410,10 +2693,7 @@ static void hush_agent_follow_kick(hush_store_t *store,
         in.scoped = slot->scoped;
         in.mode = slot->mode;
         hush_agent_begin_work(&in);
-        /* Serial: dispatch exactly one worker per finish. Parallel: dispatch
-         * all remaining workers now (capped by the job table). */
-        if (!slot->parallel)
-            return;
+        slot->inflight++;
     }
 }
 

@@ -27,32 +27,47 @@ mode.
 | 1 | any | **solo** — the robot does the whole ask |
 | N | each robot has its own clause (`@A do X. @B do Y`) | **explicit** — each robot receives only its own clause |
 | 2 | undirected broadcast (`@A @B plan it`) | **cooperate** — pair divides labor, no leader |
-| 3+ | undirected broadcast | **orchestrate** — a leader plans the division of labor |
+| 3+ | undirected broadcast | **orchestrate** — elect a leader, then plan the division of labor |
+
+Detection is a deterministic fast-path only for the clearly-explicit case
+(every tagged robot followed by a substantive clause). Everything else is
+handled by an LLM: a pair cooperates, and three-or-more robots elect a leader.
 
 ### Leader election (3+)
 
-- `Major` (Payne) leads when present.
-- Otherwise the robot with the most leadership skills leads
-  (`system:hive-patterns`, `system:conflict-break`, `system:canvas-coach`,
-  `system:summary-handoff`, `system:job-cap`); ties go to the first-mentioned.
-- A leader planning pass emits a fenced plan:
+1. `Major` (Payne) leads when present — no election.
+2. Otherwise the relay narrows to **leadership-skilled** robots
+   (`system:hive-patterns`, `system:conflict-break`, `system:canvas-coach`,
+   `system:summary-handoff`, `system:job-cap`). If exactly one, that robot
+   leads.
+3. Otherwise the **robots determine and elect**: a single one-shot LLM
+   election pass lists the candidates (name + skill count) and returns the
+   chosen leader. The elected leader then plans.
+
+### Leader plan (3+)
+
+The elected leader emits a fenced plan. Each task line carries an integer
+wave prefix; tasks sharing a wave run in **parallel**, and waves run in
+order (`fifo`) or reverse (`lifo`/`filo` → `lifo`, `lilo` → `fifo`).
 
   ````
   ```plan
   order: fifo
-  parallel: no
-  Happy: generate a riddle
-  Scout: build a slide
+  1 Happy: generate a riddle
+  2 Major: answer it
+  2 Scout: verify it
+  3 Builder: write a summary
   ```
   ````
 
-  `order` is `fifo` or `lifo` (`filo`→`lifo`, `lilo`→`fifo`). `parallel` is
-  `yes` or `no`. The relay parses this block and dispatches each non-leader
-  robot its own sub-task in that order.
+The relay parses this block and dispatches each non-leader robot its own
+sub-task. Wave 2 above runs Major and Scout in parallel; waves 1, 2, 3 run
+in sequence. A worker missing from the plan still runs (full ask) as its own
+trailing wave, so nobody is silently dropped.
 
 ### Explicit delegation detection
 
-Deterministic first: count `nostr:<npub>` tokens that are each followed by a
-substantive clause. Every robot having its own clause is explicit; at most one
-having a clause is a broadcast; anything between is ambiguous (currently
-treated as broadcast; LLM classification is a follow-up).
+Count `nostr:<npub>` tokens that are each followed by a substantive clause
+(4+ characters, so connectors like "and" are ignored). Every robot having its
+own clause is **explicit** (strict per-robot scoping). Anything less certain
+goes through the LLM (cooperate or leader).
