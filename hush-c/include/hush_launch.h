@@ -180,6 +180,15 @@ hush_status_t hush_launch_add_agent(hush_launch_t *launch,
 /* Drops a raised agent by slug. Payne is refused. */
 hush_status_t hush_launch_remove_agent(hush_launch_t *launch, const char *slug);
 
+/* Clones a raised agent. Payne is refused. Copy is unlocked. */
+hush_status_t hush_launch_clone_agent(hush_launch_t *launch,
+                                      hush_store_t *store,
+                                      const char *slug);
+
+/* Seeds locked Coach and Auditor templates when missing. */
+hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
+                                         hush_store_t *store);
+
 /* Updates a raised agent's name, prompt, picture, voice, and skills. */
 hush_status_t hush_launch_update_agent(hush_launch_t *launch, const char *slug,
                                        const hush_roster_agent_in_t *in);

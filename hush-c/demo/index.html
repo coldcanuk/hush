@@ -1034,7 +1034,13 @@
         <p class="help">Heard in calls when a Whisper model is ready.</p>
       </div>
       <div id="agent-skills">
-        <p class="help">Equip skills like items. Click the armory to wear; click the loadout to prune.</p>
+        <p class="help">Equip skills like items. Cycle the armory like a Diablo II amulet, then wear it. Chaperon skills stay off workers.</p>
+        <p class="help" id="skill-watermark"></p>
+        <div class="pill-row" id="skill-cycle-row">
+          <button class="icon-minus" id="skill-cycle-prev" type="button" aria-label="Previous skill">◀</button>
+          <div id="skill-cycle" class="skill-pool" aria-label="Cycled skill"></div>
+          <button class="icon-plus" id="skill-cycle-next" type="button" aria-label="Next skill">▶</button>
+        </div>
         <div class="skill-board">
           <div>
             <div class="lbl">Armory</div>
@@ -1053,6 +1059,7 @@
       <div class="actions">
         <button class="btn" id="agent-save" type="button">Raise Robot</button>
         <button class="btn ghost" id="agent-close" type="button">Close</button>
+        <button class="btn ghost" id="agent-clone" type="button" disabled>Clone Robot</button>
         <button class="btn danger" id="agent-delete" type="button" disabled>Delete Robot</button>
       </div>
     </div>
@@ -1436,6 +1443,9 @@
     let skillCatalog = [];
     let equippedSkills = [];
     let skillVoices = [];
+    let skillCycleIdx = 0;
+    let skillWatermarks = {};
+    let skillLocked = false;
     let ackClock = {};
     let manageTopics = [];
     let draftPicture = "";
@@ -2165,7 +2175,7 @@
           voice: a.voice || "",
           skills: a.skills || [],
           ncontext: a.ncontext || 0,
-          locked: false,
+          locked: !!a.locked,
           enabled: a.enabled !== false,
           role: a.role || "worker"
         });
@@ -2278,6 +2288,9 @@
       if ($("agent-help")) $("agent-help").textContent = "Major will walk you through it.";
       if ($("agent-save")) $("agent-save").textContent = "Raise Robot";
       if ($("agent-delete")) $("agent-delete").disabled = true;
+      if ($("agent-clone")) $("agent-clone").disabled = true;
+      skillLocked = false;
+      skillCycleIdx = 0;
       if ($("agent-err")) $("agent-err").textContent = "";
       if ($("agent-identity")) $("agent-identity").hidden = false;
       if ($("agent-pass")) $("agent-pass").closest("label").hidden = false;
@@ -2704,6 +2717,32 @@
         paintPayneOrder();
         if ($("agent-name-pill")) $("agent-name-pill").innerHTML = "";
         if ($("agent-prompt-pill")) $("agent-prompt-pill").innerHTML = "";
+      } else if (bot && bot.slug && bot.locked) {
+        editSlug = bot.slug;
+        skillLocked = true;
+        draftName = bot.name || "";
+        draftPrompt = bot.prompt || "";
+        $("agent-title").textContent = "Edit locked robot";
+        $("agent-help").textContent = "Locked template. Clone it to edit name, prompt, and skills.";
+        $("agent-save").textContent = "Save Robot";
+        $("agent-delete").disabled = true;
+        if ($("agent-name")) {
+          $("agent-name").value = draftName;
+          $("agent-name").disabled = true;
+          $("agent-name").readOnly = true;
+        }
+        if ($("agent-prompt")) {
+          $("agent-prompt").value = draftPrompt;
+          $("agent-prompt").disabled = true;
+          $("agent-prompt").readOnly = true;
+        }
+        if ($("agent-name-add")) $("agent-name-add").hidden = true;
+        if ($("agent-prompt-add")) $("agent-prompt-add").hidden = true;
+        document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
+          el.checked = el.value === bot.provider;
+        });
+        if ($("agent-name-pill")) $("agent-name-pill").innerHTML = "";
+        if ($("agent-prompt-pill")) $("agent-prompt-pill").innerHTML = "";
       } else if (bot && bot.slug && !bot.locked) {
         editSlug = bot.slug;
         draftName = bot.name || "";
@@ -2728,6 +2767,8 @@
         el.checked = el.value === ((bot && bot.role) || "worker");
       });
       equippedSkills = (bot && bot.skills) ? bot.skills.slice() : [];
+      if ($("agent-clone"))
+        $("agent-clone").disabled = !(bot && bot.slug && bot.slug !== PAYNE_SLUG);
       paintVoiceRow(bot && bot.voice);
       loadSkillCatalog(bot && bot.slug);
       {
@@ -2743,6 +2784,29 @@
 
     $("raise-agent").addEventListener("click", () => openAgentDrawer(null));
     $("agent-close").addEventListener("click", () => $("agent-drawer").classList.remove("show"));
+    if ($("skill-cycle-prev")) $("skill-cycle-prev").addEventListener("click", () => {
+      skillCycleIdx--;
+      paintSkillCycle(editSlug);
+    });
+    if ($("skill-cycle-next")) $("skill-cycle-next").addEventListener("click", () => {
+      skillCycleIdx++;
+      paintSkillCycle(editSlug);
+    });
+    if ($("agent-clone")) $("agent-clone").addEventListener("click", async () => {
+      if (!editSlug || editSlug === PAYNE_SLUG) {
+        $("agent-err").textContent = "Major cannot be cloned.";
+        return;
+      }
+      try {
+        applySession(await api("/api/agent", { action: "clone", slug: editSlug }));
+        $("agent-drawer").classList.remove("show");
+        resetAgentDraft();
+        if (typeof syncInventoryFromRoster === "function") syncInventoryFromRoster();
+      } catch (e) { $("agent-err").textContent = "Could not clone that robot."; }
+    });
+    document.querySelectorAll("input[name='agent-role']").forEach((el) => {
+      el.addEventListener("change", () => paintSkillBoard(editSlug));
+    });
     document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
       el.addEventListener("change", () => {
         if (editingPayne) addPayneProvider(el.value);
@@ -4887,6 +4951,7 @@
         const data = await fetch(API + "/api/skills").then((r) => r.json());
         skillCatalog = (data && data.skills) ? data.skills : [];
         skillVoices = (data && data.voices) ? data.voices : [];
+        skillWatermarks = (data && data.watermarks) ? data.watermarks : {};
       } catch (e) {
         skillCatalog = [];
       }
@@ -4894,20 +4959,43 @@
       paintSkillBoard(robotSlug);
     }
 
+    function robotRole() {
+      return radioValue("agent-role", "worker") || "worker";
+    }
+    function skillFitsRole(s) {
+      const need = s.role || "any";
+      if (need === "any") return true;
+      return need === robotRole();
+    }
+    function armorySkills(robotSlug) {
+      return skillCatalog.filter((s) => {
+        if (equippedSkills.indexOf(s.id) >= 0) return false;
+        if (s.scope === "robot" && s.robot && s.robot !== robotSlug) return false;
+        return skillFitsRole(s);
+      });
+    }
     function paintSkillBoard(robotSlug) {
       const armory = $("skill-armory");
       const loadout = $("skill-loadout");
       if (!armory || !loadout) return;
       armory.innerHTML = "";
       loadout.innerHTML = "";
+      const marks = skillWatermarks || {};
+      const chars = equippedSkills.reduce((n, id) => {
+        const s = skillCatalog.find((x) => x.id === id);
+        return n + ((s && s.chars) || 0);
+      }, 0);
+      if ($("skill-watermark")) {
+        $("skill-watermark").textContent = "Loadout " + equippedSkills.length +
+          "/" + (marks.slots_high || 8) + " slots, " + chars + "/" +
+          (marks.chars_high || 8000) + " chars.";
+      }
       ["system", "user", "robot"].forEach((scope) => {
         const lbl = document.createElement("div");
         lbl.className = "skill-scope-lbl";
         lbl.textContent = scope;
         armory.appendChild(lbl);
-        skillCatalog.filter((s) => s.scope === scope
-          && (scope !== "robot" || !s.robot || s.robot === robotSlug)
-          && equippedSkills.indexOf(s.id) < 0).forEach((s) => {
+        armorySkills(robotSlug).filter((s) => s.scope === scope).forEach((s) => {
           armory.appendChild(makeSkillChip(s, false));
         });
       });
@@ -4915,6 +5003,20 @@
         const s = skillCatalog.find((x) => x.id === id) || { id: id, name: id, scope: "user" };
         loadout.appendChild(makeSkillChip(s, true));
       });
+      paintSkillCycle(robotSlug);
+    }
+    function paintSkillCycle(robotSlug) {
+      const box = $("skill-cycle");
+      if (!box) return;
+      const list = armorySkills(robotSlug);
+      box.innerHTML = "";
+      if (!list.length) {
+        box.textContent = "No more skills in this role.";
+        return;
+      }
+      if (skillCycleIdx >= list.length) skillCycleIdx = 0;
+      if (skillCycleIdx < 0) skillCycleIdx = list.length - 1;
+      box.appendChild(makeSkillChip(list[skillCycleIdx], false));
     }
 
     function makeSkillChip(skill, worn) {
@@ -4926,9 +5028,26 @@
       b.title = skill.summary || skill.name;
       b.textContent = skill.name || skill.id;
       b.addEventListener("click", () => {
+        if (skillLocked) return;
         if (worn) {
           equippedSkills = equippedSkills.filter((id) => id !== skill.id);
-        } else if (equippedSkills.indexOf(skill.id) < 0 && equippedSkills.length < 8) {
+        } else if (equippedSkills.indexOf(skill.id) < 0) {
+          const marks = skillWatermarks || {};
+          const slots = equippedSkills.length + 1;
+          const chars = equippedSkills.reduce((n, id) => {
+            const s = skillCatalog.find((x) => x.id === id);
+            return n + ((s && s.chars) || 0);
+          }, skill.chars || 0);
+          const complex = equippedSkills.reduce((n, id) => {
+            const s = skillCatalog.find((x) => x.id === id);
+            return n + ((s && s.complexity) || 0);
+          }, skill.complexity || 0);
+          if (slots > (marks.slots_high || 8) ||
+              chars > (marks.chars_high || 8000) ||
+              complex > (marks.complex_high || 64)) {
+            if ($("agent-err")) $("agent-err").textContent = "Loadout over watermark.";
+            return;
+          }
           equippedSkills.push(skill.id);
         }
         paintSkillBoard(editSlug);

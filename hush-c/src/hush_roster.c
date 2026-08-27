@@ -342,7 +342,48 @@ hush_status_t hush_roster_update_agent(hush_roster_t *roster, const char *slug,
     agent = hush_roster_find_agent(roster, slug);
     if (agent == NULL)
         return HUSH_ERR_NOT_FOUND;
+    if (agent->locked) {
+        if (in->has_enabled)
+            agent->enabled = in->enabled ? 1 : 0;
+        return HUSH_OK;
+    }
     return hush_roster_apply_update(agent, in);
+}
+
+hush_status_t hush_roster_clone_agent(hush_roster_t *roster,
+                                      hush_store_t *store,
+                                      const char *slug)
+{
+    const hush_roster_agent_t *src;
+    hush_roster_agent_in_t in;
+    size_t i;
+    int n;
+
+    if (roster == NULL || store == NULL || slug == NULL || slug[0] == '\0')
+        return HUSH_ERR_ARG;
+    if (hush_roster_is_payne_slug(slug))
+        return HUSH_ERR_DENIED;
+    src = hush_roster_find_agent(roster, slug);
+    if (src == NULL)
+        return HUSH_ERR_NOT_FOUND;
+    memset(&in, 0, sizeof(in));
+    n = snprintf(in.name, sizeof(in.name), "%s copy", src->name);
+    if (n < 0 || (size_t)n >= sizeof(in.name))
+        return HUSH_ERR_FULL;
+    memcpy(in.prompt, src->prompt, sizeof(in.prompt));
+    memcpy(in.provider, src->provider, sizeof(in.provider));
+    memcpy(in.picture, src->picture, sizeof(in.picture));
+    in.has_picture = 1;
+    memcpy(in.voice, src->voice, sizeof(in.voice));
+    in.has_voice = 1;
+    memcpy(in.role, src->role, sizeof(in.role));
+    in.has_role = 1;
+    in.locked = 0;
+    for (i = 0; i < src->nskills && i < (size_t)HUSH_SKILL_EQUIP_MAX; i++)
+        memcpy(in.skills[i], src->skills[i], sizeof(in.skills[0]));
+    in.nskills = src->nskills;
+    in.has_skills = 1;
+    return hush_roster_add_agent(roster, store, &in, 0);
 }
 
 hush_status_t hush_roster_format_json(const hush_roster_t *roster,
@@ -389,6 +430,7 @@ static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
     agent->enabled = 1;
     if (in->has_enabled)
         agent->enabled = in->enabled ? 1 : 0;
+    agent->locked = in->locked ? 1 : 0;
     hush_roster_copy_text(agent->role, sizeof(agent->role),
                           hush_roster_is_role(in->role)
                               ? in->role : HUSH_ROSTER_ROLE_WORKER,
@@ -900,11 +942,12 @@ static hush_status_t hush_roster_format_one_agent(const hush_roster_agent_t *age
                  "%s{\"name\":\"%s\",\"slug\":\"%s\",\"npub\":\"%s\","
                  "\"pubkey\":\"%s\",\"provider\":\"%s\",\"prompt\":\"%s\","
                  "\"picture\":\"%s\",\"voice\":\"%s\",\"enabled\":%s,"
-                 "\"role\":\"%s\",\"ncontext\":%zu,\"skills\":",
+                 "\"locked\":%s,\"role\":\"%s\",\"ncontext\":%zu,\"skills\":",
                  first ? "" : ",",
                  esc, agent->slug, agent->id.npub, agent->id.pubkey_hex,
                  agent->provider, esc_prompt, agent->picture, agent->voice,
                  agent->enabled ? "true" : "false",
+                 agent->locked ? "true" : "false",
                  agent->role[0] ? agent->role : HUSH_ROSTER_ROLE_WORKER,
                  agent->ncontext);
     if (n < 0 || *off + (size_t)n >= outsz)
