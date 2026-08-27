@@ -1,4 +1,4 @@
-/* tests/test_skill.c: three-scope catalog, forge writer, voices. */
+/* tests/test_skill.c: two-bucket catalog, forge writer, voices. */
 
 #define _POSIX_C_SOURCE 200809L
 
@@ -94,12 +94,32 @@ int main(void)
     expect(catalog_has(&cat, "robot:happy:perimeter"), "robot in catalog");
     expect(hush_skill_format_json(&cat, 1, json, sizeof(json), &n) == HUSH_OK,
            "json");
-    expect(strstr(json, "\"scopes\":[\"system\",\"user\",\"robot\"]") != NULL,
-           "three scopes");
+    expect(strstr(json, HUSH_SKILL_SCOPES_JSON) != NULL, "two product scopes");
     expect(strstr(json, HUSH_SKILL_FORGE_ID) != NULL, "forge id json");
     expect(strstr(json, "\"scope\":\"system\"") != NULL, "system scope json");
-    expect(strstr(json, "\"scope\":\"user\"") != NULL, "user scope json");
+    expect(strstr(json, "\"scope\":\"user\"") == NULL, "no user product scope");
     expect(strstr(json, "\"scope\":\"robot\"") != NULL, "robot scope json");
+    {
+        const hush_skill_t *joke;
+        const hush_skill_t *perim;
+
+        joke = hush_skill_find(&cat, "user:joke-book");
+        expect(joke != NULL, "joke find");
+        if (joke != NULL) {
+            expect(strcmp(joke->scope, HUSH_SKILL_SCOPE_SYSTEM) == 0,
+                   "user-dir is system");
+            expect(hush_skill_robot_ok(joke, "bender"), "system on any robot");
+        }
+        perim = hush_skill_find(&cat, "robot:happy:perimeter");
+        expect(perim != NULL, "perimeter find");
+        if (perim != NULL) {
+            expect(strcmp(perim->scope, HUSH_SKILL_SCOPE_ROBOT) == 0,
+                   "robot product scope");
+            expect(hush_skill_robot_ok(perim, "happy"), "own robot ok");
+            expect(!hush_skill_robot_ok(perim, "bender"), "other robot denied");
+            expect(!hush_skill_robot_ok(perim, NULL), "empty slug denied");
+        }
+    }
     expect(strstr(json, "\"alloy\"") != NULL, "voice listed");
     expect(strstr(json, "\"watermarks\"") != NULL, "watermarks json");
     expect(strstr(json, "\"chars_high\":8000") != NULL, "char high");
