@@ -318,6 +318,9 @@ static int hush_launch_jobs_ok(int max_jobs);
 /* True when cooldown_s is 0, 10, or 30. */
 static int hush_launch_cooldown_ok(int cooldown_s);
 
+/* True when max_robot_turns is 0 (default), 1, 2, 4, or 8. */
+static int hush_launch_turns_ok(int max_robot_turns);
+
 /* Rejects unknown kind/reply/burst/jobs/cooldown/talk/hops. */
 static hush_status_t hush_launch_policy_check(const hush_launch_policy_t *in);
 
@@ -824,6 +827,8 @@ void hush_launch_policy_default(hush_launch_channel_t *ch)
     ch->max_jobs = HUSH_LAUNCH_MAX_JOBS_DEFAULT;
     ch->cooldown_s = HUSH_LAUNCH_COOLDOWN_S_DEFAULT;
     ch->robot_hops = 0;
+    ch->max_robot_turns = HUSH_LAUNCH_TURNS_DEFAULT;
+    ch->chaperon[0] = '\0';
 }
 
 hush_status_t hush_launch_policy_copy(hush_launch_policy_t *out,
@@ -839,6 +844,8 @@ hush_status_t hush_launch_policy_copy(hush_launch_policy_t *out,
     out->max_jobs = ch->max_jobs;
     out->cooldown_s = ch->cooldown_s;
     out->robot_hops = ch->robot_hops;
+    out->max_robot_turns = ch->max_robot_turns;
+    memcpy(out->chaperon, ch->chaperon, sizeof(out->chaperon));
     return HUSH_OK;
 }
 
@@ -863,6 +870,9 @@ hush_status_t hush_launch_set_channel_policy(hush_launch_t *launch,
     ch->max_jobs = in->max_jobs;
     ch->cooldown_s = in->cooldown_s;
     ch->robot_hops = in->robot_hops;
+    ch->max_robot_turns = in->max_robot_turns > 0
+        ? in->max_robot_turns : HUSH_LAUNCH_TURNS_DEFAULT;
+    hush_launch_copy_name(ch->chaperon, sizeof(ch->chaperon), in->chaperon, "");
     return hush_launch_save_vibe(launch);
 }
 
@@ -1566,12 +1576,15 @@ static hush_status_t hush_launch_format_channel_policy(
     n = snprintf(out + *off, outsz - *off,
                  ",\"kind\":\"%s\",\"robot_reply\":\"%s\",\"robot_talk\":%d,"
                  "\"burst_ms\":%d,\"max_jobs\":%d,\"cooldown_s\":%d,"
-                 "\"robot_hops\":%d",
+                 "\"robot_hops\":%d,\"max_robot_turns\":%d,\"chaperon\":\"%s\"",
                  ch->kind[0] ? ch->kind : HUSH_LAUNCH_KIND_OPEN,
                  ch->robot_reply[0] ? ch->robot_reply
                                     : HUSH_LAUNCH_REPLY_MENTION,
                  ch->robot_talk, ch->burst_ms, ch->max_jobs,
-                 ch->cooldown_s, ch->robot_hops);
+                 ch->cooldown_s, ch->robot_hops,
+                 ch->max_robot_turns > 0
+                     ? ch->max_robot_turns : HUSH_LAUNCH_TURNS_DEFAULT,
+                 ch->chaperon);
     if (n < 0 || *off + (size_t)n >= outsz)
         return HUSH_ERR_FULL;
     *off += (size_t)n;
@@ -2044,7 +2057,12 @@ static hush_status_t hush_launch_put_channel_policy(
     hush_launch_index_key(key, sizeof(key), "channel_cooldown_s", idx);
     HUSH_TRY(hush_launch_put_int_field(out, outsz, off, key, ch->cooldown_s));
     hush_launch_index_key(key, sizeof(key), "channel_robot_hops", idx);
-    return hush_launch_put_int_field(out, outsz, off, key, ch->robot_hops);
+    HUSH_TRY(hush_launch_put_int_field(out, outsz, off, key, ch->robot_hops));
+    hush_launch_index_key(key, sizeof(key), "channel_max_robot_turns", idx);
+    HUSH_TRY(hush_launch_put_int_field(out, outsz, off, key,
+                                       ch->max_robot_turns));
+    hush_launch_index_key(key, sizeof(key), "channel_chaperon", idx);
+    return hush_launch_put_field(out, outsz, off, key, ch->chaperon);
 }
 
 static hush_status_t hush_launch_put_groups(const hush_launch_t *launch,
@@ -2310,6 +2328,8 @@ static void hush_launch_take_policy_text(hush_launch_channel_t *ch,
     if (!hush_launch_reply_ok(ch->robot_reply))
         memcpy(ch->robot_reply, HUSH_LAUNCH_REPLY_MENTION,
                sizeof(HUSH_LAUNCH_REPLY_MENTION));
+    hush_launch_index_key(key, sizeof(key), "channel_chaperon", idx);
+    (void)hush_launch_json_string(json, key, ch->chaperon, sizeof(ch->chaperon));
 }
 
 static int hush_launch_take_named_int(const char *json, size_t idx,
@@ -2342,6 +2362,11 @@ static void hush_launch_take_policy_nums(hush_launch_channel_t *ch,
         ch->cooldown_s = HUSH_LAUNCH_COOLDOWN_S_DEFAULT;
     ch->robot_hops = hush_launch_take_named_int(json, idx,
                                                 "channel_robot_hops", 0) != 0;
+    ch->max_robot_turns = hush_launch_take_named_int(json, idx,
+                                                     "channel_max_robot_turns",
+                                                     HUSH_LAUNCH_TURNS_DEFAULT);
+    if (!hush_launch_turns_ok(ch->max_robot_turns))
+        ch->max_robot_turns = HUSH_LAUNCH_TURNS_DEFAULT;
 }
 
 static void hush_launch_take_channel_policy(hush_launch_channel_t *ch,
@@ -2584,6 +2609,21 @@ static int hush_launch_cooldown_ok(int cooldown_s)
     return 0;
 }
 
+static int hush_launch_turns_ok(int max_robot_turns)
+{
+    if (max_robot_turns == 0)
+        return 1;
+    if (max_robot_turns == HUSH_LAUNCH_TURNS_MIN)
+        return 1;
+    if (max_robot_turns == HUSH_LAUNCH_TURNS_PAIR)
+        return 1;
+    if (max_robot_turns == HUSH_LAUNCH_TURNS_DEFAULT)
+        return 1;
+    if (max_robot_turns == HUSH_LAUNCH_TURNS_MAX)
+        return 1;
+    return 0;
+}
+
 static hush_status_t hush_launch_policy_check(const hush_launch_policy_t *in)
 {
     assert(in != NULL);
@@ -2600,6 +2640,8 @@ static hush_status_t hush_launch_policy_check(const hush_launch_policy_t *in)
     if (in->robot_talk != 0 && in->robot_talk != 1)
         return HUSH_ERR_PARSE;
     if (in->robot_hops != 0 && in->robot_hops != 1)
+        return HUSH_ERR_PARSE;
+    if (!hush_launch_turns_ok(in->max_robot_turns))
         return HUSH_ERR_PARSE;
     return HUSH_OK;
 }
@@ -2724,6 +2766,10 @@ static hush_status_t hush_launch_put_agent_extras(const hush_roster_agent_t *age
     hush_launch_index_key(key, sizeof(key), "agent_enabled", idx);
     HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
                                    agent->enabled ? "1" : "0"));
+    hush_launch_index_key(key, sizeof(key), "agent_role", idx);
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                   agent->role[0] ? agent->role
+                                                  : HUSH_ROSTER_ROLE_WORKER));
     if (snprintf(count, sizeof(count), "%zu", agent->nskills)
         >= (int)sizeof(count))
         return HUSH_ERR_FULL;
@@ -2763,6 +2809,11 @@ static void hush_launch_take_agent_extras(hush_roster_agent_t *agent,
             && flag[0] == '0')
             agent->enabled = 0;
     }
+    hush_launch_index_key(key, sizeof(key), "agent_role", idx);
+    (void)hush_launch_json_string(json, key, agent->role, sizeof(agent->role));
+    if (!hush_roster_is_role(agent->role))
+        hush_launch_copy_name(agent->role, sizeof(agent->role),
+                              HUSH_ROSTER_ROLE_WORKER, "");
     hush_launch_index_key(key, sizeof(key), "agent_nskills", idx);
     n = hush_launch_json_count(json, key, (size_t)HUSH_SKILL_EQUIP_MAX);
     agent->nskills = 0;

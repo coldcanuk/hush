@@ -17,7 +17,8 @@ enum {
     HUSH_ROSTER_ID_WIDTH = 16,
     HUSH_ROSTER_SLUG_FALLBACK = 'a',
     HUSH_ROSTER_THEME_COUNT = 7,
-    HUSH_ROSTER_PROVIDER_COUNT = 9
+    HUSH_ROSTER_PROVIDER_COUNT = 9,
+    HUSH_ROSTER_ROLE_COUNT = 2
 };
 
 #define HUSH_ROSTER_CHAN_AGENTS "agents"
@@ -42,6 +43,11 @@ static const char *const hush_roster_providers[HUSH_ROSTER_PROVIDER_COUNT] = {
     HUSH_ROSTER_PROVIDER_OPENAI,
     HUSH_ROSTER_PROVIDER_ANTHROPIC,
     HUSH_ROSTER_PROVIDER_DEEPSEEK
+};
+
+static const char *const hush_roster_roles[HUSH_ROSTER_ROLE_COUNT] = {
+    HUSH_ROSTER_ROLE_WORKER,
+    HUSH_ROSTER_ROLE_CHAPERON
 };
 
 /* Copies trimmed text into dst. Empty becomes fallback (may be ""). */
@@ -209,6 +215,19 @@ int hush_roster_is_provider(const char *provider)
     return 0;
 }
 
+int hush_roster_is_role(const char *role)
+{
+    size_t i;
+
+    if (role == NULL || role[0] == '\0')
+        return 0;
+    for (i = 0; i < (size_t)HUSH_ROSTER_ROLE_COUNT; ++i) {
+        if (strcmp(role, hush_roster_roles[i]) == 0)
+            return 1;
+    }
+    return 0;
+}
+
 hush_status_t hush_roster_set_profile(hush_roster_t *roster,
                                       const hush_roster_profile_t *in)
 {
@@ -370,6 +389,10 @@ static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
     agent->enabled = 1;
     if (in->has_enabled)
         agent->enabled = in->enabled ? 1 : 0;
+    hush_roster_copy_text(agent->role, sizeof(agent->role),
+                          hush_roster_is_role(in->role)
+                              ? in->role : HUSH_ROSTER_ROLE_WORKER,
+                          HUSH_ROSTER_ROLE_WORKER);
     return hush_roster_copy_skills(agent, in);
 }
 
@@ -845,6 +868,14 @@ static hush_status_t hush_roster_apply_update(hush_roster_agent_t *agent,
     }
     if (in->has_enabled)
         agent->enabled = in->enabled ? 1 : 0;
+    if (in->has_role) {
+        if (in->role[0] != '\0' && !hush_roster_is_role(in->role))
+            return HUSH_ERR_PARSE;
+        hush_roster_copy_text(agent->role, sizeof(agent->role),
+                              hush_roster_is_role(in->role)
+                                  ? in->role : HUSH_ROSTER_ROLE_WORKER,
+                              HUSH_ROSTER_ROLE_WORKER);
+    }
     if (!in->has_skills)
         return HUSH_OK;
     return hush_roster_copy_skills(agent, in);
@@ -869,11 +900,12 @@ static hush_status_t hush_roster_format_one_agent(const hush_roster_agent_t *age
                  "%s{\"name\":\"%s\",\"slug\":\"%s\",\"npub\":\"%s\","
                  "\"pubkey\":\"%s\",\"provider\":\"%s\",\"prompt\":\"%s\","
                  "\"picture\":\"%s\",\"voice\":\"%s\",\"enabled\":%s,"
-                 "\"ncontext\":%zu,\"skills\":",
+                 "\"role\":\"%s\",\"ncontext\":%zu,\"skills\":",
                  first ? "" : ",",
                  esc, agent->slug, agent->id.npub, agent->id.pubkey_hex,
                  agent->provider, esc_prompt, agent->picture, agent->voice,
                  agent->enabled ? "true" : "false",
+                 agent->role[0] ? agent->role : HUSH_ROSTER_ROLE_WORKER,
                  agent->ncontext);
     if (n < 0 || *off + (size_t)n >= outsz)
         return HUSH_ERR_FULL;

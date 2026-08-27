@@ -32,6 +32,10 @@ enum {
     HUSH_LAUNCH_COOLDOWN_S_OFF = 0,
     HUSH_LAUNCH_COOLDOWN_S_DEFAULT = 10,
     HUSH_LAUNCH_COOLDOWN_S_LONG = 30,
+    HUSH_LAUNCH_TURNS_MIN = 1,
+    HUSH_LAUNCH_TURNS_PAIR = 2,
+    HUSH_LAUNCH_TURNS_DEFAULT = 4,
+    HUSH_LAUNCH_TURNS_MAX = 8,
     HUSH_LAUNCH_PAYNE_PROVIDERS_MAX = 4
 };
 
@@ -66,6 +70,8 @@ typedef struct {
     int max_jobs;
     int cooldown_s;
     int robot_hops;
+    int max_robot_turns;
+    char chaperon[HUSH_LAUNCH_NAME_MAX];
     /* Optional topic/about for this channel. When set, injected into robot
      * system prompts for jobs on this channel (quick LLM context pointer). */
     char about[HUSH_LAUNCH_ABOUT_MAX];
@@ -79,6 +85,8 @@ typedef struct {
     int max_jobs;
     int cooldown_s;
     int robot_hops;
+    int max_robot_turns;
+    char chaperon[HUSH_LAUNCH_NAME_MAX];
 } hush_launch_policy_t;
 
 typedef struct {

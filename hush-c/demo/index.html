@@ -1021,6 +1021,13 @@
         <label for="agent-enabled">Enable</label>
         <label class="switch"><input id="agent-enabled" type="checkbox" checked><span class="slider"></span></label>
       </div>
+      <div id="agent-role-row" hidden>
+        <p class="help">Role</p>
+        <div class="radio-col">
+          <label><input type="radio" name="agent-role" value="worker" checked> Worker</label>
+          <label><input type="radio" name="agent-role" value="chaperon"> Chaperon (babysit only)</label>
+        </div>
+      </div>
       <div id="agent-voice-wrap" hidden>
         <label for="agent-voice">Voice</label>
         <select id="agent-voice"></select>
@@ -1191,6 +1198,16 @@
         <details id="manage-policy-more">
           <summary>Advanced leash</summary>
           <label class="check"><input type="checkbox" id="manage-talk"> Robots may talk to robots</label>
+          <label for="manage-chaperon">Chaperon</label>
+          <select id="manage-chaperon"></select>
+          <p class="help">Babysits robot talk. Major may work and chaperon; other chaperons babysit only.</p>
+          <p class="help">Max robot turns</p>
+          <div class="radio-col">
+            <label><input type="radio" name="manage-turns" value="1"> 1</label>
+            <label><input type="radio" name="manage-turns" value="2"> 2</label>
+            <label><input type="radio" name="manage-turns" value="4"> 4</label>
+            <label><input type="radio" name="manage-turns" value="8"> 8</label>
+          </div>
           <p class="help">Burst wait</p>
           <div class="radio-col">
             <label><input type="radio" name="manage-burst" value="500"> 0.5s</label>
@@ -1917,6 +1934,19 @@
       setRadio("manage-burst", ch.burst_ms || 2000);
       setRadio("manage-jobs", ch.max_jobs || 2);
       setRadio("manage-cool", typeof ch.cooldown_s === "number" ? ch.cooldown_s : 10);
+      setRadio("manage-turns", ch.max_robot_turns || 4);
+      const sel = $("manage-chaperon");
+      if (sel) {
+        const cur = ch.chaperon || PAYNE_SLUG;
+        sel.innerHTML = "";
+        robotModels().forEach((bot) => {
+          const opt = document.createElement("option");
+          opt.value = bot.slug;
+          opt.textContent = bot.name + (bot.slug === PAYNE_SLUG ? " (may work)" : "");
+          if (bot.slug === cur) opt.selected = true;
+          sel.appendChild(opt);
+        });
+      }
     }
     function openManageChannel(slug) {
       const ch = (session.channels || []).find((c) => c.slug === slug);
@@ -2118,7 +2148,8 @@
         prompt: p.prompt || p.about || "",
         ncontext: 0,
         locked: true,
-        enabled: p.enabled !== false
+        enabled: p.enabled !== false,
+        role: "worker"
       }];
       (session.agents || []).forEach((a) => {
         if (!a || a.slug === PAYNE_SLUG) return;
@@ -2135,7 +2166,8 @@
           skills: a.skills || [],
           ncontext: a.ncontext || 0,
           locked: false,
-          enabled: a.enabled !== false
+          enabled: a.enabled !== false,
+          role: a.role || "worker"
         });
       });
       return list;
@@ -2271,6 +2303,10 @@
       if ($("agent-prompt-help")) $("agent-prompt-help").textContent = "Write its system prompt. Required.";
       if ($("agent-enabled-row")) $("agent-enabled-row").hidden = true;
       if ($("agent-enabled")) $("agent-enabled").checked = true;
+      if ($("agent-role-row")) $("agent-role-row").hidden = true;
+      document.querySelectorAll("input[name='agent-role']").forEach((el) => {
+        el.checked = el.value === "worker";
+      });
       paintAgentPicPicker();
     }
 
@@ -2687,6 +2723,10 @@
       if ($("agent-picture")) $("agent-picture").value = draftPicture;
       if ($("agent-enabled-row")) $("agent-enabled-row").hidden = !(bot && bot.slug);
       if ($("agent-enabled")) $("agent-enabled").checked = !bot || bot.enabled !== false;
+      if ($("agent-role-row")) $("agent-role-row").hidden = !!(bot && bot.locked);
+      document.querySelectorAll("input[name='agent-role']").forEach((el) => {
+        el.checked = el.value === ((bot && bot.role) || "worker");
+      });
       equippedSkills = (bot && bot.skills) ? bot.skills.slice() : [];
       paintVoiceRow(bot && bot.voice);
       loadSkillCatalog(bot && bot.slug);
@@ -2935,6 +2975,7 @@
         picture: draftPicture || ($("agent-picture") && $("agent-picture").value) || "",
         voice: voice,
         enabled: enabled,
+        role: radioValue("agent-role", "worker"),
         save_pass: !box || box.checked
       };
       if (editSlug) {
@@ -5144,6 +5185,8 @@
       body.max_jobs = parseInt(radioValue("manage-jobs", "2"), 10);
       body.cooldown_s = parseInt(radioValue("manage-cool", "10"), 10);
       body.robot_hops = body.robot_talk ? 1 : 0;
+      body.max_robot_turns = parseInt(radioValue("manage-turns", "4"), 10);
+      body.chaperon = ($("manage-chaperon") && $("manage-chaperon").value) || "";
       body.about = manageAboutValue();
       try {
         applySession(await api("/api/channel", body));
