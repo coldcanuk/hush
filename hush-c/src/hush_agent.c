@@ -75,6 +75,19 @@ enum {
     " You are a pair. Divide the labor between you two: each does a distinct, " \
     "non-overlapping part of the ask. Do not duplicate your partner's part. " \
     "Do only your own part and stop."
+#define HUSH_AGENT_LEADER_PROMPT \
+    " You are the leader. Organize the other robots: assign each other robot " \
+    "exactly one sub-task, then choose how to run them. Reply with ONE fenced " \
+    "block and nothing else:\n" \
+    "```plan\n" \
+    "order: fifo\n" \
+    "parallel: no\n" \
+    "Name: sub-task\n" \
+    "```\n" \
+    "order is fifo or lifo; parallel is yes or no. One Name: line per other " \
+    "robot. Name each robot by its exact display name."
+#define HUSH_AGENT_PLAN_FENCE "```plan"
+#define HUSH_AGENT_PLAN_END "```"
 #define HUSH_AGENT_DISALLOWED \
     "run_terminal_cmd,web_search,web_fetch,read_file,search_replace,list_dir,grep,todo_write,task,Agent"
 #define HUSH_AGENT_RULES \
@@ -148,6 +161,8 @@ typedef struct {
     char next_ask[HUSH_AGENT_FOLLOW_ROBOTS][HUSH_AGENT_TASK_MAX];
     int scoped;
     int mode;
+    int order;    /* 0 = fifo, 1 = lifo */
+    int parallel; /* 0 = serial, 1 = parallel */
 } hush_agent_follow_t;
 
 /* How a human note is interpreted for the tagged robot group. */
@@ -208,6 +223,8 @@ typedef struct {
     /* How the human note was classified (solo / explicit / broadcast /
      * ambiguous). Drives cooperation vs leader vs strict-scope prompting. */
     int mode;
+    /* True when this job is the leader's division-of-labor planning pass. */
+    int leader;
 } hush_agent_job_in_t;
 
 static hush_agent_job_t g_jobs[HUSH_AGENT_JOBS_MAX];
@@ -307,6 +324,20 @@ static hush_agent_mode_t hush_agent_classify(
     const hush_launch_t *launch, const hush_event_t *ev,
     const char hexes[][HUSH_EVENT_PUBKEY_HEX_LEN + 1], size_t nhex,
     hush_agent_assign_t *assigns);
+static int hush_agent_is_leadership_skill(const char *id);
+static int hush_agent_leadership_score(const hush_launch_t *launch,
+                                       const char *hex);
+static void hush_agent_elect_leader(
+    const hush_launch_t *launch,
+    const char hexes[][HUSH_EVENT_PUBKEY_HEX_LEN + 1], size_t nhex,
+    char *out, size_t outsz);
+static int hush_agent_lookup_hex_by_name(const hush_launch_t *launch,
+                                         const char *name,
+                                         char *out, size_t outsz);
+static void hush_agent_parse_plan(const hush_launch_t *launch,
+                                  const char *text,
+                                  hush_agent_follow_t *slot);
+static void hush_agent_begin_plan(const hush_agent_job_in_t *in);
 static void hush_agent_follow_push_hex(hush_agent_follow_t *slot,
                                        const char *hex, const char *ask);
 static void hush_agent_follow_push(const hush_event_t *ev,
@@ -1190,47 +1221,82 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
         job->n_co_robots++;
     }
 
-    hush_agent_fill_prompt(job->prompt, sizeof(job->prompt), bot, job->human_name);
-    hush_agent_append_assign(job->prompt, sizeof(job->prompt), job->ask);
-    if (in->scoped &&
-        strlen(job->prompt) + strlen(HUSH_AGENT_STRICT_SCOPE) + 1
-            < sizeof(job->prompt))
-        strcat(job->prompt, HUSH_AGENT_STRICT_SCOPE);
-
-    /* Two-robot broadcast: cooperate and divide labor, no leader. */
-    if (!in->scoped && in->mode == HUSH_AGENT_MODE_BROADCAST &&
-        job->n_co_robots == 1 &&
-        strlen(job->prompt) + strlen(HUSH_AGENT_COOPERATE) + 1
-            < sizeof(job->prompt))
-        strcat(job->prompt, HUSH_AGENT_COOPERATE);
-
-    /* Group mention seam + deliberation (M3.4):
-     * Co-mentioned robots must decide: own reply? cooperate? split? full convo?
-     * Peers are listed by name (with their nostr:npub token for dispatch).
-     * Skipped for strict per-robot scoping (explicit delegation) and for a
-     * two-robot broadcast (which uses the cooperate prompt above). */
-    if (!in->scoped && job->n_co_robots > 0 &&
-        !(in->mode == HUSH_AGENT_MODE_BROADCAST && job->n_co_robots == 1) &&
-        strlen(job->prompt) + 160 < sizeof(job->prompt)) {
-        size_t off = strlen(job->prompt);
-        const char *g = " Other robots mentioned: ";
-        size_t glen = strlen(g);
-        if (off + glen < sizeof(job->prompt)) {
-            memcpy(job->prompt + off, g, glen);
-            off += glen;
-            for (int c = 0; c < job->n_co_robots; ++c) {
-                const char *nm = job->co_names[c][0] ? job->co_names[c] : "robot";
-                const char *np = job->co_npubs[c];
-                int m = snprintf(job->prompt + off, sizeof(job->prompt) - off,
-                                 "%s%s (nostr:%s)", c > 0 ? " " : "", nm, np);
-                if (m < 0 || (size_t)m >= sizeof(job->prompt) - off)
-                    break;
-                off += (size_t)m;
+    if (in->leader) {
+        size_t off;
+        job->kind = HUSH_AGENT_KIND_PLAN;
+        hush_agent_copy(job->prompt, sizeof(job->prompt),
+                        HUSH_AGENT_LEADER_PROMPT);
+        off = strlen(job->prompt);
+        if (job->n_co_robots > 0 && off + 16 < sizeof(job->prompt)) {
+            const char *g = " Other robots: ";
+            size_t glen = strlen(g);
+            if (off + glen < sizeof(job->prompt)) {
+                memcpy(job->prompt + off, g, glen);
+                off += glen;
+                for (int c = 0; c < job->n_co_robots; ++c) {
+                    const char *nm = job->co_names[c][0]
+                        ? job->co_names[c] : "robot";
+                    int m = snprintf(job->prompt + off,
+                                     sizeof(job->prompt) - off,
+                                     "%s%s", c > 0 ? " " : "", nm);
+                    if (m < 0 || (size_t)m >= sizeof(job->prompt) - off)
+                        break;
+                    off += (size_t)m;
+                }
             }
         }
-        const char *delib = " You + these peers were mentioned together. Decide strategy (own reply / cooperate on one / split / full convo among us). To call a peer, write their name plus a phrase of intent (e.g. \"your turn, Major\"), never a bare mention and never a trailing mention at the end of a message.";
-        if (off + strlen(delib) < sizeof(job->prompt)) {
-            memcpy(job->prompt + off, delib, strlen(delib));
+        if (job->ask[0] != '\0' && off + 12 < sizeof(job->prompt)) {
+            char snip[HUSH_AGENT_SNIP_MAX + 1];
+            hush_agent_snip_line(snip, sizeof(snip), job->ask);
+            (void)snprintf(job->prompt + off, sizeof(job->prompt) - off,
+                           " The ask: %s", snip);
+        }
+    } else {
+        hush_agent_fill_prompt(job->prompt, sizeof(job->prompt), bot,
+                               job->human_name);
+        hush_agent_append_assign(job->prompt, sizeof(job->prompt), job->ask);
+        if (in->scoped &&
+            strlen(job->prompt) + strlen(HUSH_AGENT_STRICT_SCOPE) + 1
+                < sizeof(job->prompt))
+            strcat(job->prompt, HUSH_AGENT_STRICT_SCOPE);
+
+        /* Two-robot broadcast: cooperate and divide labor, no leader. */
+        if (!in->scoped && in->mode == HUSH_AGENT_MODE_BROADCAST &&
+            job->n_co_robots == 1 &&
+            strlen(job->prompt) + strlen(HUSH_AGENT_COOPERATE) + 1
+                < sizeof(job->prompt))
+            strcat(job->prompt, HUSH_AGENT_COOPERATE);
+
+        /* Group mention seam + deliberation:
+         * Co-mentioned robots must decide: own reply? cooperate? split? full
+         * convo? Peers are listed by name (with nostr:npub for dispatch).
+         * Skipped for strict scoping and for a two-robot broadcast. */
+        if (!in->scoped && job->n_co_robots > 0 &&
+            !(in->mode == HUSH_AGENT_MODE_BROADCAST && job->n_co_robots == 1) &&
+            strlen(job->prompt) + 160 < sizeof(job->prompt)) {
+            size_t off = strlen(job->prompt);
+            const char *g = " Other robots mentioned: ";
+            size_t glen = strlen(g);
+            if (off + glen < sizeof(job->prompt)) {
+                memcpy(job->prompt + off, g, glen);
+                off += glen;
+                for (int c = 0; c < job->n_co_robots; ++c) {
+                    const char *nm = job->co_names[c][0]
+                        ? job->co_names[c] : "robot";
+                    const char *np = job->co_npubs[c];
+                    int m = snprintf(job->prompt + off,
+                                     sizeof(job->prompt) - off,
+                                     "%s%s (nostr:%s)",
+                                     c > 0 ? " " : "", nm, np);
+                    if (m < 0 || (size_t)m >= sizeof(job->prompt) - off)
+                        break;
+                    off += (size_t)m;
+                }
+            }
+            const char *delib = " You + these peers were mentioned together. Decide strategy (own reply / cooperate on one / split / full convo among us). To call a peer, write their name plus a phrase of intent (e.g. \"your turn, Major\"), never a bare mention and never a trailing mention at the end of a message.";
+            if (off + strlen(delib) < sizeof(job->prompt)) {
+                memcpy(job->prompt + off, delib, strlen(delib));
+            }
         }
     }
 
@@ -1475,6 +1541,13 @@ static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
         }
 
         (void)hush_agent_insert_note(store, &in);
+        /* A leader plan note populates the follow queue with per-robot
+         * sub-tasks, order, and parallel flag before workers are kicked. */
+        if (job->kind == HUSH_AGENT_KIND_PLAN && job->launch != NULL) {
+            hush_agent_follow_t *slot = hush_agent_follow_find(job->parent_id);
+            if (slot != NULL)
+                hush_agent_parse_plan(job->launch, job->out, slot);
+        }
         if (job->launch != NULL) {
             hush_event_t posted;
 
@@ -1627,6 +1700,49 @@ static void hush_agent_handle_mention(hush_store_t *store,
                 break;
         }
         scoped = (mode == HUSH_AGENT_MODE_EXPLICIT);
+
+        /* 3+ robot broadcast: elect a leader, which plans the division of
+         * labor; non-leader mentions stay quiet until the plan is ready. */
+        if (mode == HUSH_AGENT_MODE_BROADCAST && nhex >= 3) {
+            char leader_hex[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+            hush_agent_elect_leader(launch, hexes, nhex, leader_hex,
+                                    sizeof(leader_hex));
+            if (bot.hex != NULL && leader_hex[0] != '\0' &&
+                strcmp(bot.hex, leader_hex) == 0) {
+                char root[HUSH_EVENT_ID_HEX_LEN + 1];
+                hush_agent_follow_t *slot;
+                size_t i;
+
+                hush_agent_event_root(root, sizeof(root), ev);
+                slot = hush_agent_follow_take(root);
+                hush_agent_event_channel(slot->channel, sizeof(slot->channel),
+                                         ev);
+                hush_agent_copy(slot->human_pub, sizeof(slot->human_pub),
+                                ev->pubkey);
+                hush_agent_copy(slot->ask, sizeof(slot->ask), ev->content);
+                slot->mode = (int)mode;
+                for (i = 0; i < nhex; i++) {
+                    if (strcmp(hexes[i], leader_hex) == 0)
+                        continue;
+                    hush_agent_follow_push_hex(slot, hexes[i], NULL);
+                }
+                {
+                    hush_agent_job_in_t pin;
+
+                    memset(&pin, 0, sizeof(pin));
+                    pin.store = store;
+                    pin.launch = launch;
+                    pin.bot = &bot;
+                    pin.parent = ev;
+                    pin.ask = ev->content;
+                    pin.mode = (int)mode;
+                    pin.leader = 1;
+                    hush_agent_begin_plan(&pin);
+                }
+            }
+            return;
+        }
+
         if (idx > 0 && idx < nhex) {
             hush_agent_follow_push(ev, launch, assigns, nhex, idx, scoped,
                                    (int)mode);
@@ -1762,6 +1878,261 @@ static hush_agent_mode_t hush_agent_classify(
     if (nhas <= 1)
         return HUSH_AGENT_MODE_BROADCAST;
     return HUSH_AGENT_MODE_AMBIGUOUS;
+}
+
+/* Leadership/leadership-enhancing skill ids. Used to rank leader candidates
+ * when Major is absent from a 3+ robot broadcast. Tunable list. */
+static int hush_agent_is_leadership_skill(const char *id)
+{
+    static const char *const skills[] = {
+        "system:hive-patterns",
+        "system:conflict-break",
+        "system:canvas-coach",
+        "system:summary-handoff",
+        "system:job-cap"
+    };
+    size_t i;
+
+    if (id == NULL)
+        return 0;
+    for (i = 0; i < sizeof(skills) / sizeof(skills[0]); i++)
+        if (strcmp(id, skills[i]) == 0)
+            return 1;
+    return 0;
+}
+
+static int hush_agent_leadership_score(const hush_launch_t *launch,
+                                       const char *hex)
+{
+    size_t i;
+    size_t k;
+    int score;
+
+    if (launch == NULL || hex == NULL || hex[0] == '\0')
+        return 0;
+    if (strcmp(hex, launch->payne.pubkey_hex) == 0) {
+        score = 0;
+        for (k = 0; k < launch->npayne_skills; k++)
+            if (hush_agent_is_leadership_skill(launch->payne_skills[k]))
+                score++;
+        return score;
+    }
+    for (i = 0; i < launch->roster.nagents; i++) {
+        if (strcmp(launch->roster.agents[i].id.pubkey_hex, hex) != 0)
+            continue;
+        score = 0;
+        for (k = 0; k < launch->roster.agents[i].nskills; k++)
+            if (hush_agent_is_leadership_skill(
+                    launch->roster.agents[i].skills[k]))
+                score++;
+        return score;
+    }
+    return 0;
+}
+
+/* Elects a leader for a 3+ robot broadcast. Major (Payne) leads when present;
+ * otherwise the robot with the most leadership skills leads, ties falling to
+ * the first-mentioned robot. */
+static void hush_agent_elect_leader(
+    const hush_launch_t *launch,
+    const char hexes[][HUSH_EVENT_PUBKEY_HEX_LEN + 1], size_t nhex,
+    char *out, size_t outsz)
+{
+    size_t i;
+    size_t best;
+    int best_score;
+    int score;
+
+    assert(launch != NULL);
+    assert(out != NULL);
+    assert(outsz > 0);
+    out[0] = '\0';
+    if (nhex == 0)
+        return;
+
+    for (i = 0; i < nhex; i++) {
+        if (strcmp(hexes[i], launch->payne.pubkey_hex) == 0) {
+            hush_agent_copy(out, outsz, hexes[i]);
+            return;
+        }
+    }
+
+    best = 0;
+    best_score = -1;
+    for (i = 0; i < nhex; i++) {
+        score = hush_agent_leadership_score(launch, hexes[i]);
+        if (score > best_score) {
+            best_score = score;
+            best = i;
+        }
+    }
+    hush_agent_copy(out, outsz, hexes[best]);
+}
+
+/* Maps a robot display name to its pubkey hex. Checks Payne then roster. */
+static int hush_agent_lookup_hex_by_name(const hush_launch_t *launch,
+                                         const char *name,
+                                         char *out, size_t outsz)
+{
+    size_t i;
+
+    assert(launch != NULL);
+    assert(out != NULL);
+    assert(outsz > 0);
+    out[0] = '\0';
+    if (name == NULL || name[0] == '\0')
+        return 0;
+    if (launch->payne_name[0] != '\0' &&
+        strcmp(launch->payne_name, name) == 0) {
+        hush_agent_copy(out, outsz, launch->payne.pubkey_hex);
+        return 1;
+    }
+    for (i = 0; i < launch->roster.nagents; i++) {
+        if (strcmp(launch->roster.agents[i].name, name) == 0) {
+            hush_agent_copy(out, outsz,
+                            launch->roster.agents[i].id.pubkey_hex);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Parses a leader's ```plan fence into slot->next[]/next_ask[]/order/parallel.
+ * Task order is the plan's listed order (reversed when order is lifo). Any
+ * worker already in slot->next[] but missing from the plan keeps an empty ask
+ * and is appended at the end (falls back to the shared ask). */
+static void hush_agent_parse_plan(const hush_launch_t *launch,
+                                  const char *text,
+                                  hush_agent_follow_t *slot)
+{
+    char tmp_hex[HUSH_AGENT_FOLLOW_ROBOTS][HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+    char tmp_ask[HUSH_AGENT_FOLLOW_ROBOTS][HUSH_AGENT_TASK_MAX];
+    size_t ntmp = 0;
+    size_t i;
+    size_t j;
+    const char *p;
+    const char *end;
+
+    assert(launch != NULL);
+    assert(slot != NULL);
+    if (text == NULL)
+        return;
+    p = strstr(text, HUSH_AGENT_PLAN_FENCE);
+    if (p == NULL)
+        return;
+    p += strlen(HUSH_AGENT_PLAN_FENCE);
+    end = strstr(p, HUSH_AGENT_PLAN_END);
+    slot->order = 0;
+    slot->parallel = 0;
+
+    while (p != NULL && *p != '\0' && (end == NULL || p < end) &&
+           ntmp < (size_t)HUSH_AGENT_FOLLOW_ROBOTS) {
+        char line[HUSH_AGENT_TASK_MAX];
+        const char *q = strchr(p, '\n');
+        size_t len = (q != NULL && (end == NULL || q < end))
+            ? (size_t)(q - p) : (end != NULL ? (size_t)(end - p) : strlen(p));
+        if (len >= sizeof(line))
+            len = sizeof(line) - 1;
+        memcpy(line, p, len);
+        line[len] = '\0';
+        /* trim trailing \r */
+        if (len > 0 && line[len - 1] == '\r')
+            line[len - 1] = '\0';
+
+        if (strncmp(line, "order:", 6) == 0) {
+            const char *v = line + 6;
+            while (*v == ' ' || *v == '\t')
+                v++;
+            if (strncmp(v, "lifo", 4) == 0 || strncmp(v, "filo", 4) == 0)
+                slot->order = 1;
+            else
+                slot->order = 0;
+        } else if (strncmp(line, "parallel:", 9) == 0) {
+            const char *v = line + 9;
+            while (*v == ' ' || *v == '\t')
+                v++;
+            slot->parallel = (v[0] == 'y' || v[0] == 'Y');
+        } else {
+            const char *colon = strchr(line, ':');
+            if (colon != NULL && colon > line) {
+                char name[HUSH_ROSTER_NAME_MAX];
+                char hex[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+                const char *task;
+                size_t nlen = (size_t)(colon - line);
+                if (nlen >= sizeof(name))
+                    nlen = sizeof(name) - 1;
+                memcpy(name, line, nlen);
+                name[nlen] = '\0';
+                task = colon + 1;
+                while (*task == ' ' || *task == '\t')
+                    task++;
+                if (hush_agent_lookup_hex_by_name(launch, name, hex,
+                                                  sizeof(hex))) {
+                    hush_agent_copy(tmp_hex[ntmp], sizeof(tmp_hex[0]), hex);
+                    hush_agent_copy(tmp_ask[ntmp], sizeof(tmp_ask[0]), task);
+                    ntmp++;
+                }
+            }
+        }
+        if (q == NULL || (end != NULL && q >= end))
+            break;
+        p = q + 1;
+    }
+
+    /* Capture the original worker membership before rebuilding. */
+    {
+        char old_hex[HUSH_AGENT_FOLLOW_ROBOTS][HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+        size_t nold = slot->nnext;
+        for (i = 0; i < nold; i++)
+            hush_agent_copy(old_hex[i], sizeof(old_hex[0]), slot->next[i]);
+
+        /* Reverse the parsed tasks for lifo. */
+        if (slot->order == 1) {
+            for (i = 0; i < ntmp / 2; i++) {
+                char hx[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+                char tk[HUSH_AGENT_TASK_MAX];
+                hush_agent_copy(hx, sizeof(hx), tmp_hex[i]);
+                hush_agent_copy(tk, sizeof(tk), tmp_ask[i]);
+                hush_agent_copy(tmp_hex[i], sizeof(tmp_hex[i]),
+                                tmp_hex[ntmp - 1 - i]);
+                hush_agent_copy(tmp_ask[i], sizeof(tmp_ask[i]),
+                                tmp_ask[ntmp - 1 - i]);
+                hush_agent_copy(tmp_hex[ntmp - 1 - i], sizeof(tmp_hex[0]),
+                                hx);
+                hush_agent_copy(tmp_ask[ntmp - 1 - i], sizeof(tmp_ask[0]),
+                                tk);
+            }
+        }
+
+        slot->nnext = 0;
+        for (i = 0; i < ntmp; i++) {
+            hush_agent_copy(slot->next[slot->nnext], sizeof(slot->next[0]),
+                            tmp_hex[i]);
+            if (tmp_ask[i][0] != '\0')
+                hush_agent_copy(slot->next_ask[slot->nnext],
+                                sizeof(slot->next_ask[0]), tmp_ask[i]);
+            else
+                slot->next_ask[slot->nnext][0] = '\0';
+            slot->nnext++;
+        }
+        /* Append any worker the plan omitted, so nobody is dropped. */
+        for (i = 0; i < nold; i++) {
+            int already = 0;
+            for (j = 0; j < slot->nnext; j++) {
+                if (strcmp(slot->next[j], old_hex[i]) == 0) {
+                    already = 1;
+                    break;
+                }
+            }
+            if (already || slot->nnext >= (size_t)HUSH_AGENT_FOLLOW_ROBOTS)
+                continue;
+            hush_agent_copy(slot->next[slot->nnext], sizeof(slot->next[0]),
+                            old_hex[i]);
+            slot->next_ask[slot->nnext][0] = '\0';
+            slot->nnext++;
+        }
+        slot->at = 0;
+    }
 }
 
 static size_t hush_agent_collect_hexes(const hush_launch_t *launch,
@@ -1989,6 +2360,16 @@ static void hush_agent_begin_work(const hush_agent_job_in_t *in)
                         in->ask != NULL ? in->ask : "");
 }
 
+static void hush_agent_begin_plan(const hush_agent_job_in_t *in)
+{
+    hush_agent_job_in_t plan;
+
+    assert(in != NULL);
+    plan = *in;
+    plan.leader = 1;
+    hush_agent_begin_work(&plan);
+}
+
 static void hush_agent_follow_kick(hush_store_t *store,
                                    const hush_launch_t *launch,
                                    const hush_event_t *ev)
@@ -2029,7 +2410,10 @@ static void hush_agent_follow_kick(hush_store_t *store,
         in.scoped = slot->scoped;
         in.mode = slot->mode;
         hush_agent_begin_work(&in);
-        return;
+        /* Serial: dispatch exactly one worker per finish. Parallel: dispatch
+         * all remaining workers now (capped by the job table). */
+        if (!slot->parallel)
+            return;
     }
 }
 

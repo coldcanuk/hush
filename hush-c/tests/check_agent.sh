@@ -382,6 +382,12 @@ fi
 echo "$html" | grep -q '(now - created \* 1000) > 2000' || fail "served UI must skip ack gradient after 2s"
 grep -q 'HUSH_AGENT_PEER_STANDARD' src/hush_agent.c || fail "missing inter-robot standard constant"
 grep -q 'hush_agent_intro_seen' src/hush_agent.c || fail "missing intro table"
+grep -q 'HUSH_AGENT_STRICT_SCOPE' src/hush_agent.c || fail "missing strict per-robot scope"
+grep -q 'HUSH_AGENT_COOPERATE' src/hush_agent.c || fail "missing two-robot cooperation prompt"
+grep -q 'hush_agent_elect_leader' src/hush_agent.c || fail "missing leader election"
+grep -q 'HUSH_AGENT_LEADER_PROMPT' src/hush_agent.c || fail "missing leader plan prompt"
+grep -q 'hush_agent_parse_plan' src/hush_agent.c || fail "missing leader plan parser"
+grep -q 'system:hive-patterns' src/hush_agent.c || fail "missing leadership skill set"
 handle=$(sed -n '/static void hush_agent_handle_mention/,/hush_agent_start_grok/p' src/hush_agent.c)
 echo "$handle" | grep -q 'hush_agent_on_deck' || fail "one intro must precede grok start"
 if echo "$handle" | grep -q 'dev_log_enabled'; then
