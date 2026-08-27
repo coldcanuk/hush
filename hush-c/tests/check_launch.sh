@@ -29,6 +29,12 @@ skills=$(curl -sf "http://127.0.0.1:${port}/api/skills")
 echo "$skills" | grep -q '"scopes":\["system","user","robot"\]' || fail "skills missing three scopes"
 echo "$skills" | grep -q 'system:forge-skill' || fail "skills missing forge-skill"
 echo "$skills" | grep -q '"scope":"system"' || fail "skills missing system scope"
+echo "$skills" | grep -q '"watermarks"' || fail "skills missing watermarks"
+echo "$skills" | grep -q '"chars_high":8000' || fail "skills missing char watermark"
+echo "$skills" | grep -q '"role":"chaperon"' || fail "skills missing chaperon role"
+echo "$skills" | grep -q 'system:ai-engineering-coach' || fail "skills missing coach pack"
+echo "$skills" | grep -q 'system:security-audit' || fail "skills missing audit pack"
+echo "$skills" | grep -q 'reverse-engineering' || fail "skills missing reverse-engineering"
 sess=$(curl -sf "http://127.0.0.1:${port}/api/session")
 echo "$sess" | grep -q '"logged_in":false' || fail "cold session should be logged out"
 echo "$sess" | grep -q '"ready":false' || fail "cold session should not be ready"
@@ -249,6 +255,12 @@ echo "$html" | grep -q 'agent-voice-wrap' || fail "HTML missing whisper-gated vo
 echo "$html" | grep -q 'whisperReady' || fail "HTML missing whisperReady gate"
 echo "$html" | grep -q 'id="skill-armory"' || fail "HTML missing skill armory"
 echo "$html" | grep -q 'id="skill-loadout"' || fail "HTML missing skill loadout"
+echo "$html" | grep -q 'id="skill-cycle"' || fail "HTML missing skill cycle"
+echo "$html" | grep -q 'id="skill-cycle-prev"' || fail "HTML missing skill cycle prev"
+echo "$html" | grep -q 'id="agent-clone"' || fail "HTML missing clone control"
+echo "$html" | grep -q 'skillCycleIdx' || fail "HTML missing skillCycleIdx"
+echo "$html" | grep -q 'skillWatermarks' || fail "HTML missing skillWatermarks"
+echo "$html" | grep -q 'action: \"clone\"' || fail "HTML missing clone action"
 echo "$html" | grep -q 'id="skill-forge-open"' || fail "HTML missing forge control"
 echo "$html" | grep -q 'id="forge-drawer"' || fail "HTML missing forge drawer"
 echo "$html" | grep -q 'w: 1, h: 1' || fail "inventory tiles must be equal 1x1"
@@ -301,6 +313,10 @@ vibe=$(curl -sf -X POST "http://127.0.0.1:${port}/api/vibe" \
 echo "$vibe" | grep -q '"ready":true' || fail "vibe should ready the hive"
 echo "$vibe" | grep -q '"visibility":"public"' || fail "vibe default public"
 echo "$vibe" | grep -q '"name":"Major"' || fail "Payne missing"
+echo "$vibe" | grep -q '"slug":"coach"' || fail "coach template missing"
+echo "$vibe" | grep -q '"slug":"auditor"' || fail "auditor template missing"
+echo "$vibe" | grep -q '"locked":true' || fail "locked template missing"
+echo "$vibe" | grep -q 'sgt-major-payne-copy' && fail "seed must not clone Major"
 echo "$vibe" | grep -q '"name":"Sgt Major Payne"' && fail "old Payne display name must not ship"
 echo "$vibe" | grep -q 'Sgt. Maj. Payne' && fail "old Payne display name must not ship"
 echo "$vibe" | grep -F '"providers":["goose"]' || fail "Payne default providers"
@@ -369,6 +385,26 @@ ag=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -d '{"name":"Sentry","system_prompt":"Watch.","provider":"goose","save_pass":false}')
 echo "$ag" | grep -q '"slug":"sentry"' || fail "agent create"
 echo "$ag" | grep -q '"provider":"goose"' || fail "agent provider"
+cloned=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"clone","slug":"coach"}')
+echo "$cloned" | grep -q '"slug":"coach-copy"' || fail "clone coach"
+echo "$cloned" | grep -q '"name":"Coach copy"' || fail "clone display name"
+noclone=$(curl -s -o /tmp/hush-no-major-clone -w '%{http_code}' \
+    -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"clone","slug":"sgt-major-payne"}')
+test "$noclone" != "200" || fail "Major must not clone"
+ui=$(curl -sf -X POST "http://127.0.0.1:${port}/api/skillui" \
+    -H 'Content-Type: application/json' \
+    -d '{"html":"body{color:#112233;font-family:sans-serif;padding:8px}","name":"fixture"}')
+echo "$ui" | grep -q '#112233' || fail "skillui color"
+echo "$ui" | grep -q 'sans-serif' || fail "skillui font"
+badrole=$(curl -s -o /tmp/hush-bad-role -w '%{http_code}' \
+    -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"update","slug":"sentry","skill_0":"system:civility"}')
+test "$badrole" != "200" || fail "chaperon skill must not equip on worker"
 upd=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"action":"update","slug":"sentry","name":"Sentry","system_prompt":"Watch.","picture":"panel:dogs:4","skill_0":"system:forge-skill"}')

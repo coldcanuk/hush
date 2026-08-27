@@ -62,6 +62,50 @@ int main(void)
            "vibe");
     expect(hush_launch_is_ready(&launch), "ready");
     expect(launch.vibe_public == 1, "vibe public default");
+    {
+        size_t i;
+        int coach = 0;
+        int auditor = 0;
+
+        for (i = 0; i < launch.roster.nagents; i++) {
+            if (strcmp(launch.roster.agents[i].slug, "coach") == 0 &&
+                launch.roster.agents[i].locked)
+                coach = 1;
+            if (strcmp(launch.roster.agents[i].slug, "auditor") == 0 &&
+                launch.roster.agents[i].locked)
+                auditor = 1;
+        }
+        expect(coach, "coach template");
+        expect(auditor, "auditor template");
+        expect(hush_launch_clone_agent(&launch, store, HUSH_LAUNCH_PAYNE_SLUG)
+                   == HUSH_ERR_DENIED,
+               "major no clone");
+        expect(hush_launch_clone_agent(&launch, store, "coach") == HUSH_OK,
+               "clone coach");
+        expect(hush_launch_format_session(&launch, 10555, json, sizeof(json),
+                                          &n) == HUSH_OK,
+               "session after clone");
+        expect(strstr(json, "\"slug\":\"coach-copy\"") != NULL, "coach copy");
+        expect(strstr(json, "sgt-major-payne-copy") == NULL, "not a second Major");
+        {
+            hush_roster_agent_in_t lock_in;
+
+            memset(&lock_in, 0, sizeof(lock_in));
+            memcpy(lock_in.name, "Nope", 5);
+            lock_in.has_enabled = 1;
+            lock_in.enabled = 0;
+            expect(hush_launch_update_agent(&launch, "coach", &lock_in) ==
+                       HUSH_OK,
+                   "locked enable");
+        }
+        for (i = 0; i < launch.roster.nagents; i++) {
+            if (strcmp(launch.roster.agents[i].slug, "coach") != 0)
+                continue;
+            expect(strcmp(launch.roster.agents[i].name, "Coach") == 0,
+                   "coach name stays");
+            expect(launch.roster.agents[i].enabled == 0, "coach off");
+        }
+    }
     expect(launch.vibe_token[0] != '\0', "join token");
     expect(hush_launch_set_vibe_visibility(&launch, 0) == HUSH_OK, "private");
     expect(launch.vibe_public == 0, "vibe private");

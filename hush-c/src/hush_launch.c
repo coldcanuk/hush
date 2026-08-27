@@ -59,6 +59,10 @@ static int hush_launch_has_group_id(const hush_launch_t *launch,
 /* True when slug is Payne or a raised robot. */
 static int hush_launch_has_robot(const hush_launch_t *launch, const char *slug);
 
+/* True when a raised agent already uses slug. */
+static int hush_launch_has_agent_slug(const hush_launch_t *launch,
+                                      const char *slug);
+
 /* Writes 32 hex chars from /dev/urandom. */
 static hush_status_t hush_launch_make_uuid(char *out, size_t outsz);
 
@@ -566,6 +570,69 @@ hush_status_t hush_launch_remove_agent(hush_launch_t *launch, const char *slug)
     return hush_launch_save_vibe(launch);
 }
 
+hush_status_t hush_launch_clone_agent(hush_launch_t *launch,
+                                      hush_store_t *store,
+                                      const char *slug)
+{
+    if (launch == NULL || store == NULL || slug == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe || !launch->logged_in)
+        return HUSH_ERR_ARG;
+    HUSH_TRY(hush_roster_clone_agent(&launch->roster, store, slug));
+    return hush_launch_save_vibe(launch);
+}
+
+static int hush_launch_has_agent_slug(const hush_launch_t *launch,
+                                      const char *slug)
+{
+    size_t i;
+
+    assert(launch != NULL);
+    assert(slug != NULL);
+    for (i = 0; i < launch->roster.nagents; i++) {
+        if (strcmp(launch->roster.agents[i].slug, slug) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
+                                         hush_store_t *store)
+{
+    hush_roster_agent_in_t in;
+
+    if (launch == NULL || store == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe)
+        return HUSH_ERR_ARG;
+    if (!hush_launch_has_agent_slug(launch, "coach")) {
+        memset(&in, 0, sizeof(in));
+        memcpy(in.name, "Coach", 6);
+        memcpy(in.prompt, "Coach hive jobs toward small tested C changes.", 47);
+        memcpy(in.provider, HUSH_ROSTER_PROVIDER_GROK_BUILD,
+               sizeof(HUSH_ROSTER_PROVIDER_GROK_BUILD));
+        memcpy(in.skills[0], "system:ai-engineering-coach", 28);
+        in.nskills = 1;
+        in.has_skills = 1;
+        in.locked = 1;
+        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
+    }
+    if (!hush_launch_has_agent_slug(launch, "auditor")) {
+        memset(&in, 0, sizeof(in));
+        memcpy(in.name, "Auditor", 8);
+        memcpy(in.prompt, "Hunt exploitable bugs. Report only what you can prove.",
+               55);
+        memcpy(in.provider, HUSH_ROSTER_PROVIDER_GROK_BUILD,
+               sizeof(HUSH_ROSTER_PROVIDER_GROK_BUILD));
+        memcpy(in.skills[0], "system:security-audit", 22);
+        in.nskills = 1;
+        in.has_skills = 1;
+        in.locked = 1;
+        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
+    }
+    return hush_launch_save_vibe(launch);
+}
+
 hush_status_t hush_launch_update_agent(hush_launch_t *launch, const char *slug,
                                        const hush_roster_agent_in_t *in)
 {
@@ -665,6 +732,7 @@ hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
     if (hush_launch_seed_hive(launch, store) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
     launch->has_vibe = 1;
+    HUSH_TRY(hush_launch_seed_templates(launch, store));
     return hush_launch_save_vibe(launch);
 }
 
@@ -2770,6 +2838,9 @@ static hush_status_t hush_launch_put_agent_extras(const hush_roster_agent_t *age
     HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
                                    agent->role[0] ? agent->role
                                                   : HUSH_ROSTER_ROLE_WORKER));
+    hush_launch_index_key(key, sizeof(key), "agent_locked", idx);
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                   agent->locked ? "1" : "0"));
     if (snprintf(count, sizeof(count), "%zu", agent->nskills)
         >= (int)sizeof(count))
         return HUSH_ERR_FULL;
@@ -2814,6 +2885,15 @@ static void hush_launch_take_agent_extras(hush_roster_agent_t *agent,
     if (!hush_roster_is_role(agent->role))
         hush_launch_copy_name(agent->role, sizeof(agent->role),
                               HUSH_ROSTER_ROLE_WORKER, "");
+    hush_launch_index_key(key, sizeof(key), "agent_locked", idx);
+    agent->locked = 0;
+    {
+        char flag[2];
+
+        if (hush_launch_json_string(json, key, flag, sizeof(flag))
+            && flag[0] == '1')
+            agent->locked = 1;
+    }
     hush_launch_index_key(key, sizeof(key), "agent_nskills", idx);
     n = hush_launch_json_count(json, key, (size_t)HUSH_SKILL_EQUIP_MAX);
     agent->nskills = 0;

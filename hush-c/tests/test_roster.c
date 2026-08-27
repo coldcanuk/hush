@@ -146,10 +146,40 @@ int main(void)
     expect(hush_roster_remove_agent(&roster, HUSH_ROSTER_PAYNE_SLUG) ==
                HUSH_ERR_DENIED,
            "payne stays");
+    expect(hush_roster_clone_agent(&roster, store, HUSH_ROSTER_PAYNE_SLUG) ==
+               HUSH_ERR_DENIED,
+           "payne no clone");
+    expect(hush_roster_clone_agent(&roster, store, "sentry") == HUSH_OK,
+           "clone sentry");
+    expect(roster.nagents == 2, "sentry plus copy");
+    expect(strcmp(roster.agents[1].name, "Sentry Two copy") == 0, "copy name");
+    expect(roster.agents[1].locked == 0, "copy unlocked");
+    expect(hush_roster_remove_agent(&roster, "sentry-two-copy") == HUSH_OK,
+           "drop copy");
     expect(hush_roster_remove_agent(&roster, "sentry") == HUSH_OK, "delete");
     expect(roster.nagents == 0, "empty after delete");
     expect(hush_roster_remove_agent(&roster, "sentry") == HUSH_ERR_NOT_FOUND,
            "gone");
+    memset(&agent, 0, sizeof(agent));
+    memcpy(agent.name, "Coach", 6);
+    memcpy(agent.prompt, "Coach hive jobs.", 17);
+    memcpy(agent.provider, "goose", 6);
+    agent.locked = 1;
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "locked coach");
+    expect(roster.agents[0].locked == 1, "coach locked");
+    memcpy(agent.name, "Nope", 5);
+    memcpy(agent.prompt, "Nope prompt", 12);
+    agent.has_enabled = 1;
+    agent.enabled = 0;
+    expect(hush_roster_update_agent(&roster, "coach", &agent) == HUSH_OK,
+           "locked enable");
+    expect(strcmp(roster.agents[0].name, "Coach") == 0, "locked name stays");
+    expect(roster.agents[0].enabled == 0, "locked disable");
+    expect(hush_roster_clone_agent(&roster, store, "coach") == HUSH_OK,
+           "clone locked");
+    expect(roster.nagents == 2, "coach plus copy");
+    expect(roster.agents[1].locked == 0, "clone unlocked");
     hush_store_destroy(store);
     hush_pass_set_helper(NULL);
     if (g_fail)

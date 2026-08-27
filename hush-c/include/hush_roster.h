@@ -59,6 +59,7 @@ typedef struct {
     char skills[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
     size_t nskills;
     int enabled;
+    int locked;
     char role[HUSH_ROSTER_NAME_MAX];
     hush_roster_context_t context[HUSH_ROSTER_CONTEXT_MAX];
     size_t ncontext;
@@ -129,6 +130,8 @@ typedef struct {
     size_t nskills;
     int enabled;
     int has_enabled;
+    int locked;
+    int has_locked;
     char role[HUSH_ROSTER_NAME_MAX];
     int has_role;
     int has_picture;
@@ -148,9 +151,15 @@ hush_status_t hush_roster_add_agent(hush_roster_t *roster,
 hush_status_t hush_roster_remove_agent(hush_roster_t *roster, const char *slug);
 
 /* Updates name, prompt, provider, picture, voice, and equipped skills.
- * Slug and identity stay. Payne's slug is refused. */
+ * Slug and identity stay. Payne's slug is refused. Locked templates
+ * only accept enable changes. */
 hush_status_t hush_roster_update_agent(hush_roster_t *roster, const char *slug,
                                        const hush_roster_agent_in_t *in);
+
+/* Clones an agent to "<name> copy" unlocked. Payne is refused. */
+hush_status_t hush_roster_clone_agent(hush_roster_t *roster,
+                                      hush_store_t *store,
+                                      const char *slug);
 
 /* Appends agents and members JSON after a channels/projects-style cursor.
  * Writes a comma-prefixed fragment: ,"agents":[...],"members":[...]

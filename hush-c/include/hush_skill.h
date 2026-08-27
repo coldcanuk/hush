@@ -13,16 +13,26 @@ enum {
     HUSH_SKILL_BODY_MAX = 4096,
     HUSH_SKILL_SCOPE_MAX = 16,
     HUSH_SKILL_ROBOT_MAX = 64,
-    HUSH_SKILL_CATALOG_MAX = 64,
+    HUSH_SKILL_CATALOG_MAX = 256,
     HUSH_SKILL_EQUIP_MAX = 8,
-    HUSH_SKILL_JSON_MAX = 16384,
+    HUSH_SKILL_EQUIP_LOW = 1,
+    HUSH_SKILL_CHAR_LOW = 200,
+    HUSH_SKILL_CHAR_HIGH = 8000,
+    HUSH_SKILL_COMPLEX_LOW = 2,
+    HUSH_SKILL_COMPLEX_HIGH = 64,
+    HUSH_SKILL_JSON_MAX = 65536,
     HUSH_SKILL_VOICE_MAX = 32,
-    HUSH_SKILL_VOICE_COUNT = 6
+    HUSH_SKILL_VOICE_COUNT = 6,
+    HUSH_SKILL_ROLE_MAX = 16,
+    HUSH_SKILL_CATEGORY_MAX = 32
 };
 
 #define HUSH_SKILL_SCOPE_SYSTEM "system"
 #define HUSH_SKILL_SCOPE_USER "user"
 #define HUSH_SKILL_SCOPE_ROBOT "robot"
+#define HUSH_SKILL_ROLE_WORKER "worker"
+#define HUSH_SKILL_ROLE_CHAPERON "chaperon"
+#define HUSH_SKILL_ROLE_ANY "any"
 #define HUSH_SKILL_FORGE_SLUG "forge-skill"
 #define HUSH_SKILL_FORGE_ID "system:forge-skill"
 #define HUSH_SKILL_FILE_NAME "SKILL.md"
@@ -33,6 +43,10 @@ typedef struct {
     char scope[HUSH_SKILL_SCOPE_MAX];
     char robot[HUSH_SKILL_ROBOT_MAX];
     char summary[HUSH_SKILL_SUMMARY_MAX];
+    char role[HUSH_SKILL_ROLE_MAX];
+    char category[HUSH_SKILL_CATEGORY_MAX];
+    size_t chars;
+    int complexity;
 } hush_skill_t;
 
 typedef struct {
@@ -72,5 +86,27 @@ const char *hush_skill_voice_id(size_t idx);
 
 /* Canonical forge-skill markdown. Used to seed ~/.hush/skills/system. */
 const char *hush_skill_forge_body(void);
+
+/* Character and complexity scores for a SKILL.md body. */
+void hush_skill_score_body(const char *body, size_t *out_chars, int *out_complex);
+
+/* Finds a catalog skill by id. NULL when missing. */
+const hush_skill_t *hush_skill_find(const hush_skill_catalog_t *cat,
+                                    const char *id);
+
+/* True when skill.role may be worn by robot_role (worker/chaperon). */
+int hush_skill_role_ok(const hush_skill_t *skill, const char *robot_role);
+
+/* Equips skill_id onto ids[*nids] when role and watermarks allow.
+ * Fails HUSH_ERR_DENIED on a role wall, HUSH_ERR_FULL over cap,
+ * HUSH_ERR_NOT_FOUND when the id is unknown. */
+hush_status_t hush_skill_try_equip(const hush_skill_catalog_t *cat,
+                                   char ids[][HUSH_SKILL_ID_MAX],
+                                   size_t *nids,
+                                   const char *skill_id,
+                                   const char *robot_role);
+
+/* Copies pack_dir/<slug>/SKILL.md into ~/.hush/skills/system when missing. */
+hush_status_t hush_skill_seed_pack(const char *pack_dir);
 
 #endif /* HUSH_SKILL_H */
