@@ -56,6 +56,7 @@ typedef struct {
     char voice[HUSH_SKILL_VOICE_MAX];
     char skills[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
     size_t nskills;
+    int enabled;
     hush_roster_context_t context[HUSH_ROSTER_CONTEXT_MAX];
     size_t ncontext;
 } hush_roster_agent_t;
@@ -120,6 +121,11 @@ typedef struct {
     char voice[HUSH_SKILL_VOICE_MAX];
     char skills[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
     size_t nskills;
+    int enabled;
+    int has_enabled;
+    int has_picture;
+    int has_voice;
+    int has_skills;
     hush_roster_context_in_t context[HUSH_ROSTER_CONTEXT_MAX];
     size_t ncontext;
 } hush_roster_agent_in_t;

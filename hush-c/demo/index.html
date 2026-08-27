@@ -664,6 +664,7 @@
 .agent-pic-cell.on { border-color: var(--accent); box-shadow: 0 0 6px var(--accent); }
 .robot-ack.thinking, .robot-ack.reacting { opacity: 0.9; font-size: 0.78rem; }
 .inv-item.has-pic { background-size: cover; background-position: center; }
+.inv-item.disabled { filter: grayscale(1); opacity: 0.55; }
 .inv-item.has-pic .nm { display: none; }
 .skill-board { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
 .skill-pool, .skill-loadout {
@@ -987,7 +988,7 @@
         <button class="icon-plus" id="agent-prompt-add" type="button" aria-label="Add system prompt">+</button>
       </div>
       <div class="pills" id="agent-prompt-pill"></div>
-      <p class="help">Write its system prompt. Required.</p>
+      <p class="help" id="agent-prompt-help">Write its system prompt. Required.</p>
       <label>Context files</label>
       <div class="pill-row">
         <input id="agent-file" type="file" accept=".txt,.md,text/plain,text/markdown" hidden>
@@ -1016,6 +1017,10 @@
       <div id="agent-pic-sheets" class="agent-pic-sheets" role="tablist" aria-label="Picture sheets"></div>
       <div id="agent-pic-picker" class="agent-pic-picker" role="listbox" aria-label="Robot picture picker"></div>
       <input id="agent-picture" type="hidden" value="">
+      <div class="row" id="agent-enabled-row" hidden>
+        <label for="agent-enabled">Enable</label>
+        <label class="switch"><input id="agent-enabled" type="checkbox" checked><span class="slider"></span></label>
+      </div>
       <div id="agent-voice-wrap" hidden>
         <label for="agent-voice">Voice</label>
         <select id="agent-voice"></select>
@@ -2112,7 +2117,8 @@
         providers: order,
         prompt: p.prompt || p.about || "",
         ncontext: 0,
-        locked: true
+        locked: true,
+        enabled: p.enabled !== false
       }];
       (session.agents || []).forEach((a) => {
         if (!a || a.slug === PAYNE_SLUG) return;
@@ -2128,7 +2134,8 @@
           voice: a.voice || "",
           skills: a.skills || [],
           ncontext: a.ncontext || 0,
-          locked: false
+          locked: false,
+          enabled: a.enabled !== false
         });
       });
       return list;
@@ -2251,6 +2258,19 @@
       draftPicture = "";
       picSheet = "dogs";
       if ($("agent-picture")) $("agent-picture").value = "";
+      if ($("agent-name")) {
+        $("agent-name").disabled = false;
+        $("agent-name").readOnly = false;
+      }
+      if ($("agent-prompt")) {
+        $("agent-prompt").disabled = false;
+        $("agent-prompt").readOnly = false;
+      }
+      if ($("agent-name-add")) $("agent-name-add").hidden = false;
+      if ($("agent-prompt-add")) $("agent-prompt-add").hidden = false;
+      if ($("agent-prompt-help")) $("agent-prompt-help").textContent = "Write its system prompt. Required.";
+      if ($("agent-enabled-row")) $("agent-enabled-row").hidden = true;
+      if ($("agent-enabled")) $("agent-enabled").checked = true;
       paintAgentPicPicker();
     }
 
@@ -2620,23 +2640,34 @@
         payneOrder = (bot.providers && bot.providers.length)
           ? bot.providers.slice() : ["goose"];
         $("agent-title").textContent = "Edit Major";
-        $("agent-help").textContent = "Name, prompt, picture, skills, and ranked runtimes.";
+        $("agent-help").textContent = "Major is the platform robot. Name and standing orders stay.";
         $("agent-save").textContent = "Save Robot";
         $("agent-delete").disabled = true;
         $("agent-identity").hidden = false;
         $("agent-pass").closest("label").hidden = true;
         $("payne-provider-pills").hidden = false;
         $("agent-provider-help").textContent = "Choose the runtime. First on deck speaks first.";
-        draftName = bot.name || "Major";
+        draftName = "Major";
         draftPrompt = bot.prompt || bot.about || "";
-        if ($("agent-name")) $("agent-name").value = draftName;
-        if ($("agent-prompt")) $("agent-prompt").value = draftPrompt;
+        if ($("agent-name")) {
+          $("agent-name").value = "Major";
+          $("agent-name").disabled = true;
+          $("agent-name").readOnly = true;
+        }
+        if ($("agent-prompt")) {
+          $("agent-prompt").value = draftPrompt;
+          $("agent-prompt").disabled = true;
+          $("agent-prompt").readOnly = true;
+        }
+        if ($("agent-name-add")) $("agent-name-add").hidden = true;
+        if ($("agent-prompt-add")) $("agent-prompt-add").hidden = true;
+        if ($("agent-prompt-help")) $("agent-prompt-help").textContent = "Platform standing orders. Not editable.";
         document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
           el.checked = el.value === payneOrder[0];
         });
         paintPayneOrder();
-        paintNamePill();
-        paintPromptPill();
+        if ($("agent-name-pill")) $("agent-name-pill").innerHTML = "";
+        if ($("agent-prompt-pill")) $("agent-prompt-pill").innerHTML = "";
       } else if (bot && bot.slug && !bot.locked) {
         editSlug = bot.slug;
         draftName = bot.name || "";
@@ -2654,6 +2685,8 @@
       }
       draftPicture = (bot && bot.picture) ? bot.picture : "";
       if ($("agent-picture")) $("agent-picture").value = draftPicture;
+      if ($("agent-enabled-row")) $("agent-enabled-row").hidden = !(bot && bot.slug);
+      if ($("agent-enabled")) $("agent-enabled").checked = !bot || bot.enabled !== false;
       equippedSkills = (bot && bot.skills) ? bot.skills.slice() : [];
       paintVoiceRow(bot && bot.voice);
       loadSkillCatalog(bot && bot.slug);
@@ -2869,14 +2902,14 @@
       if (typedPrompt) draftPrompt = typedPrompt;
       const voiceEl = $("agent-voice");
       const voice = (whisperReady && voiceEl) ? (voiceEl.value || "") : "";
+      const enabled = !($("agent-enabled")) || $("agent-enabled").checked;
       if (editingPayne) {
         if (!payneOrder.length) payneOrder = ["goose"];
         const body = {
           slug: PAYNE_SLUG,
-          name: draftName || "Major",
-          system_prompt: draftPrompt,
           picture: draftPicture || ($("agent-picture") && $("agent-picture").value) || "",
-          voice: voice
+          voice: voice,
+          enabled: enabled
         };
         payneOrder.forEach((id, i) => { body["provider_" + i] = id; });
         equippedSkills.forEach((id, i) => { body["skill_" + i] = id; });
@@ -2901,6 +2934,7 @@
         provider: provider,
         picture: draftPicture || ($("agent-picture") && $("agent-picture").value) || "",
         voice: voice,
+        enabled: enabled,
         save_pass: !box || box.checked
       };
       if (editSlug) {
@@ -4614,7 +4648,8 @@
         w: sz.w, h: sz.h,
         gx: slot.gx, gy: slot.gy,
         slug: (bot && bot.slug) ? bot.slug : "",
-        color: (bot && bot.locked) ? "#d4a017" : "#0ff"
+        color: (bot && bot.locked) ? "#d4a017" : "#0ff",
+        enabled: !bot || bot.enabled !== false
       };
       invItems.push(item);
       saveInvLayout();
@@ -4632,6 +4667,7 @@
         if (it) {
           it.name = bot.name;
           it.picture = bot.picture || it.picture;
+          it.enabled = bot.enabled !== false;
           return;
         }
         const sz = { w: 1, h: 1 };
@@ -4653,7 +4689,8 @@
           w: w, h: h, gx: gx, gy: gy,
           slug: bot.slug,
           picture: bot.picture || "",
-          color: bot.locked ? "#d4a017" : "#0ff"
+          color: bot.locked ? "#d4a017" : "#0ff",
+          enabled: bot.enabled !== false
         });
       });
       invItems = invItems.filter((it) => keep[it.slug]);
@@ -4691,7 +4728,7 @@
       invItems.forEach((it) => {
         if (compact && (it.gx + it.w > cols || it.gy + it.h > rows)) return;
         const el = document.createElement("div");
-        el.className = "inv-item";
+        el.className = "inv-item" + (it.enabled === false ? " disabled" : "");
         el.dataset.id = it.id;
         el.dataset.grid = compact ? "compact" : "full";
         el.style.left = (it.gx * cell + 1) + "px";

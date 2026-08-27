@@ -377,6 +377,7 @@ void hush_launch_init(hush_launch_t *launch)
     launch->dev_log_enabled = 0; /* default: disabled (see M3.1) */
     hush_roster_init(&launch->roster);
     hush_launch_default_payne_providers(launch);
+    launch->payne_enabled = 1;
 }
 
 hush_status_t hush_launch_create_identity(hush_launch_t *launch)
@@ -581,19 +582,18 @@ hush_status_t hush_launch_update_payne_profile(hush_launch_t *launch,
     if (!launch->has_vibe || !launch->logged_in)
         return HUSH_ERR_ARG;
     hush_launch_fill_payne_defaults(launch);
-    if (in->name[0] != '\0')
-        hush_launch_copy_name(launch->payne_name, sizeof(launch->payne_name),
-                              in->name, "");
-    if (in->prompt[0] != '\0')
-        hush_launch_copy_name(launch->payne_prompt, sizeof(launch->payne_prompt),
-                              in->prompt, "");
-    hush_launch_copy_name(launch->payne_picture, sizeof(launch->payne_picture),
-                          in->picture, "");
-    if (in->voice[0] != '\0' && !hush_skill_is_voice(in->voice))
-        return HUSH_ERR_PARSE;
-    hush_launch_copy_name(launch->payne_voice, sizeof(launch->payne_voice),
-                          in->voice, "");
-    if (hush_launch_copy_payne_skills(launch, in) != HUSH_OK)
+    if (in->has_picture)
+        hush_launch_copy_name(launch->payne_picture, sizeof(launch->payne_picture),
+                              in->picture, "");
+    if (in->has_voice) {
+        if (in->voice[0] != '\0' && !hush_skill_is_voice(in->voice))
+            return HUSH_ERR_PARSE;
+        hush_launch_copy_name(launch->payne_voice, sizeof(launch->payne_voice),
+                              in->voice, "");
+    }
+    if (in->has_enabled)
+        launch->payne_enabled = in->enabled ? 1 : 0;
+    if (in->has_skills && hush_launch_copy_payne_skills(launch, in) != HUSH_OK)
         return HUSH_ERR_FULL;
     return hush_launch_save_vibe(launch);
 }
@@ -657,6 +657,7 @@ hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
     launch->payne_picture[0] = '\0';
     launch->payne_voice[0] = '\0';
     launch->npayne_skills = 0;
+    launch->payne_enabled = 1;
     hush_launch_fill_payne_defaults(launch);
     if (hush_launch_seed_hive(launch, store) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
@@ -1382,9 +1383,11 @@ static hush_status_t hush_launch_format_payne_providers(
     n = snprintf(out + *off, outsz - *off,
                  "\"name\":\"%s\",\"npub\":\"%s\",\"pubkey\":\"%s\","
                  "\"about\":\"%s\",\"prompt\":\"%s\",\"picture\":\"%s\","
-                 "\"voice\":\"%s\",\"provider\":\"%s\",\"providers\":[",
+                 "\"voice\":\"%s\",\"enabled\":%s,\"provider\":\"%s\","
+                 "\"providers\":[",
                  name, npub, hex, about, about, launch->payne_picture,
-                 launch->payne_voice, primary);
+                 launch->payne_voice,
+                 launch->payne_enabled ? "true" : "false", primary);
     if (n < 0 || *off + (size_t)n >= outsz)
         return HUSH_ERR_FULL;
     *off += (size_t)n;
@@ -2651,6 +2654,8 @@ static hush_status_t hush_launch_put_payne_profile(const hush_launch_t *launch,
                                    launch->payne_picture));
     HUSH_TRY(hush_launch_put_field(out, outsz, off, "payne_voice",
                                    launch->payne_voice));
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "payne_enabled",
+                                   launch->payne_enabled ? "1" : "0"));
     if (snprintf(count, sizeof(count), "%zu", launch->npayne_skills)
         >= (int)sizeof(count))
         return HUSH_ERR_FULL;
@@ -2680,6 +2685,14 @@ static void hush_launch_take_payne_profile(hush_launch_t *launch,
                                   sizeof(launch->payne_picture));
     (void)hush_launch_json_string(json, "payne_voice", launch->payne_voice,
                                   sizeof(launch->payne_voice));
+    launch->payne_enabled = 1;
+    {
+        char flag[2];
+
+        if (hush_launch_json_string(json, "payne_enabled", flag, sizeof(flag))
+            && flag[0] == '0')
+            launch->payne_enabled = 0;
+    }
     launch->npayne_skills = 0;
     n = hush_launch_json_count(json, "npayne_skills",
                                (size_t)HUSH_SKILL_EQUIP_MAX);
@@ -2708,6 +2721,9 @@ static hush_status_t hush_launch_put_agent_extras(const hush_roster_agent_t *age
     HUSH_TRY(hush_launch_put_field(out, outsz, off, key, agent->picture));
     hush_launch_index_key(key, sizeof(key), "agent_voice", idx);
     HUSH_TRY(hush_launch_put_field(out, outsz, off, key, agent->voice));
+    hush_launch_index_key(key, sizeof(key), "agent_enabled", idx);
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                   agent->enabled ? "1" : "0"));
     if (snprintf(count, sizeof(count), "%zu", agent->nskills)
         >= (int)sizeof(count))
         return HUSH_ERR_FULL;
@@ -2738,6 +2754,15 @@ static void hush_launch_take_agent_extras(hush_roster_agent_t *agent,
                                   sizeof(agent->picture));
     hush_launch_index_key(key, sizeof(key), "agent_voice", idx);
     (void)hush_launch_json_string(json, key, agent->voice, sizeof(agent->voice));
+    hush_launch_index_key(key, sizeof(key), "agent_enabled", idx);
+    agent->enabled = 1;
+    {
+        char flag[2];
+
+        if (hush_launch_json_string(json, key, flag, sizeof(flag))
+            && flag[0] == '0')
+            agent->enabled = 0;
+    }
     hush_launch_index_key(key, sizeof(key), "agent_nskills", idx);
     n = hush_launch_json_count(json, key, (size_t)HUSH_SKILL_EQUIP_MAX);
     agent->nskills = 0;

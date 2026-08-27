@@ -880,11 +880,8 @@ static hush_status_t hush_http_update_payne(int fd, const char *body)
     if (st != HUSH_OK)
         return hush_http_reply_session(fd, st);
     memset(&in, 0, sizeof(in));
-    (void)hush_json_field(body, "name", in.name, sizeof(in.name));
-    (void)hush_json_field(body, "system_prompt", in.prompt, sizeof(in.prompt));
     hush_http_fill_agent_extras(&in, body);
-    if (in.name[0] != '\0' || in.prompt[0] != '\0' || in.picture[0] != '\0'
-        || in.voice[0] != '\0' || in.nskills > 0)
+    if (in.has_picture || in.has_voice || in.has_skills || in.has_enabled)
         st = hush_launch_update_payne_profile(g_launch, &in);
     return hush_http_reply_session(fd, st);
 }
@@ -910,10 +907,19 @@ static hush_status_t hush_http_update_agent(int fd, const char *body)
 static void hush_http_fill_agent_extras(hush_roster_agent_in_t *in,
                                         const char *body)
 {
+    char raw[8];
+
     assert(in != NULL);
     assert(body != NULL);
-    (void)hush_json_field(body, "picture", in->picture, sizeof(in->picture));
-    (void)hush_json_field(body, "voice", in->voice, sizeof(in->voice));
+    if (hush_json_field(body, "picture", in->picture, sizeof(in->picture)))
+        in->has_picture = 1;
+    if (hush_json_field(body, "voice", in->voice, sizeof(in->voice)))
+        in->has_voice = 1;
+    if (hush_json_bare_field(body, "enabled", raw, sizeof(raw))) {
+        in->has_enabled = 1;
+        in->enabled = (strcmp(raw, "false") == 0 || strcmp(raw, "0") == 0)
+            ? 0 : 1;
+    }
     hush_http_fill_agent_skills(in, body);
 }
 
@@ -926,6 +932,8 @@ static void hush_http_fill_agent_skills(hush_roster_agent_in_t *in,
     assert(in != NULL);
     assert(body != NULL);
     in->nskills = 0;
+    if (hush_json_has_key(body, "skill_0"))
+        in->has_skills = 1;
     for (i = 0; i < (size_t)HUSH_SKILL_EQUIP_MAX; ++i) {
         if (snprintf(key, sizeof(key), "skill_%zu", i) >= (int)sizeof(key))
             return;

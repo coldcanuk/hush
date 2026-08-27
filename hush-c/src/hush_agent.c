@@ -450,6 +450,8 @@ static int hush_agent_lookup_robot(hush_agent_robot_t *out,
         out->provider = (launch->npayne_providers > 0)
             ? launch->payne_providers[0] : HUSH_ROSTER_PROVIDER_GOOSE;
         out->prompt = hush_launch_payne_prompt(launch);
+        if (!launch->payne_enabled)
+            return 0;
         return 1;
     }
     for (i = 0; i < launch->roster.nagents; i++) {
@@ -457,6 +459,8 @@ static int hush_agent_lookup_robot(hush_agent_robot_t *out,
         if (!hush_agent_key_matches(mention, agent->id.npub,
                                     agent->id.pubkey_hex))
             continue;
+        if (!agent->enabled)
+            return 0;
         out->name = agent->name;
         out->npub = agent->id.npub;
         out->hex = agent->id.pubkey_hex;
