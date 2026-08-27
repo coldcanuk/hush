@@ -38,9 +38,9 @@ What the robot should do when this skill is equipped.
 
 ## Equip and prune
 
-The robot editor Armory lists skills by scope. Click a chip to equip it into
-the Loadout. Click a Loadout chip to prune it. Equipped ids persist on the
-robot (`skill_0` … `skill_7`).
+The Skill stash cycles gems like Diablo II amulets. Pick a gem up and drop
+it onto a robot tile or an empty loadout socket. Lift a worn gem to prune
+it. Equipped ids persist on the robot (`skill_0` … `skill_7`).
 
 ## Forge (this skill)
 

@@ -82,6 +82,13 @@ holds an nsec or provider secret. Install and first-run create
   Seed / Clear / Raise are one equal button class. Seed is a Payne-gated
   team briefing (not local Cosplay tiles).
   Create lives on `#tool-rail` (§15) and inside inventory.
+- **Skill stash** (Diablo II amulet analog) sits under the robot grid:
+  cycle `#hive-skill-prev` / `#hive-skill-cycle` / `#hive-skill-next`
+  (wheel also pages). The current skill is a 1×1 gem, not a catalog dump.
+  Pointer pickup holds the gem on the cursor (`#skill-ghost`). Drop onto a
+  robot tile wears it immediately (`POST /api/agent` `skill_0…` + `nskills`).
+  Locked templates refuse (clone first). Payne may wear skills. Role wall
+  and watermarks still refuse. Escape cancels the hold.
 - Stream + composer unchanged in spirit. Empty: Payne directive.
 
 ### 10. Close vs Exit (process lifecycle)
@@ -211,7 +218,10 @@ read-only. Slug stays `sgt-major-payne`. Delete stays disabled.
 Every robot, including Major, has an Enable/Disable switch
 (`#agent-enabled`). Disabled robots use `.inv-item.disabled`
 (greyscale) and do not answer mentions. Ranked providers remain.
-Skills use Armory / Loadout plus Forge. `POST /api/agent` with the
+Skills use a stash carousel plus an 8-socket paper doll (not a chip wall).
+Cycle `#skill-cycle`; armory shows neighbors; `#skill-loadout` is a 3×3
+doll around the robot portrait. Pick a gem, drop it on an empty socket.
+Lift a worn gem to prune. Forge still writes a SKILL.md. `POST /api/agent` with the
 Payne slug updates providers, picture, voice, skills, and `enabled`.
 Name and `system_prompt` on that POST are ignored. Session
 `payne.provider` is `providers[0]`; `payne.providers` is the full
