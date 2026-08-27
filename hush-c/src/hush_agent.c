@@ -58,6 +58,7 @@ enum {
     "To hand off, emit the peer nostr:npub in the note. Do not reorder mentions."
 #define HUSH_AGENT_HYGIENE \
     " Fulfill YOUR assignment in this note, not a peer's. " \
+    "STOP immediately after your part is done. Do not answer questions or perform actions assigned to a peer. " \
     "If peers are mentioned, they will take their turn after you hand off. " \
     "Do not mention yourself. After your work you may emit nostr:<peer-npub> " \
     "to hand off. Include any asked code. No preamble-only replies. " \
@@ -1368,6 +1369,19 @@ static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
 
     assert(job != NULL);
     hush_agent_trim(job->out);
+    {
+        char *p = job->out;
+        char temp[sizeof(job->out)];
+        while ((p = strstr(p, "@npub1")) != NULL) {
+            size_t pre_len = (size_t)(p - job->out);
+            temp[0] = '\0';
+            strncat(temp, job->out, pre_len);
+            strcat(temp, "nostr:");
+            strcat(temp, p + 1);
+            hush_agent_copy(job->out, sizeof(job->out), temp);
+            p = job->out + pre_len + 6;
+        }
+    }
     if (job->kind == HUSH_AGENT_KIND_FIXUP) {
         job->ok = ok && job->out[0] != '\0';
         job->busy = 0;
