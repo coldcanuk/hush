@@ -1,11 +1,11 @@
 ---
-name: agentic-patterns
+name: hive-patterns
 description: Apply Gulli agentic design patterns in the hive.
 role: any
 category: knowledge
 ---
 
-# agentic-patterns
+# hive-patterns
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 

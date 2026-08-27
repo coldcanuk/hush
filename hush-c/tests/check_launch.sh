@@ -32,9 +32,18 @@ echo "$skills" | grep -q '"scope":"system"' || fail "skills missing system scope
 echo "$skills" | grep -q '"watermarks"' || fail "skills missing watermarks"
 echo "$skills" | grep -q '"chars_high":8000' || fail "skills missing char watermark"
 echo "$skills" | grep -q '"role":"chaperon"' || fail "skills missing chaperon role"
-echo "$skills" | grep -q 'system:ai-engineering-coach' || fail "skills missing coach pack"
-echo "$skills" | grep -q 'system:security-audit' || fail "skills missing audit pack"
+echo "$skills" | grep -q 'system:canvas-coach' || fail "skills missing coach pack"
+echo "$skills" | grep -q 'system:hive-audit' || fail "skills missing audit pack"
+echo "$skills" | grep -q 'system:mobile-trace' || fail "skills missing mobile-trace"
+echo "$skills" | grep -q 'system:hive-teardown' || fail "skills missing hive-teardown"
+echo "$skills" | grep -q 'system:hive-look' || fail "skills missing hive-look"
+echo "$skills" | grep -q 'system:hive-apps' || fail "skills missing hive-apps"
+echo "$skills" | grep -q 'system:token-extract' || fail "skills missing token-extract"
 echo "$skills" | grep -q 'reverse-engineering' || fail "skills missing reverse-engineering"
+echo "$skills" | grep -q 'system:ai-engineering-coach' && fail "old coach slug must be absent"
+echo "$skills" | grep -q 'system:security-audit' && fail "old audit slug must be absent"
+echo "$skills" | grep -q 'system:skillui-extract' && fail "old skillui slug must be absent"
+echo "$skills" | grep -q 'system:on-topic' && fail "folded on-topic must be absent"
 sess=$(curl -sf "http://127.0.0.1:${port}/api/session")
 echo "$sess" | grep -q '"logged_in":false' || fail "cold session should be logged out"
 echo "$sess" | grep -q '"ready":false' || fail "cold session should not be ready"
@@ -393,16 +402,16 @@ cloned=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -d '{"action":"clone","slug":"coach"}')
 echo "$cloned" | grep -q '"slug":"coach-copy"' || fail "clone coach"
 echo "$cloned" | grep -q '"name":"Coach copy"' || fail "clone display name"
-echo "$cloned" | grep -q '"name":"Coach copy"[^}]*"skills":\["system:ai-engineering-coach"\]' \
+echo "$cloned" | grep -q '"name":"Coach copy"[^}]*"skills":\["system:canvas-coach"\]' \
     || fail "clone copy wears coach skill"
 prunedcopy=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"action":"update","slug":"coach-copy","skill_0":"","nskills":0}')
 echo "$prunedcopy" | grep -q '"name":"Coach copy"[^}]*"skills":\[\]' \
     || fail "clone unequip 1to0 must empty loadout"
-echo "$prunedcopy" | grep -q '"name":"Coach copy"[^}]*system:ai-engineering-coach' \
+echo "$prunedcopy" | grep -q '"name":"Coach copy"[^}]*system:canvas-coach' \
     && fail "clone unequip must drop skill"
-echo "$prunedcopy" | grep -q '"name":"Coach","slug":"coach"[^}]*"skills":\["system:ai-engineering-coach"\]' \
+echo "$prunedcopy" | grep -q '"name":"Coach","slug":"coach"[^}]*"skills":\["system:canvas-coach"\]' \
     || fail "locked coach must keep skill after copy prune"
 noclone=$(curl -s -o /tmp/hush-no-major-clone -w '%{http_code}' \
     -X POST "http://127.0.0.1:${port}/api/agent" \

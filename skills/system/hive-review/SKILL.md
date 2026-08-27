@@ -1,11 +1,11 @@
 ---
-name: code-review-web
-description: Review web and C changes with evidence.
+name: hive-review
+description: Review hive and C changes with evidence.
 role: worker
 category: review
 ---
 
-# code-review-web
+# hive-review
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 

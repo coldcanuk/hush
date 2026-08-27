@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-One short 'standing by' note. Never start a worker job.
+One short standing-by note. Never start a worker job.

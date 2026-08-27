@@ -1,11 +1,11 @@
 ---
-name: skillui-extract
+name: token-extract
 description: Extract design tokens from HTML/CSS into a Hush skill package.
 role: worker
 category: reverse-engineering
 ---
 
-# skillui-extract
+# token-extract
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 

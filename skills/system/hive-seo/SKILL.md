@@ -1,11 +1,11 @@
 ---
-name: seo-audit
+name: hive-seo
 description: Audit a page for technical SEO and E-E-A-T gaps.
 role: worker
 category: seo
 ---
 
-# seo-audit
+# hive-seo
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
