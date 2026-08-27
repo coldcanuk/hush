@@ -49,7 +49,7 @@ enum {
 #define HUSH_AGENT_CWD_TMP "hush-agent-cwd"
 #define HUSH_AGENT_TMP_FALLBACK "/tmp"
 #define HUSH_AGENT_PROMPT_FALLBACK \
-    "You are a robot in the Hush hive. Fulfill the last human ask in one note."
+    "You are a robot in the Hush hive. Fulfill the last human ask (only your part) in one note."
 #define HUSH_AGENT_ONE_JOKE \
     "If the last human ask is a joke, reply with exactly one joke."
 #define HUSH_AGENT_PEER_STANDARD \
@@ -58,6 +58,7 @@ enum {
     "To hand off, emit the peer nostr:npub in the note. Do not reorder mentions."
 #define HUSH_AGENT_HYGIENE \
     " Fulfill YOUR assignment in this note, not a peer's. " \
+    "If peers are mentioned, they will take their turn after you hand off. " \
     "Do not mention yourself. After your work you may emit nostr:<peer-npub> " \
     "to hand off. Include any asked code. No preamble-only replies. " \
     HUSH_AGENT_ONE_JOKE HUSH_AGENT_PEER_STANDARD
@@ -81,7 +82,7 @@ enum {
 #define HUSH_AGENT_FIXUP_MID "\n\nText:\n"
 #define HUSH_AGENT_THREAD_HEAD \
     "Thread so far. Do not repeat a prior joke. " \
-    "Fulfill the last human line in this note.\n"
+    "Fulfill only your specific part of the last human ask.\n"
 #define HUSH_AGENT_ASSIGN " YOUR assignment: "
 #define HUSH_AGENT_INTRO_PREFIX "At ease."
 #define HUSH_AGENT_ACK_LINE "Mention received."
@@ -154,6 +155,7 @@ typedef struct {
 } hush_agent_note_in_t;
 
 typedef struct {
+    const hush_launch_t *launch;
     const char *root;
     const char *human_pub;
     const char *human;
@@ -227,6 +229,7 @@ static void hush_agent_walk_thread(char *out, size_t outsz,
                                    const hush_agent_thread_walk_t *walk);
 static void hush_agent_fill_thread(char *out, size_t outsz,
                                    hush_store_t *store,
+                                   const hush_launch_t *launch,
                                    const hush_event_t *parent,
                                    const hush_agent_thread_walk_t *names);
 static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job);
@@ -817,8 +820,14 @@ static void hush_agent_intro_remember(const char *hex, const char *root)
 {
     if (hex == NULL || root == NULL)
         return;
-    if (g_nintro >= (size_t)HUSH_AGENT_INTRO_MAX)
-        return;
+    if (g_nintro >= (size_t)HUSH_AGENT_INTRO_MAX) {
+        size_t i;
+        for (i = 1; i < (size_t)HUSH_AGENT_INTRO_MAX; i++) {
+            hush_agent_copy(g_intro_hex[i - 1], sizeof(g_intro_hex[0]), g_intro_hex[i]);
+            hush_agent_copy(g_intro_root[i - 1], sizeof(g_intro_root[0]), g_intro_root[i]);
+        }
+        g_nintro = (size_t)HUSH_AGENT_INTRO_MAX - 1;
+    }
     hush_agent_copy(g_intro_hex[g_nintro], sizeof(g_intro_hex[0]), hex);
     hush_agent_copy(g_intro_root[g_nintro], sizeof(g_intro_root[0]), root);
     g_nintro++;
@@ -1028,8 +1037,13 @@ static void hush_agent_walk_thread(char *out, size_t outsz,
             continue;
         }
         who = walk->human;
-        if (strcmp(evs[i].pubkey, walk->human_pub) != 0)
-            who = walk->robot;
+        if (strcmp(evs[i].pubkey, walk->human_pub) != 0) {
+            hush_agent_robot_t peer;
+            if (walk->launch != NULL && hush_agent_lookup_robot(&peer, walk->launch, evs[i].pubkey))
+                who = peer.name;
+            else
+                who = walk->robot;
+        }
         hush_agent_append_turn(out, outsz, &evs[i], who);
         seen++;
     }
@@ -1037,6 +1051,7 @@ static void hush_agent_walk_thread(char *out, size_t outsz,
 
 static void hush_agent_fill_thread(char *out, size_t outsz,
                                   hush_store_t *store,
+                                  const hush_launch_t *launch,
                                   const hush_event_t *parent,
                                   const hush_agent_thread_walk_t *names)
 {
@@ -1056,6 +1071,7 @@ static void hush_agent_fill_thread(char *out, size_t outsz,
     n = hush_store_query(store, NULL, 0, evs, HUSH_AGENT_SCAN_MAX);
     hush_agent_copy(out, outsz, HUSH_AGENT_THREAD_HEAD);
     walk = *names;
+    walk.launch = launch;
     walk.root = root;
     walk.human_pub = parent->pubkey;
     hush_agent_walk_thread(out, outsz, evs, n, &walk);
@@ -1158,8 +1174,8 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
     memset(&names, 0, sizeof(names));
     names.human = job->human_name;
     names.robot = job->robot_name;
-    hush_agent_fill_thread(job->note, sizeof(job->note), in->store, parent,
-                           &names);
+    hush_agent_fill_thread(job->note, sizeof(job->note), in->store,
+                           in->launch, parent, &names);
     if (job->note[0] == '\0')
         hush_agent_copy(job->note, sizeof(job->note), parent->content);
 
