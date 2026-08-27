@@ -172,6 +172,89 @@ if n == 1:
 print("INTRO_COUNT_AFTER_FOLLOWUP", n)
 sys.exit(1)
 ' "${hex}" || fail "follow-up must not emit a second intro"
+
+sess=$(curl -sf "http://127.0.0.1:${port}/api/session")
+payne_npub=$(printf '%s' "$sess" | python3 -c 'import json,sys; p=json.loads(sys.stdin.read()).get("payne") or {}; print(p.get("npub") or "")')
+payne_hex=$(printf '%s' "$sess" | python3 -c 'import json,sys; p=json.loads(sys.stdin.read()).get("payne") or {}; print(p.get("pubkey") or "")')
+test -n "$payne_npub" || fail "payne npub missing"
+test -n "$payne_hex" || fail "payne hex missing"
+pair=$(curl -sf -X POST "http://127.0.0.1:${port}/api/event" \
+    -H 'Content-Type: application/json' \
+    -d "{\"content\":\"nostr:${npub} tell me a joke nostr:${payne_npub} analyze the joke, was it funny?\",\"kind\":1,\"channel\":\"general\",\"mention_0\":\"${npub}\",\"mention_1\":\"${payne_npub}\"}")
+echo "$pair" | grep -q '"ok":true' || fail "co-mention event not stored"
+pair_got=""
+i=0
+while [ "$i" -lt 60 ]; do
+    pair_got=$(curl -sf "http://127.0.0.1:${port}/api/events")
+    printf '%s' "$pair_got" | python3 -c '
+import json, sys
+happy, payne = sys.argv[1], sys.argv[2]
+data = json.loads(sys.stdin.read())
+root = None
+for e in (data.get("events") or []):
+    c = e.get("content") or ""
+    if "analyze the joke" in c:
+        root = e.get("id")
+        break
+if not root:
+    sys.exit(1)
+h = m = 0
+hold = 0
+for e in (data.get("events") or []):
+    rt = e.get("reply_to") or ""
+    if rt != root and e.get("id") != root:
+        continue
+    c = e.get("content") or ""
+    if "Holding" in c:
+        hold += 1
+    if "Standing orders are noted." not in c:
+        continue
+    if (e.get("pubkey") or "") == happy:
+        h += 1
+    if (e.get("pubkey") or "") == payne:
+        m += 1
+if hold:
+    print("HOLDING", hold)
+    sys.exit(2)
+if h == 1 and m == 1:
+    sys.exit(0)
+print("PAIR_INTRO", h, m)
+sys.exit(1)
+' "${hex}" "${payne_hex}" && break
+    i=$((i + 1))
+    sleep 0.05
+done
+printf '%s' "$pair_got" | python3 -c '
+import json, sys
+happy, payne = sys.argv[1], sys.argv[2]
+data = json.loads(sys.stdin.read())
+root = None
+for e in (data.get("events") or []):
+    if "analyze the joke" in (e.get("content") or ""):
+        root = e.get("id")
+        break
+h = m = 0
+for e in (data.get("events") or []):
+    if (e.get("reply_to") or "") != root:
+        continue
+    if "Standing orders are noted." not in (e.get("content") or ""):
+        continue
+    if (e.get("pubkey") or "") == happy:
+        h += 1
+    if (e.get("pubkey") or "") == payne:
+        m += 1
+print("PAIR_INTRO", h, m)
+if h == 1 and m == 1:
+    sys.exit(0)
+sys.exit(1)
+' "${hex}" "${payne_hex}" || fail "co-mention must intro Happy then Major once each"
+printf '%s' "$pair_got" | grep -q "Holding" && fail "co-mention must not post Holding"
+ce=$(curl -sf "http://127.0.0.1:${port}/api/chan-events")
+printf '%s' "$ce" | grep -q '"ok":true' || fail "chan-events missing ok"
+printf '%s' "$ce" | grep -q '"type":"mention"' || fail "chan-events missing mention"
+printf '%s' "$ce" | grep -q '"type":"intro"' || fail "chan-events missing intro"
+printf '%s' "$ce" | grep -q '"type":"follow"' || fail "chan-events missing follow"
+
 grep -q -- '--cwd' src/hush_agent.c || fail "grok argv missing --cwd"
 grep -q -- '--max-turns' src/hush_agent.c || fail "grok argv missing --max-turns"
 grep -q 'HUSH_AGENT_GROK_TURNS "2"' src/hush_agent.c || fail "grok turns must be 2"
@@ -182,6 +265,8 @@ grep -q 'HUSH_AGENT_GROK_EFFORT "low"' src/hush_agent.c || fail "grok effort mus
 grep -q 'HUSH_AGENT_THREAD_HEAD' src/hush_agent.c || fail "grok must receive a thread transcript"
 grep -q 'hush_agent_fill_thread' src/hush_agent.c || fail "missing thread transcript fill"
 grep -q 'No preamble-only replies' src/hush_agent.c || fail "hygiene must forbid preamble-only replies"
+grep -q 'Fulfill YOUR assignment' src/hush_agent.c || fail "hygiene must name the robot assignment"
+grep -q 'Do not mention yourself' src/hush_agent.c || fail "hygiene must forbid self-mention"
 grep -q 'Fulfill the last human ask' src/hush_agent.c || fail "hygiene must fulfill the last human ask"
 grep -q 'exactly one joke' src/hush_agent.c || fail "hygiene must demand one joke"
 grep -q 'hush_agent_robot_busy' src/hush_agent.c || fail "must refuse a second job for a busy robot"

@@ -11,6 +11,7 @@
 
 #include "hush_agent.h"
 #include "hush_canvas.h"
+#include "hush_cevent.h"
 #include "hush_home.h"
 #include "hush_http.h"
 #include "hush_intel.h"
@@ -87,6 +88,7 @@ static void hush_make_event_id(char *out65);
 static void hush_http_serve_status(int fd, const hush_store_t *store);
 static void hush_http_serve_events(int fd, const hush_store_t *store);
 static void hush_http_serve_session(int fd);
+static void hush_http_serve_chan_events(int fd);
 static hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
                                           hush_store_t *store, hush_event_t *out);
 static int hush_http_want_save_pass(const char *body);
@@ -265,6 +267,10 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
     }
     if (strcmp(path, "/api/session") == 0) {
         hush_http_serve_session(fd);
+        return HUSH_OK;
+    }
+    if (strcmp(path, "/api/chan-events") == 0) {
+        hush_http_serve_chan_events(fd);
         return HUSH_OK;
     }
     if (strcmp(path, "/api/skills") == 0) {
@@ -712,6 +718,20 @@ static void hush_http_serve_session(int fd)
     hush_http_reply(fd, "200 OK", "application/json", body, n);
 }
 
+static void hush_http_serve_chan_events(int fd)
+{
+    static const char k_empty[] = "{\"ok\":true,\"events\":[]}\n";
+    char body[HUSH_CEVENT_JSON_MAX];
+    size_t n = 0;
+
+    if (hush_cevent_format_json(body, sizeof(body), &n) != HUSH_OK) {
+        hush_http_reply(fd, "200 OK", "application/json",
+                        k_empty, sizeof(k_empty) - 1);
+        return;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", body, n);
+}
+
 static hush_status_t hush_http_reply_session(int fd, hush_status_t st)
 {
     if (st == HUSH_OK) {
@@ -920,6 +940,8 @@ static void hush_http_fill_agent_extras(hush_roster_agent_in_t *in,
         in->enabled = (strcmp(raw, "false") == 0 || strcmp(raw, "0") == 0)
             ? 0 : 1;
     }
+    if (hush_json_field(body, "role", in->role, sizeof(in->role)))
+        in->has_role = 1;
     hush_http_fill_agent_skills(in, body);
 }
 
@@ -1224,6 +1246,9 @@ static void hush_http_fill_policy_text(hush_launch_policy_t *policy,
         || policy->robot_reply[0] == '\0')
         memcpy(policy->robot_reply, ch->robot_reply,
                sizeof(policy->robot_reply));
+    if (!hush_json_field(body, "chaperon", policy->chaperon,
+                         sizeof(policy->chaperon)))
+        memcpy(policy->chaperon, ch->chaperon, sizeof(policy->chaperon));
 }
 
 static void hush_http_fill_policy_nums(hush_launch_policy_t *policy,
@@ -1237,6 +1262,8 @@ static void hush_http_fill_policy_nums(hush_launch_policy_t *policy,
     policy->max_jobs = hush_http_read_int(body, "max_jobs", ch->max_jobs);
     policy->cooldown_s = hush_http_read_int(body, "cooldown_s", ch->cooldown_s);
     policy->robot_hops = hush_http_read_int(body, "robot_hops", ch->robot_hops);
+    policy->max_robot_turns = hush_http_read_int(body, "max_robot_turns",
+                                                 ch->max_robot_turns);
 }
 
 static hush_status_t hush_http_channel_policy(const char *body,

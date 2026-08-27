@@ -29,6 +29,8 @@ enum {
 #define HUSH_ROSTER_MIME_XMARKDOWN "text/x-markdown"
 #define HUSH_ROSTER_THEME_DEFAULT "dark"
 #define HUSH_ROSTER_PAYNE_SLUG "sgt-major-payne"
+#define HUSH_ROSTER_ROLE_WORKER "worker"
+#define HUSH_ROSTER_ROLE_CHAPERON "chaperon"
 
 #define HUSH_ROSTER_PROVIDER_GOOSE "goose"
 #define HUSH_ROSTER_PROVIDER_GROK_BUILD "grok-build"
@@ -57,6 +59,7 @@ typedef struct {
     char skills[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
     size_t nskills;
     int enabled;
+    char role[HUSH_ROSTER_NAME_MAX];
     hush_roster_context_t context[HUSH_ROSTER_CONTEXT_MAX];
     size_t ncontext;
 } hush_roster_agent_t;
@@ -96,6 +99,9 @@ int hush_roster_is_theme(const char *theme);
 /* True when provider is one of the nine named runtimes. */
 int hush_roster_is_provider(const char *provider);
 
+/* True when role is worker or chaperon. */
+int hush_roster_is_role(const char *role);
+
 /* Copies profile fields. Rejects a bad theme. */
 hush_status_t hush_roster_set_profile(hush_roster_t *roster,
                                       const hush_roster_profile_t *in);
@@ -123,6 +129,8 @@ typedef struct {
     size_t nskills;
     int enabled;
     int has_enabled;
+    char role[HUSH_ROSTER_NAME_MAX];
+    int has_role;
     int has_picture;
     int has_voice;
     int has_skills;

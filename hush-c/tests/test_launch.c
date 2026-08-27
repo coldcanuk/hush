@@ -162,6 +162,9 @@ int main(void)
                "default reply");
         expect(launch.channels[3].burst_ms == HUSH_LAUNCH_BURST_MS_DEFAULT,
                "default burst");
+        expect(launch.channels[3].max_robot_turns == HUSH_LAUNCH_TURNS_DEFAULT,
+               "default turns");
+        expect(launch.channels[3].chaperon[0] == '\0', "default chaperon empty");
     }
     {
         hush_launch_policy_t policy;
@@ -184,6 +187,18 @@ int main(void)
                "reply off");
         expect(launch.channels[3].burst_ms == HUSH_LAUNCH_BURST_MS_SLOW,
                "slow burst");
+        expect(launch.channels[3].max_robot_turns == HUSH_LAUNCH_TURNS_DEFAULT,
+               "turns stay default on zero");
+        memcpy(policy.chaperon, HUSH_LAUNCH_PAYNE_SLUG,
+               sizeof(HUSH_LAUNCH_PAYNE_SLUG));
+        policy.max_robot_turns = HUSH_LAUNCH_TURNS_PAIR;
+        expect(hush_launch_set_channel_policy(&launch, "incidents",
+                                              &policy) == HUSH_OK,
+               "rails");
+        expect(launch.channels[3].max_robot_turns == HUSH_LAUNCH_TURNS_PAIR,
+               "pair turns");
+        expect(strcmp(launch.channels[3].chaperon, HUSH_LAUNCH_PAYNE_SLUG) == 0,
+               "major chaperon");
     }
     expect(hush_launch_set_channel_group(&launch, "incidents", "") == HUSH_OK,
            "ungroup");

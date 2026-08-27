@@ -18,6 +18,14 @@ void hush_agent_shutdown(void);
 void hush_agent_consider(hush_store_t *store, hush_launch_t *launch,
                          const hush_event_t *ev);
 
+/* Dispatches one mention. Later co-mentions wait for the previous robot. */
+void hush_agent_mention(hush_store_t *store, hush_launch_t *launch,
+                        const hush_event_t *ev, const char *mention);
+
+/* After a robot note is stored, starts the next queued assignee. */
+void hush_agent_on_posted(hush_store_t *store, const hush_launch_t *launch,
+                          const hush_event_t *ev);
+
 /* Reaps finished Grok jobs and inserts their notes. store may be NULL. */
 void hush_agent_poll(hush_store_t *store);
 

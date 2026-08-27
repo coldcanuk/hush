@@ -104,6 +104,8 @@ static void hush_intel_handle_robot(hush_store_t *store, hush_launch_t *launch,
                                     const char *mention);
 static int hush_intel_burst_ready(const hush_intel_hold_t *hold,
                                   const hush_launch_channel_t *ch, time_t now);
+static int hush_intel_is_lead_p(const hush_launch_t *launch,
+                                const hush_event_t *ev, const char *hex);
 
 void hush_intel_init(void)
 {
@@ -567,7 +569,7 @@ static void hush_intel_release(hush_store_t *store, hush_launch_t *launch,
     }
     ch = hush_intel_find_slug(launch, hold->channel);
     if (ev != NULL && !hush_intel_should_recap(hold, ch)) {
-        hush_agent_consider(store, launch, ev);
+        hush_agent_mention(store, launch, ev, hold->robot);
         hush_intel_clear_hold(hold);
         return;
     }
@@ -579,7 +581,7 @@ static void hush_intel_release(hush_store_t *store, hush_launch_t *launch,
     if (hush_intel_should_recap(hold, ch))
         hush_intel_post_recap(store, &synth, hold);
     else {
-        hush_agent_consider(store, launch, &synth);
+        hush_agent_mention(store, launch, &synth, hold->robot);
         hush_intel_clear_hold(hold);
     }
 }
@@ -620,7 +622,8 @@ static int hush_intel_policy_blocks(hush_store_t *store,
         hush_intel_post_line(store, ev, hex, HUSH_INTEL_DENY_HOP);
         return 1;
     }
-    if (hush_intel_jobs_busy() >= ch->max_jobs) {
+    if (hush_intel_jobs_busy() >= ch->max_jobs &&
+        hush_intel_is_lead_p(launch, ev, hex)) {
         hush_intel_post_line(store, ev, hex, HUSH_INTEL_DENY_JOBS);
         return 1;
     }
@@ -675,7 +678,7 @@ static void hush_intel_handle_robot(hush_store_t *store, hush_launch_t *launch,
     hush_intel_event_root(root, sizeof(root), ev);
     hold = hush_intel_find_hold(channel, root, hex);
     if (hold != NULL && hold->awaiting && hush_intel_is_cue(ev->content)) {
-        hush_agent_consider(store, launch, ev);
+        hush_agent_mention(store, launch, ev, hex);
         hush_intel_clear_hold(hold);
         return;
     }
@@ -690,4 +693,23 @@ static void hush_intel_handle_robot(hush_store_t *store, hush_launch_t *launch,
     }
     if (hold->nnotes == 1)
         hush_intel_release(store, launch, hold, ev);
+}
+
+static int hush_intel_is_lead_p(const hush_launch_t *launch,
+                                const hush_event_t *ev, const char *hex)
+{
+    char found[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+    size_t i;
+
+    assert(launch != NULL);
+    assert(ev != NULL);
+    assert(hex != NULL);
+    for (i = 0; i < ev->tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; i++) {
+        if (strcmp(ev->tags[i][0], HUSH_INTEL_TAG_P) != 0)
+            continue;
+        if (!hush_intel_lookup_robot(launch, ev->tags[i][1], found, sizeof(found)))
+            continue;
+        return strcmp(found, hex) == 0;
+    }
+    return 1;
 }

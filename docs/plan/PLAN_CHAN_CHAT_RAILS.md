@@ -15,12 +15,12 @@ Voice; outbound HTTP webhooks; mention-order assembler; live LLM skill forge.
 
 ## Milestones
 
-M1.1 Research (this + RESEARCH) — commit  
-M3.1 consider_one + intro uniqueness + follow queue after robot notes  
-M3.2 Prompt: per-robot assignment, no self-mention  
-M3.3 Chaperon role + max_robot_turns rails  
-M3.4 hush_cevent ring + GET /api/chan-events  
-M3.5 Manage Channel UI, tests, PR  
+M1.1 Research (this + RESEARCH) — done  
+M3.1 consider_one + intro uniqueness + follow queue after robot notes — done  
+M3.2 Prompt: per-robot assignment, no self-mention — done  
+M3.3 Chaperon role + max_robot_turns rails — done  
+M3.4 hush_cevent ring + GET /api/chan-events — done  
+M3.5 Manage Channel UI, tests, PR — done 
 
 ## Verification
 

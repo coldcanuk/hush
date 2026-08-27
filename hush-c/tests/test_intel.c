@@ -7,10 +7,12 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "hush_agent.h"
 #include "hush_event.h"
 #include "hush_intel.h"
 #include "hush_launch.h"
 #include "hush_pass.h"
+#include "hush_roster.h"
 #include "hush_store.h"
 
 static int g_fail;
@@ -41,6 +43,36 @@ static void fill_note(hush_event_t *ev, const char *id, const char *pub,
         memcpy(ev->tags[1][1], mention, strlen(mention) + 1);
         ev->tag_count = 2;
     }
+}
+
+static void fill_note_pair(hush_event_t *ev, const char *id, const char *pub,
+                           const char *content, const char *channel,
+                           const char *one, const char *two)
+{
+    fill_note(ev, id, pub, content, channel, one);
+    if (two == NULL || two[0] == '\0')
+        return;
+    memcpy(ev->tags[2][0], "p", 2);
+    memcpy(ev->tags[2][1], two, strlen(two) + 1);
+    ev->tag_count = 3;
+}
+
+static size_t count_pub_needle(hush_store_t *store, const char *pub,
+                               const char *needle)
+{
+    hush_event_t evs[32];
+    size_t n;
+    size_t i;
+    size_t hits = 0;
+
+    n = hush_store_query(store, NULL, 0, evs, 32);
+    for (i = 0; i < n; i++) {
+        if (pub != NULL && strcmp(evs[i].pubkey, pub) != 0)
+            continue;
+        if (strstr(evs[i].content, needle) != NULL)
+            hits++;
+    }
+    return hits;
 }
 
 static size_t count_store(hush_store_t *store)
@@ -78,6 +110,7 @@ int main(void)
         return 1;
     hush_pass_set_helper("tests/fake-pass.sh");
     hush_intel_init();
+    hush_agent_init();
     hush_launch_init(&launch);
     expect(hush_store_create(&store) == HUSH_OK, "store");
     expect(hush_launch_create_identity(&launch) == HUSH_OK, "ident");
@@ -161,6 +194,60 @@ int main(void)
     expect(hush_store_insert(store, &ev) == HUSH_OK, "hop insert");
     hush_intel_consider(store, &launch, &ev);
     expect(store_has(store, "do not chain"), "hop-0 denies robot author");
+
+    {
+        hush_roster_agent_in_t in;
+        char content[512];
+        const char *happy_npub;
+        const char *happy_hex;
+        const char *payne_npub;
+        const char *payne_hex;
+        hush_event_t joke;
+
+        memset(&in, 0, sizeof(in));
+        memcpy(in.name, "Happy", 6);
+        memcpy(in.prompt, "Tell short jokes.", 18);
+        memcpy(in.provider, HUSH_ROSTER_PROVIDER_GOOSE,
+               sizeof(HUSH_ROSTER_PROVIDER_GOOSE));
+        expect(hush_launch_add_agent(&launch, store, &in, 0) == HUSH_OK,
+               "raise happy");
+        expect(launch.roster.nagents >= 1, "happy on roster");
+        happy_npub = launch.roster.agents[0].id.npub;
+        happy_hex = launch.roster.agents[0].id.pubkey_hex;
+        payne_npub = launch.payne.npub;
+        payne_hex = launch.payne.pubkey_hex;
+        expect(snprintf(content, sizeof(content),
+                        "nostr:%s tell a joke nostr:%s analyze the joke",
+                        happy_npub, payne_npub) < (int)sizeof(content),
+               "ask fits");
+        fill_note_pair(&ev,
+                       "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                       launch.human.pubkey_hex, content, "general",
+                       happy_npub, payne_npub);
+        expect(hush_store_insert(store, &ev) == HUSH_OK, "pair insert");
+        hush_intel_consider(store, &launch, &ev);
+        expect(!store_has(store, "Holding."), "no jobs-held chat");
+        expect(count_pub_needle(store, happy_hex, "Standing orders") == 1,
+               "happy intro once");
+        expect(count_pub_needle(store, payne_hex, "Standing orders") == 0,
+               "major waits");
+        fill_note(&joke,
+                  "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                  happy_hex, "Why did the robot laugh? Byte me.", "general",
+                  NULL);
+        memcpy(joke.tags[1][0], "e", 2);
+        memcpy(joke.tags[1][1], ev.id, strlen(ev.id) + 1);
+        joke.tag_count = 2;
+        expect(hush_store_insert(store, &joke) == HUSH_OK, "joke insert");
+        hush_agent_on_posted(store, &launch, &joke);
+        expect(count_pub_needle(store, happy_hex, "Standing orders") == 1,
+               "happy intro stays one");
+        expect(count_pub_needle(store, payne_hex, "Standing orders") == 1,
+               "major intro after joke");
+        hush_agent_on_posted(store, &launch, &joke);
+        expect(count_pub_needle(store, payne_hex, "Standing orders") == 1,
+               "major intro not twice");
+    }
 
     hush_store_destroy(store);
     if (g_fail)

@@ -77,6 +77,8 @@ int main(void)
     expect(hush_roster_add_agent(&roster, store, &agent, 1) == HUSH_OK,
            "agent");
     expect(roster.nagents == 1, "one agent");
+    expect(strcmp(roster.agents[0].role, HUSH_ROSTER_ROLE_WORKER) == 0,
+           "default worker");
     expect(strncmp(roster.agents[0].id.npub, "npub1", 5) == 0, "agent npub");
     expect(hush_pass_has("agents/sentry/nsec"), "agent nsec in pass");
     memset(&agent, 0, sizeof(agent));
@@ -110,6 +112,7 @@ int main(void)
     expect(strstr(json, "\"provider\":\"goose\"") != NULL, "provider json");
     expect(strstr(json, "Alice") != NULL, "alice json");
     expect(strstr(json, "\"skills\":[]") != NULL, "skills json");
+    expect(strstr(json, "\"role\":\"worker\"") != NULL, "role json");
     memcpy(agent.name, "Sentry Two", 11);
     memcpy(agent.prompt, "Watch closer.", 14);
     memcpy(agent.voice, "alloy", 6);
@@ -125,6 +128,13 @@ int main(void)
     expect(hush_roster_update_agent(&roster, "sentry", &agent) == HUSH_OK,
            "update");
     expect(roster.agents[0].enabled == 0, "disabled");
+    memcpy(agent.role, HUSH_ROSTER_ROLE_CHAPERON,
+           sizeof(HUSH_ROSTER_ROLE_CHAPERON));
+    agent.has_role = 1;
+    expect(hush_roster_update_agent(&roster, "sentry", &agent) == HUSH_OK,
+           "role update");
+    expect(strcmp(roster.agents[0].role, HUSH_ROSTER_ROLE_CHAPERON) == 0,
+           "chaperon");
     expect(strcmp(roster.agents[0].name, "Sentry Two") == 0, "renamed");
     expect(strcmp(roster.agents[0].voice, "alloy") == 0, "voice");
     expect(roster.agents[0].nskills == 1, "one skill");
@@ -132,6 +142,7 @@ int main(void)
            "json2");
     expect(strstr(json, "system:forge-skill") != NULL, "equipped skill");
     expect(strstr(json, "\"enabled\":false") != NULL, "disabled json");
+    expect(strstr(json, "\"role\":\"chaperon\"") != NULL, "chaperon json");
     expect(hush_roster_remove_agent(&roster, HUSH_ROSTER_PAYNE_SLUG) ==
                HUSH_ERR_DENIED,
            "payne stays");
