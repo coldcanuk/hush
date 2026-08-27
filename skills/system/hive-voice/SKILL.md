@@ -1,6 +1,6 @@
 ---
 name: hive-voice
-description: Draft social posts in a stored hive voice.
+description: Draft one hive-voice post from stored notes, not a SaaS farm.
 role: worker
 category: social
 ---
@@ -9,4 +9,4 @@ category: social
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Hush-adapted from charlie947 social-media-skills. Build voice notes first. Write one platform post. No Apify, no Gemini SaaS keys.
+Hush-adapted from charlie947 social-media-skills. Read the robot voice and last hive notes. Write one post for one platform. No Apify, no Gemini keys, no spray to five networks.

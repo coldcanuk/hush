@@ -1,6 +1,6 @@
 ---
 name: hive-reflect
-description: Learn from human corrections once and keep the note.
+description: Learn from a human correction once and keep a local note.
 role: worker
 category: memory
 ---
@@ -9,4 +9,4 @@ category: memory
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Hush-adapted from claude-reflect-system. Store HIGH-confidence use X instead of Y in a local hive note. No Claude Code hooks.
+Hush-adapted from claude-reflect-system. Store HIGH-confidence use X instead of Y in a hive note. Replay it on the next similar job. No Claude Code hooks.

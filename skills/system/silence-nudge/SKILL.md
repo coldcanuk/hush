@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-If no human appears after the cap, stay quiet.
+If no human appears after the cap, post at most one nudge. Then stay quiet.

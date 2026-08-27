@@ -1,6 +1,6 @@
 ---
 name: hive-seo
-description: Audit a page for technical SEO and E-E-A-T gaps.
+description: Audit hive-facing HTML for titles, headings, and citability.
 role: worker
 category: seo
 ---
@@ -9,4 +9,4 @@ category: seo
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Hush-adapted from AgriciDaniel claude-seo. Check titles, headings, schema, citability. Falsifiable recommendations. No Playwright crawl farm.
+Hush-adapted from AgriciDaniel claude-seo. Check the page the hive actually serves (demo index or a project canvas). Titles, headings, schema, one falsifiable fix. No Playwright crawl farm.

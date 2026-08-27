@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-If hops are off, do not chain. If hops are on, still honor max_robot_turns.
+If robot_hops is off, do not chain a follow-kick to another robot. If hops are on, still honor max_robot_turns. Never hop to a robot that is disabled.

@@ -1,6 +1,6 @@
 ---
 name: hive-review
-description: Review hive and C changes with evidence.
+description: Review a hive/C diff with file:line evidence only.
 role: worker
 category: review
 ---
@@ -9,4 +9,4 @@ category: review
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Hush-adapted from rampstackco claude-skills code-review-web. Cite files. Demand tests on the shipped path. No leftover Claude install steps.
+Hush-adapted from rampstackco code-review-web. Given a diff, cite file and line, demand a test on the shipped path, verdict pass or fail. Do not rewrite the session plan (that is canvas-coach).

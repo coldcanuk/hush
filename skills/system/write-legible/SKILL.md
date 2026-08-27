@@ -9,4 +9,4 @@ category: craft
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Hush-adapted from the VoltAgent awesome-agent-skills slice (write-discoverable-code), on-brand with write-legible-c. Named constants, small functions, one producer per error. Not a 1000-skill dump.
+Hush-adapted from the VoltAgent write-discoverable slice, on-brand with write-legible-c. Named constants, small functions, one producer per error. C11 -Wall -Werror. Not a 1000-skill dump.

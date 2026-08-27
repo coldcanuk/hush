@@ -135,6 +135,8 @@ int main(void)
         expect(!catalog_has(&cat, "system:security-audit"), "old audit gone");
         expect(!catalog_has(&cat, "system:skillui-extract"), "old skillui gone");
         expect(!catalog_has(&cat, "system:on-topic"), "folded on-topic gone");
+        expect(!catalog_has(&cat, "system:bring-back"), "folded bring-back gone");
+        expect(catalog_has(&cat, "system:intro-once"), "intro-once");
         expect(!catalog_has(&cat, "system:no-self-mention"), "folded self-mention gone");
         expect(seed_body_has(home, "canvas-coach", "Hush-adapted"), "coach adapted");
         expect(seed_body_has(home, "canvas-coach", "obra/superpowers"),
@@ -162,9 +164,36 @@ int main(void)
         expect(seed_body_has(home, "hive-apps", "Shubhamsaboo"), "llm-apps source");
         memset(ids, 0, sizeof(ids));
         nids = 0;
+        {
+            const char *rails[] = {
+                "system:topic-leash",
+                "system:no-loop",
+                "system:civility",
+                "system:hop-cap",
+                "system:secret-watch",
+                "system:chaperon-ack",
+                "system:human-cue",
+                "system:token-budget"
+            };
+
+            memset(ids, 0, sizeof(ids));
+            nids = 0;
+            for (i = 0; i < 8; i++) {
+                expect(hush_skill_try_equip(&cat, ids, &nids, rails[i],
+                                            HUSH_SKILL_ROLE_CHAPERON) == HUSH_OK,
+                       "marshal rail equip");
+            }
+            expect(nids == 8, "marshal rails fit watermarks");
+        }
         expect(hush_skill_try_equip(&cat, ids, &nids, "system:civility",
                                     HUSH_SKILL_ROLE_WORKER) == HUSH_ERR_DENIED,
                "chaperon on worker");
+        expect(nids == 8, "worker wall does not drop rails");
+        memset(ids, 0, sizeof(ids));
+        nids = 0;
+        expect(hush_skill_try_equip(&cat, ids, &nids, "system:civility",
+                                    HUSH_SKILL_ROLE_WORKER) == HUSH_ERR_DENIED,
+               "chaperon on worker empty");
         expect(nids == 0, "worker loadout empty");
         expect(hush_skill_try_equip(&cat, ids, &nids,
                                     "system:canvas-coach",

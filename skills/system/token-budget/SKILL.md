@@ -1,6 +1,6 @@
 ---
 name: token-budget
-description: Stop robot talk when the channel has chewed enough tokens.
+description: Stop robot talk at max_robot_turns.
 role: chaperon
 category: guardrail
 ---
@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Count robot work notes. At max_robot_turns, emit the canned chaperon line. No further jobs.
+Count robot work notes on this thread (skip protocol acks such as Mention received). At max_robot_turns, emit the canned chaperon line and start no further grok jobs.

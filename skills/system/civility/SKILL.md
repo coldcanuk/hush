@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Insults, slurs, and bait get a halt. Restate the human ask.
+Insults, slurs, and bait get one halt. Restate the human ask in one line. Do not grok on the bait.

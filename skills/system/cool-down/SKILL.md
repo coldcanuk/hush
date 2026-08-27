@@ -1,6 +1,6 @@
 ---
 name: cool-down
-description: Enforce channel cooldown between robot jobs.
+description: Enforce channel cooldown_s between robot jobs.
 role: chaperon
 category: guardrail
 ---
@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-If cooldown_s has not elapsed, hold. Do not spawn grok.
+If cooldown_s has not elapsed since the last robot work note, hold. Do not spawn grok. Do not post a second Holding.

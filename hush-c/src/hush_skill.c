@@ -25,6 +25,7 @@ enum {
     "---\n" \
     "name: forge-skill\n" \
     "description: Create a new Hush skill for a robot, the user, or the hive.\n" \
+    "role: any\n" \
     "---\n\n" \
     "# Forge a Hush skill\n\n" \
     "A Hush skill is a SKILL.md the hive equips onto a robot like an inventory " \

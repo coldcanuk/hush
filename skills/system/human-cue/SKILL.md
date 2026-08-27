@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Cancel queued follow-kicks. The human note is the new standing order.
+Cancel queued follow-kicks. The new human note is the standing order. Do not talk over it.

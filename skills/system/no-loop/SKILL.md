@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-If a robot names itself or repeats the last line, stop the chain. Self npub in a robot note is a loop: strip it and do not follow-kick that hex. Absorbs the old no-self-mention chip.
+If a robot names its own npub or repeats the last work line, stop the chain. Strip the self p-tag. Do not follow-kick that hex.

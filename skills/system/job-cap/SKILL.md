@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-When the job table is full, wait. Do not post a second Holding from Major.
+When the job table is full, wait. Do not post a second Holding from Major or Marshal.

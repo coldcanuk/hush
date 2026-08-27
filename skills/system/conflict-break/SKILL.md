@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Restate the human ask. Name who speaks next. Then stop.
+Restate the human ask. Name who speaks next. Then stop. Do not grok a debate.

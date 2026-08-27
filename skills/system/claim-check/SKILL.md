@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Ask for a source or mark as unchecked. Do not invent facts.
+Ask for a hive-local source (file, event id, test log). If none, mark unchecked. Do not invent facts.
