@@ -49,7 +49,7 @@ enum {
 #define HUSH_AGENT_CWD_TMP "hush-agent-cwd"
 #define HUSH_AGENT_TMP_FALLBACK "/tmp"
 #define HUSH_AGENT_PROMPT_FALLBACK \
-    "You are a robot in the Hush hive. Fulfill the last human ask in one note."
+    "You are a robot in the Hush hive. Fulfill the last human ask (only your part) in one note."
 #define HUSH_AGENT_ONE_JOKE \
     "If the last human ask is a joke, reply with exactly one joke."
 #define HUSH_AGENT_PEER_STANDARD \
@@ -58,6 +58,7 @@ enum {
     "To hand off, emit the peer nostr:npub in the note. Do not reorder mentions."
 #define HUSH_AGENT_HYGIENE \
     " Fulfill YOUR assignment in this note, not a peer's. " \
+    "If peers are mentioned, they will take their turn after you hand off. " \
     "Do not mention yourself. After your work you may emit nostr:<peer-npub> " \
     "to hand off. Include any asked code. No preamble-only replies. " \
     HUSH_AGENT_ONE_JOKE HUSH_AGENT_PEER_STANDARD
@@ -81,7 +82,7 @@ enum {
 #define HUSH_AGENT_FIXUP_MID "\n\nText:\n"
 #define HUSH_AGENT_THREAD_HEAD \
     "Thread so far. Do not repeat a prior joke. " \
-    "Fulfill the last human line in this note.\n"
+    "Fulfill only your specific part of the last human ask.\n"
 #define HUSH_AGENT_ASSIGN " YOUR assignment: "
 #define HUSH_AGENT_INTRO_PREFIX "At ease."
 #define HUSH_AGENT_ACK_LINE "Mention received."
