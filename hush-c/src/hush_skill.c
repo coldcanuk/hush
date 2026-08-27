@@ -28,25 +28,29 @@ enum {
 #define HUSH_SKILL_FORGE_BODY \
     "---\n" \
     "name: forge-skill\n" \
-    "description: Create a new Hush skill for a robot, the user, or the hive.\n" \
+    "description: Create a System (application-wide) skill or a This robot skill.\n" \
     "role: any\n" \
     "---\n\n" \
     "# Forge a Hush skill\n\n" \
     "A Hush skill is a SKILL.md the hive equips onto a robot like an inventory " \
     "item. Forging writes a new file. Equipping points a robot at an existing " \
     "one. Pruning unequips; the file stays on disk.\n\n" \
+    "## Two product buckets\n\n" \
+    "System (application-wide): any robot may wear it. Shipped pack lives under " \
+    "system/. Hive-forged System skills live under user/ so seed never " \
+    "overwrites them.\n" \
+    "This robot: one custom robot only (Bender wears Futurama).\n\n" \
     "## Layout (~/.hush/)\n\n" \
     "system: ~/.hush/skills/system/<slug>/SKILL.md\n" \
     "user: ~/.hush/skills/user/<slug>/SKILL.md\n" \
     "robot: ~/.hush/skills/robots/<robot-slug>/<slug>/SKILL.md\n\n" \
-    "System skills ship with Hush. User skills are hive-wide. Robot skills " \
-    "belong to one robot.\n\n" \
     "## Equip and prune\n\n" \
     "Open a robot's Edit inventory (i). Cycle gems like Diablo II amulets, " \
     "then drop one onto an empty loadout socket. Lift a worn gem to prune.\n\n" \
     "## Forge (this skill)\n\n" \
-    "POST /api/skill {name, summary, body, scope, robot?}. Do not forge into " \
-    "system from the UI. Do not write secrets into a skill.\n"
+    "POST /api/skill {name, summary, body, scope, robot?}. scope=user writes " \
+    "a System skill. scope=robot writes This robot. Do not forge into the " \
+    "shipped system pack from the UI. Do not write secrets into a skill.\n"
 
 static const char *const hush_skill_voices[HUSH_SKILL_VOICE_COUNT] = {
     "alloy",

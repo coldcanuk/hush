@@ -219,9 +219,12 @@ Every robot, including Major, has an Enable/Disable switch
 thread. Major’s intro switch and text are locked. Ranked providers remain.
 Skills live only in Raise / Edit (`#agent-drawer`), never on the hive nav.
 Edit is the inventory: `i` toggles it for the selected or hovered robot
-tile. Cycle `#skill-cycle`; armory shows neighbors; `#skill-loadout` is a
-3×3 doll around the portrait. Pick a gem, drop it on an empty socket.
-Lift a worn gem to prune. Forge still writes a SKILL.md. `POST /api/agent` with the
+tile. Cycle `#skill-cycle`; armory groups **System** (application-wide) and
+**This robot** only. `#skill-loadout` is a 3×3 doll around the portrait.
+Pick a gem, drop it on an empty socket. Lift a worn gem to prune. Forge
+radios: System (`scope=user`, hive-wide file) / This robot (`scope=robot`).
+A `robot:<other>:<name>` skill is refused on this slug. Forge still writes
+a SKILL.md. `POST /api/agent` with the
 Payne slug updates providers, picture, voice, skills, and `enabled`.
 Name and `system_prompt` on that POST are ignored. Session
 `payne.provider` is `providers[0]`; `payne.providers` is the full
@@ -762,7 +765,9 @@ when policy flips; new considers honor the new leash.
 - Provider overlay: `$HOME/.hush/config/providers.json` (0600).
 - Vibe overlay: `$HOME/.hush/config/vibe.json` (0600). Override
   directory with `HUSH_CONFIG_DIR` / `HUSH_HOME` (tests). Never nsec.
-- Skills: `$HOME/.hush/skills/{system,user,robots}/`.
+- Skills: `$HOME/.hush/skills/{system,user,robots}/`. Product buckets are
+  System (application-wide: shipped `system/` + hive-forged `user/`) and
+  This robot (`robots/<slug>/`). Catalog JSON `"scopes":["system","robot"]`.
 - Avatar on disk: sniffed JPEG/PNG only; client downscales ≤96px.
 - Kind 0 `picture` is a URL, never a data URI (`HUSH_EVENT_MAX_CONTENT = 4096`).
 
