@@ -55,13 +55,16 @@ enum {
 #define HUSH_AGENT_PEER_STANDARD \
     " Inter-robot standard: keep nostr:npub mentions in the same sentence " \
     "order they were given. One short intro per thread, then work. " \
-    "To hand off, emit the peer nostr:npub in the note. Do not reorder mentions."
+    "Never end a note with a bare mention. To call a peer, write their " \
+    "name plus a phrase of intent (e.g. \"your turn, Major\"). " \
+    "Do not reorder mentions."
 #define HUSH_AGENT_HYGIENE \
     " Fulfill YOUR assignment in this note, not a peer's. " \
     "STOP immediately after your part is done. Do not answer questions or perform actions assigned to a peer. " \
-    "If peers are mentioned, they will take their turn after you hand off. " \
-    "Do not mention yourself. After your work you may emit nostr:<peer-npub> " \
-    "to hand off. Include any asked code. No preamble-only replies. " \
+    "If peers are mentioned, they take their turn automatically after you stop. " \
+    "Do not mention yourself. Do not hand off by appending a bare mention. " \
+    "Never end your note with a bare mention. Include any asked code. " \
+    "No preamble-only replies. " \
     HUSH_AGENT_ONE_JOKE HUSH_AGENT_PEER_STANDARD
 #define HUSH_AGENT_DISALLOWED \
     "run_terminal_cmd,web_search,web_fetch,read_file,search_replace,list_dir,grep,todo_write,task,Agent"
@@ -116,6 +119,7 @@ typedef struct {
     /* Co-robots mentioned together with this one on the triggering note.
      * Enables group negotiation: robots can see peers and p-mention back. */
     char co_npubs[4][HUSH_IDENTITY_NPUB_MAX];
+    char co_names[4][HUSH_ROSTER_NAME_MAX];
     int n_co_robots;
     const hush_launch_t *launch;
     char ask[HUSH_EVENT_MAX_CONTENT + 1];
@@ -1136,6 +1140,9 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
             continue;
         hush_agent_copy(job->co_npubs[job->n_co_robots],
                         sizeof(job->co_npubs[0]), np);
+        hush_agent_copy(job->co_names[job->n_co_robots],
+                        sizeof(job->co_names[0]),
+                        tmp.name != NULL ? tmp.name : "robot");
         job->n_co_robots++;
     }
 
@@ -1144,7 +1151,7 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
 
     /* Group mention seam + deliberation (M3.4):
      * Co-mentioned robots must decide: own reply? cooperate? split? full convo?
-     * They can mention peers via nostr:npub (turned into p-tags by finish).
+     * Peers are listed by name (with their nostr:npub token for dispatch).
      * Prompt hygiene + existing hop limits prevent runaway loops. */
     if (job->n_co_robots > 0 && strlen(job->prompt) + 160 < sizeof(job->prompt)) {
         size_t off = strlen(job->prompt);
@@ -1153,18 +1160,17 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
         if (off + glen < sizeof(job->prompt)) {
             memcpy(job->prompt + off, g, glen);
             off += glen;
-            for (int c = 0; c < job->n_co_robots && off + 70 < sizeof(job->prompt); ++c) {
-                if (c > 0 && off + 1 < sizeof(job->prompt)) job->prompt[off++] = ' ';
+            for (int c = 0; c < job->n_co_robots; ++c) {
+                const char *nm = job->co_names[c][0] ? job->co_names[c] : "robot";
                 const char *np = job->co_npubs[c];
-                size_t nlen = strlen(np);
-                if (off + 6 + nlen + 1 >= sizeof(job->prompt)) break;
-                memcpy(job->prompt + off, "nostr:", 6);
-                off += 6;
-                memcpy(job->prompt + off, np, nlen);
-                off += nlen;
+                int m = snprintf(job->prompt + off, sizeof(job->prompt) - off,
+                                 "%s%s (nostr:%s)", c > 0 ? " " : "", nm, np);
+                if (m < 0 || (size_t)m >= sizeof(job->prompt) - off)
+                    break;
+                off += (size_t)m;
             }
         }
-        const char *delib = " You + these peers were mentioned together. Decide strategy (own reply / cooperate on one / split / full convo among us). Call peers by emitting their nostr:npub in content with at least 1 word of context. Never leave a mention hanging at the end of a message.";
+        const char *delib = " You + these peers were mentioned together. Decide strategy (own reply / cooperate on one / split / full convo among us). To call a peer, write their name plus a phrase of intent (e.g. \"your turn, Major\"), never a bare mention and never a trailing mention at the end of a message.";
         if (off + strlen(delib) < sizeof(job->prompt)) {
             memcpy(job->prompt + off, delib, strlen(delib));
         }
