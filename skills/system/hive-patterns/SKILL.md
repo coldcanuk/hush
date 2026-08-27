@@ -1,6 +1,6 @@
 ---
 name: hive-patterns
-description: Apply Gulli agentic design patterns in the hive.
+description: Apply Gulli agentic patterns as hive standing orders.
 role: any
 category: knowledge
 ---
@@ -9,4 +9,4 @@ category: knowledge
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Hush-adapted from evoiz Agentic-Design-Patterns for Major knowledge. Prefer prompt chaining, routing, reflection, HITL, guardrails. Not a Python notebook dump.
+Hush-adapted from evoiz Agentic-Design-Patterns for Major knowledge. Prefer prompt chaining, routing, reflection, HITL, guardrails on grok jobs. Not a Python notebook dump.

@@ -92,7 +92,7 @@ int main(void)
                 expect(strcmp(launch.roster.agents[i].picture,
                               "panel:angevin:3") == 0,
                        "marshal icon");
-                expect(launch.roster.agents[i].nskills >= 1, "marshal skills");
+                expect(launch.roster.agents[i].nskills == 8, "marshal 8 rails");
             }
         }
         expect(coach, "coach template");
@@ -100,6 +100,9 @@ int main(void)
         expect(marshal, "marshal template");
         expect(strcmp(launch.payne_picture, "panel:robots:1") == 0,
                "major icon");
+        expect(launch.npayne_skills == 1, "major default skill");
+        expect(strcmp(launch.payne_skills[0], "system:hive-patterns") == 0,
+               "major hive-patterns");
         expect(hush_launch_clone_agent(&launch, store, HUSH_LAUNCH_PAYNE_SLUG)
                    == HUSH_ERR_DENIED,
                "major no clone");

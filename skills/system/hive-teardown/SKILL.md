@@ -9,4 +9,4 @@ category: reverse-engineering
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Hush-adapted from yanliudesign product-teardown-skill. Snapshot, users, core loop, architecture, UX, business, friction, next move. Write a hive note, not a bilingual Desktop HTML report. No Python fill scripts.
+Hush-adapted from yanliudesign product-teardown-skill. Snapshot, users, core loop, architecture, UX, business, friction, next move. Write a hive note. No bilingual Desktop HTML, no Python fill scripts.

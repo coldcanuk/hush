@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Replace PII with [redacted]. Do not grok on the leaked text.
+Replace emails, phone numbers, and street addresses with [redacted]. Do not grok on the leaked text.

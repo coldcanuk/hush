@@ -9,4 +9,4 @@ category: reverse-engineering
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Hush reverse-engineering category. List binaries, APIs, and config. Do not exfiltrate. Report only.
+List binaries, /api routes, and config in this checkout. Do not exfiltrate. Report only. Distinct from protocol-trace (wire tags) and mobile-trace (APK/IPA).

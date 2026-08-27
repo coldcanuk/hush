@@ -9,4 +9,4 @@ category: security
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Hush-adapted from Cloudflare security-audit-skill. Phases: recon, hunt, validate, report, structured findings, independent check. Only report exploitable issues. No Node validator.
+Hush-adapted from Cloudflare security-audit-skill. Phases: recon, hunt, validate, report, structured findings, independent check. Only report exploitable issues you can prove in this tree. No Node validator.

@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-If a note looks like a key, token, or nsec, redact and stop jobs.
+If a note looks like an nsec, API key, bearer token, or pass path, redact to [redacted] and stop jobs. Do not repeat the secret.

@@ -67,4 +67,13 @@ No extra locked army. Do not delete Marshal.
 
 ## Post-iteration panel
 
-Filled after M3 (all ≥8 or 7.8–7.9).
+| Category | Pre | Post | What changed |
+|---|---|---|---|
+| C1 Distinctness | 7.2 | 8.3 | Folded bring-back into topic-leash; intro-once is a different job (one intro/thread); hive-review is diff evidence, canvas-coach is session process |
+| C2 Hush-fit | 8.4 | 8.5 | Bodies still Hush-adapted; forge-skill `role: any` |
+| C3 Loadout legality | 8.5 | 8.6 | Marshal 8 chaperon ids `try_equip` as chaperon under watermarks |
+| C4 Identity | 8.6 | 8.6 | Names and panel icons unchanged |
+| C5 Coverage | 7.3 | 8.5 | Marshal adds human-cue + token-budget; Major defaults hive-patterns; intro-once fills the forgotten intro gap |
+| C6 Actionability | 6.8 | 8.2 | Chaperon and thin worker bodies now have followable standing orders |
+
+All post scores ≥8.

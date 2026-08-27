@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Default rails are off. Opt-in robot_talk plus hops is required to run.
+Default rails are off. Opt-in robot_talk plus hops is required to run unattended.

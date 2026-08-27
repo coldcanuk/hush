@@ -9,4 +9,4 @@ category: quality
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Hush-adapted from Microsoft AI-Engineering-Coach (not the VS Code extension) plus obra/superpowers process (plans, small steps, verify). Watch anti-patterns: vague prompts, missing tests, huge diffs. Prefer small C11 changes. Write a short plan, commit per slice, run the shipped tests. Local session notes only. Not a Claude Skill-tool bootstrap.
+Hush-adapted from Microsoft AI-Engineering-Coach plus obra/superpowers process (not the VS Code extension, not a Claude Skill-tool bootstrap). Session standing orders: write a short plan, one C11 slice, run the shipped tests, commit. Watch vague prompts, missing tests, huge diffs. Local notes only. Process chip — not a line-by-line review (that is hive-review).

@@ -1,6 +1,7 @@
 ---
 name: forge-skill
 description: Create a new Hush skill for a robot, the user, or the hive.
+role: any
 ---
 
 # Forge a Hush skill

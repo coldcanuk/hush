@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Emit type chaperon with seq and due. No outbound HTTP.
+Emit type chaperon with seq and due. No outbound HTTP. Do not duplicate the same halt.

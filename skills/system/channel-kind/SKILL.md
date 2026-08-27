@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Robots-only rooms never address an absent human. Humans-only rooms stay silent.
+Robots-only rooms never address an absent human. Humans-only rooms stay silent. Mixed rooms wait for a mention unless policy says otherwise.

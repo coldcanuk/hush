@@ -654,6 +654,8 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         hush_launch_push_template_skill(&in, "system:hop-cap");
         hush_launch_push_template_skill(&in, "system:secret-watch");
         hush_launch_push_template_skill(&in, "system:chaperon-ack");
+        hush_launch_push_template_skill(&in, "system:human-cue");
+        hush_launch_push_template_skill(&in, "system:token-budget");
         in.has_skills = 1;
         in.locked = 1;
         HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
@@ -757,6 +759,10 @@ hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
     launch->npayne_skills = 0;
     launch->payne_enabled = 1;
     hush_launch_fill_payne_defaults(launch);
+    if (launch->npayne_skills == 0) {
+        memcpy(launch->payne_skills[0], "system:hive-patterns", 21);
+        launch->npayne_skills = 1;
+    }
     if (hush_launch_seed_hive(launch, store) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
     launch->has_vibe = 1;
