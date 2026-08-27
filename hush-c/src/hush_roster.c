@@ -122,6 +122,15 @@ static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
 static hush_status_t hush_roster_copy_skills(hush_roster_agent_t *agent,
                                              const hush_roster_agent_in_t *in);
 
+/* Applies intro_enabled and intro from in. Defaults stay when flags are off. */
+static void hush_roster_apply_intro(hush_roster_agent_t *agent,
+                                    const hush_roster_agent_in_t *in);
+
+/* Appends intro_enabled and intro, then closes the agent object. */
+static hush_status_t hush_roster_format_intro(const hush_roster_agent_t *agent,
+                                              char *out, size_t outsz,
+                                              size_t *off);
+
 /* Finds an agent by slug. NULL when missing. */
 static hush_roster_agent_t *hush_roster_find_agent(hush_roster_t *roster,
                                                    const char *slug);
@@ -345,6 +354,7 @@ hush_status_t hush_roster_update_agent(hush_roster_t *roster, const char *slug,
     if (agent->locked) {
         if (in->has_enabled)
             agent->enabled = in->enabled ? 1 : 0;
+        hush_roster_apply_intro(agent, in);
         return HUSH_OK;
     }
     return hush_roster_apply_update(agent, in);
@@ -383,6 +393,10 @@ hush_status_t hush_roster_clone_agent(hush_roster_t *roster,
         memcpy(in.skills[i], src->skills[i], sizeof(in.skills[0]));
     in.nskills = src->nskills;
     in.has_skills = 1;
+    in.intro_enabled = src->intro_enabled;
+    in.has_intro_enabled = 1;
+    memcpy(in.intro, src->intro, sizeof(in.intro));
+    in.has_intro = 1;
     return hush_roster_add_agent(roster, store, &in, 0);
 }
 
@@ -435,6 +449,10 @@ static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
                           hush_roster_is_role(in->role)
                               ? in->role : HUSH_ROSTER_ROLE_WORKER,
                           HUSH_ROSTER_ROLE_WORKER);
+    agent->intro_enabled = 1;
+    hush_roster_copy_text(agent->intro, sizeof(agent->intro),
+                          HUSH_ROSTER_INTRO_DEFAULT, HUSH_ROSTER_INTRO_DEFAULT);
+    hush_roster_apply_intro(agent, in);
     return hush_roster_copy_skills(agent, in);
 }
 
@@ -918,6 +936,7 @@ static hush_status_t hush_roster_apply_update(hush_roster_agent_t *agent,
                                   ? in->role : HUSH_ROSTER_ROLE_WORKER,
                               HUSH_ROSTER_ROLE_WORKER);
     }
+    hush_roster_apply_intro(agent, in);
     if (!in->has_skills)
         return HUSH_OK;
     return hush_roster_copy_skills(agent, in);
@@ -977,9 +996,49 @@ static hush_status_t hush_roster_format_skills(const hush_roster_agent_t *agent,
             return HUSH_ERR_FULL;
         *off += (size_t)n;
     }
-    n = snprintf(out + *off, outsz - *off, "]}");
+    n = snprintf(out + *off, outsz - *off, "]");
+    if (n < 0 || *off + (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    *off += (size_t)n;
+    return hush_roster_format_intro(agent, out, outsz, off);
+}
+
+static hush_status_t hush_roster_format_intro(const hush_roster_agent_t *agent,
+                                              char *out, size_t outsz,
+                                              size_t *off)
+{
+    char esc[HUSH_ROSTER_INTRO_MAX * 2];
+    const char *line;
+    int n;
+
+    assert(agent != NULL);
+    assert(out != NULL);
+    assert(off != NULL);
+    line = agent->intro[0] ? agent->intro : HUSH_ROSTER_INTRO_DEFAULT;
+    hush_roster_json_escape(line, esc, sizeof(esc));
+    n = snprintf(out + *off, outsz - *off,
+                 ",\"intro_enabled\":%s,\"intro\":\"%s\"}",
+                 agent->intro_enabled ? "true" : "false", esc);
     if (n < 0 || *off + (size_t)n >= outsz)
         return HUSH_ERR_FULL;
     *off += (size_t)n;
     return HUSH_OK;
+}
+
+static void hush_roster_apply_intro(hush_roster_agent_t *agent,
+                                    const hush_roster_agent_in_t *in)
+{
+    assert(agent != NULL);
+    assert(in != NULL);
+    if (in->has_intro_enabled)
+        agent->intro_enabled = in->intro_enabled ? 1 : 0;
+    if (!in->has_intro)
+        return;
+    if (in->intro[0] == '\0')
+        hush_roster_copy_text(agent->intro, sizeof(agent->intro),
+                              HUSH_ROSTER_INTRO_DEFAULT,
+                              HUSH_ROSTER_INTRO_DEFAULT);
+    else
+        hush_roster_copy_text(agent->intro, sizeof(agent->intro),
+                              in->intro, HUSH_ROSTER_INTRO_DEFAULT);
 }

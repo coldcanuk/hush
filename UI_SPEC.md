@@ -213,7 +213,10 @@ and a pencil to edit it again.
 read-only. Slug stays `sgt-major-payne`. Delete stays disabled.
 Every robot, including Major, has an Enable/Disable switch
 (`#agent-enabled`). Disabled robots use `.inv-item.disabled`
-(greyscale) and do not answer mentions. Ranked providers remain.
+(greyscale) and do not answer mentions. Raise and Edit also have
+`#agent-intro-enabled` (on by default) and `#agent-intro` (default
+“I am on deck. Standing orders are noted.”). The intro posts once per
+thread. Major’s intro switch and text are locked. Ranked providers remain.
 Skills live only in Raise / Edit (`#agent-drawer`), never on the hive nav.
 Edit is the inventory: `i` toggles it for the selected or hovered robot
 tile. Cycle `#skill-cycle`; armory shows neighbors; `#skill-loadout` is a

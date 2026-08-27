@@ -113,6 +113,10 @@ int main(void)
     expect(strstr(json, "Alice") != NULL, "alice json");
     expect(strstr(json, "\"skills\":[]") != NULL, "skills json");
     expect(strstr(json, "\"role\":\"worker\"") != NULL, "role json");
+    expect(roster.agents[0].intro_enabled == 1, "intro on by default");
+    expect(strcmp(roster.agents[0].intro, HUSH_ROSTER_INTRO_DEFAULT) == 0,
+           "default intro");
+    expect(strstr(json, "\"intro_enabled\":true") != NULL, "intro json");
     memcpy(agent.name, "Sentry Two", 11);
     memcpy(agent.prompt, "Watch closer.", 14);
     memcpy(agent.voice, "alloy", 6);
@@ -153,6 +157,19 @@ int main(void)
     expect(strstr(json, "system:forge-skill") == NULL, "pruned skill gone");
     expect(strstr(json, "\"enabled\":false") != NULL, "disabled json");
     expect(strstr(json, "\"role\":\"chaperon\"") != NULL, "chaperon json");
+    memcpy(agent.intro, "Hello from Sentry.", 19);
+    agent.has_intro = 1;
+    agent.has_intro_enabled = 1;
+    agent.intro_enabled = 0;
+    expect(hush_roster_update_agent(&roster, "sentry", &agent) == HUSH_OK,
+           "intro update");
+    expect(roster.agents[0].intro_enabled == 0, "intro off");
+    expect(strcmp(roster.agents[0].intro, "Hello from Sentry.") == 0,
+           "custom intro");
+    expect(hush_roster_format_json(&roster, json, sizeof(json), &n) == HUSH_OK,
+           "json intro");
+    expect(strstr(json, "\"intro_enabled\":false") != NULL, "intro off json");
+    expect(strstr(json, "Hello from Sentry.") != NULL, "custom intro json");
     expect(hush_roster_remove_agent(&roster, HUSH_ROSTER_PAYNE_SLUG) ==
                HUSH_ERR_DENIED,
            "payne stays");
@@ -187,6 +204,15 @@ int main(void)
     agent.enabled = 0;
     expect(hush_roster_update_agent(&roster, "coach", &agent) == HUSH_OK,
            "locked enable");
+    memcpy(agent.intro, "Coach is on deck.", 18);
+    agent.has_intro = 1;
+    agent.has_intro_enabled = 1;
+    agent.intro_enabled = 0;
+    expect(hush_roster_update_agent(&roster, "coach", &agent) == HUSH_OK,
+           "locked intro");
+    expect(roster.agents[0].intro_enabled == 0, "locked intro off");
+    expect(strcmp(roster.agents[0].intro, "Coach is on deck.") == 0,
+           "locked custom intro");
     expect(strcmp(roster.agents[0].name, "Coach") == 0, "locked name stays");
     expect(roster.agents[0].enabled == 0, "locked disable");
     expect(hush_roster_clone_agent(&roster, store, "coach") == HUSH_OK,
@@ -194,6 +220,9 @@ int main(void)
     expect(roster.nagents == 2, "coach plus copy");
     expect(roster.agents[1].locked == 0, "clone unlocked");
     expect(roster.agents[1].nskills == 1, "copy wears skill");
+    expect(roster.agents[1].intro_enabled == 0, "copy intro off");
+    expect(strcmp(roster.agents[1].intro, "Coach is on deck.") == 0,
+           "copy intro text");
     memset(&agent, 0, sizeof(agent));
     agent.has_skills = 1;
     agent.nskills = 0;
