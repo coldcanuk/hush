@@ -6,10 +6,12 @@ bin=./hush-relay
 port=18766
 log=$(mktemp)
 cfg=$(mktemp -d)
+hush_home=$(mktemp -d)
 export HUSH_CONFIG_DIR="$cfg"
+export HUSH_HOME="$hush_home"
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
-cleanup() { kill "$pid" 2>/dev/null || true; rm -f "$log"; rm -rf "$cfg" /tmp/hush-check-alpha /tmp/hush-bad-canvas; }
+cleanup() { kill "$pid" 2>/dev/null || true; rm -f "$log"; rm -rf "$cfg" "$hush_home" /tmp/hush-check-alpha /tmp/hush-bad-canvas; }
 trap cleanup EXIT
 i=0
 while [ "$i" -lt 50 ]; do
@@ -20,6 +22,13 @@ while [ "$i" -lt 50 ]; do
     sleep 0.05
 done
 fail() { echo "launch check failed: $1" >&2; exit 1; }
+test -d "$hush_home/config" || fail "ensure-home missing ~/.hush/config"
+test -d "$hush_home/agents" || fail "ensure-home missing ~/.hush/agents"
+test -f "$hush_home/skills/system/forge-skill/SKILL.md" || fail "forge-skill not seeded"
+skills=$(curl -sf "http://127.0.0.1:${port}/api/skills")
+echo "$skills" | grep -q '"scopes":\["system","user","robot"\]' || fail "skills missing three scopes"
+echo "$skills" | grep -q 'system:forge-skill' || fail "skills missing forge-skill"
+echo "$skills" | grep -q '"scope":"system"' || fail "skills missing system scope"
 sess=$(curl -sf "http://127.0.0.1:${port}/api/session")
 echo "$sess" | grep -q '"logged_in":false' || fail "cold session should be logged out"
 echo "$sess" | grep -q '"ready":false' || fail "cold session should not be ready"
@@ -222,7 +231,25 @@ echo "$html" | grep -q 'Delete Robot' || fail "HTML missing delete robot"
 echo "$html" | grep -q 'Raise Robot' || fail "HTML missing raise robot"
 echo "$html" | grep -q 'Save Robot' || fail "HTML missing save robot"
 echo "$html" | grep -q 'value="deepseek-api"' || fail "HTML missing deepseek radio"
-echo "$html" | grep -q 'Edit Sgt Major Payne' || fail "HTML missing Payne edit title"
+echo "$html" | grep -q 'Edit Major' || fail "HTML missing Payne edit title"
+echo "$html" | grep -q 'id="inv-menu"' || fail "HTML missing inventory edit menu"
+echo "$html" | grep -q 'data-act="edit"' || fail "HTML missing edit menu action"
+echo "$html" | grep -q 'openInvMenu' || fail "HTML missing openInvMenu"
+echo "$html" | grep -q 'hideInvMenu' || fail "HTML missing hideInvMenu"
+echo "$html" | grep -q 'contextmenu' || fail "HTML missing contextmenu trap"
+echo "$html" | grep -q 'metaKey' || fail "HTML missing macOS meta+click"
+echo "$html" | grep -q 'id="agent-voice"' || fail "HTML missing voice picker"
+echo "$html" | grep -q 'agent-voice-wrap' || fail "HTML missing whisper-gated voice wrap"
+echo "$html" | grep -q 'whisperReady' || fail "HTML missing whisperReady gate"
+echo "$html" | grep -q 'id="skill-armory"' || fail "HTML missing skill armory"
+echo "$html" | grep -q 'id="skill-loadout"' || fail "HTML missing skill loadout"
+echo "$html" | grep -q 'id="skill-forge-open"' || fail "HTML missing forge control"
+echo "$html" | grep -q 'id="forge-drawer"' || fail "HTML missing forge drawer"
+echo "$html" | grep -q 'w: 1, h: 1' || fail "inventory tiles must be equal 1x1"
+if echo "$html" | grep -q 'PAYNE_SLUG ? "1x3"'; then
+    fail "Payne must not be a 1x3 inventory exception"
+fi
+echo "$html" | grep -q 'el.title = it.name' || fail "hover title must use robot name"
 echo "$html" | grep -q 'id="payne-provider-pills"' || fail "HTML missing Payne provider pills"
 echo "$html" | grep -q 'id="agent-identity"' || fail "HTML missing lockable identity block"
 echo "$html" | grep -q 'PAYNE_PROVIDERS_MAX = 4' || fail "HTML missing Payne provider cap"
@@ -263,7 +290,9 @@ vibe=$(curl -sf -X POST "http://127.0.0.1:${port}/api/vibe" \
     -d '{"name":"HQ","about":"primary endpoint"}')
 echo "$vibe" | grep -q '"ready":true' || fail "vibe should ready the hive"
 echo "$vibe" | grep -q '"visibility":"public"' || fail "vibe default public"
-echo "$vibe" | grep -q 'Sgt Major Payne' || fail "Payne missing"
+echo "$vibe" | grep -q '"name":"Major"' || fail "Payne missing"
+echo "$vibe" | grep -q '"name":"Sgt Major Payne"' && fail "old Payne display name must not ship"
+echo "$vibe" | grep -q 'Sgt. Maj. Payne' && fail "old Payne display name must not ship"
 echo "$vibe" | grep -F '"providers":["goose"]' || fail "Payne default providers"
 echo "$vibe" | grep -q '"slug":"welcome"' || fail "welcome channel missing"
 echo "$vibe" | grep -q '"theme":"dark"' || fail "default theme missing"
@@ -330,6 +359,15 @@ ag=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -d '{"name":"Sentry","system_prompt":"Watch.","provider":"goose","save_pass":false}')
 echo "$ag" | grep -q '"slug":"sentry"' || fail "agent create"
 echo "$ag" | grep -q '"provider":"goose"' || fail "agent provider"
+upd=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"update","slug":"sentry","name":"Sentry","system_prompt":"Watch.","picture":"panel:dogs:4","skill_0":"system:forge-skill"}')
+echo "$upd" | grep -q 'panel:dogs:4' || fail "agent picture persist"
+echo "$upd" | grep -q 'system:forge-skill' || fail "agent skill persist"
+forged=$(curl -sf -X POST "http://127.0.0.1:${port}/api/skill" \
+    -H 'Content-Type: application/json' \
+    -d '{"name":"joke-book","summary":"Jokes.","body":"Tell one joke.","scope":"user"}')
+echo "$forged" | grep -q 'user:joke-book' || fail "forge user skill"
 noprov=$(curl -s -o /tmp/hush-noprov-agent -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"name":"Ghost","system_prompt":"Watch.","save_pass":false}')
@@ -344,10 +382,14 @@ gone=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
 echo "$gone" | grep -q '"slug":"sentry"' && fail "deleted agent still listed"
 payne=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
-    -d '{"slug":"sgt-major-payne","provider_0":"grok-build","provider_1":"goose","name":"Nope","system_prompt":"Nope"}')
+    -d '{"slug":"sgt-major-payne","provider_0":"grok-build","provider_1":"goose"}')
 echo "$payne" | grep -F '"providers":["grok-build","goose"]' || fail "Payne provider order"
-echo "$payne" | grep -q 'Sgt Major Payne' || fail "Payne name stays locked"
-echo "$payne" | grep -q 'Nope' && fail "Payne name must ignore posted rename"
+echo "$payne" | grep -q '"name":"Major"' || fail "Payne default name stays Major"
+renamed=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"slug":"sgt-major-payne","provider_0":"goose","name":"Major Two","system_prompt":"Find the right robot."}')
+echo "$renamed" | grep -q '"name":"Major Two"' || fail "Payne name must be editable"
+echo "$renamed" | grep -q '"name":"Sgt Major Payne"' && fail "old Payne name must not remain"
 stay=$(curl -s -o /tmp/hush-payne-del -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"action":"delete","slug":"sgt-major-payne"}')

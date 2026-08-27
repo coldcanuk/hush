@@ -38,7 +38,7 @@ static void expect_overlay_clean(const char *home)
     FILE *fp;
     size_t n = 0;
 
-    snprintf(path, sizeof(path), "%s/.config/hush/providers.json", home);
+    snprintf(path, sizeof(path), "%s/.hush/config/providers.json", home);
     overlay[0] = '\0';
     fp = fopen(path, "r");
     if (fp != NULL) {

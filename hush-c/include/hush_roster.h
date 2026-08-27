@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "hush_identity.h"
+#include "hush_skill.h"
 #include "hush_status.h"
 #include "hush_store.h"
 
@@ -18,7 +19,7 @@ enum {
     HUSH_ROSTER_CONTEXT_MAX = 3,
     HUSH_ROSTER_CONTEXT_BYTES = 4096,
     HUSH_ROSTER_PATH_MAX = 256,
-    HUSH_ROSTER_JSON_MAX = 8192,
+    HUSH_ROSTER_JSON_MAX = 16384,
     HUSH_ROSTER_PROVIDER_MAX = 32,
     HUSH_ROSTER_PROMPT_PREVIEW = 160
 };
@@ -52,6 +53,9 @@ typedef struct {
     char prompt[HUSH_ROSTER_PROMPT_MAX];
     char provider[HUSH_ROSTER_PROVIDER_MAX];
     char picture[HUSH_ROSTER_PATH_MAX];
+    char voice[HUSH_SKILL_VOICE_MAX];
+    char skills[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
+    size_t nskills;
     hush_roster_context_t context[HUSH_ROSTER_CONTEXT_MAX];
     size_t ncontext;
 } hush_roster_agent_t;
@@ -113,6 +117,9 @@ typedef struct {
     char prompt[HUSH_ROSTER_PROMPT_MAX];
     char provider[HUSH_ROSTER_PROVIDER_MAX];
     char picture[HUSH_ROSTER_PATH_MAX];
+    char voice[HUSH_SKILL_VOICE_MAX];
+    char skills[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
+    size_t nskills;
     hush_roster_context_in_t context[HUSH_ROSTER_CONTEXT_MAX];
     size_t ncontext;
 } hush_roster_agent_in_t;
@@ -125,6 +132,11 @@ hush_status_t hush_roster_add_agent(hush_roster_t *roster,
 
 /* Drops an agent by slug. Payne's slug is refused. */
 hush_status_t hush_roster_remove_agent(hush_roster_t *roster, const char *slug);
+
+/* Updates name, prompt, provider, picture, voice, and equipped skills.
+ * Slug and identity stay. Payne's slug is refused. */
+hush_status_t hush_roster_update_agent(hush_roster_t *roster, const char *slug,
+                                       const hush_roster_agent_in_t *in);
 
 /* Appends agents and members JSON after a channels/projects-style cursor.
  * Writes a comma-prefixed fragment: ,"agents":[...],"members":[...]

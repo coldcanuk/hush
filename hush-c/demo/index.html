@@ -664,6 +664,24 @@
 .agent-pic-cell.on { border-color: var(--accent); box-shadow: 0 0 6px var(--accent); }
 .robot-ack.thinking, .robot-ack.reacting { opacity: 0.9; font-size: 0.78rem; }
 .inv-item.has-pic { background-size: cover; background-position: center; }
+.inv-item.has-pic .nm { display: none; }
+.skill-board { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+.skill-pool, .skill-loadout {
+  min-height: 72px; border: 1px solid var(--line); border-radius: 6px;
+  padding: 6px; display: flex; flex-wrap: wrap; gap: 6px; background: #11171d;
+}
+.skill-scope-lbl {
+  font-size: 0.58rem; letter-spacing: 0.06em; color: #8a9; width: 100%;
+  text-transform: uppercase;
+}
+.skill-chip {
+  font: 650 0.68rem/1 var(--sans); padding: 8px 10px; cursor: pointer;
+  border: 1px solid #3a4a55; background: #0f1419; color: #9cf; border-radius: 4px;
+}
+.skill-chip[data-scope="system"] { border-color: #d4a017; color: #fc6; }
+.skill-chip[data-scope="user"] { border-color: #0ff; }
+.skill-chip[data-scope="robot"] { border-color: #c6f; color: #e8f; }
+.skill-chip:hover { box-shadow: 0 0 6px currentColor; }
 
 /* M4.1 progressive mention states (thinking -> reacting -> emoji) */
 
@@ -948,13 +966,13 @@
         <button class="btn ghost" id="profile-logout" type="button">Logout</button>
         <button class="btn ghost" id="profile-close" type="button">Close</button>
       </div>
-      <p class="help">Sgt Major Payne: "Guard your orders. Report when ready."</p>
+      <p class="help">Major: "Guard your orders. Report when ready."</p>
     </div>
   </div>
   <div class="drawer" id="agent-drawer" role="dialog" aria-label="Raise a robot">
     <div class="panel">
       <h2 id="agent-title">Raise a robot</h2>
-      <p class="help" id="agent-help">Sgt Major Payne will walk you through it.</p>
+      <p class="help" id="agent-help">Major will walk you through it.</p>
       <div id="agent-identity">
       <label for="agent-name">Name</label>
       <div class="pill-row">
@@ -998,6 +1016,25 @@
       <div id="agent-pic-sheets" class="agent-pic-sheets" role="tablist" aria-label="Picture sheets"></div>
       <div id="agent-pic-picker" class="agent-pic-picker" role="listbox" aria-label="Robot picture picker"></div>
       <input id="agent-picture" type="hidden" value="">
+      <div id="agent-voice-wrap" hidden>
+        <label for="agent-voice">Voice</label>
+        <select id="agent-voice"></select>
+        <p class="help">Heard in calls when a Whisper model is ready.</p>
+      </div>
+      <div id="agent-skills">
+        <p class="help">Equip skills like items. Click the armory to wear; click the loadout to prune.</p>
+        <div class="skill-board">
+          <div>
+            <div class="lbl">Armory</div>
+            <div id="skill-armory" class="skill-pool" aria-label="Skill armory"></div>
+          </div>
+          <div>
+            <div class="lbl">Loadout</div>
+            <div id="skill-loadout" class="skill-loadout" aria-label="Skill loadout"></div>
+          </div>
+        </div>
+        <button class="inv-btn" id="skill-forge-open" type="button">Forge a skill</button>
+      </div>
       <label class="passbox"><input id="agent-pass" type="checkbox" checked>
         Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
       <p class="warn" id="agent-err"></p>
@@ -1182,6 +1219,32 @@
     <button type="button" data-act="delete">Delete Channel</button>
     <button type="button" data-act="manage">Manage Channel</button>
   </div>
+  <div class="menu" id="inv-menu" role="menu">
+    <button type="button" data-act="edit">edit</button>
+  </div>
+  <div class="drawer" id="forge-drawer" role="dialog" aria-label="Forge a skill">
+    <div class="panel">
+      <div class="drawer-head">
+        <h2>Forge a skill</h2>
+        <button class="drawer-x" id="forge-close" type="button" aria-label="Close forge">×</button>
+      </div>
+      <p class="help">Uses the system-wide forge-skill. Equip the new item onto this robot after it is written.</p>
+      <label for="forge-name">Name</label>
+      <input id="forge-name" type="text" maxlength="48" placeholder="joke-book">
+      <label for="forge-summary">Summary</label>
+      <input id="forge-summary" type="text" maxlength="160" placeholder="Tell short jokes.">
+      <label for="forge-body">Body</label>
+      <textarea id="forge-body" maxlength="4000" placeholder="What the robot should do."></textarea>
+      <p class="help">Scope</p>
+      <label><input type="radio" name="forge-scope" value="user" checked> User-wide</label>
+      <label><input type="radio" name="forge-scope" value="robot"> This robot</label>
+      <p class="warn" id="forge-err"></p>
+      <div class="actions">
+        <button class="btn" id="forge-save" type="button">Forge</button>
+        <button class="btn ghost" id="forge-close2" type="button">Close</button>
+      </div>
+    </div>
+  </div>
   <div class="drawer" id="dev-log-drawer" role="dialog" aria-label="Developer Log">
     <div class="panel wide">
       <div class="drawer-head">
@@ -1212,7 +1275,7 @@
         <h2>Seed a team</h2>
         <button class="drawer-x" id="seed-close" type="button" aria-label="Close seed">×</button>
       </div>
-      <p class="help">Sgt Major Payne raises a cooperating team from this briefing. He needs a working AI provider first.</p>
+      <p class="help">Major raises a cooperating team from this briefing. He needs a working AI provider first.</p>
       <p class="warn" id="seed-err"></p>
       <label for="seed-actions">This team should do</label>
       <textarea id="seed-actions" maxlength="400" placeholder="action 1, action 2, action 3"></textarea>
@@ -1347,6 +1410,10 @@
     const INV_EXPAND_CELL = 44;
     let invDrag = null; /* {id, startGX, startGY, gx, gy, w, h, dx, dy} */
     let invNextId = 1;
+    let invMenuSlug = "";
+    let skillCatalog = [];
+    let equippedSkills = [];
+    let skillVoices = [];
     let ackClock = {};
     let manageTopics = [];
     let draftPicture = "";
@@ -1431,7 +1498,7 @@
       if (page === "splash") {
         return card("hush",
           "<img class=\"feather\" src=\"/icon-192.png\" alt=\"hush\">" +
-          "<p><strong>Sgt Major Payne reporting for duty.</strong></p>" +
+          "<p><strong>Major reporting for duty.</strong></p>" +
           "<p>Detecting identity and vibe…</p>" +
           errLine() +
           actions([{ id: "begin", label: "Begin" }]) +
@@ -1493,12 +1560,12 @@
       }
       if (page === "payne") {
         const p = session.payne || {};
-        return card("Sgt Major Payne",
+        return card("Major",
           stepBar(4) +
           "<p><strong>At ease.</strong> " +
           esc(p.about || "I find the right robot — or raise one.") + "</p>" +
           (p.npub ? "<p class=\"help\">" + esc(p.npub.slice(0, 20)) + "…</p>" : "") +
-          "<p>At ease. I'm Sgt Major Payne. Tell me what you want built and I'll find — or raise — the right robot for the job.</p>" +
+          "<p>At ease. I'm Major. Tell me what you want built and I'll find — or raise — the right robot for the job.</p>" +
           errLine() +
           actions([{ id: "meet-payne", label: "Carry on." }]));
       }
@@ -1674,6 +1741,22 @@
       const m = $("chan-menu");
       if (m) m.classList.remove("show");
       menuSlug = "";
+    }
+
+    function hideInvMenu() {
+      const m = $("inv-menu");
+      if (m) m.classList.remove("show");
+      invMenuSlug = "";
+    }
+
+    function openInvMenu(slug, x, y) {
+      const m = $("inv-menu");
+      if (!m) return;
+      hideChanMenu();
+      invMenuSlug = slug;
+      m.classList.add("show");
+      m.style.left = Math.min(x, window.innerWidth - 160) + "px";
+      m.style.top = Math.min(y, window.innerHeight - 80) + "px";
     }
 
     function openChanMenu(slug, x, y) {
@@ -2018,16 +2101,18 @@
       const order = payneProviderList(p);
       const list = [{
         slug: PAYNE_SLUG,
-        name: p.name || "Sgt Major Payne",
-        about: p.about || "Finds the right robot, or raises one.",
-        picture: picIdFor(PAYNE_SLUG, ""),
+        name: p.name || "Major",
+        voice: p.voice || "",
+        skills: p.skills || [],
+        about: p.prompt || p.about || "Finds the right robot, or raises one.",
+        picture: picIdFor(PAYNE_SLUG, p.picture || ""),
         npub: p.npub || "",
         pubkey: p.pubkey || "",
         provider: order[0],
         providers: order,
-        prompt: p.about || "",
+        prompt: p.prompt || p.about || "",
         ncontext: 0,
-        locked: true
+        locked: true}
       }];
       (session.agents || []).forEach((a) => {
         if (!a || a.slug === PAYNE_SLUG) return;
@@ -2040,6 +2125,8 @@
           provider: a.provider || "",
           prompt: a.prompt || "",
           picture: picIdFor(a.slug, a.picture || ""),
+          voice: a.voice || "",
+          skills: a.skills || [],
           ncontext: a.ncontext || 0,
           locked: false
         });
@@ -2149,7 +2236,7 @@
         el.checked = false;
       });
       if ($("agent-title")) $("agent-title").textContent = "Raise a robot";
-      if ($("agent-help")) $("agent-help").textContent = "Sgt Major Payne will walk you through it.";
+      if ($("agent-help")) $("agent-help").textContent = "Major will walk you through it.";
       if ($("agent-save")) $("agent-save").textContent = "Raise Robot";
       if ($("agent-delete")) $("agent-delete").disabled = true;
       if ($("agent-err")) $("agent-err").textContent = "";
@@ -2532,18 +2619,24 @@
         editSlug = PAYNE_SLUG;
         payneOrder = (bot.providers && bot.providers.length)
           ? bot.providers.slice() : ["goose"];
-        $("agent-title").textContent = "Edit Sgt Major Payne";
-        $("agent-help").textContent = "Choose the runtime. First on deck speaks first.";
+        $("agent-title").textContent = "Edit Major";
+        $("agent-help").textContent = "Name, prompt, picture, skills, and ranked runtimes.";
         $("agent-save").textContent = "Save Robot";
         $("agent-delete").disabled = true;
-        $("agent-identity").hidden = true;
+        $("agent-identity").hidden = false;
         $("agent-pass").closest("label").hidden = true;
         $("payne-provider-pills").hidden = false;
         $("agent-provider-help").textContent = "Choose the runtime. First on deck speaks first.";
+        draftName = bot.name || "Major";
+        draftPrompt = bot.prompt || bot.about || "";
+        if ($("agent-name")) $("agent-name").value = draftName;
+        if ($("agent-prompt")) $("agent-prompt").value = draftPrompt;
         document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
           el.checked = el.value === payneOrder[0];
         });
         paintPayneOrder();
+        paintNamePill();
+        paintPromptPill();
       } else if (bot && bot.slug && !bot.locked) {
         editSlug = bot.slug;
         draftName = bot.name || "";
@@ -2551,6 +2644,8 @@
         $("agent-title").textContent = "Edit robot";
         $("agent-save").textContent = "Save Robot";
         $("agent-delete").disabled = false;
+        if ($("agent-name")) $("agent-name").value = draftName;
+        if ($("agent-prompt")) $("agent-prompt").value = draftPrompt;
         document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
           el.checked = el.value === bot.provider;
         });
@@ -2559,6 +2654,9 @@
       }
       draftPicture = (bot && bot.picture) ? bot.picture : "";
       if ($("agent-picture")) $("agent-picture").value = draftPicture;
+      equippedSkills = (bot && bot.skills) ? bot.skills.slice() : [];
+      paintVoiceRow(bot && bot.voice);
+      loadSkillCatalog(bot && bot.slug);
       {
         const parsed = parsePicId(draftPicture);
         if (parsed && parsed.sheet !== "atlas") picSheet = parsed.sheet;
@@ -2765,21 +2863,32 @@
     });
     $("agent-save").addEventListener("click", async () => {
       $("agent-err").textContent = "";
-      if (editingPayne) {
-        if (!payneOrder.length) payneOrder = ["goose"];
-        const body = { slug: PAYNE_SLUG };
-        payneOrder.forEach((id, i) => { body["provider_" + i] = id; });
-        try {
-          applySession(await api("/api/agent", body));
-          $("agent-drawer").classList.remove("show");
-          resetAgentDraft();
-        } catch (e) { $("agent-err").textContent = "Could not save Payne's runtimes."; }
-        return;
-      }
       const typedName = ($("agent-name") && $("agent-name").value || "").trim();
       const typedPrompt = ($("agent-prompt") && $("agent-prompt").value || "").trim();
       if (typedName) draftName = typedName;
       if (typedPrompt) draftPrompt = typedPrompt;
+      const voiceEl = $("agent-voice");
+      const voice = (whisperReady && voiceEl) ? (voiceEl.value || "") : "";
+      if (editingPayne) {
+        if (!payneOrder.length) payneOrder = ["goose"];
+        const body = {
+          slug: PAYNE_SLUG,
+          name: draftName || "Major",
+          system_prompt: draftPrompt,
+          picture: draftPicture || ($("agent-picture") && $("agent-picture").value) || "",
+          voice: voice
+        };
+        payneOrder.forEach((id, i) => { body["provider_" + i] = id; });
+        equippedSkills.forEach((id, i) => { body["skill_" + i] = id; });
+        try {
+          applySession(await api("/api/agent", body));
+          if (draftPicture) savePicId(PAYNE_SLUG, draftPicture);
+          $("agent-drawer").classList.remove("show");
+          resetAgentDraft();
+          if (typeof syncInventoryFromRoster === "function") syncInventoryFromRoster();
+        } catch (e) { $("agent-err").textContent = "Could not save Major."; }
+        return;
+      }
       const name = draftName || autoRobotName();
       const prompt = draftPrompt;
       const provider = chosenProvider();
@@ -2791,8 +2900,14 @@
         system_prompt: prompt,
         provider: provider,
         picture: draftPicture || ($("agent-picture") && $("agent-picture").value) || "",
+        voice: voice,
         save_pass: !box || box.checked
       };
+      if (editSlug) {
+        body.action = "update";
+        body.slug = editSlug;
+      }
+      equippedSkills.forEach((id, i) => { body["skill_" + i] = id; });
       draftFiles.forEach((f, i) => {
         body["context_name_" + i] = f.name;
         body["context_mime_" + i] = f.mime;
@@ -2800,12 +2915,12 @@
       });
       try {
         applySession(await api("/api/agent", body));
-        const last = (session.agents || []).slice(-1)[0];
-        if (last && last.slug && draftPicture) savePicId(last.slug, draftPicture);
+        const slug = editSlug || ((session.agents || []).slice(-1)[0] || {}).slug;
+        if (slug && draftPicture) savePicId(slug, draftPicture);
         $("agent-drawer").classList.remove("show");
         resetAgentDraft();
         if (typeof syncInventoryFromRoster === "function") syncInventoryFromRoster();
-      } catch (e) { $("agent-err").textContent = "Could not raise that robot."; }
+      } catch (e) { $("agent-err").textContent = "Could not save that robot."; }
     });
     $("agent-delete").addEventListener("click", async () => {
       if (!editSlug) {
@@ -4303,7 +4418,7 @@
         if (!roots.length) {
           const d = document.createElement("div");
           d.className = "empty";
-          d.innerHTML = "<strong>The hive is quiet.</strong> At ease. State the mission for #" + channel + ". — Sgt Major Payne";
+          d.innerHTML = "<strong>The hive is quiet.</strong> At ease. State the mission for #" + channel + ". — Major";
           s.appendChild(d);
         } else {
           roots.forEach((e) => {
@@ -4519,15 +4634,14 @@
           it.picture = bot.picture || it.picture;
           return;
         }
-        const sizeKey = bot.slug === PAYNE_SLUG ? "1x3" : "1x1";
-        const sz = sizeForKey(sizeKey);
+        const sz = { w: 1, h: 1 };
         const saved = layout[bot.slug];
-        let gx = 0, gy = 0, w = sz.w, h = sz.h;
+        let gx = 0, gy = 0, w = 1, h = 1;
         if (saved && typeof saved.gx === "number" && typeof saved.gy === "number") {
           gx = saved.gx; gy = saved.gy;
-          if (typeof saved.w === "number") w = saved.w;
-          if (typeof saved.h === "number") h = saved.h;
-        } else {
+        }
+        if (!isSpaceFree(gx, gy, w, h, null, INV_COLS, INV_ROWS)
+            && !isSpaceFree(gx, gy, w, h, null, INV_EXPAND_COLS, INV_EXPAND_ROWS)) {
           const slot = findFreeSlot(sz.w, sz.h, INV_COLS, INV_ROWS)
             || findFreeSlot(sz.w, sz.h, INV_EXPAND_COLS, INV_EXPAND_ROWS)
             || { gx: 0, gy: 0 };
@@ -4586,17 +4700,26 @@
         el.style.height = ((it.h * cell) - 4) + "px";
         el.style.borderColor = it.color || "#0ff";
         el.style.boxShadow = "0 0 4px " + (it.color || "#0ff");
-        const picCss = picCellStyle(it.picture, Math.min(it.w, it.h) * (compact ? INV_CELL : INV_EXPAND_CELL));
+        el.title = it.name || "";
+        const picCss = picCellStyle(it.picture, (compact ? INV_CELL : INV_EXPAND_CELL));
         if (picCss) {
           el.classList.add("has-pic");
           el.setAttribute("style", el.getAttribute("style") + ";" + picCss);
+        } else {
+          el.innerHTML = '<span class="nm">' + esc(it.name) + "</span>";
         }
-        el.innerHTML = '<span class="nm">' + esc(it.name) + "</span>";
         el.addEventListener("pointerdown", (ev) => beginInvDrag(ev, it.id, compact));
-        el.addEventListener("click", () => {
-          if (invDrag) return;
-          const bot = robotModels().find((b) => b.slug === it.slug) || { name: it.name, slug: it.slug };
-          openAgentDrawer(bot);
+        el.addEventListener("contextmenu", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          openInvMenu(it.slug, ev.clientX, ev.clientY);
+        });
+        el.addEventListener("click", (ev) => {
+          if (ev.metaKey) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            openInvMenu(it.slug, ev.clientX, ev.clientY);
+          }
         });
         grid.appendChild(el);
       });
@@ -4606,6 +4729,7 @@
     }
 
     function beginInvDrag(ev, id, compact) {
+      if (ev.button !== 0 || ev.metaKey) return;
       const it = invItems.find((i) => i.id === id);
       if (!it) return;
       const cols = compact ? INV_COLS : INV_EXPAND_COLS;
@@ -4663,6 +4787,77 @@
       renderAllInventories();
     }
 
+    function paintVoiceRow(selected) {
+      const wrap = $("agent-voice-wrap");
+      const sel = $("agent-voice");
+      if (!wrap || !sel) return;
+      wrap.hidden = !whisperReady;
+      if (!whisperReady) return;
+      const ids = skillVoices.length ? skillVoices : ["alloy", "echo", "fable", "onyx", "nova", "shimmer"];
+      sel.innerHTML = "<option value=\"\">Default</option>";
+      ids.forEach((id) => {
+        const o = document.createElement("option");
+        o.value = id;
+        o.textContent = id;
+        if (id === selected) o.selected = true;
+        sel.appendChild(o);
+      });
+    }
+
+    async function loadSkillCatalog(robotSlug) {
+      try {
+        const data = await fetch(API + "/api/skills").then((r) => r.json());
+        skillCatalog = (data && data.skills) ? data.skills : [];
+        skillVoices = (data && data.voices) ? data.voices : [];
+      } catch (e) {
+        skillCatalog = [];
+      }
+      paintVoiceRow($("agent-voice") && $("agent-voice").value);
+      paintSkillBoard(robotSlug);
+    }
+
+    function paintSkillBoard(robotSlug) {
+      const armory = $("skill-armory");
+      const loadout = $("skill-loadout");
+      if (!armory || !loadout) return;
+      armory.innerHTML = "";
+      loadout.innerHTML = "";
+      ["system", "user", "robot"].forEach((scope) => {
+        const lbl = document.createElement("div");
+        lbl.className = "skill-scope-lbl";
+        lbl.textContent = scope;
+        armory.appendChild(lbl);
+        skillCatalog.filter((s) => s.scope === scope
+          && (scope !== "robot" || !s.robot || s.robot === robotSlug)
+          && equippedSkills.indexOf(s.id) < 0).forEach((s) => {
+          armory.appendChild(makeSkillChip(s, false));
+        });
+      });
+      equippedSkills.forEach((id) => {
+        const s = skillCatalog.find((x) => x.id === id) || { id: id, name: id, scope: "user" };
+        loadout.appendChild(makeSkillChip(s, true));
+      });
+    }
+
+    function makeSkillChip(skill, worn) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "skill-chip";
+      b.dataset.scope = skill.scope || "user";
+      b.dataset.id = skill.id;
+      b.title = skill.summary || skill.name;
+      b.textContent = skill.name || skill.id;
+      b.addEventListener("click", () => {
+        if (worn) {
+          equippedSkills = equippedSkills.filter((id) => id !== skill.id);
+        } else if (equippedSkills.indexOf(skill.id) < 0 && equippedSkills.length < 8) {
+          equippedSkills.push(skill.id);
+        }
+        paintSkillBoard(editSlug);
+      });
+      return b;
+    }
+
     function revertInvDrag() {
       if (!invDrag) return;
       const it = invItems.find((i) => i.id === invDrag.id);
@@ -4693,7 +4888,7 @@
       const act = actions.length ? actions.join(", ") : "cooperate on the stated mission";
       const sk = skills.length ? skills.join(", ") : "clear hand-offs and tight reports";
       const proj = (project || "").trim() || "the current hive mission";
-      return "You are a specialist on a team seeded by Sgt Major Payne, Chief of Staff. "
+      return "You are a specialist on a team seeded by Major, Chief of Staff. "
         + "The team does: " + act + ". "
         + "The team is skilled at: " + sk + ". "
         + "The project is: " + proj + ". "
@@ -4855,6 +5050,15 @@
       }
     }
 
+    if ($("inv-menu")) $("inv-menu").addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-act]");
+      if (!btn || !invMenuSlug) return;
+      const slug = invMenuSlug;
+      hideInvMenu();
+      if (btn.getAttribute("data-act") !== "edit") return;
+      const bot = robotModels().find((b) => b.slug === slug) || { name: slug, slug: slug };
+      openAgentDrawer(bot);
+    });
     $("chan-menu").addEventListener("click", async (ev) => {
       const btn = ev.target.closest("button[data-act]");
       if (!btn || !menuSlug) return;
@@ -4868,7 +5072,9 @@
       else if (act === "manage") openManageChannel(slug);
     });
     document.addEventListener("click", (ev) => {
-      if (!$("chan-menu").contains(ev.target)) hideChanMenu();
+      if ($("chan-menu") && !$("chan-menu").contains(ev.target)) hideChanMenu();
+      if (ev.target.closest && ev.target.closest(".inv-item")) return;
+      if ($("inv-menu") && !$("inv-menu").contains(ev.target)) hideInvMenu();
     });
     $("manage-close").addEventListener("click", () => $("manage-chan").classList.remove("show"));
     $("manage-invite-add").addEventListener("click", () => {
@@ -5139,6 +5345,33 @@
     if ($("inv-seed")) $("inv-seed").addEventListener("click", () => { openSeedDrawer(); });
     if ($("inv-clear")) $("inv-clear").addEventListener("click", () => { clearInventory(); });
     if ($("inv-raise")) $("inv-raise").addEventListener("click", () => { openAgentDrawer(null); });
+    if ($("skill-forge-open")) $("skill-forge-open").addEventListener("click", () => {
+      if ($("forge-err")) $("forge-err").textContent = "";
+      $("forge-drawer").classList.add("show");
+    });
+    function closeForge() { $("forge-drawer").classList.remove("show"); }
+    if ($("forge-close")) $("forge-close").addEventListener("click", closeForge);
+    if ($("forge-close2")) $("forge-close2").addEventListener("click", closeForge);
+    if ($("forge-save")) $("forge-save").addEventListener("click", async () => {
+      const name = ($("forge-name") && $("forge-name").value || "").trim();
+      const summary = ($("forge-summary") && $("forge-summary").value || "").trim();
+      const body = ($("forge-body") && $("forge-body").value || "").trim();
+      const scopeEl = document.querySelector("input[name='forge-scope']:checked");
+      const scope = scopeEl ? scopeEl.value : "user";
+      if (!name) { $("forge-err").textContent = "Name the skill."; return; }
+      if (!body) { $("forge-err").textContent = "Write the skill body."; return; }
+      try {
+        const data = await api("/api/skill", {
+          name: name, summary: summary, body: body, scope: scope, robot: editSlug || ""
+        });
+        if (data && data.id && equippedSkills.indexOf(data.id) < 0)
+          equippedSkills.push(data.id);
+        closeForge();
+        await loadSkillCatalog(editSlug);
+      } catch (e) {
+        $("forge-err").textContent = "Could not forge that skill.";
+      }
+    });
     if ($("inv-expand")) $("inv-expand").addEventListener("click", () => {
       renderAllInventories();
       $("inv-expand-drawer").classList.add("show");

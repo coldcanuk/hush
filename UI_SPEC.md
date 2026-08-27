@@ -35,7 +35,7 @@ raise humans + robots that share channels."
 ### 1. Splash (detect)
 - Feather logo: `<img src="/icon-192.png" alt="hush" class="feather">`.
   Not a new illustration. Not the 193 KiB source PNG inline.
-- Line: "Sgt Major Payne reporting for duty."
+- Line: "Major reporting for duty."
 - Sub: "Detecting identity and vibe…"
 - Poll `/api/session`. If `ready` → hive. Else **Begin** → wizard step 1.
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
@@ -57,23 +57,28 @@ Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
 ### 3. Resume
 `logged_in && backup_acked && has_vibe` → splash detects → hive.
 
-`has_vibe` is restored from `$XDG_CONFIG_HOME/hush/vibe.json` (else
-`$HOME/.config/hush/vibe.json`) after identity restore or nsec import.
+`has_vibe` is restored from `$HUSH_HOME/config/vibe.json` (else
+`$HOME/.hush/config/vibe.json`). If that file is missing and
+`HUSH_CONFIG_DIR` is unset, first-run still reads the legacy
+`$HOME/.config/hush/vibe.json`. Writes go to the new/override path.
 `make clean` / `make install` must not force “Name your vibe” again.
-Tests override the directory with `HUSH_CONFIG_DIR`. The file never
-holds an nsec or provider secret.
+Tests override with `HUSH_CONFIG_DIR` / `HUSH_HOME`. The file never
+holds an nsec or provider secret. Install and first-run create
+`~/.hush/config/` and `~/.hush/agents/`.
 
 ### 4. Hive
 - Header: hush + vibe name + badge. Actions live on `#tool-rail` (§15).
 - Sidebar: Channels; **Robots inventory** (Diablo/Vein style spatial grid).
   Compact default is **4 cols × 3 rows**, centered, and must not exceed
   the sidebar/nav width. Expand opens a larger 8×5 grid in a drawer.
-  Drag-and-drop agents of variable sizes (1×1, 1×3, 2×2, 2×3 etc.).
-  Grid snap + occupancy/collision detection. Neon/brass cyberpunk-steampunk theme
-  (dark industrial bg, glowing borders, name overlays). Create/raise from rail or
-  inventory header populates first free slot(s). Payne is pinned or first and
-  is a live roster tile (not a Seed demo fake). Built robots go into inventory
-  slots. Persist slot layout (roster + local for prototype).
+  Every robot occupies **one equal 1×1 cell** the size of the avatar icon.
+  A chosen avatar **is** the tile. Hover shows the robot name (`title`).
+  With no avatar, the cyan border/highlight and name label remain.
+  Right-click (macOS: meta+click) opens `#inv-menu` with one action: `edit`.
+  Click outside closes the menu. `edit` opens `#agent-drawer`.
+  Grid snap + occupancy. Neon/brass cyberpunk-steampunk theme.
+  Create/raise from rail or inventory header. Payne (`Major`) is a live
+  roster tile. Persist slot layout by slug (always 1×1).
   Seed / Clear / Raise are one equal button class. Seed is a Payne-gated
   team briefing (not local Cosplay tiles).
   Create lives on `#tool-rail` (§15) and inside inventory.
@@ -199,19 +204,15 @@ and a pencil to edit it again.
   existing non-Payne robot. Payne cannot be deleted. Confirm stays
   `Delete this robot?`. Compact min-height 36px in this drawer only.
 
-**Payne Edit exception.** The Payne card shows **Edit**. The drawer
-title is `Edit Sgt Major Payne`. Name, slug, and standing orders stay
-locked (`HUSH_LAUNCH_PAYNE_NAME` / `HUSH_LAUNCH_PAYNE_ABOUT`). Hide
-the name, system-prompt, context-file, and pass rows. Delete stays
-disabled. The human ranks 1…4 distinct provider ids
-(`HUSH_LAUNCH_PAYNE_PROVIDERS_MAX`). Radios add an id to
-`#payne-provider-pills`; each pill has `−` and ▲ / ▼. Primary is
-index 0. Card subtitle is that primary, plus `+N` when more follow.
-Copy: “Choose the runtime. First on deck speaks first.”
-`POST /api/agent {slug:"sgt-major-payne", provider_0, … provider_N}`
-updates the list and ignores name / `system_prompt`. Session
-`payne.provider` is `providers[0]`; `payne.providers` is the full
-array. Missing list restores to `["goose"]`.
+**Payne Edit.** Drawer title is `Edit Major`. Display name defaults to
+`Major` (`HUSH_LAUNCH_PAYNE_NAME`). Name, system prompt, avatar, and
+(when Whisper is ready) voice are editable. Slug stays
+`sgt-major-payne`. Delete stays disabled. Ranked providers remain
+(`HUSH_LAUNCH_PAYNE_PROVIDERS_MAX`). Skills use Armory / Loadout
+(system, user, robot) plus Forge. `POST /api/agent` with the Payne slug
+updates providers and profile fields. Session `payne.provider` is
+`providers[0]`; `payne.providers` is the full array. Missing list
+restores to `["goose"]`.
 
 Client rejects other MIME. Server re-checks. Max 3 files, 4096 bytes each.
 
@@ -744,9 +745,10 @@ when policy flips; new considers honor the new leash.
 - Channel / group id: 32 hex (`HUSH_LAUNCH_ID_HEX`).
 - Context: 3 files × 4096 bytes.
 - Provider models: 32 names × 64 bytes (`HUSH_PROVIDER_MODELS_MAX`).
-- Provider overlay: `$XDG_CONFIG_HOME/hush/providers.json` (0600).
-- Vibe overlay: `$XDG_CONFIG_HOME/hush/vibe.json` (0600). Override
-  directory with `HUSH_CONFIG_DIR` (tests). Never nsec.
+- Provider overlay: `$HOME/.hush/config/providers.json` (0600).
+- Vibe overlay: `$HOME/.hush/config/vibe.json` (0600). Override
+  directory with `HUSH_CONFIG_DIR` / `HUSH_HOME` (tests). Never nsec.
+- Skills: `$HOME/.hush/skills/{system,user,robots}/`.
 - Avatar on disk: sniffed JPEG/PNG only; client downscales ≤96px.
 - Kind 0 `picture` is a URL, never a data URI (`HUSH_EVENT_MAX_CONTENT = 4096`).
 

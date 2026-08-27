@@ -109,6 +109,21 @@ int main(void)
     expect(strstr(json, "\"pubkey\":\"") != NULL, "agent pubkey json");
     expect(strstr(json, "\"provider\":\"goose\"") != NULL, "provider json");
     expect(strstr(json, "Alice") != NULL, "alice json");
+    expect(strstr(json, "\"skills\":[]") != NULL, "skills json");
+    memcpy(agent.name, "Sentry Two", 11);
+    memcpy(agent.prompt, "Watch closer.", 14);
+    memcpy(agent.voice, "alloy", 6);
+    memcpy(agent.picture, "panel:dogs:4", 13);
+    memcpy(agent.skills[0], "system:forge-skill", 19);
+    agent.nskills = 1;
+    expect(hush_roster_update_agent(&roster, "sentry", &agent) == HUSH_OK,
+           "update");
+    expect(strcmp(roster.agents[0].name, "Sentry Two") == 0, "renamed");
+    expect(strcmp(roster.agents[0].voice, "alloy") == 0, "voice");
+    expect(roster.agents[0].nskills == 1, "one skill");
+    expect(hush_roster_format_json(&roster, json, sizeof(json), &n) == HUSH_OK,
+           "json2");
+    expect(strstr(json, "system:forge-skill") != NULL, "equipped skill");
     expect(hush_roster_remove_agent(&roster, HUSH_ROSTER_PAYNE_SLUG) ==
                HUSH_ERR_DENIED,
            "payne stays");
