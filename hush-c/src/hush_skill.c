@@ -1,12 +1,16 @@
 /* hush_skill.c: owns skill catalog scan, forge writer, and voice ids. */
 
+#define _POSIX_C_SOURCE 200809L
+
 #include <assert.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "hush_home.h"
 #include "hush_json.h"
@@ -119,6 +123,15 @@ static void hush_skill_take_meta_line(char *role, size_t rolesz,
 /* Copies src file to dst. */
 static hush_status_t hush_skill_copy_file(const char *src, const char *dst);
 
+/* Strips the last path component of path in place. */
+static void hush_skill_dirname(char *path);
+
+/* Seeds pack_dir when it exists. */
+static void hush_skill_seed_if_present(const char *pack_dir);
+
+/* Seeds from paths beside /proc/self/exe (install prefix or repo build). */
+static void hush_skill_seed_from_exe(void);
+
 void hush_skill_init_catalog(hush_skill_catalog_t *cat)
 {
     if (cat == NULL)
@@ -133,8 +146,19 @@ hush_status_t hush_skill_load_catalog(hush_skill_catalog_t *cat)
     hush_skill_init_catalog(cat);
     if (hush_home_ensure() != HUSH_OK)
         return HUSH_ERR_IO;
-    (void)hush_skill_seed_pack("../skills/system");
-    (void)hush_skill_seed_pack("skills/system");
+    {
+        const char *env;
+
+        env = getenv("HUSH_SKILL_PACK");
+        if (env != NULL && env[0] != '\0')
+            hush_skill_seed_if_present(env);
+    }
+    hush_skill_seed_if_present("../skills/system");
+    hush_skill_seed_if_present("skills/system");
+#ifdef HUSH_SKILL_PACK_SHARE
+    hush_skill_seed_if_present(HUSH_SKILL_PACK_SHARE);
+#endif
+    hush_skill_seed_from_exe();
     if (hush_skill_load_scope(cat, HUSH_SKILL_SCOPE_SYSTEM, NULL) != HUSH_OK)
         return HUSH_ERR_IO;
     if (hush_skill_load_scope(cat, HUSH_SKILL_SCOPE_USER, NULL) != HUSH_OK)
@@ -378,6 +402,56 @@ hush_status_t hush_skill_seed_pack(const char *pack_dir)
     }
     closedir(dp);
     return HUSH_OK;
+}
+
+static void hush_skill_dirname(char *path)
+{
+    size_t n;
+
+    assert(path != NULL);
+    n = strlen(path);
+    while (n > 1 && path[n - 1] == '/') {
+        path[n - 1] = '\0';
+        n--;
+    }
+    while (n > 0) {
+        if (path[n - 1] == '/') {
+            if (n == 1)
+                path[1] = '\0';
+            else
+                path[n - 1] = '\0';
+            return;
+        }
+        n--;
+    }
+}
+
+static void hush_skill_seed_if_present(const char *pack_dir)
+{
+    if (pack_dir == NULL || pack_dir[0] == '\0')
+        return;
+    (void)hush_skill_seed_pack(pack_dir);
+}
+
+static void hush_skill_seed_from_exe(void)
+{
+    char exe[HUSH_HOME_PATH_MAX];
+    char pack[HUSH_HOME_PATH_MAX];
+    ssize_t n;
+
+    n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    if (n <= 0)
+        return;
+    if ((size_t)n >= sizeof(exe) - 1)
+        return;
+    exe[n] = '\0';
+    hush_skill_dirname(exe);
+    hush_skill_join(pack, sizeof(pack), exe, "../skills/system");
+    hush_skill_seed_if_present(pack);
+    hush_skill_join(pack, sizeof(pack), exe, "../../skills/system");
+    hush_skill_seed_if_present(pack);
+    hush_skill_join(pack, sizeof(pack), exe, "../share/hush/skills/system");
+    hush_skill_seed_if_present(pack);
 }
 
 static int hush_skill_is_scope(const char *scope)

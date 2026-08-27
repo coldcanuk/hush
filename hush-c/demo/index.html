@@ -1090,7 +1090,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         <p class="help">Heard in calls when a Whisper model is ready.</p>
       </div>
       <div id="agent-skills">
-        <p class="help">This is the robot’s inventory. Cycle a gem, then drop it on an empty socket. <kbd>i</kbd> opens and closes this panel.</p>
+        <p class="help">This is the robot’s inventory. Pick a gem from the armory (system / user / robot), then drop it on an empty socket. <kbd>i</kbd> opens and closes this panel.</p>
         <p class="help" id="skill-watermark"></p>
         <div class="pill-row skill-belt" id="skill-cycle-row">
           <button class="icon-minus" id="skill-cycle-prev" type="button" aria-label="Previous skill">◀</button>
@@ -1100,7 +1100,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         <div class="skill-board">
           <div>
             <div class="lbl">Armory</div>
-            <div id="skill-armory" class="skill-pool skill-cycle-stage" aria-label="Skill armory"></div>
+            <div id="skill-armory" class="skill-pool" aria-label="Skill armory"></div>
           </div>
           <div>
             <div class="lbl">Loadout</div>
@@ -4578,7 +4578,9 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       const keep = box.scrollTop;
       box.innerHTML = "";
       if (!isDevLogNote(root)) box.appendChild(paintNote(root));
-      kids.forEach((k) => box.appendChild(paintNote(k)));
+      kids.forEach((k) => {
+        if (!isDevLogNote(k)) box.appendChild(paintNote(k));
+      });
       paintThreadThink(jobs);
       threadSeen = key;
       if (near) box.scrollTop = box.scrollHeight;
@@ -5139,12 +5141,14 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         armory.textContent = "Stash empty for this role.";
         return;
       }
-      if (skillCycleIdx >= list.length) skillCycleIdx = 0;
-      if (skillCycleIdx < 0) skillCycleIdx = list.length - 1;
-      const n = list.length;
-      [-1, 1].forEach((off) => {
-        const i = (skillCycleIdx + off + n) % n;
-        armory.appendChild(makeSkillGem(list[i], { neighbor: true }));
+      ["system", "user", "robot"].forEach((scope) => {
+        const rows = list.filter((s) => s.scope === scope);
+        if (!rows.length) return;
+        const lbl = document.createElement("div");
+        lbl.className = "skill-scope-lbl";
+        lbl.textContent = scope;
+        armory.appendChild(lbl);
+        rows.forEach((s) => armory.appendChild(makeSkillGem(s, {})));
       });
     }
     function paintSkillCycle(robotSlug) {

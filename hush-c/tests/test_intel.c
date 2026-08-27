@@ -229,8 +229,8 @@ int main(void)
         expect(!store_has(store, "Holding."), "no jobs-held chat");
         expect(count_pub_needle(store, happy_hex, "Standing orders") == 1,
                "happy intro once");
-        expect(count_pub_needle(store, payne_hex, "Standing orders") == 0,
-               "major waits");
+        expect(count_pub_needle(store, payne_hex, "Standing orders") == 1,
+               "major intro on first co-mention");
         fill_note(&joke,
                   "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
                   happy_hex, "Why did the robot laugh? Byte me.", "general",
@@ -243,7 +243,7 @@ int main(void)
         expect(count_pub_needle(store, happy_hex, "Standing orders") == 1,
                "happy intro stays one");
         expect(count_pub_needle(store, payne_hex, "Standing orders") == 1,
-               "major intro after joke");
+               "major intro not delayed or repeated");
         hush_agent_on_posted(store, &launch, &joke);
         expect(count_pub_needle(store, payne_hex, "Standing orders") == 1,
                "major intro not twice");
