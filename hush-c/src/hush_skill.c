@@ -38,8 +38,8 @@ enum {
     "System skills ship with Hush. User skills are hive-wide. Robot skills " \
     "belong to one robot.\n\n" \
     "## Equip and prune\n\n" \
-    "The robot editor Armory lists skills by scope. Click a chip to equip it " \
-    "into the Loadout. Click a Loadout chip to prune it.\n\n" \
+    "The Skill stash cycles gems like Diablo II amulets. Pick one up and " \
+    "drop it onto a robot or an empty loadout socket. Lift a worn gem to prune.\n\n" \
     "## Forge (this skill)\n\n" \
     "POST /api/skill {name, summary, body, scope, robot?}. Do not forge into " \
     "system from the UI. Do not write secrets into a skill.\n"
