@@ -38,9 +38,9 @@ What the robot should do when this skill is equipped.
 
 ## Equip and prune
 
-The Skill stash cycles gems like Diablo II amulets. Pick a gem up and drop
-it onto a robot tile or an empty loadout socket. Lift a worn gem to prune
-it. Equipped ids persist on the robot (`skill_0` … `skill_7`).
+Open a robot’s Edit inventory (`i`). Cycle gems like Diablo II amulets,
+then drop one onto an empty loadout socket. Lift a worn gem to prune it.
+Equipped ids persist on the robot (`skill_0` … `skill_7`).
 
 ## Forge (this skill)
 

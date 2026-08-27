@@ -279,11 +279,15 @@ echo "$html" | grep -q 'id="skill-armory"' || fail "HTML missing skill armory"
 echo "$html" | grep -q 'id="skill-loadout"' || fail "HTML missing skill loadout"
 echo "$html" | grep -q 'id="skill-cycle"' || fail "HTML missing skill cycle"
 echo "$html" | grep -q 'id="skill-cycle-prev"' || fail "HTML missing skill cycle prev"
-echo "$html" | grep -q 'id="hive-skill-cycle"' || fail "HTML missing hive skill stash"
-echo "$html" | grep -q 'id="hive-skill-prev"' || fail "HTML missing hive skill prev"
+if echo "$html" | grep -q 'id="hive-skill-cycle"'; then
+    fail "hive skill stash must not sit on the main nav"
+fi
+if echo "$html" | grep -q 'id="hive-armory"'; then
+    fail "hive-armory must not sit on the main nav"
+fi
 echo "$html" | grep -q 'id="skill-ghost"' || fail "HTML missing skill ghost"
 echo "$html" | grep -q 'skillHeld' || fail "HTML missing skillHeld cursor"
-echo "$html" | grep -q 'function placeSkillOnRobot' || fail "HTML missing placeSkillOnRobot"
+echo "$html" | grep -q 'function toggleRobotInventory' || fail "HTML missing i-key inventory toggle"
 echo "$html" | grep -q 'function pickUpSkill' || fail "HTML missing pickUpSkill"
 echo "$html" | grep -q 'skill-slot' || fail "HTML missing paper-doll skill-slot"
 echo "$html" | grep -q 'skill-doll' || fail "HTML missing skill doll"

@@ -737,10 +737,8 @@
   margin-left: -24px; margin-top: -24px;
 }
 .skill-ghost * { pointer-events: none; }
-.inv-item.skill-drop-ok { outline: 2px solid #0ff; box-shadow: 0 0 10px #0ff; }
-.inv-item.skill-drop-no { outline: 2px solid #f66; }
+.inv-item.selected { outline: 2px solid #fc6; box-shadow: 0 0 8px #d4a017; }
 body.skill-holding, body.skill-holding * { cursor: grabbing; }
-#hive-skill-help { font-size: 0.62rem; margin: 4px 0 6px; color: var(--muted); }
 
 /* M4.1 progressive mention states (thinking -> reacting -> emoji) */
 
@@ -863,17 +861,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         </div>
       </div>
       <div id="robot-inventory" aria-label="Robot Inventory Grid"></div>
-      <div id="hive-armory" class="skill-belt-wrap">
-        <div class="inv-title-row">
-          <span class="inv-title">Skill stash</span>
-        </div>
-        <p class="help" id="hive-skill-help">Cycle a skill. Wear it on a robot.</p>
-        <div class="pill-row skill-belt" id="hive-skill-cycle-row">
-          <button class="icon-minus" id="hive-skill-prev" type="button" aria-label="Previous skill">◀</button>
-          <div id="hive-skill-cycle" class="skill-cycle-stage" aria-label="Cycled skill"></div>
-          <button class="icon-plus" id="hive-skill-next" type="button" aria-label="Next skill">▶</button>
-        </div>
-      </div>
 
       <button class="stats" id="stats" type="button" role="button" tabindex="0"
               aria-label="Relay details">waiting for relay</button>
@@ -1103,7 +1090,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         <p class="help">Heard in calls when a Whisper model is ready.</p>
       </div>
       <div id="agent-skills">
-        <p class="help">Cycle a skill like a Diablo II amulet, then drag it onto a socket or a robot.</p>
+        <p class="help">This is the robot’s inventory. Cycle a gem, then drop it on an empty socket. <kbd>i</kbd> opens and closes this panel.</p>
         <p class="help" id="skill-watermark"></p>
         <div class="pill-row skill-belt" id="skill-cycle-row">
           <button class="icon-minus" id="skill-cycle-prev" type="button" aria-label="Previous skill">◀</button>
@@ -1511,16 +1498,15 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     let invDrag = null; /* {id, startGX, startGY, gx, gy, w, h, dx, dy} */
     let invNextId = 1;
     let invMenuSlug = "";
+    let invSelectedSlug = "";
     let skillCatalog = [];
     let equippedSkills = [];
     let skillVoices = [];
     let skillCycleIdx = 0;
-    let hiveSkillCycleIdx = 0;
     let skillWatermarks = {};
     let skillLocked = false;
     let skillHeld = null;
     let skillPickAt = 0;
-    let skillCatalogRequested = false;
     const SKILL_SLOTS = 8;
     let ackClock = {};
     let manageTopics = [];
@@ -1594,10 +1580,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       paintChannels();
       paintRobots();
       if (typeof syncInventoryFromRoster === "function") syncInventoryFromRoster();
-      if (typeof loadSkillCatalog === "function" && !skillCatalogRequested) {
-        skillCatalogRequested = true;
-        loadSkillCatalog(editSlug || null);
-      }
     }
 
     function stepBar(n) {
@@ -1866,6 +1848,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       if (!m) return;
       hideChanMenu();
       invMenuSlug = slug;
+      if (slug) invSelectedSlug = slug;
       m.classList.add("show");
       m.style.left = Math.min(x, window.innerWidth - 160) + "px";
       m.style.top = Math.min(y, window.innerHeight - 80) + "px";
@@ -2874,27 +2857,13 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       skillCycleIdx++;
       paintSkillCycle(editSlug);
     });
-    if ($("hive-skill-prev")) $("hive-skill-prev").addEventListener("click", () => {
-      hiveSkillCycleIdx--;
-      paintHiveSkillBelt();
-    });
-    if ($("hive-skill-next")) $("hive-skill-next").addEventListener("click", () => {
-      hiveSkillCycleIdx++;
-      paintHiveSkillBelt();
-    });
-    ["skill-cycle-row", "hive-skill-cycle-row", "skill-armory"].forEach((id) => {
+    ["skill-cycle-row", "skill-armory"].forEach((id) => {
       const el = $(id);
       if (!el) return;
       el.addEventListener("wheel", (ev) => {
         ev.preventDefault();
-        const step = ev.deltaY > 0 ? 1 : -1;
-        if (id === "hive-skill-cycle-row") {
-          hiveSkillCycleIdx += step;
-          paintHiveSkillBelt();
-        } else {
-          skillCycleIdx += step;
-          paintSkillBoard(editSlug);
-        }
+        skillCycleIdx += ev.deltaY > 0 ? 1 : -1;
+        paintSkillBoard(editSlug);
       }, { passive: false });
     });
     if ($("agent-clone")) $("agent-clone").addEventListener("click", async () => {
@@ -3532,13 +3501,22 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       window.close();
     });
     window.addEventListener("keydown", (ev) => {
-      if (ev.key !== "Escape") return;
-      if (skillHeld) {
-        cancelSkillHold();
+      if (ev.key === "Escape") {
+        if (skillHeld) {
+          cancelSkillHold();
+          return;
+        }
+        const d = $("hive-leave");
+        if (d && d.classList.contains("show")) hideLeave();
         return;
       }
-      const d = $("hive-leave");
-      if (d && d.classList.contains("show")) hideLeave();
+      if (ev.key !== "i" && ev.key !== "I") return;
+      if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      const tag = (ev.target && ev.target.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (ev.target && ev.target.isContentEditable) return;
+      ev.preventDefault();
+      toggleRobotInventory();
     });
     $("profile-logout").addEventListener("click", async () => {
       if (!confirm("Logout and use a different key?")) return;
@@ -4956,7 +4934,8 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       invItems.forEach((it) => {
         if (compact && (it.gx + it.w > cols || it.gy + it.h > rows)) return;
         const el = document.createElement("div");
-        el.className = "inv-item" + (it.enabled === false ? " disabled" : "");
+        el.className = "inv-item" + (it.enabled === false ? " disabled" : "") +
+          (it.slug && it.slug === invSelectedSlug ? " selected" : "");
         el.dataset.id = it.id;
         el.dataset.slug = it.slug || "";
         el.dataset.grid = compact ? "compact" : "full";
@@ -5049,9 +5028,11 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       if (!invDrag) return;
       const ok = isSpaceFree(invDrag.gx, invDrag.gy, invDrag.w, invDrag.h, invDrag.id, invDrag.cols, invDrag.rows);
       const it = invItems.find((i) => i.id === invDrag.id);
+      const moved = invDrag.gx !== invDrag.startGX || invDrag.gy !== invDrag.startGY;
       if (it) {
         if (ok) { it.gx = invDrag.gx; it.gy = invDrag.gy; }
         else { it.gx = invDrag.startGX; it.gy = invDrag.startGY; }
+        if (!moved && it.slug) invSelectedSlug = it.slug;
       }
       invDrag = null;
       saveInvLayout();
@@ -5086,7 +5067,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       }
       paintVoiceRow($("agent-voice") && $("agent-voice").value);
       paintSkillBoard(robotSlug);
-      paintHiveSkillBelt();
     }
 
     function robotRole() {
@@ -5134,9 +5114,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       return "";
     }
     function skillNotice(msg) {
-      if ($("hive-skill-help")) $("hive-skill-help").textContent = msg;
-      if ($("agent-err") && $("agent-drawer") && $("agent-drawer").classList.contains("show"))
-        $("agent-err").textContent = msg;
+      if ($("agent-err")) $("agent-err").textContent = msg;
     }
     function paintSkillBoard(robotSlug) {
       const armory = $("skill-armory");
@@ -5181,19 +5159,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       if (skillCycleIdx >= list.length) skillCycleIdx = 0;
       if (skillCycleIdx < 0) skillCycleIdx = list.length - 1;
       box.appendChild(makeSkillGem(list[skillCycleIdx], {}));
-    }
-    function paintHiveSkillBelt() {
-      const box = $("hive-skill-cycle");
-      if (!box) return;
-      const list = skillCatalog;
-      box.innerHTML = "";
-      if (!list.length) {
-        box.textContent = "No skills in the stash.";
-        return;
-      }
-      if (hiveSkillCycleIdx >= list.length) hiveSkillCycleIdx = 0;
-      if (hiveSkillCycleIdx < 0) hiveSkillCycleIdx = list.length - 1;
-      box.appendChild(makeSkillGem(list[hiveSkillCycleIdx], {}));
     }
     function paintSkillDoll(loadout) {
       loadout.innerHTML = "";
@@ -5259,9 +5224,8 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         equippedSkills.splice(slot, 1);
       document.body.classList.add("skill-holding");
       paintSkillBoard(editSlug);
-      paintHiveSkillBelt();
       paintSkillGhost();
-      skillNotice("Drop on a robot or an empty socket. Escape cancels.");
+      skillNotice("Drop on an empty socket. Escape cancels.");
     }
 
     function cancelSkillHold() {
@@ -5272,9 +5236,8 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       document.body.classList.remove("skill-holding");
       hideSkillGhost();
       paintSkillBoard(editSlug);
-      paintHiveSkillBelt();
       markSkillDropTargets();
-      skillNotice("Cycle a skill. Wear it on a robot.");
+      skillNotice("");
     }
 
     function paintSkillGhost() {
@@ -5308,12 +5271,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     }
 
     function markSkillDropTargets() {
-      document.querySelectorAll(".inv-item").forEach((el) => {
-        el.classList.remove("skill-drop-ok", "skill-drop-no");
-        if (!skillHeld || !el.dataset.slug) return;
-        const bot = robotModels().find((b) => b.slug === el.dataset.slug);
-        el.classList.add(robotCanWear(bot, skillHeld.skill) ? "skill-drop-ok" : "skill-drop-no");
-      });
       document.querySelectorAll(".skill-slot, .skill-doll-pic").forEach((el) => {
         el.classList.remove("drop-ok", "drop-no");
         if (!skillHeld) return;
@@ -5323,14 +5280,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       });
     }
 
-    function robotCanWear(bot, skill) {
-      if (!bot || !skill) return false;
-      if (bot.locked && bot.slug !== PAYNE_SLUG) return false;
-      if (!skillFitsRole(skill, bot.role || "worker")) return false;
-      const worn = (bot.skills || []).slice();
-      return loadoutCanTake(worn, skill);
-    }
-
     function onSkillPointerUp(ev) {
       if (!skillHeld) return;
       if (Date.now() - skillPickAt < 250) return;
@@ -5338,14 +5287,11 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       if (!el || !el.closest) return;
       const slot = el.closest(".skill-slot");
       const pic = el.closest(".skill-doll-pic");
-      const item = el.closest(".inv-item");
-      const stash = el.closest(".skill-cycle-stage") || el.closest("#hive-armory");
+      const stash = el.closest(".skill-cycle-stage");
       if (slot && slot.dataset.idx !== undefined)
         placeSkillOnSlot(parseInt(slot.dataset.idx, 10));
       else if (pic)
         placeSkillOnSlot(equippedSkills.length);
-      else if (item && item.dataset.slug)
-        placeSkillOnRobot(item.dataset.slug);
       else if (stash)
         cancelSkillHold();
     }
@@ -5374,45 +5320,22 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       document.body.classList.remove("skill-holding");
       hideSkillGhost();
       paintSkillBoard(editSlug);
-      paintHiveSkillBelt();
       skillNotice("Worn. Save the robot to keep the loadout.");
     }
 
-    async function placeSkillOnRobot(slug) {
-      if (!skillHeld || !slug) return;
-      const skill = skillHeld.skill;
+    function toggleRobotInventory() {
+      const drawer = $("agent-drawer");
+      if (drawer && drawer.classList.contains("show")) {
+        drawer.classList.remove("show");
+        if (skillHeld) cancelSkillHold();
+        return;
+      }
+      if (!$("hive") || !$("hive").classList.contains("show")) return;
+      const hover = document.querySelector(".inv-item:hover");
+      const slug = (hover && hover.dataset.slug) || invSelectedSlug;
+      if (!slug) return;
       const bot = robotModels().find((b) => b.slug === slug);
-      if (!bot) return;
-      if (bot.locked && slug !== PAYNE_SLUG) {
-        skillNotice("Clone it to wear new skills.");
-        return;
-      }
-      if (!skillFitsRole(skill, bot.role || "worker")) {
-        skillNotice("That skill does not fit this robot.");
-        return;
-      }
-      const worn = (bot.skills || []).slice();
-      {
-        const why = loadoutRefuseReason(worn, skill);
-        if (why) { skillNotice(why); return; }
-      }
-      worn.push(skill.id);
-      const body = { slug: slug, nskills: worn.length };
-      if (slug !== PAYNE_SLUG) body.action = "update";
-      worn.forEach((id, i) => { body["skill_" + i] = id; });
-      if (!worn.length) body.skill_0 = "";
-      try {
-        applySession(await api("/api/agent", body));
-        if (editSlug === slug) equippedSkills = worn.slice();
-        skillHeld = null;
-        document.body.classList.remove("skill-holding");
-        hideSkillGhost();
-        paintSkillBoard(editSlug);
-        paintHiveSkillBelt();
-        skillNotice("Worn on " + (bot.name || slug) + ".");
-      } catch (e) {
-        skillNotice("Could not wear that skill.");
-      }
+      if (bot) openAgentDrawer(bot);
     }
 
     function revertInvDrag() {
