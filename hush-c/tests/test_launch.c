@@ -66,17 +66,40 @@ int main(void)
         size_t i;
         int coach = 0;
         int auditor = 0;
+        int marshal = 0;
 
         for (i = 0; i < launch.roster.nagents; i++) {
             if (strcmp(launch.roster.agents[i].slug, "coach") == 0 &&
-                launch.roster.agents[i].locked)
+                launch.roster.agents[i].locked) {
                 coach = 1;
+                expect(strcmp(launch.roster.agents[i].picture,
+                              "panel:robots:0") == 0,
+                       "coach icon");
+            }
             if (strcmp(launch.roster.agents[i].slug, "auditor") == 0 &&
-                launch.roster.agents[i].locked)
+                launch.roster.agents[i].locked) {
                 auditor = 1;
+                expect(strcmp(launch.roster.agents[i].picture,
+                              "panel:robots:2") == 0,
+                       "auditor icon");
+            }
+            if (strcmp(launch.roster.agents[i].slug, "marshal") == 0 &&
+                launch.roster.agents[i].locked) {
+                marshal = 1;
+                expect(strcmp(launch.roster.agents[i].role,
+                              HUSH_ROSTER_ROLE_CHAPERON) == 0,
+                       "marshal chaperon");
+                expect(strcmp(launch.roster.agents[i].picture,
+                              "panel:angevin:3") == 0,
+                       "marshal icon");
+                expect(launch.roster.agents[i].nskills >= 1, "marshal skills");
+            }
         }
         expect(coach, "coach template");
         expect(auditor, "auditor template");
+        expect(marshal, "marshal template");
+        expect(strcmp(launch.payne_picture, "panel:robots:1") == 0,
+               "major icon");
         expect(hush_launch_clone_agent(&launch, store, HUSH_LAUNCH_PAYNE_SLUG)
                    == HUSH_ERR_DENIED,
                "major no clone");

@@ -63,6 +63,10 @@ static int hush_launch_has_robot(const hush_launch_t *launch, const char *slug);
 static int hush_launch_has_agent_slug(const hush_launch_t *launch,
                                       const char *slug);
 
+/* Copies id into the next loadout slot. Ignores overflow. */
+static void hush_launch_push_template_skill(hush_roster_agent_in_t *in,
+                                            const char *id);
+
 /* Writes 32 hex chars from /dev/urandom. */
 static hush_status_t hush_launch_make_uuid(char *out, size_t outsz);
 
@@ -611,8 +615,9 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         memcpy(in.prompt, "Coach hive jobs toward small tested C changes.", 47);
         memcpy(in.provider, HUSH_ROSTER_PROVIDER_GROK_BUILD,
                sizeof(HUSH_ROSTER_PROVIDER_GROK_BUILD));
-        memcpy(in.skills[0], "system:canvas-coach", 20);
-        in.nskills = 1;
+        memcpy(in.picture, "panel:robots:0", 15);
+        in.has_picture = 1;
+        hush_launch_push_template_skill(&in, "system:canvas-coach");
         in.has_skills = 1;
         in.locked = 1;
         HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
@@ -624,8 +629,31 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
                55);
         memcpy(in.provider, HUSH_ROSTER_PROVIDER_GROK_BUILD,
                sizeof(HUSH_ROSTER_PROVIDER_GROK_BUILD));
-        memcpy(in.skills[0], "system:hive-audit", 18);
-        in.nskills = 1;
+        memcpy(in.picture, "panel:robots:2", 15);
+        in.has_picture = 1;
+        hush_launch_push_template_skill(&in, "system:hive-audit");
+        in.has_skills = 1;
+        in.locked = 1;
+        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
+    }
+    if (!hush_launch_has_agent_slug(launch, "marshal")) {
+        memset(&in, 0, sizeof(in));
+        memcpy(in.name, "Marshal", 8);
+        memcpy(in.prompt, "Babysit the channel. Enforce rails. Do not take work grok.",
+               59);
+        memcpy(in.provider, HUSH_ROSTER_PROVIDER_GROK_BUILD,
+               sizeof(HUSH_ROSTER_PROVIDER_GROK_BUILD));
+        memcpy(in.picture, "panel:angevin:3", 16);
+        in.has_picture = 1;
+        memcpy(in.role, HUSH_ROSTER_ROLE_CHAPERON,
+               sizeof(HUSH_ROSTER_ROLE_CHAPERON));
+        in.has_role = 1;
+        hush_launch_push_template_skill(&in, "system:topic-leash");
+        hush_launch_push_template_skill(&in, "system:no-loop");
+        hush_launch_push_template_skill(&in, "system:civility");
+        hush_launch_push_template_skill(&in, "system:hop-cap");
+        hush_launch_push_template_skill(&in, "system:secret-watch");
+        hush_launch_push_template_skill(&in, "system:chaperon-ack");
         in.has_skills = 1;
         in.locked = 1;
         HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
@@ -2723,6 +2751,26 @@ static void hush_launch_fill_payne_defaults(hush_launch_t *launch)
     if (launch->payne_prompt[0] == '\0')
         hush_launch_copy_name(launch->payne_prompt, sizeof(launch->payne_prompt),
                               HUSH_LAUNCH_PAYNE_ABOUT, "");
+    if (launch->payne_picture[0] == '\0')
+        hush_launch_copy_name(launch->payne_picture,
+                              sizeof(launch->payne_picture),
+                              "panel:robots:1", "");
+}
+
+static void hush_launch_push_template_skill(hush_roster_agent_in_t *in,
+                                            const char *id)
+{
+    size_t n;
+
+    assert(in != NULL);
+    assert(id != NULL);
+    if (in->nskills >= (size_t)HUSH_SKILL_EQUIP_MAX)
+        return;
+    n = strlen(id);
+    if (n + 1 > sizeof(in->skills[0]))
+        return;
+    memcpy(in->skills[in->nskills], id, n + 1);
+    in->nskills++;
 }
 
 static hush_status_t hush_launch_copy_payne_skills(hush_launch_t *launch,

@@ -185,7 +185,7 @@ hush_status_t hush_launch_clone_agent(hush_launch_t *launch,
                                       hush_store_t *store,
                                       const char *slug);
 
-/* Seeds locked Coach and Auditor templates when missing. */
+/* Seeds locked Coach, Auditor, and Marshal templates when missing. */
 hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
                                          hush_store_t *store);
 
