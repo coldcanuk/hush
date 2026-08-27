@@ -26,7 +26,8 @@ test -d "$hush_home/config" || fail "ensure-home missing ~/.hush/config"
 test -d "$hush_home/agents" || fail "ensure-home missing ~/.hush/agents"
 test -f "$hush_home/skills/system/forge-skill/SKILL.md" || fail "forge-skill not seeded"
 skills=$(curl -sf "http://127.0.0.1:${port}/api/skills")
-echo "$skills" | grep -q '"scopes":\["system","user","robot"\]' || fail "skills missing three scopes"
+echo "$skills" | grep -q '"scopes":\["system","robot"\]' || fail "skills missing two product scopes"
+echo "$skills" | grep -q '"scopes":\["system","user","robot"\]' && fail "user must not be a product scope"
 echo "$skills" | grep -q 'system:forge-skill' || fail "skills missing forge-skill"
 echo "$skills" | grep -q '"scope":"system"' || fail "skills missing system scope"
 echo "$skills" | grep -q '"watermarks"' || fail "skills missing watermarks"
@@ -278,7 +279,15 @@ echo "$html" | grep -q 'whisperReady' || fail "HTML missing whisperReady gate"
 echo "$html" | grep -q 'id="skill-armory"' || fail "HTML missing skill armory"
 echo "$html" | grep -q 'skill-scope-lbl' || fail "HTML missing skill scope labels"
 echo "$html" | grep -q 's.scope === scope' \
-    || fail "armory must group gems by system/user/robot"
+    || fail "armory must group gems by product scope"
+echo "$html" | grep -Fq '["system", "robot"]' \
+    || fail "armory must group gems by system/robot"
+echo "$html" | grep -q 'System (application-wide)' \
+    || fail "HTML missing system forge scope"
+echo "$html" | grep -q 'This robot' || fail "HTML missing robot forge scope"
+if echo "$html" | grep -q 'User-wide'; then
+    fail "User-wide must not be a skill bucket"
+fi
 echo "$html" | grep -q 'id="skill-loadout"' || fail "HTML missing skill loadout"
 echo "$html" | grep -q 'id="skill-cycle"' || fail "HTML missing skill cycle"
 echo "$html" | grep -q 'id="skill-cycle-prev"' || fail "HTML missing skill cycle prev"
@@ -498,6 +507,23 @@ forged=$(curl -sf -X POST "http://127.0.0.1:${port}/api/skill" \
     -H 'Content-Type: application/json' \
     -d '{"name":"joke-book","summary":"Jokes.","body":"Tell one joke.","scope":"user"}')
 echo "$forged" | grep -q 'user:joke-book' || fail "forge user skill"
+skills=$(curl -sf "http://127.0.0.1:${port}/api/skills")
+echo "$skills" | grep -q 'user:joke-book' || fail "catalog missing forged joke-book"
+echo "$skills" | grep -q '"id":"user:joke-book","name":"joke-book","scope":"system"' \
+    || fail "user-dir skill must present as system"
+robotskill=$(curl -sf -X POST "http://127.0.0.1:${port}/api/skill" \
+    -H 'Content-Type: application/json' \
+    -d '{"name":"futurama","summary":"Sarcastic delivery.","body":"Be Bender.","scope":"robot","robot":"sentry"}')
+echo "$robotskill" | grep -q 'robot:sentry:futurama' || fail "forge robot skill"
+cross=$(curl -s -o /tmp/hush-cross-skill -w '%{http_code}' \
+    -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"update","slug":"coach","skill_0":"robot:sentry:futurama"}')
+test "$cross" != "200" || fail "robot skill must not equip on another slug"
+own=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"update","slug":"sentry","skill_0":"robot:sentry:futurama"}')
+echo "$own" | grep -q 'robot:sentry:futurama' || fail "robot skill must equip on owner"
 noprov=$(curl -s -o /tmp/hush-noprov-agent -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"name":"Ghost","system_prompt":"Watch.","save_pass":false}')

@@ -1,4 +1,4 @@
-/* hush_skill.h: three-scope skill catalog, forge writer, robot voices. */
+/* hush_skill.h: two-bucket skill catalog (system + robot), forge writer. */
 
 #ifndef HUSH_SKILL_H
 #define HUSH_SKILL_H
@@ -30,6 +30,7 @@ enum {
 #define HUSH_SKILL_SCOPE_SYSTEM "system"
 #define HUSH_SKILL_SCOPE_USER "user"
 #define HUSH_SKILL_SCOPE_ROBOT "robot"
+#define HUSH_SKILL_SCOPES_JSON "\"scopes\":[\"system\",\"robot\"]"
 #define HUSH_SKILL_ROLE_WORKER "worker"
 #define HUSH_SKILL_ROLE_CHAPERON "chaperon"
 #define HUSH_SKILL_ROLE_ANY "any"
@@ -72,7 +73,7 @@ hush_status_t hush_skill_load_catalog(hush_skill_catalog_t *cat);
 hush_status_t hush_skill_forge(const hush_skill_forge_in_t *in,
                                char *out_id, size_t idsz);
 
-/* Writes catalog JSON including scopes and optional voices. */
+/* Writes catalog JSON including product scopes and optional voices. */
 hush_status_t hush_skill_format_json(const hush_skill_catalog_t *cat,
                                      int with_voices,
                                      char *out, size_t outsz,
@@ -105,6 +106,9 @@ hush_status_t hush_skill_try_equip(const hush_skill_catalog_t *cat,
                                    size_t *nids,
                                    const char *skill_id,
                                    const char *robot_role);
+
+/* True when skill may be worn by robot_slug. Empty robot is hive-wide. */
+int hush_skill_robot_ok(const hush_skill_t *skill, const char *robot_slug);
 
 /* Copies pack_dir/<slug>/SKILL.md into ~/.hush/skills/system when missing. */
 hush_status_t hush_skill_seed_pack(const char *pack_dir);

@@ -28,25 +28,29 @@ enum {
 #define HUSH_SKILL_FORGE_BODY \
     "---\n" \
     "name: forge-skill\n" \
-    "description: Create a new Hush skill for a robot, the user, or the hive.\n" \
+    "description: Create a System (application-wide) skill or a This robot skill.\n" \
     "role: any\n" \
     "---\n\n" \
     "# Forge a Hush skill\n\n" \
     "A Hush skill is a SKILL.md the hive equips onto a robot like an inventory " \
     "item. Forging writes a new file. Equipping points a robot at an existing " \
     "one. Pruning unequips; the file stays on disk.\n\n" \
+    "## Two product buckets\n\n" \
+    "System (application-wide): any robot may wear it. Shipped pack lives under " \
+    "system/. Hive-forged System skills live under user/ so seed never " \
+    "overwrites them.\n" \
+    "This robot: one custom robot only (Bender wears Futurama).\n\n" \
     "## Layout (~/.hush/)\n\n" \
     "system: ~/.hush/skills/system/<slug>/SKILL.md\n" \
     "user: ~/.hush/skills/user/<slug>/SKILL.md\n" \
     "robot: ~/.hush/skills/robots/<robot-slug>/<slug>/SKILL.md\n\n" \
-    "System skills ship with Hush. User skills are hive-wide. Robot skills " \
-    "belong to one robot.\n\n" \
     "## Equip and prune\n\n" \
     "Open a robot's Edit inventory (i). Cycle gems like Diablo II amulets, " \
     "then drop one onto an empty loadout socket. Lift a worn gem to prune.\n\n" \
     "## Forge (this skill)\n\n" \
-    "POST /api/skill {name, summary, body, scope, robot?}. Do not forge into " \
-    "system from the UI. Do not write secrets into a skill.\n"
+    "POST /api/skill {name, summary, body, scope, robot?}. scope=user writes " \
+    "a System skill. scope=robot writes This robot. Do not forge into the " \
+    "shipped system pack from the UI. Do not write secrets into a skill.\n"
 
 static const char *const hush_skill_voices[HUSH_SKILL_VOICE_COUNT] = {
     "alloy",
@@ -59,6 +63,9 @@ static const char *const hush_skill_voices[HUSH_SKILL_VOICE_COUNT] = {
 
 /* True when scope is system, user, or robot. */
 static int hush_skill_is_scope(const char *scope);
+
+/* Product bucket for a disk scope. User-dir files count as system. */
+static const char *hush_skill_product_scope(const char *disk_scope);
 
 /* Writes lowercase a-z0-9- slug of name into dst. */
 static void hush_skill_slugify(char *dst, size_t dstsz, const char *name);
@@ -217,7 +224,7 @@ hush_status_t hush_skill_format_json(const hush_skill_catalog_t *cat,
     if (cat == NULL || out == NULL || outsz == 0)
         return HUSH_ERR_ARG;
     n = snprintf(out, outsz,
-                 "{\"ok\":true,\"scopes\":[\"system\",\"user\",\"robot\"],"
+                 "{\"ok\":true," HUSH_SKILL_SCOPES_JSON ","
                  "\"watermarks\":{\"slots_low\":%d,\"slots_high\":%d,"
                  "\"chars_low\":%d,\"chars_high\":%d,"
                  "\"complex_low\":%d,\"complex_high\":%d},\"skills\":[",
@@ -362,6 +369,17 @@ hush_status_t hush_skill_try_equip(const hush_skill_catalog_t *cat,
     return HUSH_OK;
 }
 
+int hush_skill_robot_ok(const hush_skill_t *skill, const char *robot_slug)
+{
+    if (skill == NULL)
+        return 0;
+    if (skill->robot[0] == '\0')
+        return 1;
+    if (robot_slug == NULL || robot_slug[0] == '\0')
+        return 0;
+    return strcmp(skill->robot, robot_slug) == 0;
+}
+
 hush_status_t hush_skill_seed_pack(const char *pack_dir)
 {
     DIR *dp;
@@ -462,6 +480,14 @@ static int hush_skill_is_scope(const char *scope)
     if (strcmp(scope, HUSH_SKILL_SCOPE_USER) == 0)
         return 1;
     return strcmp(scope, HUSH_SKILL_SCOPE_ROBOT) == 0;
+}
+
+static const char *hush_skill_product_scope(const char *disk_scope)
+{
+    assert(disk_scope != NULL);
+    if (strcmp(disk_scope, HUSH_SKILL_SCOPE_USER) == 0)
+        return HUSH_SKILL_SCOPE_SYSTEM;
+    return disk_scope;
 }
 
 static void hush_skill_slugify(char *dst, size_t dstsz, const char *name)
@@ -621,7 +647,8 @@ static hush_status_t hush_skill_read_one(hush_skill_catalog_t *cat,
     slot = &cat->skills[cat->nskills];
     memset(slot, 0, sizeof(*slot));
     hush_skill_copy(slot->name, sizeof(slot->name), slug);
-    hush_skill_copy(slot->scope, sizeof(slot->scope), scope);
+    hush_skill_copy(slot->scope, sizeof(slot->scope),
+                    hush_skill_product_scope(scope));
     if (robot != NULL)
         hush_skill_copy(slot->robot, sizeof(slot->robot), robot);
     if (hush_skill_make_id(slot->id, sizeof(slot->id), scope, robot, slug)
