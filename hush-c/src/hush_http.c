@@ -111,7 +111,8 @@ static void hush_http_fill_agent_extras(hush_roster_agent_in_t *in,
 static void hush_http_fill_agent_skills(hush_roster_agent_in_t *in,
                                         const char *body);
 static hush_status_t hush_http_check_loadout(const hush_roster_agent_in_t *in,
-                                             const char *robot_role);
+                                             const char *robot_role,
+                                             const char *slug);
 static const char *hush_http_agent_role(const char *slug,
                                         const hush_roster_agent_in_t *in);
 static void hush_http_serve_skills_get(int fd);
@@ -945,7 +946,7 @@ static hush_status_t hush_http_serve_agent(int fd, const char *body,
     if (!hush_json_field(body, "provider", in.provider, sizeof(in.provider)))
         return hush_http_reply_session(fd, HUSH_ERR_PARSE);
     hush_http_fill_agent_extras(&in, body);
-    st = hush_http_check_loadout(&in, hush_http_agent_role(NULL, &in));
+    st = hush_http_check_loadout(&in, hush_http_agent_role(NULL, &in), "");
     if (st != HUSH_OK)
         return hush_http_reply_session(fd, st);
     st = hush_http_fill_agent_context(&in, body);
@@ -1004,7 +1005,8 @@ static hush_status_t hush_http_update_payne(int fd, const char *body)
         return hush_http_reply_session(fd, st);
     memset(&in, 0, sizeof(in));
     hush_http_fill_agent_extras(&in, body);
-    st = hush_http_check_loadout(&in, HUSH_ROSTER_ROLE_WORKER);
+    st = hush_http_check_loadout(&in, HUSH_ROSTER_ROLE_WORKER,
+                                 HUSH_LAUNCH_PAYNE_SLUG);
     if (st != HUSH_OK)
         return hush_http_reply_session(fd, st);
     if (in.has_picture || in.has_voice || in.has_skills || in.has_enabled)
@@ -1027,7 +1029,7 @@ static hush_status_t hush_http_update_agent(int fd, const char *body)
     (void)hush_json_field(body, "system_prompt", in.prompt, sizeof(in.prompt));
     (void)hush_json_field(body, "provider", in.provider, sizeof(in.provider));
     hush_http_fill_agent_extras(&in, body);
-    st = hush_http_check_loadout(&in, hush_http_agent_role(slug, &in));
+    st = hush_http_check_loadout(&in, hush_http_agent_role(slug, &in), slug);
     if (st != HUSH_OK)
         return hush_http_reply_session(fd, st);
     return hush_http_reply_session(fd,
@@ -1087,9 +1089,11 @@ static void hush_http_fill_agent_skills(hush_roster_agent_in_t *in,
 }
 
 static hush_status_t hush_http_check_loadout(const hush_roster_agent_in_t *in,
-                                             const char *robot_role)
+                                             const char *robot_role,
+                                             const char *slug)
 {
     hush_skill_catalog_t cat;
+    const hush_skill_t *skill;
     char ids[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
     size_t n = 0;
     size_t i;
@@ -1107,6 +1111,9 @@ static hush_status_t hush_http_check_loadout(const hush_roster_agent_in_t *in,
         st = hush_skill_try_equip(&cat, ids, &n, in->skills[i], robot_role);
         if (st != HUSH_OK)
             return st;
+        skill = hush_skill_find(&cat, in->skills[i]);
+        if (skill == NULL || !hush_skill_robot_ok(skill, slug))
+            return HUSH_ERR_DENIED;
     }
     return HUSH_OK;
 }
