@@ -666,7 +666,7 @@
 .inv-item.has-pic { background-size: cover; background-position: center; }
 .inv-item.disabled { filter: grayscale(1); opacity: 0.55; }
 .inv-item.has-pic .nm { display: none; }
-.skill-board { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+.skill-board { display: grid; grid-template-columns: 1fr; gap: 8px; margin: 8px 0; }
 .skill-pool, .skill-loadout {
   min-height: 72px; border: 1px solid var(--line); border-radius: 6px;
   padding: 6px; display: flex; flex-wrap: wrap; gap: 6px; background: #11171d;
@@ -675,14 +675,71 @@
   font-size: 0.58rem; letter-spacing: 0.06em; color: #8a9; width: 100%;
   text-transform: uppercase;
 }
-.skill-chip {
-  font: 650 0.68rem/1 var(--sans); padding: 8px 10px; cursor: pointer;
-  border: 1px solid #3a4a55; background: #0f1419; color: #9cf; border-radius: 4px;
+.skill-chip, .skill-gem {
+  font: 650 0.62rem/1.1 var(--sans); padding: 4px; cursor: grab;
+  border: 2px solid #3a4a55; background: #0f1419; color: #9cf; border-radius: 4px;
+  user-select: none; touch-action: none;
 }
-.skill-chip[data-scope="system"] { border-color: #d4a017; color: #fc6; }
-.skill-chip[data-scope="user"] { border-color: #0ff; }
-.skill-chip[data-scope="robot"] { border-color: #c6f; color: #e8f; }
-.skill-chip:hover { box-shadow: 0 0 6px currentColor; }
+.skill-chip[data-scope="system"], .skill-gem[data-scope="system"] {
+  border-color: #d4a017; color: #fc6; box-shadow: 0 0 6px #d4a01755;
+}
+.skill-chip[data-scope="user"], .skill-gem[data-scope="user"] {
+  border-color: #0ff; box-shadow: 0 0 6px #0ff4;
+}
+.skill-chip[data-scope="robot"], .skill-gem[data-scope="robot"] {
+  border-color: #c6f; color: #e8f; box-shadow: 0 0 6px #c6f4;
+}
+.skill-chip:hover, .skill-gem:hover, .skill-gem:focus { box-shadow: 0 0 10px currentColor; }
+.skill-belt-wrap { margin: 8px 0 4px; }
+.skill-belt { align-items: center; justify-content: center; gap: 4px; }
+.skill-belt .icon-minus, .skill-belt .icon-plus {
+  width: 32px; height: 32px; font-size: 0.85rem;
+}
+.skill-cycle-stage {
+  flex: 1; min-height: 48px; min-width: 48px; display: flex;
+  align-items: center; justify-content: center; gap: 4px;
+  border: 1px solid #3a4a55; border-radius: 6px; background: #11171d; padding: 4px;
+}
+.skill-gem {
+  width: 48px; height: 48px; flex: 0 0 auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center;
+}
+.skill-gem .sig { font-size: 0.9rem; letter-spacing: 0.04em; }
+.skill-gem .nm {
+  font-size: 0.5rem; max-width: 44px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.skill-gem.neighbor { width: 32px; height: 32px; opacity: 0.5; }
+.skill-gem.held { opacity: 0.4; }
+.skill-doll {
+  display: grid; grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(3, 48px);
+  gap: 6px; justify-content: center; align-items: center; min-height: 168px;
+  padding: 10px; border: 1px solid #3a4a55; border-radius: 6px; background: #0b1014;
+}
+.skill-slot {
+  width: 48px; height: 48px; border: 2px dashed #3a4a55; border-radius: 4px;
+  background: #11171d; display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.skill-slot.open { box-shadow: inset 0 0 8px #d4a01766; }
+.skill-slot.filled { border-style: solid; }
+.skill-slot.drop-ok, .skill-doll-pic.drop-ok {
+  border-style: solid; border-color: #0ff; box-shadow: 0 0 8px #0ff;
+}
+.skill-slot.drop-no { border-color: #f66; }
+.skill-doll-pic {
+  width: 48px; height: 48px; border: 2px solid #0ff; border-radius: 4px;
+  background: #11171d; background-size: cover; background-position: center;
+}
+.skill-ghost {
+  position: fixed; z-index: 80; pointer-events: none; width: 48px; height: 48px;
+  margin-left: -24px; margin-top: -24px;
+}
+.inv-item.skill-drop-ok { outline: 2px solid #0ff; box-shadow: 0 0 10px #0ff; }
+.inv-item.skill-drop-no { outline: 2px solid #f66; }
+body.skill-holding, body.skill-holding * { cursor: grabbing; }
+#hive-skill-help { font-size: 0.62rem; margin: 4px 0 6px; color: var(--muted); }
 
 /* M4.1 progressive mention states (thinking -> reacting -> emoji) */
 
@@ -805,6 +862,17 @@
         </div>
       </div>
       <div id="robot-inventory" aria-label="Robot Inventory Grid"></div>
+      <div id="hive-armory" class="skill-belt-wrap">
+        <div class="inv-title-row">
+          <span class="inv-title">Skill stash</span>
+        </div>
+        <p class="help" id="hive-skill-help">Cycle a skill. Wear it on a robot.</p>
+        <div class="pill-row skill-belt" id="hive-skill-cycle-row">
+          <button class="icon-minus" id="hive-skill-prev" type="button" aria-label="Previous skill">◀</button>
+          <div id="hive-skill-cycle" class="skill-cycle-stage" aria-label="Cycled skill"></div>
+          <button class="icon-plus" id="hive-skill-next" type="button" aria-label="Next skill">▶</button>
+        </div>
+      </div>
 
       <button class="stats" id="stats" type="button" role="button" tabindex="0"
               aria-label="Relay details">waiting for relay</button>
@@ -1034,21 +1102,21 @@
         <p class="help">Heard in calls when a Whisper model is ready.</p>
       </div>
       <div id="agent-skills">
-        <p class="help">Equip skills like items. Cycle the armory like a Diablo II amulet, then wear it. Chaperon skills stay off workers.</p>
+        <p class="help">Cycle a skill like a Diablo II amulet, then drag it onto a socket or a robot.</p>
         <p class="help" id="skill-watermark"></p>
-        <div class="pill-row" id="skill-cycle-row">
+        <div class="pill-row skill-belt" id="skill-cycle-row">
           <button class="icon-minus" id="skill-cycle-prev" type="button" aria-label="Previous skill">◀</button>
-          <div id="skill-cycle" class="skill-pool" aria-label="Cycled skill"></div>
+          <div id="skill-cycle" class="skill-cycle-stage" aria-label="Cycled skill"></div>
           <button class="icon-plus" id="skill-cycle-next" type="button" aria-label="Next skill">▶</button>
         </div>
         <div class="skill-board">
           <div>
             <div class="lbl">Armory</div>
-            <div id="skill-armory" class="skill-pool" aria-label="Skill armory"></div>
+            <div id="skill-armory" class="skill-pool skill-cycle-stage" aria-label="Skill armory"></div>
           </div>
           <div>
             <div class="lbl">Loadout</div>
-            <div id="skill-loadout" class="skill-loadout" aria-label="Skill loadout"></div>
+            <div id="skill-loadout" class="skill-loadout skill-doll" aria-label="Skill loadout"></div>
           </div>
         </div>
         <button class="inv-btn" id="skill-forge-open" type="button">Forge a skill</button>
@@ -1329,6 +1397,7 @@
       </div>
     </div>
   </div>
+  <div id="skill-ghost" class="skill-ghost" hidden></div>
 
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
