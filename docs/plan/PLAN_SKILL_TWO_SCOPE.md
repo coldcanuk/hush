@@ -4,6 +4,7 @@
 **Worktree:** `worktrees/skill-two-scope`
 **Gate:** `docs/research/RESEARCH_SKILL_TWO_SCOPE.md`
 **Land:** PR to main only (Prime Directive). Worktree path is `worktrees/<slug>`.
+**Status:** executed. `make test` passed. Ready for merge.
 
 ## Scope
 
