@@ -367,6 +367,9 @@ static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
     if (in->voice[0] != '\0' && !hush_skill_is_voice(in->voice))
         return HUSH_ERR_PARSE;
     hush_roster_copy_text(agent->voice, sizeof(agent->voice), in->voice, "");
+    agent->enabled = 1;
+    if (in->has_enabled)
+        agent->enabled = in->enabled ? 1 : 0;
     return hush_roster_copy_skills(agent, in);
 }
 
@@ -832,11 +835,18 @@ static hush_status_t hush_roster_apply_update(hush_roster_agent_t *agent,
         hush_roster_copy_text(agent->provider, sizeof(agent->provider),
                               in->provider, "");
     }
-    hush_roster_copy_text(agent->picture, sizeof(agent->picture),
-                          in->picture, "");
-    if (in->voice[0] != '\0' && !hush_skill_is_voice(in->voice))
-        return HUSH_ERR_PARSE;
-    hush_roster_copy_text(agent->voice, sizeof(agent->voice), in->voice, "");
+    if (in->has_picture)
+        hush_roster_copy_text(agent->picture, sizeof(agent->picture),
+                              in->picture, "");
+    if (in->has_voice) {
+        if (in->voice[0] != '\0' && !hush_skill_is_voice(in->voice))
+            return HUSH_ERR_PARSE;
+        hush_roster_copy_text(agent->voice, sizeof(agent->voice), in->voice, "");
+    }
+    if (in->has_enabled)
+        agent->enabled = in->enabled ? 1 : 0;
+    if (!in->has_skills)
+        return HUSH_OK;
     return hush_roster_copy_skills(agent, in);
 }
 
@@ -858,11 +868,12 @@ static hush_status_t hush_roster_format_one_agent(const hush_roster_agent_t *age
     n = snprintf(out + *off, outsz - *off,
                  "%s{\"name\":\"%s\",\"slug\":\"%s\",\"npub\":\"%s\","
                  "\"pubkey\":\"%s\",\"provider\":\"%s\",\"prompt\":\"%s\","
-                 "\"picture\":\"%s\",\"voice\":\"%s\",\"ncontext\":%zu,"
-                 "\"skills\":",
+                 "\"picture\":\"%s\",\"voice\":\"%s\",\"enabled\":%s,"
+                 "\"ncontext\":%zu,\"skills\":",
                  first ? "" : ",",
                  esc, agent->slug, agent->id.npub, agent->id.pubkey_hex,
                  agent->provider, esc_prompt, agent->picture, agent->voice,
+                 agent->enabled ? "true" : "false",
                  agent->ncontext);
     if (n < 0 || *off + (size_t)n >= outsz)
         return HUSH_ERR_FULL;

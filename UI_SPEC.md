@@ -204,15 +204,19 @@ and a pencil to edit it again.
   existing non-Payne robot. Payne cannot be deleted. Confirm stays
   `Delete this robot?`. Compact min-height 36px in this drawer only.
 
-**Payne Edit.** Drawer title is `Edit Major`. Display name defaults to
-`Major` (`HUSH_LAUNCH_PAYNE_NAME`). Name, system prompt, avatar, and
-(when Whisper is ready) voice are editable. Slug stays
-`sgt-major-payne`. Delete stays disabled. Ranked providers remain
-(`HUSH_LAUNCH_PAYNE_PROVIDERS_MAX`). Skills use Armory / Loadout
-(system, user, robot) plus Forge. `POST /api/agent` with the Payne slug
-updates providers and profile fields. Session `payne.provider` is
-`providers[0]`; `payne.providers` is the full array. Missing list
-restores to `["goose"]`.
+**Payne Edit.** Drawer title is `Edit Major`. Display name is locked
+`Major` (`HUSH_LAUNCH_PAYNE_NAME`). Standing orders are locked
+(`HUSH_LAUNCH_PAYNE_ABOUT`). Name and system-prompt fields are
+read-only. Slug stays `sgt-major-payne`. Delete stays disabled.
+Every robot, including Major, has an Enable/Disable switch
+(`#agent-enabled`). Disabled robots use `.inv-item.disabled`
+(greyscale) and do not answer mentions. Ranked providers remain.
+Skills use Armory / Loadout plus Forge. `POST /api/agent` with the
+Payne slug updates providers, picture, voice, skills, and `enabled`.
+Name and `system_prompt` on that POST are ignored. Session
+`payne.provider` is `providers[0]`; `payne.providers` is the full
+array. Missing list restores to `["goose"]`. `payne.enabled` defaults
+true.
 
 Client rejects other MIME. Server re-checks. Max 3 files, 4096 bytes each.
 

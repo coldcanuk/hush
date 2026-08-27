@@ -256,6 +256,10 @@ if echo "$html" | grep -q 'PAYNE_SLUG ? "1x3"'; then
     fail "Payne must not be a 1x3 inventory exception"
 fi
 echo "$html" | grep -q 'el.title = it.name' || fail "hover title must use robot name"
+echo "$html" | grep -q 'id="agent-enabled"' || fail "HTML missing enable slider"
+echo "$html" | grep -q 'inv-item.disabled' || fail "HTML missing disabled greyscale"
+echo "$html" | grep -q 'readOnly = true' || fail "HTML must lock Major name/prompt"
+echo "$html" | grep -q 'platform robot' || fail "HTML missing Major platform copy"
 echo "$html" | grep -q 'id="payne-provider-pills"' || fail "HTML missing Payne provider pills"
 echo "$html" | grep -q 'id="agent-identity"' || fail "HTML missing lockable identity block"
 echo "$html" | grep -q 'PAYNE_PROVIDERS_MAX = 4' || fail "HTML missing Payne provider cap"
@@ -370,6 +374,10 @@ upd=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -d '{"action":"update","slug":"sentry","name":"Sentry","system_prompt":"Watch.","picture":"panel:dogs:4","skill_0":"system:forge-skill"}')
 echo "$upd" | grep -q 'panel:dogs:4' || fail "agent picture persist"
 echo "$upd" | grep -q 'system:forge-skill' || fail "agent skill persist"
+offag=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"update","slug":"sentry","enabled":false}')
+echo "$offag" | grep -q '"enabled":false' || fail "raised robot must disable"
 forged=$(curl -sf -X POST "http://127.0.0.1:${port}/api/skill" \
     -H 'Content-Type: application/json' \
     -d '{"name":"joke-book","summary":"Jokes.","body":"Tell one joke.","scope":"user"}')
@@ -391,11 +399,21 @@ payne=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -d '{"slug":"sgt-major-payne","provider_0":"grok-build","provider_1":"goose"}')
 echo "$payne" | grep -F '"providers":["grok-build","goose"]' || fail "Payne provider order"
 echo "$payne" | grep -q '"name":"Major"' || fail "Payne default name stays Major"
+echo "$payne" | grep -q '"enabled":true' || fail "Payne starts enabled"
 renamed=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
-    -d '{"slug":"sgt-major-payne","provider_0":"goose","name":"Major Two","system_prompt":"Find the right robot."}')
-echo "$renamed" | grep -q '"name":"Major Two"' || fail "Payne name must be editable"
-echo "$renamed" | grep -q '"name":"Sgt Major Payne"' && fail "old Payne name must not remain"
+    -d '{"slug":"sgt-major-payne","provider_0":"goose","name":"Major Two","system_prompt":"Nope."}')
+echo "$renamed" | grep -q '"name":"Major"' || fail "Payne name stays locked"
+echo "$renamed" | grep -q '"name":"Major Two"' && fail "Payne name must ignore posted rename"
+off=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"slug":"sgt-major-payne","enabled":false}')
+echo "$off" | grep -q '"enabled":false' || fail "Payne must disable"
+echo "$off" | grep -q '"name":"Major"' || fail "disable keeps Major name"
+on=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+    -H 'Content-Type: application/json' \
+    -d '{"slug":"sgt-major-payne","enabled":true}')
+echo "$on" | grep -q '"enabled":true' || fail "Payne must enable"
 stay=$(curl -s -o /tmp/hush-payne-del -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"action":"delete","slug":"sgt-major-payne"}')

@@ -109,14 +109,27 @@ int main(void)
         memcpy(payne_in.voice, "alloy", 6);
         memcpy(payne_in.skills[0], "system:forge-skill", 19);
         payne_in.nskills = 1;
+        payne_in.has_picture = 1;
+        payne_in.has_voice = 1;
+        payne_in.has_skills = 1;
         expect(hush_launch_update_payne_profile(&launch, &payne_in) == HUSH_OK,
                "payne profile");
         expect(strcmp(launch.payne_picture, "panel:robots:1") == 0, "payne pic");
+        memcpy(payne_in.name, "Nope", 5);
+        memcpy(payne_in.prompt, "Nope prompt", 12);
+        payne_in.has_enabled = 1;
+        payne_in.enabled = 0;
+        expect(hush_launch_update_payne_profile(&launch, &payne_in) == HUSH_OK,
+               "payne disable");
+        expect(strcmp(launch.payne_name, HUSH_LAUNCH_PAYNE_NAME) == 0,
+               "name locked");
+        expect(launch.payne_enabled == 0, "payne off");
         expect(hush_launch_format_session(&launch, 10555, json, sizeof(json),
                                           &n) == HUSH_OK,
                "session payne extras");
         expect(strstr(json, "system:forge-skill") != NULL, "payne skill json");
         expect(strstr(json, "\"voice\":\"alloy\"") != NULL, "payne voice json");
+        expect(strstr(json, "\"enabled\":false") != NULL, "payne off json");
     }
     expect(hush_launch_add_channel(&launch, "incidents") == HUSH_OK, "channel");
     expect(launch.nchannels == 4, "four channels");

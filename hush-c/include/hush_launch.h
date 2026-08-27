@@ -109,6 +109,7 @@ typedef struct {
     char payne_voice[HUSH_SKILL_VOICE_MAX];
     char payne_skills[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
     size_t npayne_skills;
+    int payne_enabled;
     char vibe_name[HUSH_LAUNCH_NAME_MAX];
     char vibe_about[HUSH_LAUNCH_ABOUT_MAX];
     int vibe_public;
@@ -175,8 +176,8 @@ hush_status_t hush_launch_remove_agent(hush_launch_t *launch, const char *slug);
 hush_status_t hush_launch_update_agent(hush_launch_t *launch, const char *slug,
                                        const hush_roster_agent_in_t *in);
 
-/* Updates Payne's display name, prompt, picture, voice, and skills.
- * Empty name/prompt keep the current values. */
+/* Updates Payne picture, voice, skills, and enabled. Name and prompt stay
+ * locked to the platform identity. */
 hush_status_t hush_launch_update_payne_profile(hush_launch_t *launch,
                                                const hush_roster_agent_in_t *in);
 
