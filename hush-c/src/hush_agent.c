@@ -71,6 +71,10 @@ enum {
 #define HUSH_AGENT_STRICT_SCOPE \
     " Do ONLY the assignment given to you. Do not perform, answer, or " \
     "complete any part assigned to another robot. Ignore other robots' jobs."
+#define HUSH_AGENT_COOPERATE \
+    " You are a pair. Divide the labor between you two: each does a distinct, " \
+    "non-overlapping part of the ask. Do not duplicate your partner's part. " \
+    "Do only your own part and stop."
 #define HUSH_AGENT_DISALLOWED \
     "run_terminal_cmd,web_search,web_fetch,read_file,search_replace,list_dir,grep,todo_write,task,Agent"
 #define HUSH_AGENT_RULES \
@@ -143,6 +147,7 @@ typedef struct {
      * fall back to slot->ask. Indexed in parallel with next[]. */
     char next_ask[HUSH_AGENT_FOLLOW_ROBOTS][HUSH_AGENT_TASK_MAX];
     int scoped;
+    int mode;
 } hush_agent_follow_t;
 
 /* How a human note is interpreted for the tagged robot group. */
@@ -200,6 +205,9 @@ typedef struct {
     /* True when this robot's ask is a strict per-robot sub-task (explicit
      * delegation or a leader plan task), not the shared human ask. */
     int scoped;
+    /* How the human note was classified (solo / explicit / broadcast /
+     * ambiguous). Drives cooperation vs leader vs strict-scope prompting. */
+    int mode;
 } hush_agent_job_in_t;
 
 static hush_agent_job_t g_jobs[HUSH_AGENT_JOBS_MAX];
@@ -304,7 +312,8 @@ static void hush_agent_follow_push_hex(hush_agent_follow_t *slot,
 static void hush_agent_follow_push(const hush_event_t *ev,
                                    const hush_launch_t *launch,
                                    const hush_agent_assign_t *assigns,
-                                   size_t nhex, size_t start, int scoped);
+                                   size_t nhex, size_t start, int scoped,
+                                   int mode);
 static void hush_agent_follow_kick(hush_store_t *store,
                                    const hush_launch_t *launch,
                                    const hush_event_t *ev);
@@ -1188,12 +1197,20 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
             < sizeof(job->prompt))
         strcat(job->prompt, HUSH_AGENT_STRICT_SCOPE);
 
+    /* Two-robot broadcast: cooperate and divide labor, no leader. */
+    if (!in->scoped && in->mode == HUSH_AGENT_MODE_BROADCAST &&
+        job->n_co_robots == 1 &&
+        strlen(job->prompt) + strlen(HUSH_AGENT_COOPERATE) + 1
+            < sizeof(job->prompt))
+        strcat(job->prompt, HUSH_AGENT_COOPERATE);
+
     /* Group mention seam + deliberation (M3.4):
      * Co-mentioned robots must decide: own reply? cooperate? split? full convo?
      * Peers are listed by name (with their nostr:npub token for dispatch).
-     * Skipped for strict per-robot scoping (explicit delegation), where each
-     * robot already has its own clause and must not renegotiate. */
+     * Skipped for strict per-robot scoping (explicit delegation) and for a
+     * two-robot broadcast (which uses the cooperate prompt above). */
     if (!in->scoped && job->n_co_robots > 0 &&
+        !(in->mode == HUSH_AGENT_MODE_BROADCAST && job->n_co_robots == 1) &&
         strlen(job->prompt) + 160 < sizeof(job->prompt)) {
         size_t off = strlen(job->prompt);
         const char *g = " Other robots mentioned: ";
@@ -1611,11 +1628,13 @@ static void hush_agent_handle_mention(hush_store_t *store,
         }
         scoped = (mode == HUSH_AGENT_MODE_EXPLICIT);
         if (idx > 0 && idx < nhex) {
-            hush_agent_follow_push(ev, launch, assigns, nhex, idx, scoped);
+            hush_agent_follow_push(ev, launch, assigns, nhex, idx, scoped,
+                                   (int)mode);
             return;
         }
         if (idx == 0 && nhex > 1)
-            hush_agent_follow_push(ev, launch, assigns, nhex, 1, scoped);
+            hush_agent_follow_push(ev, launch, assigns, nhex, 1, scoped,
+                                   (int)mode);
         if (scoped && idx < nhex && assigns[idx].has_ask)
             ask = assigns[idx].ask;
     }
@@ -1629,6 +1648,7 @@ static void hush_agent_handle_mention(hush_store_t *store,
         in.parent = ev;
         in.ask = ask != NULL ? ask : ev->content;
         in.scoped = scoped;
+        in.mode = (int)mode;
         hush_agent_begin_work(&in);
     }
 }
@@ -1848,7 +1868,8 @@ static void hush_agent_follow_push_hex(hush_agent_follow_t *slot,
 static void hush_agent_follow_push(const hush_event_t *ev,
                                    const hush_launch_t *launch,
                                    const hush_agent_assign_t *assigns,
-                                   size_t nhex, size_t start, int scoped)
+                                   size_t nhex, size_t start, int scoped,
+                                   int mode)
 {
     hush_agent_follow_t *slot;
     char root[HUSH_EVENT_ID_HEX_LEN + 1];
@@ -1863,6 +1884,7 @@ static void hush_agent_follow_push(const hush_event_t *ev,
     hush_agent_copy(slot->ask, sizeof(slot->ask), ev->content);
     if (scoped)
         slot->scoped = 1;
+    slot->mode = mode;
     for (i = start; i < nhex; i++) {
         const char *ask = (assigns != NULL && assigns[i].has_ask)
             ? assigns[i].ask : NULL;
@@ -2005,6 +2027,7 @@ static void hush_agent_follow_kick(hush_store_t *store,
             ? slot->next_ask[at]
             : (slot->ask[0] ? slot->ask : ev->content);
         in.scoped = slot->scoped;
+        in.mode = slot->mode;
         hush_agent_begin_work(&in);
         return;
     }
