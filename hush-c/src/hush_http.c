@@ -980,7 +980,8 @@ static void hush_http_fill_agent_skills(hush_roster_agent_in_t *in,
     assert(in != NULL);
     assert(body != NULL);
     in->nskills = 0;
-    if (hush_json_has_key(body, "skill_0"))
+    if (hush_json_has_key(body, "skill_0") ||
+        hush_json_has_key(body, "nskills"))
         in->has_skills = 1;
     for (i = 0; i < (size_t)HUSH_SKILL_EQUIP_MAX; ++i) {
         if (snprintf(key, sizeof(key), "skill_%zu", i) >= (int)sizeof(key))
