@@ -21,8 +21,11 @@ enum {
     HUSH_ROSTER_PATH_MAX = 256,
     HUSH_ROSTER_JSON_MAX = 16384,
     HUSH_ROSTER_PROVIDER_MAX = 32,
-    HUSH_ROSTER_PROMPT_PREVIEW = 160
+    HUSH_ROSTER_PROMPT_PREVIEW = 160,
+    HUSH_ROSTER_INTRO_MAX = 240
 };
+
+#define HUSH_ROSTER_INTRO_DEFAULT "I am on deck. Standing orders are noted."
 
 #define HUSH_ROSTER_MIME_PLAIN "text/plain"
 #define HUSH_ROSTER_MIME_MARKDOWN "text/markdown"
@@ -61,6 +64,8 @@ typedef struct {
     int enabled;
     int locked;
     char role[HUSH_ROSTER_NAME_MAX];
+    int intro_enabled;
+    char intro[HUSH_ROSTER_INTRO_MAX];
     hush_roster_context_t context[HUSH_ROSTER_CONTEXT_MAX];
     size_t ncontext;
 } hush_roster_agent_t;
@@ -137,6 +142,10 @@ typedef struct {
     int has_picture;
     int has_voice;
     int has_skills;
+    int intro_enabled;
+    int has_intro_enabled;
+    char intro[HUSH_ROSTER_INTRO_MAX];
+    int has_intro;
     hush_roster_context_in_t context[HUSH_ROSTER_CONTEXT_MAX];
     size_t ncontext;
 } hush_roster_agent_in_t;
@@ -150,9 +159,9 @@ hush_status_t hush_roster_add_agent(hush_roster_t *roster,
 /* Drops an agent by slug. Payne's slug is refused. */
 hush_status_t hush_roster_remove_agent(hush_roster_t *roster, const char *slug);
 
-/* Updates name, prompt, provider, picture, voice, and equipped skills.
+/* Updates name, prompt, provider, picture, voice, intro, and equipped skills.
  * Slug and identity stay. Payne's slug is refused. Locked templates
- * only accept enable changes. */
+ * accept enable and intro changes. */
 hush_status_t hush_roster_update_agent(hush_roster_t *roster, const char *slug,
                                        const hush_roster_agent_in_t *in);
 

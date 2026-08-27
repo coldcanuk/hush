@@ -138,6 +138,8 @@ typedef struct {
     const char *prompt;
     const char *slug;
     const char *role;
+    const char *intro;
+    int intro_enabled;
 } hush_agent_robot_t;
 
 typedef struct {
@@ -586,6 +588,8 @@ static int hush_agent_lookup_robot(hush_agent_robot_t *out,
         out->prompt = hush_launch_payne_prompt(launch);
         out->slug = HUSH_LAUNCH_PAYNE_SLUG;
         out->role = HUSH_ROSTER_ROLE_WORKER;
+        out->intro = HUSH_ROSTER_INTRO_DEFAULT;
+        out->intro_enabled = 1;
         if (!launch->payne_enabled)
             return 0;
         return 1;
@@ -604,6 +608,8 @@ static int hush_agent_lookup_robot(hush_agent_robot_t *out,
         out->prompt = agent->prompt;
         out->slug = agent->slug;
         out->role = agent->role[0] ? agent->role : HUSH_ROSTER_ROLE_WORKER;
+        out->intro = agent->intro[0] ? agent->intro : HUSH_ROSTER_INTRO_DEFAULT;
+        out->intro_enabled = agent->intro_enabled;
         return 1;
     }
     return 0;
@@ -831,8 +837,14 @@ static void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bo
     assert(bot != NULL);
     assert(parent != NULL);
     name = (bot->name != NULL && bot->name[0] != '\0') ? bot->name : "robot";
-    line = (why != NULL && why[0] != '\0') ? why
-        : "I am on deck. Standing orders are noted.";
+    if (!bot->intro_enabled)
+        return;
+    if (bot->intro != NULL && bot->intro[0] != '\0')
+        line = bot->intro;
+    else if (why != NULL && why[0] != '\0')
+        line = why;
+    else
+        line = HUSH_ROSTER_INTRO_DEFAULT;
 
     /* One intro per (robot hex, thread root). Table, not a single last-pair. */
     hush_agent_event_root(root, sizeof(root), parent);

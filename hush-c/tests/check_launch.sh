@@ -314,6 +314,10 @@ if echo "$html" | grep -q 'PAYNE_SLUG ? "1x3"'; then
 fi
 echo "$html" | grep -q 'el.title = it.name' || fail "hover title must use robot name"
 echo "$html" | grep -q 'id="agent-enabled"' || fail "HTML missing enable slider"
+echo "$html" | grep -q 'id="agent-intro-enabled"' || fail "HTML missing intro switch"
+echo "$html" | grep -q 'id="agent-intro"' || fail "HTML missing intro editor"
+echo "$html" | grep -q 'I am on deck. Standing orders are noted.' \
+    || fail "HTML missing default intro"
 echo "$html" | grep -q 'inv-item.disabled' || fail "HTML missing disabled greyscale"
 echo "$html" | grep -q 'readOnly = true' || fail "HTML must lock Major name/prompt"
 echo "$html" | grep -q 'platform robot' || fail "HTML missing Major platform copy"

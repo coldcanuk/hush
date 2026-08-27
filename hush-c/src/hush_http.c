@@ -1052,6 +1052,13 @@ static void hush_http_fill_agent_extras(hush_roster_agent_in_t *in,
     }
     if (hush_json_field(body, "role", in->role, sizeof(in->role)))
         in->has_role = 1;
+    if (hush_json_bare_field(body, "intro_enabled", raw, sizeof(raw))) {
+        in->has_intro_enabled = 1;
+        in->intro_enabled = (strcmp(raw, "false") == 0 || strcmp(raw, "0") == 0)
+            ? 0 : 1;
+    }
+    if (hush_json_field(body, "intro", in->intro, sizeof(in->intro)))
+        in->has_intro = 1;
     hush_http_fill_agent_skills(in, body);
 }
 

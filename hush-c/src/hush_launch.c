@@ -2895,6 +2895,11 @@ static hush_status_t hush_launch_put_agent_extras(const hush_roster_agent_t *age
     hush_launch_index_key(key, sizeof(key), "agent_locked", idx);
     HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
                                    agent->locked ? "1" : "0"));
+    hush_launch_index_key(key, sizeof(key), "agent_intro_enabled", idx);
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
+                                   agent->intro_enabled ? "1" : "0"));
+    hush_launch_index_key(key, sizeof(key), "agent_intro", idx);
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, key, agent->intro));
     if (snprintf(count, sizeof(count), "%zu", agent->nskills)
         >= (int)sizeof(count))
         return HUSH_ERR_FULL;
@@ -2948,6 +2953,20 @@ static void hush_launch_take_agent_extras(hush_roster_agent_t *agent,
             && flag[0] == '1')
             agent->locked = 1;
     }
+    hush_launch_index_key(key, sizeof(key), "agent_intro_enabled", idx);
+    agent->intro_enabled = 1;
+    {
+        char flag[2];
+
+        if (hush_launch_json_string(json, key, flag, sizeof(flag))
+            && flag[0] == '0')
+            agent->intro_enabled = 0;
+    }
+    hush_launch_index_key(key, sizeof(key), "agent_intro", idx);
+    (void)hush_launch_json_string(json, key, agent->intro, sizeof(agent->intro));
+    if (agent->intro[0] == '\0')
+        hush_launch_copy_name(agent->intro, sizeof(agent->intro),
+                              HUSH_ROSTER_INTRO_DEFAULT, "");
     hush_launch_index_key(key, sizeof(key), "agent_nskills", idx);
     n = hush_launch_json_count(json, key, (size_t)HUSH_SKILL_EQUIP_MAX);
     agent->nskills = 0;
@@ -2985,7 +3004,9 @@ static hush_status_t hush_launch_format_payne_tail(const hush_launch_t *launch,
             return HUSH_ERR_FULL;
         *off += (size_t)n;
     }
-    n = snprintf(out + *off, outsz - *off, "]},\"channels\":[");
+    n = snprintf(out + *off, outsz - *off,
+                 "],\"intro_enabled\":true,\"intro\":\"%s\"},\"channels\":[",
+                 HUSH_ROSTER_INTRO_DEFAULT);
     if (n < 0 || *off + (size_t)n >= outsz)
         return HUSH_ERR_FULL;
     *off += (size_t)n;

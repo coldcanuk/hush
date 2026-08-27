@@ -1077,6 +1077,15 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         <label for="agent-enabled">Enable</label>
         <label class="switch"><input id="agent-enabled" type="checkbox" checked><span class="slider"></span></label>
       </div>
+      <div id="agent-intro-row">
+        <div class="row">
+          <label for="agent-intro-enabled">Introduce on first mention</label>
+          <label class="switch"><input id="agent-intro-enabled" type="checkbox" checked><span class="slider"></span></label>
+        </div>
+        <label for="agent-intro">Introduction</label>
+        <textarea id="agent-intro" maxlength="240" rows="2">I am on deck. Standing orders are noted.</textarea>
+        <p class="help">Posted once per thread when this robot is mentioned. Off by switch. Major’s intro is locked.</p>
+      </div>
       <div id="agent-role-row" hidden>
         <p class="help">Role</p>
         <div class="radio-col">
@@ -2222,7 +2231,9 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         ncontext: 0,
         locked: true,
         enabled: p.enabled !== false,
-        role: "worker"
+        role: "worker",
+        intro_enabled: p.intro_enabled !== false,
+        intro: p.intro || "I am on deck. Standing orders are noted."
       }];
       (session.agents || []).forEach((a) => {
         if (!a || a.slug === PAYNE_SLUG) return;
@@ -2240,7 +2251,9 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
           ncontext: a.ncontext || 0,
           locked: !!a.locked,
           enabled: a.enabled !== false,
-          role: a.role || "worker"
+          role: a.role || "worker",
+          intro_enabled: a.intro_enabled !== false,
+          intro: a.intro || "I am on deck. Standing orders are noted."
         });
       });
       return list;
@@ -2381,6 +2394,15 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       if ($("agent-prompt-help")) $("agent-prompt-help").textContent = "Write its system prompt. Required.";
       if ($("agent-enabled-row")) $("agent-enabled-row").hidden = true;
       if ($("agent-enabled")) $("agent-enabled").checked = true;
+      if ($("agent-intro-enabled")) {
+        $("agent-intro-enabled").checked = true;
+        $("agent-intro-enabled").disabled = false;
+      }
+      if ($("agent-intro")) {
+        $("agent-intro").value = "I am on deck. Standing orders are noted.";
+        $("agent-intro").disabled = false;
+        $("agent-intro").readOnly = false;
+      }
       if ($("agent-role-row")) $("agent-role-row").hidden = true;
       document.querySelectorAll("input[name='agent-role']").forEach((el) => {
         el.checked = el.value === "worker";
@@ -2827,6 +2849,20 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       if ($("agent-picture")) $("agent-picture").value = draftPicture;
       if ($("agent-enabled-row")) $("agent-enabled-row").hidden = !(bot && bot.slug);
       if ($("agent-enabled")) $("agent-enabled").checked = !bot || bot.enabled !== false;
+      {
+        const lockIntro = !!(bot && bot.slug === PAYNE_SLUG);
+        if ($("agent-intro-enabled")) {
+          $("agent-intro-enabled").checked = !bot || bot.intro_enabled !== false;
+          $("agent-intro-enabled").disabled = lockIntro;
+        }
+        if ($("agent-intro")) {
+          $("agent-intro").value = (bot && bot.intro)
+            ? bot.intro
+            : "I am on deck. Standing orders are noted.";
+          $("agent-intro").disabled = lockIntro;
+          $("agent-intro").readOnly = lockIntro;
+        }
+      }
       if ($("agent-role-row")) $("agent-role-row").hidden = !!(bot && bot.locked);
       document.querySelectorAll("input[name='agent-role']").forEach((el) => {
         el.checked = el.value === ((bot && bot.role) || "worker");
@@ -3081,13 +3117,18 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       const voiceEl = $("agent-voice");
       const voice = (whisperReady && voiceEl) ? (voiceEl.value || "") : "";
       const enabled = !($("agent-enabled")) || $("agent-enabled").checked;
+      const introEnabled = !($("agent-intro-enabled")) || $("agent-intro-enabled").checked;
+      const intro = ($("agent-intro") && $("agent-intro").value || "").trim()
+        || "I am on deck. Standing orders are noted.";
       if (editingPayne) {
         if (!payneOrder.length) payneOrder = ["goose"];
         const body = {
           slug: PAYNE_SLUG,
           picture: draftPicture || ($("agent-picture") && $("agent-picture").value) || "",
           voice: voice,
-          enabled: enabled
+          enabled: enabled,
+          intro_enabled: true,
+          intro: "I am on deck. Standing orders are noted."
         };
         payneOrder.forEach((id, i) => { body["provider_" + i] = id; });
         attachLoadout(body);
@@ -3114,6 +3155,8 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         voice: voice,
         enabled: enabled,
         role: radioValue("agent-role", "worker"),
+        intro_enabled: introEnabled,
+        intro: intro,
         save_pass: !box || box.checked
       };
       if (editSlug) {
