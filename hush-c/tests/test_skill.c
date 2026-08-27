@@ -31,6 +31,29 @@ static int catalog_has(const hush_skill_catalog_t *cat, const char *id)
     return 0;
 }
 
+/* Reads a seeded ~/.hush/skills/system/<slug>/SKILL.md and greps needle. */
+static int seed_body_has(const char *home, const char *slug, const char *needle)
+{
+    char path[512];
+    char buf[2048];
+    FILE *fp;
+    size_t nread;
+    int n;
+
+    if (home == NULL || slug == NULL || needle == NULL)
+        return 0;
+    n = snprintf(path, sizeof(path), "%s/skills/system/%s/SKILL.md", home, slug);
+    if (n < 0 || (size_t)n >= sizeof(path))
+        return 0;
+    fp = fopen(path, "r");
+    if (fp == NULL)
+        return 0;
+    nread = fread(buf, 1, sizeof(buf) - 1, fp);
+    buf[nread] = '\0';
+    fclose(fp);
+    return strstr(buf, needle) != NULL;
+}
+
 int main(void)
 {
     static hush_skill_catalog_t cat;
@@ -87,9 +110,6 @@ int main(void)
         char ids[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
         size_t nids = 0;
         char fat[HUSH_SKILL_BODY_MAX];
-        char path[256];
-        FILE *fp;
-        char buf[512];
 
         for (i = 0; i < cat.nskills; i++) {
             if (strcmp(cat.skills[i].role, HUSH_SKILL_ROLE_CHAPERON) == 0)
@@ -116,54 +136,30 @@ int main(void)
         expect(!catalog_has(&cat, "system:skillui-extract"), "old skillui gone");
         expect(!catalog_has(&cat, "system:on-topic"), "folded on-topic gone");
         expect(!catalog_has(&cat, "system:no-self-mention"), "folded self-mention gone");
-        snprintf(path, sizeof(path),
-                 "%s/skills/system/canvas-coach/SKILL.md", home);
-        fp = fopen(path, "r");
-        expect(fp != NULL, "coach file");
-        if (fp != NULL) {
-            buf[fread(buf, 1, sizeof(buf) - 1, fp)] = '\0';
-            fclose(fp);
-            expect(strstr(buf, "Hush-adapted") != NULL, "coach adapted");
-        }
-        snprintf(path, sizeof(path),
-                 "%s/skills/system/mobile-trace/SKILL.md", home);
-        fp = fopen(path, "r");
-        expect(fp != NULL, "mobile file");
-        if (fp != NULL) {
-            buf[fread(buf, 1, sizeof(buf) - 1, fp)] = '\0';
-            fclose(fp);
-            expect(strstr(buf, "Hush-adapted") != NULL, "mobile adapted");
-            expect(strstr(buf, "Android") != NULL, "names Android");
-            expect(strstr(buf, "iOS") != NULL, "names iOS");
-            expect(strstr(buf, "Claude Code only") == NULL, "not claude leftover");
-        }
-        snprintf(path, sizeof(path),
-                 "%s/skills/system/hive-look/SKILL.md", home);
-        fp = fopen(path, "r");
-        expect(fp != NULL, "look file");
-        if (fp != NULL) {
-            buf[fread(buf, 1, sizeof(buf) - 1, fp)] = '\0';
-            fclose(fp);
-            expect(strstr(buf, "Hush-adapted") != NULL, "look adapted");
-        }
-        snprintf(path, sizeof(path),
-                 "%s/skills/system/hive-apps/SKILL.md", home);
-        fp = fopen(path, "r");
-        expect(fp != NULL, "apps file");
-        if (fp != NULL) {
-            buf[fread(buf, 1, sizeof(buf) - 1, fp)] = '\0';
-            fclose(fp);
-            expect(strstr(buf, "Hush-adapted") != NULL, "apps adapted");
-        }
-        snprintf(path, sizeof(path),
-                 "%s/skills/system/hive-teardown/SKILL.md", home);
-        fp = fopen(path, "r");
-        expect(fp != NULL, "teardown file");
-        if (fp != NULL) {
-            buf[fread(buf, 1, sizeof(buf) - 1, fp)] = '\0';
-            fclose(fp);
-            expect(strstr(buf, "Hush-adapted") != NULL, "teardown adapted");
-        }
+        expect(seed_body_has(home, "canvas-coach", "Hush-adapted"), "coach adapted");
+        expect(seed_body_has(home, "canvas-coach", "obra/superpowers"),
+               "superpowers source");
+        expect(seed_body_has(home, "mobile-trace", "Hush-adapted"), "mobile adapted");
+        expect(seed_body_has(home, "mobile-trace", "SimoneAvogadro"),
+               "android source");
+        expect(seed_body_has(home, "mobile-trace", "iosre"), "ios source");
+        expect(seed_body_has(home, "mobile-trace", "Android"), "names Android");
+        expect(seed_body_has(home, "mobile-trace", "iOS"), "names iOS");
+        expect(!seed_body_has(home, "mobile-trace", "Claude Code only"),
+               "not claude leftover");
+        expect(seed_body_has(home, "hive-teardown", "Hush-adapted"),
+               "teardown adapted");
+        expect(seed_body_has(home, "hive-teardown", "yanliudesign"),
+               "teardown source");
+        expect(seed_body_has(home, "hive-look", "Hush-adapted"), "look adapted");
+        expect(seed_body_has(home, "hive-look", "Trystan-SA"), "design source");
+        expect(seed_body_has(home, "hive-look", "nextlevelbuilder"),
+               "ui-ux-pro-max source");
+        expect(seed_body_has(home, "hive-look", "plugin87"), "ux-ui-agent source");
+        expect(!seed_body_has(home, "hive-look", "npx skills add"),
+               "look not npm leftover");
+        expect(seed_body_has(home, "hive-apps", "Hush-adapted"), "apps adapted");
+        expect(seed_body_has(home, "hive-apps", "Shubhamsaboo"), "llm-apps source");
         memset(ids, 0, sizeof(ids));
         nids = 0;
         expect(hush_skill_try_equip(&cat, ids, &nids, "system:civility",

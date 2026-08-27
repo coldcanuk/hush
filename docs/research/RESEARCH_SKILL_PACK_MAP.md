@@ -127,6 +127,23 @@ topic-leash, token-budget, bring-back, hop-cap, cool-down, no-loop, civility, se
 
 Locked templates: Coach equips `system:canvas-coach`. Auditor equips `system:hive-audit`. No new locked army.
 
+## Shipped after MAP (grouped)
+
+| Cluster | Slug | Role | Named source |
+|---|---|---|---|
+| Chaperon rails | topic-leash, token-budget, bring-back, hop-cap, cool-down, no-loop, civility, secret-watch, pii-redact, rate-limit, human-cue, silence-nudge, claim-check, channel-kind, job-cap, night-watch, conflict-break, summary-handoff, guardrail-log, chaperon-ack | chaperon | hive (20) |
+| Reverse engineering | token-extract | worker | SkillUI C |
+| Reverse engineering | repo-trace, protocol-trace | worker | hive |
+| Reverse engineering | mobile-trace | worker | SimoneAvogadro + iosre (fold) |
+| Reverse engineering | hive-teardown | worker | yanliudesign |
+| Design / UX | hive-look | worker | Trystan-SA + nextlevelbuilder slice + plugin87 a11y |
+| Quality / process | canvas-coach | worker | Microsoft + obra/superpowers |
+| Quality / process | write-legible, hive-review, hive-reflect, hive-patterns | worker/any | VoltAgent, rampstackco, haddock, evoiz |
+| Security | hive-audit | worker | Cloudflare |
+| Social / SEO | hive-voice, hive-seo | worker | charlie947, AgriciDaniel |
+| Hive craft | hive-apps | worker | Shubhamsaboo slice |
+| Hive craft | forge-skill | any | canonical |
+
 ## Not shipped
 
 jadx, Fernflower, class-dump, Frida, Theos, npm `ui-ux-pro-max-cli`, 84-style CSV, 14 Claude Design files as chips, Superpowers Skill-tool bootstrap, awesome-llm-apps full index.
