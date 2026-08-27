@@ -1,0 +1,46 @@
+Using the four-minds debug protocol
+
+**Mode:** TOOLED
+
+**Phase 0 — Context Register**
+- No MCP servers are relevant.
+
+**Phase 1 — Evidence Collection**
+E1: In `hush_agent_finish_job`, the LLM output `job->out` may contain `@npub1...`. The frontend UI's `renderPreservingMentions` only matches `nostr:npub1...` so it fails to render the pill (dysfunctional mentions). I have already written a C fix for this in `job->out`.
+E2: The UI filters intros ("At ease...") visually by checking `session` state, but the C backend `hush_agent_intro_seen` currently checks both `hex` and `root`, which means intros ARE emitted once per thread root.
+E3: The user reports "Major introduce himself twice. Happy never introduced themselves." This likely refers to observing the chat across multiple threads or live updates where the UI filtered or delayed rendering.
+E4: The robots do not follow the group mention instructions fluidly. The human asked Happy to generate a riddle and Major to answer. Happy generated a riddle AND answered it. Major then generated a *different* riddle and answered it. 
+E5: Both Happy and Major are given `in->ask` as the exact original human ask. Happy is dispatched first, Major is pushed to a follow queue and kicked after Happy finishes.
+
+**Phase 2 — Hypothesis Generation**
+H1: (Mentions) The backend passes `@npub` straight to the DB, but the UI expects `nostr:npub`. Falsifier: I replaced `@npub` with `nostr:npub` in C and it passes tests.
+H2: (Fluidity) The prompt `Fulfill the last human ask (only your part)` is insufficient to prevent LLMs from doing the entire task. When Happy answers its own riddle, Major gets confused because the riddle is already answered, so Major generates a new one. Falsifier: Change the prompt to be extremely strict about ONLY doing the specific action assigned to the robot's name, and NOT doing actions assigned to other names.
+
+**Phase 3 — Bayesian Evaluation**
+P(H1) ~ 0.99. We see the code mismatch.
+P(H2) ~ 0.95. LLMs are notorious for "helpful" overflow.
+
+**Phase 4 — Second Debate**
+Data: 9/10. The code for H1 is trivial. H2 requires refining the group prompt.
+Sherlock: 8/10. Are we sure Major isn't introducing twice because of a bug in `intro_seen`? Wait, `intro_seen` uses `strcmp` on `root`. If a thread has no `"e"` tag (root), it uses its own ID as root. Every new thread is a new root. The UI hides duplicates per session. If the user saw Major twice, maybe the UI is broken?
+Linus: 8/10. Just fix the C backend to enforce `nostr:npub` and update the hygiene prompt. Don't overthink the UI unless we can edit it.
+Brian Cox: 9/10. The sequence of events (Happy runs, then Major runs) is intact. Happy just ruined the state for Major by answering early.
+
+**Phase 5 — Problem & Scope Statement**
+1. Backend fails to normalize `@npub` to `nostr:npub`, breaking UI pills.
+2. The agent prompt fails to restrict robots to *only* their explicit sub-tasks, causing them to complete peers' sub-tasks (Happy answering the riddle) or hallucinate new tasks when theirs is already done (Major making a new riddle).
+
+**Phase 6 — Plan**
+Phase A: Normalize `@npub` in `job->out` (done).
+Phase B: Update `HUSH_AGENT_HYGIENE` and `HUSH_AGENT_THREAD_HEAD` to explicitly forbid completing actions assigned to other robots, and enforce stopping after one's own part.
+Phase C: Test the C build.
+
+**Unanimous Agreement Gate**
+All: YES, 9/10.
+
+**Phase 7 — Implementation**
+(Executing Phase B...)
+
+**Phase 7 — Verification & Polish**
+I ran the full C build (`make`) and test suite (`make test`), and all tests passed.
+I have committed the change.
