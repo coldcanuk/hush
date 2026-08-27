@@ -680,11 +680,9 @@
   border: 2px solid #3a4a55; background: #0f1419; color: #9cf; border-radius: 4px;
   user-select: none; touch-action: none;
 }
-.skill-chip[data-scope="system"], .skill-gem[data-scope="system"] {
-  border-color: #d4a017; color: #fc6; box-shadow: 0 0 6px #d4a01755;
-}
+.skill-chip[data-scope="system"], .skill-gem[data-scope="system"],
 .skill-chip[data-scope="user"], .skill-gem[data-scope="user"] {
-  border-color: #0ff; box-shadow: 0 0 6px #0ff4;
+  border-color: #d4a017; color: #fc6; box-shadow: 0 0 6px #d4a01755;
 }
 .skill-chip[data-scope="robot"], .skill-gem[data-scope="robot"] {
   border-color: #c6f; color: #e8f; box-shadow: 0 0 6px #c6f4;
@@ -1322,7 +1320,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         <h2>Forge a skill</h2>
         <button class="drawer-x" id="forge-close" type="button" aria-label="Close forge">×</button>
       </div>
-      <p class="help">Uses the system-wide forge-skill. Equip the new item onto this robot after it is written.</p>
+      <p class="help">Forge writes a new SKILL.md. System skills are application-wide. This robot skills belong only to the robot being edited.</p>
       <label for="forge-name">Name</label>
       <input id="forge-name" type="text" maxlength="48" placeholder="joke-book">
       <label for="forge-summary">Summary</label>
@@ -1330,7 +1328,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       <label for="forge-body">Body</label>
       <textarea id="forge-body" maxlength="4000" placeholder="What the robot should do."></textarea>
       <p class="help">Scope</p>
-      <label><input type="radio" name="forge-scope" value="user" checked> User-wide</label>
+      <label><input type="radio" name="forge-scope" value="user" checked> System (application-wide)</label>
       <label><input type="radio" name="forge-scope" value="robot"> This robot</label>
       <p class="warn" id="forge-err"></p>
       <div class="actions">
@@ -5131,7 +5129,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       });
     }
     function skillById(id) {
-      return skillCatalog.find((x) => x.id === id) || { id: id, name: id, scope: "user" };
+      return skillCatalog.find((x) => x.id === id) || { id: id, name: id, scope: "system" };
     }
     function skillSig(skill) {
       const n = String((skill && skill.name) || (skill && skill.id) || "?");
@@ -5184,12 +5182,12 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         armory.textContent = "Stash empty for this role.";
         return;
       }
-      ["system", "user", "robot"].forEach((scope) => {
+      ["system", "robot"].forEach((scope) => {
         const rows = list.filter((s) => s.scope === scope);
         if (!rows.length) return;
         const lbl = document.createElement("div");
         lbl.className = "skill-scope-lbl";
-        lbl.textContent = scope;
+        lbl.textContent = (scope === "robot") ? "This robot" : "System";
         armory.appendChild(lbl);
         rows.forEach((s) => armory.appendChild(makeSkillGem(s, {})));
       });
@@ -5247,7 +5245,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       b.type = "button";
       b.className = "skill-gem" + (o.neighbor ? " neighbor" : "") +
         (skillHeld && skillHeld.skill && skillHeld.skill.id === skill.id ? " held" : "");
-      b.dataset.scope = skill.scope || "user";
+      b.dataset.scope = skill.scope || "system";
       b.dataset.id = skill.id;
       b.title = (skill.name || skill.id) + (skill.summary ? " — " + skill.summary : "");
       b.innerHTML = "<span class=\"sig\">" + esc(skillSig(skill)) +
