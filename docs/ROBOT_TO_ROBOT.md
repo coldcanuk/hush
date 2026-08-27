@@ -16,3 +16,43 @@ Jobs receive this as `HUSH_AGENT_PEER_STANDARD` in prompt and rules
    others' names and npubs and may choose own reply, one cooperative
    reply, a split, or a short conversation — without reordering the
    original mentions.
+
+## Coordination modes (how the relay dispatches a human note)
+
+The relay classifies a human note over N tagged robots and chooses one
+mode.
+
+| N | Human intent | Mode |
+|---|--------------|------|
+| 1 | any | **solo** — the robot does the whole ask |
+| N | each robot has its own clause (`@A do X. @B do Y`) | **explicit** — each robot receives only its own clause |
+| 2 | undirected broadcast (`@A @B plan it`) | **cooperate** — pair divides labor, no leader |
+| 3+ | undirected broadcast | **orchestrate** — a leader plans the division of labor |
+
+### Leader election (3+)
+
+- `Major` (Payne) leads when present.
+- Otherwise the robot with the most leadership skills leads
+  (`system:hive-patterns`, `system:conflict-break`, `system:canvas-coach`,
+  `system:summary-handoff`, `system:job-cap`); ties go to the first-mentioned.
+- A leader planning pass emits a fenced plan:
+
+  ````
+  ```plan
+  order: fifo
+  parallel: no
+  Happy: generate a riddle
+  Scout: build a slide
+  ```
+  ````
+
+  `order` is `fifo` or `lifo` (`filo`→`lifo`, `lilo`→`fifo`). `parallel` is
+  `yes` or `no`. The relay parses this block and dispatches each non-leader
+  robot its own sub-task in that order.
+
+### Explicit delegation detection
+
+Deterministic first: count `nostr:<npub>` tokens that are each followed by a
+substantive clause. Every robot having its own clause is explicit; at most one
+having a clause is a broadcast; anything between is ambiguous (currently
+treated as broadcast; LLM classification is a follow-up).
