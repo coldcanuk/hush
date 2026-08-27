@@ -29,9 +29,9 @@ case "$cmd" in
     save)
         [ -n "$path" ] || die "usage: hush-pass save <path> [value]"
         if [ "${3+x}" = "x" ]; then
-            printf '%s\n' "$3" | pass insert -e -m -f "${PREFIX}/${path}" >/dev/null
+            printf '%s\n' "$3" | pass insert -m -f "${PREFIX}/${path}" >/dev/null
         else
-            pass insert -e -m -f "${PREFIX}/${path}" >/dev/null
+            pass insert -m -f "${PREFIX}/${path}" >/dev/null
         fi
         ;;
     get)
