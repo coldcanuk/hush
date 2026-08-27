@@ -1110,7 +1110,7 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
         const char *np = parent->tags[t][1];
         if (np == NULL || np[0] == '\0')
             continue;
-        if (bot->npub && strcmp(np, bot->npub) == 0)
+        if (bot->hex && strcmp(np, bot->hex) == 0)
             continue; /* self */
         if (hush_agent_is_human(in->launch, np))
             continue;
@@ -1147,7 +1147,7 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
                 off += nlen;
             }
         }
-        const char *delib = " You + these peers were mentioned together. Decide strategy (own reply / cooperate on one / split / full convo among us). Call peers by emitting their nostr:npub in content.";
+        const char *delib = " You + these peers were mentioned together. Decide strategy (own reply / cooperate on one / split / full convo among us). Call peers by emitting their nostr:npub in content with at least 1 word of context. Never leave a mention hanging at the end of a message.";
         if (off + strlen(delib) < sizeof(job->prompt)) {
             memcpy(job->prompt + off, delib, strlen(delib));
         }
