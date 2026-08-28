@@ -20,6 +20,7 @@
 #include "hush_provider.h"
 #include "hush_relay.h"
 #include "hush_roster.h"
+#include "hush_seg.h"
 
 enum {
     HUSH_AGENT_INTRO_MAX = 32,
@@ -205,6 +206,10 @@ typedef struct {
     const char *role;
     const char *intro;
     int intro_enabled;
+    /* Attached file context (points into the roster agent). Empty when the
+     * robot carries no files. Consumed by hush_agent_append_context(). */
+    const hush_roster_context_t *context;
+    size_t ncontext;
 } hush_agent_robot_t;
 
 typedef struct {
@@ -724,6 +729,8 @@ static int hush_agent_lookup_robot(hush_agent_robot_t *out,
         out->role = agent->role[0] ? agent->role : HUSH_ROSTER_ROLE_WORKER;
         out->intro = agent->intro[0] ? agent->intro : HUSH_ROSTER_INTRO_DEFAULT;
         out->intro_enabled = agent->intro_enabled;
+        out->context = agent->context;
+        out->ncontext = agent->ncontext;
         return 1;
     }
     return 0;
@@ -1212,6 +1219,61 @@ static void hush_agent_fill_thread(char *out, size_t outsz,
     hush_agent_walk_thread(out, outsz, evs, n, &walk);
 }
 
+/* True when a context MIME is Markdown (chunk with fence awareness). */
+static int hush_agent_is_markdown(const char *mime)
+{
+    if (mime == NULL)
+        return 0;
+    return strcmp(mime, HUSH_ROSTER_MIME_MARKDOWN) == 0 ||
+           strcmp(mime, HUSH_ROSTER_MIME_XMARKDOWN) == 0;
+}
+
+/* Appends bounded, structurally-chunked file context to the robot note.
+ * hush_seg splits each body so the first included chunk ends on a semantic
+ * boundary (sentence/paragraph, or a markdown fence) rather than mid-word.
+ * Stops when the note buffer is full. No-op when the robot has no files. */
+static void hush_agent_append_context(char *note, size_t notesz,
+                                      const hush_agent_robot_t *bot)
+{
+    size_t off;
+    size_t i;
+
+    assert(note != NULL);
+    assert(notesz > 0);
+    assert(bot != NULL);
+    off = strlen(note);
+    for (i = 0; i < bot->ncontext && i < (size_t)HUSH_ROSTER_CONTEXT_MAX; i++) {
+        const hush_roster_context_t *ctx = &bot->context[i];
+        hush_seg_span_t span;
+        size_t len;
+        int n;
+
+        if (off + 2 >= notesz)
+            return;
+        if (ctx->text[0] == '\0')
+            continue;
+        n = snprintf(note + off, notesz - off, "\n[file: %s]\n", ctx->name);
+        if (n < 0 || (size_t)n >= notesz - off)
+            return;
+        off += (size_t)n;
+        if (off + 2 >= notesz)
+            return;
+        if (hush_seg_split(ctx->text, ctx->bytes,
+                           hush_agent_is_markdown(ctx->mime),
+                           notesz - off - 1, notesz - off - 1,
+                           &span, 1) != 1)
+            continue;
+        len = span.len;
+        if (len > notesz - off - 1)
+            len = notesz - off - 1;
+        if (len == 0)
+            return;
+        memcpy(note + off, ctx->text + span.off, len);
+        off += len;
+        note[off] = '\0';
+    }
+}
+
 static void hush_agent_fill_job(hush_agent_job_t *job,
                                 const hush_agent_job_in_t *in)
 {
@@ -1369,6 +1431,7 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
                            in->launch, parent, &names);
     if (job->note[0] == '\0')
         hush_agent_copy(job->note, sizeof(job->note), parent->content);
+    hush_agent_append_context(job->note, sizeof(job->note), bot);
 
     /* Pills / channel topic -> system prompt injection.
      * If the channel has an "about" (topic), append a short pointer so the
