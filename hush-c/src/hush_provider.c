@@ -374,15 +374,18 @@ void hush_provider_last_error(char *out, size_t outsz)
     hush_provider_copy(out, outsz, g_last_error);
 }
 
-/* True when id documents a self-update subcommand ("<binary> update"). Kept
- * deliberately narrow: only runtimes whose update command is documented are
- * spawned. New runtimes opt in here once their update routine is confirmed. */
+/* True when id documents a self-update subcommand ("<binary> update"). Only
+ * runtimes whose update routine has been verified against their CLI help are
+ * spawned (grok/codex/copilot/goose/agy all expose "update"). */
 static int hush_provider_has_update(const char *id)
 {
     if (id == NULL)
         return 0;
     return strcmp(id, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0 ||
-           strcmp(id, HUSH_ROSTER_PROVIDER_CODEX) == 0;
+           strcmp(id, HUSH_ROSTER_PROVIDER_CODEX) == 0 ||
+           strcmp(id, HUSH_ROSTER_PROVIDER_COPILOT) == 0 ||
+           strcmp(id, HUSH_ROSTER_PROVIDER_GOOSE) == 0 ||
+           strcmp(id, HUSH_ROSTER_PROVIDER_AGY) == 0;
 }
 
 /* fork + exec "<binary> update" without waiting. Parent returns immediately. */
@@ -1191,6 +1194,11 @@ static int hush_provider_login_argv(char **argv, size_t argvsz, const char *id)
     }
     if (strcmp(id, HUSH_ROSTER_PROVIDER_CODEX) == 0) {
         argv[0] = (char *)"codex";
+        argv[1] = (char *)"login";
+        return 1;
+    }
+    if (strcmp(id, HUSH_ROSTER_PROVIDER_COPILOT) == 0) {
+        argv[0] = (char *)"copilot";
         argv[1] = (char *)"login";
         return 1;
     }

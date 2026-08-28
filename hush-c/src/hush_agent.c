@@ -46,6 +46,9 @@ enum {
 
 #define HUSH_AGENT_GROK_BIN "grok"
 #define HUSH_AGENT_AGY_BIN "agy"
+#define HUSH_AGENT_COPILOT_BIN "copilot"
+#define HUSH_AGENT_CODEX_BIN "codex"
+#define HUSH_AGENT_GOOSE_BIN "goose"
 #define HUSH_AGENT_AGY_PROMPT_MAX \
     (HUSH_ROSTER_PROMPT_MAX + HUSH_ROSTER_PROMPT_MAX + \
      HUSH_EVENT_MAX_CONTENT + 16)
@@ -323,6 +326,11 @@ static void hush_agent_fill_thread(char *out, size_t outsz,
 static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job);
 static void hush_agent_exec_grok(const hush_agent_job_t *job);
 static void hush_agent_exec_agy(const hush_agent_job_t *job);
+static void hush_agent_exec_copilot(const hush_agent_job_t *job);
+static void hush_agent_exec_codex(const hush_agent_job_t *job);
+static void hush_agent_exec_goose(const hush_agent_job_t *job);
+static void hush_agent_build_combined(char *out, size_t outsz,
+                                      const hush_agent_job_t *job);
 static hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job);
 static void hush_agent_fill_fixup(hush_agent_job_t *job,
                                   const char *instruction,
@@ -1042,15 +1050,26 @@ static int hush_agent_grok_ready(void)
 static int hush_agent_runtime_ready(const char *provider)
 {
     hush_provider_status_t st;
+    unsigned int flags;
 
     if (provider == NULL || provider[0] == '\0')
         return 0;
-    if (strcmp(provider, HUSH_ROSTER_PROVIDER_AGY) == 0) {
-        /* agy is spawn-only and runs headless as text generation: presence of
-         * the binary is the only gate (no OAuth/home config in the harness). */
-        if (hush_provider_status(&st, HUSH_ROSTER_PROVIDER_AGY) != HUSH_OK)
+    /* Runtimes with a verified headless CLI execute on their own binary:
+     * agy (spawn-only), copilot, codex, goose. Each gates on binary presence,
+     * and OAUTH-flagged providers additionally require a home config. Every
+     * other provider still falls back to grok-build. */
+    if (strcmp(provider, HUSH_ROSTER_PROVIDER_AGY) == 0 ||
+        strcmp(provider, HUSH_ROSTER_PROVIDER_COPILOT) == 0 ||
+        strcmp(provider, HUSH_ROSTER_PROVIDER_CODEX) == 0 ||
+        strcmp(provider, HUSH_ROSTER_PROVIDER_GOOSE) == 0) {
+        if (hush_provider_status(&st, provider) != HUSH_OK)
             return 0;
-        return st.has_binary;
+        if (!st.has_binary)
+            return 0;
+        flags = hush_provider_flags(provider);
+        if ((flags & HUSH_PROVIDER_FLAG_OAUTH) && !st.has_home)
+            return 0;
+        return 1;
     }
     return hush_agent_grok_ready();
 }
@@ -1483,16 +1502,25 @@ static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job)
         (void)dup2(dn, STDERR_FILENO);
         close(dn);
     }
-    /* ToS constraint: providers flagged SPAWN_ONLY run as an independent
-     * process (never wrapped) and headless as a text-generation model. agy is
-     * the only such runtime today; any new SPAWN_ONLY provider must add its
-     * own executor alongside exec_agy.
+    /* Multi-provider dispatch. fixup/plan/elect prompts are grok-tuned and
+     * stay on grok regardless of the robot's provider; only a normal mention
+     * reply (NOTE_JOB) is routed to the provider's own verified headless CLI.
      *
-     * SPAWN_ONLY providers only handle a normal mention reply; fixup/plan/
-     * elect prompts are grok-tuned and stay on grok regardless of provider. */
-    if (job->kind == HUSH_AGENT_KIND_NOTE_JOB &&
-        (hush_provider_flags(job->provider) & HUSH_PROVIDER_FLAG_SPAWN_ONLY))
+     * SPAWN_ONLY providers (agy) run as an independent process, never wrapped.
+     * copilot/codex/goose each have a verified non-interactive mode; every
+     * other provider still falls back to grok-build until its CLI is confirmed. */
+    if (job->kind != HUSH_AGENT_KIND_NOTE_JOB) {
+        hush_agent_exec_grok(job);
+        return;
+    }
+    if (hush_provider_flags(job->provider) & HUSH_PROVIDER_FLAG_SPAWN_ONLY)
         hush_agent_exec_agy(job);
+    else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_COPILOT) == 0)
+        hush_agent_exec_copilot(job);
+    else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_CODEX) == 0)
+        hush_agent_exec_codex(job);
+    else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_GOOSE) == 0)
+        hush_agent_exec_goose(job);
     else
         hush_agent_exec_grok(job);
 }
@@ -1530,21 +1558,78 @@ static void hush_agent_exec_grok(const hush_agent_job_t *job)
     _exit(127);
 }
 
+static void hush_agent_build_combined(char *out, size_t outsz,
+                                      const hush_agent_job_t *job)
+{
+    int n;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    assert(job != NULL);
+    n = snprintf(out, outsz, "%s\n%s\n%s",
+                 job->prompt, job->rules, job->note);
+    if (n < 0 || (size_t)n >= outsz)
+        out[outsz - 1] = '\0';
+}
+
 static void hush_agent_exec_agy(const hush_agent_job_t *job)
 {
     char combined[HUSH_AGENT_AGY_PROMPT_MAX];
     char *argv[4];
-    int n;
 
     assert(job != NULL);
-    n = snprintf(combined, sizeof(combined), "%s\n%s\n%s",
-                 job->prompt, job->rules, job->note);
-    if (n < 0 || (size_t)n >= sizeof(combined))
-        combined[sizeof(combined) - 1] = '\0';
+    hush_agent_build_combined(combined, sizeof(combined), job);
     argv[0] = (char *)HUSH_AGENT_AGY_BIN;
     argv[1] = (char *)"-p";
     argv[2] = combined;
     argv[3] = NULL;
+    execvp(argv[0], argv);
+    _exit(127);
+}
+
+static void hush_agent_exec_copilot(const hush_agent_job_t *job)
+{
+    char combined[HUSH_AGENT_AGY_PROMPT_MAX];
+    char *argv[5];
+
+    assert(job != NULL);
+    hush_agent_build_combined(combined, sizeof(combined), job);
+    argv[0] = (char *)HUSH_AGENT_COPILOT_BIN;
+    argv[1] = (char *)"-p";
+    argv[2] = combined;
+    argv[3] = (char *)"--allow-all";
+    argv[4] = NULL;
+    execvp(argv[0], argv);
+    _exit(127);
+}
+
+static void hush_agent_exec_codex(const hush_agent_job_t *job)
+{
+    char combined[HUSH_AGENT_AGY_PROMPT_MAX];
+    char *argv[4];
+
+    assert(job != NULL);
+    hush_agent_build_combined(combined, sizeof(combined), job);
+    argv[0] = (char *)HUSH_AGENT_CODEX_BIN;
+    argv[1] = (char *)"exec";
+    argv[2] = combined;
+    argv[3] = NULL;
+    execvp(argv[0], argv);
+    _exit(127);
+}
+
+static void hush_agent_exec_goose(const hush_agent_job_t *job)
+{
+    char combined[HUSH_AGENT_AGY_PROMPT_MAX];
+    char *argv[5];
+
+    assert(job != NULL);
+    hush_agent_build_combined(combined, sizeof(combined), job);
+    argv[0] = (char *)HUSH_AGENT_GOOSE_BIN;
+    argv[1] = (char *)"run";
+    argv[2] = (char *)"--text";
+    argv[3] = combined;
+    argv[4] = NULL;
     execvp(argv[0], argv);
     _exit(127);
 }

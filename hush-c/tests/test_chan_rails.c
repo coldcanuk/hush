@@ -74,9 +74,11 @@ int main(void)
     (void)mkdir(home, 0700);
     if (setenv("HUSH_CONFIG_DIR", cfg, 1) != 0)
         return 1;
-    /* Isolate HOME so grok/provider detection can't reach a real ~/.grok and
-     * spawn a live grok binary during this unit test. */
+    /* Isolate HOME and PATH so grok/goose/copilot/codex/agy detection can't
+     * reach a real home or a live binary during this unit test. */
     if (setenv("HOME", home, 1) != 0)
+        return 1;
+    if (setenv("PATH", "/tmp/hush-empty-path", 1) != 0)
         return 1;
     if (setenv("HUSH_FAKE_PASS_DIR", "/tmp/hush-rails-pass", 1) != 0)
         return 1;

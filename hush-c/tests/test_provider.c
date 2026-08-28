@@ -279,6 +279,14 @@ int main(void)
                "grok login spawn");
         hush_provider_last_error(err, sizeof(err));
         expect(err[0] == '\0', "grok login no error");
+        snprintf(path, sizeof(path), "%s/copilot", bindir);
+        write_file(path, "#!/bin/sh\nexit 0\n");
+        if (chmod(path, 0755) != 0)
+            return 1;
+        expect(hush_provider_start_login("copilot") == HUSH_OK,
+               "copilot login spawn");
+        hush_provider_last_error(err, sizeof(err));
+        expect(err[0] == '\0', "copilot login no error");
         expect(hush_provider_start_login("goose") == HUSH_ERR_IO,
                "goose login refused");
         hush_provider_last_error(err, sizeof(err));
@@ -306,11 +314,13 @@ int main(void)
         write_file(path, "#!/bin/sh\nexit 0\n");
         if (chmod(path, 0755) != 0)
             return 1;
-        snprintf(newpath, sizeof(newpath), "%s:%s", bindir,
-                 getenv("PATH") != NULL ? getenv("PATH") : "");
+        /* Isolate PATH to the fake bin dir so real host binaries (goose, agy,
+         * …) never leak into the update scan and spawn real updates during
+         * the test. bindir already holds fake grok, copilot, and codex. */
+        snprintf(newpath, sizeof(newpath), "%s", bindir);
         if (setenv("PATH", newpath, 1) != 0)
             return 1;
-        expect(hush_provider_update_all() == 2, "update all spawns grok+codex");
+        expect(hush_provider_update_all() == 3, "update all spawns grok+copilot+codex");
         snprintf(saved_path, sizeof(saved_path), "%s",
                  getenv("PATH") != NULL ? getenv("PATH") : "");
         if (setenv("PATH", "/tmp/hush-empty-path", 1) != 0)
