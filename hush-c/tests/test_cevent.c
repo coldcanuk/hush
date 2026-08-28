@@ -40,6 +40,8 @@ int main(void)
     expect(strstr(json, "\"type\":\"intro\"") != NULL, "intro type");
     expect(strstr(json, "\"seq\":1") != NULL, "seq 1");
     expect(strstr(json, "\"seq\":2") != NULL, "seq 2");
+    expect(strstr(json, "\"drops\":0") != NULL, "no drops yet");
+    expect(hush_cevent_drops() == 0, "drops zero");
     hush_cevent_init();
     memcpy(ev.type, HUSH_CEVENT_FOLLOW, sizeof(HUSH_CEVENT_FOLLOW));
     for (i = 0; i < (size_t)HUSH_CEVENT_MAX + 2; i++)
@@ -47,6 +49,8 @@ int main(void)
     expect(hush_cevent_format_json(json, sizeof(json), &n) == HUSH_OK,
            "wrap json");
     expect(strstr(json, "\"seq\":3") != NULL, "kept seq after wrap");
+    expect(strstr(json, "\"drops\":2") != NULL, "drops recorded in json");
+    expect(hush_cevent_drops() == 2, "two drops after wrap");
     hush_cevent_init();
     if (g_fail)
         return 1;

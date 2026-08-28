@@ -41,7 +41,11 @@ void hush_cevent_init(void);
 /* Appends one event. due 0 means now. */
 hush_status_t hush_cevent_emit(const hush_cevent_t *in);
 
-/* Writes {"ok":true,"events":[...]} in seq order. */
+/* Writes {"ok":true,"drops":N,"events":[...]} in seq order. */
 hush_status_t hush_cevent_format_json(char *out, size_t outsz, size_t *out_len);
+
+/* Total events overwritten when the ring wrapped (oldest dropped). Lets a
+ * consumer detect that it may have missed signals and force a full refresh. */
+uint32_t hush_cevent_drops(void);
 
 #endif /* HUSH_CEVENT_H */

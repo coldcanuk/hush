@@ -16,6 +16,7 @@ static hush_cevent_t g_events[HUSH_CEVENT_MAX];
 static size_t g_head;
 static size_t g_n;
 static uint32_t g_seq;
+static uint32_t g_drops;
 
 static void hush_cevent_copy(char *dst, size_t dstsz, const char *src);
 static hush_status_t hush_cevent_put_one(char *out, size_t outsz, size_t *off,
@@ -27,6 +28,7 @@ void hush_cevent_init(void)
     g_head = 0;
     g_n = 0;
     g_seq = 0;
+    g_drops = 0;
 }
 
 hush_status_t hush_cevent_emit(const hush_cevent_t *in)
@@ -42,6 +44,7 @@ hush_status_t hush_cevent_emit(const hush_cevent_t *in)
     } else {
         idx = g_head;
         g_head = (g_head + 1) % (size_t)HUSH_CEVENT_MAX;
+        g_drops++;
     }
     slot = &g_events[idx];
     memset(slot, 0, sizeof(*slot));
@@ -56,6 +59,11 @@ hush_status_t hush_cevent_emit(const hush_cevent_t *in)
     return HUSH_OK;
 }
 
+uint32_t hush_cevent_drops(void)
+{
+    return g_drops;
+}
+
 hush_status_t hush_cevent_format_json(char *out, size_t outsz, size_t *out_len)
 {
     size_t off = 0;
@@ -65,7 +73,7 @@ hush_status_t hush_cevent_format_json(char *out, size_t outsz, size_t *out_len)
 
     if (out == NULL || outsz == 0)
         return HUSH_ERR_ARG;
-    n = snprintf(out, outsz, "{\"ok\":true,\"events\":[");
+    n = snprintf(out, outsz, "{\"ok\":true,\"drops\":%u,\"events\":[", g_drops);
     if (n < 0 || (size_t)n >= outsz)
         return HUSH_ERR_FULL;
     off = (size_t)n;
