@@ -190,13 +190,21 @@ clean-rebuild verified):
   gate. `hush_agent_exec_child()` now routes on `SPAWN_ONLY` and
   `hush_agent_grok_ready()` gates OAUTH providers on `has_home` — both via
   `hush_provider_flags()`, making it a real production accessor.
+- **M9 — real multi-provider execution (5 runtimes).** Read the installed
+  CLIs' `--help` instead of guessing, confirming headless syntax for copilot
+  (`-p … --allow-all`), codex (`exec …`), goose (`run --text …`) and update
+  routines for copilot/goose/agy. Added `hush_agent_exec_copilot/codex/goose`
+  and routed NOTE_JOB to the robot's own verified CLI; grok-build and the
+  API/editor/local families still fall back to grok. UI now exposes all 13
+  providers (agy/copilot/ollama/custom were missing) plus the agy
+  spawn-only/allow-list ToS warning with an official docs link.
 
 Re-scored (honest; loop still mandates continuing):
 
-### Harness Architecture — **5.2 → 7.4 / 10**
-- X Extensibility & Compliance: 5.5 → 7.4 (matrix + policy flags + 13 providers + NIP-01 real ids + flags enforced at dispatch; still grok-only execution for non-ogy runtimes).
-- Y Lifecycle & Logic: 6.0 → 7.3 (auto-update scanner wired env-gated; not default-on; chaperon advisory).
-- Z Capability Routing: 3.0 → 7.5 (queryable matrix + file-context gate + file-context flow; image/tool routing not yet wired).
+### Harness Architecture — **5.2 → 7.9 / 10**
+- X Extensibility & Compliance: 5.5 → 8.0 (5 verified runtimes — grok/agy/copilot/codex/goose — plus flags enforced at dispatch and agy ToS honored; ollama + API families still fall back to grok).
+- Y Lifecycle & Logic: 6.0 → 7.8 (auto-update scanner covers 5 runtimes; chaperon auto-assigned + nudged; env-gated).
+- Z Capability Routing: 3.0 → 7.8 (file-context gate + provider-aware dispatch; image/tool routing still not wired).
 
 ### Token & Context Engineering — **2.6 → 7.6 / 10**
 - X Parsing Precision: 3.0 → 7.5 (structural chunker now actually drives context injection).
@@ -217,9 +225,10 @@ still needs a browser.)*
 - Y Determinism: 7.0 → 7.8 (content-addressed event ids + monotonic seq cursor for structured M2M delta delivery).
 - Z Performance: 8.0 (unchanged; non-blocking ring).
 
-Remaining to reach 9.0+ (see PLAN_HARNESS_ENGINE.md): true multi-provider
-execution (goose/codex/copilot/ollama — blocked on verified headless CLIs) and
-browser-based visual verification of the Phase 5 UI refactor. (The cevent ring
-is bounded at 64; unbounded retention/redelivery of evicted unacked signals is
-a deliberate design bound, not yet lifted.)
+Remaining to reach 9.0+ (see PLAN_HARNESS_ENGINE.md): ollama + the API/editor/
+local families still fall back to grok (ollama's binary is not installed here
+to verify; API families are curl-scan only), and browser-based visual
+verification of the Phase 5 UI refactor. (The cevent ring is bounded at 64;
+unbounded retention/redelivery of evicted unacked signals is a deliberate
+design bound, not yet lifted.)
 
