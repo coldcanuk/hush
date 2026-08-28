@@ -53,6 +53,9 @@ typedef struct {
     char name[HUSH_ROSTER_NAME_MAX];
     char mime[HUSH_ROSTER_NAME_MAX];
     size_t bytes;
+    /* Plaintext/Markdown body, kept in memory for turn injection. Not
+     * serialized to JSON (session payload stays lean); lost on restart. */
+    char text[HUSH_ROSTER_CONTEXT_BYTES + 1];
 } hush_roster_context_t;
 
 typedef struct {

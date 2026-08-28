@@ -672,6 +672,15 @@ static hush_status_t hush_roster_copy_context(hush_roster_context_t *dst,
     hush_roster_copy_text(dst->mime, sizeof(dst->mime), src->mime,
                           HUSH_ROSTER_MIME_PLAIN);
     dst->bytes = n;
+    if (src->text != NULL) {
+        size_t k = 0;
+
+        while (k < sizeof(dst->text) - 1 && src->text[k] != '\0') {
+            dst->text[k] = src->text[k];
+            k++;
+        }
+        dst->text[k] = '\0';
+    }
     return HUSH_OK;
 }
 

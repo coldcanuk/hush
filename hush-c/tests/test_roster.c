@@ -81,6 +81,8 @@ int main(void)
     expect(hush_roster_add_agent(&roster, store, &agent, 1) == HUSH_OK,
            "agent");
     expect(roster.nagents == 1, "one agent");
+    expect(strcmp(roster.agents[0].context[0].text, "# stand to") == 0,
+           "context text stored");
     expect(strcmp(roster.agents[0].role, HUSH_ROSTER_ROLE_WORKER) == 0,
            "default worker");
     expect(strncmp(roster.agents[0].id.npub, "npub1", 5) == 0, "agent npub");
