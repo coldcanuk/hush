@@ -1113,12 +1113,21 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         <label><input type="radio" name="agent-provider" value="grok-build"> Grok Build</label>
         <label><input type="radio" name="agent-provider" value="codex"> Codex</label>
         <label><input type="radio" name="agent-provider" value="cline"> Cline</label>
+        <label><input type="radio" name="agent-provider" value="agy"> Antigravity</label>
+        <label><input type="radio" name="agent-provider" value="copilot"> Copilot</label>
+        <label><input type="radio" name="agent-provider" value="ollama"> Ollama</label>
         <label><input type="radio" name="agent-provider" value="gemini-api"> Gemini API</label>
         <label><input type="radio" name="agent-provider" value="xai-api"> xAI API</label>
         <label><input type="radio" name="agent-provider" value="openai-api"> OpenAI API</label>
         <label><input type="radio" name="agent-provider" value="anthropic-api"> Anthropic API</label>
         <label><input type="radio" name="agent-provider" value="deepseek-api"> Deepseek API</label>
+        <label><input type="radio" name="agent-provider" value="custom"> Custom endpoint</label>
       </div>
+      <p class="warn" id="agent-agy-warning" hidden>Antigravity (agy) runs as a text-generation
+        model only — Hush spawns it as an independent process and never wraps it. To enable
+        tool use, configure an allow-list manually. See the official
+        <a href="https://docs.antigravity.google/agents/config/allowlist" target="_blank"
+           rel="noopener">Antigravity documentation</a>.</p>
       <button class="cfg" id="provider-cfg" type="button" hidden
               title="Configure this provider.">✎</button>
       <p class="help" id="agent-pic-help">Robot picture (optional). Pick a sheet, then a tile.
@@ -1491,7 +1500,11 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       "xai-api": "xAI API",
       "openai-api": "OpenAI API",
       "anthropic-api": "Anthropic API",
-      "deepseek-api": "Deepseek API"
+      "deepseek-api": "Deepseek API",
+      "agy": "Antigravity",
+      "copilot": "Copilot",
+      "ollama": "Ollama",
+      "custom": "Custom endpoint"
     };
     const CONTEXT_MAX = 3;
     const PAYNE_PROVIDERS_MAX = 4;
@@ -1499,11 +1512,13 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     const HOME_CMDS = {
       "goose": "goose configure",
       "grok-build": "grok login --oauth",
-      "codex": "codex login"
+      "codex": "codex login",
+      "copilot": "copilot login"
     };
     const OAUTH_PROVIDERS = {
       "grok-build": "Log in with Grok OAuth",
-      "codex": "Log in with Codex OAuth"
+      "codex": "Log in with Codex OAuth",
+      "copilot": "Log in with Copilot OAuth"
     };
     const SECRET_FIELDS = [
       { id: "provider-key", kind: "api_key", has: "has_key", label: "API key" },
@@ -2699,6 +2714,8 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         }
       });
       if (btn && !id) btn.hidden = true;
+      const agyWarn = $("agent-agy-warning");
+      if (agyWarn) agyWarn.hidden = (id !== "agy");
     }
 
     async function loadProviders() {
