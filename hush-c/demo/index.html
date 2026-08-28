@@ -740,6 +740,54 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
 
 /* M4.1 progressive mention states (thinking -> reacting -> emoji) */
 
+/* ===== Phase 5 UI: responsive edit menu, spacious forge, 128px avatars ===== */
+
+/* Edit menu (Raise/Edit robot): widen and lay identity fields out as a
+   responsive two-column grid on desktop/tablet, single column on phones. */
+#agent-drawer .panel { width: min(60rem, 100%); }
+#agent-identity { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+#agent-identity .field { min-width: 0; }
+#agent-identity .field-wide { grid-column: 1 / -1; }
+
+/* Skills Forge: dedicated spacious screen with a large mono body editor. */
+#forge-drawer .panel { width: min(64rem, 100%); }
+#forge-drawer .forge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+#forge-drawer .forge-grid .field-wide { grid-column: 1 / -1; }
+#forge-drawer #forge-body {
+  min-height: 46vh; font-family: var(--mono); font-size: 0.9rem; line-height: 1.5;
+}
+
+/* Avatar selection window: dedicated 128px viewer + grid. */
+#avatar-drawer .panel { width: min(56rem, 100%); }
+.avatar-preview {
+  width: 128px; height: 128px; margin: 8px auto 4px; border: 2px solid var(--line);
+  border-radius: 16px; background-repeat: no-repeat; background-position: center;
+  background-size: cover; box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.avatar-preview.empty { background-color: var(--surface-2); background-image: none; }
+.avatar-sheets { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 10px 0 12px; }
+.avatar-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, 128px); gap: 10px;
+  justify-content: center; max-height: 52vh; overflow: auto; padding: 6px;
+}
+.avatar-cell {
+  width: 128px; height: 128px; padding: 0; border: 2px solid var(--line);
+  border-radius: 12px; cursor: pointer; background-repeat: no-repeat;
+  background-position: center; background-size: cover; background-color: var(--surface-2);
+}
+.avatar-cell.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+
+/* Tool rail: tighter, unobtrusive vertical activity bar (VS Code model). */
+#tool-rail { gap: 6px; padding: 6px; border-radius: 12px; }
+#tool-rail .rail-body { gap: 4px; }
+#tool-rail .iconbtn { padding: 6px 9px; font-size: 0.76rem; }
+
+/* Phone: collapse the two-column layouts back to a single column. */
+@media (max-width: 640px) {
+  #agent-identity, #forge-drawer .forge-grid { grid-template-columns: 1fr; }
+  #agent-identity .field-wide, #forge-drawer .forge-grid .field-wide { grid-column: auto; }
+}
+
 </style>
 </head>
 <body>
@@ -1029,28 +1077,34 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       <h2 id="agent-title">Raise a robot</h2>
       <p class="help" id="agent-help">Major will walk you through it.</p>
       <div id="agent-identity">
-      <label for="agent-name">Name</label>
-      <div class="pill-row">
-        <input id="agent-name" type="text" maxlength="48" placeholder="Sentry">
-        <button class="icon-plus" id="agent-name-add" type="button" aria-label="Add name">+</button>
+      <div class="field">
+        <label for="agent-name">Name</label>
+        <div class="pill-row">
+          <input id="agent-name" type="text" maxlength="48" placeholder="Sentry">
+          <button class="icon-plus" id="agent-name-add" type="button" aria-label="Add name">+</button>
+        </div>
+        <div class="pills" id="agent-name-pill"></div>
+        <p class="help">State the robot’s name. Leave blank to auto-generate one.</p>
       </div>
-      <div class="pills" id="agent-name-pill"></div>
-      <p class="help">State the robot’s name. Leave blank to auto-generate one.</p>
-      <label for="agent-prompt">System Prompt</label>
-      <div class="pill-row">
-        <textarea id="agent-prompt" maxlength="1000" placeholder="Watch the perimeter."></textarea>
-        <button class="icon-plus" id="agent-prompt-add" type="button" aria-label="Add system prompt">+</button>
+      <div class="field">
+        <label for="agent-prompt">System Prompt</label>
+        <div class="pill-row">
+          <textarea id="agent-prompt" maxlength="1000" placeholder="Watch the perimeter."></textarea>
+          <button class="icon-plus" id="agent-prompt-add" type="button" aria-label="Add system prompt">+</button>
+        </div>
+        <div class="pills" id="agent-prompt-pill"></div>
+        <p class="help" id="agent-prompt-help">Write its system prompt. Required.</p>
       </div>
-      <div class="pills" id="agent-prompt-pill"></div>
-      <p class="help" id="agent-prompt-help">Write its system prompt. Required.</p>
-      <label>Context files</label>
-      <div class="pill-row">
-        <input id="agent-file" type="file" accept=".txt,.md,text/plain,text/markdown" hidden>
-        <button class="icon-plus" id="agent-file-add" type="button" aria-label="Add context file">+</button>
-        <button class="icon-minus" id="agent-file-del" type="button" aria-label="Remove selected context file">−</button>
+      <div class="field field-wide">
+        <label>Context files</label>
+        <div class="pill-row">
+          <input id="agent-file" type="file" accept=".txt,.md,text/plain,text/markdown" hidden>
+          <button class="icon-plus" id="agent-file-add" type="button" aria-label="Add context file">+</button>
+          <button class="icon-minus" id="agent-file-del" type="button" aria-label="Remove selected context file">−</button>
+        </div>
+        <div class="pills" id="agent-files"></div>
+        <p class="help">Maximum 3 files. Plaintext and Markdown only.</p>
       </div>
-      <div class="pills" id="agent-files"></div>
-      <p class="help">Maximum 3 files. Plaintext and Markdown only.</p>
       </div>
       <p class="help" id="agent-provider-help">AI provider (required)</p>
       <div class="pills" id="payne-provider-pills" hidden></div>
@@ -1067,7 +1121,8 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       </div>
       <button class="cfg" id="provider-cfg" type="button" hidden
               title="Configure this provider.">✎</button>
-      <p class="help" id="agent-pic-help">Robot picture (optional). Pick a sheet, then a tile.</p>
+      <p class="help" id="agent-pic-help">Robot picture (optional). Pick a sheet, then a tile.
+        <button class="ghost mini" id="agent-pic-enlarge" type="button" title="Open the 128px avatar window">Enlarge avatars</button></p>
       <div id="agent-pic-sheets" class="agent-pic-sheets" role="tablist" aria-label="Picture sheets"></div>
       <div id="agent-pic-picker" class="agent-pic-picker" role="listbox" aria-label="Robot picture picker"></div>
       <input id="agent-picture" type="hidden" value="">
@@ -1125,6 +1180,18 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         <button class="btn ghost" id="agent-clone" type="button" disabled>Clone Robot</button>
         <button class="btn danger" id="agent-delete" type="button" disabled>Delete Robot</button>
       </div>
+    </div>
+  </div>
+  <div class="drawer" id="avatar-drawer" role="dialog" aria-label="Avatar selection">
+    <div class="panel">
+      <div class="drawer-head">
+        <h2>Avatar selection</h2>
+        <button class="drawer-x" id="avatar-close" type="button" aria-label="Close avatar window">×</button>
+      </div>
+      <p class="help">128×128 robot pictures. Pick a sheet, then a tile. The current pick is shown at full size above.</p>
+      <div id="avatar-preview" class="avatar-preview empty" aria-label="Selected avatar"></div>
+      <div id="avatar-sheets" class="avatar-sheets" role="tablist" aria-label="Avatar sheets"></div>
+      <div id="avatar-grid" class="avatar-grid" role="listbox" aria-label="Avatar grid"></div>
     </div>
   </div>
   <div class="drawer" id="providers-hub" role="dialog" aria-label="Configure Providers">
@@ -1321,12 +1388,20 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         <button class="drawer-x" id="forge-close" type="button" aria-label="Close forge">×</button>
       </div>
       <p class="help">Forge writes a new SKILL.md. System skills are application-wide. This robot skills belong only to the robot being edited.</p>
-      <label for="forge-name">Name</label>
-      <input id="forge-name" type="text" maxlength="48" placeholder="joke-book">
-      <label for="forge-summary">Summary</label>
-      <input id="forge-summary" type="text" maxlength="160" placeholder="Tell short jokes.">
-      <label for="forge-body">Body</label>
-      <textarea id="forge-body" maxlength="4000" placeholder="What the robot should do."></textarea>
+      <div class="forge-grid">
+        <div class="field">
+          <label for="forge-name">Name</label>
+          <input id="forge-name" type="text" maxlength="48" placeholder="joke-book">
+        </div>
+        <div class="field">
+          <label for="forge-summary">Summary</label>
+          <input id="forge-summary" type="text" maxlength="160" placeholder="Tell short jokes.">
+        </div>
+        <div class="field field-wide">
+          <label for="forge-body">Body</label>
+          <textarea id="forge-body" maxlength="4000" placeholder="What the robot should do."></textarea>
+        </div>
+      </div>
       <p class="help">Scope</p>
       <label><input type="radio" name="forge-scope" value="user" checked> System (application-wide)</label>
       <label><input type="radio" name="forge-scope" value="robot"> This robot</label>
@@ -2215,6 +2290,57 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       }
     }
 
+    /* Dedicated 128px avatar selection window. Shares picSheet/draftPicture
+     * with the inline picker so both stay in sync. */
+    function paintAvatarPicker() {
+      const tabs = $("avatar-sheets");
+      const box = $("avatar-grid");
+      const prev = $("avatar-preview");
+      if (tabs) {
+        tabs.innerHTML = "";
+        ICON_PANELS.forEach((sheet) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "agent-pic-sheet" + (picSheet === sheet ? " on" : "");
+          b.textContent = sheet;
+          b.setAttribute("aria-pressed", picSheet === sheet ? "true" : "false");
+          b.addEventListener("click", () => {
+            picSheet = sheet;
+            paintAgentPicPicker();
+            paintAvatarPicker();
+          });
+          tabs.appendChild(b);
+        });
+      }
+      if (prev) {
+        if (draftPicture) {
+          prev.className = "avatar-preview";
+          prev.setAttribute("style", picCellStyle(draftPicture, 128));
+        } else {
+          prev.className = "avatar-preview empty";
+          prev.removeAttribute("style");
+        }
+      }
+      if (!box) return;
+      box.innerHTML = "";
+      for (let i = 0; i < ICON_CELLS; i++) {
+        const id = "panel:" + picSheet + ":" + i;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "avatar-cell" + (draftPicture === id ? " on" : "");
+        btn.setAttribute("aria-label", picSheet + " " + i);
+        btn.setAttribute("style", panelCellStyle(picSheet, i, 128));
+        btn.addEventListener("click", () => {
+          draftPicture = id;
+          if ($("agent-picture")) $("agent-picture").value = id;
+          if (editSlug) savePicId(editSlug, id);
+          paintAgentPicPicker();
+          paintAvatarPicker();
+        });
+        box.appendChild(btn);
+      }
+    }
+
     function robotModels() {
       const p = session.payne || {};
       const order = payneProviderList(p);
@@ -2887,6 +3013,11 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
 
     $("raise-agent").addEventListener("click", () => openAgentDrawer(null));
     $("agent-close").addEventListener("click", () => $("agent-drawer").classList.remove("show"));
+    if ($("agent-pic-enlarge")) $("agent-pic-enlarge").addEventListener("click", () => {
+      paintAvatarPicker();
+      $("avatar-drawer").classList.add("show");
+    });
+    if ($("avatar-close")) $("avatar-close").addEventListener("click", () => $("avatar-drawer").classList.remove("show"));
     if ($("skill-cycle-prev")) $("skill-cycle-prev").addEventListener("click", () => {
       skillCycleIdx--;
       paintSkillCycle(editSlug);

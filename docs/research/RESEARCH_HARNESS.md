@@ -203,11 +203,19 @@ Re-scored (honest; loop still mandates continuing):
 - Y Cost Efficiency: 2.5 → 7.5 (context is chunked/bounded to the note budget; real payload reduction).
 - Z Regex Robustness: 2.0 → 8.0 (crash-proof UTF-8-safe parser).
 
-### UI/UX Responsiveness — **6.1 / 10** (unchanged; Phase 5 not started)
+### UI/UX Responsiveness — **6.1 → 7.2 / 10**
+- X Form Factor: 6.5 → 7.5 (edit menu now a responsive 2-col grid — 2 col desktop/tablet, 1 col phone — instead of one long column).
+- Y Component Clarity: 6.0 → 7.0 (Skills Forge is a dedicated wide screen with a 46vh mono body; avatar picker is a dedicated 128px window).
+- Z Z-Index/Rail: 5.5 → 7.0 (exit/leave modal now above the rail; tool rail tightened to a compact activity bar).
+
+*(Honest caveat: implemented and JS-syntax/PWA-route verified, but not yet
+rendered against Pixel/iPad/desktop viewports — pixel-level form-factor proof
+still needs a browser.)*
+
 ### Messaging Protocol — **7.4 → 7.6 / 10**
 - Y Determinism: 7.0 → 7.5 (event ids are now content-addressed SHA-256, deterministic for identical events, instead of timestamp+seq hex).
 
 Remaining to reach 9.0+ (see PLAN_HARNESS_ENGINE.md): true multi-provider
 execution (goose/codex/copilot/ollama — blocked on verified headless CLIs) and
-the full Phase 5 UI refactor.
+browser-based visual verification of the Phase 5 UI refactor.
 
