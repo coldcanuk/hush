@@ -777,10 +777,25 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
 }
 .avatar-cell.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 
-/* Tool rail: tighter, unobtrusive vertical activity bar (VS Code model). */
-#tool-rail { gap: 6px; padding: 6px; border-radius: 12px; }
+/* Tool rail: compact vertical activity bar (VS Code activity-bar model).
+   One column, tight, info popovers hidden behind the buttons' own titles. */
+#tool-rail {
+  gap: 4px; padding: 6px; border-radius: 12px; width: 176px; max-width: 176px;
+  align-items: stretch;
+}
 #tool-rail .rail-body { gap: 4px; }
-#tool-rail .iconbtn { padding: 6px 9px; font-size: 0.76rem; }
+#tool-rail .rail-grid { grid-template-columns: 1fr; gap: 4px; }
+#tool-rail .rail-info-row { display: block; }
+#tool-rail .rail-i { display: none; }
+#tool-rail .iconbtn {
+  width: 100%; padding: 7px 10px; font-size: 0.72rem; font-weight: 600;
+  text-align: left; border-radius: 8px;
+}
+#tool-rail #install { font-size: 0.72rem; padding: 7px 10px; }
+#tool-rail .rail-rule { margin: 2px 0; }
+#tool-rail #rail-toggle { width: 100%; }
+#tool-rail.collapsed { width: 44px; }
+#tool-rail.collapsed #rail-grip { min-width: 0; }
 
 /* Phone: collapse the two-column layouts back to a single column. */
 @media (max-width: 640px) {
@@ -1108,20 +1123,23 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       </div>
       <p class="help" id="agent-provider-help">AI provider (required)</p>
       <div class="pills" id="payne-provider-pills" hidden></div>
+      <p class="help" id="agent-provider-help">AI providers, in priority order. The first
+        ready one runs; the rest are fallbacks. Tick to add, then use ▲▼ to order.</p>
+      <div id="agent-provider-pills" class="pills" aria-label="Robot providers, ranked"></div>
       <div class="providers" id="agent-providers">
-        <label><input type="radio" name="agent-provider" value="goose"> Goose</label>
-        <label><input type="radio" name="agent-provider" value="grok-build"> Grok Build</label>
-        <label><input type="radio" name="agent-provider" value="codex"> Codex</label>
-        <label><input type="radio" name="agent-provider" value="cline"> Cline</label>
-        <label><input type="radio" name="agent-provider" value="agy"> Antigravity</label>
-        <label><input type="radio" name="agent-provider" value="copilot"> Copilot</label>
-        <label><input type="radio" name="agent-provider" value="ollama"> Ollama</label>
-        <label><input type="radio" name="agent-provider" value="gemini-api"> Gemini API</label>
-        <label><input type="radio" name="agent-provider" value="xai-api"> xAI API</label>
-        <label><input type="radio" name="agent-provider" value="openai-api"> OpenAI API</label>
-        <label><input type="radio" name="agent-provider" value="anthropic-api"> Anthropic API</label>
-        <label><input type="radio" name="agent-provider" value="deepseek-api"> Deepseek API</label>
-        <label><input type="radio" name="agent-provider" value="custom"> Custom endpoint</label>
+        <label><input type="checkbox" class="agent-provider-cb" value="goose"> Goose</label>
+        <label><input type="checkbox" class="agent-provider-cb" value="grok-build"> Grok Build</label>
+        <label><input type="checkbox" class="agent-provider-cb" value="codex"> Codex</label>
+        <label><input type="checkbox" class="agent-provider-cb" value="cline"> Cline</label>
+        <label><input type="checkbox" class="agent-provider-cb" value="agy"> Antigravity</label>
+        <label><input type="checkbox" class="agent-provider-cb" value="copilot"> Copilot</label>
+        <label><input type="checkbox" class="agent-provider-cb" value="ollama"> Ollama</label>
+        <label><input type="checkbox" class="agent-provider-cb" value="gemini-api"> Gemini API</label>
+        <label><input type="checkbox" class="agent-provider-cb" value="xai-api"> xAI API</label>
+        <label><input type="checkbox" class="agent-provider-cb" value="openai-api"> OpenAI API</label>
+        <label><input type="checkbox" class="agent-provider-cb" value="anthropic-api"> Anthropic API</label>
+        <label><input type="checkbox" class="agent-provider-cb" value="deepseek-api"> Deepseek API</label>
+        <label><input type="checkbox" class="agent-provider-cb" value="custom"> Custom endpoint</label>
       </div>
       <p class="warn" id="agent-agy-warning" hidden>Antigravity (agy) runs as a text-generation
         model only — Hush spawns it as an independent process and never wraps it. To enable
@@ -1608,6 +1626,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     let ackClock = {};
     let manageTopics = [];
     let draftPicture = "";
+    let draftProviders = [];
 
     function $(id) { return document.getElementById(id); }
 
@@ -2387,6 +2406,8 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
           npub: a.npub || "",
           pubkey: a.pubkey || "",
           provider: a.provider || "",
+          providers: (a.providers && a.providers.length)
+            ? a.providers : [a.provider],
           prompt: a.prompt || "",
           picture: picIdFor(a.slug, a.picture || ""),
           voice: a.voice || "",
@@ -2502,9 +2523,9 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       if ($("agent-name")) $("agent-name").value = "";
       if ($("agent-prompt")) $("agent-prompt").value = "";
       if ($("agent-file")) $("agent-file").value = "";
-      document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
-        el.checked = false;
-      });
+      draftProviders = [];
+      paintAgentProviderOrder();
+      paintAgentProviderChecks();
       if ($("agent-title")) $("agent-title").textContent = "Raise a robot";
       if ($("agent-help")) $("agent-help").textContent = "Major will walk you through it.";
       if ($("agent-save")) $("agent-save").textContent = "Raise Robot";
@@ -2619,8 +2640,80 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     }
 
     function chosenProvider() {
-      const el = document.querySelector("input[name='agent-provider']:checked");
-      return el ? el.value : "";
+      return draftProviders.length ? draftProviders[0] : "";
+    }
+
+    function paintAgentProviderOrder() {
+      const box = $("agent-provider-pills");
+      if (!box) return;
+      box.innerHTML = "";
+      draftProviders.forEach((id, i) => {
+        const pill = document.createElement("span");
+        pill.className = "pill";
+        const rank = i === 0 ? "primary · " : "";
+        pill.innerHTML = "<em>" + rank + esc(providerLabel(id)) + "</em>";
+        const up = document.createElement("button");
+        up.type = "button";
+        up.textContent = "▲";
+        up.setAttribute("aria-label", "Move " + providerLabel(id) + " up");
+        up.disabled = i === 0;
+        up.addEventListener("click", () => moveAgentProvider(i, -1));
+        const down = document.createElement("button");
+        down.type = "button";
+        down.textContent = "▼";
+        down.setAttribute("aria-label", "Move " + providerLabel(id) + " down");
+        down.disabled = i === draftProviders.length - 1;
+        down.addEventListener("click", () => moveAgentProvider(i, 1));
+        const drop = document.createElement("button");
+        drop.type = "button";
+        drop.textContent = "−";
+        drop.setAttribute("aria-label", "Remove " + providerLabel(id));
+        drop.addEventListener("click", () => {
+          draftProviders.splice(i, 1);
+          paintAgentProviderOrder();
+          paintAgentProviderChecks();
+        });
+        pill.appendChild(up);
+        pill.appendChild(down);
+        pill.appendChild(drop);
+        box.appendChild(pill);
+      });
+    }
+
+    function moveAgentProvider(idx, dir) {
+      const next = idx + dir;
+      if (next < 0 || next >= draftProviders.length) return;
+      const tmp = draftProviders[idx];
+      draftProviders[idx] = draftProviders[next];
+      draftProviders[next] = tmp;
+      paintAgentProviderOrder();
+    }
+
+    function paintAgentProviderChecks() {
+      document.querySelectorAll(".agent-provider-cb").forEach((cb) => {
+        cb.checked = draftProviders.indexOf(cb.value) >= 0;
+      });
+    }
+
+    function toggleAgentProvider(id) {
+      if (!id || !PROVIDERS[id]) return;
+      const i = draftProviders.indexOf(id);
+      if (i >= 0) {
+        draftProviders.splice(i, 1);
+      } else {
+        if (draftProviders.length >= PAYNE_PROVIDERS_MAX) {
+          $("agent-err").textContent = "Four runtimes max. Drop one first.";
+          paintAgentProviderChecks();
+          return;
+        }
+        draftProviders.push(id);
+      }
+      $("agent-err").textContent = "";
+      paintAgentProviderOrder();
+      paintAgentProviderChecks();
+      const warn = $("agent-agy-warning");
+      if (warn) warn.hidden = draftProviders[0] !== "agy";
+      paintProviderPencil();
     }
 
     function paintPayneOrder() {
@@ -2991,6 +3084,11 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         paintPromptPill();
       }
       draftPicture = (bot && bot.picture) ? bot.picture : "";
+      draftProviders = (bot && bot.providers && bot.providers.length)
+        ? bot.providers.slice()
+        : (bot ? [bot.provider] : []);
+      paintAgentProviderOrder();
+      paintAgentProviderChecks();
       if ($("agent-picture")) $("agent-picture").value = draftPicture;
       if ($("agent-enabled-row")) $("agent-enabled-row").hidden = !(bot && bot.slug);
       if ($("agent-enabled")) $("agent-enabled").checked = !bot || bot.enabled !== false;
@@ -3067,10 +3165,10 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     document.querySelectorAll("input[name='agent-role']").forEach((el) => {
       el.addEventListener("change", () => paintSkillBoard(editSlug));
     });
-    document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
+    document.querySelectorAll(".agent-provider-cb").forEach((el) => {
       el.addEventListener("change", () => {
         if (editingPayne) addPayneProvider(el.value);
-        paintProviderPencil();
+        else toggleAgentProvider(el.value);
       });
     });
     $("provider-cfg").addEventListener("click", (ev) => {
@@ -3301,6 +3399,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         name: name,
         system_prompt: prompt,
         provider: provider,
+        providers: draftProviders.join(","),
         picture: draftPicture || ($("agent-picture") && $("agent-picture").value) || "",
         voice: voice,
         enabled: enabled,
