@@ -706,10 +706,9 @@ static hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
         memset(&pin, 0, sizeof(pin));
         pin.pubkey = g_launch->human.pubkey_hex;
         pin.role = NULL;
-        pin.token = "human";
         pin.slug = HUSH_PRESENCE_SLUG_CONVERSING;
         pin.channel = channel;
-        pin.root = out->id;
+        pin.root = g_launch->human.pubkey_hex;
         pin.now = time(NULL);
         (void)hush_presence_publish(store, &pin);
     }
@@ -779,7 +778,7 @@ static hush_status_t hush_http_serve_presence_post(int fd, const char *body,
                                                    hush_store_t *store)
 {
     char slug[HUSH_PRESENCE_SLUG_MAX];
-    char token[HUSH_PRESENCE_D_MAX];
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
     char channel[64];
     hush_presence_in_t in;
     hush_status_t st;
@@ -794,17 +793,18 @@ static hush_status_t hush_http_serve_presence_post(int fd, const char *body,
         hush_http_reply(fd, "400 Bad Request", "text/plain", "need slug\n", 10);
         return HUSH_ERR_PARSE;
     }
-    if (!hush_json_field(body, "token", token, sizeof(token)))
-        memcpy(token, "human", 6);
+    if (!hush_json_field(body, "root", root, sizeof(root)) ||
+        strlen(root) != (size_t)HUSH_EVENT_ID_HEX_LEN)
+        memcpy(root, g_launch->human.pubkey_hex,
+               (size_t)HUSH_EVENT_PUBKEY_HEX_LEN + 1);
     if (!hush_json_field(body, "channel", channel, sizeof(channel)))
         memcpy(channel, "general", 8);
     memset(&in, 0, sizeof(in));
     in.pubkey = g_launch->human.pubkey_hex;
     in.role = NULL;
-    in.token = token;
     in.slug = slug;
     in.channel = channel;
-    in.root = "";
+    in.root = root;
     in.now = time(NULL);
     st = hush_presence_publish(store, &in);
     if (st == HUSH_ERR_PARSE) {

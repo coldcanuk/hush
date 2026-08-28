@@ -1,4 +1,4 @@
-/* tests/test_presence.c: NIP-38 slugs, role wall, replace, expiry, REQ privacy. */
+/* tests/test_presence.c: NIP-38 slugs, stable d, replace, expiry, REQ privacy. */
 
 #include <stdio.h>
 #include <string.h>
@@ -10,6 +10,13 @@
 #include "hush_store.h"
 
 static int g_fail;
+
+static const char k_pub[] =
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+static const char k_root[] =
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+static const char k_d[] =
+    "hive:6173cf9d3267e6b926102c8b149812658d05d834";
 
 static void expect(int cond, const char *msg)
 {
@@ -40,6 +47,7 @@ int main(void)
     hush_presence_in_t in;
     char json[HUSH_PRESENCE_JSON_MAX];
     char d[HUSH_PRESENCE_D_MAX];
+    char d2[HUSH_PRESENCE_D_MAX];
     size_t n = 0;
     time_t t0 = 1000000;
 
@@ -57,17 +65,26 @@ int main(void)
     expect(hush_presence_req_ok(HUSH_PRESENCE_KIND_LINE, 0) == 0, "private line");
     expect(hush_presence_req_ok(HUSH_PRESENCE_KIND_TRAIL, 0) == 0, "private trail");
     expect(hush_presence_req_ok(1, 0) == 1, "kind1 private ok");
-    expect(hush_presence_make_d(d, sizeof(d), "job1") == HUSH_OK, "make d");
-    expect(strcmp(d, "hive:job1") == 0, "d prefix");
+    expect(hush_presence_make_d(d, sizeof(d), k_pub, k_root) == HUSH_OK,
+           "make d");
+    expect(strlen(d) == (size_t)HUSH_PRESENCE_D_LEN, "d len 45");
+    expect(strcmp(d, k_d) == 0, "d formula");
+    expect(strstr(d, "hive:f") == NULL || strcmp(d, k_d) == 0, "not token d");
+    expect(hush_presence_make_d(d2, sizeof(d2), k_pub, k_root) == HUSH_OK,
+           "make d twice");
+    expect(strcmp(d, d2) == 0, "same robot+root same d");
+    hush_presence_init();
+    expect(hush_presence_make_d(d2, sizeof(d2), k_pub, k_root) == HUSH_OK,
+           "make d after init");
+    expect(strcmp(d, d2) == 0, "init does not change d");
 
     expect(hush_store_create(&store) == HUSH_OK, "store");
     memset(&in, 0, sizeof(in));
-    in.pubkey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    in.pubkey = k_pub;
     in.role = HUSH_ROSTER_ROLE_CHAPERON;
-    in.token = "job1";
     in.slug = HUSH_PRESENCE_SLUG_WORKING;
     in.channel = "general";
-    in.root = "bb";
+    in.root = k_root;
     in.now = t0;
     expect(hush_presence_publish(store, &in) == HUSH_ERR_DENIED, "chaperon denied");
 
@@ -75,21 +92,30 @@ int main(void)
     expect(hush_presence_publish(store, &in) == HUSH_OK, "publish working");
     expect(count_kind(store, HUSH_PRESENCE_KIND_LINE) == 1, "one line");
     expect(count_kind(store, HUSH_PRESENCE_KIND_TRAIL) == 1, "one trail");
+    expect(hush_presence_format_json(json, sizeof(json), &n) == HUSH_OK,
+           "json live");
+    expect(strstr(json, k_d) != NULL, "stable d in json");
+    expect(strstr(json, "hive:f1") == NULL, "fN not in json d");
+    expect(hush_presence_req_ok(HUSH_PRESENCE_KIND_LINE, 0) == 0,
+           "private hides REQ");
+    expect(strstr(json, "Working") != NULL, "private JSON still lists");
 
     in.slug = HUSH_PRESENCE_SLUG_STUCK;
     in.now = t0 + 5;
     expect(hush_presence_publish(store, &in) == HUSH_OK, "publish stuck");
     expect(count_kind(store, HUSH_PRESENCE_KIND_LINE) == 1, "line replaced");
     expect(count_kind(store, HUSH_PRESENCE_KIND_TRAIL) == 2, "trail appended");
-    expect(hush_presence_stuck_due("job1", t0 + 5) == 0, "just published");
-    expect(hush_presence_stuck_due("job1", t0 + 5 + HUSH_PRESENCE_HEARTBEAT_S)
+    expect(hush_presence_stuck_due(k_pub, k_root, t0 + 5) == 0,
+           "just published");
+    expect(hush_presence_stuck_due(k_pub, k_root,
+                                   t0 + 5 + HUSH_PRESENCE_HEARTBEAT_S)
            == 1, "stuck due");
 
     in.slug = HUSH_PRESENCE_SLUG_IDLE;
     in.now = t0 + 10;
     expect(hush_presence_publish(store, &in) == HUSH_OK, "idle");
-    expect(hush_presence_stall_s("job1", t0 + 10) == 0, "fresh beat");
-    expect(hush_presence_beat("job1", t0 + 20) == HUSH_OK, "beat");
+    expect(hush_presence_stall_s(k_pub, k_root, t0 + 10) == 0, "fresh beat");
+    expect(hush_presence_beat(k_pub, k_root, t0 + 20) == HUSH_OK, "beat");
     hush_presence_expire(store, t0 + 20 + HUSH_PRESENCE_IDLE_S);
     expect(hush_presence_format_json(json, sizeof(json), &n) == HUSH_OK, "json");
     expect(strstr(json, "\"ok\":true") != NULL, "json ok");
@@ -100,8 +126,9 @@ int main(void)
     in.now = t0;
     expect(hush_presence_publish(store, &in) == HUSH_OK, "working again");
     expect(hush_presence_format_json(json, sizeof(json), &n) == HUSH_OK,
-           "json live");
+           "json live 2");
     expect(strstr(json, "Working") != NULL, "slug in json");
+    expect(strstr(json, k_d) != NULL, "same d after republish");
 
     hush_store_destroy(store);
     if (g_fail)

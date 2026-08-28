@@ -8,7 +8,14 @@
 #include "hush_status.h"
 #include "hush_store.h"
 
-/* Zeros the job table. Safe to call twice. */
+enum {
+    /* Wall clock for a live grok job. hush_wake lease uses the same
+     * number (HUSH_WAKE_LEASE_S). Not HUSH_PRESENCE_STALL_S. */
+    HUSH_AGENT_TIMEOUT_S = 90
+};
+
+/* Zeros the job table and reloads the wake ledger. Safe to call twice.
+ * Does not wipe wake.ledger or device.id. */
 void hush_agent_init(void);
 
 /* Kills live jobs and closes pipes. Safe on an empty table. */

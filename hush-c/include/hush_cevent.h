@@ -60,7 +60,8 @@ uint32_t hush_cevent_last_seq(void);
 
 /* Records that the consumer has processed all signals up to seq. From then on,
  * hush_cevent_drops() only counts overwrites of *unacked* events, so a wrap
- * that evicts only already-consumed signals is reported as zero loss. */
+ * that evicts only already-consumed signals is reported as zero loss.
+ * g_ack has one owner: the PWA. No second reader may call hush_cevent_ack. */
 void hush_cevent_ack(uint32_t seq);
 
 /* Events overwritten when the ring wrapped that had not yet been acked. A

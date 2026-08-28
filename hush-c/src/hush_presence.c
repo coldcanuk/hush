@@ -3,9 +3,12 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <assert.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+
+#include <openssl/evp.h>
 
 #include "hush_cevent.h"
 #include "hush_json.h"
@@ -13,6 +16,11 @@
 #include "hush_roster.h"
 
 #define HUSH_PRESENCE_DEBUG_PREFIX "Debugging "
+
+enum {
+    HUSH_PRESENCE_HEX_BUF = HUSH_EVENT_PUBKEY_HEX_LEN + 1,
+    HUSH_PRESENCE_D_NEED = HUSH_PRESENCE_D_LEN + 1
+};
 
 typedef struct {
     int live;
@@ -29,12 +37,20 @@ typedef struct {
 
 static hush_presence_line_t g_lines[HUSH_PRESENCE_LINES_MAX];
 
+static const char hush_presence_hex[] = "0123456789abcdef";
+
 static void hush_presence_copy(char *dst, size_t dstsz, const char *src);
+static hush_status_t hush_presence_fold_hex(char *out, const char *in);
+static void hush_presence_hex_encode(char *out, const unsigned char *raw,
+                                     size_t raw_len);
 static int hush_presence_is_exact_slug(const char *slug);
 static int hush_presence_is_debug_slug(const char *slug);
 static int hush_presence_slug_expires(const char *slug);
 static hush_presence_line_t *hush_presence_find_d(const char *d);
 static hush_presence_line_t *hush_presence_take_slot(void);
+static hush_status_t hush_presence_line_d(char *out, size_t outsz,
+                                          const char *pubkey,
+                                          const char *root);
 static void hush_presence_fill_line_event(hush_event_t *ev,
                                           const hush_presence_in_t *in,
                                           const char *d, int trail);
@@ -43,6 +59,10 @@ static void hush_presence_emit(const char *type, const hush_presence_in_t *in,
 static hush_status_t hush_presence_put_one(char *out, size_t outsz, size_t *off,
                                            const hush_presence_line_t *line,
                                            int first);
+static hush_status_t hush_presence_insert_pair(hush_store_t *store,
+                                               hush_presence_line_t *slot,
+                                               const hush_presence_in_t *in,
+                                               const char *d);
 
 void hush_presence_init(void)
 {
@@ -75,14 +95,57 @@ int hush_presence_req_ok(uint32_t kind, int vibe_public)
     return vibe_public ? 1 : 0;
 }
 
-hush_status_t hush_presence_make_d(char *out, size_t outsz, const char *token)
+hush_status_t hush_presence_work_digest(unsigned char out[HUSH_PRESENCE_DIGEST_LEN],
+                                        const char *robot_hex,
+                                        const char *root_hex)
 {
+    char robot[HUSH_PRESENCE_HEX_BUF];
+    char root[HUSH_PRESENCE_HEX_BUF];
+    EVP_MD_CTX *ctx;
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int dlen = 0;
+
+    if (out == NULL)
+        return HUSH_ERR_ARG;
+    HUSH_TRY(hush_presence_fold_hex(robot, robot_hex));
+    HUSH_TRY(hush_presence_fold_hex(root, root_hex));
+    ctx = EVP_MD_CTX_new();
+    if (ctx == NULL)
+        return HUSH_ERR_CRYPTO;
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) {
+        EVP_MD_CTX_free(ctx);
+        return HUSH_ERR_CRYPTO;
+    }
+    (void)EVP_DigestUpdate(ctx, robot, (size_t)HUSH_EVENT_PUBKEY_HEX_LEN);
+    (void)EVP_DigestUpdate(ctx, ":", 1);
+    (void)EVP_DigestUpdate(ctx, root, (size_t)HUSH_EVENT_ID_HEX_LEN);
+    if (EVP_DigestFinal_ex(ctx, digest, &dlen) != 1) {
+        EVP_MD_CTX_free(ctx);
+        return HUSH_ERR_CRYPTO;
+    }
+    EVP_MD_CTX_free(ctx);
+    if (dlen < (unsigned int)HUSH_PRESENCE_DIGEST_LEN)
+        return HUSH_ERR_CRYPTO;
+    memcpy(out, digest, (size_t)HUSH_PRESENCE_DIGEST_LEN);
+    return HUSH_OK;
+}
+
+hush_status_t hush_presence_make_d(char *out, size_t outsz,
+                                   const char *robot_hex,
+                                   const char *root_hex)
+{
+    unsigned char digest[HUSH_PRESENCE_DIGEST_LEN];
+    char hex[HUSH_PRESENCE_D_HEX_LEN + 1];
     int n;
 
-    if (out == NULL || outsz < 8 || token == NULL || token[0] == '\0')
+    if (out == NULL)
         return HUSH_ERR_ARG;
-    n = snprintf(out, outsz, "%s%s", HUSH_PRESENCE_D_PREFIX, token);
-    if (n < 0 || (size_t)n >= outsz)
+    if (outsz < (size_t)HUSH_PRESENCE_D_NEED)
+        return HUSH_ERR_FULL;
+    HUSH_TRY(hush_presence_work_digest(digest, robot_hex, root_hex));
+    hush_presence_hex_encode(hex, digest, (size_t)HUSH_PRESENCE_DIGEST_D_BYTES);
+    n = snprintf(out, outsz, "%s%s", HUSH_PRESENCE_D_PREFIX, hex);
+    if (n != (int)HUSH_PRESENCE_D_LEN)
         return HUSH_ERR_FULL;
     return HUSH_OK;
 }
@@ -90,60 +153,30 @@ hush_status_t hush_presence_make_d(char *out, size_t outsz, const char *token)
 hush_status_t hush_presence_publish(hush_store_t *store,
                                     const hush_presence_in_t *in)
 {
-    hush_event_t line_ev;
-    hush_event_t trail_ev;
     hush_presence_line_t *slot;
     char d[HUSH_PRESENCE_D_MAX];
-    time_t now;
 
     if (store == NULL || in == NULL)
         return HUSH_ERR_ARG;
     if (in->pubkey == NULL || in->pubkey[0] == '\0')
         return HUSH_ERR_ARG;
-    if (in->token == NULL || in->token[0] == '\0')
+    if (in->root == NULL)
         return HUSH_ERR_ARG;
     if (!hush_presence_role_ok(in->role))
         return HUSH_ERR_DENIED;
     if (!hush_presence_slug_ok(in->slug))
         return HUSH_ERR_PARSE;
-    if (hush_presence_make_d(d, sizeof(d), in->token) != HUSH_OK)
-        return HUSH_ERR_FULL;
-    now = in->now != 0 ? in->now : time(NULL);
+    HUSH_TRY(hush_presence_make_d(d, sizeof(d), in->pubkey, in->root));
     slot = hush_presence_find_d(d);
     if (slot == NULL)
         slot = hush_presence_take_slot();
     if (slot == NULL)
         return HUSH_ERR_FULL;
-    memset(slot, 0, sizeof(*slot));
-    slot->live = 1;
-    hush_presence_copy(slot->pubkey, sizeof(slot->pubkey), in->pubkey);
-    hush_presence_copy(slot->d, sizeof(slot->d), d);
-    hush_presence_copy(slot->slug, sizeof(slot->slug), in->slug);
-    hush_presence_copy(slot->channel, sizeof(slot->channel),
-                       in->channel != NULL ? in->channel : "general");
-    hush_presence_copy(slot->root, sizeof(slot->root),
-                       in->root != NULL ? in->root : "");
-    slot->started = now;
-    slot->beat = now;
-    slot->expire = 0;
-    if (hush_presence_slug_expires(in->slug))
-        slot->expire = now + (time_t)HUSH_PRESENCE_IDLE_S;
-    hush_presence_fill_line_event(&line_ev, in, d, 0);
-    if (hush_store_insert(store, &line_ev) != HUSH_OK)
-        return HUSH_ERR_FULL;
-    hush_presence_fill_line_event(&trail_ev, in, d, 1);
-    if (hush_store_insert(store, &trail_ev) != HUSH_OK)
-        return HUSH_ERR_FULL;
-    hush_presence_emit(HUSH_CEVENT_PRESENCE, in, d);
-    if (strcmp(in->slug, HUSH_PRESENCE_SLUG_STUCK) == 0) {
-        slot->last_nudge = now;
-        hush_presence_emit(HUSH_CEVENT_STUCK, in, d);
-    }
-    return HUSH_OK;
+    return hush_presence_insert_pair(store, slot, in, d);
 }
 
 hush_status_t hush_presence_clear(hush_store_t *store, const char *pubkey,
-                                  const char *token, const char *channel,
+                                  const char *root, const char *channel,
                                   time_t now)
 {
     hush_presence_in_t in;
@@ -151,33 +184,52 @@ hush_status_t hush_presence_clear(hush_store_t *store, const char *pubkey,
     hush_presence_line_t *slot;
     char d[HUSH_PRESENCE_D_MAX];
 
-    if (store == NULL || pubkey == NULL || token == NULL)
+    if (store == NULL || pubkey == NULL || root == NULL)
         return HUSH_ERR_ARG;
-    if (hush_presence_make_d(d, sizeof(d), token) != HUSH_OK)
-        return HUSH_ERR_FULL;
+    HUSH_TRY(hush_presence_make_d(d, sizeof(d), pubkey, root));
     slot = hush_presence_find_d(d);
     if (slot != NULL)
         slot->live = 0;
     memset(&in, 0, sizeof(in));
     in.pubkey = pubkey;
-    in.token = token;
     in.slug = "";
     in.channel = channel != NULL ? channel : "general";
+    in.root = root;
     in.now = now != 0 ? now : time(NULL);
     hush_presence_fill_line_event(&ev, &in, d, 0);
     ev.content[0] = '\0';
     return hush_store_insert(store, &ev);
 }
 
-hush_status_t hush_presence_beat(const char *token, time_t now)
+hush_status_t hush_presence_lease_drop(hush_store_t *store,
+                                       const hush_presence_in_t *in)
+{
+    hush_event_t trail;
+    hush_presence_in_t drop;
+    char d[HUSH_PRESENCE_D_MAX];
+
+    if (store == NULL || in == NULL)
+        return HUSH_ERR_ARG;
+    if (in->pubkey == NULL || in->root == NULL)
+        return HUSH_ERR_ARG;
+    HUSH_TRY(hush_presence_clear(store, in->pubkey, in->root, in->channel,
+                                 in->now));
+    HUSH_TRY(hush_presence_make_d(d, sizeof(d), in->pubkey, in->root));
+    drop = *in;
+    drop.slug = HUSH_PRESENCE_TRAIL_LEASE;
+    hush_presence_fill_line_event(&trail, &drop, d, 1);
+    return hush_store_insert(store, &trail);
+}
+
+hush_status_t hush_presence_beat(const char *pubkey, const char *root,
+                                 time_t now)
 {
     hush_presence_line_t *slot;
     char d[HUSH_PRESENCE_D_MAX];
 
-    if (token == NULL || token[0] == '\0')
+    if (pubkey == NULL || root == NULL)
         return HUSH_ERR_ARG;
-    if (hush_presence_make_d(d, sizeof(d), token) != HUSH_OK)
-        return HUSH_ERR_FULL;
+    HUSH_TRY(hush_presence_make_d(d, sizeof(d), pubkey, root));
     slot = hush_presence_find_d(d);
     if (slot == NULL || !slot->live)
         return HUSH_ERR_NOT_FOUND;
@@ -187,13 +239,13 @@ hush_status_t hush_presence_beat(const char *token, time_t now)
     return HUSH_OK;
 }
 
-int hush_presence_stuck_due(const char *token, time_t now)
+int hush_presence_stuck_due(const char *pubkey, const char *root, time_t now)
 {
     hush_presence_line_t *slot;
     char d[HUSH_PRESENCE_D_MAX];
     time_t t;
 
-    if (token == NULL || hush_presence_make_d(d, sizeof(d), token) != HUSH_OK)
+    if (hush_presence_line_d(d, sizeof(d), pubkey, root) != HUSH_OK)
         return 0;
     slot = hush_presence_find_d(d);
     if (slot == NULL || !slot->live)
@@ -206,13 +258,13 @@ int hush_presence_stuck_due(const char *token, time_t now)
     return t >= slot->last_nudge + (time_t)HUSH_PRESENCE_HEARTBEAT_S;
 }
 
-int hush_presence_stall_s(const char *token, time_t now)
+int hush_presence_stall_s(const char *pubkey, const char *root, time_t now)
 {
     hush_presence_line_t *slot;
     char d[HUSH_PRESENCE_D_MAX];
     time_t t;
 
-    if (token == NULL || hush_presence_make_d(d, sizeof(d), token) != HUSH_OK)
+    if (hush_presence_line_d(d, sizeof(d), pubkey, root) != HUSH_OK)
         return -1;
     slot = hush_presence_find_d(d);
     if (slot == NULL || !slot->live)
@@ -238,8 +290,7 @@ void hush_presence_expire(hush_store_t *store, time_t now)
             continue;
         if (t < g_lines[i].expire)
             continue;
-        (void)hush_presence_clear(store, g_lines[i].pubkey,
-                                  g_lines[i].d + strlen(HUSH_PRESENCE_D_PREFIX),
+        (void)hush_presence_clear(store, g_lines[i].pubkey, g_lines[i].root,
                                   g_lines[i].channel, t);
     }
 }
@@ -289,6 +340,39 @@ static void hush_presence_copy(char *dst, size_t dstsz, const char *src)
         n = dstsz - 1;
     memcpy(dst, src, n);
     dst[n] = '\0';
+}
+
+static hush_status_t hush_presence_fold_hex(char *out, const char *in)
+{
+    size_t i;
+
+    if (out == NULL || in == NULL)
+        return HUSH_ERR_ARG;
+    if (strlen(in) != (size_t)HUSH_EVENT_PUBKEY_HEX_LEN)
+        return HUSH_ERR_ARG;
+    for (i = 0; i < (size_t)HUSH_EVENT_PUBKEY_HEX_LEN; i++) {
+        unsigned char c = (unsigned char)in[i];
+
+        if (!isxdigit(c))
+            return HUSH_ERR_ARG;
+        out[i] = (char)tolower(c);
+    }
+    out[HUSH_EVENT_PUBKEY_HEX_LEN] = '\0';
+    return HUSH_OK;
+}
+
+static void hush_presence_hex_encode(char *out, const unsigned char *raw,
+                                     size_t raw_len)
+{
+    size_t i;
+
+    assert(out != NULL);
+    assert(raw != NULL);
+    for (i = 0; i < raw_len; i++) {
+        out[i * 2] = hush_presence_hex[raw[i] >> 4];
+        out[i * 2 + 1] = hush_presence_hex[raw[i] & 0x0Fu];
+    }
+    out[raw_len * 2] = '\0';
 }
 
 static int hush_presence_is_exact_slug(const char *slug)
@@ -369,6 +453,56 @@ static hush_presence_line_t *hush_presence_take_slot(void)
     return NULL;
 }
 
+static hush_status_t hush_presence_line_d(char *out, size_t outsz,
+                                          const char *pubkey,
+                                          const char *root)
+{
+    if (pubkey == NULL || root == NULL)
+        return HUSH_ERR_ARG;
+    return hush_presence_make_d(out, outsz, pubkey, root);
+}
+
+static hush_status_t hush_presence_insert_pair(hush_store_t *store,
+                                               hush_presence_line_t *slot,
+                                               const hush_presence_in_t *in,
+                                               const char *d)
+{
+    hush_event_t line_ev;
+    hush_event_t trail_ev;
+    time_t now;
+
+    assert(store != NULL);
+    assert(slot != NULL);
+    assert(in != NULL);
+    assert(d != NULL);
+    now = in->now != 0 ? in->now : time(NULL);
+    memset(slot, 0, sizeof(*slot));
+    slot->live = 1;
+    hush_presence_copy(slot->pubkey, sizeof(slot->pubkey), in->pubkey);
+    hush_presence_copy(slot->d, sizeof(slot->d), d);
+    hush_presence_copy(slot->slug, sizeof(slot->slug), in->slug);
+    hush_presence_copy(slot->channel, sizeof(slot->channel),
+                       in->channel != NULL ? in->channel : "general");
+    hush_presence_copy(slot->root, sizeof(slot->root), in->root);
+    slot->started = now;
+    slot->beat = now;
+    slot->expire = 0;
+    if (hush_presence_slug_expires(in->slug))
+        slot->expire = now + (time_t)HUSH_PRESENCE_IDLE_S;
+    hush_presence_fill_line_event(&line_ev, in, d, 0);
+    if (hush_store_insert(store, &line_ev) != HUSH_OK)
+        return HUSH_ERR_FULL;
+    hush_presence_fill_line_event(&trail_ev, in, d, 1);
+    if (hush_store_insert(store, &trail_ev) != HUSH_OK)
+        return HUSH_ERR_FULL;
+    hush_presence_emit(HUSH_CEVENT_PRESENCE, in, d);
+    if (strcmp(in->slug, HUSH_PRESENCE_SLUG_STUCK) == 0) {
+        slot->last_nudge = now;
+        hush_presence_emit(HUSH_CEVENT_STUCK, in, d);
+    }
+    return HUSH_OK;
+}
+
 static void hush_presence_fill_line_event(hush_event_t *ev,
                                           const hush_presence_in_t *in,
                                           const char *d, int trail)
@@ -397,7 +531,8 @@ static void hush_presence_fill_line_event(hush_event_t *ev,
                        in->channel != NULL && in->channel[0] != '\0'
                            ? in->channel : "general");
     ev->tag_count++;
-    if (!trail && in->slug != NULL && hush_presence_slug_expires(in->slug)) {
+    if (!trail && in->slug != NULL && hush_presence_slug_ok(in->slug) &&
+        hush_presence_slug_expires(in->slug)) {
         (void)snprintf(exp, sizeof(exp), "%lld",
                        (long long)(now + (time_t)HUSH_PRESENCE_IDLE_S));
         memcpy(ev->tags[ev->tag_count][0], "expiration", 11);

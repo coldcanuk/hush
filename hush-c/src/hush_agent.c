@@ -21,11 +21,11 @@
 #include "hush_relay.h"
 #include "hush_roster.h"
 #include "hush_seg.h"
+#include "hush_wake.h"
 
 enum {
     HUSH_AGENT_INTRO_MAX = 32,
     HUSH_AGENT_JOBS_MAX = 4,
-    HUSH_AGENT_TIMEOUT_S = 90,
     HUSH_AGENT_KIND_NOTE = 1,
     HUSH_AGENT_ARGV_MAX = 28,
     HUSH_AGENT_PATH_MAX = 256,
@@ -142,6 +142,7 @@ typedef struct {
     time_t started;
     char token[HUSH_AGENT_TOKEN_MAX];
     char parent_id[HUSH_EVENT_ID_HEX_LEN + 1];
+    char trigger_id[HUSH_EVENT_ID_HEX_LEN + 1];
     char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
     char human_pub[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
     char robot_pub[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
@@ -266,9 +267,6 @@ typedef struct {
 static hush_agent_job_t g_jobs[HUSH_AGENT_JOBS_MAX];
 static hush_agent_follow_t g_follow[HUSH_AGENT_FOLLOW_MAX];
 static unsigned g_id_seq;
-static char g_intro_hex[HUSH_AGENT_INTRO_MAX][HUSH_EVENT_PUBKEY_HEX_LEN + 1];
-static char g_intro_root[HUSH_AGENT_INTRO_MAX][HUSH_EVENT_ID_HEX_LEN + 1];
-static size_t g_nintro;
 
 static void hush_agent_copy(char *dst, size_t dstsz, const char *src);
 static void hush_agent_trim(char *text);
@@ -408,6 +406,7 @@ static void hush_agent_emit(const char *type, const char *channel,
                             const char *root, const char *actor,
                             const char *note);
 static void hush_agent_begin_work(const hush_agent_job_in_t *in);
+static void hush_agent_release_line(hush_store_t *store, hush_agent_job_t *job);
 static void hush_agent_presence_put(hush_store_t *store, hush_agent_job_t *job,
                                     const char *slug);
 static void hush_agent_nudge_stuck(hush_store_t *store, hush_agent_job_t *job);
@@ -441,12 +440,10 @@ void hush_agent_init(void)
         memset(&g_jobs[i], 0, sizeof(g_jobs[i]));
         g_jobs[i].fd = HUSH_AGENT_FD_NONE;
     }
-    memset(g_intro_hex, 0, sizeof(g_intro_hex));
-    memset(g_intro_root, 0, sizeof(g_intro_root));
-    g_nintro = 0;
     memset(g_follow, 0, sizeof(g_follow));
     hush_cevent_init();
     hush_presence_init();
+    hush_wake_init();
 }
 
 void hush_agent_shutdown(void)
@@ -528,8 +525,10 @@ void hush_agent_poll(hush_store_t *store)
     int status;
 
     now = time(NULL);
-    if (store != NULL)
+    if (store != NULL) {
         hush_presence_expire(store, now);
+        hush_wake_expire(store, now);
+    }
     for (i = 0; i < (size_t)HUSH_AGENT_JOBS_MAX; i++) {
         if (!g_jobs[i].busy)
             continue;
@@ -545,35 +544,30 @@ void hush_agent_poll(hush_store_t *store)
             continue;
         }
         if (!hush_agent_job_enabled(&g_jobs[i])) {
-            if (store != NULL)
-                (void)hush_presence_clear(store, g_jobs[i].robot_pub,
-                                          g_jobs[i].token, g_jobs[i].channel,
-                                          now);
             hush_agent_kill_job(&g_jobs[i]);
             hush_agent_finish_job(store, &g_jobs[i], 0);
             continue;
         }
         hush_agent_read_job(&g_jobs[i]);
         if (g_jobs[i].out_n > 0)
-            (void)hush_presence_beat(g_jobs[i].token, now);
+            (void)hush_presence_beat(g_jobs[i].robot_pub, g_jobs[i].parent_id,
+                                     now);
         if (g_jobs[i].pid > 0)
             (void)waitpid(g_jobs[i].pid, &status, WNOHANG);
         if (store != NULL &&
-            hush_presence_stall_s(g_jobs[i].token, now)
+            hush_presence_stall_s(g_jobs[i].robot_pub, g_jobs[i].parent_id, now)
                 >= HUSH_PRESENCE_STALL_S &&
             strcmp(g_jobs[i].presence_slug, HUSH_PRESENCE_SLUG_STUCK) != 0)
             hush_agent_presence_put(store, &g_jobs[i],
                                     HUSH_PRESENCE_SLUG_STUCK);
-        if (store != NULL && hush_presence_stuck_due(g_jobs[i].token, now)) {
+        if (store != NULL &&
+            hush_presence_stuck_due(g_jobs[i].robot_pub, g_jobs[i].parent_id,
+                                    now)) {
             hush_agent_presence_put(store, &g_jobs[i],
                                     HUSH_PRESENCE_SLUG_STUCK);
             hush_agent_nudge_stuck(store, &g_jobs[i]);
         }
         if (hush_agent_job_timed_out(&g_jobs[i], now)) {
-            if (store != NULL)
-                (void)hush_presence_clear(store, g_jobs[i].robot_pub,
-                                          g_jobs[i].token, g_jobs[i].channel,
-                                          now);
             hush_agent_kill_job(&g_jobs[i]);
             hush_agent_finish_job(store, &g_jobs[i], 0);
             continue;
@@ -937,33 +931,19 @@ static hush_status_t hush_agent_insert_note(hush_store_t *store,
 
 static int hush_agent_intro_seen(const char *hex, const char *root)
 {
-    size_t i;
-
-    if (hex == NULL || root == NULL)
-        return 0;
-    for (i = 0; i < g_nintro && i < (size_t)HUSH_AGENT_INTRO_MAX; i++) {
-        if (strcmp(g_intro_hex[i], hex) == 0 &&
-            strcmp(g_intro_root[i], root) == 0)
-            return 1;
-    }
-    return 0;
+    return hush_wake_intro_seen(hex, root);
 }
 
 static void hush_agent_intro_remember(const char *hex, const char *root)
 {
+    hush_wake_in_t in;
+
     if (hex == NULL || root == NULL)
         return;
-    if (g_nintro >= (size_t)HUSH_AGENT_INTRO_MAX) {
-        size_t i;
-        for (i = 1; i < (size_t)HUSH_AGENT_INTRO_MAX; i++) {
-            hush_agent_copy(g_intro_hex[i - 1], sizeof(g_intro_hex[0]), g_intro_hex[i]);
-            hush_agent_copy(g_intro_root[i - 1], sizeof(g_intro_root[0]), g_intro_root[i]);
-        }
-        g_nintro = (size_t)HUSH_AGENT_INTRO_MAX - 1;
-    }
-    hush_agent_copy(g_intro_hex[g_nintro], sizeof(g_intro_hex[0]), hex);
-    hush_agent_copy(g_intro_root[g_nintro], sizeof(g_intro_root[0]), root);
-    g_nintro++;
+    memset(&in, 0, sizeof(in));
+    in.robot_hex = hex;
+    in.root_hex = root;
+    (void)hush_wake_mark_intro(&in);
 }
 
 static void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bot,
@@ -1370,6 +1350,11 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
     job->kind = HUSH_AGENT_KIND_NOTE_JOB;
     job->started = time(NULL);
     hush_agent_event_root(job->parent_id, sizeof(job->parent_id), parent);
+    if (parent->id[0] != '\0')
+        hush_agent_copy(job->trigger_id, sizeof(job->trigger_id), parent->id);
+    else
+        hush_agent_copy(job->trigger_id, sizeof(job->trigger_id),
+                        job->parent_id);
     hush_agent_event_channel(job->channel, sizeof(job->channel), parent);
     hush_agent_copy(job->human_pub, sizeof(job->human_pub), parent->pubkey);
     hush_agent_copy(job->robot_pub, sizeof(job->robot_pub),
@@ -1745,6 +1730,7 @@ static void hush_agent_make_token(char *out, size_t outsz)
 
     assert(out != NULL);
     assert(outsz > 0);
+    /* Local pipe id for fixup/HTTP only. Must not enter presence d. */
     g_id_seq++;
     n = g_id_seq;
     (void)snprintf(out, outsz, "f%u", n);
@@ -1800,6 +1786,21 @@ static hush_status_t hush_agent_start_grok(const hush_agent_job_in_t *in)
     if (job == NULL)
         return HUSH_ERR_FULL;
     hush_agent_fill_job(job, in);
+    {
+        hush_wake_in_t wake;
+
+        memset(&wake, 0, sizeof(wake));
+        wake.store = in->store;
+        wake.robot_hex = job->robot_pub;
+        wake.root_hex = job->parent_id;
+        wake.trigger_id = job->trigger_id;
+        wake.channel = job->channel;
+        wake.now = job->started;
+        if (hush_wake_claim(&wake) != HUSH_OK) {
+            job->busy = 0;
+            return HUSH_ERR_DENIED;
+        }
+    }
     if (hush_agent_spawn_grok(job) != HUSH_OK) {
         job->busy = 0;
         return HUSH_ERR_IO;
@@ -1888,7 +1889,7 @@ static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
                                                 leader_hex);
             }
         }
-        hush_agent_presence_put(store, job, HUSH_PRESENCE_SLUG_IDLE);
+        hush_agent_release_line(store, job);
         hush_agent_close_job(job);
         return;
     }
@@ -1934,14 +1935,17 @@ static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
             memcpy(posted.tags[1][0], "e", 2);
             hush_agent_copy(posted.tags[1][1], sizeof(posted.tags[1][1]),
                             job->parent_id);
+            posted.created_at = (int64_t)time(NULL);
+            (void)hush_event_compute_id(&posted, posted.id);
             hush_agent_emit(HUSH_CEVENT_JOB_DONE, job->channel, job->parent_id,
                             job->robot_pub, "job_done");
             hush_agent_on_posted(store, job->launch, &posted);
         }
-        hush_agent_presence_put(store, job, HUSH_PRESENCE_SLUG_IDLE);
+        hush_agent_release_line(store, job);
         hush_agent_close_job(job);
         return;
     }
+    hush_agent_release_line(store, job);
     hush_agent_close_job(job);
 }
 
@@ -2713,6 +2717,28 @@ static void hush_agent_follow_push(const hush_event_t *ev,
     }
 }
 
+static void hush_agent_release_line(hush_store_t *store, hush_agent_job_t *job)
+{
+    hush_wake_in_t in;
+    time_t now;
+
+    assert(job != NULL);
+    if (job->kind == HUSH_AGENT_KIND_FIXUP)
+        return;
+    now = time(NULL);
+    memset(&in, 0, sizeof(in));
+    in.store = store;
+    in.robot_hex = job->robot_pub;
+    in.root_hex = job->parent_id;
+    in.trigger_id = job->trigger_id;
+    in.channel = job->channel;
+    in.now = now;
+    (void)hush_wake_done(&in);
+    if (store != NULL && job->robot_pub[0] != '\0' && job->parent_id[0] != '\0')
+        (void)hush_presence_clear(store, job->robot_pub, job->parent_id,
+                                  job->channel, now);
+}
+
 static void hush_agent_presence_put(hush_store_t *store, hush_agent_job_t *job,
                                     const char *slug)
 {
@@ -2720,14 +2746,13 @@ static void hush_agent_presence_put(hush_store_t *store, hush_agent_job_t *job,
 
     assert(job != NULL);
     assert(slug != NULL);
-    if (store == NULL || job->token[0] == '\0')
+    if (store == NULL || job->robot_pub[0] == '\0' || job->parent_id[0] == '\0')
         return;
     if (job->kind == HUSH_AGENT_KIND_FIXUP)
         return;
     memset(&in, 0, sizeof(in));
     in.pubkey = job->robot_pub;
     in.role = job->robot_role;
-    in.token = job->token;
     in.slug = slug;
     in.channel = job->channel;
     in.root = job->parent_id;
