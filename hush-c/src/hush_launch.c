@@ -975,6 +975,13 @@ hush_status_t hush_launch_set_channel_policy(hush_launch_t *launch,
     ch->max_robot_turns = in->max_robot_turns > 0
         ? in->max_robot_turns : HUSH_LAUNCH_TURNS_DEFAULT;
     hush_launch_copy_name(ch->chaperon, sizeof(ch->chaperon), in->chaperon, "");
+    /* Conversation rule: standalone robots (robot_talk, no human in the loop)
+     * MUST have a designated chaperon. When the caller did not name one,
+     * fall back to the platform organizer (Payne) so oversight is always
+     * explicit rather than implicit. */
+    if (ch->robot_talk && ch->chaperon[0] == '\0')
+        hush_launch_copy_name(ch->chaperon, sizeof(ch->chaperon),
+                              HUSH_LAUNCH_PAYNE_SLUG, "");
     return hush_launch_save_vibe(launch);
 }
 
