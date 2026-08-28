@@ -98,6 +98,12 @@ The following were traced by hand against the code and are correct:
   solely to serve it. Actual event ids come from four separate `make_id()`
   functions (roster/agent/presence/intel) that emit a timestamp+seq hex
   string, not a hash.
+- **Four near-duplicate `make_id()` helpers.** `hush_agent_make_id`,
+  `hush_roster_make_id`, `hush_presence_make_id`, `hush_intel_make_id` each
+  emit `hex(ts) + hex(seq) + hex(seq^0x51ed270b) + hex(seq*N)` with a
+  different `N` per module. This is the real id path; `hush_event_compute_id`
+  should be the single source of truth. Unifying it changes on-disk ids, so
+  it is a careful follow-up, not a drive-by cleanup.
 - **`hush_provider_update_all()` is built but unwired** — production never
   calls it (only `test_provider.c`). Awaiting launch policy sign-off.
 - **`hush_provider_capabilities()` and `hush_provider_flags()` are test-only
