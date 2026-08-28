@@ -1,5 +1,7 @@
 /* hush_launch.c: owns first-launch session, vibe, channels, projects, Payne. */
 
+#define _POSIX_C_SOURCE 200809L
+
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
@@ -23,7 +25,6 @@ enum {
     HUSH_LAUNCH_KIND_NOTE = 1,
     HUSH_LAUNCH_KIND_REPO = 30617,
     HUSH_LAUNCH_SLUG_FALLBACK = 'x',
-    HUSH_LAUNCH_ID_WIDTH = 16,
     HUSH_LAUNCH_CMD_MAX = 768,
     HUSH_LAUNCH_FILE_MAX = 32768,
     HUSH_LAUNCH_KEY_MAX = 48,
@@ -106,9 +107,6 @@ static void hush_launch_fill_event(hush_event_t *ev, const char *pubkey_hex,
 
 /* Writes a 16-char hex join token. */
 static hush_status_t hush_launch_make_token(char *out, size_t outsz);
-
-/* Writes a deterministic hex id from time + seq. */
-static void hush_launch_make_id(char *out65);
 
 /* JSON-escapes src into dst. */
 static size_t hush_launch_json_escape(const char *src, char *dst, size_t dstsz);
@@ -975,6 +973,13 @@ hush_status_t hush_launch_set_channel_policy(hush_launch_t *launch,
     ch->max_robot_turns = in->max_robot_turns > 0
         ? in->max_robot_turns : HUSH_LAUNCH_TURNS_DEFAULT;
     hush_launch_copy_name(ch->chaperon, sizeof(ch->chaperon), in->chaperon, "");
+    /* Conversation rule: standalone robots (robot_talk, no human in the loop)
+     * MUST have a designated chaperon. When the caller did not name one,
+     * fall back to the platform organizer (Payne) so oversight is always
+     * explicit rather than implicit. */
+    if (ch->robot_talk && ch->chaperon[0] == '\0')
+        hush_launch_copy_name(ch->chaperon, sizeof(ch->chaperon),
+                              HUSH_LAUNCH_PAYNE_SLUG, "");
     return hush_launch_save_vibe(launch);
 }
 
@@ -1312,6 +1317,7 @@ static hush_status_t hush_launch_store_profile(hush_store_t *store,
         return HUSH_ERR_FULL;
     hush_launch_fill_event(&ev, id->pubkey_hex, HUSH_LAUNCH_KIND_META,
                            content, "");
+    (void)hush_event_compute_id(&ev, ev.id);
     return hush_store_insert(store, &ev);
 }
 
@@ -1327,6 +1333,7 @@ static hush_status_t hush_launch_store_welcome(hush_store_t *store,
                            "want built and I'll find — or raise — the right "
                            "robot for the job.",
                            HUSH_LAUNCH_CHAN_WELCOME);
+    (void)hush_event_compute_id(&ev, ev.id);
     return hush_store_insert(store, &ev);
 }
 
@@ -1349,6 +1356,7 @@ static hush_status_t hush_launch_store_repo(hush_store_t *store,
     ev.tag_count = 1;
     memcpy(ev.tags[0][0], "d", 2);
     memcpy(ev.tags[0][1], proj->slug, strlen(proj->slug) + 1);
+    (void)hush_event_compute_id(&ev, ev.id);
     return hush_store_insert(store, &ev);
 }
 
@@ -1360,7 +1368,6 @@ static void hush_launch_fill_event(hush_event_t *ev, const char *pubkey_hex,
     assert(pubkey_hex != NULL);
     assert(content != NULL);
     memset(ev, 0, sizeof(*ev));
-    hush_launch_make_id(ev->id);
     memcpy(ev->pubkey, pubkey_hex, HUSH_IDENTITY_HEX_LEN + 1);
     ev->kind = kind;
     ev->created_at = (int64_t)time(NULL);
@@ -1372,29 +1379,15 @@ static void hush_launch_fill_event(hush_event_t *ev, const char *pubkey_hex,
     }
 }
 
-static void hush_launch_make_id(char *out65)
-{
-    static unsigned seq;
-    time_t now;
-
-    assert(out65 != NULL);
-    now = time(NULL);
-    seq++;
-    (void)snprintf(out65, HUSH_EVENT_ID_HEX_LEN + 1,
-                   "%0*llx%0*x%0*x%0*x",
-                   HUSH_LAUNCH_ID_WIDTH, (unsigned long long)now,
-                   HUSH_LAUNCH_ID_WIDTH, seq,
-                   HUSH_LAUNCH_ID_WIDTH, seq ^ 0x9e3779b9u,
-                   HUSH_LAUNCH_ID_WIDTH, seq * 3u);
-}
-
 static void hush_launch_default_payne_providers(hush_launch_t *launch)
 {
     assert(launch != NULL);
     if (launch->npayne_providers > 0)
         return;
-    memcpy(launch->payne_providers[0], HUSH_ROSTER_PROVIDER_GOOSE,
-           sizeof(HUSH_ROSTER_PROVIDER_GOOSE));
+    /* grok-build is the primary wrapped runtime and the most likely already
+     * configured; default to it so Payne can answer out of the box. */
+    memcpy(launch->payne_providers[0], HUSH_ROSTER_PROVIDER_GROK_BUILD,
+           sizeof(HUSH_ROSTER_PROVIDER_GROK_BUILD));
     launch->npayne_providers = 1;
 }
 
@@ -2241,6 +2234,24 @@ static hush_status_t hush_launch_put_agents(const hush_launch_t *launch,
         hush_launch_index_key(key, sizeof(key), "agent_provider", i);
         HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
                                        launch->roster.agents[i].provider));
+        hush_launch_index_key(key, sizeof(key), "agent_providers", i);
+        {
+            char plist[HUSH_ROSTER_PROVIDERS_MAX *
+                       (HUSH_ROSTER_PROVIDER_MAX + 1)];
+            size_t poff = 0;
+            size_t j;
+
+            plist[0] = '\0';
+            for (j = 0; j < launch->roster.agents[i].nproviders; ++j) {
+                int m = snprintf(plist + poff, sizeof(plist) - poff, "%s%s",
+                                 j == 0 ? "" : ",",
+                                 launch->roster.agents[i].providers[j]);
+                if (m < 0 || poff + (size_t)m >= sizeof(plist))
+                    break;
+                poff += (size_t)m;
+            }
+            HUSH_TRY(hush_launch_put_field(out, outsz, off, key, plist));
+        }
         hush_launch_index_key(key, sizeof(key), "agent_prompt", i);
         HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
                                        launch->roster.agents[i].prompt));
@@ -2567,6 +2578,33 @@ static hush_status_t hush_launch_take_agent(hush_launch_t *launch,
     hush_launch_index_key(key, sizeof(key), "agent_provider", idx);
     (void)hush_launch_json_string(json, key, agent->provider,
                                   sizeof(agent->provider));
+    hush_launch_index_key(key, sizeof(key), "agent_providers", idx);
+    {
+        char plist[HUSH_ROSTER_PROVIDERS_MAX * (HUSH_ROSTER_PROVIDER_MAX + 1)];
+        char *tok;
+        char *save;
+        size_t np = 0;
+
+        if (hush_launch_json_string(json, key, plist, sizeof(plist))) {
+            for (tok = strtok_r(plist, ",", &save);
+                 tok != NULL &&
+                 np < (size_t)HUSH_ROSTER_PROVIDERS_MAX;
+                 tok = strtok_r(NULL, ",", &save)) {
+                if (tok[0] != '\0' && hush_roster_is_provider(tok))
+                    hush_launch_copy_name(agent->providers[np],
+                                          sizeof(agent->providers[np]),
+                                          tok, "");
+                np++;
+            }
+        }
+        if (np == 0 && agent->provider[0] != '\0') {
+            hush_launch_copy_name(agent->providers[0],
+                                  sizeof(agent->providers[0]),
+                                  agent->provider, "");
+            np = 1;
+        }
+        agent->nproviders = np;
+    }
     hush_launch_index_key(key, sizeof(key), "agent_prompt", idx);
     (void)hush_launch_json_string(json, key, agent->prompt,
                                   sizeof(agent->prompt));

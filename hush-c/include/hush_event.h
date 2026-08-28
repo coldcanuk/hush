@@ -28,8 +28,10 @@ typedef struct {
     char tags[HUSH_EVENT_MAX_TAGS][HUSH_EVENT_MAX_TAG_ELEMS][HUSH_EVENT_MAX_TAG_LEN + 1];
 } hush_event_t;
 
-/* Computes id = hex(sha256( serialized 0 + pubkey + created + kind + tags + content )).
- * On success writes NUL-terminated hex to out_id (65 bytes). Fails HUSH_ERR_ARG on NULLs. */
+/* Computes the NIP-01 id = hex(sha256([0, pubkey, created_at, kind, tags, content])).
+ * The canonical compact JSON preimage is serialized (strings escaped, tags included)
+ * and hashed with SHA-256. On success writes NUL-terminated 64-hex-char id to
+ * out_id (65 bytes). Fails HUSH_ERR_ARG on NULLs or a non-64-char pubkey. */
 hush_status_t hush_event_compute_id(const hush_event_t *ev, char *out_id);
 
 /* Basic structural validation (lengths, kind bounds). Does not verify signature. */

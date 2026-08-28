@@ -20,13 +20,13 @@
 #include "hush_provider.h"
 #include "hush_relay.h"
 #include "hush_roster.h"
+#include "hush_seg.h"
 
 enum {
     HUSH_AGENT_INTRO_MAX = 32,
     HUSH_AGENT_JOBS_MAX = 4,
     HUSH_AGENT_TIMEOUT_S = 90,
     HUSH_AGENT_KIND_NOTE = 1,
-    HUSH_AGENT_ID_WIDTH = 16,
     HUSH_AGENT_ARGV_MAX = 28,
     HUSH_AGENT_PATH_MAX = 256,
     HUSH_AGENT_FD_NONE = -1,
@@ -45,6 +45,14 @@ enum {
 };
 
 #define HUSH_AGENT_GROK_BIN "grok"
+#define HUSH_AGENT_AGY_BIN "agy"
+#define HUSH_AGENT_COPILOT_BIN "copilot"
+#define HUSH_AGENT_CODEX_BIN "codex"
+#define HUSH_AGENT_GOOSE_BIN "goose"
+#define HUSH_AGENT_OLLAMA_BIN "ollama"
+#define HUSH_AGENT_AGY_PROMPT_MAX \
+    (HUSH_ROSTER_PROMPT_MAX + HUSH_ROSTER_PROMPT_MAX + \
+     HUSH_EVENT_MAX_CONTENT + 16)
 #define HUSH_AGENT_DEVNULL "/dev/null"
 #define HUSH_AGENT_CHAN_FALLBACK "general"
 #define HUSH_AGENT_ENV_CONFIG "HUSH_CONFIG_DIR"
@@ -139,6 +147,7 @@ typedef struct {
     char robot_pub[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
     char robot_name[HUSH_ROSTER_NAME_MAX];
     char robot_role[HUSH_ROSTER_NAME_MAX];
+    char provider[HUSH_ROSTER_PROVIDER_MAX];
     char presence_slug[HUSH_PRESENCE_SLUG_MAX];
     char human_name[HUSH_ROSTER_NAME_MAX];
     char prompt[HUSH_ROSTER_PROMPT_MAX];
@@ -200,11 +209,19 @@ typedef struct {
     const char *npub;
     const char *hex;
     const char *provider;
+    /* Ranked provider list (index 0 = primary). Populated from the roster
+     * agent; may be empty for Payne (which has its own payne_providers). */
+    const char *providers[HUSH_ROSTER_PROVIDERS_MAX];
+    size_t nproviders;
     const char *prompt;
     const char *slug;
     const char *role;
     const char *intro;
     int intro_enabled;
+    /* Attached file context (points into the roster agent). Empty when the
+     * robot carries no files. Consumed by hush_agent_append_context(). */
+    const hush_roster_context_t *context;
+    size_t ncontext;
 } hush_agent_robot_t;
 
 typedef struct {
@@ -255,7 +272,6 @@ static size_t g_nintro;
 
 static void hush_agent_copy(char *dst, size_t dstsz, const char *src);
 static void hush_agent_trim(char *text);
-static void hush_agent_make_id(char *out65);
 static hush_agent_job_t *hush_agent_find_slot(void);
 static int hush_agent_key_matches(const char *mention, const char *npub,
                                   const char *hex);
@@ -286,9 +302,10 @@ static void hush_agent_note_no_runtime(hush_store_t *store,
                                        const hush_agent_robot_t *bot,
                                        const hush_event_t *parent);
 static int hush_agent_grok_ready(void);
-/* True when this robot can start a grok job (own id or Payne ranked grok). */
-static int hush_agent_can_start_grok(const hush_launch_t *launch,
-                                     const hush_agent_robot_t *bot);
+static int hush_agent_runtime_ready(const char *provider);
+/* True when the robot's provider runtime is ready to execute a turn. */
+static int hush_agent_can_start(const hush_launch_t *launch,
+                                const hush_agent_robot_t *bot);
 static hush_status_t hush_agent_start_grok(const hush_agent_job_in_t *in);
 static void hush_agent_fill_job(hush_agent_job_t *job,
                                 const hush_agent_job_in_t *in);
@@ -311,7 +328,15 @@ static void hush_agent_fill_thread(char *out, size_t outsz,
                                    const hush_launch_t *launch,
                                    const hush_event_t *parent,
                                    const hush_agent_thread_walk_t *names);
-static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job);
+static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job);
+static void hush_agent_exec_grok(const hush_agent_job_t *job);
+static void hush_agent_exec_agy(const hush_agent_job_t *job);
+static void hush_agent_exec_copilot(const hush_agent_job_t *job);
+static void hush_agent_exec_codex(const hush_agent_job_t *job);
+static void hush_agent_exec_goose(const hush_agent_job_t *job);
+static void hush_agent_exec_ollama(const hush_agent_job_t *job);
+static void hush_agent_build_combined(char *out, size_t outsz,
+                                      const hush_agent_job_t *job);
 static hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job);
 static void hush_agent_fill_fixup(hush_agent_job_t *job,
                                   const char *instruction,
@@ -629,21 +654,6 @@ static void hush_agent_trim(char *text)
     }
 }
 
-static void hush_agent_make_id(char *out65)
-{
-    time_t now;
-
-    assert(out65 != NULL);
-    now = time(NULL);
-    g_id_seq++;
-    (void)snprintf(out65, HUSH_EVENT_ID_HEX_LEN + 1,
-                   "%0*llx%0*x%0*x%0*x",
-                   HUSH_AGENT_ID_WIDTH, (unsigned long long)now,
-                   HUSH_AGENT_ID_WIDTH, g_id_seq,
-                   HUSH_AGENT_ID_WIDTH, g_id_seq ^ 0x51ed270bu,
-                   HUSH_AGENT_ID_WIDTH, g_id_seq * 7u);
-}
-
 static hush_agent_job_t *hush_agent_find_slot(void)
 {
     size_t i;
@@ -686,6 +696,7 @@ static int hush_agent_lookup_robot(hush_agent_robot_t *out,
                                    const char *mention)
 {
     size_t i;
+    size_t j;
     const hush_roster_agent_t *agent;
 
     assert(out != NULL);
@@ -699,6 +710,11 @@ static int hush_agent_lookup_robot(hush_agent_robot_t *out,
         out->hex = launch->payne.pubkey_hex;
         out->provider = (launch->npayne_providers > 0)
             ? launch->payne_providers[0] : HUSH_ROSTER_PROVIDER_GOOSE;
+        for (j = 0; j < launch->npayne_providers &&
+                    j < (size_t)HUSH_ROSTER_PROVIDERS_MAX; j++)
+            out->providers[j] = launch->payne_providers[j];
+        out->nproviders = (launch->npayne_providers > 0)
+            ? launch->npayne_providers : 0;
         out->prompt = hush_launch_payne_prompt(launch);
         out->slug = HUSH_LAUNCH_PAYNE_SLUG;
         out->role = HUSH_ROSTER_ROLE_WORKER;
@@ -719,11 +735,17 @@ static int hush_agent_lookup_robot(hush_agent_robot_t *out,
         out->npub = agent->id.npub;
         out->hex = agent->id.pubkey_hex;
         out->provider = agent->provider;
+        for (j = 0; j < agent->nproviders &&
+                    j < (size_t)HUSH_ROSTER_PROVIDERS_MAX; j++)
+            out->providers[j] = agent->providers[j];
+        out->nproviders = agent->nproviders;
         out->prompt = agent->prompt;
         out->slug = agent->slug;
         out->role = agent->role[0] ? agent->role : HUSH_ROSTER_ROLE_WORKER;
         out->intro = agent->intro[0] ? agent->intro : HUSH_ROSTER_INTRO_DEFAULT;
         out->intro_enabled = agent->intro_enabled;
+        out->context = agent->context;
+        out->ncontext = agent->ncontext;
         return 1;
     }
     return 0;
@@ -865,7 +887,6 @@ static void hush_agent_fill_note(hush_event_t *ev, const hush_agent_note_in_t *i
     assert(in->content != NULL);
     assert(in->channel != NULL);
     memset(ev, 0, sizeof(*ev));
-    hush_agent_make_id(ev->id);
     hush_agent_copy(ev->pubkey, sizeof(ev->pubkey), in->pubkey);
     ev->kind = (uint32_t)HUSH_AGENT_KIND_NOTE;
     ev->created_at = (int64_t)time(NULL);
@@ -901,6 +922,7 @@ static void hush_agent_fill_note(hush_event_t *ev, const hush_agent_note_in_t *i
                         sizeof(ev->tags[ev->tag_count][1]), np);
         ev->tag_count++;
     }
+    (void)hush_event_compute_id(ev, ev->id);
 }
 
 static hush_status_t hush_agent_insert_note(hush_store_t *store,
@@ -1027,23 +1049,85 @@ static void hush_agent_note_no_runtime(hush_store_t *store,
 static int hush_agent_grok_ready(void)
 {
     hush_provider_status_t st;
+    unsigned int flags;
 
     if (hush_provider_status(&st, HUSH_ROSTER_PROVIDER_GROK_BUILD) != HUSH_OK)
         return 0;
-    return st.has_home && st.has_binary;
+    if (!st.has_binary)
+        return 0;
+    /* OAUTH providers must be logged in (home config) before dispatch. The
+     * gate is driven by the policy-flag table, not a hardcoded name. */
+    flags = hush_provider_flags(HUSH_ROSTER_PROVIDER_GROK_BUILD);
+    if ((flags & HUSH_PROVIDER_FLAG_OAUTH) && !st.has_home)
+        return 0;
+    return 1;
 }
 
-static int hush_agent_can_start_grok(const hush_launch_t *launch,
-                                     const hush_agent_robot_t *bot)
+static int hush_agent_runtime_ready(const char *provider)
 {
-    /* grok-build is the only runtime that executes a turn today. The robot's
-     * selected provider is a forward-looking label; every robot falls back to
-     * grok-build so a non-grok pick (goose, codex, ...) still works instead of
-     * silently posting only its intro. */
+    hush_provider_status_t st;
+    unsigned int flags;
+
+    if (provider == NULL || provider[0] == '\0')
+        return 0;
+    /* Runtimes with a verified headless CLI execute on their own binary:
+     * agy (spawn-only), copilot, codex, goose. Each gates on binary presence,
+     * and OAUTH-flagged providers additionally require a home config. Every
+     * other provider still falls back to grok-build. */
+    if (strcmp(provider, HUSH_ROSTER_PROVIDER_AGY) == 0 ||
+        strcmp(provider, HUSH_ROSTER_PROVIDER_COPILOT) == 0 ||
+        strcmp(provider, HUSH_ROSTER_PROVIDER_CODEX) == 0 ||
+        strcmp(provider, HUSH_ROSTER_PROVIDER_GOOSE) == 0) {
+        if (hush_provider_status(&st, provider) != HUSH_OK)
+            return 0;
+        if (!st.has_binary)
+            return 0;
+        flags = hush_provider_flags(provider);
+        if ((flags & HUSH_PROVIDER_FLAG_OAUTH) && !st.has_home)
+            return 0;
+        /* goose also needs `goose configure` (config.yaml) before it can
+         * answer; an unconfigured goose emits a useless error otherwise. */
+        if (strcmp(provider, HUSH_ROSTER_PROVIDER_GOOSE) == 0 && !st.has_home)
+            return 0;
+        return 1;
+    }
+    /* Ollama (local): needs the binary and a configured model name. */
+    if (strcmp(provider, HUSH_ROSTER_PROVIDER_OLLAMA) == 0) {
+        if (hush_provider_status(&st, provider) != HUSH_OK)
+            return 0;
+        if (!st.has_binary)
+            return 0;
+        if (st.model[0] == '\0')
+            return 0;
+        return 1;
+    }
+    return hush_agent_grok_ready();
+}
+
+/* Returns the first ready provider in the robot's ranked list, else NULL. */
+static const char *hush_agent_pick_provider(const hush_agent_robot_t *bot)
+{
+    size_t i;
+
+    if (bot == NULL)
+        return NULL;
+    for (i = 0; i < bot->nproviders &&
+                i < (size_t)HUSH_ROSTER_PROVIDERS_MAX; i++) {
+        if (bot->providers[i] != NULL &&
+            hush_agent_runtime_ready(bot->providers[i]))
+            return bot->providers[i];
+    }
+    if (bot->provider != NULL && hush_agent_runtime_ready(bot->provider))
+        return bot->provider;
+    return NULL;
+}
+
+static int hush_agent_can_start(const hush_launch_t *launch,
+                                const hush_agent_robot_t *bot)
+{
     (void)launch;
     assert(bot != NULL);
-    (void)bot;
-    return hush_agent_grok_ready();
+    return hush_agent_pick_provider(bot) != NULL;
 }
 
 static int hush_agent_event_is_root(const hush_event_t *ev, const char *root)
@@ -1212,6 +1296,61 @@ static void hush_agent_fill_thread(char *out, size_t outsz,
     hush_agent_walk_thread(out, outsz, evs, n, &walk);
 }
 
+/* True when a context MIME is Markdown (chunk with fence awareness). */
+static int hush_agent_is_markdown(const char *mime)
+{
+    if (mime == NULL)
+        return 0;
+    return strcmp(mime, HUSH_ROSTER_MIME_MARKDOWN) == 0 ||
+           strcmp(mime, HUSH_ROSTER_MIME_XMARKDOWN) == 0;
+}
+
+/* Appends bounded, structurally-chunked file context to the robot note.
+ * hush_seg splits each body so the first included chunk ends on a semantic
+ * boundary (sentence/paragraph, or a markdown fence) rather than mid-word.
+ * Stops when the note buffer is full. No-op when the robot has no files. */
+static void hush_agent_append_context(char *note, size_t notesz,
+                                      const hush_agent_robot_t *bot)
+{
+    size_t off;
+    size_t i;
+
+    assert(note != NULL);
+    assert(notesz > 0);
+    assert(bot != NULL);
+    off = strlen(note);
+    for (i = 0; i < bot->ncontext && i < (size_t)HUSH_ROSTER_CONTEXT_MAX; i++) {
+        const hush_roster_context_t *ctx = &bot->context[i];
+        hush_seg_span_t span;
+        size_t len;
+        int n;
+
+        if (off + 2 >= notesz)
+            return;
+        if (ctx->text[0] == '\0')
+            continue;
+        n = snprintf(note + off, notesz - off, "\n[file: %s]\n", ctx->name);
+        if (n < 0 || (size_t)n >= notesz - off)
+            return;
+        off += (size_t)n;
+        if (off + 2 >= notesz)
+            return;
+        if (hush_seg_split(ctx->text, ctx->bytes,
+                           hush_agent_is_markdown(ctx->mime),
+                           notesz - off - 1, notesz - off - 1,
+                           &span, 1) != 1)
+            continue;
+        len = span.len;
+        if (len > notesz - off - 1)
+            len = notesz - off - 1;
+        if (len == 0)
+            return;
+        memcpy(note + off, ctx->text + span.off, len);
+        off += len;
+        note[off] = '\0';
+    }
+}
+
 static void hush_agent_fill_job(hush_agent_job_t *job,
                                 const hush_agent_job_in_t *in)
 {
@@ -1240,6 +1379,14 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
     hush_agent_copy(job->robot_role, sizeof(job->robot_role),
                     bot->role != NULL && bot->role[0] != '\0'
                         ? bot->role : HUSH_ROSTER_ROLE_WORKER);
+    {
+        const char *picked = hush_agent_pick_provider(bot);
+
+        hush_agent_copy(job->provider, sizeof(job->provider),
+                        picked != NULL ? picked :
+                        (bot->provider != NULL && bot->provider[0] != '\0'
+                             ? bot->provider : HUSH_ROSTER_PROVIDER_GROK_BUILD));
+    }
     hush_agent_make_token(job->token, sizeof(job->token));
     job->launch = in->launch;
     if (in->ask != NULL && in->ask[0] != '\0')
@@ -1369,6 +1516,7 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
                            in->launch, parent, &names);
     if (job->note[0] == '\0')
         hush_agent_copy(job->note, sizeof(job->note), parent->content);
+    hush_agent_append_context(job->note, sizeof(job->note), bot);
 
     /* Pills / channel topic -> system prompt injection.
      * If the channel has an "about" (topic), append a short pointer so the
@@ -1391,9 +1539,8 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
     }
 }
 
-static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job)
+static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job)
 {
-    char *argv[HUSH_AGENT_ARGV_MAX];
     int dn;
 
     assert(job != NULL);
@@ -1406,6 +1553,36 @@ static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job)
         (void)dup2(dn, STDERR_FILENO);
         close(dn);
     }
+    /* Multi-provider dispatch. fixup/plan/elect prompts are grok-tuned and
+     * stay on grok regardless of the robot's provider; only a normal mention
+     * reply (NOTE_JOB) is routed to the provider's own verified headless CLI.
+     *
+     * SPAWN_ONLY providers (agy) run as an independent process, never wrapped.
+     * copilot/codex/goose each have a verified non-interactive mode; every
+     * other provider still falls back to grok-build until its CLI is confirmed. */
+    if (job->kind != HUSH_AGENT_KIND_NOTE_JOB) {
+        hush_agent_exec_grok(job);
+        return;
+    }
+    if (hush_provider_flags(job->provider) & HUSH_PROVIDER_FLAG_SPAWN_ONLY)
+        hush_agent_exec_agy(job);
+    else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_COPILOT) == 0)
+        hush_agent_exec_copilot(job);
+    else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_CODEX) == 0)
+        hush_agent_exec_codex(job);
+    else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_GOOSE) == 0)
+        hush_agent_exec_goose(job);
+    else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_OLLAMA) == 0)
+        hush_agent_exec_ollama(job);
+    else
+        hush_agent_exec_grok(job);
+}
+
+static void hush_agent_exec_grok(const hush_agent_job_t *job)
+{
+    char *argv[HUSH_AGENT_ARGV_MAX];
+
+    assert(job != NULL);
     argv[0] = (char *)HUSH_AGENT_GROK_BIN;
     argv[1] = (char *)"-p";
     argv[2] = (char *)job->note;
@@ -1434,6 +1611,105 @@ static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job)
     _exit(127);
 }
 
+static void hush_agent_build_combined(char *out, size_t outsz,
+                                      const hush_agent_job_t *job)
+{
+    int n;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    assert(job != NULL);
+    n = snprintf(out, outsz, "%s\n%s\n%s",
+                 job->prompt, job->rules, job->note);
+    if (n < 0 || (size_t)n >= outsz)
+        out[outsz - 1] = '\0';
+}
+
+static void hush_agent_exec_agy(const hush_agent_job_t *job)
+{
+    char combined[HUSH_AGENT_AGY_PROMPT_MAX];
+    char *argv[4];
+
+    assert(job != NULL);
+    hush_agent_build_combined(combined, sizeof(combined), job);
+    argv[0] = (char *)HUSH_AGENT_AGY_BIN;
+    argv[1] = (char *)"-p";
+    argv[2] = combined;
+    argv[3] = NULL;
+    execvp(argv[0], argv);
+    _exit(127);
+}
+
+static void hush_agent_exec_copilot(const hush_agent_job_t *job)
+{
+    char combined[HUSH_AGENT_AGY_PROMPT_MAX];
+    char *argv[5];
+
+    assert(job != NULL);
+    hush_agent_build_combined(combined, sizeof(combined), job);
+    argv[0] = (char *)HUSH_AGENT_COPILOT_BIN;
+    argv[1] = (char *)"-p";
+    argv[2] = combined;
+    argv[3] = (char *)"--allow-all";
+    argv[4] = NULL;
+    execvp(argv[0], argv);
+    _exit(127);
+}
+
+static void hush_agent_exec_codex(const hush_agent_job_t *job)
+{
+    char combined[HUSH_AGENT_AGY_PROMPT_MAX];
+    char *argv[4];
+
+    assert(job != NULL);
+    hush_agent_build_combined(combined, sizeof(combined), job);
+    argv[0] = (char *)HUSH_AGENT_CODEX_BIN;
+    argv[1] = (char *)"exec";
+    argv[2] = combined;
+    argv[3] = NULL;
+    execvp(argv[0], argv);
+    _exit(127);
+}
+
+static void hush_agent_exec_goose(const hush_agent_job_t *job)
+{
+    char combined[HUSH_AGENT_AGY_PROMPT_MAX];
+    char *argv[5];
+
+    assert(job != NULL);
+    hush_agent_build_combined(combined, sizeof(combined), job);
+    argv[0] = (char *)HUSH_AGENT_GOOSE_BIN;
+    argv[1] = (char *)"run";
+    argv[2] = (char *)"--text";
+    argv[3] = combined;
+    argv[4] = NULL;
+    execvp(argv[0], argv);
+    _exit(127);
+}
+
+static void hush_agent_exec_ollama(const hush_agent_job_t *job)
+{
+    char combined[HUSH_AGENT_AGY_PROMPT_MAX];
+    hush_provider_status_t st;
+    char *argv[6];
+
+    assert(job != NULL);
+    hush_agent_build_combined(combined, sizeof(combined), job);
+    /* Local inference: the model is configured on the Ollama provider overlay
+     * (providers.json -> model). runtime_ready() already requires one, so the
+     * model field is non-empty here; guard anyway. */
+    (void)hush_provider_status(&st, HUSH_ROSTER_PROVIDER_OLLAMA);
+    if (st.model[0] == '\0')
+        _exit(127);
+    argv[0] = (char *)HUSH_AGENT_OLLAMA_BIN;
+    argv[1] = (char *)"run";
+    argv[2] = st.model;
+    argv[3] = combined;
+    argv[4] = NULL;
+    execvp(argv[0], argv);
+    _exit(127);
+}
+
 static hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job)
 {
     int fds[2];
@@ -1451,7 +1727,7 @@ static hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job)
     }
     if (pid == 0) {
         close(fds[0]);
-        hush_agent_exec_grok(fds[1], job);
+        hush_agent_exec_child(fds[1], job);
     }
     close(fds[1]);
     flags = fcntl(fds[0], F_GETFL, 0);
@@ -1498,6 +1774,8 @@ static void hush_agent_fill_fixup(hush_agent_job_t *job,
     job->busy = 1;
     job->kind = HUSH_AGENT_KIND_FIXUP;
     job->started = time(NULL);
+    hush_agent_copy(job->provider, sizeof(job->provider),
+                    HUSH_ROSTER_PROVIDER_GROK_BUILD);
     hush_agent_make_token(job->token, sizeof(job->token));
     hush_agent_copy(job->prompt, sizeof(job->prompt), HUSH_AGENT_FIXUP_PROMPT);
     hush_agent_copy(job->rules, sizeof(job->rules), HUSH_AGENT_FIXUP_RULES);
@@ -1554,9 +1832,6 @@ static void hush_agent_kill_job(hush_agent_job_t *job)
 static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
                                   int ok)
 {
-    hush_agent_robot_t bot;
-    hush_event_t parent;
-
     assert(job != NULL);
     hush_agent_trim(job->out);
     {
@@ -1666,22 +1941,6 @@ static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
         hush_agent_presence_put(store, job, HUSH_PRESENCE_SLUG_IDLE);
         hush_agent_close_job(job);
         return;
-    }
-    if (store != NULL) {
-        memset(&bot, 0, sizeof(bot));
-        memset(&parent, 0, sizeof(parent));
-        bot.name = job->robot_name;
-        bot.hex = job->robot_pub;
-        hush_agent_copy(parent.id, sizeof(parent.id), job->parent_id);
-        hush_agent_copy(parent.pubkey, sizeof(parent.pubkey), job->human_pub);
-        parent.tag_count = 1;
-        memcpy(parent.tags[0][0], "h", 2);
-        hush_agent_copy(parent.tags[0][1], sizeof(parent.tags[0][1]),
-                        job->channel);
-        /* M3.1 dev log gate: this error on_deck path is internal.
-         * Suppress to keep main chat clean (main intros gated at dispatch).
-         * When dev logging is later wired to a panel we can surface here. */
-        (void)store; (void)&bot; (void)&parent; (void)ok; /* no-op for now */
     }
     hush_agent_close_job(job);
 }
@@ -2541,7 +2800,7 @@ static void hush_agent_begin_work(const hush_agent_job_in_t *in)
     hush_agent_event_channel(channel, sizeof(channel), in->parent);
     hush_agent_emit(HUSH_CEVENT_INTRO, channel, root, in->bot->hex,
                     in->bot->name);
-    if (!hush_agent_can_start_grok(in->launch, in->bot)) {
+    if (!hush_agent_can_start(in->launch, in->bot)) {
         hush_agent_note_no_runtime(in->store, in->bot, in->parent);
         return;
     }

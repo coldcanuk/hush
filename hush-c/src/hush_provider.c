@@ -41,27 +41,57 @@ typedef struct {
     const char *family;
     const char *host;
     const char *binary;
+    unsigned int caps;
+    unsigned int flags;
 } hush_provider_meta_t;
 
 static const hush_provider_meta_t hush_provider_meta[HUSH_PROVIDER_COUNT] = {
     { HUSH_ROSTER_PROVIDER_GOOSE, "Goose", HUSH_PROVIDER_FAMILY_HOME,
-      "", "goose" },
+      "", "goose",
+      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH,
+      HUSH_PROVIDER_FLAG_NONE },
     { HUSH_ROSTER_PROVIDER_GROK_BUILD, "Grok Build",
-      HUSH_PROVIDER_FAMILY_HOME, "", "grok" },
+      HUSH_PROVIDER_FAMILY_HOME, "", "grok",
+      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_IMAGE |
+          HUSH_PROVIDER_CAP_FILE_ATTACH,
+      HUSH_PROVIDER_FLAG_OAUTH },
     { HUSH_ROSTER_PROVIDER_CODEX, "Codex", HUSH_PROVIDER_FAMILY_HOME,
-      "", "codex" },
+      "", "codex",
+      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_IMAGE |
+          HUSH_PROVIDER_CAP_FILE_ATTACH,
+      HUSH_PROVIDER_FLAG_OAUTH },
     { HUSH_ROSTER_PROVIDER_CLINE, "Cline", HUSH_PROVIDER_FAMILY_EDITOR,
-      "", "cline" },
+      "", "cline",
+      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_IMAGE |
+          HUSH_PROVIDER_CAP_FILE_ATTACH,
+      HUSH_PROVIDER_FLAG_NONE },
     { HUSH_ROSTER_PROVIDER_GEMINI, "Gemini API", HUSH_PROVIDER_FAMILY_API,
-      HUSH_PROVIDER_HOST_GEMINI, "" },
+      HUSH_PROVIDER_HOST_GEMINI, "", HUSH_PROVIDER_CAP_IMAGE,
+      HUSH_PROVIDER_FLAG_NONE },
     { HUSH_ROSTER_PROVIDER_XAI, "xAI API", HUSH_PROVIDER_FAMILY_API,
-      HUSH_PROVIDER_HOST_XAI, "" },
+      HUSH_PROVIDER_HOST_XAI, "", HUSH_PROVIDER_CAP_IMAGE,
+      HUSH_PROVIDER_FLAG_NONE },
     { HUSH_ROSTER_PROVIDER_OPENAI, "OpenAI API", HUSH_PROVIDER_FAMILY_API,
-      HUSH_PROVIDER_HOST_OPENAI, "" },
+      HUSH_PROVIDER_HOST_OPENAI, "", HUSH_PROVIDER_CAP_IMAGE,
+      HUSH_PROVIDER_FLAG_NONE },
     { HUSH_ROSTER_PROVIDER_ANTHROPIC, "Anthropic API",
-      HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_ANTHROPIC, "" },
+      HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_ANTHROPIC, "",
+      HUSH_PROVIDER_CAP_IMAGE, HUSH_PROVIDER_FLAG_NONE },
     { HUSH_ROSTER_PROVIDER_DEEPSEEK, "Deepseek API",
-      HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_DEEPSEEK, "" }
+      HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_DEEPSEEK, "", 0,
+      HUSH_PROVIDER_FLAG_NONE },
+    { HUSH_ROSTER_PROVIDER_AGY, "Antigravity", HUSH_PROVIDER_FAMILY_HOME,
+      "", "agy",
+      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH,
+      HUSH_PROVIDER_FLAG_SPAWN_ONLY | HUSH_PROVIDER_FLAG_ALLOWLIST },
+    { HUSH_ROSTER_PROVIDER_COPILOT, "Copilot", HUSH_PROVIDER_FAMILY_HOME,
+      "", "copilot",
+      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH,
+      HUSH_PROVIDER_FLAG_OAUTH },
+    { HUSH_ROSTER_PROVIDER_OLLAMA, "Ollama", HUSH_PROVIDER_FAMILY_LOCAL,
+      HUSH_PROVIDER_HOST_OLLAMA, "ollama", 0, HUSH_PROVIDER_FLAG_NONE },
+    { HUSH_ROSTER_PROVIDER_CUSTOM, "Custom endpoint",
+      HUSH_PROVIDER_FAMILY_API, "", "", 0, HUSH_PROVIDER_FLAG_NONE }
 };
 
 static const char *const hush_provider_secret_kind[HUSH_PROVIDER_SECRET_COUNT] = {
@@ -175,6 +205,36 @@ void hush_provider_family(char *out, size_t outsz, const char *id)
     hush_provider_copy(out, outsz, meta != NULL ? meta->family : "");
 }
 
+unsigned int hush_provider_capabilities(const char *id)
+{
+    const hush_provider_meta_t *meta;
+
+    meta = hush_provider_meta_of(id);
+    if (meta == NULL)
+        return 0;
+    return meta->caps;
+}
+
+int hush_provider_can(const char *id, unsigned int cap)
+{
+    const hush_provider_meta_t *meta;
+
+    meta = hush_provider_meta_of(id);
+    if (meta == NULL)
+        return 0;
+    return (meta->caps & cap) == cap;
+}
+
+unsigned int hush_provider_flags(const char *id)
+{
+    const hush_provider_meta_t *meta;
+
+    meta = hush_provider_meta_of(id);
+    if (meta == NULL)
+        return 0;
+    return meta->flags;
+}
+
 hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id)
 {
     const hush_provider_meta_t *meta;
@@ -190,6 +250,8 @@ hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id)
     hush_provider_copy(out->label, sizeof(out->label), meta->label);
     hush_provider_copy(out->family, sizeof(out->family), meta->family);
     hush_provider_copy(out->host, sizeof(out->host), meta->host);
+    out->caps = meta->caps;
+    out->flags = meta->flags;
     hush_provider_detect_home(out);
     json[0] = '\0';
     (void)hush_provider_read_file(json, sizeof(json));
@@ -310,6 +372,65 @@ void hush_provider_last_error(char *out, size_t outsz)
     if (out == NULL || outsz == 0)
         return;
     hush_provider_copy(out, outsz, g_last_error);
+}
+
+/* True when id documents a self-update subcommand ("<binary> update"). Only
+ * runtimes whose update routine has been verified against their CLI help are
+ * spawned (grok/codex/copilot/goose/agy all expose "update"). */
+static int hush_provider_has_update(const char *id)
+{
+    if (id == NULL)
+        return 0;
+    return strcmp(id, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0 ||
+           strcmp(id, HUSH_ROSTER_PROVIDER_CODEX) == 0 ||
+           strcmp(id, HUSH_ROSTER_PROVIDER_COPILOT) == 0 ||
+           strcmp(id, HUSH_ROSTER_PROVIDER_GOOSE) == 0 ||
+           strcmp(id, HUSH_ROSTER_PROVIDER_AGY) == 0;
+}
+
+/* fork + exec "<binary> update" without waiting. Parent returns immediately. */
+static hush_status_t hush_provider_spawn_update(const char *binary)
+{
+    pid_t pid;
+
+    assert(binary != NULL);
+    assert(binary[0] != '\0');
+    pid = fork();
+    if (pid < 0)
+        return hush_provider_fail("fork");
+    if (pid == 0) {
+        char *argv[3];
+
+        (void)signal(SIGCHLD, SIG_DFL);
+        argv[0] = (char *)binary;
+        argv[1] = (char *)"update";
+        argv[2] = NULL;
+        execvp(argv[0], argv);
+        _exit(127);
+    }
+    hush_relay_track_child(pid);
+    return HUSH_OK;
+}
+
+int hush_provider_update_all(void)
+{
+    int spawned = 0;
+    size_t i;
+
+    hush_provider_copy(g_last_error, sizeof(g_last_error), "");
+    for (i = 0; i < (size_t)HUSH_PROVIDER_COUNT; i++) {
+        const hush_provider_meta_t *meta = &hush_provider_meta[i];
+
+        if (meta->binary[0] == '\0')
+            continue;
+        if (!hush_provider_has_update(meta->id))
+            continue;
+        if (!hush_provider_has_binary(meta->binary))
+            continue;
+        if (hush_provider_spawn_update(meta->binary) == HUSH_OK)
+            spawned++;
+    }
+    return spawned;
 }
 
 static void hush_provider_copy(char *dst, size_t dstsz, const char *src)
@@ -788,6 +909,8 @@ static void hush_provider_mark_configured(hush_provider_status_t *st)
     }
     if (st->has_home && strcmp(st->family, HUSH_PROVIDER_FAMILY_HOME) == 0)
         st->configured = 1;
+    if (strcmp(st->family, HUSH_PROVIDER_FAMILY_LOCAL) == 0 && st->has_binary)
+        st->configured = 1;
 }
 
 static hush_status_t hush_provider_upsert_json(char *json, size_t jsonsz,
@@ -1071,6 +1194,11 @@ static int hush_provider_login_argv(char **argv, size_t argvsz, const char *id)
     }
     if (strcmp(id, HUSH_ROSTER_PROVIDER_CODEX) == 0) {
         argv[0] = (char *)"codex";
+        argv[1] = (char *)"login";
+        return 1;
+    }
+    if (strcmp(id, HUSH_ROSTER_PROVIDER_COPILOT) == 0) {
+        argv[0] = (char *)"copilot";
         argv[1] = (char *)"login";
         return 1;
     }

@@ -21,6 +21,7 @@ enum {
     HUSH_ROSTER_PATH_MAX = 256,
     HUSH_ROSTER_JSON_MAX = 16384,
     HUSH_ROSTER_PROVIDER_MAX = 32,
+    HUSH_ROSTER_PROVIDERS_MAX = 4,
     HUSH_ROSTER_PROMPT_PREVIEW = 160,
     HUSH_ROSTER_INTRO_MAX = 240
 };
@@ -44,11 +45,18 @@ enum {
 #define HUSH_ROSTER_PROVIDER_OPENAI "openai-api"
 #define HUSH_ROSTER_PROVIDER_ANTHROPIC "anthropic-api"
 #define HUSH_ROSTER_PROVIDER_DEEPSEEK "deepseek-api"
+#define HUSH_ROSTER_PROVIDER_AGY "agy"
+#define HUSH_ROSTER_PROVIDER_COPILOT "copilot"
+#define HUSH_ROSTER_PROVIDER_OLLAMA "ollama"
+#define HUSH_ROSTER_PROVIDER_CUSTOM "custom"
 
 typedef struct {
     char name[HUSH_ROSTER_NAME_MAX];
     char mime[HUSH_ROSTER_NAME_MAX];
     size_t bytes;
+    /* Plaintext/Markdown body, kept in memory for turn injection. Not
+     * serialized to JSON (session payload stays lean); lost on restart. */
+    char text[HUSH_ROSTER_CONTEXT_BYTES + 1];
 } hush_roster_context_t;
 
 typedef struct {
@@ -57,6 +65,10 @@ typedef struct {
     char slug[HUSH_ROSTER_NAME_MAX];
     char prompt[HUSH_ROSTER_PROMPT_MAX];
     char provider[HUSH_ROSTER_PROVIDER_MAX];
+    /* Ranked provider list (index 0 = primary). provider[] mirrors index 0 for
+     * backward compatibility. Empty entries are skipped. */
+    char providers[HUSH_ROSTER_PROVIDERS_MAX][HUSH_ROSTER_PROVIDER_MAX];
+    size_t nproviders;
     char picture[HUSH_ROSTER_PATH_MAX];
     char voice[HUSH_SKILL_VOICE_MAX];
     char skills[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
@@ -102,7 +114,7 @@ int hush_roster_is_context_mime(const char *mime, const char *filename);
 /* True when theme is one of the seven named palettes. */
 int hush_roster_is_theme(const char *theme);
 
-/* True when provider is one of the nine named runtimes. */
+/* True when provider is one of the known named runtimes. */
 int hush_roster_is_provider(const char *provider);
 
 /* True when role is worker or chaperon. */
@@ -129,6 +141,9 @@ typedef struct {
     char name[HUSH_ROSTER_NAME_MAX];
     char prompt[HUSH_ROSTER_PROMPT_MAX];
     char provider[HUSH_ROSTER_PROVIDER_MAX];
+    char providers[HUSH_ROSTER_PROVIDERS_MAX][HUSH_ROSTER_PROVIDER_MAX];
+    size_t nproviders;
+    int has_providers;
     char picture[HUSH_ROSTER_PATH_MAX];
     char voice[HUSH_SKILL_VOICE_MAX];
     char skills[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];

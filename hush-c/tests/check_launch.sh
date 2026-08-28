@@ -388,7 +388,7 @@ echo "$vibe" | grep -q '"locked":true' || fail "locked template missing"
 echo "$vibe" | grep -q 'sgt-major-payne-copy' && fail "seed must not clone Major"
 echo "$vibe" | grep -q '"name":"Sgt Major Payne"' && fail "old Payne display name must not ship"
 echo "$vibe" | grep -q 'Sgt. Maj. Payne' && fail "old Payne display name must not ship"
-echo "$vibe" | grep -F '"providers":["goose"]' || fail "Payne default providers"
+echo "$vibe" | grep -F '"providers":["grok-build"]' || fail "Payne default providers"
 echo "$vibe" | grep -q '"slug":"welcome"' || fail "welcome channel missing"
 echo "$vibe" | grep -q '"theme":"dark"' || fail "default theme missing"
 prof=$(curl -sf -X POST "http://127.0.0.1:${port}/api/profile" \

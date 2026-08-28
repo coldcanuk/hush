@@ -11,7 +11,10 @@ enum {
     HUSH_CEVENT_MAX = 64,
     HUSH_CEVENT_TYPE_MAX = 24,
     HUSH_CEVENT_NOTE_MAX = 160,
-    HUSH_CEVENT_JSON_MAX = 16384
+    /* Worst-case bound: 64 events x ~1.6 KB (channel 256 escaped to 512, note
+     * 160 escaped, plus seq/due/keys) + header. Keeps format_json from
+     * truncating a full ring of large signals to an empty reply. */
+    HUSH_CEVENT_JSON_MAX = 131072
 };
 
 #define HUSH_CEVENT_MENTION "mention"
@@ -41,7 +44,28 @@ void hush_cevent_init(void);
 /* Appends one event. due 0 means now. */
 hush_status_t hush_cevent_emit(const hush_cevent_t *in);
 
-/* Writes {"ok":true,"events":[...]} in seq order. */
+/* Writes {"ok":true,"last_seq":N,"drops":N,"events":[...]} in seq order. */
 hush_status_t hush_cevent_format_json(char *out, size_t outsz, size_t *out_len);
+
+/* Same shape, but only events whose seq > since_seq. A consumer tracks its
+ * cursor with hush_cevent_last_seq() and polls with since= to fetch only new
+ * signals (deterministic delta delivery). */
+hush_status_t hush_cevent_format_json_since(char *out, size_t outsz,
+                                            size_t *out_len,
+                                            uint32_t since_seq);
+
+/* Highest seq ever emitted (0 before the first emit). Watermark for delta
+ * polling and precise gap detection. */
+uint32_t hush_cevent_last_seq(void);
+
+/* Records that the consumer has processed all signals up to seq. From then on,
+ * hush_cevent_drops() only counts overwrites of *unacked* events, so a wrap
+ * that evicts only already-consumed signals is reported as zero loss. */
+void hush_cevent_ack(uint32_t seq);
+
+/* Events overwritten when the ring wrapped that had not yet been acked. A
+ * consumer treats a rising value as "I missed a signal; force a full refresh",
+ * and a stable value as safe compaction. */
+uint32_t hush_cevent_drops(void);
 
 #endif /* HUSH_CEVENT_H */

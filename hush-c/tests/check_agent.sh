@@ -74,7 +74,7 @@ curl -sf -X POST "http://127.0.0.1:${port}/api/vibe" \
     -d '{"name":"HQ","about":"primary endpoint"}' >/dev/null
 ag=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
-    -d '{"name":"Happy","system_prompt":"Tell short jokes.","provider":"grok-build","save_pass":false,"picture":"panel:dogs:4"}')
+    -d '{"name":"Happy","system_prompt":"Tell short jokes.","provider":"grok-build","save_pass":false,"picture":"panel:dogs:4","context_name_0":"brief.md","context_mime_0":"text/markdown","context_text_0":"CTXMARKER7x9 file body"}')
 echo "$ag" | grep -q '"slug":"happy"' || fail "happy not raised"
 echo "$ag" | grep -q 'panel:dogs:4' || fail "happy picture id not stored"
 npub=$(printf '%s' "$ag" | sed -n 's/.*"slug":"happy"[^}]*"npub":"\([^"]*\)".*/\1/p')
@@ -133,6 +133,8 @@ while [ "$i" -lt 40 ]; do
 done
 printf '%s' "$got" | grep -q '"reply_to":"' || fail "no threaded reply"
 printf '%s' "$got" | grep -q 'Byte me' || fail "grok reply missing"
+grep -q 'CTXMARKER7x9' "$home/.config/hush/grok-p.log" \
+    || fail "context body must reach the grok -p note"
 
 # Proof for M1 ack slice: server must emit the p-tag as authoritative "mentions" array
 # so UI can render truthful Discord-style acks instead of content heuristic only.

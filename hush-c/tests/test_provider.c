@@ -92,6 +92,10 @@ int main(void)
     expect(hush_provider_is_id("goose"), "goose id");
     expect(hush_provider_is_id("openai-api"), "openai id");
     expect(hush_provider_is_id("deepseek-api"), "deepseek id");
+    expect(hush_provider_is_id("agy"), "agy id");
+    expect(hush_provider_is_id("copilot"), "copilot id");
+    expect(hush_provider_is_id("ollama"), "ollama id");
+    expect(hush_provider_is_id("custom"), "custom id");
     hush_provider_default_host(host, sizeof(host), "openai-api");
     expect(strcmp(host, HUSH_PROVIDER_HOST_OPENAI) == 0, "openai host");
     hush_provider_default_host(host, sizeof(host), "deepseek-api");
@@ -104,8 +108,70 @@ int main(void)
     expect(strcmp(family, HUSH_PROVIDER_FAMILY_API) == 0, "deepseek family");
     hush_provider_family(family, sizeof(family), "cline");
     expect(strcmp(family, HUSH_PROVIDER_FAMILY_EDITOR) == 0, "cline family");
+    hush_provider_family(family, sizeof(family), "agy");
+    expect(strcmp(family, HUSH_PROVIDER_FAMILY_HOME) == 0, "agy family");
+    hush_provider_family(family, sizeof(family), "copilot");
+    expect(strcmp(family, HUSH_PROVIDER_FAMILY_HOME) == 0, "copilot family");
+    hush_provider_family(family, sizeof(family), "ollama");
+    expect(strcmp(family, HUSH_PROVIDER_FAMILY_LOCAL) == 0, "ollama family");
+    hush_provider_family(family, sizeof(family), "custom");
+    expect(strcmp(family, HUSH_PROVIDER_FAMILY_API) == 0, "custom family");
+    hush_provider_default_host(host, sizeof(host), "ollama");
+    expect(strcmp(host, HUSH_PROVIDER_HOST_OLLAMA) == 0, "ollama host");
+
+    expect(hush_provider_capabilities("grok-build") ==
+               (HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_IMAGE |
+                HUSH_PROVIDER_CAP_FILE_ATTACH),
+           "grok caps full");
+    expect(hush_provider_can("grok-build", HUSH_PROVIDER_CAP_TOOLS),
+           "grok can tools");
+    expect(hush_provider_can("grok-build", HUSH_PROVIDER_CAP_IMAGE),
+           "grok can image");
+    expect(hush_provider_can("grok-build", HUSH_PROVIDER_CAP_FILE_ATTACH),
+           "grok can file");
+    expect(hush_provider_capabilities("goose") ==
+               (HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH),
+           "goose caps tools+file");
+    expect(!hush_provider_can("goose", HUSH_PROVIDER_CAP_IMAGE),
+           "goose no image");
+    expect(hush_provider_capabilities("openai-api") ==
+               HUSH_PROVIDER_CAP_IMAGE,
+           "openai image only");
+    expect(!hush_provider_can("openai-api", HUSH_PROVIDER_CAP_TOOLS),
+           "openai no tools");
+    expect(hush_provider_capabilities("deepseek-api") == 0,
+           "deepseek caps none");
+    expect(!hush_provider_can("deepseek-api", HUSH_PROVIDER_CAP_IMAGE),
+           "deepseek no image");
+    expect(hush_provider_capabilities("nope") == 0, "unknown caps zero");
+    expect(!hush_provider_can("nope", HUSH_PROVIDER_CAP_TOOLS), "unknown no");
+    expect(hush_provider_capabilities("agy") ==
+               (HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH),
+           "agy caps tools+file");
+    expect(!hush_provider_can("agy", HUSH_PROVIDER_CAP_IMAGE),
+           "agy no image");
+    expect(hush_provider_capabilities("copilot") ==
+               (HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH),
+           "copilot caps tools+file");
+    expect(hush_provider_capabilities("ollama") == 0, "ollama caps none");
+    expect(hush_provider_capabilities("custom") == 0, "custom caps none");
+    expect(hush_provider_flags("agy") ==
+               (HUSH_PROVIDER_FLAG_SPAWN_ONLY | HUSH_PROVIDER_FLAG_ALLOWLIST),
+           "agy spawn-only + allowlist");
+    expect(hush_provider_flags("copilot") == HUSH_PROVIDER_FLAG_OAUTH,
+           "copilot oauth");
+    expect(hush_provider_flags("grok-build") == HUSH_PROVIDER_FLAG_OAUTH,
+           "grok oauth flag");
+    expect(hush_provider_flags("ollama") == HUSH_PROVIDER_FLAG_NONE,
+           "ollama no flags");
+    expect(hush_provider_flags("custom") == HUSH_PROVIDER_FLAG_NONE,
+           "custom no flags");
+    expect(hush_provider_flags("nope") == 0, "unknown flags zero");
 
     expect(hush_provider_status(&st, "goose") == HUSH_OK, "goose status");
+    expect(st.caps ==
+               (HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH),
+           "goose status caps");
     expect(!st.has_home, "goose home absent");
     expect(hush_provider_status(&st, "nope") == HUSH_ERR_PARSE, "bad id");
 
@@ -168,7 +234,7 @@ int main(void)
     expect_overlay_clean(home);
 
     expect(hush_provider_status_all(all, &n) == HUSH_OK, "all");
-    expect(n == (size_t)HUSH_PROVIDER_COUNT, "nine");
+    expect(n == (size_t)HUSH_PROVIDER_COUNT, "all providers");
 
     snprintf(bindir, sizeof(bindir), "%s/bin", home);
     snprintf(path, sizeof(path), "%s/curl", bindir);
@@ -213,6 +279,14 @@ int main(void)
                "grok login spawn");
         hush_provider_last_error(err, sizeof(err));
         expect(err[0] == '\0', "grok login no error");
+        snprintf(path, sizeof(path), "%s/copilot", bindir);
+        write_file(path, "#!/bin/sh\nexit 0\n");
+        if (chmod(path, 0755) != 0)
+            return 1;
+        expect(hush_provider_start_login("copilot") == HUSH_OK,
+               "copilot login spawn");
+        hush_provider_last_error(err, sizeof(err));
+        expect(err[0] == '\0', "copilot login no error");
         expect(hush_provider_start_login("goose") == HUSH_ERR_IO,
                "goose login refused");
         hush_provider_last_error(err, sizeof(err));
@@ -229,6 +303,29 @@ int main(void)
                "grok missing binary");
         hush_provider_last_error(err, sizeof(err));
         expect(strcmp(err, "binary missing") == 0, "missing binary msg");
+        if (setenv("PATH", saved_path, 1) != 0)
+            return 1;
+    }
+
+    {
+        char saved_path[1024];
+
+        snprintf(path, sizeof(path), "%s/codex", bindir);
+        write_file(path, "#!/bin/sh\nexit 0\n");
+        if (chmod(path, 0755) != 0)
+            return 1;
+        /* Isolate PATH to the fake bin dir so real host binaries (goose, agy,
+         * …) never leak into the update scan and spawn real updates during
+         * the test. bindir already holds fake grok, copilot, and codex. */
+        snprintf(newpath, sizeof(newpath), "%s", bindir);
+        if (setenv("PATH", newpath, 1) != 0)
+            return 1;
+        expect(hush_provider_update_all() == 3, "update all spawns grok+copilot+codex");
+        snprintf(saved_path, sizeof(saved_path), "%s",
+                 getenv("PATH") != NULL ? getenv("PATH") : "");
+        if (setenv("PATH", "/tmp/hush-empty-path", 1) != 0)
+            return 1;
+        expect(hush_provider_update_all() == 0, "update all empty path zero");
         if (setenv("PATH", saved_path, 1) != 0)
             return 1;
     }

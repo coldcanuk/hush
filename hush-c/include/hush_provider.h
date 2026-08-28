@@ -16,7 +16,7 @@ enum {
     HUSH_PROVIDER_MODELS_MAX = 32,
     HUSH_PROVIDER_JSON_MAX = 8192,
     HUSH_PROVIDER_ERR_MAX = 160,
-    HUSH_PROVIDER_COUNT = 9,
+    HUSH_PROVIDER_COUNT = 13,
     HUSH_PROVIDER_KEY_MAX = 512,
     HUSH_PROVIDER_URL_MAX = 1024,
     HUSH_PROVIDER_SECRET_COUNT = 5
@@ -25,6 +25,24 @@ enum {
 #define HUSH_PROVIDER_FAMILY_HOME "home"
 #define HUSH_PROVIDER_FAMILY_API "api"
 #define HUSH_PROVIDER_FAMILY_EDITOR "editor"
+#define HUSH_PROVIDER_FAMILY_LOCAL "local"
+
+/* Capability bitmask. Plain text is the baseline every provider supports and
+ * is therefore not a flag. The harness queries these before routing work and
+ * blocks an unsupported action instead of silently dropping it. */
+#define HUSH_PROVIDER_CAP_TOOLS       (1u << 0)  /* agentic tool use       */
+#define HUSH_PROVIDER_CAP_IMAGE       (1u << 1)  /* image analysis         */
+#define HUSH_PROVIDER_CAP_FILE_ATTACH (1u << 2)  /* consumes file context  */
+
+typedef unsigned int hush_provider_caps_t;
+
+/* Provider policy flags: constraints beyond what the provider can do. */
+#define HUSH_PROVIDER_FLAG_NONE       0
+#define HUSH_PROVIDER_FLAG_SPAWN_ONLY (1u << 0)  /* ToS: spawn, never wrap  */
+#define HUSH_PROVIDER_FLAG_OAUTH      (1u << 1)  /* OAuth login required    */
+#define HUSH_PROVIDER_FLAG_ALLOWLIST  (1u << 2)  /* tooling needs allow-list */
+
+typedef unsigned int hush_provider_flags_t;
 
 #define HUSH_PROVIDER_SECRET_API_KEY "api_key"
 #define HUSH_PROVIDER_SECRET_USERNAME "username"
@@ -37,6 +55,7 @@ enum {
 #define HUSH_PROVIDER_HOST_ANTHROPIC "https://api.anthropic.com"
 #define HUSH_PROVIDER_HOST_GEMINI "https://generativelanguage.googleapis.com"
 #define HUSH_PROVIDER_HOST_DEEPSEEK "https://api.deepseek.com"
+#define HUSH_PROVIDER_HOST_OLLAMA "http://127.0.0.1:11434"
 
 #define HUSH_PROVIDER_FILE_NAME "providers.json"
 
@@ -56,6 +75,8 @@ typedef struct {
     int has_passkey;
     int use_home;
     int configured;
+    unsigned int caps;
+    unsigned int flags;
 } hush_provider_status_t;
 
 typedef struct {
@@ -76,7 +97,7 @@ typedef struct {
     char error[HUSH_PROVIDER_ERR_MAX];
 } hush_provider_scan_t;
 
-/* True when id is one of the nine named runtimes. */
+/* True when id is one of the known named runtimes. */
 int hush_provider_is_id(const char *id);
 
 /* Copies the default host for id. Empty for home and editor families. */
@@ -84,6 +105,15 @@ void hush_provider_default_host(char *out, size_t outsz, const char *id);
 
 /* Copies the family name for id. Empty when id is unknown. */
 void hush_provider_family(char *out, size_t outsz, const char *id);
+
+/* Capability bitmask for id. 0 when id is unknown (block everything). */
+unsigned int hush_provider_capabilities(const char *id);
+
+/* True when id supports every bit in cap. Unknown ids always fail. */
+int hush_provider_can(const char *id, unsigned int cap);
+
+/* Policy flag bitmask for id. 0 when id is unknown. */
+unsigned int hush_provider_flags(const char *id);
 
 /* Fills status from home detect, overlay file, and pass. */
 hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id);
@@ -109,5 +139,12 @@ hush_status_t hush_provider_start_login(const char *id);
 
 /* Copies the last module error. out may be NULL. */
 void hush_provider_last_error(char *out, size_t outsz);
+
+/* Best-effort launch-time scanner: for each home-family provider whose binary
+ * is on PATH and documents an update subcommand, spawn "<binary> update" in
+ * the background (non-blocking, tracked for reaping). Returns the number of
+ * updates spawned. Providers without a documented update routine are skipped.
+ * Never blocks and never fails hard. */
+int hush_provider_update_all(void);
 
 #endif /* HUSH_PROVIDER_H */

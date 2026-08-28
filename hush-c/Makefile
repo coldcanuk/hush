@@ -23,6 +23,8 @@ override CFLAGS += -DHUSH_SKILL_PACK_SHARE=\"$(HUSHSHARE)/skills/system\"
 
 SRCS := $(wildcard src/*.c)
 OBJS := $(SRCS:.c=.o)
+# Track header dependencies so a struct/enum change rebuilds every consumer.
+-include $(OBJS:.o=.d)
 ICON_PANELS := dogs cats sheep virus robots angevin
 ICON_PANEL_OBJS := $(foreach s,$(ICON_PANELS),src/hush_icon_panel_$(s).o)
 TESTS := $(wildcard tests/test_*.c)
@@ -50,7 +52,7 @@ src/hush_ui_html.h: demo/index.html demo/sw.js demo/manifest.webmanifest \
 src/hush_http.o: src/hush_ui_html.h
 
 src/%.o: src/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 tests/test_%: tests/test_%.c libhush.a
 	$(CC) $(CFLAGS) $< libhush.a -o $@ $(LDFLAGS)
@@ -62,13 +64,17 @@ test: $(TEST_BINS) hush-relay
 	@sh tests/check_exit.sh
 	@sh tests/check_provider.sh
 	@sh tests/check_agent.sh
+	@sh tests/check_agy.sh
+	@sh tests/check_ollama.sh
+	@sh tests/check_failover.sh
 	@sh tests/check_fixup.sh
 	@sh tests/check_complete.sh
 	@sh tests/check_turn.sh
 	@echo "ALL TESTS PASSED"
 
 clean:
-	rm -f $(OBJS) $(ICON_PANEL_OBJS) libhush.a hush-relay $(TEST_BINS) src/hush_relay_main.o src/hush_ui_html.h
+	rm -f $(OBJS) $(OBJS:.o=.d) $(ICON_PANEL_OBJS) libhush.a hush-relay \
+		$(TEST_BINS) src/hush_relay_main.o src/hush_ui_html.h
 
 demo:
 	@echo "See hush-c/demo/ for the chat UI (also served by hush-relay on /)"

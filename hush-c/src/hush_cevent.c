@@ -16,6 +16,8 @@ static hush_cevent_t g_events[HUSH_CEVENT_MAX];
 static size_t g_head;
 static size_t g_n;
 static uint32_t g_seq;
+static uint32_t g_drops;
+static uint32_t g_ack;
 
 static void hush_cevent_copy(char *dst, size_t dstsz, const char *src);
 static hush_status_t hush_cevent_put_one(char *out, size_t outsz, size_t *off,
@@ -27,6 +29,8 @@ void hush_cevent_init(void)
     g_head = 0;
     g_n = 0;
     g_seq = 0;
+    g_drops = 0;
+    g_ack = 0;
 }
 
 hush_status_t hush_cevent_emit(const hush_cevent_t *in)
@@ -41,6 +45,10 @@ hush_status_t hush_cevent_emit(const hush_cevent_t *in)
         g_n++;
     } else {
         idx = g_head;
+        /* A wrap is a real loss only when it evicts a signal the consumer has
+         * not yet acked; evicting an already-acked event is safe compaction. */
+        if (g_events[g_head].seq > g_ack)
+            g_drops++;
         g_head = (g_head + 1) % (size_t)HUSH_CEVENT_MAX;
     }
     slot = &g_events[idx];
@@ -56,24 +64,53 @@ hush_status_t hush_cevent_emit(const hush_cevent_t *in)
     return HUSH_OK;
 }
 
+uint32_t hush_cevent_last_seq(void)
+{
+    return g_seq;
+}
+
+void hush_cevent_ack(uint32_t seq)
+{
+    if (seq > g_ack)
+        g_ack = seq;
+}
+
+uint32_t hush_cevent_drops(void)
+{
+    return g_drops;
+}
+
 hush_status_t hush_cevent_format_json(char *out, size_t outsz, size_t *out_len)
+{
+    return hush_cevent_format_json_since(out, outsz, out_len, 0);
+}
+
+hush_status_t hush_cevent_format_json_since(char *out, size_t outsz,
+                                            size_t *out_len,
+                                            uint32_t since_seq)
 {
     size_t off = 0;
     size_t i;
     size_t idx;
     int n;
+    int first = 1;
 
     if (out == NULL || outsz == 0)
         return HUSH_ERR_ARG;
-    n = snprintf(out, outsz, "{\"ok\":true,\"events\":[");
+    n = snprintf(out, outsz,
+                 "{\"ok\":true,\"last_seq\":%u,\"drops\":%u,\"events\":[",
+                 g_seq, g_drops);
     if (n < 0 || (size_t)n >= outsz)
         return HUSH_ERR_FULL;
     off = (size_t)n;
     for (i = 0; i < g_n; i++) {
         idx = (g_head + i) % (size_t)HUSH_CEVENT_MAX;
-        if (hush_cevent_put_one(out, outsz, &off, &g_events[idx], i == 0)
+        if (g_events[idx].seq <= since_seq)
+            continue;
+        if (hush_cevent_put_one(out, outsz, &off, &g_events[idx], first)
             != HUSH_OK)
             return HUSH_ERR_FULL;
+        first = 0;
     }
     n = snprintf(out + off, outsz - off, "]}\n");
     if (n < 0 || off + (size_t)n >= outsz)

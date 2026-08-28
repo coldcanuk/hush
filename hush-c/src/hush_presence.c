@@ -12,10 +12,6 @@
 #include "hush_presence.h"
 #include "hush_roster.h"
 
-enum {
-    HUSH_PRESENCE_ID_WIDTH = 16
-};
-
 #define HUSH_PRESENCE_DEBUG_PREFIX "Debugging "
 
 typedef struct {
@@ -32,7 +28,6 @@ typedef struct {
 } hush_presence_line_t;
 
 static hush_presence_line_t g_lines[HUSH_PRESENCE_LINES_MAX];
-static unsigned g_id_seq;
 
 static void hush_presence_copy(char *dst, size_t dstsz, const char *src);
 static int hush_presence_is_exact_slug(const char *slug);
@@ -40,7 +35,6 @@ static int hush_presence_is_debug_slug(const char *slug);
 static int hush_presence_slug_expires(const char *slug);
 static hush_presence_line_t *hush_presence_find_d(const char *d);
 static hush_presence_line_t *hush_presence_take_slot(void);
-static void hush_presence_make_id(char *out65);
 static void hush_presence_fill_line_event(hush_event_t *ev,
                                           const hush_presence_in_t *in,
                                           const char *d, int trail);
@@ -53,7 +47,6 @@ static hush_status_t hush_presence_put_one(char *out, size_t outsz, size_t *off,
 void hush_presence_init(void)
 {
     memset(g_lines, 0, sizeof(g_lines));
-    g_id_seq = 0;
 }
 
 int hush_presence_slug_ok(const char *slug)
@@ -376,21 +369,6 @@ static hush_presence_line_t *hush_presence_take_slot(void)
     return NULL;
 }
 
-static void hush_presence_make_id(char *out65)
-{
-    time_t now;
-
-    assert(out65 != NULL);
-    now = time(NULL);
-    g_id_seq++;
-    (void)snprintf(out65, HUSH_EVENT_ID_HEX_LEN + 1,
-                   "%0*llx%0*x%0*x%0*x",
-                   HUSH_PRESENCE_ID_WIDTH, (unsigned long long)now,
-                   HUSH_PRESENCE_ID_WIDTH, g_id_seq,
-                   HUSH_PRESENCE_ID_WIDTH, g_id_seq ^ 0x30315u,
-                   HUSH_PRESENCE_ID_WIDTH, g_id_seq * 11u);
-}
-
 static void hush_presence_fill_line_event(hush_event_t *ev,
                                           const hush_presence_in_t *in,
                                           const char *d, int trail)
@@ -402,7 +380,6 @@ static void hush_presence_fill_line_event(hush_event_t *ev,
     assert(in != NULL);
     assert(d != NULL);
     memset(ev, 0, sizeof(*ev));
-    hush_presence_make_id(ev->id);
     hush_presence_copy(ev->pubkey, sizeof(ev->pubkey), in->pubkey);
     ev->kind = trail ? (uint32_t)HUSH_PRESENCE_KIND_TRAIL
                      : (uint32_t)HUSH_PRESENCE_KIND_LINE;
@@ -428,6 +405,7 @@ static void hush_presence_fill_line_event(hush_event_t *ev,
                            sizeof(ev->tags[0][1]), exp);
         ev->tag_count++;
     }
+    (void)hush_event_compute_id(ev, ev->id);
 }
 
 static void hush_presence_emit(const char *type, const hush_presence_in_t *in,

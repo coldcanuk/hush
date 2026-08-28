@@ -46,6 +46,10 @@ int main(void)
     expect(hush_roster_is_provider("grok-build"), "grok-build ok");
     expect(hush_roster_is_provider("anthropic-api"), "anthropic ok");
     expect(hush_roster_is_provider("deepseek-api"), "deepseek ok");
+    expect(hush_roster_is_provider("agy"), "agy ok");
+    expect(hush_roster_is_provider("copilot"), "copilot ok");
+    expect(hush_roster_is_provider("ollama"), "ollama ok");
+    expect(hush_roster_is_provider("custom"), "custom ok");
     expect(!hush_roster_is_provider("chatgpt"), "chatgpt rejected");
     memset(&profile, 0, sizeof(profile));
     memcpy(profile.first_name, "Ada", 4);
@@ -77,6 +81,8 @@ int main(void)
     expect(hush_roster_add_agent(&roster, store, &agent, 1) == HUSH_OK,
            "agent");
     expect(roster.nagents == 1, "one agent");
+    expect(strcmp(roster.agents[0].context[0].text, "# stand to") == 0,
+           "context text stored");
     expect(strcmp(roster.agents[0].role, HUSH_ROSTER_ROLE_WORKER) == 0,
            "default worker");
     expect(strncmp(roster.agents[0].id.npub, "npub1", 5) == 0, "agent npub");
@@ -103,6 +109,18 @@ int main(void)
     expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_DENIED,
            "pdf denied");
     expect(roster.nagents == 1, "still one agent");
+    memset(&agent, 0, sizeof(agent));
+    memcpy(agent.name, "TextOnly", 9);
+    memcpy(agent.prompt, "Watch.", 7);
+    memcpy(agent.provider, "deepseek-api", 13);
+    memcpy(agent.context[0].name, "brief.md", 9);
+    memcpy(agent.context[0].mime, "text/markdown", 14);
+    agent.context[0].text = "# stand to";
+    agent.context[0].bytes = 11;
+    agent.ncontext = 1;
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_DENIED,
+           "text-only provider denies file context");
+    expect(roster.nagents == 1, "still one agent after context gate");
     expect(hush_roster_format_json(&roster, json, sizeof(json), &n) == HUSH_OK,
            "json");
     expect(strstr(json, "\"theme\":\"desert\"") != NULL, "theme json");

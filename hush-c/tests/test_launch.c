@@ -143,8 +143,9 @@ int main(void)
     expect(launch.nchannels == 3, "starter channels");
     expect(strncmp(launch.payne.npub, "npub1", 5) == 0, "payne");
     expect(launch.npayne_providers == 1, "default one provider");
-    expect(strcmp(launch.payne_providers[0], HUSH_ROSTER_PROVIDER_GOOSE) == 0,
-           "default goose");
+    expect(strcmp(launch.payne_providers[0],
+                  HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0,
+           "default grok-build");
     {
         const char *ids[] = {
             HUSH_ROSTER_PROVIDER_GROK_BUILD,
@@ -279,6 +280,24 @@ int main(void)
                "pair turns");
         expect(strcmp(launch.channels[3].chaperon, HUSH_LAUNCH_PAYNE_SLUG) == 0,
                "major chaperon");
+    }
+    {
+        hush_launch_policy_t policy;
+
+        memset(&policy, 0, sizeof(policy));
+        memcpy(policy.kind, HUSH_LAUNCH_KIND_HUMANS,
+               sizeof(HUSH_LAUNCH_KIND_HUMANS));
+        memcpy(policy.robot_reply, HUSH_LAUNCH_REPLY_OFF,
+               sizeof(HUSH_LAUNCH_REPLY_OFF));
+        policy.burst_ms = HUSH_LAUNCH_BURST_MS_SLOW;
+        policy.max_jobs = HUSH_LAUNCH_MAX_JOBS_MIN;
+        policy.cooldown_s = HUSH_LAUNCH_COOLDOWN_S_LONG;
+        policy.robot_talk = 1;
+        expect(hush_launch_set_channel_policy(&launch, "incidents",
+                                              &policy) == HUSH_OK,
+               "standalone policy");
+        expect(strcmp(launch.channels[3].chaperon, HUSH_LAUNCH_PAYNE_SLUG) == 0,
+               "standalone robots auto-assign chaperon");
     }
     expect(hush_launch_set_channel_group(&launch, "incidents", "") == HUSH_OK,
            "ungroup");

@@ -27,6 +27,7 @@
 #include "hush_intel.h"
 #include "hush_launch.h"
 #include "hush_proto.h"
+#include "hush_provider.h"
 #include "hush_relay.h"
 #include "hush_status.h"
 #include "hush_store.h"
@@ -112,6 +113,7 @@ static hush_status_t hush_read_pidfile(uint16_t port, pid_t *out_pid);
 static int hush_pid_is_alive(pid_t pid);
 static void hush_wait_pid_gone(pid_t pid);
 static void hush_relay_prepare(uint16_t port);
+static int hush_relay_auto_update_on(void);
 static hush_status_t hush_relay_bind(uint16_t port, int open_ui, int *out_ls);
 static void hush_relay_announce(uint16_t port, int open_ui);
 static void hush_relay_pump(int ls);
@@ -542,6 +544,21 @@ static void hush_relay_prepare(uint16_t port)
     hush_agent_init();
     hush_canvas_init();
     hush_intel_init();
+    /* Launch-time auto-update scanner (opt-in via HUSH_AUTO_UPDATE=1|true|yes).
+     * Non-blocking and tracked for reaping; off by default so tests and
+     * interactive launches never fire surprise network updates. */
+    if (hush_relay_auto_update_on())
+        (void)hush_provider_update_all();
+}
+
+/* True when the operator explicitly enabled the launch-time update scanner. */
+static int hush_relay_auto_update_on(void)
+{
+    const char *v = getenv("HUSH_AUTO_UPDATE");
+
+    return v != NULL &&
+           (strcmp(v, "1") == 0 || strcmp(v, "true") == 0 ||
+            strcmp(v, "yes") == 0);
 }
 
 static hush_status_t hush_relay_bind(uint16_t port, int open_ui, int *out_ls)
