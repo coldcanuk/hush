@@ -88,7 +88,7 @@ static int hush_json_bare_field(const char *body, const char *key,
 static void hush_http_serve_status(int fd, const hush_store_t *store);
 static void hush_http_serve_events(int fd, const hush_store_t *store);
 static void hush_http_serve_session(int fd);
-static void hush_http_serve_chan_events(int fd);
+static void hush_http_serve_chan_events(int fd, const char *req);
 static void hush_http_serve_presence_get(int fd);
 static hush_status_t hush_http_serve_presence_post(int fd, const char *body,
                                                    hush_store_t *store);
@@ -279,7 +279,7 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
         return HUSH_OK;
     }
     if (strcmp(path, "/api/chan-events") == 0) {
-        hush_http_serve_chan_events(fd);
+        hush_http_serve_chan_events(fd, req);
         return HUSH_OK;
     }
     if (strcmp(path, "/api/presence") == 0 && memcmp(req, "GET", 3) == 0) {
@@ -733,13 +733,21 @@ static void hush_http_serve_session(int fd)
     hush_http_reply(fd, "200 OK", "application/json", body, n);
 }
 
-static void hush_http_serve_chan_events(int fd)
+static void hush_http_serve_chan_events(int fd, const char *req)
 {
     static const char k_empty[] = "{\"ok\":true,\"events\":[]}\n";
     char body[HUSH_CEVENT_JSON_MAX];
     size_t n = 0;
+    uint32_t since = 0;
+    const char *q;
 
-    if (hush_cevent_format_json(body, sizeof(body), &n) != HUSH_OK) {
+    /* Optional ?since=N cursor: return only signals newer than N. */
+    if (req != NULL) {
+        q = strstr(req, "since=");
+        if (q != NULL)
+            since = (uint32_t)atoi(q + 6);
+    }
+    if (hush_cevent_format_json_since(body, sizeof(body), &n, since) != HUSH_OK) {
         hush_http_reply(fd, "200 OK", "application/json",
                         k_empty, sizeof(k_empty) - 1);
         return;

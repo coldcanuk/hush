@@ -41,8 +41,19 @@ void hush_cevent_init(void);
 /* Appends one event. due 0 means now. */
 hush_status_t hush_cevent_emit(const hush_cevent_t *in);
 
-/* Writes {"ok":true,"drops":N,"events":[...]} in seq order. */
+/* Writes {"ok":true,"last_seq":N,"drops":N,"events":[...]} in seq order. */
 hush_status_t hush_cevent_format_json(char *out, size_t outsz, size_t *out_len);
+
+/* Same shape, but only events whose seq > since_seq. A consumer tracks its
+ * cursor with hush_cevent_last_seq() and polls with since= to fetch only new
+ * signals (deterministic delta delivery). */
+hush_status_t hush_cevent_format_json_since(char *out, size_t outsz,
+                                            size_t *out_len,
+                                            uint32_t since_seq);
+
+/* Highest seq ever emitted (0 before the first emit). Watermark for delta
+ * polling and precise gap detection. */
+uint32_t hush_cevent_last_seq(void);
 
 /* Total events overwritten when the ring wrapped (oldest dropped). Lets a
  * consumer detect that it may have missed signals and force a full refresh. */

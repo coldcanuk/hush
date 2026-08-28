@@ -41,7 +41,24 @@ int main(void)
     expect(strstr(json, "\"seq\":1") != NULL, "seq 1");
     expect(strstr(json, "\"seq\":2") != NULL, "seq 2");
     expect(strstr(json, "\"drops\":0") != NULL, "no drops yet");
+    expect(strstr(json, "\"last_seq\":2") != NULL, "last_seq exposed");
     expect(hush_cevent_drops() == 0, "drops zero");
+    expect(hush_cevent_last_seq() == 2, "last_seq watermark 2");
+
+    /* Delta cursor: since=1 returns only the intro (seq 2). */
+    n = 0;
+    expect(hush_cevent_format_json_since(json, sizeof(json), &n, 1) == HUSH_OK,
+           "since json");
+    expect(strstr(json, "\"type\":\"mention\"") == NULL, "since hides mention");
+    expect(strstr(json, "\"type\":\"intro\"") != NULL, "since keeps intro");
+    expect(strstr(json, "\"last_seq\":2") != NULL, "since exposes last_seq");
+
+    /* since=2 returns no events but still reports the watermark. */
+    n = 0;
+    expect(hush_cevent_format_json_since(json, sizeof(json), &n, 2) == HUSH_OK,
+           "since at cursor json");
+    expect(strstr(json, "\"type\":\"intro\"") == NULL, "since 2 hides intro");
+    expect(strstr(json, "\"last_seq\":2") != NULL, "since 2 keeps watermark");
     hush_cevent_init();
     memcpy(ev.type, HUSH_CEVENT_FOLLOW, sizeof(HUSH_CEVENT_FOLLOW));
     for (i = 0; i < (size_t)HUSH_CEVENT_MAX + 2; i++)
