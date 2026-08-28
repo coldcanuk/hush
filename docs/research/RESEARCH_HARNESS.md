@@ -148,3 +148,39 @@ route and block actions before execution:
 
 This is self-contained, testable, and is the prerequisite for true capability
 routing (subscore Z) and for adding agy/copilot/ollama with honest feature flags.
+
+---
+
+## 6. Milestone status + re-scored (post M1/M3/M5)
+
+Landed on `gb/harness-engine` (three atomic commits, `make test` green each):
+
+- **M1 — capability matrix.** `hush_provider_caps_t` (TOOLS/IMAGE/FILE_ATTACH),
+  per-provider `caps`, `hush_provider_capabilities()` + `hush_provider_can()`,
+  exposed as `"caps"` in `/api/provider`. Tests in `test_provider.c`.
+- **M5 — token/context engine.** `hush_seg` structural chunker (blank-line >
+  line > sentence > space, UTF-8-safe hard cap, markdown fence atomicity).
+  Tests in `test_seg.c`.
+- **M3 — auto-update scanner.** `hush_provider_update_all()` spawns
+  `<binary> update` for grok-build/codex when present (non-blocking, tracked),
+  opt-in only. Tests in `test_provider.c`.
+
+Re-scored (honest; loop still mandates continuing):
+
+### Harness Architecture — **5.2 → 6.6 / 10**
+- X Extensibility & Compliance: 5.5 → 6.5 (caps + can() + update API added; still grok-only execution, no agy/copilot/ollama).
+- Y Lifecycle & Logic: 6.0 → 7.0 (auto-update scanner primitive now exists; not yet wired into launch).
+- Z Capability Routing: 3.0 → 6.5 (matrix exists + queryable; gating at dispatch still pending).
+
+### Token & Context Engineering — **2.6 → 7.0 / 10**
+- X Parsing Precision: 3.0 → 7.0 (structural chunker with markdown fence atomicity).
+- Y Cost Efficiency: 2.5 → 6.5 (chunking exists; not yet wired into context flow).
+- Z Regex Robustness: 2.0 → 8.0 (crash-proof UTF-8-safe parser, fuzz-friendly).
+
+### UI/UX Responsiveness — **6.1 / 10** (unchanged; Phase 5 not started)
+### Messaging Protocol — **7.4 / 10** (unchanged)
+
+Remaining to reach 9.0+ (see PLAN_HARNESS_ENGINE.md): true multi-provider
+execution (M2/M4), wire gating + chunker into the dispatch/context flow, and
+the full Phase 5 UI refactor.
+
