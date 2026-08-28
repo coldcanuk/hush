@@ -46,6 +46,10 @@ enum {
 };
 
 #define HUSH_AGENT_GROK_BIN "grok"
+#define HUSH_AGENT_AGY_BIN "agy"
+#define HUSH_AGENT_AGY_PROMPT_MAX \
+    (HUSH_ROSTER_PROMPT_MAX + HUSH_ROSTER_PROMPT_MAX + \
+     HUSH_EVENT_MAX_CONTENT + 16)
 #define HUSH_AGENT_DEVNULL "/dev/null"
 #define HUSH_AGENT_CHAN_FALLBACK "general"
 #define HUSH_AGENT_ENV_CONFIG "HUSH_CONFIG_DIR"
@@ -140,6 +144,7 @@ typedef struct {
     char robot_pub[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
     char robot_name[HUSH_ROSTER_NAME_MAX];
     char robot_role[HUSH_ROSTER_NAME_MAX];
+    char provider[HUSH_ROSTER_PROVIDER_MAX];
     char presence_slug[HUSH_PRESENCE_SLUG_MAX];
     char human_name[HUSH_ROSTER_NAME_MAX];
     char prompt[HUSH_ROSTER_PROMPT_MAX];
@@ -291,9 +296,10 @@ static void hush_agent_note_no_runtime(hush_store_t *store,
                                        const hush_agent_robot_t *bot,
                                        const hush_event_t *parent);
 static int hush_agent_grok_ready(void);
-/* True when this robot can start a grok job (own id or Payne ranked grok). */
-static int hush_agent_can_start_grok(const hush_launch_t *launch,
-                                     const hush_agent_robot_t *bot);
+static int hush_agent_runtime_ready(const char *provider);
+/* True when the robot's provider runtime is ready to execute a turn. */
+static int hush_agent_can_start(const hush_launch_t *launch,
+                                const hush_agent_robot_t *bot);
 static hush_status_t hush_agent_start_grok(const hush_agent_job_in_t *in);
 static void hush_agent_fill_job(hush_agent_job_t *job,
                                 const hush_agent_job_in_t *in);
@@ -316,7 +322,9 @@ static void hush_agent_fill_thread(char *out, size_t outsz,
                                    const hush_launch_t *launch,
                                    const hush_event_t *parent,
                                    const hush_agent_thread_walk_t *names);
-static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job);
+static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job);
+static void hush_agent_exec_grok(const hush_agent_job_t *job);
+static void hush_agent_exec_agy(const hush_agent_job_t *job);
 static hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job);
 static void hush_agent_fill_fixup(hush_agent_job_t *job,
                                   const char *instruction,
@@ -1040,17 +1048,30 @@ static int hush_agent_grok_ready(void)
     return st.has_home && st.has_binary;
 }
 
-static int hush_agent_can_start_grok(const hush_launch_t *launch,
-                                     const hush_agent_robot_t *bot)
+static int hush_agent_runtime_ready(const char *provider)
 {
-    /* grok-build is the only runtime that executes a turn today. The robot's
-     * selected provider is a forward-looking label; every robot falls back to
-     * grok-build so a non-grok pick (goose, codex, ...) still works instead of
-     * silently posting only its intro. */
+    hush_provider_status_t st;
+
+    if (provider == NULL || provider[0] == '\0')
+        return 0;
+    if (strcmp(provider, HUSH_ROSTER_PROVIDER_AGY) == 0) {
+        /* agy is spawn-only and runs headless as text generation: presence of
+         * the binary is the only gate (no OAuth/home config in the harness). */
+        if (hush_provider_status(&st, HUSH_ROSTER_PROVIDER_AGY) != HUSH_OK)
+            return 0;
+        return st.has_binary;
+    }
+    return hush_agent_grok_ready();
+}
+
+static int hush_agent_can_start(const hush_launch_t *launch,
+                                const hush_agent_robot_t *bot)
+{
+    /* agy executes on its own binary; every other provider falls back to
+     * grok-build (the only wrapped runtime with a verified argv today). */
     (void)launch;
     assert(bot != NULL);
-    (void)bot;
-    return hush_agent_grok_ready();
+    return hush_agent_runtime_ready(bot->provider);
 }
 
 static int hush_agent_event_is_root(const hush_event_t *ev, const char *root)
@@ -1302,6 +1323,9 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
     hush_agent_copy(job->robot_role, sizeof(job->robot_role),
                     bot->role != NULL && bot->role[0] != '\0'
                         ? bot->role : HUSH_ROSTER_ROLE_WORKER);
+    hush_agent_copy(job->provider, sizeof(job->provider),
+                    bot->provider != NULL && bot->provider[0] != '\0'
+                        ? bot->provider : HUSH_ROSTER_PROVIDER_GROK_BUILD);
     hush_agent_make_token(job->token, sizeof(job->token));
     job->launch = in->launch;
     if (in->ask != NULL && in->ask[0] != '\0')
@@ -1454,9 +1478,8 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
     }
 }
 
-static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job)
+static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job)
 {
-    char *argv[HUSH_AGENT_ARGV_MAX];
     int dn;
 
     assert(job != NULL);
@@ -1469,6 +1492,20 @@ static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job)
         (void)dup2(dn, STDERR_FILENO);
         close(dn);
     }
+    /* ToS constraint: agy is spawn-only (never wrapped) and runs headless as
+     * a text-generation model. Every other runtime goes through grok-build
+     * for now (the only wrapped runtime with a verified argv). */
+    if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_AGY) == 0)
+        hush_agent_exec_agy(job);
+    else
+        hush_agent_exec_grok(job);
+}
+
+static void hush_agent_exec_grok(const hush_agent_job_t *job)
+{
+    char *argv[HUSH_AGENT_ARGV_MAX];
+
+    assert(job != NULL);
     argv[0] = (char *)HUSH_AGENT_GROK_BIN;
     argv[1] = (char *)"-p";
     argv[2] = (char *)job->note;
@@ -1497,6 +1534,25 @@ static void hush_agent_exec_grok(int write_fd, const hush_agent_job_t *job)
     _exit(127);
 }
 
+static void hush_agent_exec_agy(const hush_agent_job_t *job)
+{
+    char combined[HUSH_AGENT_AGY_PROMPT_MAX];
+    char *argv[4];
+    int n;
+
+    assert(job != NULL);
+    n = snprintf(combined, sizeof(combined), "%s\n%s\n%s",
+                 job->prompt, job->rules, job->note);
+    if (n < 0 || (size_t)n >= sizeof(combined))
+        combined[sizeof(combined) - 1] = '\0';
+    argv[0] = (char *)HUSH_AGENT_AGY_BIN;
+    argv[1] = (char *)"-p";
+    argv[2] = combined;
+    argv[3] = NULL;
+    execvp(argv[0], argv);
+    _exit(127);
+}
+
 static hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job)
 {
     int fds[2];
@@ -1514,7 +1570,7 @@ static hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job)
     }
     if (pid == 0) {
         close(fds[0]);
-        hush_agent_exec_grok(fds[1], job);
+        hush_agent_exec_child(fds[1], job);
     }
     close(fds[1]);
     flags = fcntl(fds[0], F_GETFL, 0);
@@ -1561,6 +1617,8 @@ static void hush_agent_fill_fixup(hush_agent_job_t *job,
     job->busy = 1;
     job->kind = HUSH_AGENT_KIND_FIXUP;
     job->started = time(NULL);
+    hush_agent_copy(job->provider, sizeof(job->provider),
+                    HUSH_ROSTER_PROVIDER_GROK_BUILD);
     hush_agent_make_token(job->token, sizeof(job->token));
     hush_agent_copy(job->prompt, sizeof(job->prompt), HUSH_AGENT_FIXUP_PROMPT);
     hush_agent_copy(job->rules, sizeof(job->rules), HUSH_AGENT_FIXUP_RULES);
@@ -2604,7 +2662,7 @@ static void hush_agent_begin_work(const hush_agent_job_in_t *in)
     hush_agent_event_channel(channel, sizeof(channel), in->parent);
     hush_agent_emit(HUSH_CEVENT_INTRO, channel, root, in->bot->hex,
                     in->bot->name);
-    if (!hush_agent_can_start_grok(in->launch, in->bot)) {
+    if (!hush_agent_can_start(in->launch, in->bot)) {
         hush_agent_note_no_runtime(in->store, in->bot, in->parent);
         return;
     }
