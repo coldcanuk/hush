@@ -510,6 +510,26 @@ static void hush_provider_detect_oauth_home(hush_provider_status_t *st,
         }
         snprintf(path, sizeof(path), "%s/.codex/config.toml", home);
         st->has_home = hush_provider_file_nonempty(path);
+        return;
+    }
+    if (strcmp(st->id, HUSH_ROSTER_PROVIDER_COPILOT) == 0) {
+        char buf[4096];
+        FILE *fp;
+        size_t n;
+
+        /* The OAuth token lives in the system credential store, not a file;
+         * ~/.copilot/config.json records logged-in users, which is the local
+         * signal we can check. */
+        snprintf(path, sizeof(path), "%s/.copilot/config.json", home);
+        st->has_home = 0;
+        fp = fopen(path, "r");
+        if (fp != NULL) {
+            n = fread(buf, 1, sizeof(buf) - 1, fp);
+            buf[n] = '\0';
+            fclose(fp);
+            st->has_home = strstr(buf, "loggedInUsers") != NULL ||
+                           strstr(buf, "lastLoggedInUser") != NULL;
+        }
     }
 }
 
@@ -738,7 +758,8 @@ static void hush_provider_detect_home(hush_provider_status_t *st)
     if (home == NULL)
         home = "";
     if (strcmp(st->id, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0 ||
-        strcmp(st->id, HUSH_ROSTER_PROVIDER_CODEX) == 0) {
+        strcmp(st->id, HUSH_ROSTER_PROVIDER_CODEX) == 0 ||
+        strcmp(st->id, HUSH_ROSTER_PROVIDER_COPILOT) == 0) {
         hush_provider_detect_oauth_home(st, home);
         return;
     }
