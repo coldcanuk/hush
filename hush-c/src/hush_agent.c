@@ -282,6 +282,9 @@ static hush_status_t hush_agent_insert_note(hush_store_t *store,
                                             const hush_agent_note_in_t *in);
 static void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bot,
                                const hush_event_t *parent, const char *why);
+static void hush_agent_note_no_runtime(hush_store_t *store,
+                                       const hush_agent_robot_t *bot,
+                                       const hush_event_t *parent);
 static int hush_agent_grok_ready(void);
 /* True when this robot can start a grok job (own id or Payne ranked grok). */
 static int hush_agent_can_start_grok(const hush_launch_t *launch,
@@ -974,6 +977,44 @@ static void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bo
         >= (int)sizeof(content))
         hush_agent_copy(content, sizeof(content), line);
     hush_agent_event_channel(channel, sizeof(channel), parent);
+    {
+        hush_agent_note_in_t in;
+
+        memset(&in, 0, sizeof(in));
+        in.pubkey = bot->hex != NULL ? bot->hex : "";
+        in.content = content;
+        in.channel = channel;
+        in.parent_id = root;
+        in.human_pub = parent->pubkey;
+        (void)hush_agent_insert_note(store, &in);
+    }
+}
+
+/* Posts one diagnostic note when a mentioned robot cannot run a turn because
+ * its runtime has no execution path. Prevents the silent intro-only no-op. */
+static void hush_agent_note_no_runtime(hush_store_t *store,
+                                       const hush_agent_robot_t *bot,
+                                       const hush_event_t *parent)
+{
+    char content[HUSH_EVENT_MAX_CONTENT];
+    char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+    const char *name;
+    const char *prov;
+
+    assert(store != NULL);
+    assert(bot != NULL);
+    assert(parent != NULL);
+    name = (bot->name != NULL && bot->name[0] != '\0') ? bot->name : "robot";
+    prov = (bot->provider != NULL && bot->provider[0] != '\0')
+               ? bot->provider : "none";
+    hush_agent_event_root(root, sizeof(root), parent);
+    hush_agent_event_channel(channel, sizeof(channel), parent);
+    if (snprintf(content, sizeof(content),
+                 "No runtime wired for %s — set me to Grok Build to run turns. — %s",
+                 prov, name) >= (int)sizeof(content))
+        hush_agent_copy(content, sizeof(content),
+                        "No runtime wired for this provider.");
     {
         hush_agent_note_in_t in;
 
@@ -2514,8 +2555,10 @@ static void hush_agent_begin_work(const hush_agent_job_in_t *in)
     hush_agent_event_channel(channel, sizeof(channel), in->parent);
     hush_agent_emit(HUSH_CEVENT_INTRO, channel, root, in->bot->hex,
                     in->bot->name);
-    if (!hush_agent_can_start_grok(in->launch, in->bot))
+    if (!hush_agent_can_start_grok(in->launch, in->bot)) {
+        hush_agent_note_no_runtime(in->store, in->bot, in->parent);
         return;
+    }
     job = *in;
     if (hush_agent_start_grok(&job) == HUSH_OK)
         hush_agent_emit(HUSH_CEVENT_JOB_START, channel, root, in->bot->hex,
