@@ -124,9 +124,14 @@ These are honest and should gate the remaining work.
    generated `.d` files, so a header change rebuilds every consumer. Verified
    by touching `include/hush_provider.h` and observing `hush_agent.c` rebuild.
 
-2. **Two provider lists.** `hush_roster.c` and `hush_provider.c` each keep the
-   13 ids. They currently agree, but nothing enforces that at compile time.
-   Worth collapsing to one source of truth.
+2. ~~**Two provider lists.**~~ **Fixed in this branch.** `hush_roster.c` kept a
+   `hush_roster_providers[]` array and a `HUSH_ROSTER_PROVIDER_COUNT` constant
+   that duplicated `hush_provider_meta[]` + `HUSH_PROVIDER_COUNT`. Both are
+   deleted; `hush_roster_is_provider()` now delegates to
+   `hush_provider_is_id()`, so the provider meta table is the single runtime
+   source of truth. (The `HUSH_ROSTER_PROVIDER_*` id-string macros still live
+   in `hush_roster.h` and are referenced by `hush_provider.c`; moving them is
+   a cosmetic follow-up, not a correctness gap.)
 
 3. **agy gets no cwd isolation.** grok runs under `--cwd <temp>`; agy does not.
    Acceptable for spawn-only text generation, but a divergence to note.

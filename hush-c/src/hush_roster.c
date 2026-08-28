@@ -17,7 +17,6 @@ enum {
     HUSH_ROSTER_KIND_NOTE = 1,
     HUSH_ROSTER_SLUG_FALLBACK = 'a',
     HUSH_ROSTER_THEME_COUNT = 7,
-    HUSH_ROSTER_PROVIDER_COUNT = 13,
     HUSH_ROSTER_ROLE_COUNT = 2
 };
 
@@ -31,22 +30,6 @@ static const char *const hush_roster_themes[HUSH_ROSTER_THEME_COUNT] = {
     "desert",
     "monochrome",
     "christmas"
-};
-
-static const char *const hush_roster_providers[HUSH_ROSTER_PROVIDER_COUNT] = {
-    HUSH_ROSTER_PROVIDER_GOOSE,
-    HUSH_ROSTER_PROVIDER_GROK_BUILD,
-    HUSH_ROSTER_PROVIDER_CODEX,
-    HUSH_ROSTER_PROVIDER_CLINE,
-    HUSH_ROSTER_PROVIDER_GEMINI,
-    HUSH_ROSTER_PROVIDER_XAI,
-    HUSH_ROSTER_PROVIDER_OPENAI,
-    HUSH_ROSTER_PROVIDER_ANTHROPIC,
-    HUSH_ROSTER_PROVIDER_DEEPSEEK,
-    HUSH_ROSTER_PROVIDER_AGY,
-    HUSH_ROSTER_PROVIDER_COPILOT,
-    HUSH_ROSTER_PROVIDER_OLLAMA,
-    HUSH_ROSTER_PROVIDER_CUSTOM
 };
 
 static const char *const hush_roster_roles[HUSH_ROSTER_ROLE_COUNT] = {
@@ -214,15 +197,8 @@ int hush_roster_is_theme(const char *theme)
 
 int hush_roster_is_provider(const char *provider)
 {
-    size_t i;
-
-    if (provider == NULL || provider[0] == '\0')
-        return 0;
-    for (i = 0; i < (size_t)HUSH_ROSTER_PROVIDER_COUNT; ++i) {
-        if (strcmp(provider, hush_roster_providers[i]) == 0)
-            return 1;
-    }
-    return 0;
+    /* Single source of truth: the provider meta table in hush_provider.c. */
+    return hush_provider_is_id(provider);
 }
 
 int hush_roster_is_role(const char *role)
