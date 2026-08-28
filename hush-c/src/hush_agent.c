@@ -1025,10 +1025,18 @@ static void hush_agent_note_no_runtime(hush_store_t *store,
 static int hush_agent_grok_ready(void)
 {
     hush_provider_status_t st;
+    unsigned int flags;
 
     if (hush_provider_status(&st, HUSH_ROSTER_PROVIDER_GROK_BUILD) != HUSH_OK)
         return 0;
-    return st.has_home && st.has_binary;
+    if (!st.has_binary)
+        return 0;
+    /* OAUTH providers must be logged in (home config) before dispatch. The
+     * gate is driven by the policy-flag table, not a hardcoded name. */
+    flags = hush_provider_flags(HUSH_ROSTER_PROVIDER_GROK_BUILD);
+    if ((flags & HUSH_PROVIDER_FLAG_OAUTH) && !st.has_home)
+        return 0;
+    return 1;
 }
 
 static int hush_agent_runtime_ready(const char *provider)
@@ -1475,14 +1483,15 @@ static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job)
         (void)dup2(dn, STDERR_FILENO);
         close(dn);
     }
-    /* ToS constraint: agy is spawn-only (never wrapped) and runs headless as
-     * a text-generation model. Every other runtime goes through grok-build
-     * for now (the only wrapped runtime with a verified argv).
+    /* ToS constraint: providers flagged SPAWN_ONLY run as an independent
+     * process (never wrapped) and headless as a text-generation model. agy is
+     * the only such runtime today; any new SPAWN_ONLY provider must add its
+     * own executor alongside exec_agy.
      *
-     * agy only handles a normal mention reply; fixup/plan/elect prompts are
-     * grok-tuned and stay on grok regardless of the robot's provider. */
+     * SPAWN_ONLY providers only handle a normal mention reply; fixup/plan/
+     * elect prompts are grok-tuned and stay on grok regardless of provider. */
     if (job->kind == HUSH_AGENT_KIND_NOTE_JOB &&
-        strcmp(job->provider, HUSH_ROSTER_PROVIDER_AGY) == 0)
+        (hush_provider_flags(job->provider) & HUSH_PROVIDER_FLAG_SPAWN_ONLY))
         hush_agent_exec_agy(job);
     else
         hush_agent_exec_grok(job);

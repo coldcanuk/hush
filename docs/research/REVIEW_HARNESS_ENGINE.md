@@ -107,11 +107,17 @@ The following were traced by hand against the code and are correct:
   (`robot:slug`), not a Nostr event id, so it correctly stays separate.
   Verified against three hard-coded NIP-01 SHA-256 preimages in
   `tests/test_event.c`.
-- **`hush_provider_update_all()` is built but unwired** — production never
-  calls it (only `test_provider.c`). Awaiting launch policy sign-off.
-- **`hush_provider_capabilities()` and `hush_provider_flags()` are test-only
-  accessors.** Production reads caps/flags from the `/api/provider` JSON, not
-  these functions. Legitimate API surface, but currently redundant.
+- **~~`hush_provider_update_all()` is built but unwired.~~** **Fixed in this
+  branch.** Wired into `hush_relay_prepare()` behind an opt-in
+  `HUSH_AUTO_UPDATE=1|true|yes` gate, so the launch-time scanner is available
+  but never fires surprise network updates during tests or interactive runs.
+- **~~`hush_provider_capabilities()` and `hush_provider_flags()` are test-only
+  accessors.~~** **`hush_provider_flags()` is now a production accessor.** It
+  drives the dispatch policy: `hush_agent_exec_child()` routes on
+  `SPAWN_ONLY`, and `hush_agent_grok_ready()` gates OAUTH providers on
+  `has_home` via the flag table (not a hardcoded name). `hush_provider_can()`
+  already gates file-context in `hush_roster.c`; `hush_provider_capabilities()`
+  remains the raw-bitmask accessor used by `/api/provider` and tests.
 
 ---
 
@@ -141,9 +147,11 @@ These are honest and should gate the remaining work.
    agent BSS footprint is avoided. The trade-off is that context is lost on
    restart.
 
-5. **Auto-update scanner is not wired into launch.** Deliberate: silently
-   running `grok update`/`codex update` at startup is a policy decision. The
-   primitive exists and is tested; wiring is one env-gated line when approved.
+5. ~~**Auto-update scanner is not wired into launch.**~~ **Fixed in this
+   branch.** `hush_relay_prepare()` now calls `hush_provider_update_all()`
+   only when `HUSH_AUTO_UPDATE=1|true|yes` is set. The primitive is tested
+   directly by `test_provider.c`; the gate is opt-in because silently running
+   `grok update`/`codex update` on every launch is a side-effecting policy.
 
 6. **cevent JSON is served over HTTP** via `hush_http_serve_chan_events()`
    (`/api/chan-events`), so the drop counter does reach the UI. (An earlier

@@ -182,12 +182,20 @@ clean-rebuild verified):
   `0x9e3779b9` fake ids — a different name hid the duplicate). Verified with
   three hard-coded NIP-01 SHA-256 preimages in `tests/test_event.c`. Only
   `hush_skill_make_id()` remains — a deterministic catalog key, not a Nostr id.
+- **M7 — single provider source of truth.** Deleted `hush_roster_providers[]`
+  and `HUSH_ROSTER_PROVIDER_COUNT`; `hush_roster_is_provider()` now delegates
+  to `hush_provider_is_id()`, so `hush_provider_meta[]` is the one runtime list.
+- **M8 — auto-update wired + policy flags enforced.** `hush_relay_prepare()`
+  calls `hush_provider_update_all()` behind an opt-in `HUSH_AUTO_UPDATE=1`
+  gate. `hush_agent_exec_child()` now routes on `SPAWN_ONLY` and
+  `hush_agent_grok_ready()` gates OAUTH providers on `has_home` — both via
+  `hush_provider_flags()`, making it a real production accessor.
 
 Re-scored (honest; loop still mandates continuing):
 
-### Harness Architecture — **5.2 → 7.2 / 10**
-- X Extensibility & Compliance: 5.5 → 7.2 (matrix + policy flags + 13 providers + NIP-01 real ids; still grok-only execution, flags not yet enforced at dispatch).
-- Y Lifecycle & Logic: 6.0 → 7.0 (auto-update primitive exists; not wired into launch; chaperon advisory).
+### Harness Architecture — **5.2 → 7.4 / 10**
+- X Extensibility & Compliance: 5.5 → 7.4 (matrix + policy flags + 13 providers + NIP-01 real ids + flags enforced at dispatch; still grok-only execution for non-ogy runtimes).
+- Y Lifecycle & Logic: 6.0 → 7.3 (auto-update scanner wired env-gated; not default-on; chaperon advisory).
 - Z Capability Routing: 3.0 → 7.5 (queryable matrix + file-context gate + file-context flow; image/tool routing not yet wired).
 
 ### Token & Context Engineering — **2.6 → 7.6 / 10**
@@ -200,5 +208,6 @@ Re-scored (honest; loop still mandates continuing):
 - Y Determinism: 7.0 → 7.5 (event ids are now content-addressed SHA-256, deterministic for identical events, instead of timestamp+seq hex).
 
 Remaining to reach 9.0+ (see PLAN_HARNESS_ENGINE.md): true multi-provider
-execution, enforce policy flags at dispatch, and the full Phase 5 UI refactor.
+execution (goose/codex/copilot/ollama — blocked on verified headless CLIs) and
+the full Phase 5 UI refactor.
 
