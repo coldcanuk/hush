@@ -42,35 +42,56 @@ typedef struct {
     const char *host;
     const char *binary;
     unsigned int caps;
+    unsigned int flags;
 } hush_provider_meta_t;
 
 static const hush_provider_meta_t hush_provider_meta[HUSH_PROVIDER_COUNT] = {
     { HUSH_ROSTER_PROVIDER_GOOSE, "Goose", HUSH_PROVIDER_FAMILY_HOME,
       "", "goose",
-      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH },
+      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH,
+      HUSH_PROVIDER_FLAG_NONE },
     { HUSH_ROSTER_PROVIDER_GROK_BUILD, "Grok Build",
       HUSH_PROVIDER_FAMILY_HOME, "", "grok",
       HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_IMAGE |
-          HUSH_PROVIDER_CAP_FILE_ATTACH },
+          HUSH_PROVIDER_CAP_FILE_ATTACH,
+      HUSH_PROVIDER_FLAG_OAUTH },
     { HUSH_ROSTER_PROVIDER_CODEX, "Codex", HUSH_PROVIDER_FAMILY_HOME,
       "", "codex",
       HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_IMAGE |
-          HUSH_PROVIDER_CAP_FILE_ATTACH },
+          HUSH_PROVIDER_CAP_FILE_ATTACH,
+      HUSH_PROVIDER_FLAG_OAUTH },
     { HUSH_ROSTER_PROVIDER_CLINE, "Cline", HUSH_PROVIDER_FAMILY_EDITOR,
       "", "cline",
       HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_IMAGE |
-          HUSH_PROVIDER_CAP_FILE_ATTACH },
+          HUSH_PROVIDER_CAP_FILE_ATTACH,
+      HUSH_PROVIDER_FLAG_NONE },
     { HUSH_ROSTER_PROVIDER_GEMINI, "Gemini API", HUSH_PROVIDER_FAMILY_API,
-      HUSH_PROVIDER_HOST_GEMINI, "", HUSH_PROVIDER_CAP_IMAGE },
+      HUSH_PROVIDER_HOST_GEMINI, "", HUSH_PROVIDER_CAP_IMAGE,
+      HUSH_PROVIDER_FLAG_NONE },
     { HUSH_ROSTER_PROVIDER_XAI, "xAI API", HUSH_PROVIDER_FAMILY_API,
-      HUSH_PROVIDER_HOST_XAI, "", HUSH_PROVIDER_CAP_IMAGE },
+      HUSH_PROVIDER_HOST_XAI, "", HUSH_PROVIDER_CAP_IMAGE,
+      HUSH_PROVIDER_FLAG_NONE },
     { HUSH_ROSTER_PROVIDER_OPENAI, "OpenAI API", HUSH_PROVIDER_FAMILY_API,
-      HUSH_PROVIDER_HOST_OPENAI, "", HUSH_PROVIDER_CAP_IMAGE },
+      HUSH_PROVIDER_HOST_OPENAI, "", HUSH_PROVIDER_CAP_IMAGE,
+      HUSH_PROVIDER_FLAG_NONE },
     { HUSH_ROSTER_PROVIDER_ANTHROPIC, "Anthropic API",
       HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_ANTHROPIC, "",
-      HUSH_PROVIDER_CAP_IMAGE },
+      HUSH_PROVIDER_CAP_IMAGE, HUSH_PROVIDER_FLAG_NONE },
     { HUSH_ROSTER_PROVIDER_DEEPSEEK, "Deepseek API",
-      HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_DEEPSEEK, "", 0 }
+      HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_DEEPSEEK, "", 0,
+      HUSH_PROVIDER_FLAG_NONE },
+    { HUSH_ROSTER_PROVIDER_AGY, "Antigravity", HUSH_PROVIDER_FAMILY_HOME,
+      "", "agy",
+      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH,
+      HUSH_PROVIDER_FLAG_SPAWN_ONLY | HUSH_PROVIDER_FLAG_ALLOWLIST },
+    { HUSH_ROSTER_PROVIDER_COPILOT, "Copilot", HUSH_PROVIDER_FAMILY_HOME,
+      "", "copilot",
+      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH,
+      HUSH_PROVIDER_FLAG_OAUTH },
+    { HUSH_ROSTER_PROVIDER_OLLAMA, "Ollama", HUSH_PROVIDER_FAMILY_LOCAL,
+      HUSH_PROVIDER_HOST_OLLAMA, "ollama", 0, HUSH_PROVIDER_FLAG_NONE },
+    { HUSH_ROSTER_PROVIDER_CUSTOM, "Custom endpoint",
+      HUSH_PROVIDER_FAMILY_API, "", "", 0, HUSH_PROVIDER_FLAG_NONE }
 };
 
 static const char *const hush_provider_secret_kind[HUSH_PROVIDER_SECRET_COUNT] = {
@@ -204,6 +225,16 @@ int hush_provider_can(const char *id, unsigned int cap)
     return (meta->caps & cap) == cap;
 }
 
+unsigned int hush_provider_flags(const char *id)
+{
+    const hush_provider_meta_t *meta;
+
+    meta = hush_provider_meta_of(id);
+    if (meta == NULL)
+        return 0;
+    return meta->flags;
+}
+
 hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id)
 {
     const hush_provider_meta_t *meta;
@@ -220,6 +251,7 @@ hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id)
     hush_provider_copy(out->family, sizeof(out->family), meta->family);
     hush_provider_copy(out->host, sizeof(out->host), meta->host);
     out->caps = meta->caps;
+    out->flags = meta->flags;
     hush_provider_detect_home(out);
     json[0] = '\0';
     (void)hush_provider_read_file(json, sizeof(json));
@@ -873,6 +905,8 @@ static void hush_provider_mark_configured(hush_provider_status_t *st)
         return;
     }
     if (st->has_home && strcmp(st->family, HUSH_PROVIDER_FAMILY_HOME) == 0)
+        st->configured = 1;
+    if (strcmp(st->family, HUSH_PROVIDER_FAMILY_LOCAL) == 0 && st->has_binary)
         st->configured = 1;
 }
 

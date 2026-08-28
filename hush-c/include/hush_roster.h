@@ -44,6 +44,10 @@ enum {
 #define HUSH_ROSTER_PROVIDER_OPENAI "openai-api"
 #define HUSH_ROSTER_PROVIDER_ANTHROPIC "anthropic-api"
 #define HUSH_ROSTER_PROVIDER_DEEPSEEK "deepseek-api"
+#define HUSH_ROSTER_PROVIDER_AGY "agy"
+#define HUSH_ROSTER_PROVIDER_COPILOT "copilot"
+#define HUSH_ROSTER_PROVIDER_OLLAMA "ollama"
+#define HUSH_ROSTER_PROVIDER_CUSTOM "custom"
 
 typedef struct {
     char name[HUSH_ROSTER_NAME_MAX];
@@ -102,7 +106,7 @@ int hush_roster_is_context_mime(const char *mime, const char *filename);
 /* True when theme is one of the seven named palettes. */
 int hush_roster_is_theme(const char *theme);
 
-/* True when provider is one of the nine named runtimes. */
+/* True when provider is one of the known named runtimes. */
 int hush_roster_is_provider(const char *provider);
 
 /* True when role is worker or chaperon. */

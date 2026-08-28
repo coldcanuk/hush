@@ -46,6 +46,10 @@ int main(void)
     expect(hush_roster_is_provider("grok-build"), "grok-build ok");
     expect(hush_roster_is_provider("anthropic-api"), "anthropic ok");
     expect(hush_roster_is_provider("deepseek-api"), "deepseek ok");
+    expect(hush_roster_is_provider("agy"), "agy ok");
+    expect(hush_roster_is_provider("copilot"), "copilot ok");
+    expect(hush_roster_is_provider("ollama"), "ollama ok");
+    expect(hush_roster_is_provider("custom"), "custom ok");
     expect(!hush_roster_is_provider("chatgpt"), "chatgpt rejected");
     memset(&profile, 0, sizeof(profile));
     memcpy(profile.first_name, "Ada", 4);
