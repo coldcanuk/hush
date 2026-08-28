@@ -22,6 +22,7 @@
 #include "hush_skill.h"
 #include "hush_skillui.h"
 #include "hush_ui_html.h"
+#include "hush_wake.h"
 #include "hush_win.h"
 #include "hush_icon_panels.h"
 
@@ -603,7 +604,8 @@ static void hush_http_serve_events(int fd, const hush_store_t *store)
     off = (size_t)snprintf(body, sizeof(body), "{\"events\":[");
     for (i = 0; i < n && off + 512 < sizeof(body); ++i) {
         if (evs[i].kind == (uint32_t)HUSH_PRESENCE_KIND_LINE ||
-            evs[i].kind == (uint32_t)HUSH_PRESENCE_KIND_TRAIL)
+            evs[i].kind == (uint32_t)HUSH_PRESENCE_KIND_TRAIL ||
+            evs[i].kind == (uint32_t)HUSH_WAKE_KIND_CLAIM)
             continue;
         hush_json_escape(evs[i].content, esc, sizeof(esc));
         hush_http_event_reply_to(reply_to, sizeof(reply_to), &evs[i]);

@@ -5079,7 +5079,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
      * visibleNotes always drops log notes; the drawer is the only log view. */
     function isDevLogNote(e) {
       if (!e) return false;
-      if (e.kind === 30315 || e.kind === 1038) return true;
+      if (e.kind === 30315 || e.kind === 1038 || e.kind === 1039) return true;
       if (!e.content) return false;
       return String(e.content).indexOf("Mention received") >= 0;
     }

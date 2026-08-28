@@ -209,6 +209,45 @@ int main(void)
         expect(hush_wake_claim(&in2) == HUSH_OK, "new trig after expiry");
     }
 
+    {
+        hush_event_t evs[64];
+        hush_event_t gossip;
+        hush_wake_in_t gin;
+        const char *rg =
+            "abababababababababababababababababababababababababababababababab";
+        const char *tg =
+            "1212121212121212121212121212121212121212121212121212121212121212";
+        size_t qn;
+        size_t qi;
+        int found = 0;
+
+        memset(&gossip, 0, sizeof(gossip));
+        fill_in(&gin, store, tg, t0);
+        gin.root_hex = rg;
+        expect(hush_wake_claim(&gin) == HUSH_OK, "gossip claim A");
+        qn = hush_store_query(store, NULL, 0, evs, 64);
+        for (qi = 0; qi < qn; qi++) {
+            if (evs[qi].kind != (uint32_t)HUSH_WAKE_KIND_CLAIM)
+                continue;
+            if (strcmp(evs[qi].pubkey, k_pub) != 0)
+                continue;
+            gossip = evs[qi];
+            found = 1;
+        }
+        expect(found == 1, "1039 published");
+        expect(hush_presence_req_ok((uint32_t)HUSH_WAKE_KIND_CLAIM, 0) == 1,
+               "1039 not hidden as 30315");
+        snprintf(ledger, sizeof(ledger), "%s/agents/%s", home, HUSH_WAKE_FILE);
+        unlink(ledger);
+        hush_wake_init();
+        memset(other, 0xcd, sizeof(other));
+        hush_wake_test_set_device(other);
+        expect(hush_wake_ingest(&gossip) == HUSH_OK, "ingest peer 1039");
+        expect(hush_wake_state(k_pub, rg) == HUSH_WAKE_ST_CLAIMED,
+               "peer claimed");
+        expect(hush_wake_claim(&gin) == HUSH_ERR_DENIED, "box B denied");
+    }
+
     snprintf(ledger, sizeof(ledger), "%s/agents/%s", home, HUSH_WAKE_FILE);
     snprintf(device, sizeof(device), "%s/agents/%s", home, HUSH_WAKE_DEVICE_FILE);
     expect(stat(ledger, &st) == 0, "ledger file");

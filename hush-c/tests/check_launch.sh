@@ -11,7 +11,14 @@ export HUSH_CONFIG_DIR="$cfg"
 export HUSH_HOME="$hush_home"
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
-cleanup() { kill "$pid" 2>/dev/null || true; rm -f "$log"; rm -rf "$cfg" "$hush_home" /tmp/hush-check-alpha /tmp/hush-bad-canvas; }
+cleanup() {
+    if [ -n "$pid" ]; then
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+    fi
+    rm -f "$log"
+    rm -rf "$cfg" "$hush_home" /tmp/hush-check-alpha /tmp/hush-bad-canvas
+}
 trap cleanup EXIT
 i=0
 while [ "$i" -lt 50 ]; do
