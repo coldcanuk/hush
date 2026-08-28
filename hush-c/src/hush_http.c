@@ -1989,7 +1989,7 @@ static void hush_http_append_provider(char *body, size_t bodysz, size_t *n,
                   "\"has_username\":%s,\"has_password\":%s,"
                   "\"has_token\":%s,\"has_passkey\":%s,"
                   "\"use_home\":%s,\"host\":\"%s\",\"model\":\"%s\","
-                  "\"home_model\":\"%s\",\"configured\":%s}",
+                  "\"home_model\":\"%s\",\"caps\":%u,\"configured\":%s}",
                   first ? "" : ",",
                   st->id, st->label, st->family,
                   st->has_binary ? "true" : "false",
@@ -2001,6 +2001,7 @@ static void hush_http_append_provider(char *body, size_t bodysz, size_t *n,
                   st->has_passkey ? "true" : "false",
                   st->use_home ? "true" : "false",
                   host, model, home_model,
+                  st->caps,
                   st->configured ? "true" : "false");
     if (wr > 0 && (size_t)wr < bodysz - *n)
         *n += (size_t)wr;

@@ -41,27 +41,36 @@ typedef struct {
     const char *family;
     const char *host;
     const char *binary;
+    unsigned int caps;
 } hush_provider_meta_t;
 
 static const hush_provider_meta_t hush_provider_meta[HUSH_PROVIDER_COUNT] = {
     { HUSH_ROSTER_PROVIDER_GOOSE, "Goose", HUSH_PROVIDER_FAMILY_HOME,
-      "", "goose" },
+      "", "goose",
+      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH },
     { HUSH_ROSTER_PROVIDER_GROK_BUILD, "Grok Build",
-      HUSH_PROVIDER_FAMILY_HOME, "", "grok" },
+      HUSH_PROVIDER_FAMILY_HOME, "", "grok",
+      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_IMAGE |
+          HUSH_PROVIDER_CAP_FILE_ATTACH },
     { HUSH_ROSTER_PROVIDER_CODEX, "Codex", HUSH_PROVIDER_FAMILY_HOME,
-      "", "codex" },
+      "", "codex",
+      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_IMAGE |
+          HUSH_PROVIDER_CAP_FILE_ATTACH },
     { HUSH_ROSTER_PROVIDER_CLINE, "Cline", HUSH_PROVIDER_FAMILY_EDITOR,
-      "", "cline" },
+      "", "cline",
+      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_IMAGE |
+          HUSH_PROVIDER_CAP_FILE_ATTACH },
     { HUSH_ROSTER_PROVIDER_GEMINI, "Gemini API", HUSH_PROVIDER_FAMILY_API,
-      HUSH_PROVIDER_HOST_GEMINI, "" },
+      HUSH_PROVIDER_HOST_GEMINI, "", HUSH_PROVIDER_CAP_IMAGE },
     { HUSH_ROSTER_PROVIDER_XAI, "xAI API", HUSH_PROVIDER_FAMILY_API,
-      HUSH_PROVIDER_HOST_XAI, "" },
+      HUSH_PROVIDER_HOST_XAI, "", HUSH_PROVIDER_CAP_IMAGE },
     { HUSH_ROSTER_PROVIDER_OPENAI, "OpenAI API", HUSH_PROVIDER_FAMILY_API,
-      HUSH_PROVIDER_HOST_OPENAI, "" },
+      HUSH_PROVIDER_HOST_OPENAI, "", HUSH_PROVIDER_CAP_IMAGE },
     { HUSH_ROSTER_PROVIDER_ANTHROPIC, "Anthropic API",
-      HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_ANTHROPIC, "" },
+      HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_ANTHROPIC, "",
+      HUSH_PROVIDER_CAP_IMAGE },
     { HUSH_ROSTER_PROVIDER_DEEPSEEK, "Deepseek API",
-      HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_DEEPSEEK, "" }
+      HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_DEEPSEEK, "", 0 }
 };
 
 static const char *const hush_provider_secret_kind[HUSH_PROVIDER_SECRET_COUNT] = {
@@ -175,6 +184,26 @@ void hush_provider_family(char *out, size_t outsz, const char *id)
     hush_provider_copy(out, outsz, meta != NULL ? meta->family : "");
 }
 
+unsigned int hush_provider_capabilities(const char *id)
+{
+    const hush_provider_meta_t *meta;
+
+    meta = hush_provider_meta_of(id);
+    if (meta == NULL)
+        return 0;
+    return meta->caps;
+}
+
+int hush_provider_can(const char *id, unsigned int cap)
+{
+    const hush_provider_meta_t *meta;
+
+    meta = hush_provider_meta_of(id);
+    if (meta == NULL)
+        return 0;
+    return (meta->caps & cap) == cap;
+}
+
 hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id)
 {
     const hush_provider_meta_t *meta;
@@ -190,6 +219,7 @@ hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id)
     hush_provider_copy(out->label, sizeof(out->label), meta->label);
     hush_provider_copy(out->family, sizeof(out->family), meta->family);
     hush_provider_copy(out->host, sizeof(out->host), meta->host);
+    out->caps = meta->caps;
     hush_provider_detect_home(out);
     json[0] = '\0';
     (void)hush_provider_read_file(json, sizeof(json));

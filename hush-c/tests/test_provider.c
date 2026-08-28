@@ -105,7 +105,37 @@ int main(void)
     hush_provider_family(family, sizeof(family), "cline");
     expect(strcmp(family, HUSH_PROVIDER_FAMILY_EDITOR) == 0, "cline family");
 
+    expect(hush_provider_capabilities("grok-build") ==
+               (HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_IMAGE |
+                HUSH_PROVIDER_CAP_FILE_ATTACH),
+           "grok caps full");
+    expect(hush_provider_can("grok-build", HUSH_PROVIDER_CAP_TOOLS),
+           "grok can tools");
+    expect(hush_provider_can("grok-build", HUSH_PROVIDER_CAP_IMAGE),
+           "grok can image");
+    expect(hush_provider_can("grok-build", HUSH_PROVIDER_CAP_FILE_ATTACH),
+           "grok can file");
+    expect(hush_provider_capabilities("goose") ==
+               (HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH),
+           "goose caps tools+file");
+    expect(!hush_provider_can("goose", HUSH_PROVIDER_CAP_IMAGE),
+           "goose no image");
+    expect(hush_provider_capabilities("openai-api") ==
+               HUSH_PROVIDER_CAP_IMAGE,
+           "openai image only");
+    expect(!hush_provider_can("openai-api", HUSH_PROVIDER_CAP_TOOLS),
+           "openai no tools");
+    expect(hush_provider_capabilities("deepseek-api") == 0,
+           "deepseek caps none");
+    expect(!hush_provider_can("deepseek-api", HUSH_PROVIDER_CAP_IMAGE),
+           "deepseek no image");
+    expect(hush_provider_capabilities("nope") == 0, "unknown caps zero");
+    expect(!hush_provider_can("nope", HUSH_PROVIDER_CAP_TOOLS), "unknown no");
+
     expect(hush_provider_status(&st, "goose") == HUSH_OK, "goose status");
+    expect(st.caps ==
+               (HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH),
+           "goose status caps");
     expect(!st.has_home, "goose home absent");
     expect(hush_provider_status(&st, "nope") == HUSH_ERR_PARSE, "bad id");
 

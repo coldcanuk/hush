@@ -1,0 +1,150 @@
+# RESEARCH_HARNESS — Phase 1 Synthesis
+
+Status: complete (baseline, pre-refactor).
+Scope: multi-provider harness, capability routing, auto-update scanner,
+token/context engineering, in-hive messaging protocol, and UI/UX rail.
+
+This document is the RDAP Phase 1 synthesis gate. It maps what exists today
+and names the exact gaps between the current engine and the target harness.
+
+---
+
+## 1. Module map (as of `main` @ 88ab095a8)
+
+| Module | LOC | Role |
+|---|---|---|
+| `hush_provider.c/h` | 1138 | Provider registry, home detection, overlay file, pass secrets, curl model scan, OAuth login |
+| `hush_agent.c/h` | 2907 | Mention dispatch, job table, co-mention coordination, chaperon, process spawn |
+| `hush_launch.c/h` | 3014 | First-launch wizard, identity, vibe, channels + policy leash, projects, Payne, coordination |
+| `hush_roster.c/h` | 1044 | Robots (name/prompt/provider/picture/voice/skills/context/role), members |
+| `hush_proto.c/h` | 173 | Nostr wire protocol (EVENT/REQ/CLOSE/COUNT) |
+| `hush_cevent.c/h` | 131 | In-hive channel events (ordered + timed ring) |
+| `hush_skill.c/h` | 887 | Skill catalog (system/robot/user) + forge writer |
+| `hush_intel.c/h` | 715 | Chaperon rails: mention detect, topic leash, hop cap, policy |
+| `hush_http.c` | 2291 | HTTP routes + serves embedded PWA |
+| `hush_ui_html.h` | ~36k | Embedded PWA (generated from `hush-c/demo/` by `scripts/embed-ui.sh`) |
+| `hush_turn.c/h` | 480 | STUN/TURN (coturn); **not** agent turns |
+| `hush_win.c/h` | 269 | X11 window controls (rail window) |
+
+Strict build flags confirmed: `-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow`.
+Full `make test` passes at baseline.
+
+---
+
+## 2. Provider layer — what exists
+
+`hush_provider_meta[]` registers **nine** providers across three families:
+
+| Family | Providers | Executes turns today? |
+|---|---|---|
+| `home` (CLI binaries) | `goose`, `grok-build`, `codex` | **grok-build only** |
+| `editor` | `cline` | no |
+| `api` (REST) | `gemini-api`, `xai-api`, `openai-api`, `anthropic-api`, `deepseek-api` | no |
+
+Each provider carries `{ id, label, family, host, binary }` plus a `hush_provider_status_t`
+(has_binary / has_home / has_key / … / configured). Detection covers home configs
+(`~/.grok/auth.json`, `~/.codex/auth.json`, `~/.config/goose`), an overlay file
+(`~/.hush/config/providers.json`), and `pass` secrets (api_key, username, password,
+token, passkey). `hush_provider_scan()` lists models via curl for the API family.
+`hush_provider_start_login()` runs the official OAuth login for grok-build and codex;
+goose is refused (must use `goose configure`).
+
+**Critical finding:** the provider registry is a *configuration and status* surface,
+not an *execution* router. `hush_agent.c` hardcodes `grok -p` as the only runtime:
+
+```
+/* grok-build is the only runtime that executes a turn today ... */
+static int hush_agent_can_start_grok(...) { ... return hush_agent_grok_ready(); }
+```
+
+Non-grok robot picks silently fall back to grok-build. So "multi-provider" is
+currently a UI/config facade over a grok-only engine.
+
+---
+
+## 3. Gap analysis vs. target scope
+
+### 3.1 Harness (the engine)
+
+| Requirement | Status | Gap |
+|---|---|---|
+| Multi-provider routing (goose/agy/copilot/codex/BYOK/ollama/custom) | partial | Only grok-build executes. No goose/codex/API execution path. |
+| `agy` (Antigravity) headless, no-wrap ToS | absent | No `agy` provider, no "spawn-only, never wrap" concept, no UI allow-list pointer. |
+| Copilot OAuth flow | absent | `start_login` covers grok/codex only; no copilot OAuth. |
+| Ollama local inference | absent | Not in registry. |
+| Custom OpenAI-compatible endpoints | partial | `openai-api` is fixed-host; no user-supplied base URL field. |
+| BYOK native API | partial | API family keyed by `pass`, but no execution path. |
+| Launch-time auto-update scanner | absent | Only binary detection; no `grok update` / `agy update` / `codex update` routines. |
+| Capability matrix (tools/image/file) | absent | No capability bitmask; nothing blocks unsupported actions. |
+| Conversation rules (1:1, 1:N, N robots→chaperon) | partial | `chaperon` field + role exist; 1:1/1:N via mentions/threads work; N-robot chaperon is advisory, not hard-gated. |
+
+### 3.2 Token & context engineering
+
+| Requirement | Status | Gap |
+|---|---|---|
+| Plain-text/markdown segmentation | absent | No chunker. Only `hush_roster_is_context_mime()` MIME gate + 4096-byte/file cap. |
+| Regex/parse robustness | partial | Manual JSON escaping exists; no dedicated segmentation parser. |
+| Payload reduction for plain-text models | absent | Full context forwarded; no smart splitting. |
+
+### 3.3 Messaging protocol
+
+| Requirement | Status | Gap |
+|---|---|---|
+| Deterministic machine-to-machine signaling | present | `hush_cevent` ring: mention/intro/job_start/job_done/follow/hop_denied/jobs_held/chaperon/presence/stuck. |
+| Ordered + timed | present | `seq` + `due` fields, sorted JSON. |
+| Ack/retry guarantee | absent | Best-effort delivery; no ack or retry at the signaling layer. |
+
+### 3.4 UI/UX
+
+| Requirement | Status | Gap |
+|---|---|---|
+| Edit menu responsive grid | absent | Edit robot is "one compact line" (README); no desktop/tablet/phone grid. |
+| Skills Forge spacious screen | partial | Forge exists; renders as compact panels, not a dedicated spacious screen. |
+| 128px avatar selection window | partial | Icon sheets exist; selection is not a dedicated 128px window. |
+| Tool rail "winner" model + Z-index fixes | partial | Free-drag hamburger rail exists; Z-index (exit confirm behind rail) is a known open bug. |
+
+---
+
+## 4. Baseline Bayesian scores (pre-refactor)
+
+Weighting: `Final = 0.4*x + 0.4*y + 0.2*z`.
+
+### 4.1 Harness Architecture — **5.2 / 10**
+- X Extensibility & Compliance: 5.5 — clean registry, but grok-only execution, no agy/copilot/ollama, no ToS no-wrap model.
+- Y Lifecycle & Logic: 6.0 — chaperon field + roles + threads work; no auto-update scanner; N-robot chaperon advisory only.
+- Z Capability Routing: 3.0 — no matrix; nothing routes or blocks tools/image/file.
+
+### 4.2 UI/UX Responsiveness — **6.1 / 10**
+- X Form Factor: 6.5 — PWA is fluid, but edit menu is a single line, no explicit breakpoint grid.
+- Y Component Clarity: 6.0 — Forge + icon sheets exist but compact/hover, not dedicated screens.
+- Z Z-Index/Rail: 5.5 — free-drag rail is a good model; known z-index overlap bugs remain.
+
+### 4.3 Token & Context Engineering — **2.6 / 10**
+- X Parsing Precision: 3.0 — MIME gate only, no structural chunking.
+- Y Cost Efficiency: 2.5 — no payload reduction.
+- Z Regex Robustness: 2.0 — no dedicated segmentation parser.
+
+### 4.4 Messaging Protocol — **7.4 / 10**
+- X Reliability: 7.5 — ordered ring + poll; no ack/retry.
+- Y Determinism: 7.0 — structured JSON, machine-only, dev_log off by default.
+- Z Performance: 8.0 — lightweight non-blocking ring buffer.
+
+**All four domains are below 9.0.** Per the loop mechanics, work continues
+beginning with the highest-leverage foundational gap: the capability matrix and
+true provider abstraction (Harness Architecture), then the token/context engine.
+
+---
+
+## 5. First milestone (chosen)
+
+Add a **capability matrix** to the provider registry so the harness can
+route and block actions before execution:
+
+1. `hush_provider_caps_t` bitmask (TOOLS / IMAGE / FILE_ATTACH).
+2. Per-provider `caps` in `hush_provider_meta_t`.
+3. `hush_provider_capabilities()` + `hush_provider_can()` API.
+4. Capabilities exposed in status JSON for the UI.
+5. Unit tests in `test_provider.c`.
+
+This is self-contained, testable, and is the prerequisite for true capability
+routing (subscore Z) and for adding agy/copilot/ollama with honest feature flags.

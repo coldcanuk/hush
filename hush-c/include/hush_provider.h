@@ -26,6 +26,15 @@ enum {
 #define HUSH_PROVIDER_FAMILY_API "api"
 #define HUSH_PROVIDER_FAMILY_EDITOR "editor"
 
+/* Capability bitmask. Plain text is the baseline every provider supports and
+ * is therefore not a flag. The harness queries these before routing work and
+ * blocks an unsupported action instead of silently dropping it. */
+#define HUSH_PROVIDER_CAP_TOOLS       (1u << 0)  /* agentic tool use       */
+#define HUSH_PROVIDER_CAP_IMAGE       (1u << 1)  /* image analysis         */
+#define HUSH_PROVIDER_CAP_FILE_ATTACH (1u << 2)  /* consumes file context  */
+
+typedef unsigned int hush_provider_caps_t;
+
 #define HUSH_PROVIDER_SECRET_API_KEY "api_key"
 #define HUSH_PROVIDER_SECRET_USERNAME "username"
 #define HUSH_PROVIDER_SECRET_PASSWORD "password"
@@ -56,6 +65,7 @@ typedef struct {
     int has_passkey;
     int use_home;
     int configured;
+    unsigned int caps;
 } hush_provider_status_t;
 
 typedef struct {
@@ -84,6 +94,12 @@ void hush_provider_default_host(char *out, size_t outsz, const char *id);
 
 /* Copies the family name for id. Empty when id is unknown. */
 void hush_provider_family(char *out, size_t outsz, const char *id);
+
+/* Capability bitmask for id. 0 when id is unknown (block everything). */
+unsigned int hush_provider_capabilities(const char *id);
+
+/* True when id supports every bit in cap. Unknown ids always fail. */
+int hush_provider_can(const char *id, unsigned int cap);
 
 /* Fills status from home detect, overlay file, and pass. */
 hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id);
