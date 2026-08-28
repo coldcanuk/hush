@@ -79,6 +79,31 @@ The following were traced by hand against the code and are correct:
   fixup/plan/elect prompts stay on grok-build regardless of the robot's
   provider. (Commit `a848dbc51`.)
 
+- **Dead code block in `hush_agent_finish_job`.** A trailing `if (store)`
+  block built a `bot` and `parent` struct (eight memset/copy ops) and then
+  discarded them via `(void)` casts — a disabled "error on_deck" path. Removed
+  during this audit; the function now just closes the job.
+
+---
+
+## 4.5 Phantom code and placeholders found (audit)
+
+- **`hush_sha256_hex()` is a stub.** Both `#if HUSH_USE_OPENSSL` branches are
+  identical (`(void)data; (void)len; memset(out,'0',…)`), and
+  `HUSH_USE_OPENSSL` is never defined by `configure`, so the `#if/#else` is
+  dead. Real SHA-256 is a documented MVP deviation.
+- **`hush_event_compute_id()` is phantom.** Declared public in `hush_event.h`,
+  defined, and never called anywhere. Its only helpers
+  (`hush_event_serialize_for_id`, `hush_sha256_hex`) are static and exist
+  solely to serve it. Actual event ids come from four separate `make_id()`
+  functions (roster/agent/presence/intel) that emit a timestamp+seq hex
+  string, not a hash.
+- **`hush_provider_update_all()` is built but unwired** — production never
+  calls it (only `test_provider.c`). Awaiting launch policy sign-off.
+- **`hush_provider_capabilities()` and `hush_provider_flags()` are test-only
+  accessors.** Production reads caps/flags from the `/api/provider` JSON, not
+  these functions. Legitimate API surface, but currently redundant.
+
 ---
 
 ## 5. Known risks and limitations
@@ -106,9 +131,9 @@ These are honest and should gate the remaining work.
    running `grok update`/`codex update` at startup is a policy decision. The
    primitive exists and is tested; wiring is one env-gated line when approved.
 
-6. **cevent JSON is not served over HTTP.** The drop counter and serializer are
-   correct and tested, but `hush_cevent_format_json()` is only called from the
-   unit test, so the reliability signal isn't visible to the UI yet.
+6. **cevent JSON is served over HTTP** via `hush_http_serve_chan_events()`
+   (`/api/chan-events`), so the drop counter does reach the UI. (An earlier
+   draft of this review wrongly claimed it was not wired — corrected.)
 
 7. **Remaining runtimes need verified CLIs.** `goose`/`codex`/`copilot`/
    `ollama` still fall back to grok. I refused to fabricate their headless
@@ -132,11 +157,9 @@ These are honest and should gate the remaining work.
 
 1. ~~Fix the Makefile header-dependency gap~~ — done in this branch.
 2. Collapse the two provider id lists into one shared definition.
-3. Wire `hush_cevent_format_json()` to a route so the drop counter reaches the
-   UI (completes the messaging-reliability story).
-4. Get sign-off on launch-time auto-update, then env-gate the wiring.
-5. Before wiring the next runtime, confirm its exact headless invocation from
+3. Get sign-off on launch-time auto-update, then env-gate the wiring.
+4. Before wiring the next runtime, confirm its exact headless invocation from
    official docs; then mirror the agy pattern (exec branch + readiness gate).
-6. Phase 5 UI layout work (responsive edit-menu, Skills Forge screen, avatar
+5. Phase 5 UI layout work (responsive edit-menu, Skills Forge screen, avatar
    window, rail redesign) needs visual verification — do not attempt in a
    CI-only loop without a browser check.

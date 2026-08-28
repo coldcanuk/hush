@@ -1679,9 +1679,6 @@ static void hush_agent_kill_job(hush_agent_job_t *job)
 static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
                                   int ok)
 {
-    hush_agent_robot_t bot;
-    hush_event_t parent;
-
     assert(job != NULL);
     hush_agent_trim(job->out);
     {
@@ -1791,22 +1788,6 @@ static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
         hush_agent_presence_put(store, job, HUSH_PRESENCE_SLUG_IDLE);
         hush_agent_close_job(job);
         return;
-    }
-    if (store != NULL) {
-        memset(&bot, 0, sizeof(bot));
-        memset(&parent, 0, sizeof(parent));
-        bot.name = job->robot_name;
-        bot.hex = job->robot_pub;
-        hush_agent_copy(parent.id, sizeof(parent.id), job->parent_id);
-        hush_agent_copy(parent.pubkey, sizeof(parent.pubkey), job->human_pub);
-        parent.tag_count = 1;
-        memcpy(parent.tags[0][0], "h", 2);
-        hush_agent_copy(parent.tags[0][1], sizeof(parent.tags[0][1]),
-                        job->channel);
-        /* M3.1 dev log gate: this error on_deck path is internal.
-         * Suppress to keep main chat clean (main intros gated at dispatch).
-         * When dev logging is later wired to a panel we can surface here. */
-        (void)store; (void)&bot; (void)&parent; (void)ok; /* no-op for now */
     }
     hush_agent_close_job(job);
 }
