@@ -107,6 +107,18 @@ int main(void)
     expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_DENIED,
            "pdf denied");
     expect(roster.nagents == 1, "still one agent");
+    memset(&agent, 0, sizeof(agent));
+    memcpy(agent.name, "TextOnly", 9);
+    memcpy(agent.prompt, "Watch.", 7);
+    memcpy(agent.provider, "deepseek-api", 13);
+    memcpy(agent.context[0].name, "brief.md", 9);
+    memcpy(agent.context[0].mime, "text/markdown", 14);
+    agent.context[0].text = "# stand to";
+    agent.context[0].bytes = 11;
+    agent.ncontext = 1;
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_DENIED,
+           "text-only provider denies file context");
+    expect(roster.nagents == 1, "still one agent after context gate");
     expect(hush_roster_format_json(&roster, json, sizeof(json), &n) == HUSH_OK,
            "json");
     expect(strstr(json, "\"theme\":\"desert\"") != NULL, "theme json");

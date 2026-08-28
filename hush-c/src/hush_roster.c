@@ -8,6 +8,7 @@
 
 #include "hush_event.h"
 #include "hush_pass.h"
+#include "hush_provider.h"
 #include "hush_roster.h"
 #include "hush_skill.h"
 
@@ -469,6 +470,10 @@ static hush_status_t hush_roster_fill_context(hush_roster_agent_t *agent,
     assert(in != NULL);
     if (in->ncontext > (size_t)HUSH_ROSTER_CONTEXT_MAX)
         return HUSH_ERR_FULL;
+    /* Capability routing: a text-only provider cannot consume file context. */
+    if (in->ncontext > 0 &&
+        !hush_provider_can(agent->provider, HUSH_PROVIDER_CAP_FILE_ATTACH))
+        return HUSH_ERR_DENIED;
     for (i = 0; i < in->ncontext; ++i) {
         if (hush_roster_copy_context(&agent->context[i],
                                      &in->context[i]) != HUSH_OK)
