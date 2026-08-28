@@ -1000,21 +1000,17 @@ static void hush_agent_note_no_runtime(hush_store_t *store,
     char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
     char root[HUSH_EVENT_ID_HEX_LEN + 1];
     const char *name;
-    const char *prov;
 
     assert(store != NULL);
     assert(bot != NULL);
     assert(parent != NULL);
     name = (bot->name != NULL && bot->name[0] != '\0') ? bot->name : "robot";
-    prov = (bot->provider != NULL && bot->provider[0] != '\0')
-               ? bot->provider : "none";
     hush_agent_event_root(root, sizeof(root), parent);
     hush_agent_event_channel(channel, sizeof(channel), parent);
     if (snprintf(content, sizeof(content),
-                 "No runtime wired for %s — set me to Grok Build to run turns. — %s",
-                 prov, name) >= (int)sizeof(content))
-        hush_agent_copy(content, sizeof(content),
-                        "No runtime wired for this provider.");
+                 "No runtime available — Grok Build isn't configured. — %s",
+                 name) >= (int)sizeof(content))
+        hush_agent_copy(content, sizeof(content), "No runtime available.");
     {
         hush_agent_note_in_t in;
 
@@ -1040,24 +1036,14 @@ static int hush_agent_grok_ready(void)
 static int hush_agent_can_start_grok(const hush_launch_t *launch,
                                      const hush_agent_robot_t *bot)
 {
-    size_t i;
-
+    /* grok-build is the only runtime that executes a turn today. The robot's
+     * selected provider is a forward-looking label; every robot falls back to
+     * grok-build so a non-grok pick (goose, codex, ...) still works instead of
+     * silently posting only its intro. */
+    (void)launch;
     assert(bot != NULL);
-    if (!hush_agent_grok_ready())
-        return 0;
-    if (bot->provider != NULL &&
-        strcmp(bot->provider, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0)
-        return 1;
-    if (launch == NULL || bot->slug == NULL)
-        return 0;
-    if (strcmp(bot->slug, HUSH_LAUNCH_PAYNE_SLUG) != 0)
-        return 0;
-    for (i = 0; i < launch->npayne_providers; i++) {
-        if (strcmp(launch->payne_providers[i], HUSH_ROSTER_PROVIDER_GROK_BUILD)
-            == 0)
-            return 1;
-    }
-    return 0;
+    (void)bot;
+    return hush_agent_grok_ready();
 }
 
 static int hush_agent_event_is_root(const hush_event_t *ev, const char *root)

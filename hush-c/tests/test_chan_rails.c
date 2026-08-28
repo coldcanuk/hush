@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "hush_agent.h"
@@ -66,9 +67,16 @@ int main(void)
     static hush_launch_t launch;
     hush_store_t *store = NULL;
     char cfg[128];
+    char home[128];
 
     snprintf(cfg, sizeof(cfg), "/tmp/hush-rails-cfg-%d", (int)getpid());
+    snprintf(home, sizeof(home), "/tmp/hush-rails-home-%d", (int)getpid());
+    (void)mkdir(home, 0700);
     if (setenv("HUSH_CONFIG_DIR", cfg, 1) != 0)
+        return 1;
+    /* Isolate HOME so grok/provider detection can't reach a real ~/.grok and
+     * spawn a live grok binary during this unit test. */
+    if (setenv("HOME", home, 1) != 0)
         return 1;
     if (setenv("HUSH_FAKE_PASS_DIR", "/tmp/hush-rails-pass", 1) != 0)
         return 1;
