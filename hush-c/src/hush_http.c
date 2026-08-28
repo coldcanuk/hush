@@ -106,6 +106,8 @@ static hush_status_t hush_http_update_agent(int fd, const char *body);
 static int hush_http_is_payne_slug(const char *body);
 static void hush_http_fill_agent_extras(hush_roster_agent_in_t *in,
                                         const char *body);
+static void hush_http_take_providers(hush_roster_agent_in_t *in,
+                                     const char *body);
 static void hush_http_fill_agent_skills(hush_roster_agent_in_t *in,
                                         const char *body);
 static hush_status_t hush_http_check_loadout(const hush_roster_agent_in_t *in,
@@ -939,6 +941,7 @@ static hush_status_t hush_http_serve_agent(int fd, const char *body,
         return hush_http_reply_session(fd, HUSH_ERR_PARSE);
     if (!hush_json_field(body, "provider", in.provider, sizeof(in.provider)))
         return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    hush_http_take_providers(&in, body);
     hush_http_fill_agent_extras(&in, body);
     st = hush_http_check_loadout(&in, hush_http_agent_role(NULL, &in), "");
     if (st != HUSH_OK)
@@ -1022,12 +1025,44 @@ static hush_status_t hush_http_update_agent(int fd, const char *body)
     (void)hush_json_field(body, "name", in.name, sizeof(in.name));
     (void)hush_json_field(body, "system_prompt", in.prompt, sizeof(in.prompt));
     (void)hush_json_field(body, "provider", in.provider, sizeof(in.provider));
+    hush_http_take_providers(&in, body);
     hush_http_fill_agent_extras(&in, body);
     st = hush_http_check_loadout(&in, hush_http_agent_role(slug, &in), slug);
     if (st != HUSH_OK)
         return hush_http_reply_session(fd, st);
     return hush_http_reply_session(fd,
                                    hush_launch_update_agent(g_launch, slug, &in));
+}
+
+/* Parses "providers":"a,b,c" into in->providers (ranked, index 0 = primary). */
+static void hush_http_take_providers(hush_roster_agent_in_t *in,
+                                     const char *body)
+{
+    char plist[HUSH_ROSTER_PROVIDERS_MAX * (HUSH_ROSTER_PROVIDER_MAX + 1)];
+    char *tok;
+    char *save;
+    size_t n = 0;
+
+    assert(in != NULL);
+    assert(body != NULL);
+    if (!hush_json_field(body, "providers", plist, sizeof(plist)))
+        return;
+    for (tok = strtok_r(plist, ",", &save);
+         tok != NULL && n < (size_t)HUSH_ROSTER_PROVIDERS_MAX;
+         tok = strtok_r(NULL, ",", &save)) {
+        size_t len;
+
+        if (tok[0] == '\0')
+            continue;
+        len = strlen(tok);
+        if (len >= sizeof(in->providers[n]))
+            len = sizeof(in->providers[n]) - 1;
+        memcpy(in->providers[n], tok, len);
+        in->providers[n][len] = '\0';
+        n++;
+    }
+    in->nproviders = n;
+    in->has_providers = 1;
 }
 
 static void hush_http_fill_agent_extras(hush_roster_agent_in_t *in,

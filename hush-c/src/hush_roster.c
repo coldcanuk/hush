@@ -267,6 +267,42 @@ hush_status_t hush_roster_add_member(hush_roster_t *roster,
     return HUSH_OK;
 }
 
+/* Copies in->providers (or the single in->provider fallback) into agent as a
+ * validated ranked list, and mirrors index 0 into agent->provider. */
+static hush_status_t hush_roster_copy_providers(hush_roster_agent_t *agent,
+                                                const hush_roster_agent_in_t *in)
+{
+    size_t i;
+    size_t n = 0;
+
+    assert(agent != NULL);
+    assert(in != NULL);
+    if (in->has_providers && in->nproviders > 0) {
+        for (i = 0; i < in->nproviders &&
+                    n < (size_t)HUSH_ROSTER_PROVIDERS_MAX; i++) {
+            if (in->providers[i][0] == '\0')
+                continue;
+            if (!hush_roster_is_provider(in->providers[i]))
+                return HUSH_ERR_PARSE;
+            hush_roster_copy_text(agent->providers[n],
+                                  sizeof(agent->providers[n]),
+                                  in->providers[i], "");
+            n++;
+        }
+    }
+    if (n == 0) {
+        hush_roster_copy_text(agent->providers[0],
+                              sizeof(agent->providers[0]), in->provider, "");
+        n = 1;
+    }
+    agent->nproviders = n;
+    hush_roster_copy_text(agent->provider, sizeof(agent->provider),
+                          agent->providers[0], "");
+    if (!hush_roster_is_provider(agent->provider))
+        return HUSH_ERR_PARSE;
+    return HUSH_OK;
+}
+
 hush_status_t hush_roster_add_agent(hush_roster_t *roster,
                                     hush_store_t *store,
                                     const hush_roster_agent_in_t *in,
@@ -409,9 +445,7 @@ static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
     hush_roster_copy_text(agent->prompt, sizeof(agent->prompt), in->prompt, "");
     if (agent->prompt[0] == '\0')
         return HUSH_ERR_PARSE;
-    hush_roster_copy_text(agent->provider, sizeof(agent->provider),
-                          in->provider, "");
-    if (!hush_roster_is_provider(agent->provider))
+    if (hush_roster_copy_providers(agent, in) != HUSH_OK)
         return HUSH_ERR_PARSE;
     hush_roster_copy_text(agent->picture, sizeof(agent->picture),
                           in->picture, "");
@@ -886,11 +920,9 @@ static hush_status_t hush_roster_apply_update(hush_roster_agent_t *agent,
     if (in->prompt[0] != '\0')
         hush_roster_copy_text(agent->prompt, sizeof(agent->prompt),
                               in->prompt, "");
-    if (in->provider[0] != '\0') {
-        if (!hush_roster_is_provider(in->provider))
+    if (in->has_providers || in->provider[0] != '\0') {
+        if (hush_roster_copy_providers(agent, in) != HUSH_OK)
             return HUSH_ERR_PARSE;
-        hush_roster_copy_text(agent->provider, sizeof(agent->provider),
-                              in->provider, "");
     }
     if (in->has_picture)
         hush_roster_copy_text(agent->picture, sizeof(agent->picture),
@@ -923,6 +955,9 @@ static hush_status_t hush_roster_format_one_agent(const hush_roster_agent_t *age
     char esc[HUSH_ROSTER_NAME_MAX * 2];
     char preview[HUSH_ROSTER_PROMPT_PREVIEW + 1];
     char esc_prompt[HUSH_ROSTER_PROMPT_PREVIEW * 2];
+    char prov[HUSH_ROSTER_PROVIDERS_MAX * (HUSH_ROSTER_PROVIDER_MAX + 3)];
+    size_t poff = 0;
+    size_t i;
     int n;
 
     assert(agent != NULL);
@@ -931,14 +966,22 @@ static hush_status_t hush_roster_format_one_agent(const hush_roster_agent_t *age
     hush_roster_json_escape(agent->name, esc, sizeof(esc));
     hush_roster_preview_prompt(preview, sizeof(preview), agent->prompt);
     hush_roster_json_escape(preview, esc_prompt, sizeof(esc_prompt));
+    for (i = 0; i < agent->nproviders; i++) {
+        n = snprintf(prov + poff, sizeof(prov) - poff, "%s\"%s\"",
+                     i == 0 ? "" : ",", agent->providers[i]);
+        if (n < 0 || poff + (size_t)n >= sizeof(prov))
+            break;
+        poff += (size_t)n;
+    }
     n = snprintf(out + *off, outsz - *off,
                  "%s{\"name\":\"%s\",\"slug\":\"%s\",\"npub\":\"%s\","
-                 "\"pubkey\":\"%s\",\"provider\":\"%s\",\"prompt\":\"%s\","
-                 "\"picture\":\"%s\",\"voice\":\"%s\",\"enabled\":%s,"
-                 "\"locked\":%s,\"role\":\"%s\",\"ncontext\":%zu,\"skills\":",
+                 "\"pubkey\":\"%s\",\"provider\":\"%s\",\"providers\":[%s],"
+                 "\"prompt\":\"%s\",\"picture\":\"%s\",\"voice\":\"%s\","
+                 "\"enabled\":%s,\"locked\":%s,\"role\":\"%s\","
+                 "\"ncontext\":%zu,\"skills\":",
                  first ? "" : ",",
                  esc, agent->slug, agent->id.npub, agent->id.pubkey_hex,
-                 agent->provider, esc_prompt, agent->picture, agent->voice,
+                 agent->provider, prov, esc_prompt, agent->picture, agent->voice,
                  agent->enabled ? "true" : "false",
                  agent->locked ? "true" : "false",
                  agent->role[0] ? agent->role : HUSH_ROSTER_ROLE_WORKER,

@@ -143,8 +143,9 @@ int main(void)
     expect(launch.nchannels == 3, "starter channels");
     expect(strncmp(launch.payne.npub, "npub1", 5) == 0, "payne");
     expect(launch.npayne_providers == 1, "default one provider");
-    expect(strcmp(launch.payne_providers[0], HUSH_ROSTER_PROVIDER_GOOSE) == 0,
-           "default goose");
+    expect(strcmp(launch.payne_providers[0],
+                  HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0,
+           "default grok-build");
     {
         const char *ids[] = {
             HUSH_ROSTER_PROVIDER_GROK_BUILD,

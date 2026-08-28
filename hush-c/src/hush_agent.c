@@ -209,6 +209,10 @@ typedef struct {
     const char *npub;
     const char *hex;
     const char *provider;
+    /* Ranked provider list (index 0 = primary). Populated from the roster
+     * agent; may be empty for Payne (which has its own payne_providers). */
+    const char *providers[HUSH_ROSTER_PROVIDERS_MAX];
+    size_t nproviders;
     const char *prompt;
     const char *slug;
     const char *role;
@@ -692,6 +696,7 @@ static int hush_agent_lookup_robot(hush_agent_robot_t *out,
                                    const char *mention)
 {
     size_t i;
+    size_t j;
     const hush_roster_agent_t *agent;
 
     assert(out != NULL);
@@ -705,6 +710,11 @@ static int hush_agent_lookup_robot(hush_agent_robot_t *out,
         out->hex = launch->payne.pubkey_hex;
         out->provider = (launch->npayne_providers > 0)
             ? launch->payne_providers[0] : HUSH_ROSTER_PROVIDER_GOOSE;
+        for (j = 0; j < launch->npayne_providers &&
+                    j < (size_t)HUSH_ROSTER_PROVIDERS_MAX; j++)
+            out->providers[j] = launch->payne_providers[j];
+        out->nproviders = (launch->npayne_providers > 0)
+            ? launch->npayne_providers : 0;
         out->prompt = hush_launch_payne_prompt(launch);
         out->slug = HUSH_LAUNCH_PAYNE_SLUG;
         out->role = HUSH_ROSTER_ROLE_WORKER;
@@ -725,6 +735,10 @@ static int hush_agent_lookup_robot(hush_agent_robot_t *out,
         out->npub = agent->id.npub;
         out->hex = agent->id.pubkey_hex;
         out->provider = agent->provider;
+        for (j = 0; j < agent->nproviders &&
+                    j < (size_t)HUSH_ROSTER_PROVIDERS_MAX; j++)
+            out->providers[j] = agent->providers[j];
+        out->nproviders = agent->nproviders;
         out->prompt = agent->prompt;
         out->slug = agent->slug;
         out->role = agent->role[0] ? agent->role : HUSH_ROSTER_ROLE_WORKER;
@@ -1071,6 +1085,10 @@ static int hush_agent_runtime_ready(const char *provider)
         flags = hush_provider_flags(provider);
         if ((flags & HUSH_PROVIDER_FLAG_OAUTH) && !st.has_home)
             return 0;
+        /* goose also needs `goose configure` (config.yaml) before it can
+         * answer; an unconfigured goose emits a useless error otherwise. */
+        if (strcmp(provider, HUSH_ROSTER_PROVIDER_GOOSE) == 0 && !st.has_home)
+            return 0;
         return 1;
     }
     /* Ollama (local): needs the binary and a configured model name. */
@@ -1086,14 +1104,30 @@ static int hush_agent_runtime_ready(const char *provider)
     return hush_agent_grok_ready();
 }
 
+/* Returns the first ready provider in the robot's ranked list, else NULL. */
+static const char *hush_agent_pick_provider(const hush_agent_robot_t *bot)
+{
+    size_t i;
+
+    if (bot == NULL)
+        return NULL;
+    for (i = 0; i < bot->nproviders &&
+                i < (size_t)HUSH_ROSTER_PROVIDERS_MAX; i++) {
+        if (bot->providers[i] != NULL &&
+            hush_agent_runtime_ready(bot->providers[i]))
+            return bot->providers[i];
+    }
+    if (bot->provider != NULL && hush_agent_runtime_ready(bot->provider))
+        return bot->provider;
+    return NULL;
+}
+
 static int hush_agent_can_start(const hush_launch_t *launch,
                                 const hush_agent_robot_t *bot)
 {
-    /* agy executes on its own binary; every other provider falls back to
-     * grok-build (the only wrapped runtime with a verified argv today). */
     (void)launch;
     assert(bot != NULL);
-    return hush_agent_runtime_ready(bot->provider);
+    return hush_agent_pick_provider(bot) != NULL;
 }
 
 static int hush_agent_event_is_root(const hush_event_t *ev, const char *root)
@@ -1345,9 +1379,14 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
     hush_agent_copy(job->robot_role, sizeof(job->robot_role),
                     bot->role != NULL && bot->role[0] != '\0'
                         ? bot->role : HUSH_ROSTER_ROLE_WORKER);
-    hush_agent_copy(job->provider, sizeof(job->provider),
-                    bot->provider != NULL && bot->provider[0] != '\0'
-                        ? bot->provider : HUSH_ROSTER_PROVIDER_GROK_BUILD);
+    {
+        const char *picked = hush_agent_pick_provider(bot);
+
+        hush_agent_copy(job->provider, sizeof(job->provider),
+                        picked != NULL ? picked :
+                        (bot->provider != NULL && bot->provider[0] != '\0'
+                             ? bot->provider : HUSH_ROSTER_PROVIDER_GROK_BUILD));
+    }
     hush_agent_make_token(job->token, sizeof(job->token));
     job->launch = in->launch;
     if (in->ask != NULL && in->ask[0] != '\0')
