@@ -49,6 +49,7 @@ enum {
 #define HUSH_AGENT_COPILOT_BIN "copilot"
 #define HUSH_AGENT_CODEX_BIN "codex"
 #define HUSH_AGENT_GOOSE_BIN "goose"
+#define HUSH_AGENT_OLLAMA_BIN "ollama"
 #define HUSH_AGENT_AGY_PROMPT_MAX \
     (HUSH_ROSTER_PROMPT_MAX + HUSH_ROSTER_PROMPT_MAX + \
      HUSH_EVENT_MAX_CONTENT + 16)
@@ -329,6 +330,7 @@ static void hush_agent_exec_agy(const hush_agent_job_t *job);
 static void hush_agent_exec_copilot(const hush_agent_job_t *job);
 static void hush_agent_exec_codex(const hush_agent_job_t *job);
 static void hush_agent_exec_goose(const hush_agent_job_t *job);
+static void hush_agent_exec_ollama(const hush_agent_job_t *job);
 static void hush_agent_build_combined(char *out, size_t outsz,
                                       const hush_agent_job_t *job);
 static hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job);
@@ -1071,6 +1073,16 @@ static int hush_agent_runtime_ready(const char *provider)
             return 0;
         return 1;
     }
+    /* Ollama (local): needs the binary and a configured model name. */
+    if (strcmp(provider, HUSH_ROSTER_PROVIDER_OLLAMA) == 0) {
+        if (hush_provider_status(&st, provider) != HUSH_OK)
+            return 0;
+        if (!st.has_binary)
+            return 0;
+        if (st.model[0] == '\0')
+            return 0;
+        return 1;
+    }
     return hush_agent_grok_ready();
 }
 
@@ -1521,6 +1533,8 @@ static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job)
         hush_agent_exec_codex(job);
     else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_GOOSE) == 0)
         hush_agent_exec_goose(job);
+    else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_OLLAMA) == 0)
+        hush_agent_exec_ollama(job);
     else
         hush_agent_exec_grok(job);
 }
@@ -1628,6 +1642,29 @@ static void hush_agent_exec_goose(const hush_agent_job_t *job)
     argv[0] = (char *)HUSH_AGENT_GOOSE_BIN;
     argv[1] = (char *)"run";
     argv[2] = (char *)"--text";
+    argv[3] = combined;
+    argv[4] = NULL;
+    execvp(argv[0], argv);
+    _exit(127);
+}
+
+static void hush_agent_exec_ollama(const hush_agent_job_t *job)
+{
+    char combined[HUSH_AGENT_AGY_PROMPT_MAX];
+    hush_provider_status_t st;
+    char *argv[6];
+
+    assert(job != NULL);
+    hush_agent_build_combined(combined, sizeof(combined), job);
+    /* Local inference: the model is configured on the Ollama provider overlay
+     * (providers.json -> model). runtime_ready() already requires one, so the
+     * model field is non-empty here; guard anyway. */
+    (void)hush_provider_status(&st, HUSH_ROSTER_PROVIDER_OLLAMA);
+    if (st.model[0] == '\0')
+        _exit(127);
+    argv[0] = (char *)HUSH_AGENT_OLLAMA_BIN;
+    argv[1] = (char *)"run";
+    argv[2] = st.model;
     argv[3] = combined;
     argv[4] = NULL;
     execvp(argv[0], argv);
