@@ -11,7 +11,10 @@ enum {
     HUSH_CEVENT_MAX = 64,
     HUSH_CEVENT_TYPE_MAX = 24,
     HUSH_CEVENT_NOTE_MAX = 160,
-    HUSH_CEVENT_JSON_MAX = 16384
+    /* Worst-case bound: 64 events x ~1.6 KB (channel 256 escaped to 512, note
+     * 160 escaped, plus seq/due/keys) + header. Keeps format_json from
+     * truncating a full ring of large signals to an empty reply. */
+    HUSH_CEVENT_JSON_MAX = 131072
 };
 
 #define HUSH_CEVENT_MENTION "mention"

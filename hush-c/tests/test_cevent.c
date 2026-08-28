@@ -80,6 +80,28 @@ int main(void)
     for (i = 0; i < 2; i++)
         expect(hush_cevent_emit(&ev) == HUSH_OK, "overflow after ack");
     expect(hush_cevent_drops() == 0, "acked eviction is not a drop");
+
+    /* A full ring of large signals must still serialize without truncating. */
+    {
+        char big_note[HUSH_CEVENT_NOTE_MAX];
+        char big_channel[256];
+
+        hush_cevent_init();
+        memset(big_note, 'x', sizeof(big_note) - 1);
+        big_note[sizeof(big_note) - 1] = '\0';
+        memset(big_channel, 'c', sizeof(big_channel) - 1);
+        big_channel[sizeof(big_channel) - 1] = '\0';
+        memcpy(ev.type, HUSH_CEVENT_JOB_DONE, sizeof(HUSH_CEVENT_JOB_DONE));
+        memcpy(ev.note, big_note, sizeof(big_note));
+        memcpy(ev.channel, big_channel, sizeof(big_channel));
+        for (i = 0; i < (size_t)HUSH_CEVENT_MAX; i++)
+            expect(hush_cevent_emit(&ev) == HUSH_OK, "large emit");
+        n = 0;
+        expect(hush_cevent_format_json(json, sizeof(json), &n) == HUSH_OK,
+               "large ring serializes fully");
+        expect(strstr(json, "xxxxx") != NULL, "large note present");
+        expect(strstr(json, "\"drops\":0") != NULL, "large ring no drops");
+    }
     hush_cevent_init();
     if (g_fail)
         return 1;
