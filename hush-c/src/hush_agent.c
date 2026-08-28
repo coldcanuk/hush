@@ -1494,8 +1494,12 @@ static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job)
     }
     /* ToS constraint: agy is spawn-only (never wrapped) and runs headless as
      * a text-generation model. Every other runtime goes through grok-build
-     * for now (the only wrapped runtime with a verified argv). */
-    if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_AGY) == 0)
+     * for now (the only wrapped runtime with a verified argv).
+     *
+     * agy only handles a normal mention reply; fixup/plan/elect prompts are
+     * grok-tuned and stay on grok regardless of the robot's provider. */
+    if (job->kind == HUSH_AGENT_KIND_NOTE_JOB &&
+        strcmp(job->provider, HUSH_ROSTER_PROVIDER_AGY) == 0)
         hush_agent_exec_agy(job);
     else
         hush_agent_exec_grok(job);
