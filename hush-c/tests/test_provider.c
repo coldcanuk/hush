@@ -263,6 +263,27 @@ int main(void)
             return 1;
     }
 
+    {
+        char saved_path[1024];
+
+        snprintf(path, sizeof(path), "%s/codex", bindir);
+        write_file(path, "#!/bin/sh\nexit 0\n");
+        if (chmod(path, 0755) != 0)
+            return 1;
+        snprintf(newpath, sizeof(newpath), "%s:%s", bindir,
+                 getenv("PATH") != NULL ? getenv("PATH") : "");
+        if (setenv("PATH", newpath, 1) != 0)
+            return 1;
+        expect(hush_provider_update_all() == 2, "update all spawns grok+codex");
+        snprintf(saved_path, sizeof(saved_path), "%s",
+                 getenv("PATH") != NULL ? getenv("PATH") : "");
+        if (setenv("PATH", "/tmp/hush-empty-path", 1) != 0)
+            return 1;
+        expect(hush_provider_update_all() == 0, "update all empty path zero");
+        if (setenv("PATH", saved_path, 1) != 0)
+            return 1;
+    }
+
     hush_pass_set_helper(NULL);
     if (g_fail)
         return 1;

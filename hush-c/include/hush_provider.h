@@ -126,4 +126,11 @@ hush_status_t hush_provider_start_login(const char *id);
 /* Copies the last module error. out may be NULL. */
 void hush_provider_last_error(char *out, size_t outsz);
 
+/* Best-effort launch-time scanner: for each home-family provider whose binary
+ * is on PATH and documents an update subcommand, spawn "<binary> update" in
+ * the background (non-blocking, tracked for reaping). Returns the number of
+ * updates spawned. Providers without a documented update routine are skipped.
+ * Never blocks and never fails hard. */
+int hush_provider_update_all(void);
+
 #endif /* HUSH_PROVIDER_H */

@@ -342,6 +342,62 @@ void hush_provider_last_error(char *out, size_t outsz)
     hush_provider_copy(out, outsz, g_last_error);
 }
 
+/* True when id documents a self-update subcommand ("<binary> update"). Kept
+ * deliberately narrow: only runtimes whose update command is documented are
+ * spawned. New runtimes opt in here once their update routine is confirmed. */
+static int hush_provider_has_update(const char *id)
+{
+    if (id == NULL)
+        return 0;
+    return strcmp(id, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0 ||
+           strcmp(id, HUSH_ROSTER_PROVIDER_CODEX) == 0;
+}
+
+/* fork + exec "<binary> update" without waiting. Parent returns immediately. */
+static hush_status_t hush_provider_spawn_update(const char *binary)
+{
+    pid_t pid;
+
+    assert(binary != NULL);
+    assert(binary[0] != '\0');
+    pid = fork();
+    if (pid < 0)
+        return hush_provider_fail("fork");
+    if (pid == 0) {
+        char *argv[3];
+
+        (void)signal(SIGCHLD, SIG_DFL);
+        argv[0] = (char *)binary;
+        argv[1] = (char *)"update";
+        argv[2] = NULL;
+        execvp(argv[0], argv);
+        _exit(127);
+    }
+    hush_relay_track_child(pid);
+    return HUSH_OK;
+}
+
+int hush_provider_update_all(void)
+{
+    int spawned = 0;
+    size_t i;
+
+    hush_provider_copy(g_last_error, sizeof(g_last_error), "");
+    for (i = 0; i < (size_t)HUSH_PROVIDER_COUNT; i++) {
+        const hush_provider_meta_t *meta = &hush_provider_meta[i];
+
+        if (meta->binary[0] == '\0')
+            continue;
+        if (!hush_provider_has_update(meta->id))
+            continue;
+        if (!hush_provider_has_binary(meta->binary))
+            continue;
+        if (hush_provider_spawn_update(meta->binary) == HUSH_OK)
+            spawned++;
+    }
+    return spawned;
+}
+
 static void hush_provider_copy(char *dst, size_t dstsz, const char *src)
 {
     size_t n;
