@@ -110,6 +110,18 @@ static hush_status_t hush_wake_load_device(void);
 static hush_status_t hush_wake_need_ready(void);
 static int hush_wake_has_intro(hush_wake_state_t state);
 static int hush_wake_may_persist(void);
+static void hush_wake_put_tag(hush_event_t *ev, const char *key,
+                              const char *val);
+static void hush_wake_bin_hex(char *out, size_t outsz,
+                              const unsigned char *raw, size_t raw_len);
+static const char *hush_wake_tag1(const hush_event_t *ev, const char *key);
+static hush_status_t hush_wake_gossip_put(const hush_wake_in_t *in,
+                                          hush_wake_state_t state);
+static hush_status_t hush_wake_apply_peer(const char *robot,
+                                          const char *root,
+                                          const char *trigger,
+                                          const unsigned char *device,
+                                          int64_t lease, hush_wake_state_t st);
 
 void hush_wake_init(void)
 {
@@ -199,7 +211,9 @@ hush_status_t hush_wake_claim(const hush_wake_in_t *in)
             return HUSH_ERR_FULL;
         hush_wake_take_slot(slot, in, key, trigger);
         HUSH_TRY(hush_wake_note_delivery(deliv, dkey));
-        return hush_wake_commit(slots, deliv);
+        HUSH_TRY(hush_wake_commit(slots, deliv));
+        (void)hush_wake_gossip_put(in, HUSH_WAKE_ST_CLAIMED);
+        return HUSH_OK;
     }
     st = hush_wake_claim_existing(slot, in, key, trigger);
     if (st == HUSH_OK)
@@ -213,6 +227,8 @@ hush_status_t hush_wake_claim(const hush_wake_in_t *in)
         if (cs != HUSH_OK)
             return cs;
     }
+    if (st == HUSH_OK)
+        (void)hush_wake_gossip_put(in, HUSH_WAKE_ST_CLAIMED);
     return st;
 }
 
@@ -243,7 +259,9 @@ hush_status_t hush_wake_done(const hush_wake_in_t *in)
     }
     hush_wake_mark_slot_done(slot, trigger);
     HUSH_TRY(hush_wake_note_delivery(deliv, dkey));
-    return hush_wake_commit(slots, deliv);
+    HUSH_TRY(hush_wake_commit(slots, deliv));
+    (void)hush_wake_gossip_put(in, HUSH_WAKE_ST_DONE);
+    return HUSH_OK;
 }
 
 void hush_wake_expire(hush_store_t *store, time_t now)
@@ -265,6 +283,21 @@ void hush_wake_expire(hush_store_t *store, time_t now)
         (void)hush_wake_drop_lease(store, &slots[i], t);
         hush_wake_mark_slot_done(&slots[i], slots[i].trigger);
         dirty = 1;
+        if (store != NULL) {
+            hush_wake_in_t in;
+            char trig[HUSH_EVENT_ID_HEX_LEN + 1];
+
+            hush_wake_bin_hex(trig, sizeof(trig), slots[i].trigger,
+                              (size_t)HUSH_WAKE_TRIGGER_LEN);
+            memset(&in, 0, sizeof(in));
+            in.store = store;
+            in.robot_hex = slots[i].robot;
+            in.root_hex = slots[i].root;
+            in.trigger_id = trig;
+            in.channel = slots[i].channel;
+            in.now = t;
+            (void)hush_wake_gossip_put(&in, HUSH_WAKE_ST_DONE);
+        }
     }
     if (dirty)
         (void)hush_wake_commit(slots, g_deliv);
@@ -287,6 +320,59 @@ void hush_wake_test_set_device(const unsigned char *id)
 {
     assert(id != NULL);
     memcpy(g_device, id, (size_t)HUSH_WAKE_DEVICE_LEN);
+}
+
+hush_status_t hush_wake_ingest(const hush_event_t *ev)
+{
+    const char *root;
+    const char *trigger;
+    const char *devhex;
+    const char *lease_s;
+    const char *state_s;
+    unsigned char peer[HUSH_WAKE_DEVICE_LEN];
+    int64_t lease = 0;
+    hush_wake_state_t st;
+    char *end = NULL;
+
+    if (ev == NULL)
+        return HUSH_ERR_ARG;
+    if (ev->kind != (uint32_t)HUSH_WAKE_KIND_CLAIM)
+        return HUSH_OK;
+    if (!g_ready)
+        return HUSH_ERR_IO;
+    root = hush_wake_tag1(ev, "e");
+    trigger = hush_wake_tag1(ev, "trigger");
+    devhex = hush_wake_tag1(ev, "device");
+    lease_s = hush_wake_tag1(ev, "lease");
+    state_s = hush_wake_tag1(ev, "state");
+    if (state_s[0] == '\0')
+        state_s = ev->content;
+    if (root[0] == '\0' || trigger[0] == '\0' || devhex[0] == '\0')
+        return HUSH_ERR_ARG;
+    HUSH_TRY(hush_wake_parse_hex(peer, (size_t)HUSH_WAKE_DEVICE_LEN, devhex));
+    if (lease_s[0] != '\0')
+        lease = (int64_t)strtoll(lease_s, &end, 10);
+    if (strcmp(state_s, "done") == 0)
+        st = HUSH_WAKE_ST_DONE;
+    else
+        st = HUSH_WAKE_ST_CLAIMED;
+    return hush_wake_apply_peer(ev->pubkey, root, trigger, peer, lease, st);
+}
+
+void hush_wake_ingest_store(const hush_store_t *store)
+{
+    size_t n;
+    size_t i;
+    hush_event_t ev;
+
+    if (store == NULL || !g_ready)
+        return;
+    n = hush_store_count(store);
+    for (i = 0; i < n && i < (size_t)HUSH_STORE_CAPACITY; i++) {
+        if (hush_store_get(store, i, &ev) != HUSH_OK)
+            return;
+        (void)hush_wake_ingest(&ev);
+    }
 }
 
 static void hush_wake_copy(char *dst, size_t dstsz, const char *src)
@@ -842,4 +928,143 @@ static int hush_wake_may_persist(void)
     if (cfg != NULL && cfg[0] != '\0')
         return 0;
     return 1;
+}
+
+static void hush_wake_put_tag(hush_event_t *ev, const char *key, const char *val)
+{
+    size_t i;
+
+    assert(ev != NULL);
+    assert(key != NULL);
+    assert(val != NULL);
+    if (ev->tag_count >= (size_t)HUSH_EVENT_MAX_TAGS)
+        return;
+    i = ev->tag_count;
+    hush_wake_copy(ev->tags[i][0], sizeof(ev->tags[i][0]), key);
+    hush_wake_copy(ev->tags[i][1], sizeof(ev->tags[i][1]), val);
+    ev->tag_count++;
+}
+
+static void hush_wake_bin_hex(char *out, size_t outsz, const unsigned char *raw,
+                              size_t raw_len)
+{
+    size_t i;
+
+    assert(out != NULL);
+    assert(raw != NULL);
+    if (outsz < raw_len * 2 + 1) {
+        out[0] = '\0';
+        return;
+    }
+    for (i = 0; i < raw_len; i++) {
+        out[i * 2] = hush_wake_hex[raw[i] >> 4];
+        out[i * 2 + 1] = hush_wake_hex[raw[i] & 0x0Fu];
+    }
+    out[raw_len * 2] = '\0';
+}
+
+static const char *hush_wake_tag1(const hush_event_t *ev, const char *key)
+{
+    size_t i;
+
+    assert(ev != NULL);
+    assert(key != NULL);
+    for (i = 0; i < ev->tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; i++) {
+        if (strcmp(ev->tags[i][0], key) == 0)
+            return ev->tags[i][1];
+    }
+    return "";
+}
+
+static hush_status_t hush_wake_gossip_put(const hush_wake_in_t *in,
+                                          hush_wake_state_t state)
+{
+    hush_event_t ev;
+    char d[HUSH_PRESENCE_D_MAX];
+    char hex[HUSH_WAKE_DEVICE_HEX_LEN + 1];
+    char lease[32];
+    const char *word;
+
+    if (in == NULL || in->store == NULL)
+        return HUSH_OK;
+    if (in->robot_hex == NULL || in->root_hex == NULL || in->trigger_id == NULL)
+        return HUSH_ERR_ARG;
+    HUSH_TRY(hush_presence_make_d(d, sizeof(d), in->robot_hex, in->root_hex));
+    word = (state == HUSH_WAKE_ST_DONE) ? "done" : "claimed";
+    memset(&ev, 0, sizeof(ev));
+    hush_wake_copy(ev.pubkey, sizeof(ev.pubkey), in->robot_hex);
+    ev.kind = (uint32_t)HUSH_WAKE_KIND_CLAIM;
+    ev.created_at = (int64_t)(in->now != 0 ? in->now : time(NULL));
+    hush_wake_copy(ev.content, sizeof(ev.content), word);
+    hush_wake_put_tag(&ev, "d", d);
+    hush_wake_put_tag(&ev, "e", in->root_hex);
+    hush_wake_put_tag(&ev, "h",
+                      in->channel != NULL && in->channel[0] != '\0'
+                          ? in->channel : "general");
+    hush_wake_bin_hex(hex, sizeof(hex), g_device, (size_t)HUSH_WAKE_DEVICE_LEN);
+    hush_wake_put_tag(&ev, "device", hex);
+    if (state == HUSH_WAKE_ST_CLAIMED)
+        (void)snprintf(lease, sizeof(lease), "%lld",
+                       (long long)(ev.created_at + (int64_t)HUSH_WAKE_LEASE_S));
+    else
+        (void)snprintf(lease, sizeof(lease), "0");
+    hush_wake_put_tag(&ev, "lease", lease);
+    hush_wake_put_tag(&ev, "trigger", in->trigger_id);
+    hush_wake_put_tag(&ev, "state", word);
+    (void)hush_event_compute_id(&ev, ev.id);
+    return hush_store_insert(in->store, &ev);
+}
+
+static hush_status_t hush_wake_apply_peer(const char *robot, const char *root,
+                                          const char *trigger,
+                                          const unsigned char *device,
+                                          int64_t lease, hush_wake_state_t st)
+{
+    unsigned char key[HUSH_WAKE_KEY_LEN];
+    unsigned char dkey[HUSH_WAKE_KEY_LEN];
+    unsigned char trig[HUSH_WAKE_TRIGGER_LEN];
+    hush_wake_slot_t slots[HUSH_WAKE_SLOT_MAX];
+    hush_wake_deliv_t deliv[HUSH_WAKE_SLOT_MAX];
+    hush_wake_slot_t *slot;
+    hush_wake_in_t in;
+    time_t now;
+
+    if (memcmp(device, g_device, (size_t)HUSH_WAKE_DEVICE_LEN) == 0)
+        return HUSH_OK;
+    HUSH_TRY(hush_wake_fill_key(key, robot, root));
+    HUSH_TRY(hush_wake_fill_key(dkey, robot, trigger));
+    HUSH_TRY(hush_wake_parse_hex(trig, (size_t)HUSH_WAKE_TRIGGER_LEN, trigger));
+    memcpy(slots, g_slots, sizeof(slots));
+    memcpy(deliv, g_deliv, sizeof(deliv));
+    slot = hush_wake_find_key(slots, key);
+    now = time(NULL);
+    if (slot != NULL && slot->state == (uint8_t)HUSH_WAKE_ST_CLAIMED &&
+        hush_wake_is_lease_live(slot, now) && hush_wake_is_same_device(slot))
+        return HUSH_OK;
+    memset(&in, 0, sizeof(in));
+    in.robot_hex = robot;
+    in.root_hex = root;
+    in.trigger_id = trigger;
+    in.channel = "general";
+    in.now = now;
+    if (slot == NULL) {
+        slot = hush_wake_find_empty(slots);
+        if (slot == NULL)
+            return HUSH_ERR_FULL;
+    }
+    if (st == HUSH_WAKE_ST_DONE) {
+        memcpy(slot->key, key, (size_t)HUSH_WAKE_KEY_LEN);
+        hush_wake_copy(slot->robot, sizeof(slot->robot), robot);
+        hush_wake_copy(slot->root, sizeof(slot->root), root);
+        memcpy(slot->device, device, (size_t)HUSH_WAKE_DEVICE_LEN);
+        hush_wake_mark_slot_done(slot, trig);
+        HUSH_TRY(hush_wake_note_delivery(deliv, dkey));
+        return hush_wake_commit(slots, deliv);
+    }
+    hush_wake_take_slot(slot, &in, key, trig);
+    memcpy(slot->device, device, (size_t)HUSH_WAKE_DEVICE_LEN);
+    if (lease > 0)
+        slot->lease_unix = lease;
+    HUSH_TRY(hush_wake_note_delivery(deliv, dkey));
+    return hush_wake_commit(slots, deliv);
 }

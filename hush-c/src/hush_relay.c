@@ -32,6 +32,7 @@
 #include "hush_status.h"
 #include "hush_store.h"
 #include "hush_turn.h"
+#include "hush_wake.h"
 #include "hush_win.h"
 
 enum {
@@ -219,6 +220,12 @@ hush_status_t hush_relay_run(uint16_t port, int open_ui)
         close(ls);
         return HUSH_ERR_FULL;
     }
+    if (hush_store_persist_open(g_store) != HUSH_OK) {
+        hush_store_destroy(g_store);
+        close(ls);
+        return HUSH_ERR_IO;
+    }
+    hush_wake_ingest_store(g_store);
     hush_write_pidfile(port);
     hush_relay_announce(port, open_ui);
     hush_relay_pump(ls);
@@ -463,6 +470,7 @@ static void hush_handle_event_msg(struct client *c, const hush_client_msg_t *msg
     char line[HUSH_BUF_SZ];
 
     (void)hush_store_insert(g_store, &msg->event);
+    (void)hush_wake_ingest(&msg->event);
     if (hush_proto_format_ok(msg->event.id, 1, "", line, sizeof(line), NULL) == HUSH_OK)
         hush_send_str(c->fd, line);
     hush_fanout(&msg->event);

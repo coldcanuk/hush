@@ -19,7 +19,9 @@ enum {
     HUSH_WAKE_TRIGGER_LEN = 32,
     HUSH_WAKE_DEVICE_LEN = 16,
     HUSH_WAKE_DEVICE_HEX_LEN = 32,
-    HUSH_WAKE_VERSION = 1
+    HUSH_WAKE_VERSION = 1,
+    /* Regular kind. Claim gossip, not NIP-38. Not an offline signal. */
+    HUSH_WAKE_KIND_CLAIM = 1039
 };
 
 #define HUSH_WAKE_FILE "wake.ledger"
@@ -78,5 +80,12 @@ hush_wake_state_t hush_wake_state(const char *robot_hex, const char *root_hex);
 /* Replaces the process device id in RAM only. Does not rewrite device.id.
  * id must be HUSH_WAKE_DEVICE_LEN bytes. Test hook for two-device claims. */
 void hush_wake_test_set_device(const unsigned char *id);
+
+/* Applies a peer kind-1039 claim event to the ledger. Own device is ignored.
+ * Does not publish. Does not read 30315. */
+hush_status_t hush_wake_ingest(const hush_event_t *ev);
+
+/* Ingests every kind-1039 currently in store (after persist load). */
+void hush_wake_ingest_store(const hush_store_t *store);
 
 #endif /* HUSH_WAKE_H */
