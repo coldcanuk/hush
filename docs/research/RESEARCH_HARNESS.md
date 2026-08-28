@@ -167,23 +167,26 @@ clean-rebuild verified):
   tracked, opt-in grok-build/codex).
 - **M5 — token/context engine.** `hush_seg` structural chunker (UTF-8 safe,
   markdown fence atomicity).
+- **Phase 4 — context flows to the turn.** Context body is now persisted in
+  memory (`hush_roster_context_t.text`) and injected into the robot `-p` note
+  via `hush_agent_append_context()` (chunked, bounded, fence-aware). Previously
+  the body was validated then dropped, so attachments never reached the robot.
 
 Re-scored (honest; loop still mandates continuing):
 
 ### Harness Architecture — **5.2 → 7.1 / 10**
 - X Extensibility & Compliance: 5.5 → 7.0 (matrix + policy flags + 13 providers; still grok-only execution, flags not yet enforced at dispatch).
 - Y Lifecycle & Logic: 6.0 → 7.0 (auto-update primitive exists; not wired into launch; chaperon advisory).
-- Z Capability Routing: 3.0 → 7.5 (queryable matrix + file-context gate; image/tool routing not yet wired).
+- Z Capability Routing: 3.0 → 7.5 (queryable matrix + file-context gate + file-context flow; image/tool routing not yet wired).
 
-### Token & Context Engineering — **2.6 → 7.0 / 10**
-- X Parsing Precision: 3.0 → 7.0 (structural chunker with fence atomicity).
-- Y Cost Efficiency: 2.5 → 6.5 (chunker not yet wired into real payloads).
+### Token & Context Engineering — **2.6 → 7.6 / 10**
+- X Parsing Precision: 3.0 → 7.5 (structural chunker now actually drives context injection).
+- Y Cost Efficiency: 2.5 → 7.5 (context is chunked/bounded to the note budget; real payload reduction).
 - Z Regex Robustness: 2.0 → 8.0 (crash-proof UTF-8-safe parser).
 
 ### UI/UX Responsiveness — **6.1 / 10** (unchanged; Phase 5 not started)
 ### Messaging Protocol — **7.4 / 10** (unchanged)
 
 Remaining to reach 9.0+ (see PLAN_HARNESS_ENGINE.md): true multi-provider
-execution, enforce policy flags at dispatch, wire the chunker into context
-injection, and the full Phase 5 UI refactor.
+execution, enforce policy flags at dispatch, and the full Phase 5 UI refactor.
 
