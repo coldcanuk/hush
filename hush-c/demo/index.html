@@ -797,6 +797,20 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
 #tool-rail.collapsed { width: 44px; }
 #tool-rail.collapsed #rail-grip { min-width: 0; }
 
+/* Enlarged skill sheet (spacious cards, robot/chaperon flip). */
+.skill-sheet-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px; max-height: 60vh; overflow: auto; padding: 4px;
+}
+.skill-sheet-card {
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+  background: var(--surface-2);
+}
+.skill-sheet-card .sig { font-size: 1.3rem; font-weight: 700; letter-spacing: 0.04em; }
+.skill-sheet-card .nm { font-size: 0.92rem; font-weight: 650; margin-top: 2px; }
+.skill-sheet-card .sum { font-size: 0.76rem; color: var(--muted); margin-top: 6px; line-height: 1.45; }
+.skill-sheet-card .meta { font-size: 0.68rem; color: var(--faint); margin-top: 8px; }
+
 /* Phone: collapse the two-column layouts back to a single column. */
 @media (max-width: 640px) {
   #agent-identity, #forge-drawer .forge-grid { grid-template-columns: 1fr; }
@@ -1196,7 +1210,10 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
             <div id="skill-loadout" class="skill-loadout skill-doll" aria-label="Skill loadout"></div>
           </div>
         </div>
-        <button class="inv-btn" id="skill-forge-open" type="button">Forge a skill</button>
+        <div class="pill-row" style="gap:6px">
+          <button class="inv-btn" id="skill-forge-open" type="button">Forge a skill</button>
+          <button class="inv-btn" id="skill-enlarge" type="button" title="Open a spacious skill sheet">Enlarge skills</button>
+        </div>
       </div>
       <label class="passbox"><input id="agent-pass" type="checkbox" checked>
         Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
@@ -1219,6 +1236,21 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       <div id="avatar-preview" class="avatar-preview empty" aria-label="Selected avatar"></div>
       <div id="avatar-sheets" class="avatar-sheets" role="tablist" aria-label="Avatar sheets"></div>
       <div id="avatar-grid" class="avatar-grid" role="listbox" aria-label="Avatar grid"></div>
+    </div>
+  </div>
+  <div class="drawer" id="skill-drawer" role="dialog" aria-label="Skill sheet">
+    <div class="panel wide">
+      <div class="drawer-head">
+        <h2>Skill sheet</h2>
+        <button class="drawer-x" id="skill-sheet-close" type="button" aria-label="Close skill sheet">×</button>
+      </div>
+      <p class="help">A spacious read of a loadout. Flip between this robot and the chaperon.</p>
+      <div class="pill-row" style="justify-content:center;margin:6px 0 10px">
+        <button class="iconbtn on" id="skill-flip-robot" type="button">This robot</button>
+        <button class="iconbtn" id="skill-flip-chaperon" type="button">Chaperon</button>
+      </div>
+      <p class="help" id="skill-sheet-title"></p>
+      <div id="skill-sheet-list" class="skill-sheet-list" aria-label="Skill list"></div>
     </div>
   </div>
   <div class="drawer" id="providers-hub" role="dialog" aria-label="Configure Providers">
@@ -5410,6 +5442,43 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     function skillNotice(msg) {
       if ($("agent-err")) $("agent-err").textContent = msg;
     }
+    let skillSheetView = "robot";
+    function paintSkillSheet() {
+      const list = $("skill-sheet-list");
+      const title = $("skill-sheet-title");
+      const rb = $("skill-flip-robot");
+      const cb = $("skill-flip-chaperon");
+      if (rb) rb.classList.toggle("on", skillSheetView === "robot");
+      if (cb) cb.classList.toggle("on", skillSheetView === "chaperon");
+      const ids = (skillSheetView === "robot")
+        ? equippedSkills
+        : ((session.payne && session.payne.skills) || []);
+      const label = (skillSheetView === "robot") ? "This robot" : "Chaperon (Major)";
+      if (title) title.textContent = label + " · " + ids.length + " skills";
+      if (!list) return;
+      list.innerHTML = "";
+      if (!ids.length) {
+        list.innerHTML = "<p class='help'>No skills equipped.</p>";
+        return;
+      }
+      ids.forEach((id) => {
+        const s = skillById(id);
+        const card = document.createElement("div");
+        card.className = "skill-sheet-card";
+        card.innerHTML =
+          "<div class='sig'>" + esc(skillSig(s)) + "</div>" +
+          "<div class='nm'>" + esc(s.name || s.id) + "</div>" +
+          (s.summary ? "<div class='sum'>" + esc(s.summary) + "</div>" : "") +
+          "<div class='meta'>" + (s.chars || 0) + " chars · " +
+          (s.complexity || 0) + " complexity · " + esc(s.scope || "system") + "</div>";
+        list.appendChild(card);
+      });
+    }
+    function openSkillSheet() {
+      paintSkillSheet();
+      $("skill-drawer").classList.add("show");
+    }
+
     function paintSkillBoard(robotSlug) {
       const armory = $("skill-armory");
       const loadout = $("skill-loadout");
@@ -6135,6 +6204,10 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       if ($("forge-err")) $("forge-err").textContent = "";
       $("forge-drawer").classList.add("show");
     });
+    if ($("skill-enlarge")) $("skill-enlarge").addEventListener("click", openSkillSheet);
+    if ($("skill-sheet-close")) $("skill-sheet-close").addEventListener("click", () => $("skill-drawer").classList.remove("show"));
+    if ($("skill-flip-robot")) $("skill-flip-robot").addEventListener("click", () => { skillSheetView = "robot"; paintSkillSheet(); });
+    if ($("skill-flip-chaperon")) $("skill-flip-chaperon").addEventListener("click", () => { skillSheetView = "chaperon"; paintSkillSheet(); });
     function closeForge() { $("forge-drawer").classList.remove("show"); }
     if ($("forge-close")) $("forge-close").addEventListener("click", closeForge);
     if ($("forge-close2")) $("forge-close2").addEventListener("click", closeForge);

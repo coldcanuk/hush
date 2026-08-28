@@ -205,6 +205,18 @@ int main(void)
     expect(hush_provider_status(&st, "codex") == HUSH_OK, "codex still own file");
     expect(st.has_home, "codex not flipped by grok");
 
+    /* Copilot OAuth: detected via ~/.copilot/config.json loggedInUsers. */
+    expect(hush_provider_status(&st, "copilot") == HUSH_OK, "copilot status");
+    expect(!st.has_home, "copilot absent before config");
+    snprintf(path, sizeof(path), "%s/.copilot", home);
+    if (mkdir(path, 0755) != 0)
+        return 1;
+    snprintf(path, sizeof(path), "%s/.copilot/config.json", home);
+    write_file(path, "{\"loggedInUsers\":[{\"login\":\"coldcanuk\"}]}\n");
+    expect(hush_provider_status(&st, "copilot") == HUSH_OK,
+           "copilot after config");
+    expect(st.has_home, "copilot config is home");
+
     memset(&in, 0, sizeof(in));
     memcpy(in.id, "openai-api", 11);
     memcpy(in.host, "https://api.openai.com", 23);
