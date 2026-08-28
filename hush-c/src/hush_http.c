@@ -741,11 +741,15 @@ static void hush_http_serve_chan_events(int fd, const char *req)
     uint32_t since = 0;
     const char *q;
 
-    /* Optional ?since=N cursor: return only signals newer than N. */
+    /* Optional ?since=N cursor: return only signals newer than N, and treat N
+     * as an acknowledgement that the consumer has processed up to N (so a
+     * later ring wrap that evicts only those events is not counted as loss). */
     if (req != NULL) {
         q = strstr(req, "since=");
-        if (q != NULL)
+        if (q != NULL) {
             since = (uint32_t)atoi(q + 6);
+            hush_cevent_ack(since);
+        }
     }
     if (hush_cevent_format_json_since(body, sizeof(body), &n, since) != HUSH_OK) {
         hush_http_reply(fd, "200 OK", "application/json",

@@ -17,6 +17,7 @@ static size_t g_head;
 static size_t g_n;
 static uint32_t g_seq;
 static uint32_t g_drops;
+static uint32_t g_ack;
 
 static void hush_cevent_copy(char *dst, size_t dstsz, const char *src);
 static hush_status_t hush_cevent_put_one(char *out, size_t outsz, size_t *off,
@@ -29,6 +30,7 @@ void hush_cevent_init(void)
     g_n = 0;
     g_seq = 0;
     g_drops = 0;
+    g_ack = 0;
 }
 
 hush_status_t hush_cevent_emit(const hush_cevent_t *in)
@@ -43,8 +45,11 @@ hush_status_t hush_cevent_emit(const hush_cevent_t *in)
         g_n++;
     } else {
         idx = g_head;
+        /* A wrap is a real loss only when it evicts a signal the consumer has
+         * not yet acked; evicting an already-acked event is safe compaction. */
+        if (g_events[g_head].seq > g_ack)
+            g_drops++;
         g_head = (g_head + 1) % (size_t)HUSH_CEVENT_MAX;
-        g_drops++;
     }
     slot = &g_events[idx];
     memset(slot, 0, sizeof(*slot));
@@ -62,6 +67,12 @@ hush_status_t hush_cevent_emit(const hush_cevent_t *in)
 uint32_t hush_cevent_last_seq(void)
 {
     return g_seq;
+}
+
+void hush_cevent_ack(uint32_t seq)
+{
+    if (seq > g_ack)
+        g_ack = seq;
 }
 
 uint32_t hush_cevent_drops(void)

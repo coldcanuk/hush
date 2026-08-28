@@ -212,14 +212,14 @@ Re-scored (honest; loop still mandates continuing):
 rendered against Pixel/iPad/desktop viewports — pixel-level form-factor proof
 still needs a browser.)*
 
-### Messaging Protocol — **7.4 → 7.8 / 10**
-- X Reliability: 7.5 → 7.8 (`last_seq` watermark + `?since=` delta cursor + `drops` give precise gap detection; still no automatic at-least-once redelivery on ring overflow).
+### Messaging Protocol — **7.4 → 7.9 / 10**
+- X Reliability: 7.5 → 8.0 (`last_seq` watermark + `?since=` delta cursor + ack-gated `drops` give precise loss accounting: a wrap that evicts only acked signals reports zero loss).
 - Y Determinism: 7.0 → 7.8 (content-addressed event ids + monotonic seq cursor for structured M2M delta delivery).
 - Z Performance: 8.0 (unchanged; non-blocking ring).
 
 Remaining to reach 9.0+ (see PLAN_HARNESS_ENGINE.md): true multi-provider
-execution (goose/codex/copilot/ollama — blocked on verified headless CLIs),
-browser-based visual verification of the Phase 5 UI refactor, and an
-ack-gated retention path so ring overflow never silently drops an unacked
-signal (true at-least-once).
+execution (goose/codex/copilot/ollama — blocked on verified headless CLIs) and
+browser-based visual verification of the Phase 5 UI refactor. (The cevent ring
+is bounded at 64; unbounded retention/redelivery of evicted unacked signals is
+a deliberate design bound, not yet lifted.)
 

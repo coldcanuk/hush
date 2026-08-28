@@ -68,6 +68,18 @@ int main(void)
     expect(strstr(json, "\"seq\":3") != NULL, "kept seq after wrap");
     expect(strstr(json, "\"drops\":2") != NULL, "drops recorded in json");
     expect(hush_cevent_drops() == 2, "two drops after wrap");
+
+    /* Ack watermark: a wrap that evicts only acked events is not a loss. */
+    hush_cevent_init();
+    memcpy(ev.type, HUSH_CEVENT_CHAPERON, sizeof(HUSH_CEVENT_CHAPERON));
+    for (i = 0; i < (size_t)HUSH_CEVENT_MAX; i++)
+        expect(hush_cevent_emit(&ev) == HUSH_OK, "fill emit");
+    expect(hush_cevent_last_seq() == (uint32_t)HUSH_CEVENT_MAX,
+           "full ring watermark");
+    hush_cevent_ack(hush_cevent_last_seq());
+    for (i = 0; i < 2; i++)
+        expect(hush_cevent_emit(&ev) == HUSH_OK, "overflow after ack");
+    expect(hush_cevent_drops() == 0, "acked eviction is not a drop");
     hush_cevent_init();
     if (g_fail)
         return 1;

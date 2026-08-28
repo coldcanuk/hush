@@ -55,8 +55,14 @@ hush_status_t hush_cevent_format_json_since(char *out, size_t outsz,
  * polling and precise gap detection. */
 uint32_t hush_cevent_last_seq(void);
 
-/* Total events overwritten when the ring wrapped (oldest dropped). Lets a
- * consumer detect that it may have missed signals and force a full refresh. */
+/* Records that the consumer has processed all signals up to seq. From then on,
+ * hush_cevent_drops() only counts overwrites of *unacked* events, so a wrap
+ * that evicts only already-consumed signals is reported as zero loss. */
+void hush_cevent_ack(uint32_t seq);
+
+/* Events overwritten when the ring wrapped that had not yet been acked. A
+ * consumer treats a rising value as "I missed a signal; force a full refresh",
+ * and a stable value as safe compaction. */
 uint32_t hush_cevent_drops(void);
 
 #endif /* HUSH_CEVENT_H */
