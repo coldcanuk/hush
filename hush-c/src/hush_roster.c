@@ -15,7 +15,6 @@
 enum {
     HUSH_ROSTER_KIND_META = 0,
     HUSH_ROSTER_KIND_NOTE = 1,
-    HUSH_ROSTER_ID_WIDTH = 16,
     HUSH_ROSTER_SLUG_FALLBACK = 'a',
     HUSH_ROSTER_THEME_COUNT = 7,
     HUSH_ROSTER_PROVIDER_COUNT = 13,
@@ -86,9 +85,6 @@ static hush_status_t hush_roster_store_agent_note(hush_store_t *store,
 static void hush_roster_fill_event(hush_event_t *ev, const char *pubkey_hex,
                                    uint32_t kind, const char *content,
                                    const char *channel);
-
-/* Writes a deterministic hex id from time + seq. */
-static void hush_roster_make_id(char *out65);
 
 /* JSON-escapes src into dst. */
 static size_t hush_roster_json_escape(const char *src, char *dst, size_t dstsz);
@@ -732,7 +728,6 @@ static void hush_roster_fill_event(hush_event_t *ev, const char *pubkey_hex,
     assert(pubkey_hex != NULL);
     assert(content != NULL);
     memset(ev, 0, sizeof(*ev));
-    hush_roster_make_id(ev->id);
     memcpy(ev->pubkey, pubkey_hex, HUSH_IDENTITY_HEX_LEN + 1);
     ev->kind = kind;
     ev->created_at = (int64_t)time(NULL);
@@ -742,22 +737,7 @@ static void hush_roster_fill_event(hush_event_t *ev, const char *pubkey_hex,
         memcpy(ev->tags[0][0], "h", 2);
         memcpy(ev->tags[0][1], channel, strlen(channel) + 1);
     }
-}
-
-static void hush_roster_make_id(char *out65)
-{
-    static unsigned seq;
-    time_t now;
-
-    assert(out65 != NULL);
-    now = time(NULL);
-    seq++;
-    (void)snprintf(out65, HUSH_EVENT_ID_HEX_LEN + 1,
-                   "%0*llx%0*x%0*x%0*x",
-                   HUSH_ROSTER_ID_WIDTH, (unsigned long long)now,
-                   HUSH_ROSTER_ID_WIDTH, seq,
-                   HUSH_ROSTER_ID_WIDTH, seq ^ 0x51ed270bu,
-                   HUSH_ROSTER_ID_WIDTH, seq * 5u);
+    (void)hush_event_compute_id(ev, ev->id);
 }
 
 static size_t hush_roster_json_escape(const char *src, char *dst, size_t dstsz)

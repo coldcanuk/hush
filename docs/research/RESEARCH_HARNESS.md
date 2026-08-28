@@ -171,11 +171,22 @@ clean-rebuild verified):
   memory (`hush_roster_context_t.text`) and injected into the robot `-p` note
   via `hush_agent_append_context()` (chunked, bounded, fence-aware). Previously
   the body was validated then dropped, so attachments never reached the robot.
+- **M6 — real event identity (phantom-code hunt).** `hush_sha256_hex()` was a
+  zero-fill stub behind a dead `#if HUSH_USE_OPENSSL` guard; replaced with
+  streaming OpenSSL `EVP_sha256()` over the NIP-01 canonical preimage
+  `[0,pubkey,created_at,kind,tags,content]` (strings escaped, tags included).
+  `hush_event_compute_id()` is now the single authoritative id path, and the
+  **six** duplicate fake-id generators were deleted: five `*_make_id()`
+  (`agent/roster/presence/intel/launch`) plus `hush_make_event_id()` in
+  `hush_http.c` (found only because the e2e JSON still showed the old
+  `0x9e3779b9` fake ids — a different name hid the duplicate). Verified with
+  three hard-coded NIP-01 SHA-256 preimages in `tests/test_event.c`. Only
+  `hush_skill_make_id()` remains — a deterministic catalog key, not a Nostr id.
 
 Re-scored (honest; loop still mandates continuing):
 
-### Harness Architecture — **5.2 → 7.1 / 10**
-- X Extensibility & Compliance: 5.5 → 7.0 (matrix + policy flags + 13 providers; still grok-only execution, flags not yet enforced at dispatch).
+### Harness Architecture — **5.2 → 7.2 / 10**
+- X Extensibility & Compliance: 5.5 → 7.2 (matrix + policy flags + 13 providers + NIP-01 real ids; still grok-only execution, flags not yet enforced at dispatch).
 - Y Lifecycle & Logic: 6.0 → 7.0 (auto-update primitive exists; not wired into launch; chaperon advisory).
 - Z Capability Routing: 3.0 → 7.5 (queryable matrix + file-context gate + file-context flow; image/tool routing not yet wired).
 
@@ -185,7 +196,8 @@ Re-scored (honest; loop still mandates continuing):
 - Z Regex Robustness: 2.0 → 8.0 (crash-proof UTF-8-safe parser).
 
 ### UI/UX Responsiveness — **6.1 / 10** (unchanged; Phase 5 not started)
-### Messaging Protocol — **7.4 / 10** (unchanged)
+### Messaging Protocol — **7.4 → 7.6 / 10**
+- Y Determinism: 7.0 → 7.5 (event ids are now content-addressed SHA-256, deterministic for identical events, instead of timestamp+seq hex).
 
 Remaining to reach 9.0+ (see PLAN_HARNESS_ENGINE.md): true multi-provider
 execution, enforce policy flags at dispatch, and the full Phase 5 UI refactor.

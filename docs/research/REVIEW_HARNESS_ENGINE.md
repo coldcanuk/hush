@@ -88,22 +88,25 @@ The following were traced by hand against the code and are correct:
 
 ## 4.5 Phantom code and placeholders found (audit)
 
-- **`hush_sha256_hex()` is a stub.** Both `#if HUSH_USE_OPENSSL` branches are
-  identical (`(void)data; (void)len; memset(out,'0',…)`), and
-  `HUSH_USE_OPENSSL` is never defined by `configure`, so the `#if/#else` is
-  dead. Real SHA-256 is a documented MVP deviation.
-- **`hush_event_compute_id()` is phantom.** Declared public in `hush_event.h`,
-  defined, and never called anywhere. Its only helpers
-  (`hush_event_serialize_for_id`, `hush_sha256_hex`) are static and exist
-  solely to serve it. Actual event ids come from four separate `make_id()`
-  functions (roster/agent/presence/intel) that emit a timestamp+seq hex
-  string, not a hash.
-- **Four near-duplicate `make_id()` helpers.** `hush_agent_make_id`,
-  `hush_roster_make_id`, `hush_presence_make_id`, `hush_intel_make_id` each
-  emit `hex(ts) + hex(seq) + hex(seq^0x51ed270b) + hex(seq*N)` with a
-  different `N` per module. This is the real id path; `hush_event_compute_id`
-  should be the single source of truth. Unifying it changes on-disk ids, so
-  it is a careful follow-up, not a drive-by cleanup.
+- **~~`hush_sha256_hex()` is a stub.~~** **Fixed in this branch.** Now streams
+  the NIP-01 canonical preimage straight into OpenSSL `EVP_sha256()`; the
+  dead `#if HUSH_USE_OPENSSL` guard (never defined by `configure`) is gone.
+  OpenSSL is already a hard dependency via `hush_identity.c`, so the guard
+  was pure dead weight.
+- **~~`hush_event_compute_id()` is phantom.~~** **Fixed in this branch.** It is
+  now the single authoritative id path and is called from every event fill:
+  `hush_launch`, `hush_roster`, `hush_agent`, `hush_intel`, `hush_presence`,
+  and `hush_http` (post + signal). Serialization is NIP-01 canonical
+  `[0,pubkey,created_at,kind,tags,content]` with string escaping and tags.
+- **~~Four near-duplicate `make_id()` helpers.~~** **Fixed in this branch.**
+  `hush_agent_make_id`, `hush_roster_make_id`, `hush_presence_make_id`,
+  `hush_intel_make_id`, and `hush_launch_make_id` are all deleted. A sixth
+  duplicate, `hush_make_event_id()` in `hush_http.c` (the human-message path,
+  `0x9e3779b9` variant), was found during migration and removed too. Only
+  `hush_skill_make_id()` remains — that one is a deterministic catalog key
+  (`robot:slug`), not a Nostr event id, so it correctly stays separate.
+  Verified against three hard-coded NIP-01 SHA-256 preimages in
+  `tests/test_event.c`.
 - **`hush_provider_update_all()` is built but unwired** — production never
   calls it (only `test_provider.c`). Awaiting launch policy sign-off.
 - **`hush_provider_capabilities()` and `hush_provider_flags()` are test-only

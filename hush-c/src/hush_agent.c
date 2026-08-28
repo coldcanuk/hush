@@ -27,7 +27,6 @@ enum {
     HUSH_AGENT_JOBS_MAX = 4,
     HUSH_AGENT_TIMEOUT_S = 90,
     HUSH_AGENT_KIND_NOTE = 1,
-    HUSH_AGENT_ID_WIDTH = 16,
     HUSH_AGENT_ARGV_MAX = 28,
     HUSH_AGENT_PATH_MAX = 256,
     HUSH_AGENT_FD_NONE = -1,
@@ -265,7 +264,6 @@ static size_t g_nintro;
 
 static void hush_agent_copy(char *dst, size_t dstsz, const char *src);
 static void hush_agent_trim(char *text);
-static void hush_agent_make_id(char *out65);
 static hush_agent_job_t *hush_agent_find_slot(void);
 static int hush_agent_key_matches(const char *mention, const char *npub,
                                   const char *hex);
@@ -642,21 +640,6 @@ static void hush_agent_trim(char *text)
     }
 }
 
-static void hush_agent_make_id(char *out65)
-{
-    time_t now;
-
-    assert(out65 != NULL);
-    now = time(NULL);
-    g_id_seq++;
-    (void)snprintf(out65, HUSH_EVENT_ID_HEX_LEN + 1,
-                   "%0*llx%0*x%0*x%0*x",
-                   HUSH_AGENT_ID_WIDTH, (unsigned long long)now,
-                   HUSH_AGENT_ID_WIDTH, g_id_seq,
-                   HUSH_AGENT_ID_WIDTH, g_id_seq ^ 0x51ed270bu,
-                   HUSH_AGENT_ID_WIDTH, g_id_seq * 7u);
-}
-
 static hush_agent_job_t *hush_agent_find_slot(void)
 {
     size_t i;
@@ -880,7 +863,6 @@ static void hush_agent_fill_note(hush_event_t *ev, const hush_agent_note_in_t *i
     assert(in->content != NULL);
     assert(in->channel != NULL);
     memset(ev, 0, sizeof(*ev));
-    hush_agent_make_id(ev->id);
     hush_agent_copy(ev->pubkey, sizeof(ev->pubkey), in->pubkey);
     ev->kind = (uint32_t)HUSH_AGENT_KIND_NOTE;
     ev->created_at = (int64_t)time(NULL);
@@ -916,6 +898,7 @@ static void hush_agent_fill_note(hush_event_t *ev, const hush_agent_note_in_t *i
                         sizeof(ev->tags[ev->tag_count][1]), np);
         ev->tag_count++;
     }
+    (void)hush_event_compute_id(ev, ev->id);
 }
 
 static hush_status_t hush_agent_insert_note(hush_store_t *store,

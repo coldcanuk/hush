@@ -23,7 +23,6 @@ enum {
     HUSH_LAUNCH_KIND_NOTE = 1,
     HUSH_LAUNCH_KIND_REPO = 30617,
     HUSH_LAUNCH_SLUG_FALLBACK = 'x',
-    HUSH_LAUNCH_ID_WIDTH = 16,
     HUSH_LAUNCH_CMD_MAX = 768,
     HUSH_LAUNCH_FILE_MAX = 32768,
     HUSH_LAUNCH_KEY_MAX = 48,
@@ -106,9 +105,6 @@ static void hush_launch_fill_event(hush_event_t *ev, const char *pubkey_hex,
 
 /* Writes a 16-char hex join token. */
 static hush_status_t hush_launch_make_token(char *out, size_t outsz);
-
-/* Writes a deterministic hex id from time + seq. */
-static void hush_launch_make_id(char *out65);
 
 /* JSON-escapes src into dst. */
 static size_t hush_launch_json_escape(const char *src, char *dst, size_t dstsz);
@@ -1319,6 +1315,7 @@ static hush_status_t hush_launch_store_profile(hush_store_t *store,
         return HUSH_ERR_FULL;
     hush_launch_fill_event(&ev, id->pubkey_hex, HUSH_LAUNCH_KIND_META,
                            content, "");
+    (void)hush_event_compute_id(&ev, ev.id);
     return hush_store_insert(store, &ev);
 }
 
@@ -1334,6 +1331,7 @@ static hush_status_t hush_launch_store_welcome(hush_store_t *store,
                            "want built and I'll find — or raise — the right "
                            "robot for the job.",
                            HUSH_LAUNCH_CHAN_WELCOME);
+    (void)hush_event_compute_id(&ev, ev.id);
     return hush_store_insert(store, &ev);
 }
 
@@ -1356,6 +1354,7 @@ static hush_status_t hush_launch_store_repo(hush_store_t *store,
     ev.tag_count = 1;
     memcpy(ev.tags[0][0], "d", 2);
     memcpy(ev.tags[0][1], proj->slug, strlen(proj->slug) + 1);
+    (void)hush_event_compute_id(&ev, ev.id);
     return hush_store_insert(store, &ev);
 }
 
@@ -1367,7 +1366,6 @@ static void hush_launch_fill_event(hush_event_t *ev, const char *pubkey_hex,
     assert(pubkey_hex != NULL);
     assert(content != NULL);
     memset(ev, 0, sizeof(*ev));
-    hush_launch_make_id(ev->id);
     memcpy(ev->pubkey, pubkey_hex, HUSH_IDENTITY_HEX_LEN + 1);
     ev->kind = kind;
     ev->created_at = (int64_t)time(NULL);
@@ -1377,22 +1375,6 @@ static void hush_launch_fill_event(hush_event_t *ev, const char *pubkey_hex,
         memcpy(ev->tags[0][0], "h", 2);
         memcpy(ev->tags[0][1], channel, strlen(channel) + 1);
     }
-}
-
-static void hush_launch_make_id(char *out65)
-{
-    static unsigned seq;
-    time_t now;
-
-    assert(out65 != NULL);
-    now = time(NULL);
-    seq++;
-    (void)snprintf(out65, HUSH_EVENT_ID_HEX_LEN + 1,
-                   "%0*llx%0*x%0*x%0*x",
-                   HUSH_LAUNCH_ID_WIDTH, (unsigned long long)now,
-                   HUSH_LAUNCH_ID_WIDTH, seq,
-                   HUSH_LAUNCH_ID_WIDTH, seq ^ 0x9e3779b9u,
-                   HUSH_LAUNCH_ID_WIDTH, seq * 3u);
 }
 
 static void hush_launch_default_payne_providers(hush_launch_t *launch)

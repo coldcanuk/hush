@@ -11,7 +11,6 @@
 
 enum {
     HUSH_INTEL_KIND_NOTE = 1,
-    HUSH_INTEL_ID_WIDTH = 16,
     HUSH_INTEL_DUP_S = 1,
     HUSH_INTEL_MS_PER_S = 1000,
     HUSH_INTEL_STATUS_MAX = 256
@@ -46,11 +45,9 @@ typedef struct {
 } hush_intel_hold_t;
 
 static hush_intel_hold_t g_holds[HUSH_INTEL_HOLD_MAX];
-static unsigned g_id_seq;
 
 static void hush_intel_copy(char *dst, size_t dstsz, const char *src);
 static void hush_intel_lower(char *text);
-static void hush_intel_make_id(char *out65);
 static void hush_intel_event_channel(char *out, size_t outsz,
                                      const hush_event_t *ev);
 static void hush_intel_event_root(char *out, size_t outsz,
@@ -177,21 +174,6 @@ static void hush_intel_lower(char *text)
     assert(text != NULL);
     for (i = 0; text[i] != '\0'; i++)
         text[i] = (char)tolower((unsigned char)text[i]);
-}
-
-static void hush_intel_make_id(char *out65)
-{
-    time_t now;
-
-    assert(out65 != NULL);
-    now = time(NULL);
-    g_id_seq++;
-    (void)snprintf(out65, HUSH_EVENT_ID_HEX_LEN + 1,
-                   "%0*llx%0*x%0*x%0*x",
-                   HUSH_INTEL_ID_WIDTH, (unsigned long long)now,
-                   HUSH_INTEL_ID_WIDTH, g_id_seq,
-                   HUSH_INTEL_ID_WIDTH, g_id_seq ^ 0x51ed270bu,
-                   HUSH_INTEL_ID_WIDTH, g_id_seq * 7u);
 }
 
 static void hush_intel_event_channel(char *out, size_t outsz,
@@ -485,7 +467,6 @@ static void hush_intel_post_line(hush_store_t *store, const hush_event_t *ev,
     assert(ev != NULL);
     assert(line != NULL);
     memset(&note, 0, sizeof(note));
-    hush_intel_make_id(note.id);
     hush_intel_copy(note.pubkey, sizeof(note.pubkey),
                     robot != NULL ? robot : ev->pubkey);
     note.kind = (uint32_t)HUSH_INTEL_KIND_NOTE;
@@ -501,6 +482,7 @@ static void hush_intel_post_line(hush_store_t *store, const hush_event_t *ev,
     memcpy(note.tags[2][0], HUSH_INTEL_TAG_T, 2);
     hush_intel_copy(note.tags[2][1], sizeof(note.tags[2][1]),
                     HUSH_INTEL_CONFIRM_TAG);
+    (void)hush_event_compute_id(&note, note.id);
     (void)hush_store_insert(store, &note);
 }
 
