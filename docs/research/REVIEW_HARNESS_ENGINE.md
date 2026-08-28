@@ -85,12 +85,10 @@ The following were traced by hand against the code and are correct:
 
 These are honest and should gate the remaining work.
 
-1. **Makefile has no header-dependency tracking.** `src/%.o: src/%.c` means a
-   struct-size or enum change in a header is not propagated to already-built
-   objects. I hit a phantom `*** stack smashing detected ***` crash during an
-   incremental build for exactly this reason; `make clean` resolves it. **This
-   is a real footgun** and should be fixed (`-MMD -MP` + `-include *.d`)
-   independently of this PR.
+1. ~~**Makefile has no header-dependency tracking.**~~ **Fixed in this branch.**
+   `src/%.o` now compiles with `-MMD -MP` and the Makefile `-include`s the
+   generated `.d` files, so a header change rebuilds every consumer. Verified
+   by touching `include/hush_provider.h` and observing `hush_agent.c` rebuild.
 
 2. **Two provider lists.** `hush_roster.c` and `hush_provider.c` each keep the
    13 ids. They currently agree, but nothing enforces that at compile time.
@@ -132,7 +130,7 @@ These are honest and should gate the remaining work.
 
 ## 7. Recommendations (ordered)
 
-1. Fix the Makefile header-dependency gap (safety, orthogonal to this PR).
+1. ~~Fix the Makefile header-dependency gap~~ — done in this branch.
 2. Collapse the two provider id lists into one shared definition.
 3. Wire `hush_cevent_format_json()` to a route so the drop counter reaches the
    UI (completes the messaging-reliability story).
