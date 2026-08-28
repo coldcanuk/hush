@@ -66,6 +66,7 @@ test: $(TEST_BINS) hush-relay
 	@sh tests/check_agent.sh
 	@sh tests/check_agy.sh
 	@sh tests/check_ollama.sh
+	@sh tests/check_failover.sh
 	@sh tests/check_fixup.sh
 	@sh tests/check_complete.sh
 	@sh tests/check_turn.sh
