@@ -5030,7 +5030,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         (_, a, b) => {
           const npub = a || b;
           const hit = mentionHit(npub);
-          return hit ? ("@" + hit.name) : ("@" + npub.slice(0, 12));
+          return hit ? ("@" + hit.name) : "";
         });
     }
 
@@ -5071,9 +5071,13 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         }
         const npub = m[1] || m[2];
         const hit = mentionHit(npub);
+        if (!hit) {
+          last = re.lastIndex;
+          continue;
+        }
         const span = document.createElement("span");
         span.className = "mention-pill";
-        span.textContent = "@" + (hit ? hit.name : npub.slice(0, 12));
+        span.textContent = "@" + hit.name;
         span.title = npub;
         container.appendChild(span);
         last = re.lastIndex;

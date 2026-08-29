@@ -47,7 +47,8 @@ printf '%s\n' '#!/bin/sh' \
     'done' \
     'printf "%s\n" "Why did the robot laugh? Byte me."' \
     'printf "go:\tfmt\n"' \
-    'printf "%s\n" "@Major your turn, Do."' \
+    'printf "%s\n" "I have keys but open no doors, I have space but no room, I have an enter key but never walk in—what am I? @Happy generate a new riddle and let @npub1t337pnf take the next turn."' \
+    'printf "%s\n" "A keyboard. @Happy riddle answered; @npub1t337pnf your turn, continue the thread."' \
     > "$home/bin/grok"
 chmod 0755 "$home/bin/grok"
 PATH="$home/bin:$PATH"
@@ -147,6 +148,27 @@ for e in (data.get("events") or []):
         sys.exit(1)
 sys.exit(0)
 ' || fail "robot note must rewrite @Major and must not leave @npub1"
+printf '%s' "$got" | python3 -c '
+import json, sys
+data = json.loads(sys.stdin.read())
+for e in (data.get("events") or []):
+    c = e.get("content") or ""
+    if "Byte me" not in c:
+        continue
+    if "your turn" in c or "continue the thread" in c or "riddle answered" in c:
+        print("HANDOFF_LEFT", c)
+        sys.exit(1)
+    if "generate a new riddle" in c:
+        print("ASK_ECHO_LEFT", c)
+        sys.exit(1)
+    if "@npub1" in c or "npub1t337pnf" in c:
+        print("NPUB_KEY_LEFT", c)
+        sys.exit(1)
+    if "@Happy" in c:
+        print("SELF_MENTION_LEFT", c)
+        sys.exit(1)
+sys.exit(0)
+' || fail "scrub must strip echo, npub keys, self-mentions, and last-robot handoff from grok output"
 grep -q 'CTXMARKER7x9' "$home/.config/hush/grok-p.log" \
     || fail "context body must reach the grok -p note"
 
@@ -434,6 +456,8 @@ grep -q 'hush_agent_rewrite_mentions' src/hush_agent.c || fail "missing mention 
 echo "$html" | grep -q 'function mentionHit' || fail "served UI missing mentionHit"
 echo "$html" | grep -A 20 'function renderPreservingMentions' | grep -q 'mentionHit' \
     || fail "pills must resolve via mentionHit"
+echo "$html" | grep -A 25 'function renderPreservingMentions' | grep -q 'if (!hit)' \
+    || fail "unresolved npub tokens must not paint as @npub"
 grep -q 'hush_agent_intro_seen' src/hush_agent.c || fail "missing intro table"
 grep -q 'HUSH_AGENT_STRICT_SCOPE' src/hush_agent.c || fail "missing strict per-robot scope"
 grep -q 'HUSH_AGENT_COOPERATE' src/hush_agent.c || fail "missing two-robot cooperation prompt"
@@ -471,5 +495,7 @@ keep=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
     -H 'Content-Type: application/json' \
     -d '{"action":"manage","slug":"general","kind":"open","robot_reply":"mention"}')
 echo "$keep" | grep -q 'jokes' || fail "manage without about must not wipe topics"
+
+grep -q 'hush_agent_scrub_reply' src/hush_agent.c || fail "missing reply scrub"
 
 echo "agent mention reply ok"

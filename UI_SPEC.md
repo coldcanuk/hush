@@ -417,8 +417,9 @@ the original text flow with mention markers in place. Mention pills
 resolve `nostr:npub1…` and `@npub1…` with the same prefix match as
 `who()` (`sameKey`), so a truncated key still paints `@Major`. Robot
 notes rewrite `@Name` and truncated npubs to full `nostr:<npub>`
-before store. The last robot on a note is told to stop after its
-assignment.
+before store, then scrub self-mentions, echoed asks, and last-robot
+handoffs. Unresolved `@npub1…` tokens are not painted. The last robot
+on a note stops after its assignment and does not p-tag peers.
 
 **Progressive mention acknowledgment UX:** On mention dispatch:
 1. Immediate visual "Happy is thinking..." (or per-robot status chip)
