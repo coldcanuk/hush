@@ -6,7 +6,10 @@ Jobs receive this as `HUSH_AGENT_PEER_STANDARD` in prompt and rules
 1. **Do not copy the ask.** Write only your assignment. Do not repeat
    the human's mention list or quote the original note. Never write
    npub keys; the relay rewrites `@Name` to NIP-27 on the wire and
-   strips leftover keys.
+   strips leftover keys. The relay also **humanizes the robot's input**:
+   the thread transcript and assignment are rewritten from
+   `nostr:npub1…` to `@Name` (and the robot's own token is dropped)
+   before they reach the model, so a model never sees a raw key to copy.
 2. **One intro.** The first time a robot joins a thread it may send one
    short on-deck line. After that, ack with the hive emoji gradient and
    do the work.
