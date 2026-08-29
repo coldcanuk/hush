@@ -1,0 +1,18 @@
+#!/bin/sh
+# prerm — stop any running hush-relay before the package is removed or upgraded.
+# Called with `upgrade <new-version>` or `remove`; both should blast a live relay.
+
+pids=$(ps -axo pid=,comm= 2>/dev/null | awk '$2 == "hush-relay" {print $1}') || true
+if [ -n "$pids" ]; then
+    # SIGTERM first so the relay can reap its agent jobs, then a short grace
+    # period, then force anything still alive.
+    kill $pids 2>/dev/null || true
+    sleep 1
+    for p in $pids; do
+        if kill -0 "$p" 2>/dev/null; then
+            kill -KILL "$p" 2>/dev/null || true
+        fi
+    done
+fi
+
+exit 0

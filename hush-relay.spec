@@ -25,6 +25,17 @@ Features:
 Optimized for the Goose AI agent. Designed for set-and-forget
 self-hosting and embedding.
 
+%pre
+# Stop any running hush-relay before the new binary lands (install + upgrade),
+# so an upgrade never leaves a stale process serving the old code.
+pids=$(ps -axo pid=,comm= 2>/dev/null | awk '$2 == "hush-relay" {print $1}')
+if [ -n "$pids" ]; then
+    kill $pids 2>/dev/null || true
+    sleep 1
+    for p in $pids; do kill -0 "$p" 2>/dev/null && kill -KILL "$p" 2>/dev/null || true; done
+fi
+exit 0
+
 %prep
 %autosetup
 
