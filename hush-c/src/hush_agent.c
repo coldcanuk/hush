@@ -380,6 +380,11 @@ static void hush_agent_expand_npubs(char *text, size_t textsz,
 /* Replaces @Name with nostr:<npub> for roster display names, longest first. */
 static void hush_agent_rewrite_at_names(char *text, size_t textsz,
                                         const hush_launch_t *launch);
+/* Rewrites nostr:npub1… tokens to @Name for prompt text. Drops the acting
+ * robot's own token and unknown tokens; keeps peers and the human readable. */
+static void hush_agent_humanize_ask(char *text, size_t textsz,
+                                    const hush_launch_t *launch,
+                                    const char *self_hex);
 /* Fills out with Payne then enabled agents. Returns the count. */
 static size_t hush_agent_list_aliases(const hush_launch_t *launch,
                                       hush_agent_alias_t *out, size_t maxn);
@@ -507,7 +512,11 @@ static void hush_agent_presence_put(hush_store_t *store, hush_agent_job_t *job,
 static void hush_agent_nudge_stuck(hush_store_t *store, hush_agent_job_t *job);
 static int hush_agent_job_enabled(const hush_agent_job_t *job);
 static void hush_agent_append_assign(char *prompt, size_t promptsz,
-                                     const char *ask);
+                                     const char *ask,
+                                     const hush_launch_t *launch,
+                                     const char *self_hex);
+/* Appends " @PeerName" when a scoped assignment is a dangling delegation. */
+static void hush_agent_name_dangling_peer(hush_agent_job_t *job, int scoped);
 static void hush_agent_push_hex(char hexes[][HUSH_EVENT_PUBKEY_HEX_LEN + 1],
                                 size_t *n, size_t maxn, const char *hex);
 static const hush_launch_channel_t *hush_agent_channel(
@@ -890,6 +899,7 @@ static void hush_agent_fill_prompt(char *out, size_t outsz,
 {
     const char *base;
     const char *who;
+    const char *self;
     int n;
 
     assert(out != NULL);
@@ -898,8 +908,13 @@ static void hush_agent_fill_prompt(char *out, size_t outsz,
     base = (bot->prompt != NULL && bot->prompt[0] != '\0')
         ? bot->prompt : HUSH_AGENT_PROMPT_FALLBACK;
     who = (human != NULL && human[0] != '\0') ? human : HUSH_AGENT_HUMAN_FALLBACK;
-    n = snprintf(out, outsz, "%s You are speaking to %s.%s",
-                 base, who, HUSH_AGENT_HYGIENE);
+    self = (bot->name != NULL && bot->name[0] != '\0') ? bot->name : NULL;
+    if (self != NULL)
+        n = snprintf(out, outsz, "%s You are %s. You are speaking to %s.%s",
+                     base, self, who, HUSH_AGENT_HYGIENE);
+    else
+        n = snprintf(out, outsz, "%s You are speaking to %s.%s",
+                     base, who, HUSH_AGENT_HYGIENE);
     if (n < 0 || (size_t)n >= outsz)
         hush_agent_copy(out, outsz, HUSH_AGENT_PROMPT_FALLBACK);
 }
@@ -1589,7 +1604,10 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
     } else {
         hush_agent_fill_prompt(job->prompt, sizeof(job->prompt), bot,
                                job->human_name);
-        hush_agent_append_assign(job->prompt, sizeof(job->prompt), job->ask);
+        hush_agent_append_assign(job->prompt, sizeof(job->prompt), job->ask,
+                                 in->launch,
+                                 bot->hex != NULL ? bot->hex : "");
+        hush_agent_name_dangling_peer(job, in->scoped);
         if (in->scoped &&
             strlen(job->prompt) + strlen(HUSH_AGENT_STRICT_SCOPE) + 1
                 < sizeof(job->prompt))
@@ -1614,6 +1632,12 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
                            in->launch, parent, &names);
     if (job->note[0] == '\0')
         hush_agent_copy(job->note, sizeof(job->note), parent->content);
+    /* The LLM must see names, not keys: rewrite any nostr:npub token in the
+     * thread transcript to @Name and drop the acting robot's own token. This
+     * is what stops an LLM from copying a truncated or bare npub into its
+     * reply. */
+    hush_agent_humanize_ask(job->note, sizeof(job->note), in->launch,
+                            bot->hex != NULL ? bot->hex : "");
     hush_agent_append_context(job->note, sizeof(job->note), bot);
 
     /* Pills / channel topic -> system prompt injection.
@@ -2233,6 +2257,63 @@ static void hush_agent_rewrite_at_names(char *text, size_t textsz,
                                            HUSH_ROSTER_AGENTS_MAX + 1);
     hush_agent_sort_aliases(aliases, set.naliases);
     hush_agent_emit_at_names(scratch, sizeof(scratch), text, &set);
+    hush_agent_copy(text, textsz, scratch);
+}
+
+static void hush_agent_humanize_ask(char *text, size_t textsz,
+                                    const hush_launch_t *launch,
+                                    const char *self_hex)
+{
+    char scratch[HUSH_EVENT_MAX_CONTENT + 1];
+    char tok[HUSH_IDENTITY_NPUB_MAX];
+    size_t i = 0;
+    size_t o = 0;
+
+    assert(text != NULL);
+    assert(textsz > 0);
+    if (launch == NULL)
+        return;
+    while (text[i] != '\0' && i < (size_t)HUSH_EVENT_MAX_CONTENT &&
+           o + 1 < sizeof(scratch)) {
+        size_t span = hush_agent_npub_span(text, i);
+        size_t tlen;
+        const char *name = NULL;
+
+        if (span < (size_t)HUSH_AGENT_NOSTR_NPUB_LEN ||
+            strncmp(text + i, HUSH_AGENT_NOSTR_HEAD,
+                    (size_t)HUSH_AGENT_NOSTR_HEAD_LEN) != 0) {
+            scratch[o++] = text[i++];
+            continue;
+        }
+        tlen = span - (size_t)HUSH_AGENT_NOSTR_HEAD_LEN;
+        if (tlen >= sizeof(tok))
+            tlen = sizeof(tok) - 1;
+        memcpy(tok, text + i + (size_t)HUSH_AGENT_NOSTR_HEAD_LEN, tlen);
+        tok[tlen] = '\0';
+        i += span;
+        {
+            hush_agent_robot_t bot;
+
+            if (hush_agent_lookup_robot(&bot, launch, tok)) {
+                if (self_hex != NULL && self_hex[0] != '\0' &&
+                    bot.hex != NULL && strcmp(bot.hex, self_hex) == 0)
+                    continue; /* drop the acting robot's own mention */
+                name = bot.name;
+            } else if (launch->logged_in && hush_agent_is_human(launch, tok)) {
+                name = launch->roster.profile.first_name[0] != '\0'
+                    ? launch->roster.profile.first_name
+                    : HUSH_AGENT_HUMAN_FALLBACK;
+            }
+        }
+        if (name == NULL || name[0] == '\0')
+            continue; /* drop unknown npub */
+        if (o + 2 + strlen(name) >= sizeof(scratch))
+            break;
+        scratch[o++] = '@';
+        memcpy(scratch + o, name, strlen(name));
+        o += strlen(name);
+    }
+    scratch[o] = '\0';
     hush_agent_copy(text, textsz, scratch);
 }
 
@@ -3691,9 +3772,39 @@ static void hush_agent_emit(const char *type, const char *channel,
     (void)hush_cevent_emit(&ev);
 }
 
-static void hush_agent_append_assign(char *prompt, size_t promptsz,
-                                     const char *ask)
+static void hush_agent_name_dangling_peer(hush_agent_job_t *job, int scoped)
 {
+    size_t alen;
+    char last;
+    const char *nm;
+    size_t plen;
+    size_t nlen;
+
+    assert(job != NULL);
+    if (!scoped || job->n_co_robots <= 0 || job->ask[0] == '\0')
+        return;
+    alen = strlen(job->ask);
+    last = job->ask[alen - 1];
+    if (last == '.' || last == '!' || last == '?')
+        return;
+    nm = job->co_names[0][0] ? job->co_names[0] : "robot";
+    plen = strlen(job->prompt);
+    nlen = strlen(nm);
+    if (plen + 3 + nlen >= sizeof(job->prompt))
+        return;
+    job->prompt[plen++] = ' ';
+    job->prompt[plen++] = '@';
+    memcpy(job->prompt + plen, nm, nlen);
+    plen += nlen;
+    job->prompt[plen] = '\0';
+}
+
+static void hush_agent_append_assign(char *prompt, size_t promptsz,
+                                     const char *ask,
+                                     const hush_launch_t *launch,
+                                     const char *self_hex)
+{
+    char human[HUSH_EVENT_MAX_CONTENT + 1];
     char snip[HUSH_AGENT_SNIP_MAX + HUSH_IDENTITY_NPUB_MAX + 1];
     size_t used;
     int n;
@@ -3702,7 +3813,9 @@ static void hush_agent_append_assign(char *prompt, size_t promptsz,
     assert(promptsz > 0);
     if (ask == NULL || ask[0] == '\0')
         return;
-    hush_agent_snip_line(snip, sizeof(snip), ask);
+    hush_agent_copy(human, sizeof(human), ask);
+    hush_agent_humanize_ask(human, sizeof(human), launch, self_hex);
+    hush_agent_snip_line(snip, sizeof(snip), human);
     used = strlen(prompt);
     if (used + 8 >= promptsz)
         return;

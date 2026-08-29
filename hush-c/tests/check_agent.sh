@@ -394,19 +394,19 @@ grep -q 'S:.*YOUR assignment: tell a joke\.' "$HUSH_CONFIG_DIR/grok-p.log" \
     || fail "Happy must receive only its own clause"
 grep -q 'S:.*YOUR assignment: was it funny' "$HUSH_CONFIG_DIR/grok-p.log" \
     || fail "Payne must receive only its own clause"
-grep -F "$npub" "$HUSH_CONFIG_DIR/grok-p.log" >/dev/null \
-    || fail "thread snip must keep Happy npub intact"
-grep -F "$payne_npub" "$HUSH_CONFIG_DIR/grok-p.log" >/dev/null \
-    || fail "thread snip must keep Payne npub intact"
+grep -q '@Major' "$HUSH_CONFIG_DIR/grok-p.log" \
+    || fail "the peer must be shown as @Major, not a key"
+if grep -q 'nostr:npub' "$HUSH_CONFIG_DIR/grok-p.log"; then
+    fail "raw npub keys must not reach the LLM (thread or prompt)"
+fi
+if grep -F "$npub" "$HUSH_CONFIG_DIR/grok-p.log"; then
+    fail "the acting robot's own npub must not reach the LLM"
+fi
 python3 -c '
 import sys
-happy, payne = sys.argv[1], sys.argv[2]
-found_both = 0
 happy_last = 0
 payne_last = 0
-for line in open(sys.argv[3]):
-    if happy in line and payne in line:
-        found_both = 1
+for line in open(sys.argv[1]):
     if not line.startswith("S:"):
         continue
     if "YOUR assignment: tell a joke" in line:
@@ -415,17 +415,14 @@ for line in open(sys.argv[3]):
     if "YOUR assignment: was it funny" in line:
         if "You are last" in line:
             payne_last = 1
-if not found_both:
-    print("P_LINE_MISSING_BOTH_NPUBS")
-    sys.exit(1)
 if happy_last:
     print("FIRST_ROBOT_GOT_LAST_RULE")
     sys.exit(1)
 if not payne_last:
     print("LAST_ROBOT_MISSING_STOP_RULE")
     sys.exit(1)
-' "$npub" "$payne_npub" "$HUSH_CONFIG_DIR/grok-p.log" \
-    || fail "snip must keep both npubs; only the last robot stops"
+' "$HUSH_CONFIG_DIR/grok-p.log" \
+    || fail "only the last robot stops"
 grep '^S:' "$HUSH_CONFIG_DIR/grok-p.log" | python3 -c '
 import sys
 bad = 0
@@ -434,6 +431,28 @@ for line in sys.stdin:
         bad = 1
 sys.exit(bad)
 ' || fail "a robot received the full ask instead of its own clause"
+
+# Delegation phrasing: "generate a riddle and ask @Major to solve it" must give
+# Happy a complete assignment that names the peer, never a key or itself.
+del=$(curl -sf -X POST "http://127.0.0.1:${port}/api/event" \
+    -H 'Content-Type: application/json' \
+    -d "{\"content\":\"nostr:${npub} generate a riddle and ask nostr:${payne_npub} to solve it, please.\",\"kind\":1,\"channel\":\"general\",\"mention_0\":\"${npub}\",\"mention_1\":\"${payne_npub}\"}")
+echo "$del" | grep -q '"ok":true' || fail "delegation mention not stored"
+i=0
+while [ "$i" -lt 40 ]; do
+    if grep -q 'S:.*YOUR assignment: generate a riddle and ask @Major' \
+        "$HUSH_CONFIG_DIR/grok-p.log" 2>/dev/null; then
+        break
+    fi
+    i=$((i + 1))
+    sleep 0.05
+done
+grep -q 'S:.*YOUR assignment: generate a riddle and ask @Major' \
+    "$HUSH_CONFIG_DIR/grok-p.log" \
+    || fail "delegation must name the peer in Happy's assignment"
+if grep '^S:' "$HUSH_CONFIG_DIR/grok-p.log" | grep -q 'generate a riddle.*nostr:npub'; then
+    fail "delegation assignment must not carry a raw npub key"
+fi
 
 echo "$html" | grep -q 'function assembleMentionContent' || fail "UI missing assembleMentionContent"
 echo "$html" | grep -q 'function dropMentionFromInput' || fail "served UI missing dropMentionFromInput"
