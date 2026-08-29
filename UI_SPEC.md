@@ -413,7 +413,12 @@ E.g. "@Happy tell me a joke. @Sgt Major Payne was it funny?" keeps
 the exact sequence and locations so intent ("tell Happy the joke,
 then ask Sgt about it") is not lost. `prettyMentions` or equivalent
 must be order-preserving; `paintNote` / `paintThreadStream` render
-the original text flow with mention markers in place.
+the original text flow with mention markers in place. Mention pills
+resolve `nostr:npub1…` and `@npub1…` with the same prefix match as
+`who()` (`sameKey`), so a truncated key still paints `@Major`. Robot
+notes rewrite `@Name` and truncated npubs to full `nostr:<npub>`
+before store. The last robot on a note is told to stop after its
+assignment.
 
 **Progressive mention acknowledgment UX:** On mention dispatch:
 1. Immediate visual "Happy is thinking..." (or per-robot status chip)

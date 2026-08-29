@@ -32,7 +32,16 @@ enum {
     HUSH_AGENT_FD_NONE = -1,
     HUSH_AGENT_CWD_MODE = 0700,
     HUSH_AGENT_THREAD_MAX = 6,
-    HUSH_AGENT_SNIP_MAX = 160,
+    /* Soft cap for flattened thread/assignment lines. Two nostr:npub
+     * tokens are 138 bytes; 160 cut the second token and the LLM
+     * copied the stump as @npub1t337pnf. Tokens themselves are copied
+     * atomically even when they overrun this cap, up to outsz. */
+    HUSH_AGENT_SNIP_MAX = 384,
+    HUSH_AGENT_NPUB_MIN = 12,
+    HUSH_AGENT_NOSTR_NPUB_LEN = 11,
+    HUSH_AGENT_NPUB_HEAD_LEN = 5,
+    HUSH_AGENT_NOSTR_HEAD_LEN = 6,
+    HUSH_AGENT_AT_NPUB_LEN = 6,
     HUSH_AGENT_SCAN_MAX = 64,
     HUSH_AGENT_TASK_MAX = 512,
     HUSH_AGENT_KIND_NOTE_JOB = 0,
@@ -64,11 +73,18 @@ enum {
 #define HUSH_AGENT_ONE_JOKE \
     "If the last human ask is a joke, reply with exactly one joke."
 #define HUSH_AGENT_PEER_STANDARD \
-    " Inter-robot standard: keep nostr:npub mentions in the same sentence " \
+    " Inter-robot standard: keep @Name mentions in the same sentence " \
     "order they were given. One short intro per thread, then work. " \
-    "Never end a note with a bare mention. To call a peer, write their " \
-    "name plus a phrase of intent (e.g. \"your turn, Major\"). " \
+    "Never end a note with a bare mention. To call a peer, write " \
+    "\"your turn, @Name\". Never write npub keys or nostr: tokens. " \
     "Do not reorder mentions."
+#define HUSH_AGENT_LAST_RULE \
+    "You are last. Stop after your assignment. Do not hand off. "
+#define HUSH_AGENT_PEER_LINE " Peers: "
+#define HUSH_AGENT_AT_NPUB "@npub1"
+#define HUSH_AGENT_NOSTR_HEAD "nostr:"
+#define HUSH_AGENT_NOSTR_NPUB "nostr:npub1"
+#define HUSH_AGENT_NPUB_HEAD "npub1"
 #define HUSH_AGENT_HYGIENE \
     " Fulfill YOUR assignment in this note, not a peer's. " \
     "STOP immediately after your part is done. Do not answer questions or perform actions assigned to a peer. " \
@@ -162,6 +178,8 @@ typedef struct {
     char co_npubs[4][HUSH_IDENTITY_NPUB_MAX];
     char co_names[4][HUSH_ROSTER_NAME_MAX];
     int n_co_robots;
+    /* True when this robot is in the last follow wave for the note. */
+    int last;
     const hush_launch_t *launch;
     char ask[HUSH_EVENT_MAX_CONTENT + 1];
 } hush_agent_job_t;
@@ -262,7 +280,19 @@ typedef struct {
     int elect;
     /* Prebuilt system-prompt override (election prompt). May be NULL. */
     const char *prompt_override;
+    /* True when this robot is in the last follow wave (or is solo). */
+    int last;
 } hush_agent_job_in_t;
+
+typedef struct {
+    const char *name;
+    const char *npub;
+} hush_agent_alias_t;
+
+typedef struct {
+    const hush_agent_alias_t *aliases;
+    size_t naliases;
+} hush_agent_alias_set_t;
 
 static hush_agent_job_t g_jobs[HUSH_AGENT_JOBS_MAX];
 static hush_agent_follow_t g_follow[HUSH_AGENT_FOLLOW_MAX];
@@ -310,10 +340,54 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
 static int hush_agent_event_is_root(const hush_event_t *ev, const char *root);
 /* True when ch is space, tab, CR, or LF. Pure. */
 static int hush_agent_is_space(char ch);
+/* True when ch is a bech32/npub body character [0-9a-z]. Pure. */
+static int hush_agent_is_npub_char(char ch);
+/* Length of a nostr:npub1… or npub1… token starting at src[i], else 0. */
+static size_t hush_agent_npub_span(const char *src, size_t i);
 /* Writes one space at o when room remains. Returns the next index. */
 static size_t hush_agent_put_gap(char *out, size_t o, size_t cap);
-/* Copies src into out, collapsing whitespace to one space, up to SNIP_MAX. */
+/* Copies src into out, collapsing whitespace to one space. Soft-capped
+ * at SNIP_MAX; npub tokens are copied whole up to outsz. */
 static void hush_agent_snip_line(char *out, size_t outsz, const char *src);
+/* Rewrites @npub1 to nostr:npub1, expands truncated npubs, maps @Name. */
+static void hush_agent_rewrite_mentions(hush_agent_job_t *job);
+/* Replaces @npub1 with nostr:npub1 in place. text is a writable C string. */
+static void hush_agent_rewrite_at_npub(char *text, size_t textsz);
+/* Expands truncated nostr:npub1 tokens to the unique roster npub. */
+static void hush_agent_expand_npubs(char *text, size_t textsz,
+                                    const hush_launch_t *launch);
+/* Replaces @Name with nostr:<npub> for roster display names, longest first. */
+static void hush_agent_rewrite_at_names(char *text, size_t textsz,
+                                        const hush_launch_t *launch);
+/* Fills out with Payne then enabled agents. Returns the count. */
+static size_t hush_agent_list_aliases(const hush_launch_t *launch,
+                                      hush_agent_alias_t *out, size_t maxn);
+/* Sorts aliases longest-name-first. n is the live count. */
+static void hush_agent_sort_aliases(hush_agent_alias_t *aliases, size_t n);
+/* Writes the unique full npub for tok (exact or prefix). Returns 0 if none. */
+static int hush_agent_unique_npub(const hush_launch_t *launch,
+                                  const char *tok, char *out, size_t outsz);
+/* Copies src into dst, mapping @Name from set to nostr:<npub>. */
+static void hush_agent_emit_at_names(char *dst, size_t dstsz, const char *src,
+                                     const hush_agent_alias_set_t *set);
+/* Appends " Peers: @Name …" onto job->prompt. No-op when none. */
+static void hush_agent_append_peers(hush_agent_job_t *job);
+/* Prepends LAST_RULE to prompt (and appends to rules) when job->last. */
+static void hush_agent_append_last(hush_agent_job_t *job);
+/* True when this follow slot has no later wave after slot->at. */
+static int hush_agent_follow_last_wave(const hush_agent_follow_t *slot);
+/* True when a[0..n) equals b[0..n) ignoring ASCII case. Pure. */
+static int hush_agent_is_same_ascii(const char *a, const char *b, size_t n);
+/* True when ch cannot continue a display name. Pure. */
+static int hush_agent_is_name_end(char ch);
+/* True when tok is npub or a unique prefix of npub (min NPUB_MIN). Pure. */
+static int hush_agent_npub_prefix_hit(const char *tok, const char *npub);
+/* Writes nostr:<npub> at dst[o]. Returns the next index, or cap on overflow. */
+static size_t hush_agent_put_full_npub(char *dst, size_t o, size_t cap,
+                                       const char *npub);
+/* Index of the longest @Name match at src, or set->naliases when none. */
+static size_t hush_agent_alias_at(const char *src,
+                                  const hush_agent_alias_set_t *set);
 static void hush_agent_append_turn(char *out, size_t outsz,
                                    const hush_event_t *ev, const char *who);
 static size_t hush_agent_thread_skip(const hush_event_t *evs, size_t n,
@@ -1131,6 +1205,37 @@ static int hush_agent_is_space(char ch)
     return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
 }
 
+static int hush_agent_is_npub_char(char ch)
+{
+    if (ch >= '0' && ch <= '9')
+        return 1;
+    if (ch >= 'a' && ch <= 'z')
+        return 1;
+    return 0;
+}
+
+static size_t hush_agent_npub_span(const char *src, size_t i)
+{
+    size_t n;
+
+    assert(src != NULL);
+    if (strncmp(src + i, HUSH_AGENT_NOSTR_NPUB,
+                (size_t)HUSH_AGENT_NOSTR_NPUB_LEN) == 0)
+        n = (size_t)HUSH_AGENT_NOSTR_NPUB_LEN;
+    else if (strncmp(src + i, HUSH_AGENT_NPUB_HEAD,
+                     (size_t)HUSH_AGENT_NPUB_HEAD_LEN) == 0) {
+        if (i > 0 && hush_agent_is_npub_char(src[i - 1]))
+            return 0;
+        n = (size_t)HUSH_AGENT_NPUB_HEAD_LEN;
+    } else {
+        return 0;
+    }
+    while (src[i + n] != '\0' && hush_agent_is_npub_char(src[i + n]) &&
+           i + n < (size_t)HUSH_EVENT_MAX_CONTENT)
+        n++;
+    return n;
+}
+
 static size_t hush_agent_put_gap(char *out, size_t o, size_t cap)
 {
     assert(out != NULL);
@@ -1144,31 +1249,45 @@ static void hush_agent_snip_line(char *out, size_t outsz, const char *src)
 {
     size_t i;
     size_t o;
-    size_t cap;
+    size_t hard;
+    size_t soft;
+    size_t span;
     int gap;
 
     assert(out != NULL);
     assert(outsz > 0);
     if (src == NULL)
         src = "";
-    cap = outsz - 1;
-    if (cap > (size_t)HUSH_AGENT_SNIP_MAX)
-        cap = (size_t)HUSH_AGENT_SNIP_MAX;
+    hard = outsz - 1;
+    soft = hard;
+    if (soft > (size_t)HUSH_AGENT_SNIP_MAX)
+        soft = (size_t)HUSH_AGENT_SNIP_MAX;
     o = 0;
     gap = 0;
-    for (i = 0; src[i] != '\0' && o < cap &&
-         i < (size_t)HUSH_EVENT_MAX_CONTENT; i++) {
+    for (i = 0; src[i] != '\0' && i < (size_t)HUSH_EVENT_MAX_CONTENT; i++) {
         if (hush_agent_is_space(src[i])) {
             gap = 1;
             continue;
         }
-        if (gap && o > 0)
-            o = hush_agent_put_gap(out, o, cap);
-        if (o >= cap)
+        span = hush_agent_npub_span(src, i);
+        if (span == 0 && o >= soft)
             break;
-        gap = 0;
+        if (gap && o > 0)
+            o = hush_agent_put_gap(out, o, hard);
+        if (span > 0) {
+            if (o + span > hard)
+                break;
+            memcpy(out + o, src + i, span);
+            o += span;
+            i += span - 1;
+            gap = 0;
+            continue;
+        }
+        if (o >= hard)
+            break;
         out[o] = src[i];
         o++;
+        gap = 0;
     }
     out[o] = '\0';
 }
@@ -1176,7 +1295,7 @@ static void hush_agent_snip_line(char *out, size_t outsz, const char *src)
 static void hush_agent_append_turn(char *out, size_t outsz,
                                   const hush_event_t *ev, const char *who)
 {
-    char line[HUSH_AGENT_SNIP_MAX + 1];
+    char line[HUSH_AGENT_SNIP_MAX + HUSH_IDENTITY_NPUB_MAX + 1];
     size_t used;
 
     assert(out != NULL);
@@ -1374,6 +1493,7 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
     }
     hush_agent_make_token(job->token, sizeof(job->token));
     job->launch = in->launch;
+    job->last = in->last;
     if (in->ask != NULL && in->ask[0] != '\0')
         hush_agent_copy(job->ask, sizeof(job->ask), in->ask);
     else if (in->parent->content[0] != '\0')
@@ -1438,7 +1558,7 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
             }
         }
         if (job->ask[0] != '\0' && off + 12 < sizeof(job->prompt)) {
-            char snip[HUSH_AGENT_SNIP_MAX + 1];
+            char snip[HUSH_AGENT_SNIP_MAX + HUSH_IDENTITY_NPUB_MAX + 1];
             hush_agent_snip_line(snip, sizeof(snip), job->ask);
             (void)snprintf(job->prompt + off, sizeof(job->prompt) - off,
                            " The ask: %s", snip);
@@ -1458,41 +1578,11 @@ static void hush_agent_fill_job(hush_agent_job_t *job,
             strlen(job->prompt) + strlen(HUSH_AGENT_COOPERATE) + 1
                 < sizeof(job->prompt))
             strcat(job->prompt, HUSH_AGENT_COOPERATE);
-
-        /* Group mention seam + deliberation:
-         * Co-mentioned robots must decide: own reply? cooperate? split? full
-         * convo? Peers are listed by name (with nostr:npub for dispatch).
-         * Skipped for strict scoping and for a two-robot broadcast. */
-        if (!in->scoped && job->n_co_robots > 0 &&
-            !(in->mode == HUSH_AGENT_MODE_BROADCAST && job->n_co_robots == 1) &&
-            strlen(job->prompt) + 160 < sizeof(job->prompt)) {
-            size_t off = strlen(job->prompt);
-            const char *g = " Other robots mentioned: ";
-            size_t glen = strlen(g);
-            if (off + glen < sizeof(job->prompt)) {
-                memcpy(job->prompt + off, g, glen);
-                off += glen;
-                for (int c = 0; c < job->n_co_robots; ++c) {
-                    const char *nm = job->co_names[c][0]
-                        ? job->co_names[c] : "robot";
-                    const char *np = job->co_npubs[c];
-                    int m = snprintf(job->prompt + off,
-                                     sizeof(job->prompt) - off,
-                                     "%s%s (nostr:%s)",
-                                     c > 0 ? " " : "", nm, np);
-                    if (m < 0 || (size_t)m >= sizeof(job->prompt) - off)
-                        break;
-                    off += (size_t)m;
-                }
-            }
-            const char *delib = " You + these peers were mentioned together. Decide strategy (own reply / cooperate on one / split / full convo among us). To call a peer, write their name plus a phrase of intent (e.g. \"your turn, Major\"), never a bare mention and never a trailing mention at the end of a message.";
-            if (off + strlen(delib) < sizeof(job->prompt)) {
-                memcpy(job->prompt + off, delib, strlen(delib));
-            }
-        }
+        hush_agent_append_peers(job);
     }
 
     hush_agent_fill_rules(job->rules, sizeof(job->rules), job->human_name);
+    hush_agent_append_last(job);
     hush_agent_prepare_cwd(job->cwd, sizeof(job->cwd));
     memset(&names, 0, sizeof(names));
     names.human = job->human_name;
@@ -1830,24 +1920,380 @@ static void hush_agent_kill_job(hush_agent_job_t *job)
     }
 }
 
+static int hush_agent_npub_prefix_hit(const char *tok, const char *npub)
+{
+    size_t n;
+    size_t m;
+
+    if (tok == NULL || npub == NULL || tok[0] == '\0' || npub[0] == '\0')
+        return 0;
+    if (strcmp(tok, npub) == 0)
+        return 1;
+    n = strlen(tok);
+    m = strlen(npub);
+    if (n < (size_t)HUSH_AGENT_NPUB_MIN)
+        return 0;
+    if (n >= m)
+        return 0;
+    return strncmp(tok, npub, n) == 0;
+}
+
+static size_t hush_agent_list_aliases(const hush_launch_t *launch,
+                                      hush_agent_alias_t *out, size_t maxn)
+{
+    size_t n = 0;
+    size_t i;
+
+    assert(out != NULL);
+    if (launch == NULL || maxn == 0)
+        return 0;
+    if (launch->has_vibe && launch->payne.npub[0] != '\0' && n < maxn) {
+        out[n].name = hush_launch_payne_name(launch);
+        out[n].npub = launch->payne.npub;
+        n++;
+    }
+    for (i = 0; i < launch->roster.nagents && n < maxn; i++) {
+        const hush_roster_agent_t *agent = &launch->roster.agents[i];
+
+        if (!agent->enabled || agent->id.npub[0] == '\0')
+            continue;
+        out[n].name = agent->name;
+        out[n].npub = agent->id.npub;
+        n++;
+    }
+    return n;
+}
+
+static void hush_agent_sort_aliases(hush_agent_alias_t *aliases, size_t n)
+{
+    size_t i;
+    size_t j;
+
+    assert(aliases != NULL || n == 0);
+    for (i = 1; i < n; i++) {
+        hush_agent_alias_t hold = aliases[i];
+
+        j = i;
+        while (j > 0 && strlen(aliases[j - 1].name) < strlen(hold.name)) {
+            aliases[j] = aliases[j - 1];
+            j--;
+        }
+        aliases[j] = hold;
+    }
+}
+
+static int hush_agent_unique_npub(const hush_launch_t *launch,
+                                  const char *tok, char *out, size_t outsz)
+{
+    hush_agent_alias_t aliases[HUSH_ROSTER_AGENTS_MAX + 1];
+    size_t n;
+    size_t i;
+    size_t hits = 0;
+    const char *hit = NULL;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    out[0] = '\0';
+    if (launch == NULL || tok == NULL || tok[0] == '\0')
+        return 0;
+    n = hush_agent_list_aliases(launch, aliases, HUSH_ROSTER_AGENTS_MAX + 1);
+    for (i = 0; i < n; i++) {
+        if (!hush_agent_npub_prefix_hit(tok, aliases[i].npub))
+            continue;
+        hits++;
+        hit = aliases[i].npub;
+        if (hits > 1)
+            return 0;
+    }
+    if (hits != 1)
+        return 0;
+    hush_agent_copy(out, outsz, hit);
+    return 1;
+}
+
+static size_t hush_agent_put_full_npub(char *dst, size_t o, size_t cap,
+                                       const char *npub)
+{
+    size_t nlen;
+
+    assert(dst != NULL);
+    assert(npub != NULL);
+    nlen = strlen(npub);
+    if (o + (size_t)HUSH_AGENT_NOSTR_HEAD_LEN + nlen >= cap)
+        return cap;
+    memcpy(dst + o, HUSH_AGENT_NOSTR_HEAD, (size_t)HUSH_AGENT_NOSTR_HEAD_LEN);
+    o += (size_t)HUSH_AGENT_NOSTR_HEAD_LEN;
+    memcpy(dst + o, npub, nlen);
+    return o + nlen;
+}
+
+static int hush_agent_is_same_ascii(const char *a, const char *b, size_t n)
+{
+    size_t i;
+
+    assert(a != NULL);
+    assert(b != NULL);
+    for (i = 0; i < n; i++) {
+        unsigned char ca;
+        unsigned char cb;
+
+        if (a[i] == '\0' || b[i] == '\0')
+            return 0;
+        ca = (unsigned char)a[i];
+        cb = (unsigned char)b[i];
+        if (ca >= 'A' && ca <= 'Z')
+            ca = (unsigned char)(ca - 'A' + 'a');
+        if (cb >= 'A' && cb <= 'Z')
+            cb = (unsigned char)(cb - 'A' + 'a');
+        if (ca != cb)
+            return 0;
+    }
+    return 1;
+}
+
+static int hush_agent_is_name_end(char ch)
+{
+    if (ch == '\0')
+        return 1;
+    if (ch >= '0' && ch <= '9')
+        return 0;
+    if (ch >= 'A' && ch <= 'Z')
+        return 0;
+    if (ch >= 'a' && ch <= 'z')
+        return 0;
+    return 1;
+}
+
+static size_t hush_agent_alias_at(const char *src,
+                                  const hush_agent_alias_set_t *set)
+{
+    size_t a;
+
+    assert(src != NULL);
+    assert(set != NULL);
+    if (src[0] != '@')
+        return set->naliases;
+    for (a = 0; a < set->naliases; a++) {
+        const char *nm = set->aliases[a].name;
+        size_t nlen;
+
+        if (nm == NULL || nm[0] == '\0')
+            continue;
+        nlen = strlen(nm);
+        if (!hush_agent_is_same_ascii(src + 1, nm, nlen))
+            continue;
+        if (!hush_agent_is_name_end(src[1 + nlen]))
+            continue;
+        return a;
+    }
+    return set->naliases;
+}
+
+static void hush_agent_rewrite_at_npub(char *text, size_t textsz)
+{
+    char scratch[HUSH_EVENT_MAX_CONTENT + 1];
+    size_t i = 0;
+    size_t o = 0;
+
+    assert(text != NULL);
+    assert(textsz > 0);
+    while (text[i] != '\0' && i < (size_t)HUSH_EVENT_MAX_CONTENT &&
+           o + 1 < sizeof(scratch)) {
+        if (strncmp(text + i, HUSH_AGENT_AT_NPUB,
+                    (size_t)HUSH_AGENT_AT_NPUB_LEN) == 0) {
+            if (o + (size_t)HUSH_AGENT_NOSTR_HEAD_LEN >= sizeof(scratch))
+                break;
+            memcpy(scratch + o, HUSH_AGENT_NOSTR_HEAD,
+                   (size_t)HUSH_AGENT_NOSTR_HEAD_LEN);
+            o += (size_t)HUSH_AGENT_NOSTR_HEAD_LEN;
+            i += 1;
+            continue;
+        }
+        scratch[o++] = text[i++];
+    }
+    scratch[o] = '\0';
+    hush_agent_copy(text, textsz, scratch);
+}
+
+static void hush_agent_expand_npubs(char *text, size_t textsz,
+                                    const hush_launch_t *launch)
+{
+    char scratch[HUSH_EVENT_MAX_CONTENT + 1];
+    char full[HUSH_IDENTITY_NPUB_MAX];
+    char tok[HUSH_IDENTITY_NPUB_MAX];
+    size_t i = 0;
+    size_t o = 0;
+
+    assert(text != NULL);
+    if (launch == NULL)
+        return;
+    while (text[i] != '\0' && i < (size_t)HUSH_EVENT_MAX_CONTENT &&
+           o + 1 < sizeof(scratch)) {
+        size_t span = hush_agent_npub_span(text, i);
+        size_t tlen;
+        size_t next;
+
+        if (span < (size_t)HUSH_AGENT_NOSTR_NPUB_LEN ||
+            strncmp(text + i, HUSH_AGENT_NOSTR_HEAD,
+                    (size_t)HUSH_AGENT_NOSTR_HEAD_LEN) != 0) {
+            scratch[o++] = text[i++];
+            continue;
+        }
+        tlen = span - (size_t)HUSH_AGENT_NOSTR_HEAD_LEN;
+        if (tlen >= sizeof(tok))
+            tlen = sizeof(tok) - 1;
+        memcpy(tok, text + i + (size_t)HUSH_AGENT_NOSTR_HEAD_LEN, tlen);
+        tok[tlen] = '\0';
+        if (!hush_agent_unique_npub(launch, tok, full, sizeof(full))) {
+            scratch[o++] = text[i++];
+            continue;
+        }
+        next = hush_agent_put_full_npub(scratch, o, sizeof(scratch), full);
+        if (next >= sizeof(scratch))
+            break;
+        o = next;
+        i += span;
+    }
+    scratch[o] = '\0';
+    hush_agent_copy(text, textsz, scratch);
+}
+
+static void hush_agent_emit_at_names(char *dst, size_t dstsz, const char *src,
+                                     const hush_agent_alias_set_t *set)
+{
+    size_t i = 0;
+    size_t o = 0;
+
+    assert(dst != NULL);
+    assert(dstsz > 0);
+    assert(src != NULL);
+    assert(set != NULL);
+    while (src[i] != '\0' && i < (size_t)HUSH_EVENT_MAX_CONTENT &&
+           o + 1 < dstsz) {
+        size_t hit = hush_agent_alias_at(src + i, set);
+        size_t next;
+
+        if (hit >= set->naliases) {
+            dst[o++] = src[i++];
+            continue;
+        }
+        next = hush_agent_put_full_npub(dst, o, dstsz, set->aliases[hit].npub);
+        if (next >= dstsz)
+            break;
+        o = next;
+        i += 1 + strlen(set->aliases[hit].name);
+    }
+    dst[o] = '\0';
+}
+
+static void hush_agent_rewrite_at_names(char *text, size_t textsz,
+                                        const hush_launch_t *launch)
+{
+    hush_agent_alias_t aliases[HUSH_ROSTER_AGENTS_MAX + 1];
+    hush_agent_alias_set_t set;
+    char scratch[HUSH_EVENT_MAX_CONTENT + 1];
+
+    assert(text != NULL);
+    if (launch == NULL)
+        return;
+    set.aliases = aliases;
+    set.naliases = hush_agent_list_aliases(launch, aliases,
+                                           HUSH_ROSTER_AGENTS_MAX + 1);
+    hush_agent_sort_aliases(aliases, set.naliases);
+    hush_agent_emit_at_names(scratch, sizeof(scratch), text, &set);
+    hush_agent_copy(text, textsz, scratch);
+}
+
+static void hush_agent_rewrite_mentions(hush_agent_job_t *job)
+{
+    assert(job != NULL);
+    if (job->kind == HUSH_AGENT_KIND_FIXUP ||
+        job->kind == HUSH_AGENT_KIND_ELECT)
+        return;
+    hush_agent_rewrite_at_npub(job->out, sizeof(job->out));
+    if (job->launch == NULL)
+        return;
+    hush_agent_expand_npubs(job->out, sizeof(job->out), job->launch);
+    hush_agent_rewrite_at_names(job->out, sizeof(job->out), job->launch);
+}
+
+static void hush_agent_append_peers(hush_agent_job_t *job)
+{
+    size_t off;
+    size_t glen;
+    int c;
+
+    assert(job != NULL);
+    if (job->n_co_robots <= 0)
+        return;
+    off = strlen(job->prompt);
+    glen = strlen(HUSH_AGENT_PEER_LINE);
+    if (off + glen >= sizeof(job->prompt))
+        return;
+    memcpy(job->prompt + off, HUSH_AGENT_PEER_LINE, glen);
+    off += glen;
+    for (c = 0; c < job->n_co_robots; c++) {
+        const char *nm = job->co_names[c][0] ? job->co_names[c] : "robot";
+        int nwritten;
+
+        nwritten = snprintf(job->prompt + off, sizeof(job->prompt) - off,
+                            "%s@%s", c > 0 ? " " : "", nm);
+        if (nwritten < 0 || (size_t)nwritten >= sizeof(job->prompt) - off)
+            break;
+        off += (size_t)nwritten;
+    }
+    if (off < sizeof(job->prompt))
+        job->prompt[off] = '\0';
+}
+
+static void hush_agent_append_last(hush_agent_job_t *job)
+{
+    char hold[HUSH_ROSTER_PROMPT_MAX];
+    size_t n;
+    size_t plen;
+    size_t roff;
+
+    assert(job != NULL);
+    if (!job->last)
+        return;
+    n = strlen(HUSH_AGENT_LAST_RULE);
+    if (n + 1 >= sizeof(job->prompt))
+        return;
+    plen = strlen(job->prompt);
+    if (n + plen + 1 > sizeof(job->prompt))
+        plen = sizeof(job->prompt) - n - 1;
+    memcpy(hold, job->prompt, plen);
+    hold[plen] = '\0';
+    memcpy(job->prompt, HUSH_AGENT_LAST_RULE, n);
+    memcpy(job->prompt + n, hold, plen + 1);
+    roff = strlen(job->rules);
+    if (roff + n < sizeof(job->rules))
+        memcpy(job->rules + roff, HUSH_AGENT_LAST_RULE, n + 1);
+}
+
+static int hush_agent_follow_last_wave(const hush_agent_follow_t *slot)
+{
+    size_t i;
+    int group;
+
+    assert(slot != NULL);
+    if (slot->at >= slot->nnext)
+        return 1;
+    group = slot->group[slot->at];
+    for (i = slot->at; i < slot->nnext && i < (size_t)HUSH_AGENT_FOLLOW_ROBOTS;
+         i++) {
+        if (slot->group[i] != group)
+            return 0;
+    }
+    return 1;
+}
+
 static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job,
                                   int ok)
 {
     assert(job != NULL);
     hush_agent_trim(job->out);
-    {
-        char *p = job->out;
-        char temp[sizeof(job->out)];
-        while ((p = strstr(p, "@npub1")) != NULL) {
-            size_t pre_len = (size_t)(p - job->out);
-            temp[0] = '\0';
-            strncat(temp, job->out, pre_len);
-            strcat(temp, "nostr:");
-            strcat(temp, p + 1);
-            hush_agent_copy(job->out, sizeof(job->out), temp);
-            p = job->out + pre_len + 6;
-        }
-    }
+    hush_agent_rewrite_mentions(job);
     if (job->kind == HUSH_AGENT_KIND_FIXUP) {
         job->ok = ok && job->out[0] != '\0';
         job->busy = 0;
@@ -2136,6 +2582,7 @@ static void hush_agent_handle_mention(hush_store_t *store,
         in.ask = ask != NULL ? ask : ev->content;
         in.scoped = scoped;
         in.mode = (int)mode;
+        in.last = (nhex <= 1);
         hush_agent_begin_work(&in);
     }
 }
@@ -2884,7 +3331,7 @@ static void hush_agent_begin_elect(
         off += (size_t)m;
     }
     if (slot->ask[0] != '\0' && off + 10 < sizeof(prompt)) {
-        char snip[HUSH_AGENT_SNIP_MAX + 1];
+        char snip[HUSH_AGENT_SNIP_MAX + HUSH_IDENTITY_NPUB_MAX + 1];
         hush_agent_snip_line(snip, sizeof(snip), slot->ask);
         (void)snprintf(prompt + off, sizeof(prompt) - off, " Task: %s", snip);
     }
@@ -2985,28 +3432,33 @@ static void hush_agent_follow_kick(hush_store_t *store,
     /* Dispatch the next wave: every task sharing this group number. Tasks in
      * a wave run in parallel; waves run in order. */
     cur_group = slot->group[slot->at];
-    while (slot->at < slot->nnext && slot->group[slot->at] == cur_group) {
-        size_t at = slot->at;
-        hex = slot->next[at];
-        slot->at++;
-        if (!hush_agent_lookup_robot(&bot, launch, hex))
-            continue;
-        if (!hush_agent_is_work_ok(launch, &bot))
-            continue;
-        hush_agent_emit(HUSH_CEVENT_FOLLOW, slot->channel, root, bot.hex,
-                        "follow");
-        memset(&in, 0, sizeof(in));
-        in.store = store;
-        in.launch = launch;
-        in.bot = &bot;
-        in.parent = ev;
-        in.ask = (slot->scoped && slot->next_ask[at][0] != '\0')
-            ? slot->next_ask[at]
-            : (slot->ask[0] ? slot->ask : ev->content);
-        in.scoped = slot->scoped;
-        in.mode = slot->mode;
-        hush_agent_begin_work(&in);
-        slot->inflight++;
+    {
+        int last_wave = hush_agent_follow_last_wave(slot);
+
+        while (slot->at < slot->nnext && slot->group[slot->at] == cur_group) {
+            size_t at = slot->at;
+            hex = slot->next[at];
+            slot->at++;
+            if (!hush_agent_lookup_robot(&bot, launch, hex))
+                continue;
+            if (!hush_agent_is_work_ok(launch, &bot))
+                continue;
+            hush_agent_emit(HUSH_CEVENT_FOLLOW, slot->channel, root, bot.hex,
+                            "follow");
+            memset(&in, 0, sizeof(in));
+            in.store = store;
+            in.launch = launch;
+            in.bot = &bot;
+            in.parent = ev;
+            in.ask = (slot->scoped && slot->next_ask[at][0] != '\0')
+                ? slot->next_ask[at]
+                : (slot->ask[0] ? slot->ask : ev->content);
+            in.scoped = slot->scoped;
+            in.mode = slot->mode;
+            in.last = last_wave;
+            hush_agent_begin_work(&in);
+            slot->inflight++;
+        }
     }
 }
 
@@ -3028,7 +3480,7 @@ static void hush_agent_emit(const char *type, const char *channel,
 static void hush_agent_append_assign(char *prompt, size_t promptsz,
                                      const char *ask)
 {
-    char snip[HUSH_AGENT_SNIP_MAX + 1];
+    char snip[HUSH_AGENT_SNIP_MAX + HUSH_IDENTITY_NPUB_MAX + 1];
     size_t used;
     int n;
 
