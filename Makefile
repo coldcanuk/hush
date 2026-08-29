@@ -24,6 +24,7 @@ test:
 	$(MAKE) -C hush-c test CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)"
 
 clean:
+	@sh scripts/kill-relay.sh
 	$(MAKE) -C hush-c clean
 	rm -f *.tar.gz
 
