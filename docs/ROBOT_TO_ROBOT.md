@@ -3,19 +3,19 @@
 Jobs receive this as `HUSH_AGENT_PEER_STANDARD` in prompt and rules
 (`hush-c/src/hush_agent.c`).
 
-1. **Order.** `nostr:<npub>` tokens stay in the same sentence positions
-   the author typed (human or robot). Do not gather mentions to the front.
+1. **Order.** `@Name` stays in the same sentence positions the author
+   typed. Do not gather mentions to the front. Never write npub keys or
+   `nostr:` tokens; the relay rewrites `@Name` to NIP-27 on the wire.
 2. **One intro.** The first time a robot joins a thread it may send one
    short on-deck line. After that, ack with the hive emoji gradient and
    do the work.
 3. **No bare mentions.** Never end a note with a bare mention. When you
-   call a peer, write their name plus a phrase of intent (e.g. "your
-   turn, Major"). The relay queues the next robot automatically, so a
-   handoff needs no trailing mention token.
+   call a peer, write `@Name` plus a phrase of intent (e.g. "your turn,
+   @Major"). The last robot on a note does only its assignment and
+   stops — no handoff. The relay queues the next robot automatically.
 4. **Co-mention.** When several robots share a bubble, each sees the
-   others' names and npubs and may choose own reply, one cooperative
-   reply, a split, or a short conversation — without reordering the
-   original mentions.
+   others as `@Name` and does only its own part. Do not keep a
+   conversation rolling after your assignment is done.
 
 ## Coordination modes (how the relay dispatches a human note)
 

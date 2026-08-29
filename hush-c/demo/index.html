@@ -5016,13 +5016,22 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       return pk.slice(0, 8);
     }
 
+    function mentionHit(npub) {
+      if (!npub) return null;
+      return mentionRoster().find((h) =>
+        h && (sameKey(h.npub, npub) || sameKey(h.pubkey, npub))
+      ) || null;
+    }
+
     function prettyMentions(text) {
       /* Legacy string form. paintNote must not use this: it strips nostr:
        * tokens so renderPreservingMentions cannot place in-sentence pills. */
-      return String(text).replace(/nostr:(npub1[0-9a-z]+)/gi, (_, npub) => {
-        const hit = mentionRoster().find((h) => h.npub === npub);
-        return hit ? ("@" + hit.name) : ("@" + npub.slice(0, 12));
-      });
+      return String(text).replace(/nostr:(npub1[0-9a-z]+)|@(npub1[0-9a-z]+)/gi,
+        (_, a, b) => {
+          const npub = a || b;
+          const hit = mentionHit(npub);
+          return hit ? ("@" + hit.name) : ("@" + npub.slice(0, 12));
+        });
     }
 
     /* In-place mention assembly: keep each @Name where it was typed.
@@ -5053,15 +5062,15 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
      */
     function renderPreservingMentions(text, container) {
       if (!container) return;
-      const re = /nostr:(npub1[0-9a-z]+)/gi;
+      const re = /nostr:(npub1[0-9a-z]+)|@(npub1[0-9a-z]+)/gi;
       let last = 0;
       let m;
       while ((m = re.exec(text || "")) !== null) {
         if (m.index > last) {
           container.appendChild(document.createTextNode(text.slice(last, m.index)));
         }
-        const npub = m[1];
-        const hit = mentionRoster().find((h) => h.npub === npub);
+        const npub = m[1] || m[2];
+        const hit = mentionHit(npub);
         const span = document.createElement("span");
         span.className = "mention-pill";
         span.textContent = "@" + (hit ? hit.name : npub.slice(0, 12));

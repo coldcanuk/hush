@@ -47,6 +47,7 @@ printf '%s\n' '#!/bin/sh' \
     'done' \
     'printf "%s\n" "Why did the robot laugh? Byte me."' \
     'printf "go:\tfmt\n"' \
+    'printf "%s\n" "@Major your turn, Do."' \
     > "$home/bin/grok"
 chmod 0755 "$home/bin/grok"
 PATH="$home/bin:$PATH"
@@ -133,6 +134,19 @@ while [ "$i" -lt 40 ]; do
 done
 printf '%s' "$got" | grep -q '"reply_to":"' || fail "no threaded reply"
 printf '%s' "$got" | grep -q 'Byte me' || fail "grok reply missing"
+printf '%s' "$got" | python3 -c '
+import json, sys
+data = json.loads(sys.stdin.read())
+for e in (data.get("events") or []):
+    c = e.get("content") or ""
+    if "Byte me" in c and "@Major" in c:
+        print("AT_NAME_NOT_REWRITTEN")
+        sys.exit(1)
+    if "Byte me" in c and "@npub1" in c:
+        print("BARE_NPUB_LEFT")
+        sys.exit(1)
+sys.exit(0)
+' || fail "robot note must rewrite @Major and must not leave @npub1"
 grep -q 'CTXMARKER7x9' "$home/.config/hush/grok-p.log" \
     || fail "context body must reach the grok -p note"
 
@@ -358,6 +372,38 @@ grep -q 'S:.*YOUR assignment: tell a joke\.' "$HUSH_CONFIG_DIR/grok-p.log" \
     || fail "Happy must receive only its own clause"
 grep -q 'S:.*YOUR assignment: was it funny' "$HUSH_CONFIG_DIR/grok-p.log" \
     || fail "Payne must receive only its own clause"
+grep -F "$npub" "$HUSH_CONFIG_DIR/grok-p.log" >/dev/null \
+    || fail "thread snip must keep Happy npub intact"
+grep -F "$payne_npub" "$HUSH_CONFIG_DIR/grok-p.log" >/dev/null \
+    || fail "thread snip must keep Payne npub intact"
+python3 -c '
+import sys
+happy, payne = sys.argv[1], sys.argv[2]
+found_both = 0
+happy_last = 0
+payne_last = 0
+for line in open(sys.argv[3]):
+    if happy in line and payne in line:
+        found_both = 1
+    if not line.startswith("S:"):
+        continue
+    if "YOUR assignment: tell a joke" in line:
+        if "You are last" in line:
+            happy_last = 1
+    if "YOUR assignment: was it funny" in line:
+        if "You are last" in line:
+            payne_last = 1
+if not found_both:
+    print("P_LINE_MISSING_BOTH_NPUBS")
+    sys.exit(1)
+if happy_last:
+    print("FIRST_ROBOT_GOT_LAST_RULE")
+    sys.exit(1)
+if not payne_last:
+    print("LAST_ROBOT_MISSING_STOP_RULE")
+    sys.exit(1)
+' "$npub" "$payne_npub" "$HUSH_CONFIG_DIR/grok-p.log" \
+    || fail "snip must keep both npubs; only the last robot stops"
 grep '^S:' "$HUSH_CONFIG_DIR/grok-p.log" | python3 -c '
 import sys
 bad = 0
@@ -383,6 +429,11 @@ if echo "$html" | grep -q 'if (devLogEnabled) return events.slice()'; then
 fi
 echo "$html" | grep -q '(now - created \* 1000) > 2000' || fail "served UI must skip ack gradient after 2s"
 grep -q 'HUSH_AGENT_PEER_STANDARD' src/hush_agent.c || fail "missing inter-robot standard constant"
+grep -q 'HUSH_AGENT_LAST_RULE' src/hush_agent.c || fail "missing last-robot stop rule"
+grep -q 'hush_agent_rewrite_mentions' src/hush_agent.c || fail "missing mention rewrite"
+echo "$html" | grep -q 'function mentionHit' || fail "served UI missing mentionHit"
+echo "$html" | grep -A 20 'function renderPreservingMentions' | grep -q 'mentionHit' \
+    || fail "pills must resolve via mentionHit"
 grep -q 'hush_agent_intro_seen' src/hush_agent.c || fail "missing intro table"
 grep -q 'HUSH_AGENT_STRICT_SCOPE' src/hush_agent.c || fail "missing strict per-robot scope"
 grep -q 'HUSH_AGENT_COOPERATE' src/hush_agent.c || fail "missing two-robot cooperation prompt"

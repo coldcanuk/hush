@@ -38,32 +38,29 @@ changes, new persistence, rewriting historical events.
 
 ## Phase 1 — Research gate
 
-- [ ] M1.1 This plan + research file. Commit.
+- [x] M1.1 This plan + research file. Commit.
 
 ## Phase 2 — Snip (H1)
 
-- [ ] M2.1 Atomic npub copy in `hush_agent_snip_line`. Raise
+- [x] M2.1 Atomic npub copy in `hush_agent_snip_line`. Raise
       `HUSH_AGENT_SNIP_MAX` to 384. Line buffers
       `SNIP_MAX + HUSH_IDENTITY_NPUB_MAX`.
-      Commit: `Milestone 2.1: do not snip through npub tokens`
 
 ## Phase 3 — Rewrite + prompt (H2, H4)
 
-- [ ] M3.1 `hush_agent_rewrite_mentions` on finish (bounded).
-- [ ] M3.2 Peer list is `@Name` for every group job. `job.last` +
+- [x] M3.1 `hush_agent_rewrite_mentions` on finish (bounded).
+- [x] M3.2 Peer list is `@Name` for every group job. `job.last` +
       last-robot stop rule. PEER_STANDARD: write `@Name`, never keys.
-      Commit: `Milestone 3.1: rewrite @Name, last robot stops`
 
 ## Phase 4 — UI (H3)
 
-- [ ] M4.1 `mentionHit` + `sameKey` in `renderPreservingMentions`.
-      Embed. Commit: `Milestone 4.1: mention pills resolve by sameKey`
+- [x] M4.1 `mentionHit` + `sameKey` in `renderPreservingMentions`.
+      Embed at build.
 
 ## Phase 5 — Verify
 
-- [ ] M5.1 `check_agent.sh`: both npubs in `P:`; `@Major` rewritten;
-      last-rule on Payne only. `make test`.
-      Commit: `Milestone 5.1: tests for mention resolve and last stop`
+- [x] M5.1 `check_agent.sh`: both npubs in grok log; `@Major` rewritten;
+      last-rule on Payne only. `make test` green.
 
 ## Final
 
