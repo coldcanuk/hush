@@ -6132,6 +6132,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       const rect = pane.getBoundingClientRect();
       threadDrag = { x: ev.clientX, y: ev.clientY, w: rect.width, h: rect.height };
       ev.preventDefault();
+      try { ev.target.setPointerCapture(ev.pointerId); } catch(e) {}
     });
     $("thread-msg").addEventListener("input", scanThreadMention);
     $("thread-msg").addEventListener("keydown", (ev) => {
@@ -6185,6 +6186,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       if (threadDrag) {
         threadDrag = null;
         saveThreadSize();
+        try { $("thread-resize").releasePointerCapture(ev.pointerId); } catch(e) {}
       }
     });
     window.addEventListener("pointercancel", () => {
