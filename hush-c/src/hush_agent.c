@@ -2770,10 +2770,8 @@ static void hush_agent_emit(const char *type, const char *channel, const char *i
 
 static hush_agent_owner_t *hush_agent_owner_find(const char *channel)
 {
-    size_t i;
-
     assert(channel != NULL);
-    for (i = 0; i < (size_t)HUSH_AGENT_OWNER_MAX; i++) {
+    for (size_t i = 0; i < (size_t)HUSH_AGENT_OWNER_MAX; i++) {
         if (g_owners[i].channel[0] != '\0' && strcmp(g_owners[i].channel, channel) == 0)
             return &g_owners[i];
     }
@@ -2782,10 +2780,8 @@ static hush_agent_owner_t *hush_agent_owner_find(const char *channel)
 
 static hush_agent_owner_t *hush_agent_owner_alloc(const char *channel)
 {
-    size_t i;
-
     assert(channel != NULL);
-    for (i = 0; i < (size_t)HUSH_AGENT_OWNER_MAX; i++) {
+    for (size_t i = 0; i < (size_t)HUSH_AGENT_OWNER_MAX; i++) {
         if (g_owners[i].channel[0] == '\0') {
             hush_agent_copy(g_owners[i].channel, sizeof(g_owners[i].channel), channel);
             return &g_owners[i];
