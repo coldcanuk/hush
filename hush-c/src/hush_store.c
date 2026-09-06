@@ -195,6 +195,20 @@ hush_status_t hush_store_get(const hush_store_t *store, size_t idx,
     return HUSH_OK;
 }
 
+hush_status_t hush_store_find(const hush_store_t *store, hush_event_t *out, const char *id)
+{
+    if (store == NULL || out == NULL || id == NULL)
+        return HUSH_ERR_ARG;
+    for (size_t i = 0; i < store->count && i < (size_t)HUSH_STORE_CAPACITY; ++i) {
+        const hush_event_t *event = hush_store_at(store, i);
+        if (strcmp(event->id, id) != 0)
+            continue;
+        *out = *event;
+        return HUSH_OK;
+    }
+    return HUSH_ERR_NOT_FOUND;
+}
+
 static hush_status_t hush_store_alloc(hush_store_t **out_store)
 {
     hush_store_t *s;

@@ -8,7 +8,7 @@ CFLAGS := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2
 LDFLAGS := -lcrypto
 # Parent ./configure writes HUSH_HAVE_X11 and -lX11 when Xlib is present.
 -include ../config.mk
-LDFLAGS += -Wl,-z,noexecstack
+override LDFLAGS += -Wl,-z,noexecstack
 
 # These can be overridden by top-level or configure
 PREFIX ?= $(HOME)/.local
@@ -72,6 +72,7 @@ test: $(TEST_BINS) hush-relay
 	@sh tests/check_codex.sh
 	@sh tests/check_ollama.sh
 	@sh tests/check_failover.sh
+	@python3 tests/check_collaboration.py
 	@sh tests/check_fixup.sh
 	@sh tests/check_complete.sh
 	@sh tests/check_turn.sh

@@ -45,12 +45,14 @@ enum {
     "user: ~/.hush/skills/user/<slug>/SKILL.md\n" \
     "robot: ~/.hush/skills/robots/<robot-slug>/<slug>/SKILL.md\n\n" \
     "## Equip and prune\n\n" \
-    "Open a robot's Edit inventory (i). Cycle gems like Diablo II amulets, " \
-    "then drop one onto an empty loadout socket. Lift a worn gem to prune.\n\n" \
+    "Open a robot's Edit screen. Choose an available skill to assign it, " \
+    "or choose an assigned skill to remove it. Save the robot to apply changes.\n\n" \
     "## Forge (this skill)\n\n" \
     "POST /api/skill {name, summary, body, scope, robot?}. scope=user writes " \
     "a System skill. scope=robot writes This robot. Do not forge into the " \
     "shipped system pack from the UI. Do not write secrets into a skill.\n"
+
+#define HUSH_SKILL_SLUG_CHARS "abcdefghijklmnopqrstuvwxyz0123456789-_"
 
 static const char *const hush_skill_voices[HUSH_SKILL_VOICE_COUNT] = {
     "alloy",
@@ -61,6 +63,13 @@ static const char *const hush_skill_voices[HUSH_SKILL_VOICE_COUNT] = {
     "shimmer"
 };
 
+/* Resolves required validated skill identity to caller-owned path. */
+static hush_status_t hush_skill_instruction_path(char *out, size_t outsz, const char *id);
+/* True when a required component is a bounded file-safe skill slug. */
+static int hush_skill_is_path_slug(const char *slug);
+
+/* Reads one required skill file completely, rejecting embedded NUL/truncation. */
+static hush_status_t hush_skill_read_instructions_file(char *out, size_t outsz, const char *path);
 /* True when scope is system, user, or robot. */
 static int hush_skill_is_scope(const char *scope);
 
@@ -138,6 +147,16 @@ static void hush_skill_seed_if_present(const char *pack_dir);
 
 /* Seeds from paths beside /proc/self/exe (install prefix or repo build). */
 static void hush_skill_seed_from_exe(void);
+
+hush_status_t hush_skill_read_instructions(char *out, size_t outsz, const char *skill_id)
+{
+    if (out == NULL || outsz == 0 || skill_id == NULL)
+        return HUSH_ERR_ARG;
+    char path[HUSH_HOME_PATH_MAX] = {0};
+    HUSH_TRY(hush_skill_instruction_path(path, sizeof(path), skill_id));
+    return hush_skill_read_instructions_file(out, outsz, path);
+}
+
 
 void hush_skill_init_catalog(hush_skill_catalog_t *cat)
 {
@@ -883,5 +902,64 @@ static hush_status_t hush_skill_copy_file(const char *src, const char *dst)
     }
     fclose(in);
     fclose(out);
+    return HUSH_OK;
+}
+
+static int hush_skill_is_path_slug(const char *slug)
+{
+    assert(slug != NULL);
+    return slug[0] != '\0' && strspn(slug, HUSH_SKILL_SLUG_CHARS) == strlen(slug);
+}
+
+static hush_status_t hush_skill_instruction_path(char *out, size_t outsz, const char *id)
+{
+    assert(out != NULL && outsz > 0);
+    assert(id != NULL);
+    if (strlen(id) >= (size_t)HUSH_SKILL_ID_MAX)
+        return HUSH_ERR_PARSE;
+    char parts[HUSH_SKILL_ID_MAX] = {0};
+    memcpy(parts, id, strlen(id) + 1);
+    char *slug = strchr(parts, ':');
+    if (slug == NULL)
+        return HUSH_ERR_PARSE;
+    *slug++ = '\0';
+    char *robot = NULL;
+    if (strcmp(parts, HUSH_SKILL_SCOPE_ROBOT) == 0) {
+        robot = slug;
+        slug = strchr(robot, ':');
+        if (slug == NULL)
+            return HUSH_ERR_PARSE;
+        *slug++ = '\0';
+        if (!hush_skill_is_path_slug(robot))
+            return HUSH_ERR_PARSE;
+    }
+    if (!hush_skill_is_path_slug(slug))
+        return HUSH_ERR_PARSE;
+    char directory[HUSH_HOME_PATH_MAX] = {0};
+    HUSH_TRY(hush_home_skills_dir(directory, sizeof(directory), parts, robot));
+    int written = snprintf(out, outsz, "%s/%s/%s", directory, slug, HUSH_SKILL_FILE_NAME);
+    if (written < 0 || (size_t)written >= outsz)
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_skill_read_instructions_file(char *out, size_t outsz, const char *path)
+{
+    assert(out != NULL && outsz > 0);
+    assert(path != NULL);
+    FILE *file = fopen(path, "rb");
+    if (file == NULL)
+        return errno == ENOENT ? HUSH_ERR_NOT_FOUND : HUSH_ERR_IO;
+    size_t count = fread(out, 1, outsz - 1, file);
+    out[count] = '\0';
+    int extra = fgetc(file);
+    int failed = ferror(file);
+    int closed = fclose(file);
+    if (failed || closed != 0)
+        return HUSH_ERR_IO;
+    if (extra != EOF)
+        return HUSH_ERR_FULL;
+    if (memchr(out, '\0', count) != NULL)
+        return HUSH_ERR_PARSE;
     return HUSH_OK;
 }

@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "hush_identity.h"
+#include "hush_json.h"
 #include "hush_pass.h"
 #include "hush_roster.h"
 #include "hush_status.h"
@@ -21,7 +22,10 @@ enum {
     HUSH_LAUNCH_CHAN_HUMANS_MAX = 8,
     HUSH_LAUNCH_CHAN_ROBOTS_MAX = 8,
     HUSH_LAUNCH_ID_HEX = 32,
-    HUSH_LAUNCH_JSON_MAX = 32768,
+    HUSH_LAUNCH_PROMPT_CHARS = 500,
+    HUSH_LAUNCH_PROMPT_BYTES = HUSH_LAUNCH_PROMPT_CHARS * HUSH_JSON_UTF8_MAX + 1,
+    HUSH_LAUNCH_PROMPT_ESC_MAX = HUSH_LAUNCH_PROMPT_CHARS * HUSH_JSON_U_LEN + 1,
+    HUSH_LAUNCH_JSON_MAX = 32768 + HUSH_LAUNCH_CHANNELS_MAX * HUSH_LAUNCH_PROMPT_ESC_MAX,
     HUSH_LAUNCH_POLICY_MAX = 16,
     HUSH_LAUNCH_BURST_MS_FAST = 500,
     HUSH_LAUNCH_BURST_MS_DEFAULT = 2000,
@@ -48,6 +52,10 @@ enum {
 #define HUSH_LAUNCH_REPLY_CONFIRM "confirm"
 
 #define HUSH_LAUNCH_PASS_FAIL "pass helper failed"
+#define HUSH_LAUNCH_ROOM_PROMPT \
+    "Help the people in this room make progress on their goals. Stay on topic, " \
+    "coordinate with the other agents, respect each assignment, and ask the human " \
+    "when direction is unclear. Be concise, practical, and candid about results."
 
 #define HUSH_LAUNCH_PAYNE_NAME "Major"
 #define HUSH_LAUNCH_PAYNE_SLUG "sgt-major-payne"
@@ -75,6 +83,8 @@ typedef struct {
     /* Optional topic/about for this channel. When set, injected into robot
      * system prompts for jobs on this channel (quick LLM context pointer). */
     char about[HUSH_LAUNCH_ABOUT_MAX];
+    /* NUL-terminated UTF-8; at most HUSH_LAUNCH_PROMPT_CHARS scalar values. */
+    char system_prompt[HUSH_LAUNCH_PROMPT_BYTES];
 } hush_launch_channel_t;
 
 typedef struct {
@@ -223,6 +233,19 @@ hush_status_t hush_launch_set_vibe_visibility(hush_launch_t *launch,
 /* Adds an open channel. Fails HUSH_ERR_FULL at cap. */
 hush_status_t hush_launch_add_channel(hush_launch_t *launch,
                                       const char *name);
+
+/* Creates a channel with required guidance; blank guidance uses the room default.
+ * Borrowed required pointers. ARG/PARSE/FULL/IO leave invalid guidance unapplied. */
+hush_status_t hush_launch_add_channel_prompt(hush_launch_t *launch, const char *name,
+                                             const char *prompt);
+
+/* Validates required UTF-8 room guidance without mutating state. */
+hush_status_t hush_launch_validate_channel_prompt(const char *prompt);
+
+/* Saves required room guidance on an existing channel. Blank restores the default.
+ * Required borrowed pointers; returns ARG/PARSE/FULL/NOT_FOUND/IO on failure. */
+hush_status_t hush_launch_set_channel_prompt(hush_launch_t *launch, const char *slug,
+                                             const char *prompt);
 
 /* Drops a channel by slug. Refuses the last remaining channel. */
 hush_status_t hush_launch_remove_channel(hush_launch_t *launch,

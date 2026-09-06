@@ -19,7 +19,7 @@
       --accent-ink: oklch(15.3% 0.006 107.1); --accent-dim: oklch(46.6% 0.025 107.3); --warn: #f87171;
       --sans: "Inter", system-ui, sans-serif;
       --mono: ui-monospace, "Cascadia Mono", monospace;
-      --display: "Instrument Serif", serif;
+      --display: var(--sans);
     }
     html[data-theme="light"] {
       --bg: oklch(98.8% 0.003 106.5); --surface: #ffffff; --surface-2: oklch(96.6% 0.005 106.5); --line: oklch(93% 0.007 106.5);
@@ -54,6 +54,7 @@
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: var(--sans); }
     body { display: flex; flex-direction: column; min-height: 100%; }
+    button, input, textarea, select { font-family: inherit; }
     button, [role="button"] { cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: 0.5; }
     a { color: var(--accent); }
@@ -89,15 +90,13 @@
     .chan.on { background: var(--surface-2); color: var(--accent); }
     .chan-row { display: flex; align-items: center; gap: 4px; }
     .chan-row .chan { flex: 1; min-width: 0; }
-    .chan-del, .chan-voice, .robot-call {
+    .chan-options, .chan-voice, .robot-call {
       flex: 0 0 auto; width: 24px; height: 24px; border-radius: 12px;
       border: 1px solid var(--line); background: transparent; color: var(--muted);
       font-size: 0.85rem; font-weight: 700; line-height: 1; padding: 0;
     }
-    .chan-del {
-      border-color: var(--warn); color: var(--warn);
-    }
-    .chan-del:hover { background: var(--warn); color: #fff; }
+    .chan-options { width: 44px; height: 44px; border: 0; }
+    .chan-options:hover { background: var(--surface-2); }
     .chan-voice, .robot-call { color: var(--accent); border-color: var(--accent-dim); }
     .chan-voice:hover, .robot-call:hover { background: var(--accent-dim); }
     .group-lbl { font-size: 0.72rem; color: var(--muted); padding: 8px 8px 2px; font-weight: 650; }
@@ -605,36 +604,32 @@
       .lbl { display: none; }
     }
   
-/* Compact robots inventory: 4x3, must not exceed nav (~220px). */
-#robot-inventory {
-  display: block; position: relative; margin: 0 auto;
-  max-width: 100%;
-  background: #0f1419; padding: 4px; border: 2px solid #3a4a55; border-radius: 4px;
-}
+/* Named robot directory fits the navigation column. */
+#robot-inventory { margin: 0; padding: 0; max-width: 100%; }
 #robot-inventory-full {
   display: block; position: relative; margin: 0 auto;
-  background: #0f1419; padding: 4px; border: 2px solid #3a4a55; border-radius: 4px;
+  background: var(--surface); padding: 4px; border: 1px solid var(--line); border-radius: 8px;
 }
-.inv-cell { border: 1px solid #2a3a45; background: #11171d; box-sizing: border-box; }
+.inv-cell { border: 1px solid var(--line); background: var(--surface-2); box-sizing: border-box; }
 .inv-item {
-  position: absolute; border: 2px solid #0ff; background: rgba(0,255,255,0.12);
+  position: absolute; border: 1px solid var(--line); background: var(--surface-2);
   color: #fff; font: 700 8px/1 sans-serif; padding: 2px 4px; cursor: grab;
-  box-shadow: 0 0 4px #0ff; overflow: hidden; white-space: nowrap;
+  overflow: hidden; white-space: nowrap;
   display: flex; align-items: center; justify-content: center; touch-action: none;
 }
 .inv-item.dragging { opacity: 0.5; border-color: #fff; box-shadow: 0 0 8px #fff; z-index: 20; }
-.inv-item .nm { font-size: 7px; color: #0ff; text-shadow: 0 0 2px #000; }
+.inv-item .nm { font-size: 0.75rem; color: var(--fg); }
 .inv-header { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .inv-header .inv-title-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.inv-header .inv-title { font-size: 0.62rem; letter-spacing: 0.06em; color: #8a9; text-transform: uppercase; }
-.inv-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; width: 100%; }
+.inv-header .inv-title { font-size: 0.7rem; letter-spacing: 0.04em; color: var(--muted); text-transform: uppercase; }
+.inv-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
 .inv-btn {
-  min-height: 32px; width: 100%; box-sizing: border-box;
+  min-height: 44px; width: 100%; box-sizing: border-box;
   font: 650 0.72rem/1 var(--sans); padding: 6px 0; margin: 0;
-  border: 1px solid #3a4a55; background: #11171d; color: #9cf;
-  border-radius: 3px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--fg);
+  border-radius: 8px; cursor: pointer;
 }
-.inv-btn:hover { border-color: #0ff; color: #fff; }
+.inv-btn:hover { border-color: var(--accent); }
 .inv-expand-link {
   font-size: 0.62rem; background: none; border: 0; color: var(--accent);
   cursor: pointer; padding: 0;
@@ -659,77 +654,48 @@
 .inv-item.has-pic { background-size: cover; background-position: center; }
 .inv-item.disabled { filter: grayscale(1); opacity: 0.55; }
 .inv-item.has-pic .nm { display: none; }
-.skill-board { display: grid; grid-template-columns: 1fr; gap: 8px; margin: 8px 0; }
+/* Skills use immediate, keyboard-accessible assignment controls. */
+.skill-board { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 12px 0; }
 .skill-pool, .skill-loadout {
-  min-height: 72px; border: 1px solid var(--line); border-radius: 12px;
-  padding: 6px; display: flex; flex-wrap: wrap; gap: 6px; background: #11171d;
+  min-height: 96px; border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px; display: flex; flex-direction: column; gap: 8px;
+  background: var(--surface-2); color: var(--muted); font-size: 0.85rem;
 }
-.skill-scope-lbl {
-  font-size: 0.58rem; letter-spacing: 0.06em; color: #8a9; width: 100%;
-  text-transform: uppercase;
-}
-.skill-chip, .skill-gem {
-  font: 650 0.62rem/1.1 var(--sans); padding: 4px; cursor: grab;
-  border: 2px solid #3a4a55; background: #0f1419; color: #9cf; border-radius: 4px;
-  user-select: none; touch-action: none;
-}
-.skill-chip[data-scope="system"], .skill-gem[data-scope="system"],
-.skill-chip[data-scope="user"], .skill-gem[data-scope="user"] {
-  border-color: #d4a017; color: #fc6; box-shadow: 0 0 6px #d4a01755;
-}
-.skill-chip[data-scope="robot"], .skill-gem[data-scope="robot"] {
-  border-color: #c6f; color: #e8f; box-shadow: 0 0 6px #c6f4;
-}
-.skill-chip:hover, .skill-gem:hover, .skill-gem:focus { box-shadow: 0 0 10px currentColor; }
-.skill-belt-wrap { margin: 8px 0 4px; }
-.skill-belt { align-items: center; justify-content: center; gap: 4px; }
-.skill-belt .icon-minus, .skill-belt .icon-plus {
-  width: 32px; height: 32px; font-size: 0.85rem;
-}
-.skill-cycle-stage {
-  flex: 1; min-height: 48px; min-width: 48px; display: flex;
-  align-items: center; justify-content: center; gap: 4px;
-  border: 1px solid #3a4a55; border-radius: 12px; background: #11171d; padding: 4px;
-}
+.skill-scope-lbl { font-size: 0.75rem; color: var(--muted); margin: 4px 0; }
 .skill-gem {
-  width: 48px; height: 48px; flex: 0 0 auto;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  text-align: center;
+  font: 500 0.85rem/1.4 var(--sans); min-height: 44px; padding: 10px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--fg);
+  border-radius: 8px; display: flex; align-items: center; gap: 10px; text-align: left;
 }
-.skill-gem .sig { font-size: 0.9rem; letter-spacing: 0.04em; }
-.skill-gem .nm {
-  font-size: 0.5rem; max-width: 44px; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap;
+.skill-gem .sig { display: none; }
+.skill-gem .nm { flex: 1; }
+.skill-gem::after { content: "+"; font-size: 1.1rem; color: var(--muted); }
+.skill-gem[aria-pressed="true"] { border-color: var(--accent); }
+.skill-gem[aria-pressed="true"]::after { content: "−"; }
+.skill-gem:hover { background: var(--surface-2); }
+.skill-gem:active { transform: translateY(1px); }
+button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
+.robot-directory { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.directory-row { display: flex; align-items: center; gap: 4px; border-radius: 10px; }
+.directory-row:hover { background: var(--surface-2); }
+.directory-chat, .directory-edit {
+  border: 0; background: transparent; color: var(--fg); min-height: 44px;
+  padding: 8px; border-radius: 8px; font-family: var(--sans);
 }
-.skill-gem.neighbor { width: 32px; height: 32px; opacity: 0.5; }
-.skill-gem.held { opacity: 0.4; }
-.skill-doll {
-  display: grid; grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(3, 48px);
-  gap: 6px; justify-content: center; align-items: center; min-height: 168px;
-  padding: 10px; border: 1px solid #3a4a55; border-radius: 12px; background: #0b1014;
-}
-.skill-slot {
-  width: 48px; height: 48px; border: 2px dashed #3a4a55; border-radius: 4px;
-  background: #11171d; display: flex; align-items: center; justify-content: center;
-  cursor: pointer;
-}
-.skill-slot.open { box-shadow: inset 0 0 8px #d4a01766; }
-.skill-slot.filled { border-style: solid; }
-.skill-slot.drop-ok, .skill-doll-pic.drop-ok {
-  border-style: solid; border-color: #0ff; box-shadow: 0 0 8px #0ff;
-}
-.skill-slot.drop-no { border-color: #f66; }
-.skill-doll-pic {
-  width: 48px; height: 48px; border: 2px solid #0ff; border-radius: 4px;
-  background: #11171d; background-size: cover; background-position: center;
-}
-.skill-ghost {
-  position: fixed; z-index: 80; pointer-events: none; width: 48px; height: 48px;
-  margin-left: -24px; margin-top: -24px;
-}
-.skill-ghost * { pointer-events: none; }
-.inv-item.selected { outline: 2px solid #fc6; box-shadow: 0 0 8px #d4a017; }
-body.skill-holding, body.skill-holding * { cursor: grabbing; }
+.directory-chat { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; text-align: left; }
+.directory-avatar { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 8px; background-color: var(--surface-2); }
+.directory-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.directory-copy strong { font-size: 0.85rem; font-weight: 600; overflow-wrap: anywhere; }
+.directory-copy small { font-size: 0.72rem; color: var(--muted); }
+.directory-edit { width: 44px; }
+.send-error:empty { display: none; }
+.send-error { padding: 0 16px; margin: 6px 0; }
+.provider-config { margin-left: auto; min-height: 32px; padding: 6px 8px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--fg);
+  border-radius: 6px; font: 500 0.75rem var(--sans); }
+#agent-providers label { margin: 0; min-height: 44px; }
+#agent-providers { gap: 8px; }
+@media (max-width: 640px) { .skill-board { grid-template-columns: 1fr; } }
 
 /* M4.1 progressive mention states (thinking -> reacting -> emoji) */
 
@@ -788,7 +754,8 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
 #tool-rail .rail-rule { margin: 2px 0; }
 #tool-rail #rail-toggle { width: 100%; }
 #tool-rail.collapsed { width: 44px; }
-#tool-rail.collapsed #rail-grip { min-width: 0; }
+#tool-rail.collapsed #rail-grip { display: none; }
+#tool-rail.collapsed #rail-toggle { flex: 1; min-width: 32px; }
 
 /* Enlarged skill sheet (spacious cards, robot/chaperon flip). */
 .skill-sheet-list {
@@ -810,10 +777,25 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
   #agent-identity .field-wide, #forge-drawer .forge-grid .field-wide { grid-column: auto; }
 }
 
+.directory-avatar { display: grid; place-items: center; font-weight: 650; }
+#nav-toggle { display: none; min-width: 44px; min-height: 44px; }
+@media (max-width: 640px) {
+  #nav-toggle { display: block; }
+  header { gap: 10px; }
+  header #badge { max-width: 95px; overflow: hidden; margin-right: 48px; }
+  .hive > nav { display: none; position: fixed; top: 66px; bottom: 0; left: 0;
+    width: min(300px, 90vw); overflow-y: auto; flex-direction: column; flex-wrap: nowrap;
+    background: var(--surface); z-index: 30; box-shadow: 8px 0 24px #0003; }
+  .hive.nav-open > nav { display: flex; }
+  .hive { grid-template-rows: minmax(0, 1fr); }
+  #agent-providers { grid-template-columns: 1fr; }
+  .skill-board .lbl { display: block; }
+}
 </style>
 </head>
 <body>
   <header>
+    <button class="btn ghost" id="nav-toggle" type="button" aria-expanded="false" aria-label="Toggle navigation">☰</button>
     <div class="brand">
       <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
         <rect width="64" height="64" rx="14" fill="#064e3b"/>
@@ -870,7 +852,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
           <button class="rail-i" id="chan-info" type="button" aria-expanded="false" aria-controls="chan-help" title="Channel help">i</button>
           <div class="rail-pop" id="chan-help">
             <p>A channel is a named room in this hive. Notes you post there stay on that channel.</p>
-            <input id="new-chan" maxlength="48" placeholder="new channel">
           </div>
         </div>
         <div class="rail-info-row">
@@ -911,7 +892,8 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
   <div id="hive-banner" role="status">Window stays open here. Close this window. The hive is still standing.</div>
   <section class="gate" id="gate" aria-live="polite"></section>
   <div class="shell hive" id="hive">
-    <nav>
+    <nav aria-label="Workspace navigation">
+      <button class="inv-btn" id="nav-new-channel" type="button">New channel</button>
       <div id="chan-list">
         <div class="lbl">Channels</div>
       </div>
@@ -919,13 +901,12 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       <div class="robots" id="robot-list" aria-label="Robots" style="display:none"></div>
       <div class="inv-header">
         <div class="inv-title-row">
-          <span class="inv-title">Robots Inventory</span>
-          <button class="inv-expand-link" id="inv-expand" type="button">Expand</button>
+          <span class="inv-title">Your robots</span>
+          <button class="inv-expand-link" id="inv-expand" type="button">Arrange</button>
         </div>
         <div class="inv-btns">
-          <button class="inv-btn" id="inv-seed" type="button" title="Brief Payne to seed a team">Seed</button>
-          <button class="inv-btn" id="inv-clear" type="button" title="Reset inventory layout">Clear</button>
-          <button class="inv-btn" id="inv-raise" type="button" title="Raise a robot">Raise</button>
+          <button class="inv-btn" id="inv-seed" type="button" title="Create a team from a shared brief">New team</button>
+          <button class="inv-btn" id="inv-raise" type="button" title="Raise a robot">New robot</button>
         </div>
       </div>
       <div id="robot-inventory" aria-label="Robot Inventory Grid"></div>
@@ -940,11 +921,12 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         <span class="badge-vis" id="vibe-vis"></span>
       </div>
       <div id="stream"></div>
+      <p id="send-error" class="warn send-error" role="status"></p>
       <form class="composer" id="form">
         <div class="mention-box" id="mention-box" hidden></div>
         <div class="composer-box">
           <div id="composer-pills"></div>
-          <textarea id="msg" rows="6" maxlength="2000" placeholder="Write to the hive… @ a human or robot"></textarea>
+          <textarea id="msg" rows="3" maxlength="2000" placeholder="Write to the hive… @ a human or robot"></textarea>
         </div>
         <button id="send" type="submit">Send</button>
       </form>
@@ -1022,6 +1004,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         </div>
         <button id="thread-send" type="submit">Send</button>
       </form>
+      <p id="thread-send-error" class="warn send-error" role="status"></p>
       <div id="thread-resize" title="Resize thread" aria-hidden="true"></div>
     </div>
   </div>
@@ -1045,6 +1028,21 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
           <button class="btn ghost" id="canvas-k-cancel" type="button">Cancel</button>
           <button class="btn" id="canvas-k-apply" type="button">Apply</button>
         </div>
+      </div>
+    </div>
+  </div>
+  <div class="drawer" id="new-chan-drawer" role="dialog" aria-label="Create channel">
+    <div class="panel">
+      <h2>Create channel</h2>
+            <label for="new-chan">Channel name</label>
+            <input id="new-chan" maxlength="48" placeholder="new channel">
+            <label for="new-chan-prompt">Room system prompt</label>
+            <textarea id="new-chan-prompt" rows="3" placeholder="What should agents help accomplish here?"></textarea>
+            <p class="help" id="new-chan-count">0 / 500 characters · Blank uses shared collaboration guidance.</p>
+            <p class="warn" id="new-chan-error" role="status"></p>
+      <div class="actions">
+        <button class="btn" id="new-chan-save" type="button">Create channel</button>
+        <button class="btn ghost" id="new-chan-close" type="button">Cancel</button>
       </div>
     </div>
   </div>
@@ -1094,27 +1092,23 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       <p class="help">Major: "Guard your orders. Report when ready."</p>
     </div>
   </div>
-  <div class="drawer" id="agent-drawer" role="dialog" aria-label="Raise a robot">
+  <div class="drawer" id="agent-drawer" role="dialog" aria-label="Robot settings">
     <div class="panel">
-      <h2 id="agent-title">Raise a robot</h2>
-      <p class="help" id="agent-help">Major will walk you through it.</p>
+      <h2 id="agent-title">Create robot</h2>
+      <p class="help" id="agent-help">Give your robot a purpose, choose its provider order, and assign useful skills.</p>
       <div id="agent-identity">
       <div class="field">
         <label for="agent-name">Name</label>
         <div class="pill-row">
-          <input id="agent-name" type="text" maxlength="48" placeholder="Sentry">
-          <button class="icon-plus" id="agent-name-add" type="button" aria-label="Add name">+</button>
+          <input id="agent-name" type="text" maxlength="48" placeholder="Research assistant">
         </div>
-        <div class="pills" id="agent-name-pill"></div>
         <p class="help">State the robot’s name. Leave blank to auto-generate one.</p>
       </div>
       <div class="field">
         <label for="agent-prompt">System Prompt</label>
         <div class="pill-row">
-          <textarea id="agent-prompt" maxlength="1000" placeholder="Watch the perimeter."></textarea>
-          <button class="icon-plus" id="agent-prompt-add" type="button" aria-label="Add system prompt">+</button>
+          <textarea id="agent-prompt" maxlength="1000" placeholder="Help research ideas and turn them into practical next steps."></textarea>
         </div>
-        <div class="pills" id="agent-prompt-pill"></div>
         <p class="help" id="agent-prompt-help">Write its system prompt. Required.</p>
       </div>
       <div class="field field-wide">
@@ -1128,7 +1122,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         <p class="help">Maximum 3 files. Plaintext and Markdown only.</p>
       </div>
       </div>
-      <p class="help" id="agent-provider-help">AI provider (required)</p>
       <div class="pills" id="payne-provider-pills" hidden></div>
       <p class="help" id="agent-provider-help">AI providers, in priority order. The first
         ready one runs; the rest are fallbacks. Tick to add, then use ▲▼ to order.</p>
@@ -1147,8 +1140,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         <label><input type="checkbox" class="agent-provider-cb" value="deepseek-api"> Deepseek API</label>
         <label><input type="checkbox" class="agent-provider-cb" value="custom"> Custom endpoint</label>
       </div>
-      <button class="cfg" id="provider-cfg" type="button" hidden
-              title="Configure this provider.">✎</button>
       <p class="help" id="agent-pic-help">Robot picture (optional). Pick a sheet, then a tile.
         <button class="ghost mini" id="agent-pic-enlarge" type="button" title="Open the 128px avatar window">Enlarge avatars</button></p>
       <div id="agent-pic-sheets" class="agent-pic-sheets" role="tablist" aria-label="Picture sheets"></div>
@@ -1180,25 +1171,20 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         <p class="help">Heard in calls when a Whisper model is ready.</p>
       </div>
       <div id="agent-skills">
-        <p class="help">This is the robot’s inventory. Pick a gem from the armory (System or This robot), then drop it on an empty socket. <kbd>i</kbd> opens and closes this panel.</p>
+        <p class="help">Choose a skill to assign it. Choose an assigned skill to remove it. Save the robot to apply your changes.</p>
         <p class="help" id="skill-watermark"></p>
-        <div class="pill-row skill-belt" id="skill-cycle-row">
-          <button class="icon-minus" id="skill-cycle-prev" type="button" aria-label="Previous skill">◀</button>
-          <div id="skill-cycle" class="skill-cycle-stage" aria-label="Cycled skill"></div>
-          <button class="icon-plus" id="skill-cycle-next" type="button" aria-label="Next skill">▶</button>
-        </div>
         <div class="skill-board">
           <div>
-            <div class="lbl">Armory</div>
+            <div class="lbl">Available skills</div>
             <div id="skill-armory" class="skill-pool" aria-label="Skill armory"></div>
           </div>
           <div>
-            <div class="lbl">Loadout</div>
+            <div class="lbl">Assigned skills</div>
             <div id="skill-loadout" class="skill-loadout skill-doll" aria-label="Skill loadout"></div>
           </div>
         </div>
         <div class="pill-row" style="gap:6px">
-          <button class="inv-btn" id="skill-forge-open" type="button">Forge a skill</button>
+          <button class="inv-btn" id="skill-forge-open" type="button">Create a skill</button>
           <button class="inv-btn" id="skill-enlarge" type="button" title="Open a spacious skill sheet">Enlarge skills</button>
         </div>
       </div>
@@ -1206,7 +1192,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
       <p class="warn" id="agent-err"></p>
       <div class="actions">
-        <button class="btn" id="agent-save" type="button">Raise Robot</button>
+        <button class="btn" id="agent-save" type="button">Create robot</button>
         <button class="btn ghost" id="agent-close" type="button">Close</button>
         <button class="btn ghost" id="agent-clone" type="button" disabled>Clone Robot</button>
         <button class="btn danger" id="agent-delete" type="button" disabled>Delete Robot</button>
@@ -1348,6 +1334,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       <p class="help">Name the group. Put the right humans and robots on the channel. Delete only when the room is done.</p>
       <p class="help">Humans</p>
       <div class="pills" id="manage-human-pills"></div>
+      <div id="manage-humans"></div>
       <label for="manage-invite">Invite npub</label>
       <div class="pill-row">
         <input id="manage-invite" type="text" maxlength="80" placeholder="npub1…">
@@ -1355,8 +1342,9 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       </div>
       <p class="help">Robots</p>
       <div class="pills" id="manage-robot-pills"></div>
+      <div id="manage-robots"></div>
       <div id="manage-policy">
-        <p class="help">Leash the robots. They speak when mentioned, or not at all.</p>
+        <p class="help">Choose who participates and when robots may respond.</p>
         <p class="help">Kind</p>
         <div class="radio-col">
           <label><input type="radio" name="manage-kind" value="open"> Open hive</label>
@@ -1376,14 +1364,15 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
           <button class="icon-plus" id="manage-topic-add" type="button" aria-label="Add topic">+</button>
         </div>
         <div class="pills" id="manage-topic-pills"></div>
-        <label for="manage-prompt">Channel prompt</label>
-        <textarea id="manage-prompt" maxlength="240" placeholder="Standing orders for this channel"></textarea>
+        <label for="manage-prompt">Room system prompt</label>
+        <textarea id="manage-prompt" rows="4" aria-describedby="manage-prompt-count" placeholder="Guide every agent in this room"></textarea>
+        <p class="help" id="manage-prompt-count">0 / 500 characters</p>
         <details id="manage-policy-more">
-          <summary>Advanced leash</summary>
+          <summary>Advanced conversation settings</summary>
           <label class="check"><input type="checkbox" id="manage-talk"> Robots may talk to robots</label>
           <label for="manage-chaperon">Chaperon</label>
           <select id="manage-chaperon"></select>
-          <p class="help">Babysits robot talk. Major may work and chaperon; other chaperons babysit only.</p>
+          <p class="help">Moderates agent conversations. Major can also contribute; other moderators only coordinate.</p>
           <p class="help">Max robot turns</p>
           <div class="radio-col">
             <label><input type="radio" name="manage-turns" value="1"> 1</label>
@@ -1482,17 +1471,17 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       <div id="robot-inventory-full" aria-label="Expanded robot inventory"></div>
     </div>
   </div>
-  <div class="drawer" id="seed-drawer" role="dialog" aria-label="Seed a team">
+  <div class="drawer" id="seed-drawer" role="dialog" aria-label="Create a team">
     <div class="panel">
       <div class="drawer-head">
-        <h2>Seed a team</h2>
+        <h2>Create a team</h2>
         <button class="drawer-x" id="seed-close" type="button" aria-label="Close seed">×</button>
       </div>
-      <p class="help">Major raises a cooperating team from this briefing. He needs a working AI provider first.</p>
+      <p class="help">Create one robot per responsibility (at least two), with this shared brief. Assign specific skills in each robot’s settings afterward.</p>
       <p class="warn" id="seed-err"></p>
       <label for="seed-actions">This team should do</label>
       <textarea id="seed-actions" maxlength="400" placeholder="action 1, action 2, action 3"></textarea>
-      <label for="seed-skills">Skilled at</label>
+      <label for="seed-skills">Areas of expertise</label>
       <textarea id="seed-skills" maxlength="400" placeholder="skill 1, skill 2, skill 3"></textarea>
       <label for="seed-project">The project</label>
       <input id="seed-project" type="text" maxlength="120" placeholder="I need a team to help me build …">
@@ -1505,15 +1494,16 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       <select id="seed-channel-slug"></select>
       <label for="seed-channel-name">New channel name</label>
       <input id="seed-channel-name" type="text" maxlength="48" placeholder="team-ops">
-      <p class="help">Prompt Payne will use</p>
+      <label for="seed-provider">Provider for this team</label>
+      <select id="seed-provider"></select>
+      <p class="help">Shared robot instructions</p>
       <textarea id="seed-preview" maxlength="2000" readonly></textarea>
       <div class="actions">
-        <button class="btn" id="seed-submit" type="button">Seed team</button>
+        <button class="btn" id="seed-submit" type="button">Create team</button>
         <button class="btn ghost" id="seed-cancel" type="button">Cancel</button>
       </div>
     </div>
   </div>
-  <div id="skill-ghost" class="skill-ghost" hidden></div>
 
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
@@ -1594,6 +1584,8 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     let railClickTimer = 0;
     let threadDrag = null;
     let lastEvents = [];
+    let sendingMessage = false;
+    let sendingThread = false;
     let lastStatus = {};
     let lastPresence = [];
     let openThread = null;
@@ -1635,11 +1627,8 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     let skillCatalog = [];
     let equippedSkills = [];
     let skillVoices = [];
-    let skillCycleIdx = 0;
     let skillWatermarks = {};
     let skillLocked = false;
-    let skillHeld = null;
-    let skillPickAt = 0;
     const SKILL_SLOTS = 8;
     let ackClock = {};
     let manageTopics = [];
@@ -1932,6 +1921,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       b.innerHTML = "<span class=\"dot\"></span>#" + esc(c.slug);
       b.addEventListener("click", () => {
         channel = c.slug;
+        closeNavigation();
         $("room").textContent = "#" + channel;
         seen = "";
         paintChannels();
@@ -1955,14 +1945,14 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         row.appendChild(voice);
       }
       const del = document.createElement("button");
-      del.className = "chan-del";
+      del.className = "chan-options";
       del.type = "button";
-      del.id = "chan-del";
-      del.setAttribute("aria-label", "Delete #" + c.slug);
-      del.textContent = "−";
+      del.setAttribute("aria-label", "Options for #" + c.slug);
+      del.textContent = "⋯";
       del.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        deleteChannel(c.slug);
+        const rect = del.getBoundingClientRect();
+        openChanMenu(c.slug, rect.left, rect.bottom);
       });
       row.appendChild(b);
       row.appendChild(del);
@@ -2179,18 +2169,14 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       fillManagePolicy(ch);
       paintManageLists();
       fillManageTopics(ch.about || "");
+      $("manage-prompt").value = ch.system_prompt || "";
+      updateRoomPromptCount("manage-prompt", "manage-prompt-count");
       $("manage-chan").classList.add("show");
     }
 
     function fillManageTopics(about) {
       manageTopics = [];
-      let prompt = about || "";
-      const pipe = prompt.indexOf(" | ");
-      if (pipe >= 0) {
-        manageTopics = prompt.slice(0, pipe).split(",").map((s) => s.trim()).filter(Boolean);
-        prompt = prompt.slice(pipe + 3);
-      }
-      if ($("manage-prompt")) $("manage-prompt").value = prompt;
+      manageTopics = (about || "").split(",").map((topic) => topic.trim()).filter(Boolean);
       paintManageTopicPills();
     }
 
@@ -2215,10 +2201,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     }
 
     function manageAboutValue() {
-      const prompt = ($("manage-prompt") && $("manage-prompt").value || "").trim();
-      const head = manageTopics.join(", ");
-      if (head && prompt) return head + " | " + prompt;
-      return head || prompt;
+      return manageTopics.join(", ");
     }
 
     function providerLabel(id) {
@@ -2505,20 +2488,59 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       });
     }
 
-    $("add-chan").addEventListener("click", async () => {
+    const ROOM_PROMPT_MAX = 500;
+    function updateRoomPromptCount(inputId, countId) {
+      const input = $(inputId);
+      const count = Array.from(input.value).length;
+      const valid = count <= ROOM_PROMPT_MAX;
+      $(countId).textContent = count + " / " + ROOM_PROMPT_MAX + " characters · Guides every agent in this room.";
+      input.setAttribute("aria-invalid", String(!valid));
+      $(countId).classList.toggle("warn", !valid);
+      return valid;
+    }
+    [["new-chan-prompt", "new-chan-count"], ["manage-prompt", "manage-prompt-count"]].forEach(([input, count]) => {
+      $(input).addEventListener("input", () => updateRoomPromptCount(input, count));
+    });
+
+    function closeNavigation() {
+      $("hive").classList.remove("nav-open");
+      $("nav-toggle").setAttribute("aria-expanded", "false");
+    }
+    $("nav-toggle").addEventListener("click", () => {
+      const open = $("hive").classList.toggle("nav-open");
+      $("nav-toggle").setAttribute("aria-expanded", String(open));
+    });
+    ["add-chan", "nav-new-channel"].forEach((id) => $(id).addEventListener("click", () => {
+      closeNavigation();
+      $("new-chan-drawer").classList.add("show");
+      $("new-chan").focus();
+    }));
+    $("new-chan-close").addEventListener("click", () => $("new-chan-drawer").classList.remove("show"));
+    $("new-chan-save").addEventListener("click", async () => {
       const name = $("new-chan").value.trim();
       if (!name) {
-        openRailPop("chan-info");
         $("new-chan").focus();
         return;
       }
-      $("new-chan").value = "";
-      await postJson("/api/channel", { name: name });
+      if (!updateRoomPromptCount("new-chan-prompt", "new-chan-count")) return;
+      $("new-chan-save").disabled = true;
+      try {
+        applySession(await api("/api/channel", {name, system_prompt: $("new-chan-prompt").value.trim()}));
+        $("new-chan").value = "";
+        $("new-chan-prompt").value = "";
+        $("new-chan-error").textContent = "";
+        $("new-chan-drawer").classList.remove("show");
+        updateRoomPromptCount("new-chan-prompt", "new-chan-count");
+      } catch (error) {
+        $("new-chan-error").textContent = "Channel was not created. Your draft is saved here; try again.";
+      } finally {
+        $("new-chan-save").disabled = false;
+      }
     });
     $("new-chan").addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") {
         ev.preventDefault();
-        $("add-chan").click();
+        $("new-chan-save").click();
       }
     });
     function isContextFile(file) {
@@ -2545,19 +2567,16 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       paintAgentProviderOrder();
       paintAgentProviderChecks();
       if ($("agent-title")) $("agent-title").textContent = "Raise a robot";
-      if ($("agent-help")) $("agent-help").textContent = "Major will walk you through it.";
-      if ($("agent-save")) $("agent-save").textContent = "Raise Robot";
+      if ($("agent-help")) $("agent-help").textContent = "Give your robot a purpose, choose its provider order, and assign useful skills.";
+      if ($("agent-save")) $("agent-save").textContent = "Create robot";
       if ($("agent-delete")) $("agent-delete").disabled = true;
       if ($("agent-clone")) $("agent-clone").disabled = true;
       skillLocked = false;
-      skillCycleIdx = 0;
       if ($("agent-err")) $("agent-err").textContent = "";
       if ($("agent-identity")) $("agent-identity").hidden = false;
       if ($("agent-pass")) $("agent-pass").closest("label").hidden = false;
       if ($("payne-provider-pills")) $("payne-provider-pills").hidden = true;
-      if ($("agent-provider-help")) $("agent-provider-help").textContent = "AI provider (required)";
-      paintNamePill();
-      paintPromptPill();
+      if ($("agent-provider-help")) $("agent-provider-help").textContent = "Harness / API priority (required)";
       paintFilePills();
       paintPayneOrder();
       draftPicture = "";
@@ -2571,8 +2590,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         $("agent-prompt").disabled = false;
         $("agent-prompt").readOnly = false;
       }
-      if ($("agent-name-add")) $("agent-name-add").hidden = false;
-      if ($("agent-prompt-add")) $("agent-prompt-add").hidden = false;
       if ($("agent-prompt-help")) $("agent-prompt-help").textContent = "Write its system prompt. Required.";
       if ($("agent-enabled-row")) $("agent-enabled-row").hidden = true;
       if ($("agent-enabled")) $("agent-enabled").checked = true;
@@ -2590,41 +2607,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         el.checked = el.value === "worker";
       });
       paintAgentPicPicker();
-    }
-
-    function paintNamePill() {
-      const box = $("agent-name-pill");
-      if (!box) return;
-      if (!draftName) { box.innerHTML = ""; return; }
-      box.innerHTML = "<span class=\"pill\"><em>" + esc(draftName) +
-        "</em><button type=\"button\" id=\"agent-name-edit\" aria-label=\"Edit name\">✎</button></span>";
-      $("agent-name-edit").addEventListener("click", () => {
-        $("agent-name").value = draftName;
-        draftName = "";
-        paintNamePill();
-        $("agent-name").focus();
-      });
-    }
-
-    function paintPromptPill() {
-      const box = $("agent-prompt-pill");
-      if (!box) return;
-      if (!draftPrompt) { box.innerHTML = ""; return; }
-      const short = draftPrompt.length > 48 ? draftPrompt.slice(0, 48) + "…" : draftPrompt;
-      box.innerHTML = "<span class=\"pill\"><em>" + esc(short) +
-        "</em><button type=\"button\" id=\"agent-prompt-edit\" aria-label=\"Edit system prompt\">✎</button>" +
-        "<button type=\"button\" id=\"agent-prompt-del\" aria-label=\"Delete system prompt\">−</button></span>";
-      $("agent-prompt-edit").addEventListener("click", () => {
-        $("agent-prompt").value = draftPrompt;
-        draftPrompt = "";
-        paintPromptPill();
-        $("agent-prompt").focus();
-      });
-      $("agent-prompt-del").addEventListener("click", () => {
-        draftPrompt = "";
-        $("agent-prompt").value = "";
-        paintPromptPill();
-      });
     }
 
     function paintFilePills() {
@@ -2793,36 +2775,24 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     }
 
     function paintProviderPencil() {
-      const id = chosenProvider();
-      const btn = $("provider-cfg");
-      document.querySelectorAll("#agent-providers label").forEach((lab) => {
-        const radio = lab.querySelector("input");
-        const pid = radio ? radio.value : "";
-        const st = providerMap[pid] || {};
-        const on = radio && radio.checked;
-        const ready = !!(OAUTH_PROVIDERS[pid] && st.has_home);
-        lab.classList.toggle("picked", !!on);
-        lab.classList.toggle("ready", ready);
-        lab.querySelectorAll(".okmark, .okhint").forEach((n) => n.remove());
-        if (ready) {
-          const mark = document.createElement("span");
-          mark.className = "okmark";
-          mark.setAttribute("aria-hidden", "true");
-          mark.textContent = "✓";
-          lab.appendChild(mark);
-          const hint = document.createElement("span");
-          hint.className = "okhint";
-          hint.textContent = "authenticated";
-          lab.appendChild(hint);
-        }
-        const old = lab.querySelector(".cfg-slot");
-        if (old) old.remove();
-        if (on && btn) {
-          lab.appendChild(btn);
-          btn.hidden = false;
-        }
+      document.querySelectorAll("#agent-providers label").forEach((label) => {
+        const checkbox = label.querySelector("input");
+        const id = checkbox.value;
+        label.classList.toggle("picked", checkbox.checked);
+        label.classList.toggle("ready", !!(providerMap[id] || {}).ready);
+        label.querySelectorAll(".provider-config").forEach((button) => button.remove());
+        const configure = document.createElement("button");
+        configure.type = "button";
+        configure.className = "ghost provider-config";
+        configure.textContent = "Configure";
+        configure.setAttribute("aria-label", "Configure " + providerLabel(id));
+        configure.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openProviderDrawer(id);
+        });
+        label.appendChild(configure);
       });
-      if (btn && !id) btn.hidden = true;
     }
 
     async function loadProviders() {
@@ -2852,7 +2822,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       box.innerHTML = "";
       Object.keys(PROVIDERS).forEach((id) => {
         const st = providerMap[id] || {};
-        const ready = !!(OAUTH_PROVIDERS[id] && st.has_home);
+        const ready = !!st.ready;
         const used = robotsUsingProvider(id);
         const row = document.createElement("div");
         row.className = "prov-row" + (ready ? " ready" : "");
@@ -2909,7 +2879,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       if (st.has_password) bits.push("password on file");
       if (st.has_token) bits.push("token on file");
       if (st.has_passkey) bits.push("passkey on file");
-      if (st.configured) bits.push("configured");
+      bits.push(st.ready ? "Available to try" : "Setup needed");
       if (st.home_model) bits.push("home model " + st.home_model);
       if (st.model) bits.push("model " + st.model);
       return bits.length ? bits.join(" · ") : "Not configured yet.";
@@ -2961,29 +2931,29 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       const family = st.family || "";
       const isOauth = !!OAUTH_PROVIDERS[id];
       const isHome = family === "home";
-      const isApi = family === "api" || family === "editor";
+      const isApi = family === "api";
       $("provider-title").textContent = "Configure " + (PROVIDERS[id] || id);
       $("provider-status").textContent = providerStatusLine(st);
       $("provider-err").textContent = "";
       $("provider-home-fields").hidden = isOauth || (!isHome && family !== "editor");
       $("provider-oauth-fields").hidden = !isOauth;
-      $("provider-api-fields").hidden = isOauth || (!isApi && !isHome);
+      $("provider-api-fields").hidden = isOauth || !isApi;
       $("provider-save").hidden = isOauth;
       $("provider-use-home").checked = !!st.use_home || (!!st.has_home && !st.has_key);
       if (id === "goose" && st.has_home)
         $("provider-home-help").textContent = "Use the Goose already standing in ~/.config/goose.";
       else if (id === "goose")
-        $("provider-home-help").textContent = "Goose is not configured here. Run goose configure, or enter a key.";
+        $("provider-home-help").textContent = "Run goose configure to choose its provider and model. Hush uses that local configuration.";
       else if (id === "cline")
         $("provider-home-help").textContent = st.has_home || st.has_binary
-          ? "Cline is on this machine. It uses ClinePass or a bring-your-own provider key — not OAuth."
-          : "Install the Cline extension, then come back. Cline uses ClinePass or a bring-your-own provider key. Or paste an API key and host.";
+          ? "Hush runs the Cline CLI with its local provider configuration."
+          : "Install and configure the Cline CLI to use it with Hush.";
       else
         $("provider-home-help").textContent = "";
       if (isOauth) {
         $("provider-oauth").textContent = OAUTH_PROVIDERS[id];
         $("provider-oauth-help").textContent = st.has_home
-          ? (PROVIDERS[id] + " is authenticated. Close the login browser and the terminal. Carry on.")
+          ? (PROVIDERS[id] + " has local configuration. A successful reply confirms the connection.")
           : ("This starts " + HOME_CMDS[id] + " on the command line.");
       }
       SECRET_FIELDS.forEach((field) => {
@@ -3021,6 +2991,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     }
 
     function openAgentDrawer(bot) {
+      closeNavigation();
       resetAgentDraft();
       if (bot && bot.slug === PAYNE_SLUG) {
         editingPayne = true;
@@ -3047,15 +3018,11 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
           $("agent-prompt").disabled = true;
           $("agent-prompt").readOnly = true;
         }
-        if ($("agent-name-add")) $("agent-name-add").hidden = true;
-        if ($("agent-prompt-add")) $("agent-prompt-add").hidden = true;
         if ($("agent-prompt-help")) $("agent-prompt-help").textContent = "Platform standing orders. Not editable.";
         document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
           el.checked = el.value === payneOrder[0];
         });
         paintPayneOrder();
-        if ($("agent-name-pill")) $("agent-name-pill").innerHTML = "";
-        if ($("agent-prompt-pill")) $("agent-prompt-pill").innerHTML = "";
       } else if (bot && bot.slug && bot.locked) {
         editSlug = bot.slug;
         skillLocked = true;
@@ -3075,13 +3042,9 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
           $("agent-prompt").disabled = true;
           $("agent-prompt").readOnly = true;
         }
-        if ($("agent-name-add")) $("agent-name-add").hidden = true;
-        if ($("agent-prompt-add")) $("agent-prompt-add").hidden = true;
         document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
           el.checked = el.value === bot.provider;
         });
-        if ($("agent-name-pill")) $("agent-name-pill").innerHTML = "";
-        if ($("agent-prompt-pill")) $("agent-prompt-pill").innerHTML = "";
       } else if (bot && bot.slug && !bot.locked) {
         editSlug = bot.slug;
         draftName = bot.name || "";
@@ -3094,8 +3057,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         document.querySelectorAll("input[name='agent-provider']").forEach((el) => {
           el.checked = el.value === bot.provider;
         });
-        paintNamePill();
-        paintPromptPill();
       }
       draftPicture = (bot && bot.picture) ? bot.picture : "";
       draftProviders = (bot && bot.providers && bot.providers.length)
@@ -3147,23 +3108,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       $("avatar-drawer").classList.add("show");
     });
     if ($("avatar-close")) $("avatar-close").addEventListener("click", () => $("avatar-drawer").classList.remove("show"));
-    if ($("skill-cycle-prev")) $("skill-cycle-prev").addEventListener("click", () => {
-      skillCycleIdx--;
-      paintSkillCycle(editSlug);
-    });
-    if ($("skill-cycle-next")) $("skill-cycle-next").addEventListener("click", () => {
-      skillCycleIdx++;
-      paintSkillCycle(editSlug);
-    });
-    ["skill-cycle-row", "skill-armory"].forEach((id) => {
-      const el = $(id);
-      if (!el) return;
-      el.addEventListener("wheel", (ev) => {
-        ev.preventDefault();
-        skillCycleIdx += ev.deltaY > 0 ? 1 : -1;
-        paintSkillBoard(editSlug);
-      }, { passive: false });
-    });
     if ($("agent-clone")) $("agent-clone").addEventListener("click", async () => {
       if (!editSlug || editSlug === PAYNE_SLUG) {
         $("agent-err").textContent = "Major cannot be cloned.";
@@ -3184,11 +3128,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         if (editingPayne) addPayneProvider(el.value);
         else toggleAgentProvider(el.value);
       });
-    });
-    $("provider-cfg").addEventListener("click", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      openProviderDrawer();
     });
     $("providers-btn").addEventListener("click", () => { openProvidersHub(); });
     $("providers-hub-close").addEventListener("click", () => $("providers-hub").classList.remove("show"));
@@ -3229,7 +3168,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
           fillProviderDrawer(id);
           $("provider-status").textContent =
             (PROVIDERS[id] || id) +
-            " is authenticated. Close the login browser and the terminal. Carry on.";
+            " has local configuration. A successful reply confirms the connection.";
           return;
         }
         if (ticks >= 45) {
@@ -3299,22 +3238,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         $("provider-err").textContent = "Could not list models. Type the model name.";
       }
     });
-    $("agent-name-add").addEventListener("click", () => {
-      const name = ($("agent-name").value || "").trim();
-      if (!name) { $("agent-err").textContent = "State the robot’s name."; return; }
-      draftName = name;
-      $("agent-name").value = "";
-      $("agent-err").textContent = "";
-      paintNamePill();
-    });
-    $("agent-prompt-add").addEventListener("click", () => {
-      const prompt = ($("agent-prompt").value || "").trim();
-      if (!prompt) { $("agent-err").textContent = "Write its system prompt."; return; }
-      draftPrompt = prompt;
-      $("agent-prompt").value = "";
-      $("agent-err").textContent = "";
-      paintPromptPill();
-    });
     $("agent-file-add").addEventListener("click", () => {
       if (draftFiles.length >= CONTEXT_MAX) {
         $("agent-err").textContent = "Maximum 3 context files.";
@@ -3374,8 +3297,8 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       $("agent-err").textContent = "";
       const typedName = ($("agent-name") && $("agent-name").value || "").trim();
       const typedPrompt = ($("agent-prompt") && $("agent-prompt").value || "").trim();
-      if (typedName) draftName = typedName;
-      if (typedPrompt) draftPrompt = typedPrompt;
+      draftName = typedName;
+      draftPrompt = typedPrompt;
       const voiceEl = $("agent-voice");
       const voice = (whisperReady && voiceEl) ? (voiceEl.value || "") : "";
       const enabled = !($("agent-enabled")) || $("agent-enabled").checked;
@@ -3628,9 +3551,11 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       const assembled = assembleMentionContent($("msg").value, mentionRoster());
       const text = assembled.content;
       if (!text) return;
-      $("msg").value = "";
-      composerPills = [];
-      paintComposerPills();
+      if (sendingMessage) return;
+      sendingMessage = true;
+      const draft = $("msg").value;
+      $("send").disabled = true;
+      $("send-error").textContent = "";
       const body = { content: text, kind: 1, channel: channel };
       assembled.mentions.forEach((np, i) => {
         body["mention_" + i] = np;
@@ -3638,9 +3563,17 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       pendingMentions = [];
       try {
         await api("/api/event", body);
+        if ($("msg").value === draft) {
+          $("msg").value = "";
+          composerPills = [];
+          paintComposerPills();
+        }
         await tick();
       } catch (err) {
-        badge(false, "send failed");
+        $("send-error").textContent = "Message was not sent. Your draft is still here; try again.";
+      } finally {
+        sendingMessage = false;
+        $("send").disabled = false;
       }
     });
 
@@ -3656,11 +3589,12 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     });
     $("thread-form").addEventListener("submit", async (e) => {
       e.preventDefault();
-      if (!openThread || threadMentionOpen) return;
+      if (!openThread || threadMentionOpen || sendingThread) return;
       if (thinkingFor(openThread, lastStatus).length) return;
       let raw = $("thread-msg").value;
       const extra = threadPills.slice();
       const root = lastEvents.find((ev) => ev.id === openThread);
+      if (!root) return;
       const kids = repliesTo(lastEvents, openThread);
       const sole = threadMembers(root, kids);
       if (!extra.filter((p) => p.kind !== "human").length &&
@@ -3675,13 +3609,15 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       const assembled = assembleMentionContent(raw, mentionRoster());
       const text = assembled.content;
       if (!text) return;
-      $("thread-msg").value = "";
-      threadPills = [];
-      paintThreadPills();
+      const draft = $("thread-msg").value;
+      const conversation = openThread;
+      sendingThread = true;
+      $("thread-send").disabled = true;
+      $("thread-send-error").textContent = "";
       const body = {
         content: text,
         kind: 1,
-        channel: channel,
+        channel: root.channel,
         reply_to: openThread
       };
       assembled.mentions.forEach((np, i) => {
@@ -3694,10 +3630,18 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       }
       try {
         await api("/api/event", body);
+        if (openThread === conversation && $("thread-msg").value === draft) {
+          $("thread-msg").value = "";
+          threadPills = [];
+          paintThreadPills();
+        }
         await tick();
       } catch (err) {
         localThink = [];
-        badge(false, "send failed");
+        $("thread-send-error").textContent = "Reply was not sent. Your draft is still here; try again.";
+      } finally {
+        sendingThread = false;
+        paintThreadThink(thinkingFor(openThread, lastStatus));
       }
     });
     $("stats").addEventListener("click", () => {
@@ -3808,10 +3752,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     });
     window.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape") {
-        if (skillHeld) {
-          cancelSkillHold();
-          return;
-        }
         const d = $("hive-leave");
         if (d && d.classList.contains("show")) hideLeave();
         return;
@@ -4125,7 +4065,10 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     }
 
     function repliesTo(events, rootId) {
-      return channelNotes(events).filter((e) => e.reply_to === rootId);
+      const root = (events || []).find((event) => event.id === rootId);
+      if (!root) return [];
+      return events.filter((event) => event.reply_to === rootId &&
+        event.channel === root.channel && event.kind !== 25000);
     }
 
     function mentionedRobots(ev) {
@@ -4326,7 +4269,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       box.innerHTML = "";
       if (jobs.length) paintThink(box, jobs);
       if (send) {
-        send.disabled = jobs.length > 0;
+        send.disabled = sendingThread || jobs.length > 0;
         send.title = jobs.length ? thinkLabel(jobs) : "";
       }
     }
@@ -4869,9 +4812,12 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       const bots = threadMembers(root, kids);
       const names = bots.map((b) => b.name).filter(Boolean);
       $("thread-title").textContent = names.length ? ("Thread · " + names.join(", ")) : "Thread";
-      $("thread-help").textContent = names.length
-        ? (names.length === 1 ? ("1:1 with " + names[0]) : ("1:n · you + " + names.join(", ")))
-        : "1:1 thread";
+      const owner = rosterHit(root.pubkey);
+      const lead = mentionedRobots(root)[0];
+      $("thread-help").title = "Agents receive your current message and excerpts from the opening message and six recent replies.";
+      $("thread-help").textContent = "#" + root.channel + " · Started by " +
+        ((owner && owner.name) || "a teammate") + (lead ? " · Lead: " + lead.name : "") +
+        (names.length === 1 ? " · Follow-ups go to " + names[0] : " · @ a robot to direct its next turn");
       const jobs = thinkingFor(root.id, lastStatus);
       const key = threadKeyOf(root, kids, jobs);
       const box = $("thread-stream");
@@ -5100,7 +5046,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
 
     function visibleNotes(events) {
       if (!events || !events.length) return [];
-      return events.filter((e) => !isDevLogNote(e));
+      return events.filter((e) => (e.kind === 1 || e.kind === 9) && !isDevLogNote(e));
     }
 
     function openDevLog() {
@@ -5231,8 +5177,66 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       if (full) renderInventory(full, INV_EXPAND_COLS, INV_EXPAND_ROWS, INV_EXPAND_CELL, false);
     }
 
+    function startRobotConversation(bot) {
+      closeNavigation();
+      const existing = lastEvents.find((event) => !event.reply_to && event.channel === channel &&
+        event.pubkey === session.pubkey && mentionedRobots(event).length === 1 &&
+        mentionedRobots(event)[0].npub === bot.npub);
+      if (existing) {
+        openThreadPane(existing.id);
+        $("thread-msg").focus();
+        return;
+      }
+      if (!$("msg").value.includes("@" + bot.name))
+        $("msg").value = "@" + bot.name + " " + $("msg").value;
+      if (!composerPills.some((pill) => pill.npub === bot.npub))
+        composerPills.push({name: bot.name, npub: bot.npub});
+      paintComposerPills();
+      $("msg").focus();
+    }
+
+    function paintRobotDirectory(grid) {
+      grid.replaceChildren();
+      grid.removeAttribute("style");
+      grid.className = "robot-directory";
+      robotModels().forEach((bot) => {
+        const row = document.createElement("div");
+        row.className = "directory-row";
+        row.dataset.slug = bot.slug;
+        const chat = document.createElement("button");
+        chat.type = "button";
+        chat.className = "directory-chat";
+        chat.disabled = !bot.enabled || bot.role === "chaperon";
+        chat.setAttribute("aria-label", "Chat with " + bot.name);
+        const avatar = document.createElement("span");
+        avatar.className = "directory-avatar";
+        avatar.setAttribute("aria-hidden", "true");
+        avatar.style.cssText = picCellStyle(bot.picture, 36) || "";
+        if (!bot.picture) avatar.textContent = bot.name.slice(0, 1);
+        const label = document.createElement("span");
+        label.className = "directory-copy";
+        const name = document.createElement("strong");
+        name.textContent = bot.name;
+        const status = document.createElement("small");
+        status.textContent = !bot.enabled ? "Paused" : bot.role === "chaperon"
+          ? "Room moderator" : providerLabel(bot.provider);
+        label.append(name, status);
+        chat.append(avatar, label);
+        chat.addEventListener("click", () => startRobotConversation(bot));
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.className = "directory-edit";
+        edit.textContent = "•••";
+        edit.setAttribute("aria-label", "Edit " + bot.name);
+        edit.addEventListener("click", () => openAgentDrawer(bot));
+        row.append(chat, edit);
+        grid.appendChild(row);
+      });
+    }
+
     function renderInventory(grid, cols, rows, cell, compact) {
       if (!grid) return;
+      if (compact) { paintRobotDirectory(grid); return; }
       grid.innerHTML = "";
       grid.style.position = "relative";
       grid.style.width = (cols * cell + 8) + "px";
@@ -5296,11 +5300,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
 
     function beginInvDrag(ev, id, compact) {
       if (ev.button !== 0 || ev.metaKey) return;
-      if (skillHeld) {
-        ev.preventDefault();
-        ev.stopPropagation();
-        return;
-      }
       const it = invItems.find((i) => i.id === id);
       if (!it) return;
       const cols = compact ? INV_COLS : INV_EXPAND_COLS;
@@ -5420,18 +5419,15 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     function loadoutComplex(ids) {
       return ids.reduce((n, id) => n + ((skillById(id).complexity) || 0), 0);
     }
-    function loadoutCanTake(ids, skill) {
-      return !loadoutRefuseReason(ids, skill);
-    }
     function loadoutRefuseReason(ids, skill) {
       const marks = skillWatermarks || {};
       const worn = ids.filter(Boolean);
-      if (worn.indexOf(skill.id) >= 0) return "Already worn on this robot.";
-      if (worn.length + 1 > (marks.slots_high || SKILL_SLOTS)) return "Loadout over watermark.";
+      if (worn.indexOf(skill.id) >= 0) return "Already assigned to this robot.";
+      if (worn.length + 1 > (marks.slots_high || SKILL_SLOTS)) return "This robot has reached its skill capacity. Remove a skill first.";
       if (loadoutChars(worn) + (skill.chars || 0) > (marks.chars_high || 8000))
-        return "Loadout over watermark.";
+        return "This robot has reached its skill capacity. Remove a skill first.";
       if (loadoutComplex(worn) + (skill.complexity || 0) > (marks.complex_high || 64))
-        return "Loadout over watermark.";
+        return "This robot has reached its skill capacity. Remove a skill first.";
       return "";
     }
     function skillNotice(msg) {
@@ -5480,21 +5476,18 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       const marks = skillWatermarks || {};
       const chars = loadoutChars(equippedSkills);
       if ($("skill-watermark")) {
-        $("skill-watermark").textContent = "Loadout " + equippedSkills.length +
+        $("skill-watermark").textContent = "Assigned " + equippedSkills.length +
           "/" + (marks.slots_high || SKILL_SLOTS) + " slots, " + chars + "/" +
           (marks.chars_high || 8000) + " chars.";
       }
       if (armory) paintSkillArmory(armory, robotSlug);
       if (loadout) paintSkillDoll(loadout);
-      paintSkillCycle(robotSlug);
-      paintSkillGhost();
-      markSkillDropTargets();
     }
     function paintSkillArmory(armory, robotSlug) {
       const list = armorySkills(robotSlug);
       armory.innerHTML = "";
       if (!list.length) {
-        armory.textContent = "Stash empty for this role.";
+        armory.textContent = "No available skills for this role.";
         return;
       }
       ["system", "robot"].forEach((scope) => {
@@ -5502,48 +5495,19 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         if (!rows.length) return;
         const lbl = document.createElement("div");
         lbl.className = "skill-scope-lbl";
-        lbl.textContent = (scope === "robot") ? "This robot" : "System";
+        lbl.textContent = scope === "robot" ? "This robot" : "Shared skills";
         armory.appendChild(lbl);
         rows.forEach((s) => armory.appendChild(makeSkillGem(s, {})));
       });
     }
-    function paintSkillCycle(robotSlug) {
-      const box = $("skill-cycle");
-      if (!box) return;
-      const list = armorySkills(robotSlug);
-      box.innerHTML = "";
-      if (!list.length) {
-        box.textContent = "No more skills in this role.";
-        return;
-      }
-      if (skillCycleIdx >= list.length) skillCycleIdx = 0;
-      if (skillCycleIdx < 0) skillCycleIdx = list.length - 1;
-      box.appendChild(makeSkillGem(list[skillCycleIdx], {}));
-    }
     function paintSkillDoll(loadout) {
       loadout.innerHTML = "";
       loadout.className = "skill-loadout skill-doll";
-      const order = [0, 1, 2, 3, "pic", 4, 5, 6, 7];
-      order.forEach((key) => {
-        if (key === "pic") {
-          const pic = document.createElement("div");
-          pic.className = "skill-doll-pic";
-          pic.id = "skill-doll-pic";
-          const css = picCellStyle(draftPicture, 48);
-          if (css) pic.setAttribute("style", css);
-          pic.title = draftName || editSlug || "robot";
-          loadout.appendChild(pic);
-          return;
-        }
-        const slot = document.createElement("div");
-        slot.className = "skill-slot" + (key < equippedSkills.length ? " filled" : " open");
-        slot.dataset.idx = String(key);
-        slot.title = key < equippedSkills.length
-          ? (skillById(equippedSkills[key]).name || equippedSkills[key])
-          : "Empty socket";
-        if (key < equippedSkills.length)
-          slot.appendChild(makeSkillGem(skillById(equippedSkills[key]), { slot: key }));
-        loadout.appendChild(slot);
+      if (!equippedSkills.length) {
+        loadout.textContent = "No skills assigned yet. Choose from the available skills.";
+      }
+      equippedSkills.forEach((id, index) => {
+        loadout.appendChild(makeSkillGem(skillById(id), {slot: index}));
       });
     }
 
@@ -5558,136 +5522,35 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       const o = opts || {};
       const b = document.createElement("button");
       b.type = "button";
-      b.className = "skill-gem" + (o.neighbor ? " neighbor" : "") +
-        (skillHeld && skillHeld.skill && skillHeld.skill.id === skill.id ? " held" : "");
+      b.className = "skill-gem";
       b.dataset.scope = skill.scope || "system";
       b.dataset.id = skill.id;
       b.title = (skill.name || skill.id) + (skill.summary ? " — " + skill.summary : "");
       b.innerHTML = "<span class=\"sig\">" + esc(skillSig(skill)) +
         "</span><span class=\"nm\">" + esc(skill.name || skill.id) + "</span>";
-      b.addEventListener("pointerdown", (ev) => {
-        if (ev.button !== 0) return;
-        ev.preventDefault();
-        ev.stopPropagation();
-        if (skillHeld) return;
-        pickUpSkill(skill, o.slot);
+      const assigned = typeof o.slot === "number";
+      b.setAttribute("aria-label", (assigned ? "Remove " : "Assign ") + (skill.name || skill.id));
+      b.setAttribute("aria-pressed", String(assigned));
+      b.disabled = skillLocked;
+      b.addEventListener("click", () => {
+        if (assigned) {
+          equippedSkills.splice(o.slot, 1);
+          skillNotice("Skill removed. Save the robot to apply the change.");
+        } else {
+          const reason = loadoutRefuseReason(equippedSkills, skill);
+          if (reason) { skillNotice(reason); return; }
+          equippedSkills.push(skill.id);
+          skillNotice("Skill assigned. Save the robot to apply the change.");
+        }
+        paintSkillBoard(editSlug);
       });
       return b;
-    }
-
-    function pickUpSkill(skill, fromSlot) {
-      if (!skill || skillLocked) return;
-      const slot = (typeof fromSlot === "number") ? fromSlot : null;
-      skillHeld = { skill: skill, fromSlot: slot };
-      skillPickAt = Date.now();
-      if (slot !== null && slot >= 0 && slot < equippedSkills.length)
-        equippedSkills.splice(slot, 1);
-      document.body.classList.add("skill-holding");
-      paintSkillBoard(editSlug);
-      paintSkillGhost();
-      skillNotice("Drop on an empty socket. Escape cancels.");
-    }
-
-    function cancelSkillHold() {
-      if (!skillHeld) return;
-      if (skillHeld.fromSlot !== null && equippedSkills.indexOf(skillHeld.skill.id) < 0)
-        equippedSkills.splice(skillHeld.fromSlot, 0, skillHeld.skill.id);
-      skillHeld = null;
-      document.body.classList.remove("skill-holding");
-      hideSkillGhost();
-      paintSkillBoard(editSlug);
-      markSkillDropTargets();
-      skillNotice("");
-    }
-
-    function paintSkillGhost() {
-      const g = $("skill-ghost");
-      if (!g) return;
-      if (!skillHeld) {
-        g.hidden = true;
-        g.innerHTML = "";
-        return;
-      }
-      g.hidden = false;
-      g.innerHTML = "";
-      const gem = makeSkillGem(skillHeld.skill, {});
-      gem.style.pointerEvents = "none";
-      g.appendChild(gem);
-    }
-
-    function hideSkillGhost() {
-      const g = $("skill-ghost");
-      if (!g) return;
-      g.hidden = true;
-      g.innerHTML = "";
-    }
-
-    function moveSkillGhost(x, y) {
-      const g = $("skill-ghost");
-      if (!g || !skillHeld) return;
-      g.style.left = x + "px";
-      g.style.top = y + "px";
-      if (g.hidden) paintSkillGhost();
-    }
-
-    function markSkillDropTargets() {
-      document.querySelectorAll(".skill-slot, .skill-doll-pic").forEach((el) => {
-        el.classList.remove("drop-ok", "drop-no");
-        if (!skillHeld) return;
-        const idx = el.dataset.idx === undefined ? equippedSkills.length : parseInt(el.dataset.idx, 10);
-        const empty = !(idx < equippedSkills.length);
-        el.classList.add(empty && loadoutCanTake(equippedSkills, skillHeld.skill) ? "drop-ok" : "drop-no");
-      });
-    }
-
-    function onSkillPointerUp(ev) {
-      if (!skillHeld) return;
-      if (Date.now() - skillPickAt < 250) return;
-      const el = document.elementFromPoint(ev.clientX, ev.clientY);
-      if (!el || !el.closest) return;
-      const slot = el.closest(".skill-slot");
-      const pic = el.closest(".skill-doll-pic");
-      const stash = el.closest(".skill-cycle-stage");
-      if (slot && slot.dataset.idx !== undefined)
-        placeSkillOnSlot(parseInt(slot.dataset.idx, 10));
-      else if (pic)
-        placeSkillOnSlot(equippedSkills.length);
-      else if (stash)
-        cancelSkillHold();
-    }
-
-    function placeSkillOnSlot(idx) {
-      if (!skillHeld) return;
-      if (skillLocked) {
-        skillNotice("Clone it to wear new skills.");
-        return;
-      }
-      const skill = skillHeld.skill;
-      if (idx < equippedSkills.length) {
-        skillNotice("That socket is worn. Lift the gem first.");
-        return;
-      }
-      if (!skillFitsRole(skill, robotRole())) {
-        skillNotice("That skill does not fit this robot.");
-        return;
-      }
-      {
-        const why = loadoutRefuseReason(equippedSkills, skill);
-        if (why) { skillNotice(why); return; }
-      }
-      equippedSkills.push(skill.id);
-      skillHeld = null;
-      document.body.classList.remove("skill-holding");
-      hideSkillGhost();
-      paintSkillBoard(editSlug);
-      skillNotice("Worn. Save the robot to keep the loadout.");
     }
 
     function toggleRobotInventory() {
       const drawer = $("agent-drawer");
       if (drawer && drawer.classList.contains("show")) {
         drawer.classList.remove("show");
-        if (skillHeld) cancelSkillHold();
         return;
       }
       if (!$("hive") || !$("hive").classList.contains("show")) return;
@@ -5728,31 +5591,12 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       const act = actions.length ? actions.join(", ") : "cooperate on the stated mission";
       const sk = skills.length ? skills.join(", ") : "clear hand-offs and tight reports";
       const proj = (project || "").trim() || "the current hive mission";
-      return "You are a specialist on a team seeded by Major, Chief of Staff. "
+      return "You are a specialist on a team created for this shared goal. "
         + "The team does: " + act + ". "
         + "The team is skilled at: " + sk + ". "
         + "The project is: " + proj + ". "
         + "Cooperate with sibling robots. Hand off work. Do not work in isolation. "
-        + "Payne remains Chief of Staff. Speak when mentioned.";
-    }
-
-    function payneCanReply() {
-      const p = robotModels().find((b) => b.slug === PAYNE_SLUG) || {};
-      const ids = (p.providers && p.providers.length) ? p.providers : [p.provider];
-      return ids.some((id) => {
-        if (!id) return false;
-        const st = providerMap[id] || {};
-        return !!(st.has_home || st.has_binary || st.has_key || st.has_token);
-      });
-    }
-
-    function seedSlug(name, used) {
-      let slug = (name || "bot").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      if (!slug) slug = "bot";
-      let out = slug, n = 2;
-      while (used[out]) { out = slug + "-" + n; n++; }
-      used[out] = true;
-      return out;
+        + "Follow the room guidance. Speak when mentioned.";
     }
 
     function paintSeedPreview() {
@@ -5782,9 +5626,13 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       await loadProviders();
       paintSeedChannels();
       paintSeedPreview();
-      if (!payneCanReply()) {
-        if (err) err.textContent = "Payne needs a working AI provider before he can seed. Open Providers or edit Payne.";
-      }
+      const select = $("seed-provider");
+      select.replaceChildren();
+      Object.keys(PROVIDERS).filter((id) => (providerMap[id] || {}).ready).forEach((id) => {
+        select.add(new Option(providerLabel(id), id));
+      });
+      if (!select.options.length) err.textContent = "Configure a provider before creating the team.";
+      closeNavigation();
       $("seed-drawer").classList.add("show");
     }
 
@@ -5792,15 +5640,16 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       const err = $("seed-err");
       if (err) err.textContent = "";
       await loadProviders();
-      if (!payneCanReply()) {
-        if (err) err.textContent = "Payne needs a working AI provider before he can seed. Open Providers or edit Payne.";
+      const provider = $("seed-provider").value;
+      if (!provider || !(providerMap[provider] || {}).ready) {
+        err.textContent = "Choose an available provider for this team.";
         return;
       }
       const actions = splitSeedList($("seed-actions") && $("seed-actions").value);
       const skills = splitSeedList($("seed-skills") && $("seed-skills").value);
       const project = ($("seed-project") && $("seed-project").value || "").trim();
       if (!actions.length && !skills.length && !project) {
-        if (err) err.textContent = "Tell Payne what the team should do, their skills, or the project.";
+        if (err) err.textContent = "Describe the team’s responsibilities, expertise, or project.";
         return;
       }
       const prompt = buildSeedPrompt(actions, skills, project);
@@ -5809,10 +5658,9 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       else if (skills.length) skills.forEach((s) => names.push(s.slice(0, 24)));
       else names.push("Scout", "Builder");
       while (names.length < 2) names.push(names.length === 1 ? "Handoff" : "Scout");
-      const used = {};
-      robotModels().forEach((b) => { if (b.slug) used[b.slug] = true; });
-      const provider = (robotModels().find((b) => b.slug === PAYNE_SLUG) || {}).provider || "goose";
       const created = [];
+      if ($("seed-submit").disabled) return;
+      $("seed-submit").disabled = true;
       try {
         for (let i = 0; i < names.length; i++) {
           const name = names[i];
@@ -5831,7 +5679,8 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         let slug = "";
         if (mode && mode.value === "new") {
           const nm = ($("seed-channel-name") && $("seed-channel-name").value || "").trim() || "seeded-team";
-          const ch = await api("/api/channel", { name: nm });
+          const ch = await api("/api/channel", { name: nm, system_prompt:
+            Array.from("Help the team accomplish: " + (project || actions.join(", ")) + ". Coordinate responsibilities and report practical results.").slice(0, 500).join("") });
           applySession(ch);
           slug = (ch.channels || session.channels || []).slice(-1)[0];
           slug = slug && slug.slug ? slug.slug : "";
@@ -5845,13 +5694,16 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         if (slug && created.length) {
           const body = { action: "manage", slug: slug, robot_reply: "mention" };
           created.forEach((s, i) => { body["robot_" + i] = s; });
-          body["robot_" + created.length] = PAYNE_SLUG;
           applySession(await api("/api/channel", body));
         }
         $("seed-drawer").classList.remove("show");
         syncInventoryFromRoster();
       } catch (e) {
-        if (err) err.textContent = "Payne could not raise that team.";
+        err.textContent = created.length
+          ? "Created " + created.length + " robot(s), but team setup stopped. They are in Your robots; finish their room assignment in channel settings."
+          : "The team could not be created. Your brief is still here.";
+      } finally {
+        $("seed-submit").disabled = false;
       }
     }
 
@@ -5936,7 +5788,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     });
     $("manage-save").addEventListener("click", async () => {
       if (!manageSlug) return;
-      const body = { action: "manage", slug: manageSlug };
+      const body = { action: "manage", slug: manageSlug, human_0: "", robot_0: "" };
       manageHumanPills.slice(0, 8).forEach((p, i) => {
         body["human_" + i] = p.npub;
       });
@@ -5953,6 +5805,11 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       body.max_robot_turns = parseInt(radioValue("manage-turns", "4"), 10);
       body.chaperon = ($("manage-chaperon") && $("manage-chaperon").value) || "";
       body.about = manageAboutValue();
+      body.system_prompt = $("manage-prompt").value.trim();
+      if (!updateRoomPromptCount("manage-prompt", "manage-prompt-count")) {
+        $("manage-err").textContent = "Keep the room system prompt within 500 characters.";
+        return;
+      }
       try {
         applySession(await api("/api/channel", body));
         $("manage-chan").classList.remove("show");
@@ -6034,7 +5891,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       const rail = $("tool-rail");
       let saved = {};
       try { saved = JSON.parse(localStorage.getItem("hush-rail") || "{}"); } catch (e) { saved = {}; }
-      if (saved.collapsed) setRailCollapsed(true);
+      setRailCollapsed(saved.collapsed !== false);
       if (typeof saved.x === "number" && typeof saved.y === "number")
         placeRail(saved.x, saved.y);
       else {
@@ -6152,10 +6009,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       }
     });
     window.addEventListener("pointermove", (ev) => {
-      if (skillHeld) {
-        moveSkillGhost(ev.clientX, ev.clientY);
-        markSkillDropTargets();
-      }
       if (railDrag) {
         placeRail(ev.clientX - railDrag.dx, ev.clientY - railDrag.dy);
         return;
@@ -6177,7 +6030,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       });
     });
     window.addEventListener("pointerup", (ev) => {
-      if (skillHeld) onSkillPointerUp(ev);
       if (railDrag) {
         railDrag = null;
         saveRail();
@@ -6206,7 +6058,6 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
 
     /* Inventory header: Seed wizard, layout reset, raise, expand. */
     if ($("inv-seed")) $("inv-seed").addEventListener("click", () => { openSeedDrawer(); });
-    if ($("inv-clear")) $("inv-clear").addEventListener("click", () => { clearInventory(); });
     if ($("inv-raise")) $("inv-raise").addEventListener("click", () => { openAgentDrawer(null); });
     if ($("skill-forge-open")) $("skill-forge-open").addEventListener("click", () => {
       if ($("forge-err")) $("forge-err").textContent = "";

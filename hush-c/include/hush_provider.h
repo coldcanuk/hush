@@ -113,6 +113,10 @@ int hush_provider_can(const char *id, unsigned int cap);
 /* Policy flag bitmask for id. 0 when id is unknown. */
 unsigned int hush_provider_flags(const char *id);
 
+/* True when local prerequisites for dispatch are present. Does not probe remote
+ * authentication: a successful request is the evidence for a working connection. */
+int hush_provider_ready(const hush_provider_status_t *status);
+
 /* Fills status from home detect, overlay file, and pass. */
 hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id);
 
