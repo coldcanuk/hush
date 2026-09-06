@@ -219,7 +219,8 @@ static hush_status_t hush_win_do_bare(Display *dpy, Window win)
     assert(dpy != NULL);
     memset(&mwm, 0, sizeof(mwm));
     mwm.flags = (unsigned long)HUSH_WIN_MWM_DECOR;
-    mwm.decorations = 0;
+    /* MWM_DECOR_BORDER | MWM_DECOR_RESIZEH */
+    mwm.decorations = (1L << 1) | (1L << 2);
     atom = XInternAtom(dpy, HUSH_WIN_ATOM_MOTIF, False);
     XChangeProperty(dpy, win, atom, atom, 32, PropModeReplace,
                     (unsigned char *)&mwm, HUSH_WIN_MWM_FIELDS);
