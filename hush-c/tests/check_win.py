@@ -2,13 +2,17 @@
 """Exercise native window setup against an isolated X server, never the desktop."""
 
 import ctypes as ct
+import json
 import os
 from pathlib import Path
 import selectors
 import shlex
 import shutil
+import socket
 import subprocess
 import tempfile
+import time
+from urllib.request import Request, urlopen
 
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -102,7 +106,8 @@ class Display:
 def check_properties(native, display):
     other = display.window("other-app", "OtherApp")
     window = display.window("hush-relay", "Hush")
-    display.set_words(display.root, "_NET_CLIENT_LIST", "WINDOW", [other, window])
+    reopened = display.window("hush-relay", "Hush")
+    display.set_words(display.root, "_NET_CLIENT_LIST", "WINDOW", [other, window, reopened])
     names = ["WM_DELETE_WINDOW", "_NET_WM_SYNC_REQUEST", "_NET_WM_PING", "HUSH_TEST_CUSTOM"]
     original = [display.atom(name) for name in names]
     expected = [original[0], original[2], original[3]]
@@ -114,18 +119,23 @@ def check_properties(native, display):
         else:
             os.environ["XDG_CURRENT_DESKTOP"] = desktop
         display.set_words(window, "WM_PROTOCOLS", "ATOM", original)
+        display.set_words(reopened, "WM_PROTOCOLS", "ATOM", original)
         assert native.hush_win_undecorate() == 0
         assert display.words(window, "WM_PROTOCOLS") == original, desktop
+        assert display.words(reopened, "WM_PROTOCOLS") == original, desktop
     print("window check: other desktops retain resize synchronization", flush=True)
 
     for desktop in ["COSMIC", "pop:COSMIC", "COSMIC:pop", "pop:COSMIC:extra"]:
         os.environ["XDG_CURRENT_DESKTOP"] = desktop
         display.set_words(window, "WM_PROTOCOLS", "ATOM", original)
+        display.set_words(reopened, "WM_PROTOCOLS", "ATOM", original)
         assert native.hush_win_undecorate() == 0
         assert display.words(window, "WM_PROTOCOLS") == expected, (
             f"{desktop}: resize synchronization must be removed; close/ping/custom must remain"
         )
         assert display.words(window, "_MOTIF_WM_HINTS") == [2, 0, 6, 0, 0]
+        assert display.words(reopened, "WM_PROTOCOLS") == expected
+        assert display.words(reopened, "_MOTIF_WM_HINTS") == [2, 0, 6, 0, 0]
         assert native.hush_win_undecorate() == 0
         assert display.words(window, "WM_PROTOCOLS") == expected
     assert display.words(other, "WM_PROTOCOLS") == original
@@ -147,6 +157,56 @@ def check_properties(native, display):
     display.set_words(display.root, "_NET_CLIENT_LIST", "WINDOW", [other])
     assert native.hush_win_undecorate() == -4
     print("window check: empty/missing/oversized protocols and absent Hush window handled", flush=True)
+
+
+def check_prepare_route(directory, display):
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    runtime = directory / "runtime"
+    runtime.mkdir(mode=0o700)
+    environment = dict(os.environ, HUSH_HOME=str(directory / "home"),
+                       HUSH_CONFIG_DIR=str(directory / "config"),
+                       PASSWORD_STORE_DIR=str(directory / "pass"),
+                       XDG_RUNTIME_DIR=str(runtime), XDG_CURRENT_DESKTOP="COSMIC")
+    address = f"http://127.0.0.1:{port}"
+    with (directory / "relay.log").open("w") as log:
+        process = subprocess.Popen([str(SOURCE / "hush-relay"), "--no-open", str(port)],
+                                   env=environment, stdout=log, stderr=log)
+        try:
+            for _ in range(100):
+                try:
+                    with urlopen(address + "/api/status", timeout=1):
+                        break
+                except OSError:
+                    time.sleep(0.03)
+            else:
+                raise AssertionError("throwaway relay did not start")
+
+            def prepare():
+                request = Request(address + "/api/window", data=b'{"action":"prepare"}',
+                                  headers={"Content-Type": "application/json"})
+                with urlopen(request, timeout=2) as response:
+                    return json.load(response)
+
+            display.set_words(display.root, "_NET_CLIENT_LIST", "WINDOW", [])
+            assert prepare()["ok"] is False, "window absence must permit a later retry"
+            first = display.window("hush-relay", "Hush")
+            original = [display.atom("WM_DELETE_WINDOW"), display.atom("_NET_WM_SYNC_REQUEST")]
+            display.set_words(first, "WM_PROTOCOLS", "ATOM", original)
+            display.set_words(display.root, "_NET_CLIENT_LIST", "WINDOW", [first])
+            assert prepare() == {"ok": True, "action": "prepare"}
+            assert display.words(first, "WM_PROTOCOLS") == original[:1]
+            second = display.window("hush-relay", "Hush")
+            display.set_words(second, "WM_PROTOCOLS", "ATOM", original)
+            display.set_words(display.root, "_NET_CLIENT_LIST", "WINDOW", [first, second])
+            assert prepare()["ok"] is True
+            assert display.words(second, "WM_PROTOCOLS") == original[:1]
+            assert display.words(second, "_MOTIF_WM_HINTS") == [2, 0, 6, 0, 0]
+            print("window check: page-ready API handles late and reopened windows", flush=True)
+        finally:
+            process.terminate()
+            process.wait(timeout=10)
 
 
 def main():
@@ -176,6 +236,7 @@ def main():
                 os.environ["DISPLAY"] = ":" + number
                 display = Display(os.environ["DISPLAY"])
                 check_properties(native, display)
+                check_prepare_route(directory, display)
             finally:
                 os.close(read_fd)
                 if display:
