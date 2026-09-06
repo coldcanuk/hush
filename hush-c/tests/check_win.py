@@ -140,9 +140,13 @@ def check_properties(native, display):
     display.sync(display.handle, 0)
     assert native.hush_win_undecorate() == 0
     assert display.words(window, "WM_PROTOCOLS") is None
+    oversized = original * 17
+    display.set_words(window, "WM_PROTOCOLS", "ATOM", oversized)
+    assert native.hush_win_undecorate() == -3
+    assert display.words(window, "WM_PROTOCOLS") == oversized
     display.set_words(display.root, "_NET_CLIENT_LIST", "WINDOW", [other])
     assert native.hush_win_undecorate() == -4
-    print("window check: empty/missing protocols and absent Hush window handled", flush=True)
+    print("window check: empty/missing/oversized protocols and absent Hush window handled", flush=True)
 
 
 def main():
