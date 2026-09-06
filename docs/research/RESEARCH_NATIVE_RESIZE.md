@@ -213,3 +213,71 @@ Data: **yes, 6/10**; F6 supports the path, the production implementation is pend
 Sherlock: **yes, 6/10**; "all matching windows" must include a second-window test.
 Linus: **yes, 6/10**; keep preparation out of drag handlers.
 Brian Cox: **yes, 6/10**; repeat the exact sequence after fresh and reused launches.
+
+### Implementation cross-examination and acceptance
+
+After launcher changes, Data: 6/10; the argv fixture now observes
+`--user-data-dir=` from Hush itself. Sherlock challenges "from Hush itself":
+the final native test wrapper adds only debugging/initial-size options, not
+class, profile, filesystem permission or URL. Linus: 6/10; bounded native and
+Flatpak lists share one options record. Brian Cox: 6/10; browser singleton
+forwarding still requires the page-ready task. All agree to continue.
+
+After page preparation, Data: 6/10; the route dispatches `prepare` to the native
+setup. Sherlock challenges "native setup": a first-window lookup misses a
+reopened window. Linus: 6/10; preparation scans the bounded matching-client list,
+while the old once-per-launcher call is removed. Brian Cox: 6/10; twenty bounded
+page attempts cover mapping after page startup. All agree to continue.
+
+After regression changes, Data: 8/10; output:
+`window check: page-ready API handles late and reopened windows`.
+Sherlock challenges "reopened": require the real Flatpak singleton path too.
+Linus: 8/10; `browser launch check: OK` covers native/Flatpak, fresh/reused relay,
+and profile paths containing spaces. Brian Cox: 8/10; browser interception below
+covers absent windows and transport errors. All agree to final native testing.
+
+- F9 — Strict `make -j4` exited 0. Focused regressions printed:
+  `browser launch check: OK` and `window check: OK`.
+- F10 — Full production launcher, installed Flatpak Brave, isolated COSMIC:
+  `WM_CLASS(STRING) = "127.0.0.1", "hush-relay"`;
+  `WM_PROTOCOLS(ATOM): protocols  WM_DELETE_WINDOW, _NET_WM_PING`;
+  `_MOTIF_WM_HINTS(_MOTIF_WM_HINTS) = 0x2, 0x0, 0x6, 0x0, 0x0`.
+  Ten drags each printed `"geometry_updates": 40, "samples": 40`;
+  `Full launcher: right-left-right twice, then horizontal/vertical edges: PASS`.
+- F11 — A second actual `hush-relay --open 18898` printed
+  `Opening in existing browser session.` The new window had the same prepared
+  properties, and six drags each printed `"geometry_updates": 40, "samples": 40`;
+  `Reopened Hush window: right-left-right twice: PASS`.
+- F12 — Installed Brave executing the actual embedded UI with intercepted
+  window responses printed:
+  `page preparation: transport failure + two absent windows -> fourth attempt succeeds; retries stop`;
+  `page preparation: unavailable native window -> exactly 20 attempts; retries stop`.
+- F13 — `PASSWORD_STORE_DIR=/tmp/hush-resize-followup/test-password-store make test`
+  exited 0 and printed `ALL TESTS PASSED`. The temporary store was empty, avoiding
+  restoration of the operator's identity in first-launch tests.
+
+C review applied the write-legible-c section 14 checklist to changed regions:
+new helpers stay below forty lines and depth two, loops have explicit bounds,
+string formatting checks overflow, declarations/prototypes carry ownership
+contracts, and acquired X11 displays close on every return path. POSIX exec
+adapters intentionally fall through on failure; the existing status/API ABI is
+preserved. Generated UI headers are rebuilt by Make and are not tracked.
+
+Data: 9/10; F9–F13 cover delivery and observed resizing. Sherlock challenges
+"delivery": the physical desktop still needs the installed binary launched with
+its actual profile directory. Sherlock: 8/10 pending that check. Linus: 9/10;
+no resize-event computation was added. Brian Cox: 9/10; fresh and reused launches
+both retain 40/40 updates across the complete ordering. No objection to delivery.
+
+- F14 — Additional top/right edge test:
+  `Reopened Hush window: top/right edges in both directions: PASS`;
+  all four drags printed `"geometry_updates": 40, "samples": 40`.
+  The first two top probes were rejected as test-coordinate errors: `y-1`
+  moved the whole window without changing height; `y-35` hit the header. The
+  isolated desktop screenshot showed a 36-pixel server header above the client,
+  and `y-40` hit the actual outer border. No source change was made for those
+  failed probes. Left/bottom tests already covered both axis directions.
+
+Verification milestone complete. Installation/physical-desktop property checks
+remain the delivery milestone; the old live Hush window had already closed
+when checked immediately before delivery.

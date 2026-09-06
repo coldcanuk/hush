@@ -33,3 +33,9 @@ See the follow-up evidence in
 1. Record exact results, review the PR and merge through GitHub.
 2. Install the tested binary and replace the old Hush app window/relay.
 3. Inspect the real desktop's Hush class/protocols, then clean the worktree.
+
+Milestones 1–3 are complete: diagnosis and regression, implementation, strict
+build/full suite, startup retry, real Flatpak fresh/reopened corner sequences,
+and all four edges in both directions. Exact evidence is F9–F14 in the research
+record. Milestone 4 proceeds through reviewed GitHub merge, installation, live
+window-property inspection, and worktree cleanup.
