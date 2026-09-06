@@ -32,4 +32,31 @@ Worktree: `worktrees/resize-drag-lag`, branch `gb/resize-drag-lag`.
 
 ## Verification / changelog
 
-Pending implementation and verification.
+Fixed COSMIC/Xwayland native resize stalls by removing only the optional
+`_NET_WM_SYNC_REQUEST` protocol from Hush's window setup. Other desktops keep
+synchronization. Close/ping/custom protocols and resize border hints remain.
+
+- Strict C11 `./configure && make -j4`: exit 0.
+- `python3 hush-c/tests/check_win.py`: `window check: OK`.
+- Compiled C entry point applied to the isolated COSMIC browser:
+  `native C resize check: 12 consecutive corner/left/vertical drags passed`.
+  Every drag produced 40 distinct native geometries from 40 pointer samples;
+  final width/height matched the requested pointer delta within two pixels.
+- Fresh normal startup:
+  `real --open launch: COSMIC resize workaround applied; close/ping preserved`.
+- `PASSWORD_STORE_DIR=/tmp/hush-resize-evidence/test-password-store make test`:
+  `ALL TESTS PASSED`. The first invocation without credential isolation stopped
+  at `launch check failed: cold session should be logged out`; the empty
+  password store removes the developer's saved identity from that test.
+- `git diff --check`: exit 0.
+
+C review: bounded desktop/protocol scans; no recursion/goto; touched functions
+under 40 lines and nesting depth at most two; protocol allocation released on
+all successful-read paths; assertions on mutation/borrowed resource invariants;
+new native helpers declared at file top; Xlib-required int length documented;
+shared `hush_status_t` and public signatures retained for repository ABI.
+
+Residual limit: the reproduction uses a nested instance of the installed
+COSMIC compositor with software rendering. Physical-monitor/GPU timing was not
+measured. The compatibility path opts out of synchronized repainting on COSMIC,
+so it trades that synchronization for responsive asynchronous native resizing.

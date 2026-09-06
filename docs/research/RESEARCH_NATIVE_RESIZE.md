@@ -105,3 +105,26 @@ Brian Cox: Yes, 6/10; validate multiple consecutive native drags.
 
 All four agree to execute the scoped plan. Confidence in the unexecuted C
 implementation remains capped at 6/10 until its own verification output exists.
+
+## Phase 7 — Observed implementation and review
+
+- E9 — `python3 hush-c/tests/check_win.py` before implementation:
+  `AssertionError: COSMIC: resize synchronization must be removed; close/ping/custom must remain`.
+  After implementation: `window check: OK`.
+- E10 — Compiled public C entry point, real isolated compositor/pointer drags:
+  `native C resize check: 12 consecutive corner/left/vertical drags passed`.
+  Each drag: `"geometry_updates": 40, "samples": 40`.
+  Fresh app startup:
+  `real --open launch: COSMIC resize workaround applied; close/ping preserved`.
+- E11 — Full suite with an empty temporary password store: `ALL TESTS PASSED`.
+
+Data: 9/10; E9–E11 exercise C behavior, actual pointer motion and normal launch.
+Sherlock: 9/10; "normal launch" addresses whether direct-call verification
+bypassed application setup. Negative desktop/window tests pass.
+Linus: 9/10; native code remains in one module, with scoped helpers and no UI diff.
+Brian Cox: 9/10; repeated drags preserve pointer/geometry timing. No objection.
+
+Physical-desktop confirmation would raise Data/Brian's scores; wider compositor
+version coverage would raise Sherlock's; sustained use without regressions would
+raise Linus's. The Hush paperwork contract is a reviewed GitHub PR and merge,
+per PRIME_DIRECTIVE.md; there is no GitLab incident issue in this task.
