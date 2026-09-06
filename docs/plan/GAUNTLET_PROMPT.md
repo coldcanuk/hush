@@ -1,6 +1,6 @@
-# Goose Instruction Prompt: The Hush Gauntlet
+# Codex Instruction Prompt: The Hush Gauntlet
 
-**Primary Directive for Goose:** Execute the "Gauntlet Loop" on the Hush application. You have access to Playwright and an instruct visual model. Follow this protocol precisely.
+**Primary Directive for Codex:** Execute the "Gauntlet Loop" on the Hush application. You have access to Playwright and an instruct visual model. Follow this protocol precisely.
 
 **Scoring law:** Use the category algebra and pass curve in [`GAUNTLET_LOOP_PROMPT.md`](GAUNTLET_LOOP_PROMPT.md). Summary: scale 0–10; **KEEP GOING** while any applicable score \(< 7.8\); **ACCEPTABLE PASS** when all applicable scores \(\ge 7.8\) and composite \(S \ge 7.8\). Aspire to 9+, but never require universal 9s — that incentivizes lying.
 
