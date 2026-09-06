@@ -3,6 +3,8 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <assert.h>
+#include <errno.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,9 +29,15 @@
 #include "hush_icon_panels.h"
 
 enum {
+    HUSH_HTTP_WRITE_RETRIES = 8,
+    HUSH_HTTP_WRITE_WAIT_MS = 250,
     HUSH_HTTP_JSON_MAX = 65536,
     HUSH_HTTP_PATH_MAX = 128,
-    HUSH_HTTP_EVENTS_MAX = 64,
+    HUSH_HTTP_KIND_BYTES = 16,
+    HUSH_HTTP_CONTENT_ESC_MAX = (HUSH_EVENT_MAX_CONTENT + 1) * HUSH_JSON_U_LEN,
+    HUSH_HTTP_MENTIONS_JSON_MAX = HUSH_EVENT_MAX_TAGS *
+        ((HUSH_EVENT_MAX_TAG_LEN + 1) * HUSH_JSON_U_LEN + 3),
+    HUSH_HTTP_EVENT_JSON_MAX = HUSH_HTTP_CONTENT_ESC_MAX + HUSH_HTTP_MENTIONS_JSON_MAX + 4096,
     HUSH_HTTP_HDR_MAX = 8192,
     HUSH_HTTP_KIND_SIGNAL = 25000,
     HUSH_HTTP_LOGIN_REPLY_MAX = 384,
@@ -76,7 +84,10 @@ static char g_context_text[HUSH_ROSTER_CONTEXT_MAX][HUSH_ROSTER_CONTEXT_BYTES];
 static const char *hush_find_headers_end(const char *buf, size_t len);
 static long hush_http_content_length(const char *buf, size_t hlen);
 static void hush_http_path(const char *req, char *out, size_t outsz);
-static void hush_http_write_all(int fd, const char *buf, size_t len);
+/* Writes required bytes with bounded backpressure; IO on disconnect or stalled reader. */
+static hush_status_t hush_http_write_all(int fd, const char *buf, size_t len);
+/* Returns the borrowed h-tag value regardless of tag order, or general if absent. */
+static const char *hush_http_event_channel(const hush_event_t *event);
 static void hush_http_reply(int fd, const char *status, const char *ctype,
                             const char *body, size_t blen);
 static int hush_http_serve_asset(int fd, const char *path);
@@ -87,6 +98,13 @@ static int hush_json_has_key(const char *body, const char *key);
 static int hush_json_bare_field(const char *body, const char *key,
                                 char *out, size_t outsz);
 static void hush_http_serve_status(int fd, const hush_store_t *store);
+/* True for required events exposed in conversation history. */
+static int hush_http_is_visible_event(const hush_event_t *event);
+/* Serializes p-tags from required event into bounded caller storage. */
+static hush_status_t hush_http_format_mentions(char *out, size_t outsz,
+                                               const hush_event_t *event);
+/* Sends one required event as JSON; returns FULL if serialization exceeds capacity. */
+static hush_status_t hush_http_send_event(int fd, const hush_event_t *event, int first);
 static void hush_http_serve_events(int fd, const hush_store_t *store);
 static void hush_http_serve_session(int fd);
 static void hush_http_serve_chan_events(int fd, const char *req);
@@ -127,6 +145,9 @@ static hush_status_t hush_http_read_legacy_context(hush_roster_context_in_t *slo
                                                    const char *body);
 static hush_status_t hush_http_serve_vibe(int fd, const char *body,
                                           hush_store_t *store);
+/* Decodes optional required room guidance into borrowed caller storage.
+ * Missing field preserves the supplied default; invalid or oversized fields fail. */
+static hush_status_t hush_http_take_room_prompt(char *out, size_t outsz, const char *body);
 static hush_status_t hush_http_serve_channel(int fd, const char *body);
 static hush_status_t hush_http_serve_group(int fd, const char *body);
 static hush_status_t hush_http_channel_manage(int fd, const char *body,
@@ -145,6 +166,23 @@ static void hush_http_collect_indexed(const char *body, const char *stem,
                                       char (*out)[HUSH_IDENTITY_NPUB_MAX],
                                       size_t *out_n, size_t maxn);
 static void hush_http_add_mentions(hush_event_t *out, const char *body);
+/* Resolves a required reply to its existing conversation channel/lead.
+ * Rejects unknown roots and cross-channel replies; adds a lead only without mentions. */
+static hush_status_t hush_http_resolve_conversation(hush_event_t *event, const hush_store_t *store);
+/* True for an enabled robot key in the current roster; borrowed required key. */
+/* Parses required note input without truncating the user's message. */
+static hush_status_t hush_http_parse_note(hush_event_t *out, const char *body);
+/* Publishes current human presence after a stored work note. */
+static void hush_http_note_presence(hush_store_t *store, const hush_event_t *event);
+/* Creates one room from required JSON request fields. */
+static hush_status_t hush_http_channel_create(const char *body);
+/* Applies a room's group choice from required request and slug. */
+static hush_status_t hush_http_channel_group(const char *body, const char *slug);
+/* Applies explicitly supplied roster lists to the required room. */
+static hush_status_t hush_http_channel_roster(const char *body, const hush_launch_channel_t *channel);
+/* Updates optional room topic text; omission preserves the current topic. */
+static hush_status_t hush_http_channel_about(const char *body, const char *slug);
+static int hush_http_is_robot_key(const char *key);
 static void hush_http_add_reply_to(hush_event_t *out, const char *body);
 static void hush_http_event_reply_to(char *out, size_t outsz,
                                      const hush_event_t *ev);
@@ -183,6 +221,7 @@ static hush_status_t hush_http_serve_exit(int fd);
 static hush_status_t hush_http_serve_window(int fd, const char *body);
 static hush_status_t hush_http_window_run(const char *action);
 static void hush_http_reply_window(int fd, const char *action);
+/* Enumeration serializer retains its existing output-offset/first-item ABI. */
 static void hush_http_append_provider(char *body, size_t bodysz, size_t *n,
                                       const hush_provider_status_t *st,
                                       int first);
@@ -440,19 +479,29 @@ static int hush_http_serve_icon_panel(int fd, const char *path)
     return 0;
 }
 
-static void hush_http_write_all(int fd, const char *buf, size_t len)
+static hush_status_t hush_http_write_all(int fd, const char *buf, size_t len)
 {
-    size_t off = 0;
-    ssize_t w;
-
-    if (buf == NULL)
-        return;
-    while (off < len) {
-        w = write(fd, buf + off, len - off);
-        if (w <= 0)
-            break;
-        off += (size_t)w;
+    assert(buf != NULL);
+    size_t offset = 0;
+    for (size_t tries = 0; tries < len + HUSH_HTTP_WRITE_RETRIES && offset < len; ++tries) {
+        ssize_t count = write(fd, buf + offset, len - offset);
+        if (count > 0) { offset += (size_t)count; continue; }
+        if (count < 0 && errno == EINTR) continue;
+        if (count == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) return HUSH_ERR_IO;
+        struct pollfd ready = {.fd = fd, .events = POLLOUT};
+        if (poll(&ready, 1, HUSH_HTTP_WRITE_WAIT_MS) <= 0) return HUSH_ERR_IO;
     }
+    return offset == len ? HUSH_OK : HUSH_ERR_IO;
+}
+
+static const char *hush_http_event_channel(const hush_event_t *event)
+{
+    assert(event != NULL);
+    for (size_t i = 0; i < event->tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; ++i) {
+        if (strcmp(event->tags[i][0], "h") == 0 && event->tags[i][1][0] != '\0')
+            return event->tags[i][1];
+    }
+    return "general";
 }
 
 static void hush_http_reply(int fd, const char *status, const char *ctype,
@@ -471,9 +520,12 @@ static void hush_http_reply(int fd, const char *status, const char *ctype,
                  "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
                  "\r\n",
                  status, ctype, blen);
-    if (n > 0 && (size_t)n < sizeof(hdr))
-        hush_http_write_all(fd, hdr, (size_t)n);
-    hush_http_write_all(fd, body, blen);
+    if (n <= 0 || (size_t)n >= sizeof(hdr))
+        return;
+    if (hush_http_write_all(fd, hdr, (size_t)n) != HUSH_OK)
+        return;
+    if (hush_http_write_all(fd, body, blen) != HUSH_OK)
+        return;
 }
 
 static void hush_json_unescape_copy(const char *src, char *dst, size_t dstsz)
@@ -562,14 +614,13 @@ static void hush_http_serve_status(int fd, const hush_store_t *store)
 {
     char body[HUSH_HTTP_STATUS_MAX];
     char thinking[HUSH_HTTP_THINKING_MAX];
-    hush_event_t tmp[HUSH_HTTP_EVENTS_MAX];
     size_t n;
     int w;
     int whisper;
     int turn_on;
     int vibe_pub;
 
-    n = hush_store_query(store, NULL, 0, tmp, HUSH_HTTP_EVENTS_MAX);
+    n = hush_store_count(store);
     whisper = hush_turn_whisper_available();
     turn_on = (g_turn != NULL && g_turn->running);
     vibe_pub = (g_launch == NULL || !g_launch->has_vibe || g_launch->vibe_public);
@@ -590,131 +641,193 @@ static void hush_http_serve_status(int fd, const hush_store_t *store)
 
 static void hush_http_serve_events(int fd, const hush_store_t *store)
 {
-    static char body[HUSH_HTTP_JSON_MAX];
-    hush_event_t evs[HUSH_HTTP_EVENTS_MAX];
-    char esc[HUSH_EVENT_MAX_CONTENT + 8];
-    char reply_to[HUSH_EVENT_ID_HEX_LEN + 1];
-    size_t n;
-    size_t i;
-    size_t off;
-    int w;
+    assert(store != NULL);
+    const char *header = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+        "Access-Control-Allow-Origin: *\r\nCache-Control: no-store\r\n"
+        "Connection: close\r\n\r\n{\"events\":[";
+    if (hush_http_write_all(fd, header, strlen(header)) != HUSH_OK)
+        return;
+    size_t count = hush_store_count(store);
     int first = 1;
-
-    n = hush_store_query(store, NULL, 0, evs, HUSH_HTTP_EVENTS_MAX);
-    off = (size_t)snprintf(body, sizeof(body), "{\"events\":[");
-    for (i = 0; i < n && off + 512 < sizeof(body); ++i) {
-        if (evs[i].kind == (uint32_t)HUSH_PRESENCE_KIND_LINE ||
-            evs[i].kind == (uint32_t)HUSH_PRESENCE_KIND_TRAIL ||
-            evs[i].kind == (uint32_t)HUSH_WAKE_KIND_CLAIM)
-            continue;
-        hush_json_escape(evs[i].content, esc, sizeof(esc));
-        hush_http_event_reply_to(reply_to, sizeof(reply_to), &evs[i]);
-
-        /* Collect p-mentions (the authoritative tags that triggered robot dispatch).
-         * Produces a valid JSON array (or empty) so UI acks are truthful.
-         * Never emits a trailing comma even on truncation.
-         */
-        char ment[1024];
-        ment[0] = '\0';
-        size_t mentoff = 0;
-        int has_mention = 0;
-        for (size_t t = 0; t < evs[i].tag_count && t < HUSH_EVENT_MAX_TAGS; ++t) {
-            if (strcmp(evs[i].tags[t][0], "p") != 0 || evs[i].tags[t][1][0] == '\0')
-                continue;
-            char mval[256];
-            hush_json_escape(evs[i].tags[t][1], mval, sizeof(mval));
-            size_t need = strlen(mval) + 3; /* quote + quote + optional leading comma */
-            if (mentoff + need + 1 >= sizeof(ment))
-                break; /* stop; array so far is valid */
-            if (has_mention) {
-                ment[mentoff++] = ',';
-            }
-            int nw = snprintf(ment + mentoff, sizeof(ment) - mentoff,
-                              "\"%s\"", mval);
-            if (nw < 0 || (size_t)nw >= (sizeof(ment) - mentoff))
-                break;
-            mentoff += (size_t)nw;
-            has_mention = 1;
-        }
-        if (!has_mention)
-            ment[0] = '\0';
-
-        w = snprintf(body + off, sizeof(body) - off,
-                     "%s{\"id\":\"%s\",\"pubkey\":\"%s\",\"kind\":%u,"
-                     "\"created_at\":%lld,\"content\":\"%s\",\"channel\":\"%s\","
-                     "\"reply_to\":\"%s\",\"mentions\":[%s]}",
-                     first ? "" : ",",
-                     evs[i].id, evs[i].pubkey, evs[i].kind,
-                     (long long)evs[i].created_at, esc,
-                     evs[i].tags[0][1][0] ? evs[i].tags[0][1] : "general",
-                     reply_to, ment);
-        if (w < 0)
+    for (size_t i = 0; i < count && i < (size_t)HUSH_STORE_CAPACITY; ++i) {
+        hush_event_t event = {0};
+        if (hush_store_get(store, i, &event) != HUSH_OK)
             break;
-        off += (size_t)w;
+        if (!hush_http_is_visible_event(&event))
+            continue;
+        if (hush_http_send_event(fd, &event, first) != HUSH_OK)
+            return;
         first = 0;
     }
-    if (off + 3 < sizeof(body)) {
-        memcpy(body + off, "]}\n", 3);
-        off += 3;
-    }
-    hush_http_reply(fd, "200 OK", "application/json", body, off);
+    if (hush_http_write_all(fd, "]}\n", strlen("]}\n")) != HUSH_OK)
+        return;
 }
 
+static int hush_http_is_visible_event(const hush_event_t *event)
+{
+    assert(event != NULL);
+    return event->kind != (uint32_t)HUSH_PRESENCE_KIND_LINE &&
+        event->kind != (uint32_t)HUSH_PRESENCE_KIND_TRAIL &&
+        event->kind != (uint32_t)HUSH_WAKE_KIND_CLAIM;
+}
+
+static hush_status_t hush_http_format_mentions(char *out, size_t outsz,
+                                               const hush_event_t *event)
+{
+    assert(out != NULL && outsz > 0);
+    assert(event != NULL);
+    size_t used = 0;
+    out[0] = '\0';
+    for (size_t i = 0; i < event->tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; ++i) {
+        if (strcmp(event->tags[i][0], "p") != 0 || event->tags[i][1][0] == '\0')
+            continue;
+        char escaped[(HUSH_EVENT_MAX_TAG_LEN + 1) * HUSH_JSON_U_LEN] = {0};
+        (void)hush_json_escape(event->tags[i][1], escaped, sizeof(escaped));
+        int written = snprintf(out + used, outsz - used, "%s\"%s\"", used ? "," : "", escaped);
+        if (written < 0 || (size_t)written >= outsz - used)
+            return HUSH_ERR_FULL;
+        used += (size_t)written;
+    }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_http_send_event(int fd, const hush_event_t *event, int first)
+{
+    assert(event != NULL);
+    char content[HUSH_HTTP_CONTENT_ESC_MAX] = {0};
+    char mentions[HUSH_HTTP_MENTIONS_JSON_MAX] = {0};
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    char channel[(HUSH_EVENT_MAX_TAG_LEN + 1) * HUSH_JSON_U_LEN] = {0};
+    char body[HUSH_HTTP_EVENT_JSON_MAX] = {0};
+    (void)hush_json_escape(event->content, content, sizeof(content));
+    (void)hush_json_escape(hush_http_event_channel(event),
+                          channel, sizeof(channel));
+    hush_http_event_reply_to(root, sizeof(root), event);
+    HUSH_TRY(hush_http_format_mentions(mentions, sizeof(mentions), event));
+    int written = snprintf(body, sizeof(body),
+        "%s{\"id\":\"%s\",\"pubkey\":\"%s\",\"kind\":%u,"
+        "\"created_at\":%lld,\"content\":\"%s\",\"channel\":\"%s\","
+        "\"reply_to\":\"%s\",\"mentions\":[%s]}", first ? "" : ",",
+        event->id, event->pubkey, event->kind, (long long)event->created_at,
+        content, channel, root, mentions);
+    if (written < 0 || (size_t)written >= sizeof(body))
+        return HUSH_ERR_FULL;
+    return hush_http_write_all(fd, body, (size_t)written);
+}
+
+/* The relay's existing HTTP callback signature includes both transport and event outputs. */
 static hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
                                           hush_store_t *store, hush_event_t *out)
 {
-    const char *end;
-    const char *body;
-    char content[HUSH_EVENT_MAX_CONTENT + 1];
-    char channel[64];
-    char kindbuf[16];
-
-    end = hush_find_headers_end(req, len);
-    if (end == NULL)
-        return HUSH_ERR_PARSE;
-    body = end + 4;
-    memset(out, 0, sizeof(*out));
-    if (!hush_json_field(body, "content", content, sizeof(content))) {
-        hush_http_reply(fd, "400 Bad Request", "text/plain", "need content\n", 13);
-        return HUSH_ERR_PARSE;
+    if (g_launch == NULL || !g_launch->logged_in) {
+        const char *error = "Sign in before sending a message.\n";
+        hush_http_reply(fd, "401 Unauthorized", "text/plain", error, strlen(error));
+        return HUSH_ERR_DENIED;
     }
-    if (!hush_json_field(body, "channel", channel, sizeof(channel)))
-        memcpy(channel, "general", 8);
-    if (g_launch != NULL && g_launch->logged_in)
-        memcpy(out->pubkey, g_launch->human.pubkey_hex, 65);
-    else
-        memcpy(out->pubkey,
-               "0000000000000000000000000000000000000000000000000000000000000001",
-               65);
+    hush_status_t status = hush_http_parse_note(out, hush_http_body(req, len));
+    if (status == HUSH_OK) status = hush_http_resolve_conversation(out, store);
+    if (status != HUSH_OK) {
+        const char *error = "Invalid message or conversation. Reopen the thread and retry.\n";
+        hush_http_reply(fd, "400 Bad Request", "text/plain", error, strlen(error));
+        return status;
+    }
+    status = hush_event_compute_id(out, out->id);
+    if (status == HUSH_OK) status = hush_store_insert(store, out);
+    if (status != HUSH_OK) {
+        const char *error = "Message could not be stored.\n";
+        hush_http_reply(fd, "507 Insufficient Storage", "text/plain", error, strlen(error));
+        return status;
+    }
+    hush_intel_consider(store, g_launch, out);
+    hush_http_note_presence(store, out);
+    const char *success = "{\"ok\":true}\n";
+    hush_http_reply(fd, "200 OK", "application/json", success, strlen(success));
+    return HUSH_OK;
+}
+
+static hush_status_t hush_http_parse_note(hush_event_t *out, const char *body)
+{
+    assert(out != NULL && body != NULL);
+    assert(g_launch != NULL && g_launch->logged_in);
+    memset(out, 0, sizeof(*out));
+    hush_json_value_t value = {0};
+    HUSH_TRY(hush_json_lookup(&value, body, "/content"));
+    HUSH_TRY(hush_json_decode(out->content, sizeof(out->content), &value));
+    if (out->content[0] == '\0') return HUSH_ERR_PARSE;
+    char channel[HUSH_LAUNCH_NAME_MAX] = "general";
+    hush_status_t status = hush_json_lookup(&value, body, "/channel");
+    if (status == HUSH_OK) status = hush_json_decode(channel, sizeof(channel), &value);
+    if (status != HUSH_OK && status != HUSH_ERR_NOT_FOUND) return status;
+    memcpy(out->pubkey, g_launch->human.pubkey_hex, sizeof(out->pubkey));
     out->kind = 1;
-    if (hush_json_field(body, "kind", kindbuf, sizeof(kindbuf)))
-        out->kind = (uint32_t)atoi(kindbuf);
+    char kind[HUSH_HTTP_KIND_BYTES] = {0};
+    if (hush_json_field(body, "kind", kind, sizeof(kind))) out->kind = (uint32_t)atoi(kind);
     out->created_at = (int64_t)time(NULL);
-    memcpy(out->content, content, strlen(content) + 1);
     out->tag_count = 1;
-    memcpy(out->tags[0][0], "h", 2);
+    memcpy(out->tags[0][0], "h", sizeof("h"));
     memcpy(out->tags[0][1], channel, strlen(channel) + 1);
     hush_http_add_reply_to(out, body);
     hush_http_add_mentions(out, body);
-    (void)hush_event_compute_id(out, out->id);
-    if (hush_store_insert(store, out) != HUSH_OK) {
-        hush_http_reply(fd, "507 Insufficient Storage", "text/plain", "full\n", 5);
-        return HUSH_ERR_FULL;
-    }
-    hush_intel_consider(store, g_launch, out);
-    if (out->kind == 1 && g_launch != NULL && g_launch->logged_in) {
-        hush_presence_in_t pin;
+    return HUSH_OK;
+}
 
-        memset(&pin, 0, sizeof(pin));
-        pin.pubkey = g_launch->human.pubkey_hex;
-        pin.role = NULL;
-        pin.slug = HUSH_PRESENCE_SLUG_CONVERSING;
-        pin.channel = channel;
-        pin.root = g_launch->human.pubkey_hex;
-        pin.now = time(NULL);
-        (void)hush_presence_publish(store, &pin);
+static void hush_http_note_presence(hush_store_t *store, const hush_event_t *event)
+{
+    assert(store != NULL && event != NULL && g_launch != NULL);
+    if (event->kind != 1)
+        return;
+    hush_presence_in_t presence = {.pubkey = g_launch->human.pubkey_hex,
+        .slug = HUSH_PRESENCE_SLUG_CONVERSING, .channel = event->tags[0][1],
+        .root = g_launch->human.pubkey_hex, .now = time(NULL)};
+    /* The stored note remains successful even if optional presence is unavailable. */
+    if (hush_presence_publish(store, &presence) != HUSH_OK)
+        return;
+}
+
+static int hush_http_is_robot_key(const char *key)
+{
+    assert(key != NULL);
+    if (g_launch == NULL)
+        return 0;
+    if (g_launch->payne_enabled && (strcmp(key, g_launch->payne.npub) == 0 ||
+        strcmp(key, g_launch->payne.pubkey_hex) == 0))
+        return 1;
+    const hush_roster_t *roster = &g_launch->roster;
+    for (size_t i = 0; i < roster->nagents && i < (size_t)HUSH_ROSTER_AGENTS_MAX; ++i) {
+        const hush_roster_agent_t *robot = &roster->agents[i];
+        const hush_identity_t *identity = &robot->id;
+        if (robot->enabled && (strcmp(key, identity->npub) == 0 ||
+            strcmp(key, identity->pubkey_hex) == 0))
+            return 1;
     }
-    hush_http_reply(fd, "200 OK", "application/json", "{\"ok\":true}\n", 12);
+    return 0;
+}
+
+static hush_status_t hush_http_resolve_conversation(hush_event_t *event, const hush_store_t *store)
+{
+    assert(event != NULL);
+    assert(store != NULL);
+    char root_id[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    hush_http_event_reply_to(root_id, sizeof(root_id), event);
+    if (root_id[0] == '\0')
+        return HUSH_OK;
+    hush_event_t root = {0};
+    HUSH_TRY(hush_store_find(store, &root, root_id));
+    if (strcmp(hush_http_event_channel(event), hush_http_event_channel(&root)) != 0)
+        return HUSH_ERR_DENIED;
+    for (size_t i = 0; i < event->tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; ++i) {
+        if (strcmp(event->tags[i][0], "p") == 0)
+            return HUSH_OK;
+    }
+    for (size_t i = 0; i < root.tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; ++i) {
+        if (strcmp(root.tags[i][0], "p") != 0 || !hush_http_is_robot_key(root.tags[i][1]))
+            continue;
+        if (event->tag_count == (size_t)HUSH_EVENT_MAX_TAGS)
+            return HUSH_ERR_FULL;
+        memcpy(event->tags[event->tag_count], root.tags[i], sizeof(root.tags[i]));
+        ++event->tag_count;
+        return HUSH_OK;
+    }
     return HUSH_OK;
 }
 
@@ -1337,50 +1450,49 @@ static hush_status_t hush_http_serve_vibe(int fd, const char *body,
 
 static hush_status_t hush_http_serve_channel(int fd, const char *body)
 {
-    char name[HUSH_LAUNCH_NAME_MAX];
-    char slug[HUSH_LAUNCH_NAME_MAX];
-    char action[16];
-    char group_id[HUSH_LAUNCH_ID_HEX + 1];
-    char group_name[HUSH_LAUNCH_NAME_MAX];
-
     if (g_launch == NULL || body == NULL)
         return hush_http_reply_session(fd, HUSH_ERR_ARG);
-    action[0] = '\0';
+    char action[HUSH_HTTP_PATH_MAX] = {0};
     (void)hush_json_field(body, "action", action, sizeof(action));
-    if (action[0] == '\0' || strcmp(action, "create") == 0) {
-        if (!hush_json_field(body, "name", name, sizeof(name)))
-            return hush_http_reply_session(fd, HUSH_ERR_PARSE);
-        return hush_http_reply_session(fd,
-                                       hush_launch_add_channel(g_launch, name));
-    }
+    if (action[0] == '\0' || strcmp(action, "create") == 0)
+        return hush_http_reply_session(fd, hush_http_channel_create(body));
+    char slug[HUSH_LAUNCH_NAME_MAX] = {0};
     if (!hush_json_field(body, "slug", slug, sizeof(slug)))
         return hush_http_reply_session(fd, HUSH_ERR_PARSE);
     if (strcmp(action, "delete") == 0)
-        return hush_http_reply_session(fd,
-                                       hush_launch_remove_channel(g_launch, slug));
+        return hush_http_reply_session(fd, hush_launch_remove_channel(g_launch, slug));
     if (strcmp(action, "ungroup") == 0)
-        return hush_http_reply_session(fd,
-                                       hush_launch_set_channel_group(g_launch,
-                                                                     slug, ""));
-    if (strcmp(action, "group") == 0) {
-        if (hush_json_field(body, "group_id", group_id, sizeof(group_id)))
-            return hush_http_reply_session(fd,
-                                           hush_launch_set_channel_group(
-                                               g_launch, slug, group_id));
-        if (!hush_json_field(body, "group", group_name, sizeof(group_name)))
-            return hush_http_reply_session(fd, HUSH_ERR_PARSE);
-        if (hush_launch_add_group(g_launch, group_name) != HUSH_OK)
-            return hush_http_reply_session(fd, HUSH_ERR_FULL);
-        if (g_launch->ngroups == 0)
-            return hush_http_reply_session(fd, HUSH_ERR_FULL);
-        return hush_http_reply_session(fd,
-                                       hush_launch_set_channel_group(
-                                           g_launch, slug,
-                                           g_launch->groups[g_launch->ngroups - 1].id));
-    }
+        return hush_http_reply_session(fd, hush_launch_set_channel_group(g_launch, slug, ""));
+    if (strcmp(action, "group") == 0)
+        return hush_http_reply_session(fd, hush_http_channel_group(body, slug));
     if (strcmp(action, "manage") == 0)
         return hush_http_channel_manage(fd, body, slug);
     return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+}
+
+static hush_status_t hush_http_channel_create(const char *body)
+{
+    assert(body != NULL && g_launch != NULL);
+    char name[HUSH_LAUNCH_NAME_MAX] = {0};
+    if (!hush_json_field(body, "name", name, sizeof(name)))
+        return HUSH_ERR_PARSE;
+    char prompt[HUSH_LAUNCH_PROMPT_BYTES] = HUSH_LAUNCH_ROOM_PROMPT;
+    HUSH_TRY(hush_http_take_room_prompt(prompt, sizeof(prompt), body));
+    return hush_launch_add_channel_prompt(g_launch, name, prompt);
+}
+
+static hush_status_t hush_http_channel_group(const char *body, const char *slug)
+{
+    assert(body != NULL && slug != NULL && g_launch != NULL);
+    char group[HUSH_LAUNCH_NAME_MAX] = {0};
+    if (hush_json_field(body, "group_id", group, sizeof(group)))
+        return hush_launch_set_channel_group(g_launch, slug, group);
+    if (!hush_json_field(body, "group", group, sizeof(group)))
+        return HUSH_ERR_PARSE;
+    HUSH_TRY(hush_launch_add_group(g_launch, group));
+    if (g_launch->ngroups == 0)
+        return HUSH_ERR_FULL;
+    return hush_launch_set_channel_group(g_launch, slug, g_launch->groups[g_launch->ngroups - 1].id);
 }
 
 static hush_status_t hush_http_serve_group(int fd, const char *body)
@@ -1394,43 +1506,70 @@ static hush_status_t hush_http_serve_group(int fd, const char *body)
     return hush_http_reply_session(fd, hush_launch_add_group(g_launch, name));
 }
 
-static hush_status_t hush_http_channel_manage(int fd, const char *body,
-                                              const char *slug)
+static hush_status_t hush_http_channel_manage(int fd, const char *body, const char *slug)
 {
-    char humans[HUSH_HTTP_CHAN_LIST_MAX][HUSH_IDENTITY_NPUB_MAX];
-    char robots[HUSH_HTTP_CHAN_LIST_MAX][HUSH_IDENTITY_NPUB_MAX];
-    const char *human_ptrs[HUSH_HTTP_CHAN_LIST_MAX];
-    const char *robot_ptrs[HUSH_HTTP_CHAN_LIST_MAX];
-    size_t nhumans = 0;
-    size_t nrobots = 0;
-    size_t i;
-    hush_status_t st;
+    const hush_launch_channel_t *channel = hush_http_find_channel(slug);
+    if (channel == NULL)
+        return hush_http_reply_session(fd, HUSH_ERR_NOT_FOUND);
+    char prompt[HUSH_LAUNCH_PROMPT_BYTES] = {0};
+    memcpy(prompt, channel->system_prompt, sizeof(prompt));
+    hush_status_t status = hush_http_take_room_prompt(prompt, sizeof(prompt), body);
+    if (status == HUSH_OK) status = hush_http_channel_roster(body, channel);
+    if (status == HUSH_OK) status = hush_http_channel_policy(body, slug);
+    if (status == HUSH_OK) status = hush_http_channel_about(body, slug);
+    if (status == HUSH_OK) status = hush_launch_set_channel_prompt(g_launch, slug, prompt);
+    return hush_http_reply_session(fd, status);
+}
 
-    hush_http_collect_indexed(body, "human", humans, &nhumans,
-                              (size_t)HUSH_HTTP_CHAN_LIST_MAX);
-    hush_http_collect_indexed(body, "robot", robots, &nrobots,
-                              (size_t)HUSH_HTTP_CHAN_LIST_MAX);
-    for (i = 0; i < nhumans; ++i)
+static hush_status_t hush_http_channel_roster(const char *body, const hush_launch_channel_t *channel)
+{
+    assert(body != NULL && channel != NULL);
+    int has_humans = hush_json_has_key(body, "human_0");
+    int has_robots = hush_json_has_key(body, "robot_0");
+    if (!has_humans && !has_robots)
+        return HUSH_OK;
+    char humans[HUSH_HTTP_CHAN_LIST_MAX][HUSH_IDENTITY_NPUB_MAX] = {{0}};
+    char robots[HUSH_HTTP_CHAN_LIST_MAX][HUSH_IDENTITY_NPUB_MAX] = {{0}};
+    const char *human_ptrs[HUSH_HTTP_CHAN_LIST_MAX] = {0};
+    const char *robot_ptrs[HUSH_HTTP_CHAN_LIST_MAX] = {0};
+    size_t nhumans = channel->nhumans;
+    size_t nrobots = channel->nrobots;
+    if (has_humans) hush_http_collect_indexed(body, "human", humans, &nhumans, HUSH_HTTP_CHAN_LIST_MAX);
+    if (has_robots) hush_http_collect_indexed(body, "robot", robots, &nrobots, HUSH_HTTP_CHAN_LIST_MAX);
+    for (size_t i = 0; i < nhumans && i < (size_t)HUSH_HTTP_CHAN_LIST_MAX; ++i) {
+        if (!has_humans) memcpy(humans[i], channel->humans[i], strlen(channel->humans[i]) + 1);
         human_ptrs[i] = humans[i];
-    for (i = 0; i < nrobots; ++i)
-        robot_ptrs[i] = robots[i];
-    st = hush_launch_set_channel_roster(g_launch, slug, human_ptrs, nhumans,
-                                        robot_ptrs, nrobots);
-    if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
-    st = hush_http_channel_policy(body, slug);
-    if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
-    if (hush_json_has_key(body, "about")) {
-        char about[HUSH_LAUNCH_ABOUT_MAX];
-
-        about[0] = '\0';
-        (void)hush_json_field(body, "about", about, sizeof(about));
-        st = hush_launch_set_channel_about(g_launch, slug, about);
-        if (st != HUSH_OK)
-            return hush_http_reply_session(fd, st);
     }
-    return hush_http_reply_session(fd, HUSH_OK);
+    for (size_t i = 0; i < nrobots && i < (size_t)HUSH_HTTP_CHAN_LIST_MAX; ++i) {
+        if (!has_robots) memcpy(robots[i], channel->robots[i], strlen(channel->robots[i]) + 1);
+        robot_ptrs[i] = robots[i];
+    }
+    return hush_launch_set_channel_roster(g_launch, channel->slug, human_ptrs, nhumans,
+                                          robot_ptrs, nrobots);
+}
+
+static hush_status_t hush_http_channel_about(const char *body, const char *slug)
+{
+    assert(body != NULL && slug != NULL);
+    if (!hush_json_has_key(body, "about"))
+        return HUSH_OK;
+    char about[HUSH_LAUNCH_ABOUT_MAX] = {0};
+    (void)hush_json_field(body, "about", about, sizeof(about));
+    return hush_launch_set_channel_about(g_launch, slug, about);
+}
+
+static hush_status_t hush_http_take_room_prompt(char *out, size_t outsz, const char *body)
+{
+    assert(out != NULL && outsz >= (size_t)HUSH_LAUNCH_PROMPT_BYTES);
+    assert(body != NULL);
+    hush_json_value_t value = {0};
+    hush_status_t status = hush_json_lookup(&value, body, "/system_prompt");
+    if (status == HUSH_ERR_NOT_FOUND)
+        return HUSH_OK;
+    if (status != HUSH_OK)
+        return status;
+    HUSH_TRY(hush_json_decode(out, outsz, &value));
+    return hush_launch_validate_channel_prompt(out);
 }
 
 static const hush_launch_channel_t *hush_http_find_channel(const char *slug)
@@ -1999,6 +2138,7 @@ static void hush_http_reply_window(int fd, const char *action)
                     sizeof(HUSH_HTTP_WINDOW_MAX_JSON) - 1);
 }
 
+/* Enumeration serializer retains its existing output-offset/first-item ABI. */
 static void hush_http_append_provider(char *body, size_t bodysz, size_t *n,
                                       const hush_provider_status_t *st,
                                       int first)
@@ -2007,10 +2147,7 @@ static void hush_http_append_provider(char *body, size_t bodysz, size_t *n,
     char model[HUSH_PROVIDER_MODEL_MAX * 2];
     char home_model[HUSH_PROVIDER_MODEL_MAX * 2];
     int wr;
-
-    assert(body != NULL);
-    assert(n != NULL);
-    assert(st != NULL);
+    assert(body != NULL && n != NULL && st != NULL);
     hush_json_escape(st->host, host, sizeof(host));
     hush_json_escape(st->model, model, sizeof(model));
     hush_json_escape(st->home_model, home_model, sizeof(home_model));
@@ -2021,7 +2158,7 @@ static void hush_http_append_provider(char *body, size_t bodysz, size_t *n,
                   "\"has_token\":%s,\"has_passkey\":%s,"
                   "\"use_home\":%s,\"host\":\"%s\",\"model\":\"%s\","
                   "\"home_model\":\"%s\",\"caps\":%u,\"flags\":%u,"
-                  "\"configured\":%s}",
+                  "\"configured\":%s,\"ready\":%s}",
                   first ? "" : ",",
                   st->id, st->label, st->family,
                   st->has_binary ? "true" : "false",
@@ -2035,7 +2172,8 @@ static void hush_http_append_provider(char *body, size_t bodysz, size_t *n,
                   host, model, home_model,
                   st->caps,
                   st->flags,
-                  st->configured ? "true" : "false");
+                  st->configured ? "true" : "false",
+                  hush_provider_ready(st) ? "true" : "false");
     if (wr > 0 && (size_t)wr < bodysz - *n)
         *n += (size_t)wr;
 }

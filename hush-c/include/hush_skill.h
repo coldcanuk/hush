@@ -113,4 +113,9 @@ int hush_skill_robot_ok(const hush_skill_t *skill, const char *robot_slug);
 /* Copies pack_dir/<slug>/SKILL.md into ~/.hush/skills/system when missing. */
 hush_status_t hush_skill_seed_pack(const char *pack_dir);
 
+/* Reads the full instruction file for required skill_id into required output.
+ * Rejects invalid identifiers, missing files, read errors, and truncation.
+ * IDs follow system:slug, user:slug, or robot:robot-slug:skill-slug. */
+hush_status_t hush_skill_read_instructions(char *out, size_t outsz, const char *skill_id);
+
 #endif /* HUSH_SKILL_H */

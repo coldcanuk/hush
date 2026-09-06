@@ -40,4 +40,8 @@ size_t hush_store_count(const hush_store_t *store);
 hush_status_t hush_store_get(const hush_store_t *store, size_t idx,
                              hush_event_t *out);
 
+/* Copies an event identified by required id into required caller storage.
+ * Borrowed store/id; returns ARG or NOT_FOUND without changing output. */
+hush_status_t hush_store_find(const hush_store_t *store, hush_event_t *out, const char *id);
+
 #endif /* HUSH_STORE_H */

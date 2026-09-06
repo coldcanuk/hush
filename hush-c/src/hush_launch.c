@@ -26,11 +26,18 @@ enum {
     HUSH_LAUNCH_KIND_REPO = 30617,
     HUSH_LAUNCH_SLUG_FALLBACK = 'x',
     HUSH_LAUNCH_CMD_MAX = 768,
-    HUSH_LAUNCH_FILE_MAX = 32768,
+    HUSH_LAUNCH_FILE_MAX = HUSH_LAUNCH_JSON_MAX,
     HUSH_LAUNCH_KEY_MAX = 48,
     HUSH_LAUNCH_COUNT_MAX = 8,
     HUSH_LAUNCH_UUID_RAW = 16
 };
+
+/* Borrows the flat serializer's output buffer and cursor for channel writers. */
+typedef struct {
+    char *out;
+    size_t capacity;
+    size_t *offset;
+} hush_launch_writer_t;
 
 #define HUSH_LAUNCH_RETIRED_PROVIDER "agy"
 
@@ -40,6 +47,11 @@ enum {
 #define HUSH_LAUNCH_CHAN_AGENTS "agents"
 #define HUSH_LAUNCH_VIBE_FILE "vibe.json"
 #define HUSH_LAUNCH_VIBE_VERSION "1"
+
+/* Appends guidance from a required borrowed channel to a bounded JSON output.
+ * Required output/offset; FULL on insufficient space. */
+static hush_status_t hush_launch_format_channel_guidance(const hush_launch_channel_t *channel,
+                                                         char *out, size_t outsz, size_t *off);
 
 /* Copies text, trimmed, into dst. Empty becomes fallback. */
 static void hush_launch_copy_name(char *dst, size_t dstsz,
@@ -61,6 +73,16 @@ static int hush_launch_has_group_id(const hush_launch_t *launch,
 
 /* True when slug is Payne or a raised robot. */
 static int hush_launch_has_robot(const hush_launch_t *launch, const char *slug);
+
+/* Appends one indexed channel to required borrowed writer; FULL on overflow. */
+static hush_status_t hush_launch_put_channel(hush_launch_writer_t *writer,
+                                             const hush_launch_channel_t *ch, size_t idx);
+/* Restores one indexed channel into required output, defaulting absent guidance. */
+static hush_status_t hush_launch_take_channel(hush_launch_channel_t *ch,
+                                               const char *json, size_t idx);
+/* Restores validated guidance in required output; uses the current default otherwise. */
+static hush_status_t hush_launch_take_channel_prompt(hush_launch_channel_t *ch,
+                                                      const char *json, size_t idx);
 
 /* True when a raised agent already uses slug. */
 static int hush_launch_has_agent_slug(const hush_launch_t *launch,
@@ -138,6 +160,7 @@ static hush_status_t hush_launch_format_channels(const hush_launch_t *launch,
                                                  size_t *off);
 
 /* Appends one channel's humans and robots arrays. */
+
 static hush_status_t hush_launch_format_channel_lists(
     const hush_launch_channel_t *ch, char *out, size_t outsz, size_t *off);
 
@@ -753,6 +776,8 @@ hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
         return HUSH_ERR_ARG;
     if (!launch->logged_in)
         return HUSH_ERR_ARG;
+    hush_skill_catalog_t catalog;
+    HUSH_TRY(hush_skill_load_catalog(&catalog));
     hush_launch_copy_name(launch->vibe_name, sizeof(launch->vibe_name),
                           name, HUSH_LAUNCH_DEFAULT_VIBE);
     hush_launch_copy_name(launch->vibe_about, sizeof(launch->vibe_about),
@@ -800,6 +825,38 @@ hush_status_t hush_launch_set_vibe_visibility(hush_launch_t *launch,
 
 hush_status_t hush_launch_add_channel(hush_launch_t *launch, const char *name)
 {
+    return hush_launch_add_channel_prompt(launch, name, HUSH_LAUNCH_ROOM_PROMPT);
+}
+
+hush_status_t hush_launch_validate_channel_prompt(const char *prompt)
+{
+    size_t count = 0;
+    HUSH_TRY(hush_json_count_chars(&count, prompt, HUSH_LAUNCH_PROMPT_BYTES));
+    return count <= (size_t)HUSH_LAUNCH_PROMPT_CHARS ? HUSH_OK : HUSH_ERR_FULL;
+}
+
+hush_status_t hush_launch_set_channel_prompt(hush_launch_t *launch, const char *slug,
+                                             const char *prompt)
+{
+    if (launch == NULL || slug == NULL || !launch->has_vibe)
+        return HUSH_ERR_ARG;
+    HUSH_TRY(hush_launch_validate_channel_prompt(prompt));
+    hush_launch_channel_t *channel = hush_launch_find_channel(launch, slug);
+    if (channel == NULL)
+        return HUSH_ERR_NOT_FOUND;
+    char previous[HUSH_LAUNCH_PROMPT_BYTES] = {0};
+    memcpy(previous, channel->system_prompt, sizeof(previous));
+    hush_launch_copy_name(channel->system_prompt, sizeof(channel->system_prompt),
+                          prompt, HUSH_LAUNCH_ROOM_PROMPT);
+    hush_status_t status = hush_launch_save_vibe(launch);
+    if (status != HUSH_OK)
+        memcpy(channel->system_prompt, previous, sizeof(previous));
+    return status;
+}
+
+hush_status_t hush_launch_add_channel_prompt(hush_launch_t *launch, const char *name,
+                                             const char *prompt)
+{
     char slug[HUSH_LAUNCH_NAME_MAX];
 
     if (launch == NULL || name == NULL)
@@ -811,8 +868,17 @@ hush_status_t hush_launch_add_channel(hush_launch_t *launch, const char *name)
         return HUSH_ERR_PARSE;
     if (hush_launch_has_channel(launch, slug))
         return HUSH_OK;
+    HUSH_TRY(hush_launch_validate_channel_prompt(prompt));
     HUSH_TRY(hush_launch_push_channel(launch, name));
-    return hush_launch_save_vibe(launch);
+    hush_launch_channel_t *channel = &launch->channels[launch->nchannels - 1];
+    hush_launch_copy_name(channel->system_prompt, sizeof(channel->system_prompt),
+                          prompt, HUSH_LAUNCH_ROOM_PROMPT);
+    hush_status_t status = hush_launch_save_vibe(launch);
+    if (status != HUSH_OK) {
+        memset(channel, 0, sizeof(*channel));
+        --launch->nchannels;
+    }
+    return status;
 }
 
 hush_status_t hush_launch_remove_channel(hush_launch_t *launch, const char *slug)
@@ -1280,6 +1346,8 @@ static hush_status_t hush_launch_push_channel(hush_launch_t *launch,
     if (hush_launch_ensure_channel_id(ch) != HUSH_OK)
         return HUSH_ERR_IO;
     hush_launch_policy_default(ch);
+    hush_launch_copy_name(ch->system_prompt, sizeof(ch->system_prompt),
+                          HUSH_LAUNCH_ROOM_PROMPT, "");
     launch->nchannels++;
     return HUSH_OK;
 }
@@ -1613,23 +1681,30 @@ static hush_status_t hush_launch_format_channels(const hush_launch_t *launch,
                                                   out, outsz, off));
         HUSH_TRY(hush_launch_format_channel_policy(&launch->channels[i],
                                                    out, outsz, off));
-        /* Emit optional channel about/topic so it can be used as prompt pointer
-         * (pills/topics become quick LLM system context). */
-        if (launch->channels[i].about[0] != '\0') {
-            char esc_ab[HUSH_LAUNCH_ABOUT_MAX * 2];
-            if (*off + 16 >= outsz)
-                return HUSH_ERR_FULL;
-            hush_launch_json_escape(launch->channels[i].about, esc_ab,
-                                    sizeof(esc_ab));
-            n = snprintf(out + *off, outsz - *off, ",\"about\":\"%s\"", esc_ab);
-            if (n > 0)
-                *off += (size_t)n;
-        }
+        HUSH_TRY(hush_launch_format_channel_guidance(&launch->channels[i],
+                                                     out, outsz, off));
         if (*off + 1 >= outsz)
             return HUSH_ERR_FULL;
         out[(*off)++] = '}';
         out[*off] = '\0';
     }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_format_channel_guidance(const hush_launch_channel_t *channel,
+                                                         char *out, size_t outsz, size_t *off)
+{
+    assert(channel != NULL);
+    assert(out != NULL && off != NULL && *off < outsz);
+    char about[HUSH_LAUNCH_ABOUT_MAX * HUSH_JSON_U_LEN] = {0};
+    char prompt[HUSH_LAUNCH_PROMPT_ESC_MAX] = {0};
+    (void)hush_json_escape(channel->about, about, sizeof(about));
+    (void)hush_json_escape(channel->system_prompt, prompt, sizeof(prompt));
+    int written = snprintf(out + *off, outsz - *off,
+                           ",\"about\":\"%s\",\"system_prompt\":\"%s\"", about, prompt);
+    if (written < 0 || (size_t)written >= outsz - *off)
+        return HUSH_ERR_FULL;
+    *off += (size_t)written;
     return HUSH_OK;
 }
 
@@ -2025,7 +2100,7 @@ static void hush_launch_index_key(char *out, size_t outsz,
 static hush_status_t hush_launch_put_field(char *out, size_t outsz, size_t *off,
                                            const char *key, const char *val)
 {
-    char esc[HUSH_ROSTER_PROMPT_MAX * 2];
+    char esc[HUSH_LAUNCH_PROMPT_ESC_MAX + HUSH_ROSTER_PROMPT_MAX * HUSH_JSON_U_LEN];
     int n;
 
     assert(out != NULL);
@@ -2065,39 +2140,45 @@ static hush_status_t hush_launch_put_channels(const hush_launch_t *launch,
                                               char *out, size_t outsz,
                                               size_t *off)
 {
-    char key[HUSH_LAUNCH_KEY_MAX];
-    char count[HUSH_LAUNCH_COUNT_MAX];
-    size_t i;
-
     assert(launch != NULL);
-    if (snprintf(count, sizeof(count), "%zu", launch->nchannels)
-        >= (int)sizeof(count))
+    char count[HUSH_LAUNCH_COUNT_MAX];
+    int written = snprintf(count, sizeof(count), "%zu", launch->nchannels);
+    if (written < 0 || (size_t)written >= sizeof(count))
         return HUSH_ERR_FULL;
     HUSH_TRY(hush_launch_put_field(out, outsz, off, "nchannels", count));
-    for (i = 0; i < launch->nchannels; ++i) {
-        hush_launch_index_key(key, sizeof(key), "channel_name", i);
-        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
-                                       launch->channels[i].name));
-        hush_launch_index_key(key, sizeof(key), "channel_slug", i);
-        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
-                                       launch->channels[i].slug));
-        hush_launch_index_key(key, sizeof(key), "channel_id", i);
-        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
-                                       launch->channels[i].id));
-        hush_launch_index_key(key, sizeof(key), "channel_group", i);
-        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
-                                       launch->channels[i].group_id));
-        /* Persist channel about/topic so it can be used as a quick prompt pointer
-         * for robots on this channel (pills/topics). */
-        hush_launch_index_key(key, sizeof(key), "channel_about", i);
-        HUSH_TRY(hush_launch_put_field(out, outsz, off, key,
-                                       launch->channels[i].about));
-        HUSH_TRY(hush_launch_put_channel_lists(&launch->channels[i], i,
-                                              out, outsz, off));
-        HUSH_TRY(hush_launch_put_channel_policy(&launch->channels[i], i,
-                                                out, outsz, off));
-    }
+    hush_launch_writer_t writer = {.out = out, .capacity = outsz, .offset = off};
+    for (size_t i = 0; i < launch->nchannels; ++i)
+        HUSH_TRY(hush_launch_put_channel(&writer, &launch->channels[i], i));
     return HUSH_OK;
+}
+
+static hush_status_t hush_launch_put_channel(hush_launch_writer_t *writer,
+                                             const hush_launch_channel_t *ch, size_t idx)
+{
+    assert(writer != NULL && ch != NULL);
+    char key[HUSH_LAUNCH_KEY_MAX];
+    hush_launch_index_key(key, sizeof(key), "channel_name", idx);
+    HUSH_TRY(hush_launch_put_field(writer->out, writer->capacity, writer->offset, key,
+                                   ch->name));
+    hush_launch_index_key(key, sizeof(key), "channel_slug", idx);
+    HUSH_TRY(hush_launch_put_field(writer->out, writer->capacity, writer->offset, key,
+                                   ch->slug));
+    hush_launch_index_key(key, sizeof(key), "channel_id", idx);
+    HUSH_TRY(hush_launch_put_field(writer->out, writer->capacity, writer->offset, key,
+                                   ch->id));
+    hush_launch_index_key(key, sizeof(key), "channel_group", idx);
+    HUSH_TRY(hush_launch_put_field(writer->out, writer->capacity, writer->offset, key,
+                                   ch->group_id));
+    /* Persist channel about/topic so it can be used as a quick prompt pointer
+     * for robots on this channel (pills/topics). */
+    hush_launch_index_key(key, sizeof(key), "channel_about", idx);
+    HUSH_TRY(hush_launch_put_field(writer->out, writer->capacity, writer->offset, key,
+                                   ch->about));
+    hush_launch_index_key(key, sizeof(key), "channel_prompt", idx);
+    HUSH_TRY(hush_launch_put_field(writer->out, writer->capacity, writer->offset, key,
+                                   ch->system_prompt));
+    HUSH_TRY(hush_launch_put_channel_lists(ch, idx, writer->out, writer->capacity, writer->offset));
+    return hush_launch_put_channel_policy(ch, idx, writer->out, writer->capacity, writer->offset);
 }
 
 static hush_status_t hush_launch_put_channel_lists(
@@ -2355,38 +2436,61 @@ static hush_status_t hush_launch_take_vibe_head(hush_launch_t *launch,
 static hush_status_t hush_launch_take_channels(hush_launch_t *launch,
                                                const char *json)
 {
-    char key[HUSH_LAUNCH_KEY_MAX];
-    size_t n;
-    size_t i;
-
-    assert(launch != NULL);
+    assert(launch != NULL && json != NULL);
     launch->nchannels = 0;
-    n = hush_launch_json_count(json, "nchannels",
-                               (size_t)HUSH_LAUNCH_CHANNELS_MAX);
-    for (i = 0; i < n; ++i) {
-        hush_launch_channel_t *ch = &launch->channels[i];
-
-        memset(ch, 0, sizeof(*ch));
-        hush_launch_index_key(key, sizeof(key), "channel_name", i);
-        (void)hush_launch_json_string(json, key, ch->name, sizeof(ch->name));
-        hush_launch_index_key(key, sizeof(key), "channel_slug", i);
-        (void)hush_launch_json_string(json, key, ch->slug, sizeof(ch->slug));
-        hush_launch_index_key(key, sizeof(key), "channel_id", i);
-        (void)hush_launch_json_string(json, key, ch->id, sizeof(ch->id));
-        hush_launch_index_key(key, sizeof(key), "channel_group", i);
-        (void)hush_launch_json_string(json, key, ch->group_id,
-                                      sizeof(ch->group_id));
-        /* Restore channel about/topic for prompt injection (pills/topics). */
-        hush_launch_index_key(key, sizeof(key), "channel_about", i);
-        (void)hush_launch_json_string(json, key, ch->about, sizeof(ch->about));
-        hush_launch_take_channel_lists(ch, json, i);
-        hush_launch_take_channel_policy(ch, json, i);
-        if (ch->name[0] == '\0')
-            continue;
-        if (ch->slug[0] == '\0')
-            hush_launch_slugify(ch->slug, sizeof(ch->slug), ch->name);
-        launch->nchannels++;
+    size_t count = hush_launch_json_count(json, "nchannels", HUSH_LAUNCH_CHANNELS_MAX);
+    for (size_t i = 0; i < count; ++i) {
+        hush_launch_channel_t *ch = &launch->channels[launch->nchannels];
+        HUSH_TRY(hush_launch_take_channel(ch, json, i));
+        if (ch->name[0] != '\0') ++launch->nchannels;
     }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_take_channel(hush_launch_channel_t *ch,
+                                               const char *json, size_t idx)
+{
+    assert(ch != NULL && json != NULL);
+    char key[HUSH_LAUNCH_KEY_MAX];
+    memset(ch, 0, sizeof(*ch));
+    hush_launch_index_key(key, sizeof(key), "channel_name", idx);
+    (void)hush_launch_json_string(json, key, ch->name, sizeof(ch->name));
+    hush_launch_index_key(key, sizeof(key), "channel_slug", idx);
+    (void)hush_launch_json_string(json, key, ch->slug, sizeof(ch->slug));
+    hush_launch_index_key(key, sizeof(key), "channel_id", idx);
+    (void)hush_launch_json_string(json, key, ch->id, sizeof(ch->id));
+    hush_launch_index_key(key, sizeof(key), "channel_group", idx);
+    (void)hush_launch_json_string(json, key, ch->group_id,
+                                  sizeof(ch->group_id));
+    /* Restore channel about/topic for prompt injection (pills/topics). */
+    hush_launch_index_key(key, sizeof(key), "channel_about", idx);
+    (void)hush_launch_json_string(json, key, ch->about, sizeof(ch->about));
+    HUSH_TRY(hush_launch_take_channel_prompt(ch, json, idx));
+    hush_launch_take_channel_lists(ch, json, idx);
+    hush_launch_take_channel_policy(ch, json, idx);
+    if (ch->slug[0] == '\0')
+        hush_launch_slugify(ch->slug, sizeof(ch->slug), ch->name);
+    return HUSH_OK;
+}
+
+static hush_status_t hush_launch_take_channel_prompt(hush_launch_channel_t *ch,
+                                                      const char *json, size_t idx)
+{
+    assert(ch != NULL && json != NULL);
+    char key[HUSH_LAUNCH_KEY_MAX];
+    hush_launch_index_key(key, sizeof(key), "channel_prompt", idx);
+    char path[HUSH_LAUNCH_KEY_MAX + 1] = {0};
+    int written = snprintf(path, sizeof(path), "/%s", key);
+    if (written < 0 || (size_t)written >= sizeof(path))
+        return HUSH_ERR_FULL;
+    hush_json_value_t value = {0};
+    hush_status_t status = hush_json_lookup(&value, json, path);
+    if (status == HUSH_OK)
+        status = hush_json_decode(ch->system_prompt, sizeof(ch->system_prompt), &value);
+    if (status != HUSH_OK || ch->system_prompt[0] == '\0' ||
+        hush_launch_validate_channel_prompt(ch->system_prompt) != HUSH_OK)
+        hush_launch_copy_name(ch->system_prompt, sizeof(ch->system_prompt),
+                              HUSH_LAUNCH_ROOM_PROMPT, HUSH_LAUNCH_ROOM_PROMPT);
     return HUSH_OK;
 }
 

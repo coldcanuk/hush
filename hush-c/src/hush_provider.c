@@ -231,6 +231,23 @@ unsigned int hush_provider_flags(const char *id)
     return meta->flags;
 }
 
+int hush_provider_ready(const hush_provider_status_t *status)
+{
+    if (status == NULL)
+        return 0;
+    if (strcmp(status->family, HUSH_PROVIDER_FAMILY_API) == 0) {
+        if (status->host[0] == '\0' || status->model[0] == '\0')
+            return 0;
+        return status->has_key || status->has_token ||
+            strcmp(status->id, HUSH_ROSTER_PROVIDER_CUSTOM) == 0;
+    }
+    if (!status->has_binary)
+        return 0;
+    if (strcmp(status->id, HUSH_ROSTER_PROVIDER_OLLAMA) == 0)
+        return status->model[0] != '\0';
+    return status->has_home;
+}
+
 hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id)
 {
     const hush_provider_meta_t *meta;
@@ -733,8 +750,14 @@ static void hush_provider_home_path(char *out, size_t outsz, const char *id)
             snprintf(out, outsz, "%s/.config/goose/config.yaml", home);
         return;
     }
-    if (strcmp(id, HUSH_ROSTER_PROVIDER_CLINE) == 0)
-        snprintf(out, outsz, "%s/Documents/Cline", home);
+    if (strcmp(id, HUSH_ROSTER_PROVIDER_CLINE) == 0) {
+        const char *cline_data = getenv("CLINE_DATA_DIR");
+        int written = cline_data != NULL && cline_data[0] != '\0'
+            ? snprintf(out, outsz, "%s/settings/providers.json", cline_data)
+            : snprintf(out, outsz, "%s/.cline/data/settings/providers.json", home);
+        if (written < 0 || (size_t)written >= outsz)
+            out[0] = '\0';
+    }
 }
 
 static void hush_provider_detect_home(hush_provider_status_t *st)
@@ -766,12 +789,8 @@ static void hush_provider_detect_home(hush_provider_status_t *st)
             snprintf(path, sizeof(path), "%s/.goose/config.yaml", home);
         st->has_home = hush_provider_path_exists(path);
     }
-    if (!st->has_home && strcmp(st->id, HUSH_ROSTER_PROVIDER_CLINE) == 0) {
-        home = getenv("HOME");
-        if (home != NULL)
-            snprintf(path, sizeof(path), "%s/.cline", home);
-        st->has_home = hush_provider_path_exists(path);
-    }
+    if (strcmp(st->id, HUSH_ROSTER_PROVIDER_CLINE) == 0)
+        st->has_home = hush_provider_file_nonempty(path);
     if (st->has_home && strcmp(st->id, HUSH_ROSTER_PROVIDER_GOOSE) == 0)
         hush_provider_read_goose_model(st->home_model, sizeof(st->home_model));
 }

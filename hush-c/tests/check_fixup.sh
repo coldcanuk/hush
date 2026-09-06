@@ -33,6 +33,7 @@ wait_up() {
 }
 
 export HOME="$home"
+export HUSH_HOME="$home/.hush"
 export HUSH_CONFIG_DIR="$home/.config/hush"
 unset XDG_CONFIG_HOME
 mkdir -p "$home/bin" "$home/.grok" "$home/.config/hush"

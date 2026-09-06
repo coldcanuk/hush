@@ -128,7 +128,7 @@ echo "$html" | grep -q 'id="seed-project"' || fail "HTML missing seed project"
 echo "$html" | grep -q 'id="seed-channel-new"' || fail "HTML missing seed new-channel choice"
 echo "$html" | grep -q 'id="seed-channel-existing"' || fail "HTML missing seed existing-channel choice"
 echo "$html" | grep -q 'function buildSeedPrompt' || fail "HTML missing buildSeedPrompt"
-echo "$html" | grep -q 'function payneCanReply' || fail "HTML missing Payne seed gate"
+echo "$html" | grep -q 'id="seed-provider"' || fail "HTML missing team provider selection"
 echo "$html" | grep -q 'function seedTeam' || fail "HTML missing seedTeam"
 echo "$html" | grep -q 'id="inv-expand"' || fail "HTML missing inventory expand"
 echo "$html" | grep -q 'INV_EXPAND_COLS = 8' || fail "expanded inventory must be 8 cols"
@@ -154,7 +154,7 @@ if echo "$html" | grep -q 'threadPills.pop()'; then
     fail "thread Backspace-at-0 must not pop pills"
 fi
 grep -q 'hush_json_has_key' src/hush_http.c || fail "manage about must use hush_json_has_key"
-manage=$(sed -n '/static hush_status_t hush_http_channel_manage/,/hush_http_find_channel/p' src/hush_http.c)
+manage=$(sed -n '/^static hush_status_t hush_http_channel_about/,/^}/p' src/hush_http.c)
 echo "$manage" | grep -q 'hush_json_has_key(body, "about")' \
     || fail "manage must no-op about when the field is absent"
 if echo "$html" | grep -q 'splitFences(prettyMentions'; then
@@ -200,10 +200,10 @@ done
 echo "$html" | grep -q 'function manageAboutValue' || fail "HTML missing channel about writer"
 echo "$html" | grep -q 'System Prompt' || fail "HTML missing system prompt"
 echo "$html" | grep -q 'agent-provider' || fail "HTML missing AI provider"
-echo "$html" | grep -q 'id="provider-cfg"' || fail "HTML missing provider pencil"
+echo "$html" | grep -q 'provider-config' || fail "HTML missing per-provider configuration"
 echo "$html" | grep -q 'id="provider-drawer"' || fail "HTML missing provider drawer"
 echo "$html" | grep -q 'id="provider-oauth"' || fail "HTML missing OAuth login button"
-echo "$html" | grep -q 'Close the login browser and the terminal' || fail "HTML missing OAuth close-window copy"
+echo "$html" | grep -q 'A successful reply confirms the connection' || fail "HTML missing honest connection status"
 echo "$html" | grep -q 'label.ready' || fail "HTML missing provider ready style"
 echo "$html" | grep -q 'id="mention-box"' || fail "HTML missing mention box"
 echo "$html" | grep -q 'composer-pill' || fail "HTML missing mention pills"
@@ -215,7 +215,7 @@ echo "$html" | grep -q 'id="manage-policy-more"' || fail "HTML missing policy ad
 echo "$html" | grep -q 'name="manage-reply"' || fail "HTML missing robot_reply radios"
 echo "$html" | grep -q 'name="manage-burst"' || fail "HTML missing burst_ms radios"
 echo "$html" | grep -q 'manage-invite-add' || fail "HTML missing manage + invite"
-echo "$html" | grep -q 'chan-del' || fail "HTML missing channel delete"
+echo "$html" | grep -q 'chan-options' || fail "HTML missing channel options"
 echo "$html" | grep -q 'chan-voice' || fail "HTML missing channel voice"
 echo "$html" | grep -q 'robot-call' || fail "HTML missing robot call"
 echo "$html" | grep -q 'tile-mute' || fail "HTML missing tile mute"
@@ -231,8 +231,8 @@ echo "$html" | grep -q 'reply_to' || fail "HTML missing reply_to indent"
 echo "$html" | grep -q 'note reply' || fail "HTML missing reply class"
 echo "$html" | grep -q 'id="thread-pane"' || fail "HTML missing thread pane"
 echo "$html" | grep -q 'note.mine' || fail "HTML missing sided thread bubbles"
-echo "$html" | grep -q '1:1 with' || fail "HTML missing 1:1 thread help"
-echo "$html" | grep -q '1:n · you +' || fail "HTML missing 1:n thread help"
+echo "$html" | grep -q 'Follow-ups go to' || fail "HTML missing 1:1 thread help"
+echo "$html" | grep -q '@ a robot to direct its next turn' || fail "HTML missing 1:n thread help"
 if echo "$html" | grep -q 'you · this robot. At ease.'; then
   fail "thread help must not be a Payne voice line"
 fi
@@ -267,10 +267,9 @@ echo "$html" | grep -q 'id="provider-token"' || fail "HTML missing provider toke
 echo "$html" | grep -q 'id="provider-passkey"' || fail "HTML missing provider passkey"
 echo "$html" | grep -q '/api/provider' || fail "HTML missing provider route"
 echo "$html" | grep -q 'pass show hush/providers/' || fail "HTML missing provider retrieve CLI"
-echo "$html" | grep -q 'ClinePass' || fail "HTML missing ClinePass copy"
-echo "$html" | grep -q 'bring-your-own' || fail "HTML missing Cline BYOK copy"
+echo "$html" | grep -q 'Cline CLI' || fail "HTML missing Cline CLI setup copy"
 echo "$html" | grep -q 'Delete Robot' || fail "HTML missing delete robot"
-echo "$html" | grep -q 'Raise Robot' || fail "HTML missing raise robot"
+echo "$html" | grep -q 'Create robot' || fail "HTML missing create robot"
 echo "$html" | grep -q 'Save Robot' || fail "HTML missing save robot"
 echo "$html" | grep -q 'value="deepseek-api"' || fail "HTML missing deepseek radio"
 echo "$html" | grep -q 'Edit Major' || fail "HTML missing Payne edit title"
@@ -296,27 +295,19 @@ if echo "$html" | grep -q 'User-wide'; then
     fail "User-wide must not be a skill bucket"
 fi
 echo "$html" | grep -q 'id="skill-loadout"' || fail "HTML missing skill loadout"
-echo "$html" | grep -q 'id="skill-cycle"' || fail "HTML missing skill cycle"
-echo "$html" | grep -q 'id="skill-cycle-prev"' || fail "HTML missing skill cycle prev"
 if echo "$html" | grep -q 'id="hive-skill-cycle"'; then
     fail "hive skill stash must not sit on the main nav"
 fi
 if echo "$html" | grep -q 'id="hive-armory"'; then
     fail "hive-armory must not sit on the main nav"
 fi
-echo "$html" | grep -q 'id="skill-ghost"' || fail "HTML missing skill ghost"
-echo "$html" | grep -q 'skillHeld' || fail "HTML missing skillHeld cursor"
 echo "$html" | grep -q 'function toggleRobotInventory' || fail "HTML missing i-key inventory toggle"
-echo "$html" | grep -q 'function pickUpSkill' || fail "HTML missing pickUpSkill"
-echo "$html" | grep -q 'skill-slot' || fail "HTML missing paper-doll skill-slot"
 echo "$html" | grep -q 'if (!isDevLogNote(k))' \
     || fail "thread kids must hide Mention received"
-echo "$html" | grep -q 'skill-doll' || fail "HTML missing skill doll"
 echo "$html" | grep -q 'function attachLoadout' || fail "HTML missing attachLoadout"
 echo "$html" | grep -q 'body.skill_0 = ""' || fail "empty loadout must post skill_0"
 echo "$html" | grep -q 'body.nskills = equippedSkills.length' || fail "save must post nskills"
 echo "$html" | grep -q 'id="agent-clone"' || fail "HTML missing clone control"
-echo "$html" | grep -q 'skillCycleIdx' || fail "HTML missing skillCycleIdx"
 echo "$html" | grep -q 'skillWatermarks' || fail "HTML missing skillWatermarks"
 if echo "$html" | grep -q 'makeSkillChip'; then
     fail "chip-wall makeSkillChip must be gone"
