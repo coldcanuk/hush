@@ -80,10 +80,6 @@ static const hush_provider_meta_t hush_provider_meta[HUSH_PROVIDER_COUNT] = {
     { HUSH_ROSTER_PROVIDER_DEEPSEEK, "Deepseek API",
       HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_DEEPSEEK, "", 0,
       HUSH_PROVIDER_FLAG_NONE },
-    { HUSH_ROSTER_PROVIDER_AGY, "Antigravity", HUSH_PROVIDER_FAMILY_HOME,
-      "", "agy",
-      HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH,
-      HUSH_PROVIDER_FLAG_SPAWN_ONLY | HUSH_PROVIDER_FLAG_ALLOWLIST },
     { HUSH_ROSTER_PROVIDER_COPILOT, "Copilot", HUSH_PROVIDER_FAMILY_HOME,
       "", "copilot",
       HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH,
@@ -376,7 +372,7 @@ void hush_provider_last_error(char *out, size_t outsz)
 
 /* True when id documents a self-update subcommand ("<binary> update"). Only
  * runtimes whose update routine has been verified against their CLI help are
- * spawned (grok/codex/copilot/goose/agy all expose "update"). */
+ * spawned (grok/codex/copilot/goose all expose "update"). */
 static int hush_provider_has_update(const char *id)
 {
     if (id == NULL)
@@ -384,8 +380,7 @@ static int hush_provider_has_update(const char *id)
     return strcmp(id, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0 ||
            strcmp(id, HUSH_ROSTER_PROVIDER_CODEX) == 0 ||
            strcmp(id, HUSH_ROSTER_PROVIDER_COPILOT) == 0 ||
-           strcmp(id, HUSH_ROSTER_PROVIDER_GOOSE) == 0 ||
-           strcmp(id, HUSH_ROSTER_PROVIDER_AGY) == 0;
+           strcmp(id, HUSH_ROSTER_PROVIDER_GOOSE) == 0;
 }
 
 /* fork + exec "<binary> update" without waiting. Parent returns immediately. */

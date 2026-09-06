@@ -45,7 +45,6 @@ enum {
 #define HUSH_ROSTER_PROVIDER_OPENAI "openai-api"
 #define HUSH_ROSTER_PROVIDER_ANTHROPIC "anthropic-api"
 #define HUSH_ROSTER_PROVIDER_DEEPSEEK "deepseek-api"
-#define HUSH_ROSTER_PROVIDER_AGY "agy"
 #define HUSH_ROSTER_PROVIDER_COPILOT "copilot"
 #define HUSH_ROSTER_PROVIDER_OLLAMA "ollama"
 #define HUSH_ROSTER_PROVIDER_CUSTOM "custom"
