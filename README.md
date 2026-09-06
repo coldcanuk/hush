@@ -8,7 +8,7 @@
 
 Hush began as a fork of [Buzz](https://github.com/block/buzz). It is now a standalone C11 relay and hive. We do not track, fetch, or sync Buzz. One-way import notes live in [IMPORT.md](IMPORT.md).
 
-Optimized for the Goose AI agent. All development uses worktrees **inside this repository** (`worktrees/<slug>`), never under `/opt/repo/worktrees` or other external paths.
+Developed with the Codex AI agent. All development uses worktrees **inside this repository** (`worktrees/<slug>`), never under `/opt/repo/worktrees` or other external paths.
 
 - Written in strict C11 following the machine-legibility standard (write-legible-c).
 - Single binary: `hush-relay`
@@ -99,7 +99,7 @@ while the relay is running at `http://127.0.0.1:<port>/`.
 
 Importing identities and channels from the predecessor project? See [IMPORT.md](IMPORT.md).
 
-## Goose + Worktree (Prime Directive)
+## Codex + Worktree (Prime Directive)
 
 **Law:** [PRIME_DIRECTIVE.md](PRIME_DIRECTIVE.md) — also [AGENTS.md](AGENTS.md), [BRANCHING.md](BRANCHING.md).
 
@@ -179,7 +179,7 @@ launches a **frameless standalone app window** (Chromium/Chrome/Brave/Edge
 no browser tab strip, URL bar, or OS title-bar `×`. Firefox-as-default
 is not used, because it cannot hide chrome. The same port
 also speaks the newline-delimited Nostr JSON protocol (see
-`.goose/skills/relay/SKILL.md`).
+`.agents/skills/relay/SKILL.md`).
 
 ### Close vs Exit
 
@@ -343,10 +343,25 @@ Plans and research live under `docs/`. Do not leave `PLAN_*.md` or `RESEARCH*.md
 | Research | [`docs/research/`](docs/research/) |
 | `pass` | [`docs/pass-integration.md`](docs/pass-integration.md) |
 
-## Skills for Goose
+## Skills for Codex
 
-Core skills in `.goose/skills/`:
-- worktree, c-build, c-test, legible-c, relay, goose-init, publish
+Codex is the supported development agent. Read [AGENTS.md](AGENTS.md) and
+[Codex for Hush](docs/CODEX.md). The complete
+[write-legible-c skill](.agents/skills/write-legible-c/SKILL.md) is checked in,
+including its normative reference and upstream MIT license. Invoke
+`$write-legible-c` for C work; spawned development agents follow the same skill.
+
+Hush also exposes this skill in the isolated working directory of each Codex
+runtime job. `make install` installs the complete skill under
+`share/hush/codex/skills/write-legible-c`. `HUSH_CODEX_SKILL_DIR` can point to
+another complete copy. Missing or conflicting skill files prevent Codex dispatch.
+
+The `agy` integration is removed. Select `codex` and run `codex login`;
+saved robot and Payne provider selections migrate on restore. New API requests
+reject the retired id. Other providers keep their existing runtime roles.
+
+Core skills in `.agents/skills/`:
+- worktree, c-build, c-test, write-legible-c, legible-c, relay, codex-init, publish
 
 ## Code of Ethics
 

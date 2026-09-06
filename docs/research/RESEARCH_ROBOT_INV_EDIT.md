@@ -35,7 +35,7 @@ On launch the hive shows **Robots Inventory** with Payne and Happy, but:
 | Config dir | `$HUSH_CONFIG_DIR` else `$XDG_CONFIG_HOME/hush` else `$HOME/.config/hush` | `hush_launch_config_dir` |
 | Provider overlay | `$XDG_CONFIG_HOME/hush` else `$HOME/.config/hush` (**no** `HUSH_CONFIG_DIR`) | `hush_provider_config_dir` |
 | Whisper | `hush_turn_whisper_available()` → `/api/status` `whisper`; UI `whisperReady` | `hush_turn.h`, `tick()` |
-| Skills | None in C. Goose skills live in `.goose/skills/` (agent-create, etc.) | repo |
+| Skills | None in C. Goose skills live in `.agents/skills/` (agent-create, etc.) | repo |
 | Install | binary + desktop + icons; does **not** mkdir a user home tree | `hush-c/Makefile` `install` |
 | Picture picker | sheets dogs/cats/sheep/virus/robots/angevin; id `panel:<sheet>:<i>` | `paintAgentPicPicker` |
 

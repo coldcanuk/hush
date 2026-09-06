@@ -6,7 +6,7 @@
 1. **Compile Hush**: Initialize the repository and compile the Hush C11 Nostr relay core (e.g., `./configure`, `make`, `make test`). Start the application.
 2. **Visual Interaction**: Launch Playwright to interact with the Hush interface. 
 3. **Onboarding Walkthrough**: Step through the first-time Wizard and complete the onboarding process as a new user. Explore and utilize the interface thoroughly.
-    * **CRITICAL OVERRIDE**: Your active model (DeepSeek) does not support images natively. You MUST NOT attach images to the chat. To "see" the UI, take screenshots with Playwright, save them to disk, and analyze them by executing this exact command in your shell: `python3 .goose/skills/vision/vision_tool.py <path_to_screenshot> "Describe this UI in detail..."` This script securely delegates the vision task to a dedicated visual model and returns the text description back to you.
+    * **CRITICAL OVERRIDE**: Your active model (DeepSeek) does not support images natively. You MUST NOT attach images to the chat. To "see" the UI, take screenshots with Playwright, save them to disk, and analyze them by executing this exact command in your shell: `python3 .agents/skills/vision/vision_tool.py <path_to_screenshot> "Describe this UI in detail..."` This script securely delegates the vision task to a dedicated visual model and returns the text description back to you.
 
 ## Phase 2: The Full Shake Audit
 Perform a complete audit of the application based on your visual and functional walkthrough. Evaluate and score the application on a scale of **0 to 10** (0 = Absolute worst/broken, 10 = Flawless perfection) across the following categories:
@@ -29,7 +29,7 @@ You must now execute the build plan in a continuous iteration loop ("The Gauntle
 For every change, modification, or fix made during the Gauntlet Loop, you must pass the verification protocol before the score can be increased:
 1. **Default Stance**: Adopt the personas of the **Skeptic** and the **Critic**. They approach the entire work with the baseline assumption that *everything is broken and everything is a lie*.
 2. **Burden of Proof**: Claims like "the bug is fixed" or "the UI is improved" are rejected by default. Hard evidence (Playwright screenshots, DOM snapshots, network logs, and test assertions) is strictly required. 
-    * **Note on Screenshots**: Use `python3 .goose/skills/vision/vision_tool.py <path_to_screenshot>` to evaluate screenshots.
+    * **Note on Screenshots**: Use `python3 .agents/skills/vision/vision_tool.py <path_to_screenshot>` to evaluate screenshots.
 3. **Bayesian Evaluation**: The Critic will use a Bayesian framework to evaluate the theory ($H$) that the fix/feature is successfully implemented given the provided evidence ($E$):
     *   **Prior $P(H)$**: Start with a very low probability (e.g., 5% or 0.05) that the change actually works as intended, reflecting the Skeptic's stance.
     *   **Likelihood $P(E|H)$**: If the feature works perfectly, how likely is the evidence provided (e.g., the screenshot shows the exact correct alignment)?

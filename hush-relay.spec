@@ -22,7 +22,7 @@ Features:
  - Optional coturn STUN/TURN + conference signaling
  - Strict build: -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow
 
-Optimized for the Goose AI agent. Designed for set-and-forget
+Developed with the Codex AI agent. Designed for set-and-forget
 self-hosting and embedding.
 
 %pre

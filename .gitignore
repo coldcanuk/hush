@@ -1,5 +1,5 @@
 # Hush — C11 project .gitignore
-# Optimized for legible C builds, Goose worktrees, and local tooling.
+# Optimized for legible C builds, Codex worktrees, and local tooling.
 
 # --- Configure / generated build config ---
 /config.mk
@@ -70,7 +70,7 @@ GTAGS
 *.tgz
 *.zip
 
-# --- Goose worktrees (checkouts live here; not committed) ---
+# --- Codex worktrees (checkouts live here; not committed) ---
 # Keep only the in-repo policy note; ignore actual worktree trees.
 /worktrees/*
 !/worktrees/README.md

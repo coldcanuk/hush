@@ -64,7 +64,7 @@ After ready:
    rejects any file whose MIME/extension is not `text/plain` or
    Markdown. Agent nsec saved via `pass` at
    `hush/agents/<slug>/nsec` (default on). Kind 0 published for the agent.
-7. `.goose/skills/agent-create/SKILL.md` exists and documents the API
+7. `.agents/skills/agent-create/SKILL.md` exists and documents the API
    Payne/Goose uses to create agents.
 8. Seven themes apply via `data-theme` + CSS variables; persist in
    `localStorage` and session `theme`.
@@ -258,7 +258,7 @@ gcc, make, openssl, curl, git, gh, python3 (embed). `pass` optional
     textarea, context file input (`accept=".txt,.md,text/plain,text/markdown"`).
     JS rejects other MIME **and** server re-checks. Payne walkthrough
     copy on each field.
-  - Task 5 of M3.6: Write `.goose/skills/agent-create/SKILL.md`
+  - Task 5 of M3.6: Write `.agents/skills/agent-create/SKILL.md`
     (Payne/Goose: collect fields, POST `/api/agent`, confirm).
   - Task 6 of M3.6: Tests: happy path, reject `application/pdf` and
     `image/png` as context, pass path `hush/agents/<slug>/nsec`.

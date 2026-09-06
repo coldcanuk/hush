@@ -1,4 +1,4 @@
-# Goose worktrees (inside the Hush repo)
+# Codex worktrees (inside the Hush repo)
 
 All Hush worktrees **must** live here:
 
@@ -21,4 +21,4 @@ git worktree add -b gb/<slug> worktrees/<slug>
 
 This directory is gitignored except for this README.
 
-See [PRIME_DIRECTIVE.md](../PRIME_DIRECTIVE.md), [AGENTS.md](../AGENTS.md), and [.goose/skills/worktree/SKILL.md](../.goose/skills/worktree/SKILL.md).
+See [PRIME_DIRECTIVE.md](../PRIME_DIRECTIVE.md), [AGENTS.md](../AGENTS.md), and [.agents/skills/worktree/SKILL.md](../.agents/skills/worktree/SKILL.md).

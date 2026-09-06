@@ -29,7 +29,7 @@ The bulk of PLAN_ONBOARD_PROFILE_AGENTS.md DoD is already implemented on this ba
 - Context MIME: text/plain or Markdown only (checked)
 
 **Agent-create skill:**
-- .goose/skills/agent-create/SKILL.md exists and documents the API (name, system_prompt, provider, context ≤3, pass retrieve path)
+- .agents/skills/agent-create/SKILL.md exists and documents the API (name, system_prompt, provider, context ≤3, pass retrieve path)
 
 **Tests + checks:**
 - make -C hush-c test → ALL PASS

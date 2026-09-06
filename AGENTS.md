@@ -1,6 +1,6 @@
-# AGENTS.md — Goose + Hush (C11)
+# AGENTS.md — Codex + Hush (C11)
 
-Hush is a legible C11 Nostr relay core, optimized exclusively for the Goose agent.
+Hush is a legible C11 Nostr relay core, developed with Codex.
 
 **Read [PRIME_DIRECTIVE.md](PRIME_DIRECTIVE.md) first. It overrides every other workflow note.**
 
@@ -47,17 +47,20 @@ git branch -d "gb/${FEATURE_SLUG}" 2>/dev/null || true
 git push origin --delete "gb/${FEATURE_SLUG}" 2>/dev/null || true
 ```
 
-See also: [BRANCHING.md](BRANCHING.md), [.goose/skills/worktree/SKILL.md](.goose/skills/worktree/SKILL.md).  
+See also: [BRANCHING.md](BRANCHING.md), [.agents/skills/worktree/SKILL.md](.agents/skills/worktree/SKILL.md).
 Install local guards: `./scripts/install-hooks.sh`.
 
 Product version: see top-level `VERSION` (currently `0.0.1`).
 
-## Goose is the Only Agent
+## Codex development
 
-- `.goose/` is the canonical location for skills and configuration.
-- `.agents/`, `.claude/`, `.codex/` and similar are deprecated and removed.
-- Skills: `.goose/skills/<name>/SKILL.md` (with optional runner scripts).
-- Core skills: worktree, c-build, c-test, legible-c, relay, goose-init, publish.
+- Codex is the supported development agent; read [docs/CODEX.md](docs/CODEX.md).
+- Repository skills live in `.agents/skills/<name>/SKILL.md` for Codex discovery.
+- `.codex/` is reserved for Codex configuration; keep credentials out of Git.
+- Apply [write-legible-c](.agents/skills/write-legible-c/SKILL.md) to every C task,
+  including work delegated to agents. Read its full reference before editing C.
+- `agy` is removed. Use the existing `codex` runtime and `codex login`.
+- Other selectable Hush providers are runtime integrations, not development policy.
 
 ## C11 + write-legible-c
 

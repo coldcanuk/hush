@@ -191,9 +191,9 @@ and a pencil to edit it again.
   `+` opens the file browser. `-` removes the selected file.
   “Attach only plain text or Markdown. I will refuse the rest.”
 - **AI provider** (required). One of:
-  Goose, Grok Build, Codex, Cline, Gemini API, xAI API,
+  Goose, Grok Build, Codex, Cline, Copilot, Ollama, Custom endpoint, Gemini API, xAI API,
   OpenAI API, Anthropic API, Deepseek API.
-  Wire ids: `goose`, `grok-build`, `codex`, `cline`,
+  Wire ids: `goose`, `grok-build`, `codex`, `cline`, `copilot`, `ollama`, `custom`,
   `gemini-api`, `xai-api`, `openai-api`, `anthropic-api`,
   `deepseek-api`.
   Selecting a radio reveals a 44px pencil (`#provider-cfg`) on that
@@ -238,7 +238,7 @@ Payne update: `POST /api/agent {slug:"sgt-major-payne", provider_0…N}`.
 
 Delete: `POST /api/agent {action:"delete", slug}`. Payne slug is refused.
 
-Goose/Payne skill: `.goose/skills/agent-create/SKILL.md`.
+Agent-creation skill: `.agents/skills/agent-create/SKILL.md`.
 
 ### 11. Provider configure (hive-wide desk + pencil)
 

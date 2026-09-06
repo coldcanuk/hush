@@ -1,5 +1,10 @@
 # Technical Review — Harness Engine, Token/Context, Signaling (PR #130)
 
+> Historical record. Current development uses Codex and `.agents/skills`.
+> The former `agy` integration is removed; saved selections migrate to `codex`.
+> Old commands, provider counts, flags, and agent-only policies below describe
+> the original work, not current support. See [Codex for Hush](../CODEX.md).
+
 Branch `gb/harness-engine`, 15 commits on top of `main`. All work is behind the
 C11 strict build (`-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow`) and
 the full `make test` suite is green.

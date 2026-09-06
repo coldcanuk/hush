@@ -5,7 +5,7 @@ description: "Apply write-legible-c + c-standard §14 pre-delivery checklist to 
 # legible-c
 
 Before any C commit or PR:
-1. Read references/c-standard.md (or loaded skill).
+1. Read [write-legible-c](../write-legible-c/SKILL.md) and its full reference.
 2. Run the 17-item checklist on every changed .c/.h:
    - Named literals (no magic >1)
    - Fn <=40 lines, depth <=2
