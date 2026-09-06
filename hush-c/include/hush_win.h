@@ -12,7 +12,9 @@ hush_status_t hush_win_minimize(void);
 /* Toggle WM maximized (vert+horz) on that window. Same errors. */
 hush_status_t hush_win_maximize(void);
 
-/* Strip Motif decorations (no OS title-bar ×). Same errors. */
+/* Request Motif border/resize handles without the title bar. On COSMIC, disable
+ * the optional X11 resize-sync handshake that stalls successive native drags.
+ * Same errors; HUSH_ERR_FULL for an oversized protocol list. */
 hush_status_t hush_win_undecorate(void);
 
 #endif /* HUSH_WIN_H */
