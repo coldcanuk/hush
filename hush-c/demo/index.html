@@ -6170,7 +6170,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
       if (!threadDrag) return;
       const maxW = Math.max(THREAD_MIN_W, window.innerWidth - 24);
       const maxH = Math.max(THREAD_MIN_H, window.innerHeight - 72);
-      const w = Math.max(THREAD_MIN_W, Math.min(maxW, threadDrag.w + (ev.clientX - threadDrag.x)));
+      const w = Math.max(THREAD_MIN_W, Math.min(maxW, threadDrag.w + ((ev.clientX - threadDrag.x) * 2)));
       const h = Math.max(THREAD_MIN_H, Math.min(maxH, threadDrag.h + (ev.clientY - threadDrag.y)));
       const pane = $("thread-pane");
       pane.style.width = w + "px";
