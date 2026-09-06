@@ -2771,7 +2771,9 @@ static void hush_agent_emit(const char *type, const char *channel, const char *i
 static hush_agent_owner_t *hush_agent_owner_find(const char *channel)
 {
     size_t i;
-    for (i = 0; i < HUSH_AGENT_OWNER_MAX; i++) {
+
+    assert(channel != NULL);
+    for (i = 0; i < (size_t)HUSH_AGENT_OWNER_MAX; i++) {
         if (g_owners[i].channel[0] != '\0' && strcmp(g_owners[i].channel, channel) == 0)
             return &g_owners[i];
     }
@@ -2781,7 +2783,9 @@ static hush_agent_owner_t *hush_agent_owner_find(const char *channel)
 static hush_agent_owner_t *hush_agent_owner_alloc(const char *channel)
 {
     size_t i;
-    for (i = 0; i < HUSH_AGENT_OWNER_MAX; i++) {
+
+    assert(channel != NULL);
+    for (i = 0; i < (size_t)HUSH_AGENT_OWNER_MAX; i++) {
         if (g_owners[i].channel[0] == '\0') {
             hush_agent_copy(g_owners[i].channel, sizeof(g_owners[i].channel), channel);
             return &g_owners[i];
@@ -2790,24 +2794,30 @@ static hush_agent_owner_t *hush_agent_owner_alloc(const char *channel)
     return NULL;
 }
 
-static void hush_agent_establish_owner(hush_store_t *store, const hush_launch_t *launch, const hush_event_t *ev, const char *channel, const char *mention)
+static void hush_agent_establish_owner(const hush_launch_t *launch,
+                                       const char *channel,
+                                       const char *mention)
 {
-    (void)store;
-    (void)ev;
-    hush_agent_owner_t *own = hush_agent_owner_find(channel);
+    hush_agent_owner_t *own;
+    hush_agent_robot_t bot;
+
+    assert(launch != NULL);
+    assert(channel != NULL);
+    assert(mention != NULL);
+
+    own = hush_agent_owner_find(channel);
     if (own == NULL)
         own = hush_agent_owner_alloc(channel);
     if (own == NULL)
         return;
-    
-    // In this basic version, if we're unsure or no owner, the first agent mentioned becomes owner.
-    if (own->owner_hex[0] == '\0' || own->unsure) {
-        own->unsure = 0;
-        hush_agent_robot_t bot;
-        if (hush_agent_lookup_robot(&bot, launch, mention) && bot.hex != NULL) {
-            hush_agent_copy(own->owner_hex, sizeof(own->owner_hex), bot.hex);
-            hush_agent_emit(HUSH_CEVENT_MENTION, channel, NULL, bot.hex, "election_won");
-        }
+
+    if (own->owner_hex[0] != '\0' && !own->unsure)
+        return;
+
+    own->unsure = 0;
+    if (hush_agent_lookup_robot(&bot, launch, mention) && bot.hex != NULL) {
+        hush_agent_copy(own->owner_hex, sizeof(own->owner_hex), bot.hex);
+        hush_agent_emit(HUSH_CEVENT_MENTION, channel, NULL, bot.hex, "election_won");
     }
 }
 
@@ -2842,7 +2852,7 @@ static void hush_agent_handle_mention(hush_store_t *store,
     char chan[64];
     hush_agent_event_channel(chan, sizeof(chan), ev);
     if (chan[0] != '\0') {
-        hush_agent_establish_owner(store, launch, ev, chan, mention);
+        hush_agent_establish_owner(launch, chan, mention);
     }
 
     hush_agent_emit(HUSH_CEVENT_MENTION, NULL, NULL, bot.hex, mention);
