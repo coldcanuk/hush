@@ -2798,14 +2798,11 @@ static void hush_agent_establish_owner(const hush_launch_t *launch,
                                        const char *channel,
                                        const char *mention)
 {
-    hush_agent_owner_t *own;
-    hush_agent_robot_t bot;
-
     assert(launch != NULL);
     assert(channel != NULL);
     assert(mention != NULL);
 
-    own = hush_agent_owner_find(channel);
+    hush_agent_owner_t *own = hush_agent_owner_find(channel);
     if (own == NULL)
         own = hush_agent_owner_alloc(channel);
     if (own == NULL)
@@ -2815,6 +2812,7 @@ static void hush_agent_establish_owner(const hush_launch_t *launch,
         return;
 
     own->unsure = 0;
+    hush_agent_robot_t bot;
     if (hush_agent_lookup_robot(&bot, launch, mention) && bot.hex != NULL) {
         hush_agent_copy(own->owner_hex, sizeof(own->owner_hex), bot.hex);
         hush_agent_emit(HUSH_CEVENT_MENTION, channel, NULL, bot.hex, "election_won");
