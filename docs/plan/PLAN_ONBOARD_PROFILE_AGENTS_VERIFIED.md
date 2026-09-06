@@ -14,7 +14,7 @@ Date: 2026-08-24
 4. Kind 0 for human includes name/display_name/about/picture when set. Email/org Hush-local.
 5. Hive has Add human (npub/invite) and Create agent. Private vibe shows join token.
 6. Agent create: name, system_prompt (required), provider (required), avatar, context files (text/plain or Markdown only, max 3). Agent nsec via pass hush/agents/<slug>/nsec (default on). Kind 0 published.
-7. .goose/skills/agent-create/SKILL.md exists with full contract (Payne/Goose can create agents).
+7. .agents/skills/agent-create/SKILL.md exists with full contract (Payne/Goose can create agents).
 8. 7 themes via data-theme + CSS vars; persist in localStorage + session.
 9. ./configure && make && make test + check_launch.sh pass.
 10. Worktree + PR lifecycle followed (no direct main).

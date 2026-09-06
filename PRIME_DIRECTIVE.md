@@ -1,6 +1,6 @@
 # Hush Prime Directive
 
-**Status: MANDATORY for every human and every agent (including Goose).**  
+**Status: MANDATORY for every human and every agent (including Codex).**
 **Violation is a process failure. Stop and correct before continuing.**
 
 Hush is a **C11** project. It is not Buzz. Rust/desktop/mobile history is irrelevant.
@@ -13,7 +13,7 @@ Hush is a **C11** project. It is not Buzz. Rust/desktop/mobile history is irrele
 2. **Commit and push only on the worktree branch** (`gb/<slug>`).
 3. **Land on `main` only via Pull Request** (merge request): open PR → review → **auto-merge** (or explicit approve + merge on GitHub).
 4. **After the PR is successfully merged into `main`**, delete the worktree and the local branch.
-5. **Writing directly to `main` is strictly prohibited**  
+5. **Writing directly to `main` is strictly prohibited**
    — no commits on `main`, no direct pushes to `main`, no local merge-into-main as a substitute for a PR.
 
 There is no “small change” exception. There is no “docs only” exception. There is no “I’m the agent” exception.
@@ -81,7 +81,7 @@ gh pr merge --auto --merge
 # Or: ensure review, then merge via GitHub UI / gh pr merge --merge
 ```
 
-**Do not** run `git checkout main && git merge …` to land the branch.  
+**Do not** run `git checkout main && git merge …` to land the branch.
 **Do not** `git push origin main` from a feature path.
 
 ### D. After PR is merged
@@ -117,7 +117,7 @@ git status          # clean, on main
 
 ## Enforcement
 
-1. **Docs:** this file, `AGENTS.md`, `BRANCHING.md`, `.goose/skills/worktree/SKILL.md`.
+1. **Docs:** this file, `AGENTS.md`, `BRANCHING.md`, `.agents/skills/worktree/SKILL.md`.
 2. **Hooks:** `scripts/install-hooks.sh` installs `pre-commit` + `pre-push` that **reject commits and pushes on `main`**.
 3. **GitHub:** protect `main` (require PR, disallow direct push) when admin access allows.
 4. **Origin fetch:** main-only (`remote.origin.fetch` + `tagopt=--no-tags`).
@@ -131,7 +131,7 @@ cd /opt/repo/hush
 
 ---
 
-## Goose checklist (every task)
+## Codex checklist (every task)
 
 - [ ] Am I inside `…/hush/worktrees/<slug>` on `gb/<slug>`?
 - [ ] Did I commit **and** push the branch (not main)?

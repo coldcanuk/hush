@@ -1,5 +1,10 @@
 # RESEARCH_HARNESS — Phase 1 Synthesis
 
+> Historical record. Current development uses Codex and `.agents/skills`.
+> The former `agy` integration is removed; saved selections migrate to `codex`.
+> Old commands, provider counts, flags, and agent-only policies below describe
+> the original work, not current support. See [Codex for Hush](../CODEX.md).
+
 Status: complete (baseline, pre-refactor).
 Scope: multi-provider harness, capability routing, auto-update scanner,
 token/context engineering, in-hive messaging protocol, and UI/UX rail.

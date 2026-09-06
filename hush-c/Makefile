@@ -21,6 +21,11 @@ ENABLE_STUN_TURN ?= 1
 HUSHSHARE ?= $(DATADIR)/hush
 override CFLAGS += -DHUSH_SKILL_PACK_SHARE=\"$(HUSHSHARE)/skills/system\"
 
+CODEX_SKILL_SOURCE := $(abspath ../.agents/skills/write-legible-c)
+CODEX_SKILL_SHARE := $(HUSHSHARE)/codex/skills/write-legible-c
+override CFLAGS += -DHUSH_CODEX_SKILL_SOURCE=\"$(CODEX_SKILL_SOURCE)\"
+override CFLAGS += -DHUSH_CODEX_SKILL_SHARE=\"$(CODEX_SKILL_SHARE)\"
+
 SRCS := $(wildcard src/*.c)
 OBJS := $(SRCS:.c=.o)
 # Track header dependencies so a struct/enum change rebuilds every consumer.
@@ -64,7 +69,7 @@ test: $(TEST_BINS) hush-relay
 	@sh tests/check_exit.sh
 	@sh tests/check_provider.sh
 	@sh tests/check_agent.sh
-	@sh tests/check_agy.sh
+	@sh tests/check_codex.sh
 	@sh tests/check_ollama.sh
 	@sh tests/check_failover.sh
 	@sh tests/check_fixup.sh
@@ -80,6 +85,11 @@ demo:
 	@echo "See hush-c/demo/ for the chat UI (also served by hush-relay on /)"
 
 install: all
+	install -d $(DESTDIR)$(CODEX_SKILL_SHARE)/references
+	install -m 0644 $(CODEX_SKILL_SOURCE)/SKILL.md $(CODEX_SKILL_SOURCE)/LICENSE \
+		$(CODEX_SKILL_SOURCE)/UPSTREAM.md $(DESTDIR)$(CODEX_SKILL_SHARE)/
+	install -m 0644 $(CODEX_SKILL_SOURCE)/references/c-standard.md \
+		$(DESTDIR)$(CODEX_SKILL_SHARE)/references/
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 0755 hush-relay $(DESTDIR)$(BINDIR)/hush-relay
 	install -m 0755 ../scripts/hush-pass $(DESTDIR)$(BINDIR)/hush-pass
@@ -153,6 +163,9 @@ ifneq ($(ENABLE_STUN_TURN),0)
 endif
 
 uninstall:
+	rm -f $(DESTDIR)$(CODEX_SKILL_SHARE)/SKILL.md $(DESTDIR)$(CODEX_SKILL_SHARE)/LICENSE \
+		$(DESTDIR)$(CODEX_SKILL_SHARE)/UPSTREAM.md \
+		$(DESTDIR)$(CODEX_SKILL_SHARE)/references/c-standard.md
 	rm -f $(DESTDIR)$(BINDIR)/hush-relay
 	rm -f $(DESTDIR)$(APPDIR)/hush-relay.desktop
 	@for size in $(ICON_SIZES); do \

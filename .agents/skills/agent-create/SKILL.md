@@ -1,7 +1,11 @@
+---
+name: agent-create
+description: Create and configure Hush robots through the roster API when a user asks to raise an agent.
+---
 # Agent create (Sgt Major Payne)
 
 Create a Hush agent (a robot on this vibe) via the relay HTTP API.
-Use this when a human asks Payne to raise a robot, or when Goose
+Use this when a human asks Payne to raise a robot, or when Codex
 must create an agent with skills on the fly.
 
 ## Contract
@@ -39,7 +43,7 @@ Content-Type: application/json
 {
   "name": "Sentry",
   "system_prompt": "Watch the perimeter.",
-  "provider": "goose",
+  "provider": "codex",
   "save_pass": true,
   "context_name_0": "brief.md",
   "context_mime_0": "text/markdown",

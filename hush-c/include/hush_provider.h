@@ -16,7 +16,7 @@ enum {
     HUSH_PROVIDER_MODELS_MAX = 32,
     HUSH_PROVIDER_JSON_MAX = 8192,
     HUSH_PROVIDER_ERR_MAX = 160,
-    HUSH_PROVIDER_COUNT = 13,
+    HUSH_PROVIDER_COUNT = 12,
     HUSH_PROVIDER_KEY_MAX = 512,
     HUSH_PROVIDER_URL_MAX = 1024,
     HUSH_PROVIDER_SECRET_COUNT = 5
@@ -38,9 +38,7 @@ typedef unsigned int hush_provider_caps_t;
 
 /* Provider policy flags: constraints beyond what the provider can do. */
 #define HUSH_PROVIDER_FLAG_NONE       0
-#define HUSH_PROVIDER_FLAG_SPAWN_ONLY (1u << 0)  /* ToS: spawn, never wrap  */
 #define HUSH_PROVIDER_FLAG_OAUTH      (1u << 1)  /* OAuth login required    */
-#define HUSH_PROVIDER_FLAG_ALLOWLIST  (1u << 2)  /* tooling needs allow-list */
 
 typedef unsigned int hush_provider_flags_t;
 

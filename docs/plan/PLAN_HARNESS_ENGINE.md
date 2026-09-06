@@ -63,14 +63,16 @@ instead of silently dropped.
 ## Milestone 3 (follow-on) — launch-time auto-update scanner
 
 Add `hush_provider_update_all()`: scan for installed CLI binaries and run their
-documented update routine (`grok update`, `codex update`, `goose update`, …)
+documented update routine (`grok update`, `goose update`, …)
 silently at launch, with per-provider skip on absence and a bounded timeout.
 
 ## Milestone 4 (follow-on) — new providers
 
-Add `agy` (Antigravity, spawn-only no-wrap), `copilot` (OAuth), `ollama`
-(local), and `custom` (OpenAI-compatible base URL) with honest capability flags
-and UI warnings where a ToS/allow-list constraint applies.
+The current registry has 12 providers, including the existing `codex` runtime,
+`copilot` (OAuth), `ollama` (local), and `custom` (OpenAI-compatible base URL).
+Codex runs `codex exec` with its own OAuth readiness gate. The retired provider
+and its spawn-only/allow-list flags and UI warning have been removed.
+See [Codex migration](PLAN_CODEX_MIGRATION.md).
 
 ## Milestone 5 (follow-on) — token/context segmentation
 

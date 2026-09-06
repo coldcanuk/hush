@@ -74,7 +74,7 @@ int main(void)
     (void)mkdir(home, 0700);
     if (setenv("HUSH_CONFIG_DIR", cfg, 1) != 0)
         return 1;
-    /* Isolate HOME and PATH so grok/goose/copilot/codex/agy detection can't
+    /* Isolate HOME and PATH so grok/goose/copilot/codex detection can't
      * reach a real home or a live binary during this unit test. */
     if (setenv("HOME", home, 1) != 0)
         return 1;

@@ -32,6 +32,8 @@ enum {
     HUSH_LAUNCH_UUID_RAW = 16
 };
 
+#define HUSH_LAUNCH_RETIRED_PROVIDER "agy"
+
 #define HUSH_LAUNCH_DEFAULT_VIBE "local hive"
 #define HUSH_LAUNCH_CHAN_GENERAL "general"
 #define HUSH_LAUNCH_CHAN_WELCOME "welcome"
@@ -341,6 +343,18 @@ static hush_status_t hush_launch_take_projects(hush_launch_t *launch,
 /* Fills profile, agents, members from json. */
 static hush_status_t hush_launch_take_roster(hush_launch_t *launch,
                                              const char *json);
+
+/* Returns a borrowed canonical id for non-NULL persisted text; never fails.
+ * This import-only alias is deliberately absent from the provider registry. */
+static const char *hush_launch_restore_provider(const char *id);
+
+/* Appends a valid unique persisted id to a borrowed non-NULL agent. */
+static void hush_launch_restore_agent_provider(hush_roster_agent_t *agent,
+                                                const char *id);
+
+/* Restores providers from non-NULL persisted JSON into a borrowed agent. */
+static void hush_launch_take_agent_providers(hush_roster_agent_t *agent,
+                                             const char *json, size_t idx);
 
 /* Restores one agent slot from persist fields + optional pass nsec. */
 static hush_status_t hush_launch_take_agent(hush_launch_t *launch,
@@ -1461,7 +1475,7 @@ static void hush_launch_take_payne_providers(hush_launch_t *launch,
         hush_launch_index_key(key, sizeof(key), "payne_provider", i);
         if (!hush_launch_json_string(json, key, id, sizeof(id)))
             continue;
-        hush_launch_push_payne_provider(launch, id);
+        hush_launch_push_payne_provider(launch, hush_launch_restore_provider(id));
     }
     hush_launch_default_payne_providers(launch);
 }
@@ -2561,6 +2575,59 @@ static hush_status_t hush_launch_restore_agent_id(hush_roster_agent_t *agent)
     return hush_identity_generate(&agent->id);
 }
 
+static const char *hush_launch_restore_provider(const char *id)
+{
+    assert(id != NULL);
+    return strcmp(id, HUSH_LAUNCH_RETIRED_PROVIDER) == 0
+               ? HUSH_ROSTER_PROVIDER_CODEX : id;
+}
+
+static void hush_launch_restore_agent_provider(hush_roster_agent_t *agent,
+                                                const char *id)
+{
+    assert(agent != NULL);
+    assert(id != NULL);
+    assert(agent->nproviders <= (size_t)HUSH_ROSTER_PROVIDERS_MAX);
+    const char *provider = hush_launch_restore_provider(id);
+    if (!hush_roster_is_provider(provider))
+        return;
+    for (size_t i = 0; i < agent->nproviders; ++i) {
+        if (strcmp(agent->providers[i], provider) == 0)
+            return;
+    }
+    if (agent->nproviders == (size_t)HUSH_ROSTER_PROVIDERS_MAX)
+        return;
+    hush_launch_copy_name(agent->providers[agent->nproviders],
+                          sizeof(agent->providers[0]), provider, "");
+    agent->nproviders++;
+}
+
+static void hush_launch_take_agent_providers(hush_roster_agent_t *agent,
+                                             const char *json, size_t idx)
+{
+    assert(agent != NULL);
+    assert(json != NULL);
+    char key[HUSH_LAUNCH_KEY_MAX] = {0};
+    char primary[HUSH_ROSTER_PROVIDER_MAX] = {0};
+    char providers[HUSH_ROSTER_PROVIDERS_MAX * (HUSH_ROSTER_PROVIDER_MAX + 1)] = {0};
+    hush_launch_index_key(key, sizeof(key), "agent_provider", idx);
+    (void)hush_launch_json_string(json, key, primary, sizeof(primary));
+    hush_launch_index_key(key, sizeof(key), "agent_providers", idx);
+    (void)hush_launch_json_string(json, key, providers, sizeof(providers));
+    char *cursor = NULL;
+    char *provider = strtok_r(providers, ",", &cursor);
+    for (size_t i = 0; i < (size_t)HUSH_ROSTER_PROVIDERS_MAX && provider != NULL; ++i) {
+        hush_launch_restore_agent_provider(agent, provider);
+        provider = strtok_r(NULL, ",", &cursor);
+    }
+    if (agent->nproviders == 0)
+        hush_launch_restore_agent_provider(agent, primary);
+    if (agent->nproviders == 0)
+        hush_launch_restore_agent_provider(agent, HUSH_ROSTER_PROVIDER_GOOSE);
+    hush_launch_copy_name(agent->provider, sizeof(agent->provider),
+                          agent->providers[0], "");
+}
+
 static hush_status_t hush_launch_take_agent(hush_launch_t *launch,
                                             const char *json, size_t idx)
 {
@@ -2575,45 +2642,13 @@ static hush_status_t hush_launch_take_agent(hush_launch_t *launch,
     (void)hush_launch_json_string(json, key, agent->name, sizeof(agent->name));
     hush_launch_index_key(key, sizeof(key), "agent_slug", idx);
     (void)hush_launch_json_string(json, key, agent->slug, sizeof(agent->slug));
-    hush_launch_index_key(key, sizeof(key), "agent_provider", idx);
-    (void)hush_launch_json_string(json, key, agent->provider,
-                                  sizeof(agent->provider));
-    hush_launch_index_key(key, sizeof(key), "agent_providers", idx);
-    {
-        char plist[HUSH_ROSTER_PROVIDERS_MAX * (HUSH_ROSTER_PROVIDER_MAX + 1)];
-        char *tok;
-        char *save;
-        size_t np = 0;
-
-        if (hush_launch_json_string(json, key, plist, sizeof(plist))) {
-            for (tok = strtok_r(plist, ",", &save);
-                 tok != NULL &&
-                 np < (size_t)HUSH_ROSTER_PROVIDERS_MAX;
-                 tok = strtok_r(NULL, ",", &save)) {
-                if (tok[0] != '\0' && hush_roster_is_provider(tok))
-                    hush_launch_copy_name(agent->providers[np],
-                                          sizeof(agent->providers[np]),
-                                          tok, "");
-                np++;
-            }
-        }
-        if (np == 0 && agent->provider[0] != '\0') {
-            hush_launch_copy_name(agent->providers[0],
-                                  sizeof(agent->providers[0]),
-                                  agent->provider, "");
-            np = 1;
-        }
-        agent->nproviders = np;
-    }
+    hush_launch_take_agent_providers(agent, json, idx);
     hush_launch_index_key(key, sizeof(key), "agent_prompt", idx);
     (void)hush_launch_json_string(json, key, agent->prompt,
                                   sizeof(agent->prompt));
     hush_launch_take_agent_extras(agent, json, idx);
     if (agent->name[0] == '\0' || agent->slug[0] == '\0')
         return HUSH_OK;
-    if (!hush_roster_is_provider(agent->provider))
-        hush_launch_copy_name(agent->provider, sizeof(agent->provider),
-                              HUSH_ROSTER_PROVIDER_GOOSE, "");
     if (hush_launch_restore_agent_id(agent) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
     launch->roster.nagents++;

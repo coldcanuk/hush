@@ -92,7 +92,8 @@ int main(void)
     expect(hush_provider_is_id("goose"), "goose id");
     expect(hush_provider_is_id("openai-api"), "openai id");
     expect(hush_provider_is_id("deepseek-api"), "deepseek id");
-    expect(hush_provider_is_id("agy"), "agy id");
+    expect(!hush_provider_is_id("agy"), "removed provider rejected");
+    expect(hush_provider_is_id("codex"), "codex id");
     expect(hush_provider_is_id("copilot"), "copilot id");
     expect(hush_provider_is_id("ollama"), "ollama id");
     expect(hush_provider_is_id("custom"), "custom id");
@@ -108,8 +109,8 @@ int main(void)
     expect(strcmp(family, HUSH_PROVIDER_FAMILY_API) == 0, "deepseek family");
     hush_provider_family(family, sizeof(family), "cline");
     expect(strcmp(family, HUSH_PROVIDER_FAMILY_EDITOR) == 0, "cline family");
-    hush_provider_family(family, sizeof(family), "agy");
-    expect(strcmp(family, HUSH_PROVIDER_FAMILY_HOME) == 0, "agy family");
+    hush_provider_family(family, sizeof(family), "codex");
+    expect(strcmp(family, HUSH_PROVIDER_FAMILY_HOME) == 0, "codex family");
     hush_provider_family(family, sizeof(family), "copilot");
     expect(strcmp(family, HUSH_PROVIDER_FAMILY_HOME) == 0, "copilot family");
     hush_provider_family(family, sizeof(family), "ollama");
@@ -145,19 +146,17 @@ int main(void)
            "deepseek no image");
     expect(hush_provider_capabilities("nope") == 0, "unknown caps zero");
     expect(!hush_provider_can("nope", HUSH_PROVIDER_CAP_TOOLS), "unknown no");
-    expect(hush_provider_capabilities("agy") ==
-               (HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH),
-           "agy caps tools+file");
-    expect(!hush_provider_can("agy", HUSH_PROVIDER_CAP_IMAGE),
-           "agy no image");
+    expect(hush_provider_capabilities("codex") ==
+               (HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_IMAGE |
+                HUSH_PROVIDER_CAP_FILE_ATTACH),
+           "codex caps tools+image+file");
     expect(hush_provider_capabilities("copilot") ==
                (HUSH_PROVIDER_CAP_TOOLS | HUSH_PROVIDER_CAP_FILE_ATTACH),
            "copilot caps tools+file");
     expect(hush_provider_capabilities("ollama") == 0, "ollama caps none");
     expect(hush_provider_capabilities("custom") == 0, "custom caps none");
-    expect(hush_provider_flags("agy") ==
-               (HUSH_PROVIDER_FLAG_SPAWN_ONLY | HUSH_PROVIDER_FLAG_ALLOWLIST),
-           "agy spawn-only + allowlist");
+    expect(hush_provider_flags("codex") == HUSH_PROVIDER_FLAG_OAUTH,
+           "codex oauth");
     expect(hush_provider_flags("copilot") == HUSH_PROVIDER_FLAG_OAUTH,
            "copilot oauth");
     expect(hush_provider_flags("grok-build") == HUSH_PROVIDER_FLAG_OAUTH,
@@ -326,7 +325,7 @@ int main(void)
         write_file(path, "#!/bin/sh\nexit 0\n");
         if (chmod(path, 0755) != 0)
             return 1;
-        /* Isolate PATH to the fake bin dir so real host binaries (goose, agy,
+        /* Isolate PATH to the fake bin dir so real host binaries (goose,
          * …) never leak into the update scan and spawn real updates during
          * the test. bindir already holds fake grok, copilot, and codex. */
         snprintf(newpath, sizeof(newpath), "%s", bindir);

@@ -1,5 +1,10 @@
 # Hush C Port — Research Synthesis (Phase 1)
 
+> Historical record. Current development uses Codex and `.agents/skills`.
+> The former `agy` integration is removed; saved selections migrate to `codex`.
+> Old commands, provider counts, flags, and agent-only policies below describe
+> the original work, not current support. See [Codex for Hush](../CODEX.md).
+
 ## Scope Locked
 - MVP: Nostr NIP-01 basics for chat (kinds 0,1,5,7,9), EVENT/REQ/CLOSE/COUNT (COUNT minimal), simple #h channel tag + authors/ids/since.
 - In-memory bounded store (ring buffer or fixed array of 1024 events for MVP).
@@ -1360,7 +1365,7 @@ Persist: `localStorage.hush-theme` immediately (so splash is themed before sessi
 
 Payne is already seeded (kind 0 + `#welcome` note). Onboard step 4 is the introduction: show name, about, npub short, the welcome quote, CTA “Carry on.”
 
-Skill file (Goose-canonical): `.goose/skills/agent-create/SKILL.md`.
+Skill file (Goose-canonical): `.agents/skills/agent-create/SKILL.md`.
 
 Contract for Payne/Goose:
 

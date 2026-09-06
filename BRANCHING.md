@@ -13,7 +13,7 @@
 - After the PR merges: remove the worktree, delete `gb/<slug>` locally and on origin if still present.
 - Origin is main-only fetch (`remote.origin.fetch` + `tagopt = --no-tags`). Do not revive Buzz branches/tags.
 
-## Goose workflow (mandatory)
+## Codex workflow (mandatory)
 
 ```
 clean main → worktree add gb/<slug> → commit/push on branch
@@ -28,7 +28,7 @@ Local `git merge` into `main` is **not** an acceptable land path.
 1. **PRIME_DIRECTIVE.md** + this file + AGENTS.md + worktree skill.
 2. **`./scripts/install-hooks.sh`** — `pre-commit` and `pre-push` reject work on `main`.
 3. **GitHub branch protection** on `main` (require PR; block direct push) when enabled.
-4. Agent discipline: Goose must refuse direct-main edits.
+4. Agent discipline: Codex must refuse direct-main edits.
 
 ## Cleanup (after successful PR merge)
 
