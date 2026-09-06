@@ -6130,7 +6130,11 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
     $("thread-resize").addEventListener("pointerdown", (ev) => {
       const pane = $("thread-pane");
       const rect = pane.getBoundingClientRect();
-      threadDrag = { x: ev.clientX, y: ev.clientY, w: rect.width, h: rect.height };
+      threadDrag = {
+        x: ev.clientX, y: ev.clientY, w: rect.width, h: rect.height,
+        currentX: ev.clientX, currentY: ev.clientY, raf: null
+      };
+      ev.target.setPointerCapture(ev.pointerId);
       ev.preventDefault();
     });
     $("thread-msg").addEventListener("input", scanThreadMention);
@@ -6168,13 +6172,20 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         return;
       }
       if (!threadDrag) return;
-      const maxW = Math.max(THREAD_MIN_W, window.innerWidth - 24);
-      const maxH = Math.max(THREAD_MIN_H, window.innerHeight - 72);
-      const w = Math.max(THREAD_MIN_W, Math.min(maxW, threadDrag.w + ((ev.clientX - threadDrag.x) * 2)));
-      const h = Math.max(THREAD_MIN_H, Math.min(maxH, threadDrag.h + (ev.clientY - threadDrag.y)));
-      const pane = $("thread-pane");
-      pane.style.width = w + "px";
-      pane.style.height = h + "px";
+      threadDrag.currentX = ev.clientX;
+      threadDrag.currentY = ev.clientY;
+      if (threadDrag.raf) return;
+      threadDrag.raf = requestAnimationFrame(() => {
+        if (!threadDrag) return;
+        threadDrag.raf = null;
+        const maxW = Math.max(THREAD_MIN_W, window.innerWidth - 24);
+        const maxH = Math.max(THREAD_MIN_H, window.innerHeight - 72);
+        const w = Math.max(THREAD_MIN_W, Math.min(maxW, threadDrag.w + ((threadDrag.currentX - threadDrag.x) * 2)));
+        const h = Math.max(THREAD_MIN_H, Math.min(maxH, threadDrag.h + (threadDrag.currentY - threadDrag.y)));
+        const pane = $("thread-pane");
+        pane.style.width = w + "px";
+        pane.style.height = h + "px";
+      });
     });
     window.addEventListener("pointerup", (ev) => {
       if (skillHeld) onSkillPointerUp(ev);
@@ -6183,12 +6194,14 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
         saveRail();
       }
       if (threadDrag) {
+        if (threadDrag.raf) cancelAnimationFrame(threadDrag.raf);
         threadDrag = null;
         saveThreadSize();
       }
     });
     window.addEventListener("pointercancel", () => {
       railDrag = null;
+      if (threadDrag && threadDrag.raf) cancelAnimationFrame(threadDrag.raf);
       threadDrag = null;
     });
     window.addEventListener("resize", () => {
