@@ -128,3 +128,88 @@ Physical-desktop confirmation would raise Data/Brian's scores; wider compositor
 version coverage would raise Sherlock's; sustained use without regressions would
 raise Linus's. The Hush paperwork contract is a reviewed GitHub PR and merge,
 per PRIME_DIRECTIVE.md; there is no GitLab incident issue in this task.
+
+## Follow-up: reopen the incident after the real Brave launch failed
+
+The earlier resolution was too broad: the isolated Chromium test used a
+separate profile that the production launcher did not supply. The user reports
+that bottom-right works, bottom-left stalls, then bottom-right also stalls.
+That ordering is the acceptance test for this follow-up.
+
+Context register: the same connectors offer no desktop telemetry. Local X11,
+process inspection and isolated COSMIC remain relevant. Consulted
+[Chromium's separate-profile guidance](https://www.chromium.org/developers/creating-and-using-profiles/).
+
+Data: The previous binary was installed, but window setup is a separate fact.
+Sherlock: "Installed" cannot establish that the target window was found.
+Linus: Check its live class and protocol list before changing the workaround.
+Brian Cox: Preserve the right-left-right sequence. No objection.
+
+### Quoted evidence and assumptions
+
+- F1 — Live window `0x800080`: `WM_NAME(UTF8_STRING) = "Hush"` and
+  `WM_CLASS(STRING) = "127.0.0.1", "Brave-browser"`.
+- F2 — Same window:
+  `WM_PROTOCOLS(ATOM): protocols  WM_DELETE_WINDOW, _NET_WM_PING, _NET_WM_SYNC_REQUEST`.
+  `_MOTIF_WM_HINTS(_MOTIF_WM_HINTS) = 0x2, 0x0, 0x1, 0x0, 0x0`.
+- F3 — Live relay and installed binary both reported SHA-256
+  `8dab10260931fd1011f67757838cfdf3a3b8bf5f4d7e0aadb1235e3fcf9d1021`.
+- F4 — Existing lookup: `#define HUSH_WIN_CLASS_NAME        "hush-relay"`;
+  diagnostic call on the shared-browser class:
+  `shared-browser window: hush_win_undecorate status = -4`.
+- F5 — Installed Flatpak Brave, isolated COSMIC, first exact sequence:
+  `"edge": "bottom-right"`, `"geometry_updates": 37, "samples": 40`;
+  `"edge": "bottom-left"`, `"geometry_updates": 2, "samples": 40`;
+  `"edge": "bottom-right"`, `"geometry_updates": 1, "samples": 40`.
+- F6 — Same Brave window with the Hush class and C workaround active:
+  `owned-browser window: hush_win_undecorate status = 0`;
+  six drags each report `"geometry_updates": 40, "samples": 40`;
+  `Brave right-left-right: two consecutive sequences passed with window ownership`.
+- F7 — Temporary separate-profile Flatpak launch produced
+  `("127.0.0.1" "hush-resize-probe")` in the isolated X11 window tree.
+- F8 — Existing startup gate: `if (!g_saw_app)` then
+  `(void)hush_win_undecorate();`; existing relay reuse opens the browser and
+  returns without starting another event pump.
+
+Raw scripts/logs: `/tmp/hush-resize-followup/`. F5/F6 use the installed Brave,
+not the cached Chromium test build. Physical-desktop smoothness after the new
+launch remains unverified. The protocol and window-identity failure are observed.
+
+Data: F1/F2/F4 show the previous workaround missed the real window.
+Sherlock: "Missed the real window" also invalidates our old launch acceptance test.
+Linus: Make browser isolation part of the launcher, not a test-only shim.
+Brian Cox: Prepare after the page is alive; a launcher PID may already be gone.
+
+### Hypotheses and numerical review
+
+| Hypothesis | Explains | Does not establish | Falsifier |
+|---|---|---|---|
+| H1: shared-browser launch bypasses Hush window setup | F1/F2/F4/F5/F6/F8 | Future reopen behavior | Dedicated profile + page-ready preparation |
+| H2: another left-edge geometry defect | F5 | F6's full recovery | Exact sequence with workaround demonstrably active |
+| H3: stale executable | Could explain a missing workaround | F3 and class mismatch | Compare live and installed executable |
+
+Subjective priors .75/.15/.10 reflect the live class/protocol mismatch (F1/F2),
+the sequence specificity (F5), and the possibility of an old running binary.
+Likelihoods .98/.05/.01 reflect F4/F6's reversal and F3's matching binaries.
+Denominator: `.75*.98 + .15*.05 + .10*.01 = .7435`.
+Normalized posteriors: `.735/.7435=.989`, `.0075/.7435=.010`,
+`.001/.7435=.001` (diagnostic estimates, not population statistics).
+
+Data: 6/10 for implementing H1; it leads H2 by .979.
+Sherlock: 6/10; "H1" needs tests with the production launcher and a running relay.
+Linus: 6/10; retain the proven handshake change and fix its delivery.
+Brian Cox: 6/10; page readiness removes the launcher/window timing assumption.
+
+### Scope, plan and agreement gate
+
+Use a per-relay browser data directory, preserve the dedicated Hush class,
+prepare native windows from page startup with bounded retry, and cover all
+matching windows when a browser instance is reused. Other browser windows
+remain outside the class match. No pointer/resize arithmetic changes.
+
+Plan: [PLAN_NATIVE_RESIZE_FOLLOWUP.md](../plan/PLAN_NATIVE_RESIZE_FOLLOWUP.md).
+
+Data: **yes, 6/10**; F6 supports the path, the production implementation is pending.
+Sherlock: **yes, 6/10**; "all matching windows" must include a second-window test.
+Linus: **yes, 6/10**; keep preparation out of drag handlers.
+Brian Cox: **yes, 6/10**; repeat the exact sequence after fresh and reused launches.
