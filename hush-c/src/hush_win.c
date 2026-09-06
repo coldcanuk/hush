@@ -52,6 +52,13 @@ static Display *hush_win_open(void);
 /* Writes the first matching client into *out. Fails HUSH_ERR_NOT_FOUND. */
 static hush_status_t hush_win_find(Display *dpy, Window *out);
 
+/* Prepares every matching client on borrowed non-NULL display. Propagates setup
+ * errors; NOT_FOUND when no matching window is mapped yet. */
+static hush_status_t hush_win_prepare_clients(Display *display);
+
+/* Prepares one owned window on borrowed non-NULL display. Propagates IO/FULL. */
+static hush_status_t hush_win_prepare_client(Display *display, Window window);
+
 /* Reads _NET_CLIENT_LIST into wins[0..*out_n). Bounded. */
 static hush_status_t hush_win_list(Display *dpy, Window *wins, size_t *out_n);
 
@@ -131,14 +138,35 @@ hush_status_t hush_win_undecorate(void)
     if (display == NULL)
         return HUSH_ERR_IO;
 
-    Window window = None;
-    hush_status_t status = hush_win_find(display, &window);
-    if (status == HUSH_OK)
-        status = hush_win_do_bare(display, window);
-    if (status == HUSH_OK && hush_win_is_cosmic_session())
-        status = hush_win_disable_resize_sync(display, window);
+    hush_status_t status = hush_win_prepare_clients(display);
     XCloseDisplay(display);
     return status;
+}
+
+static hush_status_t hush_win_prepare_clients(Display *display)
+{
+    assert(display != NULL);
+    Window windows[HUSH_WIN_CLIENT_MAX] = {None};
+    size_t count = 0;
+    HUSH_TRY(hush_win_list(display, windows, &count));
+    hush_status_t status = HUSH_ERR_NOT_FOUND;
+    for (size_t index = 0; index < HUSH_WIN_CLIENT_MAX && index < count; ++index) {
+        if (!hush_win_class_is_ours(display, windows[index]))
+            continue;
+        HUSH_TRY(hush_win_prepare_client(display, windows[index]));
+        status = HUSH_OK;
+    }
+    return status;
+}
+
+static hush_status_t hush_win_prepare_client(Display *display, Window window)
+{
+    assert(display != NULL);
+    assert(window != None);
+    HUSH_TRY(hush_win_do_bare(display, window));
+    if (hush_win_is_cosmic_session())
+        return hush_win_disable_resize_sync(display, window);
+    return HUSH_OK;
 }
 
 static Display *hush_win_open(void)

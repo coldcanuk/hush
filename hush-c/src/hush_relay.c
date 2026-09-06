@@ -44,6 +44,8 @@ enum {
     HUSH_FD_NONE = -1,
     HUSH_UI_URL_MAX = 64,
     HUSH_UI_APP_ARG_MAX = 80,
+    HUSH_UI_PROFILE_EXTRA_MAX = 64,
+    HUSH_UI_PROFILE_ARG_MAX = HUSH_HOME_PATH_MAX + HUSH_UI_PROFILE_EXTRA_MAX,
     HUSH_PIDFILE_PATH_MAX = 256,
     HUSH_PIDFILE_BODY_MAX = 32,
     HUSH_QUIT_WAIT_TRIES = 20,
@@ -62,6 +64,19 @@ enum {
 #define HUSH_LEAVE_OK         "Exit the application"
 #define HUSH_LEAVE_EXTRA      "Close the window"
 #define HUSH_LEAVE_CANCEL     "Cancel"
+#define HUSH_UI_CLASS_OPTION  "--class=hush-relay"
+#define HUSH_UI_NAME_OPTION   "--name=Hush"
+#define HUSH_UI_X11_OPTION    "--ozone-platform=x11"
+#define HUSH_UI_FLATPAK       "flatpak"
+
+/* Options are terminated strings; both profile options identify the same
+ * per-relay directory, isolated from the operator's ordinary browser. */
+typedef struct {
+    char address[HUSH_UI_URL_MAX];
+    char app_option[HUSH_UI_APP_ARG_MAX];
+    char profile_option[HUSH_UI_PROFILE_ARG_MAX];
+    char filesystem_option[HUSH_UI_PROFILE_ARG_MAX];
+} hush_ui_browser_t;
 
 struct client {
     int fd;
@@ -91,8 +106,21 @@ static int g_leave_rd = HUSH_FD_NONE;
 static void hush_clients_reset(void);
 static int hush_listen_on(uint16_t port);
 static void hush_set_nonblock(int fd);
+/* Starts a browser child for port; fork/argument failure leaves the relay alive. */
 static void hush_open_app_window(uint16_t port);
-static void hush_exec_app_browser(const char *url, const char *app_arg);
+/* Initializes borrowed non-NULL browser options. Fails IO/FULL on invalid paths. */
+static hush_status_t hush_ui_prepare_browser(hush_ui_browser_t *browser, uint16_t port);
+/* Formats the app address into borrowed non-NULL browser. Fails FULL on overflow. */
+static hush_status_t hush_ui_format_address(hush_ui_browser_t *browser, uint16_t port);
+/* Formats isolated profile options into borrowed non-NULL browser. Fails IO/FULL. */
+static hush_status_t hush_ui_format_profile(hush_ui_browser_t *browser, uint16_t port);
+/* Exec adapters borrow non-NULL options. POSIX exec returns only on failure;
+ * each returned attempt deliberately falls through to the next candidate. */
+static void hush_exec_app_browser(const hush_ui_browser_t *browser);
+/* Attempts the bounded native-browser list with borrowed non-NULL options. */
+static void hush_exec_native_browser(const hush_ui_browser_t *browser);
+/* Attempts the bounded Flatpak list with borrowed non-NULL options. */
+static void hush_exec_flatpak_browser(const hush_ui_browser_t *browser);
 static int hush_active_clients(void);
 static hush_status_t hush_accept_new(int ls);
 static void hush_drop_client(struct client *c);
@@ -279,29 +307,72 @@ static void hush_set_nonblock(int fd)
 
 static void hush_open_app_window(uint16_t port)
 {
-    char url[HUSH_UI_URL_MAX];
-    char app_arg[HUSH_UI_APP_ARG_MAX];
-    pid_t pid;
-    int n;
-
-    n = snprintf(url, sizeof(url), "http://127.0.0.1:%u/", (unsigned)port);
-    if (n <= 0 || (size_t)n >= sizeof(url))
+    hush_ui_browser_t browser = {.address = ""};
+    if (hush_ui_prepare_browser(&browser, port) != HUSH_OK)
         return;
-    n = snprintf(app_arg, sizeof(app_arg), "--app=%s", url);
-    if (n <= 0 || (size_t)n >= sizeof(app_arg))
+    pid_t process = fork();
+    if (process < 0)
         return;
-    pid = fork();
-    if (pid < 0)
-        return;
-    if (pid > 0) {
-        hush_relay_track_child(pid);
+    if (process > 0) {
+        hush_relay_track_child(process);
         return;
     }
-    hush_exec_app_browser(url, app_arg);
-    _exit(127);
+    hush_exec_app_browser(&browser);
+    _exit(HUSH_LEAVE_MISSING);
 }
 
-static void hush_exec_app_browser(const char *url, const char *app_arg)
+static hush_status_t hush_ui_prepare_browser(hush_ui_browser_t *browser, uint16_t port)
+{
+    assert(browser != NULL);
+    HUSH_TRY(hush_ui_format_address(browser, port));
+    return hush_ui_format_profile(browser, port);
+}
+
+static hush_status_t hush_ui_format_address(hush_ui_browser_t *browser, uint16_t port)
+{
+    assert(browser != NULL);
+    assert(port != 0);
+    /* snprintf's return type is int. */
+    int address_len = snprintf(browser->address, sizeof(browser->address),
+                               "http://127.0.0.1:%u/", (unsigned)port);
+    int option_len = snprintf(browser->app_option, sizeof(browser->app_option),
+                              "--app=%s", browser->address);
+    if (address_len <= 0 || (size_t)address_len >= sizeof(browser->address) ||
+        option_len <= 0 || (size_t)option_len >= sizeof(browser->app_option))
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_ui_format_profile(hush_ui_browser_t *browser, uint16_t port)
+{
+    assert(browser != NULL);
+    assert(port != 0);
+    char root[HUSH_HOME_PATH_MAX] = {0};
+    hush_home_root(root, sizeof(root));
+    if (root[0] == '\0')
+        return HUSH_ERR_IO;
+    /* A separate data directory prevents an existing browser process from
+     * swallowing --class. Flatpak gets only this profile's filesystem access. */
+    int profile_len = snprintf(browser->profile_option, sizeof(browser->profile_option),
+                               "--user-data-dir=%s/browser-%u", root, (unsigned)port);
+    int filesystem_len = snprintf(browser->filesystem_option, sizeof(browser->filesystem_option),
+                                  "--filesystem=%s/browser-%u:create", root, (unsigned)port);
+    if (profile_len <= 0 || (size_t)profile_len >= sizeof(browser->profile_option) ||
+        filesystem_len <= 0 || (size_t)filesystem_len >= sizeof(browser->filesystem_option))
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
+}
+
+static void hush_exec_app_browser(const hush_ui_browser_t *browser)
+{
+    assert(browser != NULL);
+    hush_exec_native_browser(browser);
+    execlp("epiphany", "epiphany", "--application-mode", browser->address, (char *)NULL);
+    hush_exec_flatpak_browser(browser);
+    execlp("xdg-open", "xdg-open", browser->address, (char *)NULL);
+}
+
+static void hush_exec_native_browser(const hush_ui_browser_t *browser)
 {
     static const char *const browsers[] = {
         "chromium",
@@ -311,24 +382,30 @@ static void hush_exec_app_browser(const char *url, const char *app_arg)
         "brave-browser",
         "microsoft-edge",
         "microsoft-edge-stable",
-        "vivaldi",
-        NULL
+        "vivaldi"
     };
-    size_t i;
 
-    for (i = 0; browsers[i] != NULL; ++i) {
-        execlp(browsers[i], browsers[i],
-               "--class=hush-relay", "--name=Hush",
-               "--ozone-platform=x11", app_arg, (char *)NULL);
+    assert(browser != NULL);
+    assert(browser->profile_option[0] != '\0');
+    for (size_t idx = 0; idx < sizeof(browsers) / sizeof(browsers[0]); ++idx) {
+        execlp(browsers[idx], browsers[idx], HUSH_UI_CLASS_OPTION, HUSH_UI_NAME_OPTION,
+               HUSH_UI_X11_OPTION, browser->app_option, browser->profile_option, (char *)NULL);
     }
-    execlp("epiphany", "epiphany", "--application-mode", url, (char *)NULL);
-    execlp("flatpak", "flatpak", "run", "com.brave.Browser",
-           "--class=hush-relay", "--ozone-platform=x11", app_arg, (char *)NULL);
-    execlp("flatpak", "flatpak", "run", "org.chromium.Chromium",
-           "--class=hush-relay", "--ozone-platform=x11", app_arg, (char *)NULL);
-    execlp("flatpak", "flatpak", "run", "com.google.Chrome",
-           "--class=hush-relay", "--ozone-platform=x11", app_arg, (char *)NULL);
-    execlp("xdg-open", "xdg-open", url, (char *)NULL);
+}
+
+static void hush_exec_flatpak_browser(const hush_ui_browser_t *browser)
+{
+    static const char *const applications[] = {
+        "com.brave.Browser", "org.chromium.Chromium", "com.google.Chrome"
+    };
+
+    assert(browser != NULL);
+    assert(browser->filesystem_option[0] != '\0');
+    for (size_t idx = 0; idx < sizeof(applications) / sizeof(applications[0]); ++idx) {
+        execlp(HUSH_UI_FLATPAK, HUSH_UI_FLATPAK, "run", browser->filesystem_option,
+               applications[idx], HUSH_UI_CLASS_OPTION, HUSH_UI_X11_OPTION,
+               browser->app_option, browser->profile_option, (char *)NULL);
+    }
 }
 
 static int hush_active_clients(void)
@@ -1025,8 +1102,6 @@ static void hush_relay_watch_app(void)
     hush_leave_forget_dead();
     hush_leave_poll();
     if (hush_leave_app_alive()) {
-        if (!g_saw_app)
-            (void)hush_win_undecorate();
         g_saw_app = 1;
         return;
     }

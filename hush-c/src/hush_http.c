@@ -63,9 +63,11 @@ enum {
 #define HUSH_HTTP_COMPLETE_PEND "{\"ok\":true,\"pending\":true}\n"
 #define HUSH_HTTP_WINDOW_MIN_JSON "{\"ok\":true,\"action\":\"minimize\"}\n"
 #define HUSH_HTTP_WINDOW_MAX_JSON "{\"ok\":true,\"action\":\"maximize\"}\n"
+#define HUSH_HTTP_WINDOW_PREPARE_JSON "{\"ok\":true,\"action\":\"prepare\"}\n"
 #define HUSH_HTTP_WINDOW_FAIL "{\"ok\":false,\"error\":\"window failed\"}\n"
 #define HUSH_HTTP_WINDOW_MIN "minimize"
 #define HUSH_HTTP_WINDOW_MAX "maximize"
+#define HUSH_HTTP_WINDOW_PREPARE "prepare"
 
 typedef struct {
     char api_key[HUSH_PROVIDER_KEY_MAX];
@@ -2117,6 +2119,8 @@ static hush_status_t hush_http_serve_window(int fd, const char *body)
 static hush_status_t hush_http_window_run(const char *action)
 {
     assert(action != NULL);
+    if (strcmp(action, HUSH_HTTP_WINDOW_PREPARE) == 0)
+        return hush_win_undecorate();
     if (strcmp(action, HUSH_HTTP_WINDOW_MIN) == 0)
         return hush_win_minimize();
     if (strcmp(action, HUSH_HTTP_WINDOW_MAX) == 0)
@@ -2127,6 +2131,12 @@ static hush_status_t hush_http_window_run(const char *action)
 static void hush_http_reply_window(int fd, const char *action)
 {
     assert(action != NULL);
+    if (strcmp(action, HUSH_HTTP_WINDOW_PREPARE) == 0) {
+        hush_http_reply(fd, "200 OK", "application/json",
+                        HUSH_HTTP_WINDOW_PREPARE_JSON,
+                        sizeof(HUSH_HTTP_WINDOW_PREPARE_JSON) - 1);
+        return;
+    }
     if (strcmp(action, HUSH_HTTP_WINDOW_MIN) == 0) {
         hush_http_reply(fd, "200 OK", "application/json",
                         HUSH_HTTP_WINDOW_MIN_JSON,

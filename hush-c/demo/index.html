@@ -6104,6 +6104,21 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       if ($(id)) $(id).addEventListener("input", paintSeedPreview);
     });
 
+    async function prepareNativeWindow() {
+      const attempts = 20;
+      const retryMs = 250;
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        try {
+          const result = await api("/api/window", { action: "prepare" });
+          if (result.ok) return;
+        } catch (err) {}
+        if (attempt + 1 < attempts) {
+          await new Promise(resolve => setTimeout(resolve, retryMs));
+        }
+      }
+    }
+
+    prepareNativeWindow();
     applyTheme(localStorage.getItem("hush-theme") || "dark");
     paint();
     tick();
