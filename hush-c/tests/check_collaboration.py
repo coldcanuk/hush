@@ -459,6 +459,52 @@ def check_oversized_line(relay):
     print("wire: oversized line gets a NOTICE before the close OK")
 
 
+def check_wire_auth(relay):
+    """A wire EVENT needs a valid id and BIP-340 signature."""
+    signed = {
+        "id": "cd218e665c9ef4514e46b2728775663669b8e2e045ee148b35d3e0f58ee5ca59",
+        "pubkey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        "kind": 1,
+        "created_at": 1720000123,
+        "content": "signed hello",
+        "tags": [["h", "general"]],
+        "sig": "02883fd447cf38fa7e66703445f56f7cd42ccd10411a18b21d116165171ff02c"
+               "afdd7f51d02ee7acb474632f20b940d4d736508cef8668d5e1a8a82b353ddad1",
+    }
+    client = socket.create_connection(("127.0.0.1", relay.port), timeout=5)
+    try:
+        client.settimeout(5)
+        client.sendall(b'["EVENT",' + json.dumps(signed, separators=(",", ":")).encode() + b"]\n")
+        buffer = b""
+        while b'"OK"' not in buffer:
+            chunk = client.recv(65536)
+            if not chunk:
+                break
+            buffer += chunk
+        assert b'"OK","' + signed["id"].encode() + b'",true' in buffer, buffer[:200]
+        tampered = dict(signed)
+        tampered["content"] = "tampered hello"
+        client.sendall(b'["EVENT",' + json.dumps(tampered, separators=(",", ":")).encode() + b"]\n")
+        time.sleep(0.2)
+        buffer = b""
+        client.settimeout(2)
+        try:
+            while True:
+                chunk = client.recv(65536)
+                if not chunk:
+                    break
+                buffer += chunk
+        except socket.timeout:
+            pass
+        assert b"false" in buffer and b"invalid" in buffer, buffer[:200]
+    finally:
+        client.close()
+    events = relay.request("/api/events")["events"]
+    assert any(event["id"] == signed["id"] for event in events)
+    assert not any(event["content"] == "tampered hello" for event in events)
+    print("wire auth: signed EVENT accepted, tampered EVENT rejected OK")
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="hush-collaboration-") as temporary:
         relay = Relay(Path(temporary))
@@ -469,6 +515,7 @@ def main():
             check_history_capacity(relay)
             check_slow_reader(relay)
             check_oversized_line(relay)
+            check_wire_auth(relay)
         except Exception:
             relay.log.flush()
             relay.log.seek(0)

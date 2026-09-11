@@ -14,7 +14,9 @@ enum {
     HUSH_EVENT_MAX_CONTENT = 4096,
     HUSH_EVENT_MAX_TAGS = 32,
     HUSH_EVENT_MAX_TAG_ELEMS = 4,
-    HUSH_EVENT_MAX_TAG_LEN = 256
+    HUSH_EVENT_MAX_TAG_LEN = 256,
+    /* Shortest reason buffer hush_event_verify needs for its denial text. */
+    HUSH_EVENT_REASON_MAX = 64
 };
 
 typedef struct {
@@ -26,6 +28,9 @@ typedef struct {
     /* tags stored as flattened for MVP simplicity; parser populates */
     size_t tag_count;
     char tags[HUSH_EVENT_MAX_TAGS][HUSH_EVENT_MAX_TAG_ELEMS][HUSH_EVENT_MAX_TAG_LEN + 1];
+    /* BIP-340 signature as 128 hex chars. Locally created events leave it
+     * empty; the wire gate requires and verifies it. Not persisted. */
+    char sig[HUSH_EVENT_SIG_HEX_LEN + 1];
 } hush_event_t;
 
 /* Computes the NIP-01 id = hex(sha256([0, pubkey, created_at, kind, tags, content])).
@@ -34,7 +39,15 @@ typedef struct {
  * out_id (65 bytes). Fails HUSH_ERR_ARG on NULLs or a non-64-char pubkey. */
 hush_status_t hush_event_compute_id(const hush_event_t *ev, char *out_id);
 
-/* Basic structural validation (lengths, kind bounds). Does not verify signature. */
+/* Basic structural validation (hex lengths, kind bounds, content cap).
+ * Does not verify the id or signature; hush_event_verify does. */
 hush_status_t hush_event_validate(const hush_event_t *ev);
+
+/* Recomputes the NIP-01 id and verifies the BIP-340 signature over it.
+ * reason, when non-NULL, receives a short "invalid: ..." text on DENIED.
+ * Returns HUSH_OK when authentic, HUSH_ERR_DENIED when not, HUSH_ERR_ARG on
+ * NULL, and HUSH_ERR_CRYPTO on an internal failure. */
+hush_status_t hush_event_verify(const hush_event_t *ev, char *reason,
+                                size_t reason_len);
 
 #endif /* HUSH_EVENT_H */

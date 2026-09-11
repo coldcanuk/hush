@@ -655,7 +655,22 @@ static int hush_send_str(struct client *c, const char *s)
 static void hush_handle_event_msg(struct client *c, const hush_client_msg_t *msg)
 {
     char line[HUSH_BUF_SZ];
+    char reason[HUSH_EVENT_REASON_MAX];
+    hush_status_t verified;
 
+    /* Wire events must carry a valid id and BIP-340 signature. A rejected
+     * event is answered OK false and never stored or fanned out. */
+    verified = hush_event_verify(&msg->event, reason, sizeof(reason));
+    if (verified != HUSH_OK) {
+        const char *text = verified == HUSH_ERR_DENIED ? reason
+                                                       : "error: verify failed";
+
+        if (hush_proto_format_ok(msg->event.id, 0, text, line, sizeof(line),
+                                 NULL) == HUSH_OK &&
+            !hush_send_str(c, line))
+            hush_drop_client(c);
+        return;
+    }
     (void)hush_store_insert(g_store, &msg->event);
     (void)hush_wake_ingest(&msg->event);
     if (hush_proto_format_ok(msg->event.id, 1, "", line, sizeof(line), NULL) == HUSH_OK &&

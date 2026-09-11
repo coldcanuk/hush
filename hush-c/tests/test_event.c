@@ -92,6 +92,57 @@ int main(void)
     ev.kind = 65536;
     expect(hush_event_validate(&ev) == HUSH_ERR_ARG, "oversize kind rejected");
 
+    /* A real BIP-340-signed event: signer secret 3 over the NIP-01 id. */
+    {
+        hush_event_t signed_ev;
+        char reason[HUSH_EVENT_REASON_MAX];
+
+        memset(&signed_ev, 0, sizeof(signed_ev));
+        memcpy(signed_ev.id,
+               "cd218e665c9ef4514e46b2728775663669b8e2e045ee148b35d3e0f58ee5ca59",
+               HUSH_EVENT_ID_HEX_LEN + 1);
+        memcpy(signed_ev.pubkey,
+               "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+               HUSH_EVENT_PUBKEY_HEX_LEN + 1);
+        signed_ev.kind = 1;
+        signed_ev.created_at = 1720000123;
+        memcpy(signed_ev.content, "signed hello", 13);
+        signed_ev.tag_count = 1;
+        memcpy(signed_ev.tags[0][0], "h", 2);
+        memcpy(signed_ev.tags[0][1], "general", 8);
+        memcpy(signed_ev.sig,
+               "02883fd447cf38fa7e66703445f56f7cd42ccd10411a18b21d116165171ff02c"
+               "afdd7f51d02ee7acb474632f20b940d4d736508cef8668d5e1a8a82b353ddad1",
+               HUSH_EVENT_SIG_HEX_LEN + 1);
+        expect(hush_event_verify(&signed_ev, reason, sizeof(reason)) == HUSH_OK,
+               "valid signature accepted");
+
+        signed_ev.content[0] = 'S';
+        expect(hush_event_verify(&signed_ev, reason, sizeof(reason)) ==
+                   HUSH_ERR_DENIED,
+               "tampered content denied");
+        expect(strcmp(reason, "invalid: id mismatch") == 0,
+               "id mismatch reason");
+        signed_ev.content[0] = 's';
+
+        signed_ev.sig[0] = signed_ev.sig[0] == '0' ? '1' : '0';
+        expect(hush_event_verify(&signed_ev, reason, sizeof(reason)) ==
+                   HUSH_ERR_DENIED,
+               "bad signature denied");
+        expect(strcmp(reason, "invalid: bad signature") == 0, "bad sig reason");
+        memcpy(signed_ev.sig,
+               "02883fd447cf38fa7e66703445f56f7cd42ccd10411a18b21d116165171ff02c"
+               "afdd7f51d02ee7acb474632f20b940d4d736508cef8668d5e1a8a82b353ddad1",
+               HUSH_EVENT_SIG_HEX_LEN + 1);
+
+        signed_ev.sig[0] = '\0';
+        expect(hush_event_verify(&signed_ev, reason, sizeof(reason)) ==
+                   HUSH_ERR_DENIED,
+               "missing signature denied");
+        expect(strcmp(reason, "invalid: missing signature") == 0,
+               "missing sig reason");
+    }
+
     if (g_fail)
         return 1;
     printf("ok\n");
