@@ -77,6 +77,8 @@ typedef struct {
     int burst_ms;
     int max_jobs;
     int cooldown_s;
+    /* Boolean gate (0/1): nonzero lets robots answer robot mentions. It is a
+     * switch, not a hop counter, despite the field name. */
     int robot_hops;
     int max_robot_turns;
     char chaperon[HUSH_LAUNCH_NAME_MAX];

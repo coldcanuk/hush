@@ -320,6 +320,46 @@ int main(void)
                "ninth denial posted");
     }
 
+    {
+        hush_launch_policy_t policy;
+        size_t cooling;
+
+        /* The first dispatch starts the channel cooldown; the next mention in
+         * the same room is denied until it expires. */
+        hush_intel_init();
+        hush_agent_init();
+        memset(&policy, 0, sizeof(policy));
+        memcpy(policy.kind, HUSH_LAUNCH_KIND_OPEN,
+               sizeof(HUSH_LAUNCH_KIND_OPEN));
+        memcpy(policy.robot_reply, HUSH_LAUNCH_REPLY_MENTION,
+               sizeof(HUSH_LAUNCH_REPLY_MENTION));
+        policy.burst_ms = HUSH_LAUNCH_BURST_MS_DEFAULT;
+        policy.max_jobs = HUSH_LAUNCH_MAX_JOBS_DEFAULT;
+        policy.cooldown_s = HUSH_LAUNCH_COOLDOWN_S_LONG;
+        policy.robot_hops = 1;
+        expect(hush_launch_set_channel_policy(&launch, "general", &policy) ==
+                   HUSH_OK,
+               "cooldown policy");
+        fill_note(&ev,
+                  "c000000000000000000000000000000000000000000000000000000000000000",
+                  launch.human.pubkey_hex, "nostr:payne first ask", "general",
+                  launch.payne.pubkey_hex);
+        expect(hush_store_insert(store, &ev) == HUSH_OK,
+               "cooldown first insert");
+        hush_intel_consider(store, &launch, &ev);
+        cooling = count_needle(store, "Cooling down");
+        /* A robot-triggered chain is what the cooldown throttles. */
+        fill_note(&ev,
+                  "c100000000000000000000000000000000000000000000000000000000000000",
+                  launch.payne.pubkey_hex, "nostr:payne second ask", "general",
+                  launch.payne.pubkey_hex);
+        expect(hush_store_insert(store, &ev) == HUSH_OK,
+               "cooldown second insert");
+        hush_intel_consider(store, &launch, &ev);
+        expect(count_needle(store, "Cooling down") == cooling + 1,
+               "cooldown denies the second mention");
+    }
+
     hush_store_destroy(store);
     if (g_fail)
         return 1;

@@ -39,6 +39,9 @@ void hush_agent_poll(hush_store_t *store);
 /* Writes a JSON array of busy jobs into out. No-op if out is NULL. */
 void hush_agent_status(char *out, size_t outsz);
 
+/* Number of live jobs dispatched from this channel. 0 for NULL or empty. */
+int hush_agent_channel_busy(const char *channel);
+
 /* Starts a one-shot grok rewrite. Does not insert a hive note.
  * instruction and text may be empty; both are copied. Fails with
  * HUSH_ERR_ARG, HUSH_ERR_FULL, or HUSH_ERR_IO. Writes a token. */

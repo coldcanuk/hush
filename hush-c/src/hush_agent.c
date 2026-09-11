@@ -740,6 +740,20 @@ void hush_agent_status(char *out, size_t outsz)
     out[2] = '\0';
 }
 
+int hush_agent_channel_busy(const char *channel)
+{
+    int busy = 0;
+    size_t i;
+
+    if (channel == NULL || channel[0] == '\0')
+        return 0;
+    for (i = 0; i < (size_t)HUSH_AGENT_JOBS_MAX; ++i) {
+        if (g_jobs[i].busy && strcmp(g_jobs[i].channel, channel) == 0)
+            busy++;
+    }
+    return busy;
+}
+
 void hush_agent_poll(hush_store_t *store)
 {
     size_t i;
