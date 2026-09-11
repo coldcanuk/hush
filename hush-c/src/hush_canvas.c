@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include "hush_canvas.h"
+#include "hush_dir.h"
 #include "hush_event.h"
 #include "hush_provider.h"
 #include "hush_relay.h"
@@ -25,7 +26,6 @@ enum {
     HUSH_CANVAS_TIMEOUT_S = 20,
     HUSH_CANVAS_ARGV_MAX = 24,
     HUSH_CANVAS_PATH_MAX = 256,
-    HUSH_CANVAS_CWD_MODE = 0700,
     HUSH_CANVAS_HALF_MAX = 1800,
     HUSH_CANVAS_READ_MAX = 256,
     HUSH_CANVAS_READ_STEPS = 32
@@ -241,11 +241,15 @@ static void hush_canvas_prepare_cwd(char *out, size_t outsz)
         leaf = HUSH_CANVAS_CWD_LEAF;
     }
     n = snprintf(out, outsz, "%s/%s", base, leaf);
-    if (n < 0 || (size_t)n >= outsz) {
-        hush_canvas_copy(out, outsz, HUSH_CANVAS_TMP_FALLBACK);
-        return;
+    if (n < 0 || (size_t)n >= outsz ||
+        hush_dir_ensure_private(out) != HUSH_OK) {
+        /* A pre-created or foreign path is not a safe cwd; use a per-process
+         * private directory instead of trusting it. */
+        n = snprintf(out, outsz, "%s/%s-%d", base, leaf, (int)getpid());
+        if (n < 0 || (size_t)n >= outsz ||
+            hush_dir_ensure_private(out) != HUSH_OK)
+            out[0] = '\0';
     }
-    (void)mkdir(out, (mode_t)HUSH_CANVAS_CWD_MODE);
 }
 
 static int hush_canvas_grok_ready(void)

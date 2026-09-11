@@ -17,6 +17,7 @@
 #include "hush_agent.h"
 #include "hush_codex.h"
 #include "hush_cevent.h"
+#include "hush_dir.h"
 #include "hush_inference.h"
 #include "hush_presence.h"
 #include "hush_provider.h"
@@ -32,7 +33,6 @@ enum {
     HUSH_AGENT_ARGV_MAX = 28,
     HUSH_AGENT_PATH_MAX = 256,
     HUSH_AGENT_FD_NONE = -1,
-    HUSH_AGENT_CWD_MODE = 0700,
     HUSH_AGENT_THREAD_MAX = 6,
     HUSH_AGENT_PAIR_COUNT = 2,
     /* Soft cap for flattened thread/assignment lines. Two nostr:npub
@@ -1073,11 +1073,15 @@ static void hush_agent_prepare_cwd(char *out, size_t outsz)
         leaf = HUSH_AGENT_CWD_LEAF;
     }
     n = snprintf(out, outsz, "%s/%s", base, leaf);
-    if (n < 0 || (size_t)n >= outsz) {
-        hush_agent_copy(out, outsz, HUSH_AGENT_TMP_FALLBACK);
-        return;
+    if (n < 0 || (size_t)n >= outsz ||
+        hush_dir_ensure_private(out) != HUSH_OK) {
+        /* A pre-created or foreign path is not a safe cwd; use a per-process
+         * private directory instead of trusting it. */
+        n = snprintf(out, outsz, "%s/%s-%d", base, leaf, (int)getpid());
+        if (n < 0 || (size_t)n >= outsz ||
+            hush_dir_ensure_private(out) != HUSH_OK)
+            out[0] = '\0';
     }
-    (void)mkdir(out, (mode_t)HUSH_AGENT_CWD_MODE);
 }
 
 static int hush_agent_status_append(char *out, size_t outsz, size_t *off,
