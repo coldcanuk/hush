@@ -1,11 +1,13 @@
 # PLAN — Review Hardening and Collaboration Features
 
-**Status: FROZEN after the Phase 1 synthesis gate.** Scope, decisions, and
-success criteria below are authoritative for the rest of this build.
+**Status: FROZEN after the Phase 1 synthesis gate. Progress: Phases 0–4 done;
+Phase 5 next.** Scope, decisions, and success criteria below are authoritative
+for the rest of this build.
 
 - **Knowledge document:** [docs/research/REVIEW_HUSH_0.0.1.md](../research/REVIEW_HUSH_0.0.1.md)
 - **Phase 1 synthesis:** [docs/research/RESEARCH_REVIEW_HARDENING.md](../research/RESEARCH_REVIEW_HARDENING.md)
-- **Branch/worktree:** `gb/review-hardening` in `worktrees/review-hardening`
+- **Landed:** PR #152 (Phases 0–3) merged; `gb/relay-correctness` carries Phase 4.
+- **Branch/worktree:** phases use `gb/<phase-slug>` in `worktrees/<phase-slug>`
 - **Methodology:** RDAP (Double Diamond, risk-driven research iterations, small
   atomic Milestones with a Definition of Done).
 
@@ -116,7 +118,7 @@ durable thread memory, streaming/cancellable/budgeted turns with a work ledger).
 - **M2.1 Decisions D1–D12** recorded in the synthesis (§3). No separate
   architecture document; each decision names its constraint and rationale.
 
-### Phase 3 — Trust boundary  🔄 IN PROGRESS (PR 1)
+### Phase 3 — Trust boundary  ✅ DONE (PR #152 merged)
 
 - **M3.1 Shell sink.** ✅ Commit `ac16327f9`: `hush_launch_git_init` uses
   `mkdir` + `execvp("git")`; `hush_launch_validate_project_path` rejects
@@ -154,7 +156,7 @@ durable thread memory, streaming/cancellable/budgeted turns with a work ledger).
   `main`. Verify: `gh pr view` shows MERGED; `git worktree list` shows only
   the main checkout.
 
-### Phase 4 — Relay correctness (PR 2)
+### Phase 4 — Relay correctness  ✅ DONE (PR 2)
 
 - **M4.1 Overflow clobbers.** `hush_intel_take_hold` returns NULL when the
   table is full and `hush_agent_follow_take` reports FULL; callers deny/jam
@@ -167,25 +169,28 @@ durable thread memory, streaming/cancellable/budgeted turns with a work ledger).
   4097-byte reply succeeds (or truncates with an explicit notice), removing the
   "not usable" failure.
   Verify: `check_collaboration.py` 4097 case expects a stored reply.
-- **M4.4 Leash semantics.** Enforce `cooldown_s` per (channel, robot);
-  `max_jobs` per channel for non-lead mentions; `robot_hops` as a counted cap.
-  Verify: `test_intel` cases for each.
-- **M4.5 Dead reset path.** Call `hush_agent_reset_follow` (or delete the dead
-  path) so a re-mentioned robot after completion dispatches again.
-  Verify: integration case in `check_agent.sh`.
-- **M4.6 Start-failure diagnostics + inflight.** Post a short note when a job
-  cannot start and only increment `inflight` when a job actually began.
-  Verify: unit/integration case forcing a full job table.
-- **M4.7 POST /api/turn.** Add GET guards to read-only routes so POST reaches
-  `hush_http_serve_turn_post`; `check_turn.sh` asserts the toggle.
-  Verify: `POST /api/turn {"mode":"on"}` changes `/api/turn` state (with a stub
-  turnserver).
-- **M4.8 Predictable dirs.** Owner + directory/symlink checks for `/tmp` cwd,
-  TURN state dir, provider dir, pidfile dir.
-  Verify: unit tests with foreign-owned/symlinked paths where feasible.
-- **M4.9 Oversized line.** >32 KiB Nostr lines get a NOTICE and close instead of
-  a silent mid-frame drop.
-  Verify: raw-socket test in `check_collaboration.py`.
+- **M4.4 Leash semantics.** ✅ Commit `6e712527e`. `cooldown_s` throttles
+  robot-triggered chains only (human mentions and cues stay exempt so normal
+  follow-ups are never blocked); `max_jobs` counts live jobs per channel;
+  `robot_hops` is documented as the boolean gate it has always been.
+  Verify: `test_intel` cooldown case; `check_agent.sh`; `check_collaboration.py`.
+- **M4.5 Dead reset path.** ✅ Commits `372ffee28`. `hush_agent_consider` is
+  gone; `hush_intel_consider` resets a completed follow slot for each human note.
+- **M4.6 Start-failure diagnostics + inflight.** ✅ Commit `372ffee28`. A turn
+  that cannot start posts a diagnostic note; only started jobs count toward a
+  wave's `inflight`.
+- **M4.7 POST /api/turn.** ✅ Commit `765117259`. Read-only routes require GET,
+  so the POST handler is reachable; `check_turn.sh` proves the body is applied.
+- **M4.8 Predictable dirs.** ✅ Commit `0ba8ded78`. New
+  `hush_dir_ensure_private` (owner match, no symlink) guards TURN state and
+  `turnserver.conf` (`O_NOFOLLOW`, 0600); agent and canvas cwd fall back to a
+  per-process private directory. `tests/test_dir` covers file and symlink
+  rejection. Deferred: the same treatment for `~/.hush`-rooted provider and
+  pidfile directories, which are not shared/world-writable paths.
+- **M4.9 Oversized line.** ✅ Commit `3fc4b946e`. An over-long line drains the
+  peer, sends a `NOTICE`, and closes; raw-socket case in
+  `check_collaboration.py`.
+- **M4.10 PR 2.** Push, open PR, merge, delete the worktree.
 
 ### Phase 5 — Persistence performance (PR 3)
 
@@ -211,6 +216,12 @@ durable thread memory, streaming/cancellable/budgeted turns with a work ledger).
   document the omission explicitly).
 - **M6.4 NOSTR.md rewrite** to describe the actual line protocol.
   Verify: doc claims match `grep`/live tests.
+- **M6.5 JSON-escape emitted frames** (found by the M4.2 slow-reader check):
+  `hush_proto_format_event` writes `content` raw, so a tab or quote produces
+  invalid JSON on the wire. Escape the content and message fields and cover it
+  with a `test_proto` round-trip.
+  Verify: a raw REQ for an event whose content holds a tab, quote, and backslash
+  parses as JSON.
 
 ### Phase 7 — Feature 1: signed identity (PR 5)
 
