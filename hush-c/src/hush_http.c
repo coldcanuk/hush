@@ -369,19 +369,19 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
         return HUSH_ERR_DENIED;
     if (hush_http_serve_asset(fd, path))
         return HUSH_OK;
-    if (strcmp(path, "/api/status") == 0) {
+    if (strcmp(path, "/api/status") == 0 && memcmp(req, "GET", 3) == 0) {
         hush_http_serve_status(fd, store);
         return HUSH_OK;
     }
-    if (strcmp(path, "/api/events") == 0) {
+    if (strcmp(path, "/api/events") == 0 && memcmp(req, "GET", 3) == 0) {
         hush_http_serve_events(fd, store);
         return HUSH_OK;
     }
-    if (strcmp(path, "/api/session") == 0) {
+    if (strcmp(path, "/api/session") == 0 && memcmp(req, "GET", 3) == 0) {
         hush_http_serve_session(fd);
         return HUSH_OK;
     }
-    if (strcmp(path, "/api/chan-events") == 0) {
+    if (strcmp(path, "/api/chan-events") == 0 && memcmp(req, "GET", 3) == 0) {
         hush_http_serve_chan_events(fd, req);
         return HUSH_OK;
     }
@@ -389,15 +389,15 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
         hush_http_serve_presence_get(fd);
         return HUSH_OK;
     }
-    if (strcmp(path, "/api/skills") == 0) {
+    if (strcmp(path, "/api/skills") == 0 && memcmp(req, "GET", 3) == 0) {
         hush_http_serve_skills_get(fd);
         return HUSH_OK;
     }
-    if (strcmp(path, "/api/turn") == 0) {
+    if (strcmp(path, "/api/turn") == 0 && memcmp(req, "GET", 3) == 0) {
         hush_http_serve_turn_get(fd);
         return HUSH_OK;
     }
-    if (strcmp(path, "/api/ice") == 0) {
+    if (strcmp(path, "/api/ice") == 0 && memcmp(req, "GET", 3) == 0) {
         hush_http_serve_ice(fd);
         return HUSH_OK;
     }

@@ -64,4 +64,9 @@ posted=$(curl -sf -X POST "http://127.0.0.1:${port}/api/turn" \
     -H 'Content-Type: application/json' \
     -d '{"enabled":true,"daemon":false}')
 echo "$posted" | grep -q '"compiled":' || fail "turn post"
+# The body must reach the POST handler (the old GET guard swallowed it).
+hostset=$(curl -sf -X POST "http://127.0.0.1:${port}/api/turn" \
+    -H 'Content-Type: application/json' \
+    -d '{"host":"turn.example.test"}')
+echo "$hostset" | grep -q '"host":"turn.example.test"' || fail "turn post host"
 echo "turn routes ok"

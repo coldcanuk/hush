@@ -14,6 +14,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "hush_dir.h"
 #include "hush_turn.h"
 
 #if !defined(HUSH_STUN_TURN)
@@ -42,7 +43,6 @@ static void hush_turn_resolve_state(hush_turn_t *turn);
 static void hush_turn_find_binary(hush_turn_t *turn);
 static int hush_turn_unit_present(void);
 static hush_status_t hush_turn_random_hex(char *out, size_t hex_chars);
-static hush_status_t hush_turn_ensure_dir(const char *path);
 static hush_status_t hush_turn_write_conf(const hush_turn_t *turn);
 static hush_status_t hush_turn_enable_child(hush_turn_t *turn);
 static hush_status_t hush_turn_enable_daemon(hush_turn_t *turn);
@@ -122,7 +122,7 @@ hush_status_t hush_turn_disable(hush_turn_t *turn)
 static hush_status_t hush_turn_enable_child(hush_turn_t *turn)
 {
     assert(turn != NULL);
-    if (hush_turn_ensure_dir(turn->state_dir) != HUSH_OK)
+    if (hush_dir_ensure_private(turn->state_dir) != HUSH_OK)
         return HUSH_ERR_IO;
     if (hush_turn_write_conf(turn) != HUSH_OK)
         return HUSH_ERR_IO;
@@ -145,7 +145,7 @@ static hush_status_t hush_turn_enable_daemon(hush_turn_t *turn)
     }
     hush_turn_copy(turn->conf_path, sizeof(turn->conf_path),
                    HUSH_TURN_SYS_CONF);
-    if (hush_turn_ensure_dir(HUSH_TURN_SYS_DIR) != HUSH_OK) {
+    if (hush_dir_ensure_private(HUSH_TURN_SYS_DIR) != HUSH_OK) {
         turn->need_root = 1;
         return HUSH_ERR_DENIED;
     }
@@ -380,20 +380,10 @@ static hush_status_t hush_turn_random_hex(char *out, size_t hex_chars)
     return HUSH_OK;
 }
 
-static hush_status_t hush_turn_ensure_dir(const char *path)
-{
-    if (path == NULL || path[0] == '\0')
-        return HUSH_ERR_ARG;
-    if (mkdir(path, 0700) == 0)
-        return HUSH_OK;
-    if (errno == EEXIST)
-        return HUSH_OK;
-    return HUSH_ERR_IO;
-}
-
 static hush_status_t hush_turn_write_conf(const hush_turn_t *turn)
 {
     FILE *fp;
+    int fd;
     char log_path[HUSH_TURN_PATH_MAX];
     char pid_path[HUSH_TURN_PATH_MAX];
 
@@ -404,9 +394,15 @@ static hush_status_t hush_turn_write_conf(const hush_turn_t *turn)
     if (snprintf(pid_path, sizeof(pid_path), "%s/turnserver.pid",
                  turn->state_dir) >= (int)sizeof(pid_path))
         return HUSH_ERR_ARG;
-    fp = fopen(turn->conf_path, "w");
-    if (fp == NULL)
+    fd = open(turn->conf_path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW,
+              S_IRUSR | S_IWUSR);
+    if (fd < 0)
         return HUSH_ERR_IO;
+    fp = fdopen(fd, "w");
+    if (fp == NULL) {
+        close(fd);
+        return HUSH_ERR_IO;
+    }
     (void)fprintf(fp,
                   "listening-port=%u\nmin-port=%u\nmax-port=%u\n"
                   "fingerprint\nlt-cred-mech\nrealm=%s\nuser=%s:%s\n"

@@ -308,7 +308,7 @@ def check_memory(relay, bot, host, skill_id):
 
 
 def check_failures(relay, bot):
-    for mode in ("failure", "empty", "malformed", "oversized"):
+    for mode in ("failure", "empty", "malformed"):
         Endpoint.mode = mode
         request = post_thread(relay, bot, "FAILURE_CASE_" + mode)
         wait_idle(relay)
@@ -316,8 +316,15 @@ def check_failures(relay, bot):
                    if event.get("reply_to") == request["id"]]
         assert any("did not return a usable reply" in event["content"] for event in replies), replies
         assert not any("API_REPLY" in event["content"] or "FAKE_REPLY" in event["content"] for event in replies)
+    Endpoint.mode = "oversized"
+    request = post_thread(relay, bot, "FAILURE_CASE_oversized")
+    wait_idle(relay)
+    replies = [event for event in relay.request("/api/events")["events"]
+               if event.get("reply_to") == request["id"]]
+    assert any(event["content"] == "B" * 4096 for event in replies), replies
+    assert not any("did not return a usable reply" in event["content"] for event in replies)
     Endpoint.mode = "ok"
-    print("failures: HTTP error, empty output and malformed schema produce honest notices OK")
+    print("failures: HTTP error, empty output and malformed schema produce honest notices; oversized reply truncates OK")
 
 
 def check_chaining(relay):
@@ -389,6 +396,69 @@ if 'CLI_FAILURE_CASE' in prompt:
     print("Cline: CLI selection, complete JSON response, progress filtering and failed-exit suppression OK")
 
 
+def check_slow_reader(relay):
+    """A subscriber that stops reading is disconnected, never served torn frames."""
+    wait_idle(relay)
+    payload = "SLOW_READER_" + ("x" * 4000)
+    for _ in range(80):
+        relay.request("/api/event", {"channel": "research", "content": payload})
+    slow = socket.create_connection(("127.0.0.1", relay.port), timeout=5)
+    try:
+        slow.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+        slow.settimeout(0)  # never read the responses
+        # Each REQ replays up to 64 stored notes from this channel, so forty of
+        # them push several megabytes at a socket that is not draining.
+        slow.sendall(b"".join(
+            f'["REQ","slow-{index}",{{"kinds":[1],"#h":["research"]}}]\n'.encode()
+            for index in range(40)
+        ))
+        time.sleep(1.5)
+        assert relay.request("/api/status")["ok"] is True
+        slow.settimeout(10)
+        data = b""
+        closed = False
+        try:
+            while True:
+                chunk = slow.recv(65536)
+                if not chunk:
+                    closed = True
+                    break
+                data += chunk
+        except ConnectionResetError:
+            closed = True
+        assert closed, "relay kept a reader past its output queue"
+        for line in data.split(b"\n")[:-1]:
+            if line.strip():
+                json.loads(line)
+    finally:
+        slow.close()
+    print("backpressure: slow subscriber disconnected without torn frames OK")
+
+
+def check_oversized_line(relay):
+    """A line larger than the relay buffer gets a NOTICE before the close."""
+    client = socket.create_connection(("127.0.0.1", relay.port), timeout=5)
+    try:
+        client.settimeout(5)
+        try:
+            client.sendall(b'["EVENT","' + b"x" * 40000)
+        except OSError:
+            pass
+        data = b""
+        try:
+            while True:
+                chunk = client.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+        except (ConnectionResetError, socket.timeout):
+            pass
+        assert b"line too long" in data, data[:120]
+    finally:
+        client.close()
+    print("wire: oversized line gets a NOTICE before the close OK")
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="hush-collaboration-") as temporary:
         relay = Relay(Path(temporary))
@@ -397,6 +467,8 @@ def main():
             check_rooms(relay)
             check_providers(relay)
             check_history_capacity(relay)
+            check_slow_reader(relay)
+            check_oversized_line(relay)
         except Exception:
             relay.log.flush()
             relay.log.seek(0)

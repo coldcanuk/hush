@@ -12,8 +12,7 @@
 enum {
     HUSH_INTEL_KIND_NOTE = 1,
     HUSH_INTEL_DUP_S = 1,
-    HUSH_INTEL_MS_PER_S = 1000,
-    HUSH_INTEL_STATUS_MAX = 256
+    HUSH_INTEL_MS_PER_S = 1000
 };
 
 #define HUSH_INTEL_TAG_H "h"
@@ -30,6 +29,9 @@ enum {
 #define HUSH_INTEL_DENY_EMPTY "Say the ask."
 #define HUSH_INTEL_DENY_HOP "Robots do not chain here."
 #define HUSH_INTEL_DENY_JOBS "Holding. This channel is at its job cap."
+#define HUSH_INTEL_DENY_HOLDS "Holding. Too many live conversations; try again shortly."
+#define HUSH_INTEL_DENY_COOLDOWN \
+    "Cooling down. This robot just answered here; try again shortly."
 
 typedef struct {
     int live;
@@ -45,6 +47,20 @@ typedef struct {
 } hush_intel_hold_t;
 
 static hush_intel_hold_t g_holds[HUSH_INTEL_HOLD_MAX];
+
+/* Per (channel, robot) dispatch times that start the channel cooldown. */
+typedef struct {
+    int live;
+    char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
+    char robot[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+    time_t last;
+} hush_intel_cooldown_t;
+
+enum {
+    HUSH_INTEL_COOLDOWN_MAX = 16
+};
+
+static hush_intel_cooldown_t g_cooldowns[HUSH_INTEL_COOLDOWN_MAX];
 
 static void hush_intel_copy(char *dst, size_t dstsz, const char *src);
 static void hush_intel_lower(char *text);
@@ -74,11 +90,20 @@ static int hush_intel_looks_many(const hush_intel_hold_t *hold);
 static hush_intel_hold_t *hush_intel_find_hold(const char *channel,
                                                const char *root,
                                                const char *robot);
+/* Finds or creates the live hold. NULL when every slot is live, so a ninth
+ * conversation cannot fold into an unrelated in-flight hold. */
 static hush_intel_hold_t *hush_intel_take_hold(const char *channel,
                                                const char *root,
                                                const char *robot);
 static void hush_intel_clear_hold(hush_intel_hold_t *hold);
-static int hush_intel_jobs_busy(void);
+/* True when (channel, robot) is still inside its cooldown window. */
+static int hush_intel_cooldown_active(const char *channel, const char *robot,
+                                      int cooldown_s);
+/* Records a dispatch time for (channel, robot), replacing the oldest slot. */
+static void hush_intel_cooldown_mark(const char *channel, const char *robot);
+/* Dispatches the hold's robot and starts its channel cooldown. */
+static void hush_intel_dispatch(hush_store_t *store, hush_launch_t *launch,
+                                const hush_event_t *ev, hush_intel_hold_t *hold);
 static void hush_intel_post_line(hush_store_t *store, const hush_event_t *ev,
                                  const char *robot, const char *line);
 static void hush_intel_post_recap(hush_store_t *store, const hush_event_t *ev,
@@ -101,12 +126,11 @@ static void hush_intel_handle_robot(hush_store_t *store, hush_launch_t *launch,
                                     const char *mention);
 static int hush_intel_burst_ready(const hush_intel_hold_t *hold,
                                   const hush_launch_channel_t *ch, time_t now);
-static int hush_intel_is_lead_p(const hush_launch_t *launch,
-                                const hush_event_t *ev, const char *hex);
 
 void hush_intel_init(void)
 {
     memset(g_holds, 0, sizeof(g_holds));
+    memset(g_cooldowns, 0, sizeof(g_cooldowns));
 }
 
 void hush_intel_consider(hush_store_t *store, hush_launch_t *launch,
@@ -124,6 +148,8 @@ void hush_intel_consider(hush_store_t *store, hush_launch_t *launch,
     ch = hush_intel_channel(launch, ev);
     if (ch == NULL)
         return;
+    if (hush_intel_is_human(launch, ev->pubkey))
+        hush_agent_reset_follow(launch, ev);
     for (i = 0; i < ev->tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; i++) {
         if (strcmp(ev->tags[i][0], HUSH_INTEL_TAG_P) != 0)
             continue;
@@ -432,7 +458,7 @@ static hush_intel_hold_t *hush_intel_take_hold(const char *channel,
         hush_intel_copy(g_holds[i].robot, sizeof(g_holds[i].robot), robot);
         return &g_holds[i];
     }
-    return &g_holds[0];
+    return NULL;
 }
 
 static void hush_intel_clear_hold(hush_intel_hold_t *hold)
@@ -441,19 +467,64 @@ static void hush_intel_clear_hold(hush_intel_hold_t *hold)
     memset(hold, 0, sizeof(*hold));
 }
 
-static int hush_intel_jobs_busy(void)
+static int hush_intel_cooldown_active(const char *channel, const char *robot,
+                                      int cooldown_s)
 {
-    char thinking[HUSH_INTEL_STATUS_MAX];
-    const char *p;
-    int n;
+    size_t i;
 
-    hush_agent_status(thinking, sizeof(thinking));
-    n = 0;
-    for (p = thinking; *p != '\0'; p++) {
-        if (*p == '{')
-            n++;
+    assert(channel != NULL);
+    assert(robot != NULL);
+    if (cooldown_s <= 0)
+        return 0;
+    for (i = 0; i < (size_t)HUSH_INTEL_COOLDOWN_MAX; ++i) {
+        if (!g_cooldowns[i].live)
+            continue;
+        if (strcmp(g_cooldowns[i].channel, channel) == 0 &&
+            strcmp(g_cooldowns[i].robot, robot) == 0)
+            return time(NULL) < g_cooldowns[i].last + (time_t)cooldown_s;
     }
-    return n;
+    return 0;
+}
+
+static void hush_intel_cooldown_mark(const char *channel, const char *robot)
+{
+    size_t free_slot = (size_t)HUSH_INTEL_COOLDOWN_MAX;
+    size_t oldest = 0;
+    size_t i;
+
+    assert(channel != NULL);
+    assert(robot != NULL);
+    for (i = 0; i < (size_t)HUSH_INTEL_COOLDOWN_MAX; ++i) {
+        hush_intel_cooldown_t *entry = &g_cooldowns[i];
+
+        if (entry->live && strcmp(entry->channel, channel) == 0 &&
+            strcmp(entry->robot, robot) == 0) {
+            entry->last = time(NULL);
+            return;
+        }
+        if (!entry->live && free_slot == (size_t)HUSH_INTEL_COOLDOWN_MAX)
+            free_slot = i;
+        if (entry->live && entry->last < g_cooldowns[oldest].last)
+            oldest = i;
+    }
+    if (free_slot == (size_t)HUSH_INTEL_COOLDOWN_MAX)
+        free_slot = oldest;
+    memset(&g_cooldowns[free_slot], 0, sizeof(g_cooldowns[0]));
+    g_cooldowns[free_slot].live = 1;
+    hush_intel_copy(g_cooldowns[free_slot].channel,
+                    sizeof(g_cooldowns[0].channel), channel);
+    hush_intel_copy(g_cooldowns[free_slot].robot, sizeof(g_cooldowns[0].robot),
+                    robot);
+    g_cooldowns[free_slot].last = time(NULL);
+}
+
+static void hush_intel_dispatch(hush_store_t *store, hush_launch_t *launch,
+                                const hush_event_t *ev, hush_intel_hold_t *hold)
+{
+    assert(hold != NULL);
+    hush_intel_cooldown_mark(hold->channel, hold->robot);
+    hush_agent_mention(store, launch, ev, hold->robot);
+    hush_intel_clear_hold(hold);
 }
 
 static void hush_intel_post_line(hush_store_t *store, const hush_event_t *ev,
@@ -551,8 +622,7 @@ static void hush_intel_release(hush_store_t *store, hush_launch_t *launch,
     }
     ch = hush_intel_find_slug(launch, hold->channel);
     if (ev != NULL && !hush_intel_should_recap(hold, ch)) {
-        hush_agent_mention(store, launch, ev, hold->robot);
-        hush_intel_clear_hold(hold);
+        hush_intel_dispatch(store, launch, ev, hold);
         return;
     }
     if (ev != NULL) {
@@ -563,8 +633,7 @@ static void hush_intel_release(hush_store_t *store, hush_launch_t *launch,
     if (hush_intel_should_recap(hold, ch))
         hush_intel_post_recap(store, &synth, hold);
     else {
-        hush_agent_mention(store, launch, &synth, hold->robot);
-        hush_intel_clear_hold(hold);
+        hush_intel_dispatch(store, launch, &synth, hold);
     }
 }
 
@@ -604,8 +673,15 @@ static int hush_intel_policy_blocks(hush_store_t *store,
         hush_intel_post_line(store, ev, hex, HUSH_INTEL_DENY_HOP);
         return 1;
     }
-    if (hush_intel_jobs_busy() >= ch->max_jobs &&
-        hush_intel_is_lead_p(launch, ev, hex)) {
+    /* The cooldown throttles robot-triggered chains only. A human mention or
+     * cue always dispatches; blocking those would break normal follow-ups. */
+    if (!hush_intel_is_human(launch, ev->pubkey) &&
+        hush_intel_cooldown_active(ch->slug, hex, ch->cooldown_s)) {
+        hush_intel_post_line(store, ev, hex, HUSH_INTEL_DENY_COOLDOWN);
+        return 1;
+    }
+    if (ch->max_jobs > 0 &&
+        hush_agent_channel_busy(ch->slug) >= ch->max_jobs) {
         hush_intel_post_line(store, ev, hex, HUSH_INTEL_DENY_JOBS);
         return 1;
     }
@@ -660,13 +736,16 @@ static void hush_intel_handle_robot(hush_store_t *store, hush_launch_t *launch,
     hush_intel_event_root(root, sizeof(root), ev);
     hold = hush_intel_find_hold(channel, root, hex);
     if (hold != NULL && hold->awaiting && hush_intel_is_cue(ev->content)) {
-        hush_agent_mention(store, launch, ev, hex);
-        hush_intel_clear_hold(hold);
+        hush_intel_dispatch(store, launch, ev, hold);
         return;
     }
     if (hold != NULL)
         hold->awaiting = 0;
     hold = hush_intel_take_hold(channel, root, hex);
+    if (hold == NULL) {
+        hush_intel_post_line(store, ev, hex, HUSH_INTEL_DENY_HOLDS);
+        return;
+    }
     hush_intel_fold_note(hold, ev);
     if (ch != NULL &&
         strcmp(ch->robot_reply, HUSH_LAUNCH_REPLY_CONFIRM) == 0) {
@@ -677,21 +756,4 @@ static void hush_intel_handle_robot(hush_store_t *store, hush_launch_t *launch,
         hush_intel_release(store, launch, hold, ev);
 }
 
-static int hush_intel_is_lead_p(const hush_launch_t *launch,
-                                const hush_event_t *ev, const char *hex)
-{
-    char found[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
-    size_t i;
 
-    assert(launch != NULL);
-    assert(ev != NULL);
-    assert(hex != NULL);
-    for (i = 0; i < ev->tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; i++) {
-        if (strcmp(ev->tags[i][0], HUSH_INTEL_TAG_P) != 0)
-            continue;
-        if (!hush_intel_lookup_robot(launch, ev->tags[i][1], found, sizeof(found)))
-            continue;
-        return strcmp(found, hex) == 0;
-    }
-    return 1;
-}

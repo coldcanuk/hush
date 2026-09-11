@@ -21,9 +21,10 @@ void hush_agent_init(void);
 /* Kills live jobs and closes pipes. Safe on an empty table. */
 void hush_agent_shutdown(void);
 
-/* Starts a reply for each robot p-tag on a kind-1 note. Ignores NULL. */
-void hush_agent_consider(hush_store_t *store, hush_launch_t *launch,
-                         const hush_event_t *ev);
+/* Clears completed handoff state before a new human request in the thread.
+ * Ignores non-human authors, NULL launch, and NULL event. */
+void hush_agent_reset_follow(const hush_launch_t *launch,
+                             const hush_event_t *ev);
 
 /* Dispatches one mention. Later co-mentions wait for the previous robot. */
 void hush_agent_mention(hush_store_t *store, hush_launch_t *launch,
@@ -38,6 +39,9 @@ void hush_agent_poll(hush_store_t *store);
 
 /* Writes a JSON array of busy jobs into out. No-op if out is NULL. */
 void hush_agent_status(char *out, size_t outsz);
+
+/* Number of live jobs dispatched from this channel. 0 for NULL or empty. */
+int hush_agent_channel_busy(const char *channel);
 
 /* Starts a one-shot grok rewrite. Does not insert a hive note.
  * instruction and text may be empty; both are copied. Fails with

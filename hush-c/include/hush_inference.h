@@ -7,6 +7,12 @@
 #include "hush_provider.h"
 #include "hush_status.h"
 
+enum {
+    /* Largest provider answer the extractor will assemble. Callers that store
+     * into a smaller field must truncate, not fail the job. */
+    HUSH_INFERENCE_TEXT_MAX = 32768
+};
+
 /* All strings are borrowed, required, and NUL-terminated. No secret is supplied
  * by callers: credentials are retrieved from the provider's pass namespace. */
 typedef struct {
