@@ -2,8 +2,8 @@
 
 > **Status: Hush 0.0.1.** This document describes what the in-tree
 > `hush-relay` actually speaks. It is Nostr-shaped, not Nostr: there is no
-> WebSocket transport, no NIP-42 AUTH, and no signature verification yet.
-> Earlier revisions of this file described the upstream NIP-29 reference relay
+> WebSocket transport and no NIP-42 AUTH. Event signatures are verified on
+> ingest. Earlier revisions of this file described the upstream NIP-29 reference relay
 > that Hush's wire format was modelled on; that description was wrong for this
 > codebase and has been replaced.
 
@@ -29,7 +29,9 @@
 | `["COUNT", ...]` / `["AUTH", ...]` | Parsed as typed frames and otherwise ignored. |
 
 The event object parses `id`, `pubkey`, `kind`, `created_at`, `content`, and
-`tags`. A `sig` field is neither parsed nor verified yet.
+`tags`, and `sig`. A wire EVENT must carry a valid BIP-340 signature over
+its recomputed NIP-01 id; otherwise the relay answers `OK false` and stores
+nothing.
 
 Filter fields parsed and matched:
 
@@ -68,9 +70,11 @@ Emitted events carry `id`, `pubkey`, `kind`, `created_at`, `content`, and
 - Events that arrive over the line protocol are stored, acknowledged, and fanned
   out, but they are **not** dispatched to robots. Only `POST /api/event` from
   the PWA reaches the conversation engine.
-- No event signatures are verified. Any client that can reach the port can
-  publish under any pubkey, so treat the port as trusted until signatures and
-  NIP-42 land.
+- Wire events are authenticated: the id is recomputed and the BIP-340
+  signature is verified against the claimed pubkey. Rejected events get
+  `["OK", <id>, false, "invalid: ..."]` and are neither stored nor fanned out.
+- There is no NIP-42 challenge yet, so a captured valid event can be replayed,
+  and locally created events (the HTTP path) carry no signature.
 
 ## HTTP side
 
@@ -79,6 +83,7 @@ and [README.md](README.md).
 
 ## Deliberately not implemented
 
-WebSocket transport, NIP-42 AUTH, NIP-29 relay groups, NIP-50 search, NIP-17
+WebSocket transport, NIP-42 AUTH (only ingest signatures exist), NIP-29 relay
+groups, NIP-50 search, NIP-17
 DMs, message encryption, relay-to-relay federation, and `a`-tag deletion
 targets.

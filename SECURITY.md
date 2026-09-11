@@ -62,11 +62,15 @@ address) exposes it deliberately; remote clients must then present the token.
 `Access-Control-Allow-Origin` is not set, the `Host` header must name the local
 machine in loopback mode, and the browser cookie is `HttpOnly; SameSite=Strict`.
 
-The newline-Nostr line protocol on the same port is **still unauthenticated**
-and does not verify event signatures. The planned model is
-[NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md)
-challenge/response plus BIP-340 signature verification on ingest. Until those
-land, treat any client that can reach the port as trusted.
+Wire `EVENT` frames are authenticated: the relay recomputes the NIP-01 id and
+verifies the BIP-340 signature with OpenSSL against the claimed pubkey before
+store, `OK true`, and fan-out. A rejected event is answered
+`["OK", <id>, false, "invalid: ..."]` and dropped.
+
+There is no [NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md)
+challenge yet, so an attacker who captured a valid frame can replay it, and
+locally created events (the HTTP path) carry no signature. Treat reachability
+of the port as the outer boundary until NIP-42 lands.
 
 ### Authorization — the session token, not channel membership
 
@@ -130,8 +134,8 @@ harnessed agents and CI.
 
 ### Input Validation
 
-- Event ids and pubkeys are fixed-length hex buffers. Signatures are not stored
-  or verified yet; BIP-340 verification on ingest is planned.
+- Event ids, pubkeys, and signatures are fixed-length hex buffers; wire events
+  are recomputed and BIP-340 verified before they are stored.
 - Content and tag strings are bounded (`HUSH_EVENT_MAX_CONTENT`,
   `HUSH_EVENT_MAX_TAGS`, `HUSH_EVENT_MAX_TAG_LEN`).
 - The wire parser rejects malformed lines instead of trusting client input.
