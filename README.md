@@ -18,15 +18,20 @@ Developed with the Codex AI agent. All development uses worktrees **inside this 
 
 ## Features (MVP)
 
-- Nostr NIP-01 basics for chat (kinds 0,1,5,7,9)
-- EVENT ingestion + bounded in-memory store
-- REQ with filter matching (kinds, authors, ids, since/until, #h)
+- Nostr NIP-01 basics for chat (kind 0 profiles, kind 1 notes). Kind 5 deletion
+  and kind 7 reactions are **not implemented yet**
+- EVENT ingestion + a bounded event store persisted to `store.ring`
+- REQ with filter matching (kinds, first author, first `#h` value). `ids`,
+  `since`, and `until` are **not parsed yet**
 - CLOSE
 - Simple TCP newline-delimited JSON protocol (MVP; WebSocket adapter later)
 - `poll(2)` single-threaded server
 - Same port also serves the chat **PWA** over HTTP (`GET /`, manifest, service worker, icons)
 - Optional **STUN/TURN** (coturn) from Settings, including systemd daemon mode
-- Vibes are **public** (discoverable) or **private** (join token)
+- Vibes are **public** (discoverable) or **private** (a join token is shown; the
+  relay does not enforce it yet)
+- HTTP API gated by a per-hive session token (`$HUSH_HOME/session.token`);
+  the listener binds `127.0.0.1` unless `--listen` says otherwise
 - Mesh **conference calling** (humans and AI agents; agent voice needs Whisper)
 - Strict build: `-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow`
 

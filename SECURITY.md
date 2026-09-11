@@ -42,34 +42,43 @@ All security fixes land on `main` first.
 
 ## Security Design Principles
 
-### Authentication — NIP-42 (planned)
+### Authentication — HTTP session token, NIP-42 planned for the line protocol
 
-The Hush MVP accepts newline-delimited Nostr frames over TCP and does not yet
-enforce NIP-42. Production deployments that need authentication should treat
-the listener as a trusted-network service until AUTH lands.
+The HTTP API is gated by a per-hive session token. On first run the relay mints
+`session.token` (32 hex characters from `/dev/urandom`, mode 0600) inside
+`$HUSH_HOME` and prints its path at startup. Every `/api/*` route requires it
+except `/api/status` (liveness) and `GET /api/complete?t=<job-token>` (a
+per-job capability token). Credentials are accepted as:
 
-The intended model is
+| Carrier | Use |
+|---|---|
+| `Cookie: hush_session=…` | issued to loopback browsers on the first response |
+| `X-Hush-Token: …` | scripts and CLI clients |
+| `Authorization: Bearer …` | HTTP clients |
+| `?k=…` | one-off links |
+
+The listener binds `127.0.0.1` by default. `--listen 0.0.0.0` (or another
+address) exposes it deliberately; remote clients must then present the token.
+`Access-Control-Allow-Origin` is not set, the `Host` header must name the local
+machine in loopback mode, and the browser cookie is `HttpOnly; SameSite=Strict`.
+
+The newline-Nostr line protocol on the same port is **still unauthenticated**
+and does not verify event signatures. The planned model is
 [NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md)
-challenge/response before writing events: the relay sends a random challenge;
-the client signs a `kind:22242` event containing the challenge and the relay
-URL, proving possession of the private key.
+challenge/response plus BIP-340 signature verification on ingest. Until those
+land, treat any client that can reach the port as trusted.
 
-### Authorization — Channel Membership as the Gate
+### Authorization — the session token, not channel membership
 
-Channel membership is the **only** access control mechanism once AUTH is
-enabled. There are no separate ACL lists or capability taxonomies. If a
-principal (human or agent) is a member of a channel, they can read and write
-to it. If they are not a member, the relay rejects their requests — even if
-they are authenticated.
+Channel membership (`humans[]` / `robots[]`) is conversation metadata: it
+decides which robots the leash may dispatch and what the UI shows. It is **not**
+a request access-control mechanism, and the relay does not compare a caller's
+pubkey or address to channel membership. The session token is the access
+boundary.
 
-Private channels are invisible to non-members: they do not appear in channel
-listings, and subscription filters for private channel events return nothing
-unless the subscriber is a member.
-
-A **vibe** (this relay) has the same visibility: `public` vibes are
-discoverable and joinable; `private` vibes are not listed and require the
-operator’s join token. Full NIP-42 AUTH is still planned — the MVP hides
-listings and issues a token, it does not yet challenge every socket.
+A **vibe** has a `public` or `private` visibility flag and a join token that
+the UI displays for a human to share, but 0.0.1 does not check that token on any
+request path, so "private" is not a confidentiality boundary yet.
 
 ### STUN/TURN
 
@@ -79,11 +88,14 @@ used as a DDoS reflector. TLS/DTLS for TURN is out of this slice; put
 coturn behind a firewall and set `external-ip` when NATed. Daemon mode
 installs a systemd unit but does not enable it until the operator asks.
 
-### In-Memory Store (MVP)
+### Event Store
 
-The MVP store is a bounded in-memory ring. Events are not durable across
-process restart and are not written to a tamper-evident audit log. Do not
-treat a running `hush-relay` as a compliance archive.
+The store is a bounded 1,024-event ring that is persisted to
+`$HUSH_HOME/store.ring` and fsynced on insert, so it survives a restart.
+Oldest events are evicted first (`store.ring` is currently a full snapshot
+rewritten per insert; an append-only rewrite is planned). It is not a
+tamper-evident audit log; do not treat a running `hush-relay` as a compliance
+archive.
 
 ### Agent Secret Storage — `pass`
 
@@ -116,7 +128,8 @@ harnessed agents and CI.
 
 ### Input Validation
 
-- Event ids, pubkeys, and signatures are fixed-length hex buffers.
+- Event ids and pubkeys are fixed-length hex buffers. Signatures are not stored
+  or verified yet; BIP-340 verification on ingest is planned.
 - Content and tag strings are bounded (`HUSH_EVENT_MAX_CONTENT`,
   `HUSH_EVENT_MAX_TAGS`, `HUSH_EVENT_MAX_TAG_LEN`).
 - The wire parser rejects malformed lines instead of trusting client input.
@@ -133,8 +146,12 @@ controllers.
 ### Build Hardening
 
 Hush is strict C11. The required compiler flags are
-`-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow`. There is no Rust,
-Cargo, or `unsafe` crate surface in this repository.
+`-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow`. `./configure` probes
+`-fstack-protector-strong`, `-D_FORTIFY_SOURCE=2`, `-fPIE`, `-Wl,-z,relro`,
+`-Wl,-z,now`, and `-pie`, and records the flags the toolchain accepts in
+`config.mk`; `hush-c/Makefile` always compiles with
+`-fstack-protector-strong -fPIE` and links `-Wl,-z,noexecstack`. There is no
+Rust, Cargo, or `unsafe` crate surface in this repository.
 
 ---
 
