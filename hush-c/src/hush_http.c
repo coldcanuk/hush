@@ -3,15 +3,20 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <assert.h>
+#include <ctype.h>
 #include <errno.h>
+#include <netinet/in.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "hush_agent.h"
+#include "hush_auth.h"
 #include "hush_canvas.h"
 #include "hush_cevent.h"
 #include "hush_home.h"
@@ -52,7 +57,9 @@ enum {
     HUSH_HTTP_FIXUP_WAIT_MAX = 1800,
     HUSH_HTTP_FIXUP_TOKEN_MAX = 16,
     HUSH_HTTP_WINDOW_ACT_MAX = 16,
-    HUSH_HTTP_COMPLETE_JSON_MAX = 1536
+    HUSH_HTTP_COMPLETE_JSON_MAX = 1536,
+    HUSH_HTTP_HDR_VALUE_MAX = 512,
+    HUSH_HTTP_HOST_MAX = 128
 };
 
 #define HUSH_HTTP_CLOSE_JSON "{\"ok\":true,\"action\":\"close\"}\n"
@@ -81,6 +88,8 @@ static uint16_t g_listen_port;
 static int g_client_count;
 static hush_launch_t *g_launch;
 static hush_turn_t *g_turn;
+static char g_bind_addr[HUSH_HTTP_HOST_MAX];
+static int g_set_cookie;
 static char g_context_text[HUSH_ROSTER_CONTEXT_MAX][HUSH_ROSTER_CONTEXT_BYTES];
 
 static const char *hush_find_headers_end(const char *buf, size_t len);
@@ -242,6 +251,35 @@ static hush_status_t hush_http_serve_provider_login(int fd, const char *body);
 static void hush_http_reply_scan(int fd, const hush_provider_scan_t *scan,
                                  hush_status_t st);
 
+/* True when line begins with name followed by ':'. Case-insensitive. */
+static int hush_http_line_has_name(const char *line, const char *name,
+                                   size_t name_len);
+/* Copies a header value trimmed of leading blanks and trailing CR/LF. */
+static void hush_http_copy_value(const char *src, char *out, size_t outsz);
+/* Copies the named header value into out. 0 when absent or empty. */
+static int hush_http_header_value(const char *req, size_t len, const char *name,
+                                  char *out, size_t outsz);
+/* Copies the ?k= credential from the request line. 0 when absent. */
+static int hush_http_query_token(const char *req, char *out, size_t outsz);
+/* Copies cookie name's value from a Cookie header. 0 when absent. */
+static int hush_http_cookie_token(const char *cookie, const char *name,
+                                  char *out, size_t outsz);
+/* True when any accepted credential matches the live session token. */
+static int hush_http_request_is_authed(const char *req, size_t len);
+/* True when the peer address is loopback. */
+static int hush_http_peer_is_loopback(int fd);
+/* True when host names the local machine. */
+static int hush_http_host_is_loopback(const char *host);
+/* Truncates a host at its port, keeping [v6] brackets. */
+static void hush_http_host_strip_port(char *host);
+/* True when the Host header may serve this request. */
+static int hush_http_host_ok(const char *req, size_t len);
+/* True when path is an API route that requires the session credential. */
+static int hush_http_needs_auth(const char *req, const char *path);
+/* Replies 401/403 and returns DENIED when host or token checks fail. */
+static hush_status_t hush_http_guard(int fd, const char *req, size_t len,
+                                     const char *path);
+
 void hush_http_set_listen_port(uint16_t port)
 {
     g_listen_port = port;
@@ -250,6 +288,19 @@ void hush_http_set_listen_port(uint16_t port)
 void hush_http_set_client_count(int n)
 {
     g_client_count = n;
+}
+
+void hush_http_set_bind_addr(const char *addr)
+{
+    size_t len = 0;
+
+    if (addr != NULL)
+        len = strlen(addr);
+    if (len >= sizeof(g_bind_addr))
+        len = sizeof(g_bind_addr) - 1;
+    if (len > 0)
+        memcpy(g_bind_addr, addr, len);
+    g_bind_addr[len] = '\0';
 }
 
 void hush_http_set_launch(hush_launch_t *launch)
@@ -303,11 +354,19 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
     if (req == NULL || store == NULL || out_posted == NULL)
         return HUSH_ERR_ARG;
     memset(out_posted, 0, sizeof(*out_posted));
+    g_set_cookie = 0;
     if (len >= 7 && memcmp(req, "OPTIONS", 7) == 0) {
         hush_http_reply(fd, "204 No Content", "text/plain", "", 0);
         return HUSH_OK;
     }
     hush_http_path(req, path, sizeof(path));
+    /* A loopback browser earns the session cookie on any first response, so
+     * the fetch after page load already carries it. Remotes present the token. */
+    if (hush_http_peer_is_loopback(fd) &&
+        !hush_http_request_is_authed(req, len))
+        g_set_cookie = 1;
+    if (hush_http_guard(fd, req, len, path) != HUSH_OK)
+        return HUSH_ERR_DENIED;
     if (hush_http_serve_asset(fd, path))
         return HUSH_OK;
     if (strcmp(path, "/api/status") == 0) {
@@ -398,6 +457,267 @@ static void hush_http_path(const char *req, char *out, size_t outsz)
         i++;
     }
     out[i] = '\0';
+}
+
+static int hush_http_line_has_name(const char *line, const char *name,
+                                   size_t name_len)
+{
+    size_t i;
+
+    assert(line != NULL);
+    assert(name != NULL);
+    for (i = 0; i < name_len; ++i) {
+        if (line[i] == '\0' ||
+            tolower((unsigned char)line[i]) !=
+                tolower((unsigned char)name[i]))
+            return 0;
+    }
+    return line[name_len] == ':';
+}
+
+static void hush_http_copy_value(const char *src, char *out, size_t outsz)
+{
+    size_t n = 0;
+
+    assert(src != NULL);
+    assert(out != NULL);
+    while (*src == ' ' || *src == '\t')
+        ++src;
+    while (*src != '\0' && *src != '\r' && *src != '\n' && n + 1 < outsz)
+        out[n++] = *src++;
+    out[n] = '\0';
+}
+
+static int hush_http_header_value(const char *req, size_t len, const char *name,
+                                  char *out, size_t outsz)
+{
+    char block[HUSH_HTTP_HDR_MAX];
+    const char *end;
+    char *line;
+    size_t name_len;
+    size_t hlen;
+
+    assert(req != NULL);
+    assert(name != NULL);
+    assert(out != NULL);
+    if (outsz == 0)
+        return 0;
+    out[0] = '\0';
+    end = hush_find_headers_end(req, len);
+    if (end == NULL)
+        return 0;
+    hlen = (size_t)(end - req) + 4;
+    if (hlen >= sizeof(block))
+        return 0;
+    memcpy(block, req, hlen);
+    block[hlen] = '\0';
+    name_len = strlen(name);
+    line = strchr(block, '\n');
+    if (line == NULL)
+        return 0;
+    for (;;) {
+        char *next;
+
+        line++;
+        if (*line == '\r' || *line == '\n' || *line == '\0')
+            break;
+        if (hush_http_line_has_name(line, name, name_len)) {
+            hush_http_copy_value(line + name_len + 1, out, outsz);
+            return out[0] != '\0';
+        }
+        next = strchr(line, '\n');
+        if (next == NULL)
+            break;
+        line = next;
+    }
+    return 0;
+}
+
+static int hush_http_query_token(const char *req, char *out, size_t outsz)
+{
+    const char *p;
+    size_t n = 0;
+
+    assert(req != NULL);
+    assert(out != NULL);
+    if (outsz == 0)
+        return 0;
+    out[0] = '\0';
+    p = strchr(req, '?');
+    if (p == NULL)
+        return 0;
+    p++;
+    for (;;) {
+        if (p[0] == 'k' && p[1] == '=') {
+            const char *value = p + 2;
+
+            while (*value != '\0' && *value != ' ' && *value != '&' &&
+                   *value != '#' && n + 1 < outsz)
+                out[n++] = *value++;
+            out[n] = '\0';
+            return n > 0;
+        }
+        p = strchr(p, '&');
+        if (p == NULL)
+            return 0;
+        p++;
+    }
+}
+
+static int hush_http_cookie_token(const char *cookie, const char *name,
+                                  char *out, size_t outsz)
+{
+    size_t name_len;
+    const char *p;
+
+    assert(cookie != NULL);
+    assert(name != NULL);
+    assert(out != NULL);
+    if (outsz == 0)
+        return 0;
+    out[0] = '\0';
+    name_len = strlen(name);
+    p = cookie;
+    while (*p != '\0') {
+        size_t n = 0;
+
+        while (*p == ' ' || *p == ';' || *p == '\t')
+            ++p;
+        if (strncmp(p, name, name_len) == 0 && p[name_len] == '=') {
+            const char *value = p + name_len + 1;
+
+            while (*value != '\0' && *value != ';' && n + 1 < outsz)
+                out[n++] = *value++;
+            out[n] = '\0';
+            return n > 0;
+        }
+        p = strchr(p, ';');
+        if (p == NULL)
+            return 0;
+        p++;
+    }
+    return 0;
+}
+
+static int hush_http_request_is_authed(const char *req, size_t len)
+{
+    static const char bearer[] = "Bearer ";
+    char header[HUSH_HTTP_HDR_VALUE_MAX];
+    char value[HUSH_AUTH_TOKEN_BUF];
+
+    assert(req != NULL);
+    if (hush_http_header_value(req, len, "Cookie", header, sizeof(header)) &&
+        hush_http_cookie_token(header, HUSH_AUTH_COOKIE, value,
+                               sizeof(value)) &&
+        hush_auth_token_matches(value))
+        return 1;
+    if (hush_http_header_value(req, len, "Authorization", header,
+                               sizeof(header)) &&
+        strncmp(header, bearer, sizeof(bearer) - 1) == 0 &&
+        hush_auth_token_matches(header + sizeof(bearer) - 1))
+        return 1;
+    if (hush_http_header_value(req, len, HUSH_AUTH_HEADER, value,
+                               sizeof(value)) &&
+        hush_auth_token_matches(value))
+        return 1;
+    if (hush_http_query_token(req, value, sizeof(value)) &&
+        hush_auth_token_matches(value))
+        return 1;
+    return 0;
+}
+
+static int hush_http_peer_is_loopback(int fd)
+{
+    struct sockaddr_storage peer;
+    socklen_t peer_len = (socklen_t)sizeof(peer);
+
+    if (getpeername(fd, (struct sockaddr *)&peer, &peer_len) != 0)
+        return 0;
+    if (peer.ss_family == AF_INET) {
+        const struct sockaddr_in *addr = (const struct sockaddr_in *)&peer;
+
+        return addr->sin_addr.s_addr == htonl(INADDR_LOOPBACK);
+    }
+    if (peer.ss_family == AF_INET6) {
+        const struct sockaddr_in6 *addr = (const struct sockaddr_in6 *)&peer;
+
+        return IN6_IS_ADDR_LOOPBACK(&addr->sin6_addr);
+    }
+    return 0;
+}
+
+static int hush_http_host_is_loopback(const char *host)
+{
+    assert(host != NULL);
+    return strcasecmp(host, "127.0.0.1") == 0 ||
+           strcasecmp(host, "localhost") == 0 ||
+           strcasecmp(host, "::1") == 0 ||
+           strcasecmp(host, "[::1]") == 0;
+}
+
+static void hush_http_host_strip_port(char *host)
+{
+    char *close;
+    char *colon;
+
+    assert(host != NULL);
+    if (host[0] == '[') {
+        close = strchr(host, ']');
+        if (close != NULL)
+            close[1] = '\0';
+        return;
+    }
+    colon = strrchr(host, ':');
+    if (colon != NULL && strchr(host, ':') == colon)
+        *colon = '\0';
+}
+
+static int hush_http_host_ok(const char *req, size_t len)
+{
+    char host[HUSH_HTTP_HOST_MAX];
+
+    assert(req != NULL);
+    if (g_bind_addr[0] != '\0' && !hush_http_host_is_loopback(g_bind_addr))
+        return 1; /* An operator-chosen non-loopback bind makes Host advisory. */
+    if (!hush_http_header_value(req, len, "Host", host, sizeof(host)))
+        return 0;
+    hush_http_host_strip_port(host);
+    return hush_http_host_is_loopback(host);
+}
+
+static int hush_http_needs_auth(const char *req, const char *path)
+{
+    assert(req != NULL);
+    assert(path != NULL);
+    if (strncmp(path, "/api/", 5) != 0)
+        return 0;
+    if (strcmp(path, "/api/status") == 0)
+        return 0;
+    if (strcmp(path, "/api/complete") == 0 && memcmp(req, "GET", 3) == 0)
+        return 0;
+    return 1;
+}
+
+static hush_status_t hush_http_guard(int fd, const char *req, size_t len,
+                                     const char *path)
+{
+    const char *denied;
+
+    assert(req != NULL);
+    assert(path != NULL);
+    if (!hush_http_host_ok(req, len)) {
+        denied = "bad host\n";
+        hush_http_reply(fd, "403 Forbidden", "text/plain", denied,
+                        strlen(denied));
+        return HUSH_ERR_DENIED;
+    }
+    if (!hush_http_needs_auth(req, path) ||
+        hush_http_request_is_authed(req, len))
+        return HUSH_OK;
+    denied = "{\"ok\":false,\"error\":\"session token required\"}\n";
+    hush_http_reply(fd, "401 Unauthorized", "application/json", denied,
+                    strlen(denied));
+    return HUSH_ERR_DENIED;
 }
 
 static int hush_http_serve_asset(int fd, const char *path)
@@ -509,19 +829,28 @@ static const char *hush_http_event_channel(const hush_event_t *event)
 static void hush_http_reply(int fd, const char *status, const char *ctype,
                             const char *body, size_t blen)
 {
-    char hdr[320];
+    char hdr[512];
+    char cookie[160];
+    char token[HUSH_AUTH_TOKEN_BUF];
+    const char *extra = "";
     int n;
 
+    if (g_set_cookie && hush_auth_token_copy(token, sizeof(token)) == HUSH_OK) {
+        int cn = snprintf(cookie, sizeof(cookie),
+                          "Set-Cookie: %s=%s; HttpOnly; SameSite=Strict; "
+                          "Path=/\r\n",
+                          HUSH_AUTH_COOKIE, token);
+        if (cn > 0 && (size_t)cn < sizeof(cookie))
+            extra = cookie;
+    }
     n = snprintf(hdr, sizeof(hdr),
                  "HTTP/1.1 %s\r\n"
                  "Content-Type: %s\r\n"
                  "Content-Length: %zu\r\n"
                  "Connection: close\r\n"
-                 "Access-Control-Allow-Origin: *\r\n"
-                 "Access-Control-Allow-Headers: Content-Type\r\n"
-                 "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+                 "%s"
                  "\r\n",
-                 status, ctype, blen);
+                 status, ctype, blen, extra);
     if (n <= 0 || (size_t)n >= sizeof(hdr))
         return;
     if (hush_http_write_all(fd, hdr, (size_t)n) != HUSH_OK)
@@ -645,7 +974,7 @@ static void hush_http_serve_events(int fd, const hush_store_t *store)
 {
     assert(store != NULL);
     const char *header = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
-        "Access-Control-Allow-Origin: *\r\nCache-Control: no-store\r\n"
+        "Cache-Control: no-store\r\n"
         "Connection: close\r\n\r\n{\"events\":[";
     if (hush_http_write_all(fd, header, strlen(header)) != HUSH_OK)
         return;

@@ -13,6 +13,10 @@ enum {
     HUSH_PASS_ERR_MAX = 160
 };
 
+/* Environment override selecting the pass helper binary. A non-empty value
+ * wins over the repo helper, which keeps tests off the operator's real store. */
+#define HUSH_PASS_ENV_HELPER "HUSH_PASS_HELPER"
+
 #define HUSH_PASS_IDENTITY_NSEC "identity/nsec"
 #define HUSH_PASS_PAYNE_NSEC "agents/sgt-major-payne/nsec"
 #define HUSH_PASS_SHOW_IDENTITY "pass show hush/identity/nsec"

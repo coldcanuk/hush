@@ -2,6 +2,14 @@
 # Provider configure: GET/POST /api/provider, scan, no key echo.
 set -eu
 cd "$(dirname "$0")/.."
+# Session-token gate plus a hermetic pass store, so the harness never reads the
+# operator's real credentials. curl() adds the hive token to every call.
+test_home="$(mktemp -d)"
+export HUSH_HOME="${HUSH_HOME:-$test_home/hush}"
+export HUSH_PASS_HELPER="$(pwd)/tests/fake-pass.sh"
+export HUSH_FAKE_PASS_DIR="$(mktemp -d)"
+curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" "$@"; }
+
 bin=./hush-relay
 port=18769
 log=$(mktemp)
@@ -96,7 +104,7 @@ echo "$again" | grep -q '"password"' && fail "later GET leaked password field"
 echo "$again" | grep -q '"token"' && fail "later GET leaked token field"
 echo "$again" | grep -q '"passkey"' && fail "later GET leaked passkey field"
 
-overlay="$home/.hush/config/providers.json"
+overlay="$HUSH_HOME/config/providers.json"
 test -f "$overlay" || fail "overlay missing"
 grep -q 'sk-secret-test' "$overlay" && fail "overlay stored api_key"
 grep -q 'user-alice' "$overlay" && fail "overlay stored username"

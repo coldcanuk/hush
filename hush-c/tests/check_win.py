@@ -184,8 +184,10 @@ def check_prepare_route(directory, display):
                 raise AssertionError("throwaway relay did not start")
 
             def prepare():
+                token = (directory / "home" / "session.token").read_text().strip()
                 request = Request(address + "/api/window", data=b'{"action":"prepare"}',
-                                  headers={"Content-Type": "application/json"})
+                                  headers={"Content-Type": "application/json",
+                                           "X-Hush-Token": token})
                 with urlopen(request, timeout=2) as response:
                     return json.load(response)
 

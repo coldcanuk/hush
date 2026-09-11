@@ -148,10 +148,17 @@ static int hush_pass_path_is_ok(const char *path)
 
 static hush_status_t hush_pass_resolve_helper(char *cmd, size_t cmdsz)
 {
+    const char *env_helper = NULL;
+
     assert(cmd != NULL);
     assert(cmdsz > 0);
     if (g_helper[0] != '\0') {
         hush_pass_copy(cmd, cmdsz, g_helper);
+        return HUSH_OK;
+    }
+    env_helper = getenv(HUSH_PASS_ENV_HELPER);
+    if (env_helper != NULL && env_helper[0] != '\0') {
+        hush_pass_copy(cmd, cmdsz, env_helper);
         return HUSH_OK;
     }
     if (access(HUSH_PASS_REPO_HELPER, X_OK) == 0) {
