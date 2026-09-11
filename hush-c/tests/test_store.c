@@ -2,6 +2,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,6 +54,10 @@ int main(void)
 
     snprintf(home, sizeof(home), "/tmp/hush-store-test-%d", (int)getpid());
     (void)mkdir(home, 0700);
+    snprintf(path, sizeof(path), "%s/%s", home, HUSH_STORE_FILE);
+    (void)unlink(path);
+    snprintf(path, sizeof(path), "%s/%s", home, HUSH_STORE_LOG_FILE);
+    (void)unlink(path);
     if (setenv("HUSH_HOME", home, 1) != 0)
         return 1;
     unsetenv("HUSH_CONFIG_DIR");
@@ -80,9 +85,11 @@ int main(void)
     expect(hush_store_insert(store, &ev) == HUSH_OK, "30315 replace");
     expect(hush_store_count(store) == 2, "replaced not appended");
 
-    snprintf(path, sizeof(path), "%s/%s", home, HUSH_STORE_FILE);
-    expect(stat(path, &st) == 0, "store.ring exists");
+    snprintf(path, sizeof(path), "%s/%s", home, HUSH_STORE_LOG_FILE);
+    expect(stat(path, &st) == 0, "store.log exists");
     hush_store_destroy(store);
+    snprintf(path, sizeof(path), "%s/%s", home, HUSH_STORE_FILE);
+    expect(stat(path, &st) == 0, "store.ring written on compact");
     store = NULL;
     expect(hush_store_create(&store) == HUSH_OK, "create 2");
     expect(hush_store_persist_open(store) == HUSH_OK, "reload");
@@ -119,6 +126,39 @@ int main(void)
            "cap after load");
 
     hush_store_destroy(store);
+    store = NULL;
+
+    {
+        /* Simulate a crash: leave the log un-compacted, then tear its tail. */
+        hush_store_t *crashed = NULL;
+        hush_store_t *reopened = NULL;
+        hush_event_t replayed;
+        char logpath[HUSH_HOME_PATH_MAX];
+        int fd;
+
+        expect(hush_store_create(&crashed) == HUSH_OK, "crash create");
+        expect(hush_store_persist_open(crashed) == HUSH_OK, "crash open");
+        fill_note(&ev,
+                  "5555555555555555555555555555555555555555555555555555555555555555",
+                  1, "uncompacted");
+        expect(hush_store_insert(crashed, &ev) == HUSH_OK, "crash insert");
+        snprintf(logpath, sizeof(logpath), "%s/%s", home, HUSH_STORE_LOG_FILE);
+        fd = open(logpath, O_WRONLY | O_APPEND);
+        expect(fd >= 0, "log append open");
+        if (fd >= 0) {
+            expect(write(fd, "torn", 4) == 4, "torn tail");
+            expect(close(fd) == 0, "log close");
+        }
+        expect(hush_store_create(&reopened) == HUSH_OK, "reopen create");
+        expect(hush_store_persist_open(reopened) == HUSH_OK, "torn log open");
+        expect(hush_store_find(reopened, &replayed,
+                               "5555555555555555555555555555555555555555555555555555555555555555") ==
+                   HUSH_OK,
+               "record before the torn tail replays");
+        hush_store_destroy(reopened);
+        /* crashed is deliberately leaked: that is the crash simulation. */
+    }
+
     if (g_fail)
         return 1;
     printf("test_store ok\n");

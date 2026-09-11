@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "hush_home.h"
@@ -18,16 +19,27 @@
 enum {
     HUSH_STORE_FILE_MODE = 0600,
     HUSH_STORE_VERSION = 1,
-    HUSH_STORE_U16_MAX = 65535
+    HUSH_STORE_U16_MAX = 65535,
+    /* One magic word precedes each append-log event record. */
+    HUSH_STORE_LOG_MAGIC = 0x32474F4Cu,
+    /* Full snapshot plus log truncate after this many appends. */
+    HUSH_STORE_SNAPSHOT_INSERTS = 256,
+    /* fdatasync the log at most this often (seconds). */
+    HUSH_STORE_LOG_SYNC_S = 1
 };
 
-/* Opaque ring buffer of events. persist_on selects fsync snapshots. */
+/* Opaque ring buffer of events. The snapshot is store.ring; store.log holds
+ * the appends since that snapshot and is replayed on load. */
 struct hush_store {
     hush_event_t events[HUSH_STORE_CAPACITY];
     size_t head;
     size_t count;
     int persist_on;
     char persist_path[HUSH_HOME_PATH_MAX];
+    char log_path[HUSH_HOME_PATH_MAX];
+    int log_fd;
+    size_t pending;
+    time_t last_sync;
 };
 
 static hush_status_t hush_store_alloc(hush_store_t **out_store);
@@ -51,6 +63,19 @@ static hush_status_t hush_store_read_event(int fd, hush_event_t *ev);
 static hush_status_t hush_store_fsync_fd(int fd);
 static hush_status_t hush_store_fsync_dir(const char *file);
 static hush_status_t hush_store_save(const hush_store_t *store);
+/* Builds persist_path and log_path under $HUSH_HOME. IO on overflow. */
+static hush_status_t hush_store_paths(hush_store_t *store);
+/* Loads the store.ring snapshot when present. Missing file is OK. */
+static hush_status_t hush_store_load_snapshot(hush_store_t *store);
+/* Replays store.log over the snapshot, skipping ids already present. */
+static hush_status_t hush_store_replay_log(hush_store_t *store);
+/* Opens store.log for appends. */
+static hush_status_t hush_store_open_log(hush_store_t *store);
+/* Appends one log record and syncs at most once a second. IO on failure. */
+static hush_status_t hush_store_append(hush_store_t *store,
+                                       const hush_event_t *ev);
+/* Writes a fresh snapshot, then empties the log. Best effort. */
+static void hush_store_compact(hush_store_t *store);
 
 hush_status_t hush_store_create(hush_store_t **out_store)
 {
@@ -59,60 +84,89 @@ hush_status_t hush_store_create(hush_store_t **out_store)
 
 void hush_store_destroy(hush_store_t *store)
 {
-    if (store != NULL && store->persist_on)
-        (void)hush_store_save(store);
+    if (store == NULL)
+        return;
+    if (store->persist_on)
+        hush_store_compact(store);
+    if (store->log_fd >= 0)
+        (void)close(store->log_fd);
     free(store);
 }
 
 hush_status_t hush_store_persist_open(hush_store_t *store)
 {
+    hush_status_t st;
+
+    if (store == NULL)
+        return HUSH_ERR_ARG;
+    store->persist_on = 0;
+    store->persist_path[0] = '\0';
+    store->log_path[0] = '\0';
+    if (store->log_fd >= 0) {
+        (void)close(store->log_fd);
+        store->log_fd = -1;
+    }
+    if (!hush_store_may_persist())
+        return HUSH_OK;
+    if (hush_home_ensure() != HUSH_OK)
+        return HUSH_ERR_IO;
+    st = hush_store_paths(store);
+    if (st != HUSH_OK)
+        return st;
+    st = hush_store_load_snapshot(store);
+    if (st != HUSH_OK)
+        return st;
+    store->persist_on = 1;
+    st = hush_store_replay_log(store);
+    if (st != HUSH_OK)
+        return st;
+    return hush_store_open_log(store);
+}
+
+static hush_status_t hush_store_paths(hush_store_t *store)
+{
     char root[HUSH_HOME_PATH_MAX];
+    int n;
+
+    assert(store != NULL);
+    hush_home_root(root, sizeof(root));
+    if (root[0] == '\0')
+        return HUSH_ERR_IO;
+    n = snprintf(store->persist_path, sizeof(store->persist_path), "%s/%s",
+                 root, HUSH_STORE_FILE);
+    if (n <= 0 || (size_t)n >= sizeof(store->persist_path))
+        return HUSH_ERR_IO;
+    n = snprintf(store->log_path, sizeof(store->log_path), "%s/%s",
+                 root, HUSH_STORE_LOG_FILE);
+    if (n <= 0 || (size_t)n >= sizeof(store->log_path))
+        return HUSH_ERR_IO;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_store_load_snapshot(hush_store_t *store)
+{
     uint32_t magic = 0;
     uint32_t version = 0;
     uint32_t count = 0;
     uint32_t cap = 0;
     uint32_t i;
     int fd;
-    int n;
 
-    if (store == NULL)
-        return HUSH_ERR_ARG;
-    store->persist_on = 0;
-    store->persist_path[0] = '\0';
-    if (!hush_store_may_persist())
-        return HUSH_OK;
-    if (hush_home_ensure() != HUSH_OK)
-        return HUSH_ERR_IO;
-    hush_home_root(root, sizeof(root));
-    if (root[0] == '\0')
-        return HUSH_ERR_IO;
-    n = snprintf(store->persist_path, sizeof(store->persist_path), "%s/%s",
-                 root, HUSH_STORE_FILE);
-    if (n <= 0 || (size_t)n >= sizeof(store->persist_path)) {
-        store->persist_path[0] = '\0';
-        return HUSH_ERR_IO;
-    }
+    assert(store != NULL);
     fd = open(store->persist_path, O_RDONLY);
-    if (fd < 0) {
-        if (errno == ENOENT) {
-            store->persist_on = 1;
-            return HUSH_OK;
-        }
-        return HUSH_ERR_IO;
-    }
+    if (fd < 0)
+        return errno == ENOENT ? HUSH_OK : HUSH_ERR_IO;
     if (hush_store_read_u32(fd, &magic) != HUSH_OK ||
         hush_store_read_u32(fd, &version) != HUSH_OK ||
         hush_store_read_u32(fd, &count) != HUSH_OK ||
         hush_store_read_u32(fd, &cap) != HUSH_OK) {
         close(fd);
-        store->persist_on = 1;
         return HUSH_OK;
     }
     if (magic != HUSH_STORE_MAGIC || version != (uint32_t)HUSH_STORE_VERSION ||
         cap != (uint32_t)HUSH_STORE_CAPACITY ||
         count > (uint32_t)HUSH_STORE_CAPACITY) {
         close(fd);
-        store->persist_on = 1;
         return HUSH_OK;
     }
     for (i = 0; i < count; i++) {
@@ -129,7 +183,51 @@ hush_status_t hush_store_persist_open(hush_store_t *store)
         }
     }
     close(fd);
-    store->persist_on = 1;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_store_replay_log(hush_store_t *store)
+{
+    uint32_t magic = 0;
+    int fd;
+
+    assert(store != NULL);
+    fd = open(store->log_path, O_RDONLY);
+    if (fd < 0)
+        return errno == ENOENT ? HUSH_OK : HUSH_ERR_IO;
+    for (;;) {
+        hush_event_t ev;
+        hush_event_t existing;
+
+        memset(&ev, 0, sizeof(ev));
+        /* A torn header, a torn record, or a foreign tail all end replay. */
+        if (hush_store_read_u32(fd, &magic) != HUSH_OK)
+            break;
+        if (magic != (uint32_t)HUSH_STORE_LOG_MAGIC)
+            break;
+        if (hush_store_read_event(fd, &ev) != HUSH_OK)
+            break;
+        if (hush_store_find(store, &existing, ev.id) == HUSH_OK)
+            continue; /* already snapshotted */
+        if (hush_store_insert(store, &ev) != HUSH_OK) {
+            close(fd);
+            return HUSH_ERR_FULL;
+        }
+    }
+    close(fd);
+    return HUSH_OK;
+}
+
+static hush_status_t hush_store_open_log(hush_store_t *store)
+{
+    assert(store != NULL);
+    store->log_fd = open(store->log_path,
+                         O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW,
+                         HUSH_STORE_FILE_MODE);
+    if (store->log_fd < 0)
+        return HUSH_ERR_IO;
+    store->pending = 0;
+    store->last_sync = time(NULL);
     return HUSH_OK;
 }
 
@@ -137,14 +235,13 @@ hush_status_t hush_store_insert(hush_store_t *store, const hush_event_t *ev)
 {
     if (store == NULL || ev == NULL)
         return HUSH_ERR_ARG;
-    if (hush_store_replace_addressable(store, ev)) {
-        if (store->persist_on)
-            (void)hush_store_save(store);
+    if (!hush_store_replace_addressable(store, ev))
+        hush_store_write(store, ev);
+    if (!store->persist_on || store->log_fd < 0)
         return HUSH_OK;
-    }
-    hush_store_write(store, ev);
-    if (store->persist_on)
-        (void)hush_store_save(store);
+    (void)hush_store_append(store, ev);
+    if (store->pending >= (size_t)HUSH_STORE_SNAPSHOT_INSERTS)
+        hush_store_compact(store);
     return HUSH_OK;
 }
 
@@ -218,6 +315,7 @@ static hush_status_t hush_store_alloc(hush_store_t **out_store)
     s = (hush_store_t *)calloc(1, sizeof(*s));
     if (s == NULL)
         return HUSH_ERR_FULL;
+    s->log_fd = -1;
     *out_store = s;
     return HUSH_OK;
 }
@@ -569,4 +667,36 @@ static hush_status_t hush_store_save(const hush_store_t *store)
         return HUSH_ERR_IO;
     }
     return hush_store_fsync_dir(store->persist_path);
+}
+
+static hush_status_t hush_store_append(hush_store_t *store,
+                                       const hush_event_t *ev)
+{
+    time_t now;
+
+    assert(store != NULL);
+    assert(ev != NULL);
+    assert(store->log_fd >= 0);
+    if (hush_store_write_u32(store->log_fd, HUSH_STORE_LOG_MAGIC) != HUSH_OK ||
+        hush_store_write_event(store->log_fd, ev) != HUSH_OK)
+        return HUSH_ERR_IO;
+    store->pending++;
+    /* Bound loss to roughly one second of chat without a sync per insert. */
+    now = time(NULL);
+    if (now - store->last_sync >= (time_t)HUSH_STORE_LOG_SYNC_S &&
+        fdatasync(store->log_fd) == 0)
+        store->last_sync = now;
+    return HUSH_OK;
+}
+
+static void hush_store_compact(hush_store_t *store)
+{
+    assert(store != NULL);
+    if (store->persist_path[0] == '\0')
+        return;
+    if (hush_store_save(store) != HUSH_OK)
+        return; /* Keep appending; the next insert retries the snapshot. */
+    store->pending = 0;
+    if (store->log_fd >= 0 && ftruncate(store->log_fd, 0) != 0)
+        store->last_sync = 0; /* Force a sync on the next append. */
 }
