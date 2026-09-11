@@ -192,18 +192,25 @@ durable thread memory, streaming/cancellable/budgeted turns with a work ledger).
   `check_collaboration.py`.
 - **M4.10 PR 2.** Push, open PR, merge, delete the worktree.
 
-### Phase 5 — Persistence performance (PR 3)
+### Phase 5 — Persistence performance  ✅ DONE (PR 3)
 
-- **M5.1 Record format.** Versioned append records + header; read existing
-  `store.ring` snapshot for migration.
-- **M5.2 Append writer.** Replace full-snapshot-per-insert with append + `fdatasync`
-  policy; snapshot every N inserts or M bytes.
-- **M5.3 Compaction.** Snapshot atomically (tmp + rename + dir fsync) and
-  truncate the log.
-- **M5.4 Measurement.** Add a benchmark (`tests/bench_store.c` or a documented
-  script) and record before/after in the synthesis or plan.
-  Verify: restart memory in `check_collaboration.py`; median insert < 1 ms at a
-  1,000-event ring, persistence on.
+- **M5.1 Record format.** ✅ Every insert appends `u32 magic + event` to
+  `$HUSH_HOME/store.log`; the reader treats a missing entry, a foreign magic,
+  or a torn record as end-of-log. `test_store` covers replay and a torn tail.
+- **M5.2 Append writer.** ✅ No snapshot per insert: one append plus a
+  `fdatasync` at most once per second, and a snapshot every 256 inserts.
+- **M5.3 Compaction.** ✅ `hush_store_compact` writes the existing snapshot
+  format through temp + fsync + rename + dir fsync, then truncates the log;
+  replay skips ids already in the snapshot, so an interrupted compaction cannot
+  duplicate events. Old `store.ring` files load unchanged.
+- **M5.4 Measurement.** ✅ `tests/test_store_bench` (also in the unit suite).
+  Same harness, same `/tmp` filesystem, 1 KB events:
+  **before** median 3.437 ms / p95 5.828 ms at 1,200 events (old full-snapshot
+  writer); **after** median 0.022 ms / p95 0.032 ms, max ~6 ms at the
+  256-insert snapshot, final compact ~9 ms. 4 KB events: 4.445 ms before,
+  0.023 ms after. That is ~150x at 1,200 events, well past the <1 ms target.
+  Restart memory is covered by `check_collaboration.py`.
+- **M5.5 PR 3.** Push, open PR, merge, delete the worktree.
 
 ### Phase 6 — Wire fidelity and docs (PR 4)
 

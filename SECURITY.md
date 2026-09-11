@@ -90,12 +90,14 @@ installs a systemd unit but does not enable it until the operator asks.
 
 ### Event Store
 
-The store is a bounded 1,024-event ring that is persisted to
-`$HUSH_HOME/store.ring` and fsynced on insert, so it survives a restart.
-Oldest events are evicted first (`store.ring` is currently a full snapshot
-rewritten per insert; an append-only rewrite is planned). It is not a
-tamper-evident audit log; do not treat a running `hush-relay` as a compliance
-archive.
+The store is a bounded 1,024-event ring. Every insert appends one record to
+`$HUSH_HOME/store.log`; the relay rewrites `$HUSH_HOME/store.ring` as a
+snapshot every 256 inserts and once at shutdown, then empties the log. The log
+is synced at most once per second, so a hard crash can lose the last second of
+chat. On load a missing snapshot is empty and a torn log tail is ignored; the
+snapshot is written through a temp file plus rename. Oldest events are evicted
+first. The files are not a tamper-evident audit log; do not treat a running
+`hush-relay` as a compliance archive.
 
 ### Agent Secret Storage — `pass`
 
