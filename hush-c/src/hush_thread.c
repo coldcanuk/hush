@@ -108,6 +108,7 @@ size_t hush_thread_read(const char *root, hush_thread_turn_t *out, size_t max)
 {
     char log_path[HUSH_HOME_PATH_MAX];
     char line[HUSH_THREAD_LINE_MAX];
+    char last[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
     FILE *fp;
     size_t count = 0;
 
@@ -127,6 +128,9 @@ size_t hush_thread_read(const char *root, hush_thread_turn_t *out, size_t max)
         memset(&turn, 0, sizeof(turn));
         if (!hush_thread_parse_line(line, &turn))
             continue;
+        if (last[0] != '\0' && strcmp(last, turn.id) == 0)
+            continue;
+        memcpy(last, turn.id, sizeof(last));
         if (count < max) {
             out[count++] = turn;
         } else {
@@ -142,6 +146,7 @@ size_t hush_thread_count(const char *root)
 {
     char log_path[HUSH_HOME_PATH_MAX];
     char line[HUSH_THREAD_LINE_MAX];
+    char last[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
     hush_thread_turn_t turn;
     FILE *fp;
     size_t count = 0;
@@ -153,8 +158,12 @@ size_t hush_thread_count(const char *root)
     if (fp == NULL)
         return 0;
     while (fgets(line, sizeof(line), fp) != NULL) {
-        if (hush_thread_parse_line(line, &turn))
-            count++;
+        if (!hush_thread_parse_line(line, &turn))
+            continue;
+        if (last[0] != '\0' && strcmp(last, turn.id) == 0)
+            continue;
+        memcpy(last, turn.id, sizeof(last));
+        count++;
     }
     (void)fclose(fp);
     return count;
@@ -176,6 +185,7 @@ void hush_thread_brief_get(const char *root, char *out, size_t outsz)
 void hush_thread_brief_set(const char *root, const char *text)
 {
     char brief_path[HUSH_HOME_PATH_MAX];
+    char capped[HUSH_THREAD_BRIEF_MAX + 1];
 
     if (text == NULL)
         text = "";
@@ -188,7 +198,8 @@ void hush_thread_brief_set(const char *root, const char *text)
     }
     if (hush_thread_ensure_dir() != HUSH_OK)
         return;
-    (void)hush_thread_write_file(brief_path, text);
+    (void)snprintf(capped, sizeof(capped), "%s", text);
+    (void)hush_thread_write_file(brief_path, capped);
 }
 
 static void hush_thread_root_of(const hush_event_t *ev,

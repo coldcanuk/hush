@@ -257,15 +257,31 @@ durable thread memory, streaming/cancellable/budgeted turns with a work ledger).
 
 ### Phase 8 — Feature 2: thread memory (PR 6)
 
-- **M8.1 Durable transcript.** Per-root JSONL + index under `$HUSH_HOME`;
-  survives restart and ring eviction.
-- **M8.2 Rolling brief.** Summary event pinned to the root when the window
-  exceeds its budget; loaded first on rebuild.
-- **M8.3 `messages[]`.** API providers receive system + user/assistant turns;
-  CLI providers keep the flattened prompt.
-- **M8.4 Budget-driven context + durable robot context files.**
-  Verify: restart test shows remembered decisions; provider mock asserts the
-  array shape; context stays under the byte budget.
+- **M8.1 Durable transcript.** ✅ `hush_thread.c/h` appends per-root JSONL
+  `$HUSH_HOME/threads/<root>.log` (`{"id","pubkey","at","content"}`) keyed by
+  the first `e` tag, else the event id. Roots are validated as 64-char
+  lowercase hex so a hostile tag cannot escape the directory; files are 0600
+  and opened `O_NOFOLLOW`. Every ingest path records: POST `/api/event`, the
+  relay's verified `EVENT`, and agent notes/replies. Republished ids are
+  deduplicated on read.
+- **M8.2 Rolling brief.** ✅ `<root>.brief` (0600, capped at
+  `HUSH_THREAD_BRIEF_MAX`) is rewritten with the robot's latest answer on every
+  published reply and loaded ahead of the transcript as a one-line
+  `Thread brief:` memory.
+- **M8.3 `messages[]`.** ⏸ Deferred alongside M7.4: API providers still receive
+  one flattened message. Splitting turns into a real `messages[]` array needs a
+  per-provider prompt split, because the CLI providers (codex/claude) take a
+  single prompt string; the durable transcript (M8.1/M8.2/M8.4) is what the
+  memory finding required.
+- **M8.4 Budget-driven context + durable robot context files.** ✅ (context
+  part) `hush_agent_fill_thread` renders the live store while it holds the
+  thread and falls back to the durable transcript once the ring has evicted it;
+  `hush_thread_read` keeps the newest `HUSH_AGENT_THREAD_MAX` turns with each
+  line snipped to `HUSH_AGENT_SNIP_MAX`, so the prompt stays inside the note
+  budget. Robot context files remain the roster-provided ones.
+  Verify: `test_thread` covers round-trips, dedupe, escaping, truncation, brief
+  replacement/cap, bad roots, and symlink refusal; `make test` keeps
+  `check_collaboration.py` memory/restart green.
 
 ### Phase 9 — Feature 3: streaming, cancel, ledger (PR 7)
 

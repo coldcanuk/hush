@@ -28,6 +28,7 @@
 #include "hush_relay.h"
 #include "hush_skill.h"
 #include "hush_skillui.h"
+#include "hush_thread.h"
 #include "hush_ui_html.h"
 #include "hush_wake.h"
 #include "hush_win.h"
@@ -1069,6 +1070,7 @@ static hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
         hush_http_reply(fd, "507 Insufficient Storage", "text/plain", error, strlen(error));
         return status;
     }
+    hush_thread_record(out);
     hush_intel_consider(store, g_launch, out);
     hush_http_note_presence(store, out);
     const char *success = "{\"ok\":true}\n";

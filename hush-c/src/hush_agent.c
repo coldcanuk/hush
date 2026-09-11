@@ -24,6 +24,7 @@
 #include "hush_relay.h"
 #include "hush_roster.h"
 #include "hush_seg.h"
+#include "hush_thread.h"
 #include "hush_wake.h"
 
 enum {
@@ -1156,10 +1157,14 @@ static hush_status_t hush_agent_insert_note(hush_store_t *store,
                                             const hush_agent_note_in_t *in)
 {
     hush_event_t ev;
+    hush_status_t status;
 
     assert(store != NULL);
     hush_agent_fill_note(&ev, in);
-    return hush_store_insert(store, &ev);
+    status = hush_store_insert(store, &ev);
+    if (status == HUSH_OK)
+        hush_thread_record(&ev);
+    return status;
 }
 
 static int hush_agent_intro_seen(const char *hex, const char *root)
@@ -1575,7 +1580,56 @@ static void hush_agent_push_thread(hush_event_t *out, size_t *count, const hush_
     out[(*count)++] = *event;
 }
 
-/* Legacy renderer signature is retained to keep transcript formatting local. */
+/* Appends prefix + text as one line, rolling back on overflow. */
+static void hush_agent_append_line(char *out, size_t outsz, const char *prefix,
+                                   const char *text)
+{
+    size_t used;
+    int written;
+
+    assert(out != NULL && outsz > 0);
+    assert(prefix != NULL);
+    assert(text != NULL);
+    used = strlen(out);
+    if (used + 2 >= outsz)
+        return;
+    written = snprintf(out + used, outsz - used, "%s%s\n", prefix, text);
+    if (written < 0 || (size_t)written >= outsz - used)
+        out[used] = '\0';
+}
+
+/* Renders the durable transcript when the live store lost the thread. */
+static void hush_agent_append_durable(char *out, size_t outsz,
+                                      const hush_event_t *parent,
+                                      const hush_agent_thread_walk_t *walk)
+{
+    hush_thread_turn_t turns[HUSH_AGENT_THREAD_MAX];
+    size_t count;
+    size_t i;
+
+    assert(out != NULL && outsz > 0);
+    assert(parent != NULL);
+    assert(walk != NULL);
+    assert(walk->root != NULL);
+    count = hush_thread_read(walk->root, turns, HUSH_AGENT_THREAD_MAX);
+    for (i = 0; i < count; ++i) {
+        hush_agent_robot_t peer;
+        const char *who = walk->robot;
+        hush_event_t ev = {0};
+
+        if (strcmp(turns[i].id, parent->id) == 0)
+            continue;
+        hush_agent_copy(ev.content, sizeof(ev.content), turns[i].content);
+        if (strcmp(turns[i].pubkey, walk->human_pub) == 0)
+            who = walk->human;
+        else if (walk->launch != NULL &&
+                 hush_agent_lookup_robot(&peer, walk->launch, turns[i].pubkey))
+            who = peer.name;
+        hush_agent_append_turn(out, outsz, &ev, who);
+    }
+}
+
+/* Renders the thread: live store turns when present, durable otherwise. */
 static void hush_agent_fill_thread(char *out, size_t outsz,
                                   hush_store_t *store,
                                   const hush_launch_t *launch,
@@ -1599,10 +1653,20 @@ static void hush_agent_fill_thread(char *out, size_t outsz,
     walk.launch = launch;
     walk.root = root;
     walk.human_pub = human;
+    int owner = original.id[0] != '\0' && strcmp(original.id, parent->id) != 0;
+    char brief[HUSH_THREAD_BRIEF_MAX + 1];
+    char line[HUSH_AGENT_SNIP_MAX + 1];
     hush_agent_copy(out, outsz, HUSH_AGENT_THREAD_HEAD);
-    if (original.id[0] != '\0' && strcmp(original.id, parent->id) != 0)
+    hush_thread_brief_get(root, brief, sizeof(brief));
+    hush_agent_snip_line(line, sizeof(line), brief);
+    if (line[0] != '\0')
+        hush_agent_append_line(out, outsz, "Thread brief: ", line);
+    if (owner)
         hush_agent_append_turn(out, outsz, &original, "Conversation owner");
-    hush_agent_walk_thread(out, outsz, events, count, &walk);
+    if (count > 0)
+        hush_agent_walk_thread(out, outsz, events, count, &walk);
+    else if (!owner)
+        hush_agent_append_durable(out, outsz, parent, &walk);
     size_t used = strlen(out);
     int written = snprintf(out + used, outsz - used, "\nCurrent message: %s", parent->content);
     if (written < 0 || (size_t)written >= outsz - used)
@@ -2989,6 +3053,17 @@ static void hush_agent_fill_reply(hush_agent_note_in_t *out, const hush_agent_jo
     }
 }
 
+/* Rolls the thread brief forward to the robot's latest answer. */
+static void hush_agent_brief_update(const hush_event_t *posted, const char *answer)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+
+    assert(posted != NULL);
+    assert(answer != NULL);
+    hush_agent_event_root(root, sizeof(root), posted);
+    hush_thread_brief_set(root, answer);
+}
+
 static hush_status_t hush_agent_publish_reply(hush_store_t *store, const hush_agent_job_t *job)
 {
     assert(store != NULL && job != NULL);
@@ -2997,6 +3072,8 @@ static hush_status_t hush_agent_publish_reply(hush_store_t *store, const hush_ag
     hush_event_t posted = {0};
     hush_agent_fill_note(&posted, &note);
     HUSH_TRY(hush_store_insert(store, &posted));
+    hush_thread_record(&posted);
+    hush_agent_brief_update(&posted, job->out);
     if (job->launch == NULL)
         return HUSH_OK;
     if (job->kind == HUSH_AGENT_KIND_PLAN) {

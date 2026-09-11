@@ -99,6 +99,8 @@ static void test_root_and_reply(void)
     add_root_tag(&ev, root_note);
     hush_thread_record(&ev);
     expect(hush_thread_count(root_note) == 3, "replies join the root");
+    hush_thread_record(&ev);
+    expect(hush_thread_count(root_note) == 3, "republished turn deduped");
     count = hush_thread_read(root_note, turns, 8);
     expect(count == 3, "read returns every turn");
     expect(strcmp(turns[0].content, "root note") == 0, "oldest first");
@@ -170,6 +172,15 @@ static void test_brief(const char *root)
     hush_thread_brief_set(root, "");
     hush_thread_brief_get(root, brief, sizeof(brief));
     expect(brief[0] == '\0', "empty brief clears");
+    {
+        char oversized[HUSH_THREAD_BRIEF_MAX * 2 + 1];
+
+        memset(oversized, 'c', sizeof(oversized) - 1);
+        oversized[sizeof(oversized) - 1] = '\0';
+        hush_thread_brief_set(root, oversized);
+        hush_thread_brief_get(root, brief, sizeof(brief));
+        expect(strlen(brief) == (size_t)HUSH_THREAD_BRIEF_MAX, "brief capped");
+    }
 }
 
 static void test_bad_roots(void)
