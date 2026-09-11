@@ -161,6 +161,8 @@ enum {
 #define HUSH_AGENT_ASSIGN " YOUR assignment: "
 #define HUSH_AGENT_INTRO_PREFIX "At ease."
 #define HUSH_AGENT_ACK_LINE "Mention received."
+#define HUSH_AGENT_FOLLOW_FULL_LINE \
+    "I cannot start another wave: too many live conversations are already in flight."
 #define HUSH_AGENT_CHAPERON_LINE \
     "That's enough robot talk. Standing by for the human."
 
@@ -340,6 +342,8 @@ static int hush_agent_prepare_human_job(hush_agent_job_in_t *job, hush_agent_men
 /* Introduces the required request's bounded mentioned roster. */
 static void hush_agent_greet_mentions(const hush_agent_job_in_t *job,
                                        const hush_agent_mentions_t *mentions);
+/* Posts a robot notice when the follow table cannot accept another root. */
+static void hush_agent_note_follow_busy(const hush_agent_job_in_t *job);
 /* Starts this request's election or planning on its selected provider. */
 static void hush_agent_dispatch_group(const hush_agent_job_in_t *job,
                                       const hush_agent_mentions_t *mentions);
@@ -571,6 +575,7 @@ static size_t hush_agent_collect_hexes(const hush_launch_t *launch,
                                        char hexes[][HUSH_EVENT_PUBKEY_HEX_LEN + 1],
                                        size_t maxn);
 static hush_agent_follow_t *hush_agent_follow_find(const char *root);
+/* Finds or creates the root's follow slot. NULL when every slot is live. */
 static hush_agent_follow_t *hush_agent_follow_take(const char *root);
 static int hush_agent_extract_clause(char *out, size_t outsz,
                                      const char *content, const char *npub);
@@ -603,11 +608,11 @@ static void hush_agent_start_plan_from_slot(
     hush_agent_follow_t *slot, const char *leader_hex);
 static void hush_agent_follow_push_hex(hush_agent_follow_t *slot,
                                        const char *hex, const char *ask);
-static void hush_agent_follow_push(const hush_event_t *ev,
-                                   const hush_launch_t *launch,
-                                   const hush_agent_assign_t *assigns,
-                                   size_t nhex, size_t start, int scoped,
-                                   int mode);
+/* Queues the remaining assignees on the root's follow slot. Returns 0 and
+ * posts a notice when every follow slot is live. */
+static int hush_agent_follow_push(const hush_agent_job_in_t *job,
+                                  const hush_agent_mentions_t *mentions,
+                                  size_t start);
 static void hush_agent_follow_kick(hush_store_t *store,
                                    const hush_launch_t *launch,
                                    const hush_event_t *ev);
@@ -3077,8 +3082,8 @@ static int hush_agent_prepare_human_job(hush_agent_job_in_t *job, hush_agent_men
     }
     if (mentions->count > 1) {
         size_t start = idx > 0 ? idx : 1;
-        hush_agent_follow_push(job->parent, job->launch, mentions->assigns, mentions->count,
-                               start, job->scoped, job->mode);
+        if (!hush_agent_follow_push(job, mentions, start))
+            return 0;
     }
     if (idx > 0 && idx < mentions->count)
         return 0;
@@ -3094,6 +3099,8 @@ static hush_agent_follow_t *hush_agent_prepare_group(const hush_agent_job_in_t *
     char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
     hush_agent_event_root(root, sizeof(root), job->parent);
     hush_agent_follow_t *slot = hush_agent_follow_take(root);
+    if (slot == NULL)
+        return NULL;
     hush_agent_event_channel(slot->channel, sizeof(slot->channel), job->parent);
     hush_agent_copy(slot->human_pub, sizeof(slot->human_pub), job->parent->pubkey);
     hush_agent_copy(slot->ask, sizeof(slot->ask), job->parent->content);
@@ -3101,6 +3108,27 @@ static hush_agent_follow_t *hush_agent_prepare_group(const hush_agent_job_in_t *
     for (size_t i = 0; i < mentions->count && i < (size_t)HUSH_AGENT_FOLLOW_ROBOTS; ++i)
         hush_agent_follow_push_hex(slot, mentions->hexes[i], NULL);
     return slot;
+}
+
+static void hush_agent_note_follow_busy(const hush_agent_job_in_t *job)
+{
+    hush_agent_note_in_t notice = {0};
+    char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+
+    assert(job != NULL);
+    if (job->store == NULL || job->bot == NULL || job->parent == NULL)
+        return;
+    hush_agent_event_channel(channel, sizeof(channel), job->parent);
+    hush_agent_event_root(root, sizeof(root), job->parent);
+    notice.pubkey = job->bot->hex;
+    notice.content = HUSH_AGENT_FOLLOW_FULL_LINE;
+    notice.channel = channel;
+    notice.parent_id = root;
+    notice.human_pub = job->parent->pubkey;
+    (void)hush_agent_insert_note(job->store, &notice);
+    hush_agent_emit(HUSH_CEVENT_JOB_DONE, channel, root, job->bot->hex,
+                    "follow_full");
 }
 
 static void hush_agent_dispatch_group(const hush_agent_job_in_t *job,
@@ -3113,6 +3141,10 @@ static void hush_agent_dispatch_group(const hush_agent_job_in_t *job,
     if (count == 0 || strcmp(job->bot->hex, candidates[0]) != 0)
         return;
     hush_agent_follow_t *slot = hush_agent_prepare_group(job, mentions);
+    if (slot == NULL) {
+        hush_agent_note_follow_busy(job);
+        return;
+    }
     if (count == 1) {
         hush_agent_follow_remove(slot, candidates[0]);
         hush_agent_start_plan_from_slot(job->store, job->launch, slot, candidates[0]);
@@ -3615,10 +3647,7 @@ static hush_agent_follow_t *hush_agent_follow_take(const char *root)
             return &g_follow[i];
         }
     }
-    memset(&g_follow[0], 0, sizeof(g_follow[0]));
-    g_follow[0].live = 1;
-    hush_agent_copy(g_follow[0].root, sizeof(g_follow[0].root), root);
-    return &g_follow[0];
+    return NULL;
 }
 
 static void hush_agent_follow_push_hex(hush_agent_follow_t *slot,
@@ -3671,33 +3700,36 @@ static void hush_agent_follow_remove(hush_agent_follow_t *slot,
     slot->nnext = w;
 }
 
-static void hush_agent_follow_push(const hush_event_t *ev,
-                                   const hush_launch_t *launch,
-                                   const hush_agent_assign_t *assigns,
-                                   size_t nhex, size_t start, int scoped,
-                                   int mode)
+static int hush_agent_follow_push(const hush_agent_job_in_t *job,
+                                  const hush_agent_mentions_t *mentions,
+                                  size_t start)
 {
     hush_agent_follow_t *slot;
     char root[HUSH_EVENT_ID_HEX_LEN + 1];
     size_t i;
 
-    assert(ev != NULL);
-    assert(launch != NULL);
-    hush_agent_event_root(root, sizeof(root), ev);
+    assert(job != NULL);
+    assert(mentions != NULL);
+    hush_agent_event_root(root, sizeof(root), job->parent);
     slot = hush_agent_follow_take(root);
-    hush_agent_event_channel(slot->channel, sizeof(slot->channel), ev);
-    hush_agent_copy(slot->human_pub, sizeof(slot->human_pub), ev->pubkey);
-    hush_agent_copy(slot->ask, sizeof(slot->ask), ev->content);
-    if (scoped)
-        slot->scoped = 1;
-    slot->mode = mode;
-    for (i = start; i < nhex; i++) {
-        const char *ask = (assigns != NULL && assigns[i].has_ask)
-            ? assigns[i].ask : NULL;
-        hush_agent_follow_push_hex(slot,
-                                   assigns != NULL ? assigns[i].hex : NULL,
-                                   ask);
+    if (slot == NULL) {
+        hush_agent_note_follow_busy(job);
+        return 0;
     }
+    hush_agent_event_channel(slot->channel, sizeof(slot->channel), job->parent);
+    hush_agent_copy(slot->human_pub, sizeof(slot->human_pub), job->parent->pubkey);
+    hush_agent_copy(slot->ask, sizeof(slot->ask), job->parent->content);
+    if (job->scoped)
+        slot->scoped = 1;
+    slot->mode = job->mode;
+    for (i = start; i < mentions->count &&
+                    i < (size_t)HUSH_AGENT_FOLLOW_ROBOTS; i++) {
+        const char *ask = mentions->assigns[i].has_ask
+            ? mentions->assigns[i].ask : NULL;
+
+        hush_agent_follow_push_hex(slot, mentions->assigns[i].hex, ask);
+    }
+    return 1;
 }
 
 static void hush_agent_release_line(hush_store_t *store, hush_agent_job_t *job)

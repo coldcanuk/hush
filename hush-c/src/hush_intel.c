@@ -30,6 +30,7 @@ enum {
 #define HUSH_INTEL_DENY_EMPTY "Say the ask."
 #define HUSH_INTEL_DENY_HOP "Robots do not chain here."
 #define HUSH_INTEL_DENY_JOBS "Holding. This channel is at its job cap."
+#define HUSH_INTEL_DENY_HOLDS "Holding. Too many live conversations; try again shortly."
 
 typedef struct {
     int live;
@@ -74,6 +75,8 @@ static int hush_intel_looks_many(const hush_intel_hold_t *hold);
 static hush_intel_hold_t *hush_intel_find_hold(const char *channel,
                                                const char *root,
                                                const char *robot);
+/* Finds or creates the live hold. NULL when every slot is live, so a ninth
+ * conversation cannot fold into an unrelated in-flight hold. */
 static hush_intel_hold_t *hush_intel_take_hold(const char *channel,
                                                const char *root,
                                                const char *robot);
@@ -432,7 +435,7 @@ static hush_intel_hold_t *hush_intel_take_hold(const char *channel,
         hush_intel_copy(g_holds[i].robot, sizeof(g_holds[i].robot), robot);
         return &g_holds[i];
     }
-    return &g_holds[0];
+    return NULL;
 }
 
 static void hush_intel_clear_hold(hush_intel_hold_t *hold)
@@ -667,6 +670,10 @@ static void hush_intel_handle_robot(hush_store_t *store, hush_launch_t *launch,
     if (hold != NULL)
         hold->awaiting = 0;
     hold = hush_intel_take_hold(channel, root, hex);
+    if (hold == NULL) {
+        hush_intel_post_line(store, ev, hex, HUSH_INTEL_DENY_HOLDS);
+        return;
+    }
     hush_intel_fold_note(hold, ev);
     if (ch != NULL &&
         strcmp(ch->robot_reply, HUSH_LAUNCH_REPLY_CONFIRM) == 0) {

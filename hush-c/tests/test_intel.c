@@ -82,6 +82,24 @@ static size_t count_store(hush_store_t *store)
     return hush_store_query(store, NULL, 0, evs, 32);
 }
 
+static size_t count_needle(hush_store_t *store, const char *needle)
+{
+    size_t total;
+    size_t hits = 0;
+    size_t i;
+
+    total = hush_store_count(store);
+    for (i = 0; i < total && i < (size_t)HUSH_STORE_CAPACITY; ++i) {
+        hush_event_t item = {0};
+
+        if (hush_store_get(store, i, &item) != HUSH_OK)
+            break;
+        if (strstr(item.content, needle) != NULL)
+            hits++;
+    }
+    return hits;
+}
+
 static int store_has(hush_store_t *store, const char *needle)
 {
     hush_event_t evs[32];
@@ -247,6 +265,59 @@ int main(void)
         hush_agent_on_posted(store, &launch, &joke);
         expect(count_pub_needle(store, payne_hex, "Standing orders") == 1,
                "major intro not twice");
+    }
+
+    {
+        hush_launch_policy_t policy;
+        size_t recaps;
+        size_t i;
+
+        /* Confirm-mode holds stay live; the ninth mention must be denied rather
+         * than folded into slot 0 and recapped as an unrelated conversation. */
+        hush_intel_init();
+        hush_agent_init();
+        memset(&policy, 0, sizeof(policy));
+        memcpy(policy.kind, HUSH_LAUNCH_KIND_OPEN,
+               sizeof(HUSH_LAUNCH_KIND_OPEN));
+        memcpy(policy.robot_reply, HUSH_LAUNCH_REPLY_CONFIRM,
+               sizeof(HUSH_LAUNCH_REPLY_CONFIRM));
+        policy.burst_ms = HUSH_LAUNCH_BURST_MS_DEFAULT;
+        policy.max_jobs = HUSH_LAUNCH_MAX_JOBS_DEFAULT;
+        policy.cooldown_s = HUSH_LAUNCH_COOLDOWN_S_DEFAULT;
+        expect(hush_launch_set_channel_policy(&launch, "general", &policy) ==
+                   HUSH_OK,
+               "overflow policy");
+        recaps = count_needle(store, "I heard:");
+        for (i = 0; i < (size_t)HUSH_INTEL_HOLD_MAX; ++i) {
+            char id[HUSH_EVENT_ID_HEX_LEN + 1];
+
+            memset(id, 'a', sizeof(id) - 1);
+            id[0] = "0123456789abcdef"[i];
+            id[HUSH_EVENT_ID_HEX_LEN] = '\0';
+            fill_note(&ev, id, launch.human.pubkey_hex, "nostr:payne hold open",
+                      "general", launch.payne.pubkey_hex);
+            expect(hush_store_insert(store, &ev) == HUSH_OK,
+                   "hold fill insert");
+            hush_intel_consider(store, &launch, &ev);
+        }
+        expect(count_needle(store, "I heard:") ==
+                   recaps + (size_t)HUSH_INTEL_HOLD_MAX,
+               "eight live holds recap");
+        {
+            char id[HUSH_EVENT_ID_HEX_LEN + 1];
+
+            memset(id, 'b', sizeof(id) - 1);
+            id[HUSH_EVENT_ID_HEX_LEN] = '\0';
+            fill_note(&ev, id, launch.human.pubkey_hex, "nostr:payne hold open",
+                      "general", launch.payne.pubkey_hex);
+        }
+        expect(hush_store_insert(store, &ev) == HUSH_OK, "ninth insert");
+        hush_intel_consider(store, &launch, &ev);
+        expect(count_needle(store, "I heard:") ==
+                   recaps + (size_t)HUSH_INTEL_HOLD_MAX,
+               "ninth denied without recap");
+        expect(count_needle(store, "Too many live conversations") == 1,
+               "ninth denial posted");
     }
 
     hush_store_destroy(store);
