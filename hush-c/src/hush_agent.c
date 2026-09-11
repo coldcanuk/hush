@@ -1901,8 +1901,13 @@ static hush_status_t hush_agent_capture_reply(char *out, size_t outsz, char *cap
     if (strcmp(provider, HUSH_ROSTER_PROVIDER_CLINE) == 0)
         return hush_agent_capture_cline(out, outsz, capture);
     size_t len = strlen(capture);
-    if (len >= outsz) return HUSH_ERR_FULL;
-    memcpy(out, capture, len + 1);
+    if (len >= outsz) {
+        /* A verbose answer is truncated to the event content cap so the note
+         * still lands; the job must not fail for being longer than the cap. */
+        len = outsz - 1;
+    }
+    memcpy(out, capture, len);
+    out[len] = '\0';
     return len == 0 ? HUSH_ERR_PARSE : HUSH_OK;
 }
 
@@ -1967,7 +1972,9 @@ static void hush_agent_exec_api(const hush_agent_job_t *job)
         .provider = job->provider, .system = job->prompt,
         .rules = job->rules, .message = job->note
     };
-    char response[HUSH_EVENT_MAX_CONTENT + 1] = {0};
+    /* The worker captures the whole provider answer; the reply cap applies
+     * only when the note is assembled. */
+    char response[HUSH_INFERENCE_TEXT_MAX + 1] = {0};
     if (hush_inference_reply(response, sizeof(response), &request) != HUSH_OK)
         _exit(HUSH_AGENT_EXEC_FAILURE);
     if (fputs(response, stdout) == EOF || fflush(stdout) != 0)

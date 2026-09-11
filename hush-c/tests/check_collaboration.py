@@ -308,7 +308,7 @@ def check_memory(relay, bot, host, skill_id):
 
 
 def check_failures(relay, bot):
-    for mode in ("failure", "empty", "malformed", "oversized"):
+    for mode in ("failure", "empty", "malformed"):
         Endpoint.mode = mode
         request = post_thread(relay, bot, "FAILURE_CASE_" + mode)
         wait_idle(relay)
@@ -316,8 +316,15 @@ def check_failures(relay, bot):
                    if event.get("reply_to") == request["id"]]
         assert any("did not return a usable reply" in event["content"] for event in replies), replies
         assert not any("API_REPLY" in event["content"] or "FAKE_REPLY" in event["content"] for event in replies)
+    Endpoint.mode = "oversized"
+    request = post_thread(relay, bot, "FAILURE_CASE_oversized")
+    wait_idle(relay)
+    replies = [event for event in relay.request("/api/events")["events"]
+               if event.get("reply_to") == request["id"]]
+    assert any(event["content"] == "B" * 4096 for event in replies), replies
+    assert not any("did not return a usable reply" in event["content"] for event in replies)
     Endpoint.mode = "ok"
-    print("failures: HTTP error, empty output and malformed schema produce honest notices OK")
+    print("failures: HTTP error, empty output and malformed schema produce honest notices; oversized reply truncates OK")
 
 
 def check_chaining(relay):
