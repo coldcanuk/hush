@@ -30,21 +30,20 @@ bool hush_filter_match(const hush_filter_t *f, const hush_event_t *ev)
     if (f->ids_len > 0 && !hush_str_in_array(ev->id, f->ids, f->ids_len))
         return false;
 
-    /* tag match simplified: only first tag key "h" for MVP */
     for (size_t ti = 0; ti < f->tag_count; ++ti) {
-        if (strcmp(f->tag_keys[ti], "h") == 0) {
-            bool matched = false;
-            for (size_t vi = 0; vi < f->tag_vals_len[ti]; ++vi) {
-                for (size_t ei = 0; ei < ev->tag_count; ++ei) {
-                    if (strcmp(ev->tags[ei][0], "h") == 0 &&
-                        strcmp(ev->tags[ei][1], f->tag_vals[ti][vi]) == 0) {
-                        matched = true;
-                    }
+        bool matched = false;
+
+        for (size_t vi = 0; vi < f->tag_vals_len[ti]; ++vi) {
+            for (size_t ei = 0; ei < ev->tag_count &&
+                 ei < (size_t)HUSH_EVENT_MAX_TAGS; ++ei) {
+                if (strcmp(ev->tags[ei][0], f->tag_keys[ti]) == 0 &&
+                    strcmp(ev->tags[ei][1], f->tag_vals[ti][vi]) == 0) {
+                    matched = true;
                 }
             }
-            if (!matched)
-                return false;
         }
+        if (!matched)
+            return false;
     }
     return true;
 }
