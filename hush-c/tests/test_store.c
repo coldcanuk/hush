@@ -129,6 +129,60 @@ int main(void)
     store = NULL;
 
     {
+        /* Kind 5 deletes only same-author targets, is not stored itself, and
+         * survives a reload through the log. */
+        hush_store_t *fresh = NULL;
+        hush_event_t a1;
+        hush_event_t a2;
+        hush_event_t b1;
+        hush_event_t del;
+        hush_event_t found;
+        char other[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+
+        expect(hush_store_create(&fresh) == HUSH_OK, "delete create");
+        expect(hush_store_persist_open(fresh) == HUSH_OK, "delete open");
+        memset(other, 'c', sizeof(other) - 1);
+        other[sizeof(other) - 1] = '\0';
+        fill_note(&a1,
+                  "aaaa000000000000000000000000000000000000000000000000000000000001",
+                  1, "delete me");
+        fill_note(&a2,
+                  "aaaa000000000000000000000000000000000000000000000000000000000002",
+                  1, "keep me");
+        fill_note(&b1,
+                  "bbbb000000000000000000000000000000000000000000000000000000000001",
+                  1, "other author");
+        memcpy(b1.pubkey, other, sizeof(other));
+        expect(hush_store_insert(fresh, &a1) == HUSH_OK, "insert a1");
+        expect(hush_store_insert(fresh, &a2) == HUSH_OK, "insert a2");
+        expect(hush_store_insert(fresh, &b1) == HUSH_OK, "insert b1");
+        memset(&del, 0, sizeof(del));
+        memset(del.id, 'e', (size_t)HUSH_EVENT_ID_HEX_LEN);
+        memcpy(del.pubkey, k_pub, sizeof(k_pub));
+        del.kind = 5;
+        del.tag_count = 1;
+        memcpy(del.tags[0][0], "e", 2);
+        memcpy(del.tags[0][1], a1.id, strlen(a1.id) + 1);
+        expect(hush_store_insert(fresh, &del) == HUSH_OK, "insert deletion");
+        expect(hush_store_find(fresh, &found, a1.id) == HUSH_ERR_NOT_FOUND,
+               "target deleted");
+        expect(hush_store_find(fresh, &found, a2.id) == HUSH_OK,
+               "sibling kept");
+        expect(hush_store_find(fresh, &found, b1.id) == HUSH_OK,
+               "other author kept");
+        expect(hush_store_find(fresh, &found, del.id) == HUSH_ERR_NOT_FOUND,
+               "deletion not stored");
+        hush_store_destroy(fresh);
+        expect(hush_store_create(&fresh) == HUSH_OK, "delete reopen create");
+        expect(hush_store_persist_open(fresh) == HUSH_OK, "delete reopen");
+        expect(hush_store_find(fresh, &found, a1.id) == HUSH_ERR_NOT_FOUND,
+               "deletion survived reload");
+        expect(hush_store_find(fresh, &found, b1.id) == HUSH_OK,
+               "survivor reloaded");
+        hush_store_destroy(fresh);
+    }
+
+    {
         /* Simulate a crash: leave the log un-compacted, then tear its tail. */
         hush_store_t *crashed = NULL;
         hush_store_t *reopened = NULL;

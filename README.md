@@ -18,12 +18,14 @@ Developed with the Codex AI agent. All development uses worktrees **inside this 
 
 ## Features (MVP)
 
-- Nostr NIP-01 basics for chat (kind 0 profiles, kind 1 notes). Kind 5 deletion
-  and kind 7 reactions are **not implemented yet**
-- EVENT ingestion + a bounded event store persisted to `store.ring`
-- REQ with filter matching (kinds, first author, first `#h` value). `ids`,
-  `since`, and `until` are **not parsed yet**
+- Nostr NIP-01 basics for chat (kind 0 profiles, kind 1 notes). Kind 5
+  `e`-tag deletions are applied; kind 7 reactions are stored but not rendered
+- EVENT ingestion + a bounded event store persisted to `store.ring` + `store.log`
+- REQ with filter matching (kinds, ids, authors, since/until, and `#e`/`#p`/`#h`/`#d`
+  tag values, up to four filters)
 - CLOSE
+- No event signature verification yet; see [NOSTR.md](NOSTR.md) and
+  [SECURITY.md](SECURITY.md)
 - Simple TCP newline-delimited JSON protocol (MVP; WebSocket adapter later)
 - `poll(2)` single-threaded server
 - Same port also serves the chat **PWA** over HTTP (`GET /`, manifest, service worker, icons)

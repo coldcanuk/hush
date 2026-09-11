@@ -25,7 +25,9 @@ enum {
     /* Full snapshot plus log truncate after this many appends. */
     HUSH_STORE_SNAPSHOT_INSERTS = 256,
     /* fdatasync the log at most this often (seconds). */
-    HUSH_STORE_LOG_SYNC_S = 1
+    HUSH_STORE_LOG_SYNC_S = 1,
+    /* NIP-09 deletion; applied to the ring, logged, never stored itself. */
+    HUSH_STORE_KIND_DELETE = 5
 };
 
 /* Opaque ring buffer of events. The snapshot is store.ring; store.log holds
@@ -63,6 +65,14 @@ static hush_status_t hush_store_read_event(int fd, hush_event_t *ev);
 static hush_status_t hush_store_fsync_fd(int fd);
 static hush_status_t hush_store_fsync_dir(const char *file);
 static hush_status_t hush_store_save(const hush_store_t *store);
+/* Mutable twin of hush_store_at. index must be live. */
+static hush_event_t *hush_store_slot(hush_store_t *store, size_t i);
+/* True when deletion, from the victim's author, names it in an e tag. */
+static int hush_store_deletes(const hush_event_t *deletion,
+                              const hush_event_t *victim);
+/* Applies a kind 5 deletion to the live ring in one forward pass. */
+static void hush_store_apply_deletion(hush_store_t *store,
+                                      const hush_event_t *deletion);
 /* Builds persist_path and log_path under $HUSH_HOME. IO on overflow. */
 static hush_status_t hush_store_paths(hush_store_t *store);
 /* Loads the store.ring snapshot when present. Missing file is OK. */
@@ -235,6 +245,17 @@ hush_status_t hush_store_insert(hush_store_t *store, const hush_event_t *ev)
 {
     if (store == NULL || ev == NULL)
         return HUSH_ERR_ARG;
+    if (ev->kind == (uint32_t)HUSH_STORE_KIND_DELETE) {
+        /* The deletion is logged so replay re-applies it, but it is never
+         * stored itself: chat must not show deletion bookkeeping. */
+        hush_store_apply_deletion(store, ev);
+        if (store->persist_on && store->log_fd >= 0) {
+            (void)hush_store_append(store, ev);
+            if (store->pending >= (size_t)HUSH_STORE_SNAPSHOT_INSERTS)
+                hush_store_compact(store);
+        }
+        return HUSH_OK;
+    }
     if (!hush_store_replace_addressable(store, ev))
         hush_store_write(store, ev);
     if (!store->persist_on || store->log_fd < 0)
@@ -667,6 +688,61 @@ static hush_status_t hush_store_save(const hush_store_t *store)
         return HUSH_ERR_IO;
     }
     return hush_store_fsync_dir(store->persist_path);
+}
+
+static hush_event_t *hush_store_slot(hush_store_t *store, size_t i)
+{
+    size_t pos;
+
+    assert(store != NULL);
+    assert(i < store->count);
+    pos = (store->head + (size_t)HUSH_STORE_CAPACITY - store->count + i)
+        % (size_t)HUSH_STORE_CAPACITY;
+    return &store->events[pos];
+}
+
+static int hush_store_deletes(const hush_event_t *deletion,
+                              const hush_event_t *victim)
+{
+    size_t i;
+
+    assert(deletion != NULL);
+    assert(victim != NULL);
+    if (strcmp(deletion->pubkey, victim->pubkey) != 0)
+        return 0;
+    for (i = 0; i < deletion->tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS;
+         ++i) {
+        if (strcmp(deletion->tags[i][0], "e") == 0 &&
+            strcmp(deletion->tags[i][1], victim->id) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static void hush_store_apply_deletion(hush_store_t *store,
+                                      const hush_event_t *deletion)
+{
+    size_t removed;
+    size_t read_i;
+    size_t write_i = 0;
+
+    assert(store != NULL);
+    assert(deletion != NULL);
+    for (read_i = 0; read_i < store->count; ++read_i) {
+        const hush_event_t *victim = hush_store_at(store, read_i);
+
+        if (hush_store_deletes(deletion, victim))
+            continue;
+        if (write_i != read_i)
+            *hush_store_slot(store, write_i) = *victim;
+        write_i++;
+    }
+    removed = store->count - write_i;
+    if (removed == 0)
+        return;
+    store->count = write_i;
+    store->head = (store->head + (size_t)HUSH_STORE_CAPACITY - removed)
+        % (size_t)HUSH_STORE_CAPACITY;
 }
 
 static hush_status_t hush_store_append(hush_store_t *store,

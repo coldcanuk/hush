@@ -13,7 +13,8 @@ enum {
     HUSH_FILTER_MAX_KINDS = 8,
     HUSH_FILTER_MAX_IDS = 8,
     HUSH_FILTER_MAX_AUTHORS = 8,
-    HUSH_FILTER_MAX_TAGS = 4
+    HUSH_FILTER_MAX_TAGS = 4,
+    HUSH_FILTER_MAX_VALUES = 4
 };
 
 typedef struct {
@@ -29,7 +30,8 @@ typedef struct {
     size_t tag_count;
     char tag_keys[HUSH_FILTER_MAX_TAGS][3];
     size_t tag_vals_len[HUSH_FILTER_MAX_TAGS];
-    char tag_vals[HUSH_FILTER_MAX_TAGS][4][HUSH_EVENT_MAX_TAG_LEN + 1];
+    char tag_vals[HUSH_FILTER_MAX_TAGS][HUSH_FILTER_MAX_VALUES]
+                 [HUSH_EVENT_MAX_TAG_LEN + 1];
 } hush_filter_t;
 
 /* Returns true if event matches this single filter (AND semantics inside). */
