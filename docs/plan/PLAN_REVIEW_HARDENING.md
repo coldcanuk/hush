@@ -212,23 +212,27 @@ durable thread memory, streaming/cancellable/budgeted turns with a work ledger).
   Restart memory is covered by `check_collaboration.py`.
 - **M5.5 PR 3.** Push, open PR, merge, delete the worktree.
 
-### Phase 6 — Wire fidelity and docs (PR 4)
+### Phase 6 — Wire fidelity and docs  ✅ DONE (PR 4)
 
-- **M6.1 Parser preservation.** `created_at` and tags parsed and stored;
-  `created_at` no longer hard-coded.
-- **M6.2 Filters.** `ids`, `since`, `until`, all authors, all `#h` values.
-  Verify: `test_proto` + `check_collaboration.py` round-trips.
-- **M6.3 Kind semantics.** Implement NIP-09 kind 5 deletion for self-authored
-  events and store kind 7 reactions (or keep the corrected README claim and
-  document the omission explicitly).
-- **M6.4 NOSTR.md rewrite** to describe the actual line protocol.
-  Verify: doc claims match `grep`/live tests.
-- **M6.5 JSON-escape emitted frames** (found by the M4.2 slow-reader check):
-  `hush_proto_format_event` writes `content` raw, so a tab or quote produces
-  invalid JSON on the wire. Escape the content and message fields and cover it
-  with a `test_proto` round-trip.
-  Verify: a raw REQ for an event whose content holds a tab, quote, and backslash
-  parses as JSON.
+- **M6.1 Parser preservation.** ✅ The line parser now runs on
+  `hush_json_lookup`/`hush_json_decode` instead of `strstr`/`sscanf`; events keep
+  `created_at` and tags, and every string is escape-decoded. `test_proto` covers
+  a three-tag event with escaped content.
+- **M6.2 Filters.** ✅ `kinds`, `ids`, `authors`, `since`, `until`, and the
+  `#e`/`#p`/`#h`/`#d` tag filters (four values each) are parsed, and matching is
+  generic over the tag key instead of only `#h`. `test_filter` covers AND
+  semantics, inclusive ranges, ids/authors, and tag values.
+- **M6.3 Kind semantics.** ✅ NIP-09 kind 5 deletions remove same-author
+  `e`-tagged targets in one forward pass and are logged (but never stored) so
+  replay re-applies them across a reload. `a` tags and reaction rendering stay
+  documented omissions.
+- **M6.4 NOSTR.md rewrite.** ✅ `NOSTR.md` now documents the real transport,
+  frames, parsed fields, filter semantics, kind handling, limits, and the
+  deliberately missing pieces.
+- **M6.5 JSON-escape emitted frames.** ✅ EVENT/OK/EOSE writers escape every
+  string through `hush_json_escape`, and emitted events carry `created_at` and
+  `tags`; `test_proto` round-trips a tab/quote/backslash payload.
+- **M6.6 PR 4.** Push, open PR, merge, delete the worktree.
 
 ### Phase 7 — Feature 1: signed identity (PR 5)
 
