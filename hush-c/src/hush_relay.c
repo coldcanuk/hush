@@ -39,6 +39,9 @@
 
 enum {
     HUSH_MAX_CLIENTS = 16,
+    /* Queued outbound Nostr bytes per client; a reader that falls further
+     * behind than this is disconnected instead of served a torn frame. */
+    HUSH_CLIENT_OUT_SZ = 65536,
     /* 32 KiB: HTTP JSON plus a downscaled avatar. Was 8192. */
     HUSH_BUF_SZ = 32768,
     HUSH_LISTEN_BACKLOG = 8,
@@ -88,6 +91,11 @@ struct client {
     int has_sub;
     char sub_id[256 + 1];
     hush_filter_t filter;
+    /* Queued Nostr frames for a reader that cannot keep up. out_off is the
+     * first unsent byte and out_end is one past the last queued byte. */
+    char out[HUSH_CLIENT_OUT_SZ];
+    size_t out_off;
+    size_t out_end;
 };
 
 static struct client clients[HUSH_MAX_CLIENTS];
@@ -132,7 +140,10 @@ static void hush_drop_client(struct client *c);
 static void hush_service_clients(struct pollfd *fds, int nf);
 static void hush_on_bytes(struct client *c);
 static void hush_on_nostr_line(struct client *c, const char *line);
-static void hush_send_str(int fd, const char *s);
+/* Writes queued output the non-blocking socket accepts now. */
+static void hush_client_flush(struct client *c);
+/* Queues one frame. Returns 0 when c must be dropped (queue full). */
+static int hush_send_str(struct client *c, const char *s);
 static void hush_handle_event_msg(struct client *c, const hush_client_msg_t *msg);
 static void hush_handle_req_msg(struct client *c, const hush_client_msg_t *msg);
 static void hush_fanout(const hush_event_t *ev);
@@ -475,6 +486,8 @@ static hush_status_t hush_accept_new(int ls)
             clients[i].is_http = 0;
             clients[i].has_sub = 0;
             clients[i].sub_id[0] = '\0';
+            clients[i].out_off = 0;
+            clients[i].out_end = 0;
             return HUSH_OK;
         }
     }
@@ -490,6 +503,8 @@ static void hush_drop_client(struct client *c)
     c->len = 0;
     c->is_http = 0;
     c->has_sub = 0;
+    c->out_off = 0;
+    c->out_end = 0;
 }
 
 static void hush_service_clients(struct pollfd *fds, int nf)
@@ -501,7 +516,7 @@ static void hush_service_clients(struct pollfd *fds, int nf)
         int j;
         ssize_t n;
 
-        if ((fds[i].revents & (POLLIN | POLLHUP | POLLERR)) == 0)
+        if ((fds[i].revents & (POLLIN | POLLOUT | POLLHUP | POLLERR)) == 0)
             continue;
         for (j = 0; j < HUSH_MAX_CLIENTS; ++j) {
             if (clients[j].fd == fds[i].fd) {
@@ -510,6 +525,10 @@ static void hush_service_clients(struct pollfd *fds, int nf)
             }
         }
         if (c == NULL)
+            continue;
+        if (fds[i].revents & POLLOUT)
+            hush_client_flush(c);
+        if ((fds[i].revents & (POLLIN | POLLHUP | POLLERR)) == 0)
             continue;
         n = read(c->fd, c->buf + c->len, HUSH_BUF_SZ - c->len - 1);
         if (n <= 0) {
@@ -545,6 +564,8 @@ static void hush_on_bytes(struct client *c)
     while ((nl = strchr(start, '\n')) != NULL) {
         *nl = '\0';
         hush_on_nostr_line(c, start);
+        if (c->fd == HUSH_FD_NONE)
+            return; /* A full output queue dropped the client mid-read. */
         start = nl + 1;
     }
     {
@@ -568,17 +589,47 @@ static void hush_on_nostr_line(struct client *c, const char *line)
         c->has_sub = 0;
 }
 
-static void hush_send_str(int fd, const char *s)
+static void hush_client_flush(struct client *c)
 {
-    size_t n = strlen(s);
-    size_t off = 0;
+    assert(c != NULL);
+    while (c->out_off < c->out_end) {
+        ssize_t w = write(c->fd, c->out + c->out_off, c->out_end - c->out_off);
 
-    while (off < n) {
-        ssize_t w = write(fd, s + off, n - off);
-        if (w <= 0)
-            break;
-        off += (size_t)w;
+        if (w > 0) {
+            c->out_off += (size_t)w;
+            continue;
+        }
+        if (w < 0 && errno == EINTR)
+            continue;
+        return; /* EAGAIN or a dead socket: keep the remainder queued. */
     }
+    c->out_off = 0;
+    c->out_end = 0;
+}
+
+static int hush_send_str(struct client *c, const char *s)
+{
+    size_t pending;
+    size_t n;
+
+    assert(c != NULL);
+    assert(s != NULL);
+    hush_client_flush(c);
+    n = strlen(s);
+    pending = c->out_end - c->out_off;
+    if (c->out_end + n > sizeof(c->out)) {
+        if (c->out_off > 0) {
+            memmove(c->out, c->out + c->out_off, pending);
+            c->out_off = 0;
+            c->out_end = pending;
+        }
+        if (c->out_end + n > sizeof(c->out))
+            return 0;
+    }
+    memcpy(c->out + c->out_end, s, n);
+    c->out_end += n;
+    hush_client_flush(c);
+    return 1;
 }
 
 static void hush_handle_event_msg(struct client *c, const hush_client_msg_t *msg)
@@ -587,8 +638,9 @@ static void hush_handle_event_msg(struct client *c, const hush_client_msg_t *msg
 
     (void)hush_store_insert(g_store, &msg->event);
     (void)hush_wake_ingest(&msg->event);
-    if (hush_proto_format_ok(msg->event.id, 1, "", line, sizeof(line), NULL) == HUSH_OK)
-        hush_send_str(c->fd, line);
+    if (hush_proto_format_ok(msg->event.id, 1, "", line, sizeof(line), NULL) == HUSH_OK &&
+        !hush_send_str(c, line))
+        hush_drop_client(c);
     hush_fanout(&msg->event);
 }
 
@@ -606,11 +658,15 @@ static void hush_handle_req_msg(struct client *c, const hush_client_msg_t *msg)
     for (i = 0; i < n; ++i) {
         if (!hush_presence_req_ok(results[i].kind, g_launch.vibe_public))
             continue;
-        if (hush_proto_format_event(c->sub_id, &results[i], line, sizeof(line), NULL) == HUSH_OK)
-            hush_send_str(c->fd, line);
+        if (hush_proto_format_event(c->sub_id, &results[i], line, sizeof(line), NULL) == HUSH_OK &&
+            !hush_send_str(c, line)) {
+            hush_drop_client(c);
+            return;
+        }
     }
-    if (hush_proto_format_eose(c->sub_id, line, sizeof(line), NULL) == HUSH_OK)
-        hush_send_str(c->fd, line);
+    if (hush_proto_format_eose(c->sub_id, line, sizeof(line), NULL) == HUSH_OK &&
+        !hush_send_str(c, line))
+        hush_drop_client(c);
 }
 
 static void hush_fanout(const hush_event_t *ev)
@@ -625,8 +681,9 @@ static void hush_fanout(const hush_event_t *ev)
             continue;
         if (!hush_presence_req_ok(ev->kind, g_launch.vibe_public))
             continue;
-        if (hush_proto_format_event(clients[i].sub_id, ev, line, sizeof(line), NULL) == HUSH_OK)
-            hush_send_str(clients[i].fd, line);
+        if (hush_proto_format_event(clients[i].sub_id, ev, line, sizeof(line), NULL) == HUSH_OK &&
+            !hush_send_str(&clients[i], line))
+            hush_drop_client(&clients[i]);
     }
 }
 
@@ -745,7 +802,8 @@ static int hush_fill_pollfds(struct pollfd *fds, int ls)
         if (clients[i].fd == HUSH_FD_NONE)
             continue;
         fds[nf].fd = clients[i].fd;
-        fds[nf].events = POLLIN;
+        fds[nf].events = clients[i].out_off < clients[i].out_end
+            ? (POLLIN | POLLOUT) : POLLIN;
         fds[nf].revents = 0;
         nf++;
     }

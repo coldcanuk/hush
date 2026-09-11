@@ -389,6 +389,45 @@ if 'CLI_FAILURE_CASE' in prompt:
     print("Cline: CLI selection, complete JSON response, progress filtering and failed-exit suppression OK")
 
 
+def check_slow_reader(relay):
+    """A subscriber that stops reading is disconnected, never served torn frames."""
+    wait_idle(relay)
+    payload = "SLOW_READER_" + ("x" * 4000)
+    for _ in range(80):
+        relay.request("/api/event", {"channel": "research", "content": payload})
+    slow = socket.create_connection(("127.0.0.1", relay.port), timeout=5)
+    try:
+        slow.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+        slow.settimeout(0)  # never read the responses
+        # Each REQ replays up to 64 stored notes from this channel, so forty of
+        # them push several megabytes at a socket that is not draining.
+        slow.sendall(b"".join(
+            f'["REQ","slow-{index}",{{"kinds":[1],"#h":["research"]}}]\n'.encode()
+            for index in range(40)
+        ))
+        time.sleep(1.5)
+        assert relay.request("/api/status")["ok"] is True
+        slow.settimeout(10)
+        data = b""
+        closed = False
+        try:
+            while True:
+                chunk = slow.recv(65536)
+                if not chunk:
+                    closed = True
+                    break
+                data += chunk
+        except ConnectionResetError:
+            closed = True
+        assert closed, "relay kept a reader past its output queue"
+        for line in data.split(b"\n")[:-1]:
+            if line.strip():
+                json.loads(line)
+    finally:
+        slow.close()
+    print("backpressure: slow subscriber disconnected without torn frames OK")
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="hush-collaboration-") as temporary:
         relay = Relay(Path(temporary))
@@ -397,6 +436,7 @@ def main():
             check_rooms(relay)
             check_providers(relay)
             check_history_capacity(relay)
+            check_slow_reader(relay)
         except Exception:
             relay.log.flush()
             relay.log.seek(0)
