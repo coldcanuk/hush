@@ -1,16 +1,13 @@
 # PLAN — Review Hardening and Collaboration Features
 
-**Status:** DRAFT — scope frozen; Phases 3+ are finalized at the Phase 1
-synthesis gate (see `docs/research/RESEARCH_REVIEW_HARDENING.md`).
+**Status: FROZEN after the Phase 1 synthesis gate.** Scope, decisions, and
+success criteria below are authoritative for the rest of this build.
 
-**Knowledge document:** `docs/research/REVIEW_HUSH_0.0.1.md` (external technical
-review of Hush `0.0.1` @ `5f67c65eb`).
-
-**Methodology:** RDAP — Double Diamond (discover → define → develop → deliver),
-risk-driven research iterations, small atomic Milestones with a strict
-Definition of Done.
-
-**Branch:** `gb/review-hardening` · **Worktree:** `worktrees/review-hardening`
+- **Knowledge document:** [docs/research/REVIEW_HUSH_0.0.1.md](../research/REVIEW_HUSH_0.0.1.md)
+- **Phase 1 synthesis:** [docs/research/RESEARCH_REVIEW_HARDENING.md](../research/RESEARCH_REVIEW_HARDENING.md)
+- **Branch/worktree:** `gb/review-hardening` in `worktrees/review-hardening`
+- **Methodology:** RDAP (Double Diamond, risk-driven research iterations, small
+  atomic Milestones with a Definition of Done).
 
 ---
 
@@ -18,124 +15,260 @@ Definition of Done.
 
 ### Primary goal
 
-Turn the review's findings into verified code, in priority order: close the
-missing trust boundary, make the relay core correct and fast enough to use
-daily, and then deliver the three collaboration features the review names
-(signed identity, durable thread memory, streaming/cancellable/budgeted turns
-with a work ledger).
+Turn the review into verified code, in priority order: close the missing trust
+boundary, make the relay core correct and fast enough for daily use, then
+deliver the three collaboration features the review names (signed identity,
+durable thread memory, streaming/cancellable/budgeted turns with a work ledger).
 
-### Non-goals (this build)
+### Non-goals
 
-- WebSocket transport. The relay keeps its newline JSON protocol; the plan
-  makes it honest and authenticated rather than interoperable with stock Nostr
-  clients.
-- Relay-to-relay federation (the review's honorable mention).
-- A SQLite dependency. Durable state must stay C11 + OpenSSL/libc, matching
-  the existing `store.ring` / `wake.ledger` design.
-- Rust, new languages, or a new web framework. The PWA stays vanilla JS served
-  by the binary.
-- Rewriting the conversation engine. `hush_intel.c` policy semantics are
-  preserved except where the review found them unenforced.
-- Multi-human identity/roster semantics beyond what signatures make possible.
+- WebSocket transport. The line protocol becomes honest and authenticated, not
+  interoperable with stock Nostr clients.
+- Relay-to-relay federation.
+- A SQLite dependency; durable state stays C11 + OpenSSL + libc.
+- Rust, a new web framework, or a rewrite of the conversation engine.
 
 ### Success criteria (measurable)
 
-1. **Trust boundary.** No `system()` call remains on any request path;
-   `/api/project` uses `mkdir()` + `execvp`. The relay binds `127.0.0.1`
-   by default; remote binding requires an explicit flag. `Access-Control-Allow-Origin: *`
-   is gone. No `nsec` or TURN password is returned to an unauthenticated or
-   non-loopback caller. `/api/*` requires a session token minted at first run.
-2. **Event authentication.** `hush_event_t` carries `sig`; the line protocol
-   verifies BIP-340 signatures and recomputes the event id before store/ack;
-   invalid events get `["OK", id, false, "invalid: ..."]` and are not stored.
-   BIP-340 official test vectors pass in a unit test.
+1. **Trust boundary.** No `system()` on any request path; loopback bind by
+   default; `Access-Control-Allow-Origin: *` gone; no `nsec`/TURN password to
+   an unauthenticated caller; `/api/*` token-gated except `/api/status` and
+   `GET /api/complete?t=`.
+2. **Event authentication.** `hush_event_t` carries `sig`; BIP-340 verified and
+   ids recomputed on the wire path; invalid events answered
+   `["OK", id, false, "invalid: ..."]` and not stored; all 19 official BIP-340
+   vectors pass.
 3. **Relay correctness.** The two table-overflow clobbers and the
-   `hush_send_str` partial-write bug are fixed with tests that fail before the
-   fix. `cooldown_s`, `max_jobs`, and `robot_hops` are enforced as
-   documented, or the documentation is corrected.
-4. **Persistence performance.** Store inserts are append-only with a periodic
-   snapshot; median insert latency at a 1,000-event ring is < 1 ms with
-   persistence on (baseline to be re-measured), and `store.ring` stays valid
-   across restart.
+   `hush_send_str` partial-write bug are fixed with regression tests;
+   `cooldown_s`, `max_jobs`, and `robot_hops` are enforced as documented or
+   the documentation is corrected.
+4. **Persistence performance.** Append-only records + periodic snapshot; median
+   insert latency < 1 ms with persistence on at a 1,000-event ring (baseline
+   re-measured), `store.ring` still loads across restart.
 5. **Wire/documentation truth.** Filters honor `ids`/`since`/`until` and all
-   authors/#h values; `created_at` and tags survive the line parser; README,
-   `SECURITY.md`, and `NOSTR.md` describe what the code actually does.
+   authors/`#h` values; `created_at` and tags survive the line parser; README,
+   `SECURITY.md`, and `NOSTR.md` describe actual behavior.
 6. **Durable thread memory.** A thread brief survives restart; API providers
-   receive a real `messages[]` array; thread context is budget-driven rather
-   than a fixed 6 × 384 B window.
+   receive a real `messages[]` array; context selection is budget-driven.
 7. **Streaming, cancel, budget.** API providers stream partial output to the
-   PWA; `POST /api/cancel` stops a running job; token/cost is accounted per
-   job/robot/thread and a per-thread budget is enforced by the leash; the
-   signal ring drives a visible activity timeline.
-8. **No regressions.** `make` is clean under
-   `-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow`; all existing unit
-   tests, `check_agent.sh`, and `check_collaboration.py` pass, plus new tests
-   for every fix. Every milestone is committed on `gb/review-hardening`; the
-   work lands on `main` only through PRs; the worktree is removed afterwards.
+   PWA; `POST /api/cancel` stops a job; usage/cost is accounted per job, robot,
+   and thread; the leash enforces a per-thread budget; the signal ring drives a
+   visible activity timeline.
+8. **No regressions.** Clean build under the strict flag set; all unit tests,
+   the non-GUI integration checks, and new tests pass; work lands on `main`
+   only through PRs; worktrees are removed after merge.
 
 ### Constraints
 
-- C11 only; strict warning set; legible-C standard (`write-legible-c`) applies
-  to every `.c`/`.h` touched.
-- No new mandatory runtime dependency. OpenSSL (`-lcrypto`) is already linked
-  and is the crypto toolbox.
-- The single-threaded `poll(2)` loop stays; streaming must not require a
-  thread-per-client or blocking reads.
-- Existing data files (`store.ring`, `wake.ledger`, `vibe.json`) must be
-  read compatibly or migrated with a documented path.
+- C11 only; `-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow`; the
+  write-legible-c standard applies to every changed `.c`/`.h`.
+- No new mandatory runtime dependency (OpenSSL `-lcrypto` is the toolbox).
+- The single-threaded `poll(2)` loop stays; streaming must not block it.
+- Existing data files (`store.ring`, `wake.ledger`, `vibe.json`) load or
+  migrate with a documented path.
 - Prime Directive: worktree → commits/pushes on `gb/*` → PR → auto-merge →
   delete worktree. Never touch `main` directly.
 
-### Assumptions
+### Assumptions and environment
 
-- The review's claims are accurate until the Phase 1 verification says
-  otherwise; every claim is checked against the code before a fix is written.
-- The local machine has OpenSSL 3.x with secp256k1 group support and Python 3
-  for the test harnesses.
-- GUI-window tests (`check_win.py`, `check_browser_launch.py`) are verified
-  manually or skipped with a recorded reason, as in the review.
+- The four Phase 1 notes are accurate for `5f67c65eb`; each task re-checks its
+  own citations before editing.
+- Tools: gcc, GNU make, `./configure`, OpenSSL 3.0.13 (secp256k1 via
+  `EC_GROUP`), python3, curl, `gh` (authenticated as `coldcanuk`).
+- GUI checks (`check_win.py`, `check_browser_launch.py`) are run only when a
+  display is available and the operator accepts windows opening; otherwise the
+  skip is recorded. `check_collaboration_ui.cjs` needs Playwright.
 
-### Required environment / tools
-
-`gcc`, `make`, `./configure`, `openssl`, `python3`, `gh` (authenticated as
-`coldcanuk`), `pass` (tests use `fake-pass.sh`).
-
-### Top risks and mitigations
+### Top risks
 
 | # | Risk | Mitigation |
 |---|------|------------|
-| R1 | The session-token gate breaks the embedded PWA or the integration tests | Phase 1 inventory of every route + every test caller; token served same-origin; compatibility mode only for loopback; update tests in the same milestone |
-| R2 | BIP-340 verification is expensive or subtly wrong | Use official test vectors as the gate; verification-only (no signing on the wire path); if OpenSSL BIGNUM proves too slow for the wire, vendor a small audited single-file verifier |
-| R3 | The append-only store changes on-disk format and breaks restart memory | Keep a versioned record format; migration path from `store.ring`; restart tests in `check_collaboration.py` cover it |
-| R4 | Streaming in a single-threaded poll loop blocks other clients | Non-blocking child stdout pipe + per-job output ring; only `/api/stream` reads it; CLI providers keep buffering until the streaming milestone |
-| R5 | Scope creep across 256 goal rounds | Phases land as separate PRs; each phase has its own Definition of Done; the plan is re-frozen at the Phase 1 gate |
+| R1 | Token gate breaks the PWA or tests | Route inventory; same-origin cookie bootstrap; harness wrapper; browser flow check |
+| R2 | BIP-340 verify wrong or slow | Official vectors first; verification-only; OpenSSL path measured at ~291 µs/op in a probe |
+| R3 | Store format change breaks restart memory | Versioned records; read old `store.ring`; restart tests |
+| R4 | Streaming blocks the poll loop | Non-blocking child stdout + per-job buffer; poll-set integration milestone |
+| R5 | Scope across rounds | One PR per phase; explicit DoD; plan frozen here |
 
 ---
 
-## 2. Phases (finalized at the Phase 1 synthesis gate)
+## 2. Phases, Milestones, Tasks
 
-The phase skeleton below is the working structure; task-level detail is
-written into this file once the research notes land.
+### Phase 0 — Environment and isolation  ✅ DONE
 
-- **Phase 0 — Environment & isolation.** Worktree, baseline build/test. (done)
-- **Phase 1 — Research & discovery.** Four evidence notes, then synthesis and
-  the updated plan. Ends with the mandatory synthesis task.
-- **Phase 2 — Define / architecture.** Decisions record: token flow, BIP-340
-  verify path, store log format, streaming transport, thread-memory model.
-- **Phase 3 — Trust boundary.** Review §8 items 1–3, 5, 7 + hardening flags.
-- **Phase 4 — Relay correctness.** Overflow clobbers, partial writes, reply
-  cap, leash semantics, dead reset path, start-failure diagnostics.
-- **Phase 5 — Persistence.** Append-only log + snapshot; measure the write
-  path before/after.
-- **Phase 6 — Wire fidelity.** Tags, timestamps, filter completeness; docs
-  truth (README/SECURITY/NOSTR).
-- **Phase 7 — Feature 1: signed identity.** BIP-340 verification, `sig` in
-  the event struct, id recompute, NIP-42-style challenge.
-- **Phase 8 — Feature 2: thread memory.** Durable thread store, rolling
-  brief, `messages[]` for API providers, budget-driven context, durable robot
-  context.
-- **Phase 9 — Feature 3: streaming/cancel/budget/ledger.** SSE or NDJSON
-  endpoint, cancel endpoint, accounting + budget enforcement, activity
-  timeline from `hush_cevent`.
-- **Final phase — Verification, polish, integration, cleanup.** Full suite,
-  docs, PRs merged, worktree removed, "Vibe Code Build complete."
+- **M0.1 Worktree + baseline.** `gb/review-hardening` in
+  `worktrees/review-hardening`; baseline: clean build, 22/22 unit tests,
+  `check_agent.sh`, `check_collaboration.py`.
+  Verify: `git worktree list`; test logs.
+- **M0.2 Knowledge document.** Land `docs/research/REVIEW_HUSH_0.0.1.md`.
+  Commit `0bc0f34e9`.
+
+### Phase 1 — Research and discovery  ✅ DONE
+
+- **M1.1 Evidence notes.** Four notes (security surface 588 lines; relay
+  correctness; event auth, incl. BIP-340 probe result; thread memory/streaming).
+  Verify: each note's claim table is all "verified", "partially verified", or
+  "refuted" with `path:line` evidence.
+- **M1.2 Synthesis gate.** `RESEARCH_REVIEW_HARDENING.md` + this frozen plan.
+  Verify: every Phase ≥ 3 task below cites a note or the review.
+
+### Phase 2 — Define / architecture  ✅ DONE
+
+- **M2.1 Decisions D1–D12** recorded in the synthesis (§3). No separate
+  architecture document; each decision names its constraint and rationale.
+
+### Phase 3 — Trust boundary  🔄 IN PROGRESS (PR 1)
+
+- **M3.1 Shell sink.** ✅ Commit `ac16327f9`: `hush_launch_git_init` uses
+  `mkdir` + `execvp("git")`; `hush_launch_validate_project_path` rejects
+  relative/root/`..`/control-char paths; regression test proves a quote/semicolon
+  path creates no file.
+  Verify: `./tests/test_launch && grep -rn 'system(' hush-c/src` (no hits).
+- **M3.2 Bind + CORS + Host.** `hush_relay_run(port, bind_addr, open_ui)`;
+  `--listen ADDR` (default `127.0.0.1`, `0.0.0.0` for LAN); announce prints the
+  real address; `hush_http_host_ok` rejects non-local `Host` in loopback mode;
+  both `Access-Control-Allow-Origin` emitters deleted.
+  Verify: `ss -ltn` shows `127.0.0.1`; `curl -H 'Host: evil' → 403`;
+  `--listen 0.0.0.0` still serves the PWA.
+- **M3.3 Session token.** `hush_auth.c/h`: 32-hex token in
+  `$HUSH_HOME/session.token` (0600, `O_NOFOLLOW`), constant-time compare;
+  `hush_http_guard` gates `/api/*` (exceptions: `/api/status`,
+  `GET /api/complete`); loopback responses set `hush_session` cookie
+  (`HttpOnly; SameSite=Strict`); carriers: cookie, `X-Hush-Token`,
+  `Authorization: Bearer`, `?k=`. Test harness: hermetic `HUSH_HOME`,
+  `XDG_RUNTIME_DIR`, `HUSH_PASS_HELPER` seam, token-aware `curl()`.
+  Verify: `tests/test_auth`; manual 401/200 matrix; `check_launch.sh`,
+  `check_turn.sh`, `check_provider.sh`, `check_agent.sh`,
+  `check_collaboration.py`.
+- **M3.4 Build hardening + default goal.** `configure` probes
+  `-fstack-protector-strong`, `-D_FORTIFY_SOURCE=2`, `-fPIE`,
+  `-Wl,-z,relro`, `-Wl,-z,now`, `-pie`; Makefile defaults add
+  `-fstack-protector-strong -fPIE`; `.DEFAULT_GOAL := all` fixes incremental
+  builds.
+  Verify: `grep HARDEN` in configure output; `make` twice rebuilds
+  correctly; `readelf -l hush-relay | grep GNU_RELRO`.
+- **M3.5 Docs truth.** `SECURITY.md` rewritten for the token gate, durable
+  store, membership semantics, input validation, hardening; README feature
+  claims corrected (kinds, filters, private vibe, token); `NOSTR.md` banner.
+  Verify: claims match `grep` results from the security note.
+- **M3.6 PR 1.** Push, open PR, auto-merge, delete worktree, fast-forward
+  `main`. Verify: `gh pr view` shows MERGED; `git worktree list` shows only
+  the main checkout.
+
+### Phase 4 — Relay correctness (PR 2)
+
+- **M4.1 Overflow clobbers.** `hush_intel_take_hold` returns NULL when the
+  table is full and `hush_agent_follow_take` reports FULL; callers deny/jam
+  explicitly instead of folding into slot 0.
+  Verify: new `test_intel` overflow case + a follow-table test at its boundary.
+- **M4.2 Partial writes.** Per-client output buffer with `POLLOUT`, bounded
+  queue, and drop-with-log on overflow; `hush_send_str` returns status.
+  Verify: slow-reader case in `check_collaboration.py` gets complete frames.
+- **M4.3 Reply size.** Raise/align the worker and reader reply caps so a
+  4097-byte reply succeeds (or truncates with an explicit notice), removing the
+  "not usable" failure.
+  Verify: `check_collaboration.py` 4097 case expects a stored reply.
+- **M4.4 Leash semantics.** Enforce `cooldown_s` per (channel, robot);
+  `max_jobs` per channel for non-lead mentions; `robot_hops` as a counted cap.
+  Verify: `test_intel` cases for each.
+- **M4.5 Dead reset path.** Call `hush_agent_reset_follow` (or delete the dead
+  path) so a re-mentioned robot after completion dispatches again.
+  Verify: integration case in `check_agent.sh`.
+- **M4.6 Start-failure diagnostics + inflight.** Post a short note when a job
+  cannot start and only increment `inflight` when a job actually began.
+  Verify: unit/integration case forcing a full job table.
+- **M4.7 POST /api/turn.** Add GET guards to read-only routes so POST reaches
+  `hush_http_serve_turn_post`; `check_turn.sh` asserts the toggle.
+  Verify: `POST /api/turn {"mode":"on"}` changes `/api/turn` state (with a stub
+  turnserver).
+- **M4.8 Predictable dirs.** Owner + directory/symlink checks for `/tmp` cwd,
+  TURN state dir, provider dir, pidfile dir.
+  Verify: unit tests with foreign-owned/symlinked paths where feasible.
+- **M4.9 Oversized line.** >32 KiB Nostr lines get a NOTICE and close instead of
+  a silent mid-frame drop.
+  Verify: raw-socket test in `check_collaboration.py`.
+
+### Phase 5 — Persistence performance (PR 3)
+
+- **M5.1 Record format.** Versioned append records + header; read existing
+  `store.ring` snapshot for migration.
+- **M5.2 Append writer.** Replace full-snapshot-per-insert with append + `fdatasync`
+  policy; snapshot every N inserts or M bytes.
+- **M5.3 Compaction.** Snapshot atomically (tmp + rename + dir fsync) and
+  truncate the log.
+- **M5.4 Measurement.** Add a benchmark (`tests/bench_store.c` or a documented
+  script) and record before/after in the synthesis or plan.
+  Verify: restart memory in `check_collaboration.py`; median insert < 1 ms at a
+  1,000-event ring, persistence on.
+
+### Phase 6 — Wire fidelity and docs (PR 4)
+
+- **M6.1 Parser preservation.** `created_at` and tags parsed and stored;
+  `created_at` no longer hard-coded.
+- **M6.2 Filters.** `ids`, `since`, `until`, all authors, all `#h` values.
+  Verify: `test_proto` + `check_collaboration.py` round-trips.
+- **M6.3 Kind semantics.** Implement NIP-09 kind 5 deletion for self-authored
+  events and store kind 7 reactions (or keep the corrected README claim and
+  document the omission explicitly).
+- **M6.4 NOSTR.md rewrite** to describe the actual line protocol.
+  Verify: doc claims match `grep`/live tests.
+
+### Phase 7 — Feature 1: signed identity (PR 5)
+
+- **M7.1 `sig` + id recompute.** Add `sig` to `hush_event_t`; fix
+  `hush_event_compute_id` empty-tag deviation; parse sig on the wire.
+- **M7.2 `hush_schnorr` verify.** OpenSSL BIGNUM/EC, x-only decompression,
+  tagged hashes, negation; unit test with all 19 official vectors.
+- **M7.3 Ingest gate.** Verify id + signature before store/ack; OK false with
+  reason; fan-out only for accepted events.
+- **M7.4 NIP-42 line-protocol AUTH** (challenge + kind 22242) if the milestone
+  budget allows; otherwise document the remaining gap.
+  Verify: `test_schnorr`; raw-socket invalid-signature test;
+  `check_collaboration.py` unchanged for valid internal events.
+
+### Phase 8 — Feature 2: thread memory (PR 6)
+
+- **M8.1 Durable transcript.** Per-root JSONL + index under `$HUSH_HOME`;
+  survives restart and ring eviction.
+- **M8.2 Rolling brief.** Summary event pinned to the root when the window
+  exceeds its budget; loaded first on rebuild.
+- **M8.3 `messages[]`.** API providers receive system + user/assistant turns;
+  CLI providers keep the flattened prompt.
+- **M8.4 Budget-driven context + durable robot context files.**
+  Verify: restart test shows remembered decisions; provider mock asserts the
+  array shape; context stays under the byte budget.
+
+### Phase 9 — Feature 3: streaming, cancel, ledger (PR 7)
+
+- **M9.1 `hush_sse` parser** + unit tests (pure, bounded).
+- **M9.2 `stream:true` + `curl -N`** into the job pipe with non-streaming
+  fallback.
+- **M9.3 Job fds in the poll set** so partial output arrives without the 1 s
+  tick; per-job bounded output ring.
+- **M9.4 Reply delivery.** `GET /api/reply?root=…` long-poll/NDJSON for
+  partial text.
+- **M9.5 `POST /api/cancel`** with SIGTERM then SIGKILL to the process group;
+  honest "stopped" note. Verify: cancellation test.
+- **M9.6 Usage + budget.** Parse provider usage; count tokens/cost per job,
+  robot, thread; leash denies over-budget dispatch.
+- **M9.7 PWA + ledger.** Stream into the thread pane; activity timeline from
+  `hush_cevent`; one run artifact per team run.
+  Verify: `check_collaboration.py` streaming/cancel cases; UI check when
+  Playwright is available.
+
+### Final phase — Verification, polish, integration, cleanup
+
+- Full clean `./configure && make`; all unit tests; all non-GUI checks plus
+  GUI checks when a display is available; README/CHANGELOG updates; final PR
+  merged; worktree removed; `main` clean; report **"Vibe Code Build complete."**
+
+---
+
+## 3. Plan audit (pre-execution)
+
+- Every task names its milestone, its exact code/CLI surface, and a
+  verification step. ✅
+- The research → plan-update gate is the Phase 1 synthesis, which is committed
+  before Phase 3 code. ✅
+- Worktree lifecycle follows the Prime Directive at every milestone. ✅
+- Tasks are single-purpose and small enough to verify independently. ✅
+- Commit per milestone on `gb/review-hardening`; PR per phase. ✅
