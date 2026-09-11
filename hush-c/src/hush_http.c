@@ -28,6 +28,7 @@
 #include "hush_relay.h"
 #include "hush_skill.h"
 #include "hush_skillui.h"
+#include "hush_thread.h"
 #include "hush_ui_html.h"
 #include "hush_wake.h"
 #include "hush_win.h"
@@ -206,6 +207,8 @@ static hush_status_t hush_http_canvas_join(char *out, size_t outsz,
 static hush_status_t hush_http_canvas_write(const char *path,
                                             const char *content);
 static hush_status_t hush_http_serve_canvas(int fd, const char *body);
+static hush_status_t hush_http_serve_cancel(int fd, const char *body);
+static hush_status_t hush_http_serve_reply(int fd, const char *body);
 static hush_status_t hush_http_serve_fixup(int fd, const char *body);
 static void hush_http_reply_fixup_ok(int fd, const char *text);
 static hush_status_t hush_http_serve_complete_post(int fd, const char *body);
@@ -1069,6 +1072,7 @@ static hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
         hush_http_reply(fd, "507 Insufficient Storage", "text/plain", error, strlen(error));
         return status;
     }
+    hush_thread_record(out);
     hush_intel_consider(store, g_launch, out);
     hush_http_note_presence(store, out);
     const char *success = "{\"ok\":true}\n";
@@ -2379,6 +2383,10 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_project(fd, hush_http_body(req, len), store);
     if (strcmp(path, "/api/canvas") == 0)
         return hush_http_serve_canvas(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/cancel") == 0)
+        return hush_http_serve_cancel(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/reply") == 0)
+        return hush_http_serve_reply(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/fixup") == 0)
         return hush_http_serve_fixup(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/complete") == 0)
@@ -2402,6 +2410,70 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_provider_login(fd, hush_http_body(req, len));
     hush_http_reply(fd, "404 Not Found", "text/plain", "not found\n", 10);
     return HUSH_ERR_NOT_FOUND;
+}
+
+/* Reports the live answer for one thread so the pane can paint partials. */
+static hush_status_t hush_http_serve_reply(int fd, const char *body)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    char robot[HUSH_EVENT_PUBKEY_HEX_LEN + 1] = {0};
+    char partial[HUSH_EVENT_MAX_CONTENT + 1] = {0};
+    char escaped[HUSH_EVENT_MAX_CONTENT * HUSH_JSON_U_LEN + 1];
+    char payload[HUSH_EVENT_MAX_CONTENT * HUSH_JSON_U_LEN + 64];
+    const char *error = "{\"ok\":false,\"error\":\"root and robot are required\"}\n";
+    const char *idle = "{\"ok\":true,\"running\":false,\"text\":\"\"}\n";
+    const char *failed = "{\"ok\":false,\"error\":\"answer too large\"}\n";
+    int n;
+
+    if (!hush_json_field(body, "root", root, sizeof(root)) ||
+        !hush_json_field(body, "robot", robot, sizeof(robot))) {
+        hush_http_reply(fd, "400 Bad Request", "application/json", error,
+                        strlen(error));
+        return HUSH_ERR_ARG;
+    }
+    if (hush_agent_partial(partial, sizeof(partial), root, robot) != HUSH_OK) {
+        hush_http_reply(fd, "200 OK", "application/json", idle, strlen(idle));
+        return HUSH_OK;
+    }
+    if ((hush_json_escape(partial, escaped, sizeof(escaped)) == 0 && partial[0] != '\0')) {
+        hush_http_reply(fd, "507 Insufficient Storage", "application/json", failed,
+                        strlen(failed));
+        return HUSH_ERR_FULL;
+    }
+    n = snprintf(payload, sizeof(payload),
+                 "{\"ok\":true,\"running\":true,\"text\":\"%s\"}\n", escaped);
+    if (n <= 0 || (size_t)n >= sizeof(payload)) {
+        hush_http_reply(fd, "507 Insufficient Storage", "application/json", failed,
+                        strlen(failed));
+        return HUSH_ERR_FULL;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", payload, (size_t)n);
+    return HUSH_OK;
+}
+
+/* Stops the robot's live job on one thread; absent jobs are not an error. */
+static hush_status_t hush_http_serve_cancel(int fd, const char *body)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    char robot[HUSH_EVENT_PUBKEY_HEX_LEN + 1] = {0};
+    const char *error = "{\"ok\":false,\"error\":\"root and robot are required\"}\n";
+
+    if (!hush_json_field(body, "root", root, sizeof(root)) ||
+        !hush_json_field(body, "robot", robot, sizeof(robot))) {
+        hush_http_reply(fd, "400 Bad Request", "application/json", error,
+                        strlen(error));
+        return HUSH_ERR_ARG;
+    }
+    if (hush_agent_cancel(root, robot) == HUSH_OK) {
+        const char *stopped = "{\"ok\":true,\"stopped\":true}\n";
+
+        hush_http_reply(fd, "200 OK", "application/json", stopped,
+                        strlen(stopped));
+        return HUSH_OK;
+    }
+    const char *idle = "{\"ok\":true,\"stopped\":false}\n";
+    hush_http_reply(fd, "200 OK", "application/json", idle, strlen(idle));
+    return HUSH_OK;
 }
 
 static hush_status_t hush_http_serve_close(int fd)

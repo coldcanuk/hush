@@ -33,6 +33,7 @@
 #include "hush_relay.h"
 #include "hush_status.h"
 #include "hush_store.h"
+#include "hush_thread.h"
 #include "hush_turn.h"
 #include "hush_wake.h"
 #include "hush_win.h"
@@ -672,6 +673,7 @@ static void hush_handle_event_msg(struct client *c, const hush_client_msg_t *msg
         return;
     }
     (void)hush_store_insert(g_store, &msg->event);
+    hush_thread_record(&msg->event);
     (void)hush_wake_ingest(&msg->event);
     if (hush_proto_format_ok(msg->event.id, 1, "", line, sizeof(line), NULL) == HUSH_OK &&
         !hush_send_str(c, line))

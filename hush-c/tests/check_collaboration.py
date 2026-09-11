@@ -107,13 +107,64 @@ def check_rooms(relay):
 class Endpoint(BaseHTTPRequestHandler):
     requests = []
     mode = "ok"
+    hold = None
+    chunk_delay = 0.0
 
     def log_message(self, *_args):
         pass
 
+    def reply_text(self, body):
+        if self.path.endswith("/messages"):
+            return "API_REPLY_ANTHROPIC"
+        if self.path.endswith(":generateContent"):
+            return "API_REPLY_GEMINI"
+        text = "API_REPLY_" + body["model"]
+        instructions = body["messages"][0]["content"]
+        if "You are the election committee" in instructions:
+            return "Planner"
+        if "You are the leader. Organize" in instructions:
+            return "```plan\norder: fifo\n1 Writer: Draft the response.\n2 Reviewer: Review the draft.\n```"
+        if self.mode in ("full", "oversized"):
+            return "B" * (4096 if self.mode == "full" else 4097)
+        return text
+
+    def write_stream(self, text):
+        """Answers a stream:true request the way a real SSE provider does."""
+        if self.mode == "failure":
+            self.send_response(503)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        for index in range(0, len(text), 3):
+            piece = text[index:index + 3]
+            if self.path.endswith("/messages"):
+                event = {"type": "content_block_delta",
+                         "delta": {"type": "text_delta", "text": piece}}
+            else:
+                event = {"choices": [{"delta": {"content": piece}}]}
+            try:
+                self.wfile.write(b"data: " + json.dumps(event).encode() + b"\n\n")
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                return
+            time.sleep(Endpoint.chunk_delay)
+        try:
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         self.requests.append((self.path, body, dict(self.headers)))
+        if Endpoint.hold is not None:
+            Endpoint.hold.wait(timeout=15)
+        if body.get("stream") and self.mode in ("ok", "full", "oversized", "failure"):
+            self.write_stream(self.reply_text(body))
+            return
         if self.path.endswith("/messages"):
             response = {"content": [{"type": "text", "text": "API_"},
                                     {"type": "text", "text": "REPLY_ANTHROPIC"}]}
@@ -136,7 +187,10 @@ class Endpoint(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
-        self.wfile.write(encoded)
+        try:
+            self.wfile.write(encoded)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
 
 def wait_reply(relay, marker):
@@ -222,6 +276,8 @@ else:
         check_failures(relay, bot)
         check_chaining(relay)
         check_cline(relay, host)
+        check_cancel(relay, bot)
+        check_streaming(relay, bot)
         server.shutdown()
         thread.join(timeout=5)
     print("providers: six API routes, model selection, identity, room and equipped skill instructions OK")
@@ -236,6 +292,62 @@ def post_thread(relay, bot, content, root=None, room="research"):
     relay.request("/api/event", body)
     return next(event for event in reversed(relay.request("/api/events")["events"])
                 if event["content"] == content)
+
+
+def check_cancel(relay, bot):
+    wait_idle(relay)
+    hold = threading.Event()
+    Endpoint.hold = hold
+    count = len(Endpoint.requests)
+    try:
+        posted = post_thread(relay, bot, "CANCEL_TARGET please take your time")
+        wait_request_count(count + 1)
+        stopped = relay.request("/api/cancel", {"root": posted["id"], "robot": bot["name"]})
+        assert stopped == {"ok": True, "stopped": True}, stopped
+        wait_reply(relay, "stopped on request")
+        again = relay.request("/api/cancel", {"root": posted["id"], "robot": bot["name"]})
+        assert again == {"ok": True, "stopped": False}, again
+        relay.request("/api/cancel", {"root": posted["id"]}, expected=400)
+        relay.request("/api/cancel", {"root": "not-hex", "robot": bot["name"]})
+    finally:
+        hold.set()
+        Endpoint.hold = None
+    wait_idle(relay)
+    print("cancel: live job stopped on request, repeat cancel is a no-op OK")
+
+
+def check_streaming(relay, bot):
+    wait_idle(relay)
+    expected = "API_REPLY_custom"
+    Endpoint.chunk_delay = 0.2
+    try:
+        posted = post_thread(relay, bot, "STREAM_TARGET: answer in pieces")
+        partial = ""
+        for _ in range(200):
+            answer = relay.request("/api/reply", {"root": posted["id"], "robot": bot["name"]})
+            if answer["running"] and answer["text"]:
+                partial = answer["text"]
+                break
+            time.sleep(0.02)
+        assert partial, "no partial answer was visible"
+        assert expected.startswith(partial), (expected, partial)
+        assert len(partial) < len(expected), ("stream arrived whole", partial)
+        landed = []
+        for _ in range(200):
+            events = relay.request("/api/events")["events"]
+            landed = [event for event in events
+                      if event.get("reply_to") == posted["id"] and event["content"] == expected]
+            if landed:
+                break
+            time.sleep(0.05)
+        assert landed, "streamed reply never landed"
+        idle = relay.request("/api/reply", {"root": posted["id"], "robot": bot["name"]})
+        assert idle == {"ok": True, "running": False, "text": ""}, idle
+        relay.request("/api/reply", {"root": posted["id"]}, expected=400)
+    finally:
+        Endpoint.chunk_delay = 0.0
+    wait_idle(relay)
+    print("streaming: partial answers paint before the provider finishes OK")
 
 
 def wait_request_count(expected):
