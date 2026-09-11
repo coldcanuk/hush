@@ -208,6 +208,21 @@ Click the launcher (`hush-relay --open`) while the hive is already up to
 re-attach a window. `POST /api/close` acknowledges Close and does not stop
 the process. `POST /api/exit` sets the same shutdown flag as SIGTERM.
 
+### Threads, streaming, and stop
+
+Every note is transcribed to `$HUSH_HOME/threads/<root>.log` (keyed by the
+thread's root event) and each robot reply rolls that thread's brief forward.
+Transcripts are private (0600, no symlink follow), survive restart, and are
+what an agent reads when the live in-memory ring has moved on.
+
+While a robot is answering, the relay streams the provider's deltas into the
+thread, so text paints as it arrives instead of after the whole answer:
+
+| Endpoint | Body | Answer |
+|---|---|---|
+| `POST /api/reply` | `{"root": "<hex>", "robot": "<name or hex>"}` | `{"ok":true,"running":true,"text":"…"}` while the job is live, `running:false` once it is gone. |
+| `POST /api/cancel` | same | `{"ok":true,"stopped":true}` after SIGTERM to the job's process group (SIGKILL follows if it will not exit), then the robot posts an honest "stopped on request" note. A second cancel answers `stopped:false`. |
+
 ### Provider configure
 
 **Configure Providers** on the tool rail is the hive-wide desk.
