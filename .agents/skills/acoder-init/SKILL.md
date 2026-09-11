@@ -1,5 +1,5 @@
 ---
-name: codex-init
+name: acoder-init
 description: Bootstrap or repair Hush's repository skills for Codex.
 ---
 # Codex setup

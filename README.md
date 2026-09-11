@@ -361,7 +361,7 @@ saved robot and Payne provider selections migrate on restore. New API requests
 reject the retired id. Other providers keep their existing runtime roles.
 
 Core skills in `.agents/skills/`:
-- worktree, c-build, c-test, write-legible-c, legible-c, relay, codex-init, publish
+- worktree, c-build, c-test, write-legible-c, legible-c, relay, acoder-init, publish
 
 ## Code of Ethics
 
