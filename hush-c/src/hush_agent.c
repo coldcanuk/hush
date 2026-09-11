@@ -35,6 +35,8 @@ enum {
     HUSH_AGENT_PATH_MAX = 256,
     HUSH_AGENT_FD_NONE = -1,
     HUSH_AGENT_THREAD_MAX = 6,
+    /* Seconds a cancelled job gets to exit on SIGTERM before SIGKILL. */
+    HUSH_AGENT_CANCEL_GRACE_S = 3,
     HUSH_AGENT_PAIR_COUNT = 2,
     /* Soft cap for flattened thread/assignment lines. Two nostr:npub
      * tokens are 138 bytes; 160 cut the second token and the LLM
@@ -172,7 +174,9 @@ typedef struct {
     int kind;
     int done;
     int ok;
+    int cancelled;
     pid_t pid;
+    time_t kill_deadline;
     int fd;
     time_t started;
     char token[HUSH_AGENT_TOKEN_MAX];
@@ -776,8 +780,15 @@ void hush_agent_poll(hush_store_t *store)
         if (g_jobs[i].out_n > 0)
             (void)hush_presence_beat(g_jobs[i].robot_pub, g_jobs[i].parent_id,
                                      now);
-        if (g_jobs[i].pid > 0)
-            (void)waitpid(g_jobs[i].pid, &status, WNOHANG);
+        if (g_jobs[i].pid > 0 &&
+            waitpid(g_jobs[i].pid, &status, WNOHANG) == g_jobs[i].pid)
+            g_jobs[i].pid = 0;
+        if (g_jobs[i].cancelled && g_jobs[i].pid > 0 &&
+            now >= g_jobs[i].kill_deadline) {
+            (void)kill(-g_jobs[i].pid, SIGKILL);
+            hush_agent_finish_job(store, &g_jobs[i], 0);
+            continue;
+        }
         if (store != NULL &&
             hush_presence_stall_s(g_jobs[i].robot_pub, g_jobs[i].parent_id, now)
                 >= HUSH_PRESENCE_STALL_S &&
@@ -2350,6 +2361,8 @@ static void hush_agent_close_job(hush_agent_job_t *job)
     job->fd = HUSH_AGENT_FD_NONE;
     job->pid = 0;
     job->busy = 0;
+    job->cancelled = 0;
+    job->kill_deadline = 0;
 }
 
 static void hush_agent_kill_job(hush_agent_job_t *job)
@@ -2361,6 +2374,40 @@ static void hush_agent_kill_job(hush_agent_job_t *job)
         (void)kill(-job->pid, SIGTERM);
         (void)waitpid(job->pid, &status, WNOHANG);
     }
+}
+
+/* True when job is the live non-fixup job for root and the robot selector. */
+static int hush_agent_job_matches(const hush_agent_job_t *job, const char *root,
+                                  const char *robot)
+{
+    assert(job != NULL);
+    assert(root != NULL);
+    assert(robot != NULL);
+    if (strcmp(job->parent_id, root) != 0)
+        return 0;
+    return strcmp(job->robot_pub, robot) == 0 ||
+           strcmp(job->robot_name, robot) == 0;
+}
+
+hush_status_t hush_agent_cancel(const char *root, const char *robot)
+{
+    size_t i;
+
+    if (root == NULL || robot == NULL || root[0] == '\0' || robot[0] == '\0')
+        return HUSH_ERR_ARG;
+    for (i = 0; i < (size_t)HUSH_AGENT_JOBS_MAX; ++i) {
+        hush_agent_job_t *job = &g_jobs[i];
+
+        if (!job->busy || job->kind == HUSH_AGENT_KIND_FIXUP)
+            continue;
+        if (!hush_agent_job_matches(job, root, robot))
+            continue;
+        job->cancelled = 1;
+        job->kill_deadline = time(NULL) + HUSH_AGENT_CANCEL_GRACE_S;
+        hush_agent_kill_job(job);
+        return HUSH_OK;
+    }
+    return HUSH_ERR_NOT_FOUND;
 }
 
 static int hush_agent_npub_prefix_hit(const char *tok, const char *npub)
@@ -2987,6 +3034,29 @@ static void hush_agent_note_failure(hush_store_t *store, const hush_agent_job_t 
                     job->robot_pub, "provider_failed");
 }
 
+/* Posts the honest note for a job the human stopped. */
+static void hush_agent_note_stopped(hush_store_t *store, const hush_agent_job_t *job)
+{
+    assert(job != NULL);
+    if (store == NULL)
+        return;
+    hush_agent_follow_t *follow = hush_agent_follow_find(job->parent_id);
+    if (follow != NULL)
+        follow->live = 0;
+    char message[HUSH_EVENT_MAX_CONTENT] = {0};
+    int written = snprintf(message, sizeof(message),
+        "%s stopped on request before finishing. Send the ask again when you want it to continue.",
+        job->robot_name);
+    if (written < 0 || (size_t)written >= sizeof(message))
+        return;
+    hush_agent_note_in_t notice = {.pubkey = job->robot_pub, .content = message,
+        .channel = job->channel, .parent_id = job->parent_id, .human_pub = job->human_pub};
+    if (hush_agent_insert_note(store, &notice) != HUSH_OK)
+        return;
+    hush_agent_emit(HUSH_CEVENT_JOB_DONE, job->channel, job->parent_id,
+                    job->robot_pub, "cancelled");
+}
+
 static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job, int ok)
 {
     assert(job != NULL);
@@ -2994,6 +3064,12 @@ static void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job, in
     hush_agent_rewrite_mentions(job);
     if (job->kind == HUSH_AGENT_KIND_FIXUP) {
         job->ok = ok && job->out[0] != '\0';
+        hush_agent_close_job(job);
+        return;
+    }
+    if (job->cancelled) {
+        hush_agent_note_stopped(store, job);
+        hush_agent_release_line(store, job);
         hush_agent_close_job(job);
         return;
     }

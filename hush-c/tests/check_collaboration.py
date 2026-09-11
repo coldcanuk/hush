@@ -107,6 +107,7 @@ def check_rooms(relay):
 class Endpoint(BaseHTTPRequestHandler):
     requests = []
     mode = "ok"
+    hold = None
 
     def log_message(self, *_args):
         pass
@@ -114,6 +115,8 @@ class Endpoint(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         self.requests.append((self.path, body, dict(self.headers)))
+        if Endpoint.hold is not None:
+            Endpoint.hold.wait(timeout=15)
         if self.path.endswith("/messages"):
             response = {"content": [{"type": "text", "text": "API_"},
                                     {"type": "text", "text": "REPLY_ANTHROPIC"}]}
@@ -136,7 +139,10 @@ class Endpoint(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
-        self.wfile.write(encoded)
+        try:
+            self.wfile.write(encoded)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
 
 def wait_reply(relay, marker):
@@ -222,6 +228,7 @@ else:
         check_failures(relay, bot)
         check_chaining(relay)
         check_cline(relay, host)
+        check_cancel(relay, bot)
         server.shutdown()
         thread.join(timeout=5)
     print("providers: six API routes, model selection, identity, room and equipped skill instructions OK")
@@ -236,6 +243,28 @@ def post_thread(relay, bot, content, root=None, room="research"):
     relay.request("/api/event", body)
     return next(event for event in reversed(relay.request("/api/events")["events"])
                 if event["content"] == content)
+
+
+def check_cancel(relay, bot):
+    wait_idle(relay)
+    hold = threading.Event()
+    Endpoint.hold = hold
+    count = len(Endpoint.requests)
+    try:
+        posted = post_thread(relay, bot, "CANCEL_TARGET please take your time")
+        wait_request_count(count + 1)
+        stopped = relay.request("/api/cancel", {"root": posted["id"], "robot": bot["name"]})
+        assert stopped == {"ok": True, "stopped": True}, stopped
+        wait_reply(relay, "stopped on request")
+        again = relay.request("/api/cancel", {"root": posted["id"], "robot": bot["name"]})
+        assert again == {"ok": True, "stopped": False}, again
+        relay.request("/api/cancel", {"root": posted["id"]}, expected=400)
+        relay.request("/api/cancel", {"root": "not-hex", "robot": bot["name"]})
+    finally:
+        hold.set()
+        Endpoint.hold = None
+    wait_idle(relay)
+    print("cancel: live job stopped on request, repeat cancel is a no-op OK")
 
 
 def wait_request_count(expected):

@@ -207,6 +207,7 @@ static hush_status_t hush_http_canvas_join(char *out, size_t outsz,
 static hush_status_t hush_http_canvas_write(const char *path,
                                             const char *content);
 static hush_status_t hush_http_serve_canvas(int fd, const char *body);
+static hush_status_t hush_http_serve_cancel(int fd, const char *body);
 static hush_status_t hush_http_serve_fixup(int fd, const char *body);
 static void hush_http_reply_fixup_ok(int fd, const char *text);
 static hush_status_t hush_http_serve_complete_post(int fd, const char *body);
@@ -2381,6 +2382,8 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_project(fd, hush_http_body(req, len), store);
     if (strcmp(path, "/api/canvas") == 0)
         return hush_http_serve_canvas(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/cancel") == 0)
+        return hush_http_serve_cancel(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/fixup") == 0)
         return hush_http_serve_fixup(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/complete") == 0)
@@ -2404,6 +2407,31 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_provider_login(fd, hush_http_body(req, len));
     hush_http_reply(fd, "404 Not Found", "text/plain", "not found\n", 10);
     return HUSH_ERR_NOT_FOUND;
+}
+
+/* Stops the robot's live job on one thread; absent jobs are not an error. */
+static hush_status_t hush_http_serve_cancel(int fd, const char *body)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    char robot[HUSH_EVENT_PUBKEY_HEX_LEN + 1] = {0};
+    const char *error = "{\"ok\":false,\"error\":\"root and robot are required\"}\n";
+
+    if (!hush_json_field(body, "root", root, sizeof(root)) ||
+        !hush_json_field(body, "robot", robot, sizeof(robot))) {
+        hush_http_reply(fd, "400 Bad Request", "application/json", error,
+                        strlen(error));
+        return HUSH_ERR_ARG;
+    }
+    if (hush_agent_cancel(root, robot) == HUSH_OK) {
+        const char *stopped = "{\"ok\":true,\"stopped\":true}\n";
+
+        hush_http_reply(fd, "200 OK", "application/json", stopped,
+                        strlen(stopped));
+        return HUSH_OK;
+    }
+    const char *idle = "{\"ok\":true,\"stopped\":false}\n";
+    hush_http_reply(fd, "200 OK", "application/json", idle, strlen(idle));
+    return HUSH_OK;
 }
 
 static hush_status_t hush_http_serve_close(int fd)

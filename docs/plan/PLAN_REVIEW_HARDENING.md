@@ -292,8 +292,13 @@ durable thread memory, streaming/cancellable/budgeted turns with a work ledger).
   tick; per-job bounded output ring.
 - **M9.4 Reply delivery.** `GET /api/reply?root=…` long-poll/NDJSON for
   partial text.
-- **M9.5 `POST /api/cancel`** with SIGTERM then SIGKILL to the process group;
-  honest "stopped" note. Verify: cancellation test.
+- **M9.5 `POST /api/cancel`** ✅ `hush_agent_cancel(root, robot)` matches the live
+  non-fixup job by thread root and robot (hex pubkey or roster name), sends
+  SIGTERM to the process group, and escalates to SIGKILL after
+  `HUSH_AGENT_CANCEL_GRACE_S`. The finishing job posts an honest "stopped on
+  request" note instead of a provider failure, and releases its follow slot.
+  `check_collaboration.py` holds a provider request, cancels it, asserts the
+  note, and proves a repeat cancel is a no-op.
 - **M9.6 Usage + budget.** Parse provider usage; count tokens/cost per job,
   robot, thread; leash denies over-budget dispatch.
 - **M9.7 PWA + ledger.** Stream into the thread pane; activity timeline from
