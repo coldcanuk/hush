@@ -42,6 +42,8 @@ enum {
     /* Queued outbound Nostr bytes per client; a reader that falls further
      * behind than this is disconnected instead of served a torn frame. */
     HUSH_CLIENT_OUT_SZ = 65536,
+    /* Bounded drain reads before an oversized-line NOTICE and close. */
+    HUSH_OVERSIZE_DRAIN_STEPS = 8,
     /* 32 KiB: HTTP JSON plus a downscaled avatar. Was 8192. */
     HUSH_BUF_SZ = 32768,
     HUSH_LISTEN_BACKLOG = 8,
@@ -557,6 +559,24 @@ static void hush_on_bytes(struct client *c)
         (void)hush_http_serve(c->fd, c->buf, c->len, g_store, &posted);
         if (posted.id[0] != '\0')
             hush_fanout(&posted);
+        hush_drop_client(c);
+        return;
+    }
+    if (c->len >= (size_t)HUSH_BUF_SZ - 1 &&
+        memchr(c->buf, '\n', c->len) == NULL) {
+        static const char notice[] = "[\"NOTICE\",\"line too long\"]\n";
+        char drain[HUSH_BUF_SZ];
+        size_t step;
+
+        /* Discard what the peer already sent so the notice survives the close
+         * (a close with unread data resets the connection). */
+        for (step = 0; step < (size_t)HUSH_OVERSIZE_DRAIN_STEPS; ++step) {
+            if (read(c->fd, drain, sizeof(drain)) <= 0)
+                break;
+        }
+        ssize_t wrote = write(c->fd, notice, sizeof(notice) - 1);
+
+        (void)wrote;
         hush_drop_client(c);
         return;
     }

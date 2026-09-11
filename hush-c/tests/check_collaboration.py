@@ -435,6 +435,30 @@ def check_slow_reader(relay):
     print("backpressure: slow subscriber disconnected without torn frames OK")
 
 
+def check_oversized_line(relay):
+    """A line larger than the relay buffer gets a NOTICE before the close."""
+    client = socket.create_connection(("127.0.0.1", relay.port), timeout=5)
+    try:
+        client.settimeout(5)
+        try:
+            client.sendall(b'["EVENT","' + b"x" * 40000)
+        except OSError:
+            pass
+        data = b""
+        try:
+            while True:
+                chunk = client.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+        except (ConnectionResetError, socket.timeout):
+            pass
+        assert b"line too long" in data, data[:120]
+    finally:
+        client.close()
+    print("wire: oversized line gets a NOTICE before the close OK")
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="hush-collaboration-") as temporary:
         relay = Relay(Path(temporary))
@@ -444,6 +468,7 @@ def main():
             check_providers(relay)
             check_history_capacity(relay)
             check_slow_reader(relay)
+            check_oversized_line(relay)
         except Exception:
             relay.log.flush()
             relay.log.seek(0)
