@@ -20,6 +20,8 @@
 enum {
     HUSH_INFERENCE_BODY_MAX = HUSH_INFERENCE_TEXT_MAX * HUSH_JSON_U_LEN,
     HUSH_INFERENCE_RESPONSE_MAX = 131072,
+    /* One SSE line: a full content chunk plus JSON escaping. */
+    HUSH_INFERENCE_LINE_MAX = 65536,
     HUSH_INFERENCE_PARTS_MAX = 64,
     HUSH_INFERENCE_PATH_MAX = 96,
     HUSH_INFERENCE_WAIT_MAX = 8,
@@ -38,6 +40,8 @@ typedef struct {
     char message[HUSH_INFERENCE_BODY_MAX];
     char model[HUSH_PROVIDER_MODEL_MAX * HUSH_JSON_U_LEN];
     char body[HUSH_INFERENCE_BODY_MAX];
+    /* Set before encoding so format_body can ask the provider to stream. */
+    int stream;
 } hush_inference_encoding_t;
 
 /* Resolves required provider credentials into caller-owned secret storage. */
@@ -90,29 +94,9 @@ int hush_inference_is_ready(const hush_provider_status_t *status)
 }
 
 hush_status_t hush_inference_reply(char *out, size_t outsz,
-                                    const hush_inference_request_t *request)
+                                     const hush_inference_request_t *request)
 {
-    if (out == NULL || outsz == 0 || request == NULL || request->provider == NULL ||
-        request->system == NULL || request->rules == NULL || request->message == NULL)
-        return HUSH_ERR_ARG;
-    out[0] = '\0';
-    hush_provider_status_t status = {0};
-    hush_status_t checked = hush_provider_status(&status, request->provider);
-    if (checked != HUSH_OK)
-        return checked;
-    if (!hush_inference_is_ready(&status))
-        return HUSH_ERR_DENIED;
-    hush_inference_encoding_t *encoding = calloc(1, sizeof(*encoding));
-    if (encoding == NULL)
-        return HUSH_ERR_IO;
-    hush_status_t result = hush_inference_encode(encoding, &status, request);
-    char response[HUSH_INFERENCE_RESPONSE_MAX] = {0};
-    if (result == HUSH_OK)
-        result = hush_inference_transport(response, sizeof(response), &status, encoding->body);
-    free(encoding);
-    if (result != HUSH_OK)
-        return result;
-    return hush_inference_extract(out, outsz, status.id, response);
+    return hush_inference_stream(out, outsz, request, -1, NULL);
 }
 
 static hush_status_t hush_inference_load_key(char *out, size_t outsz, const char *provider)
@@ -152,12 +136,13 @@ static hush_status_t hush_inference_format_body(hush_inference_encoding_t *encod
     assert(encoding != NULL);
     assert(provider != NULL);
     int written = 0;
+    const char *stream = encoding->stream ? "true" : "false";
     if (strcmp(provider, HUSH_ROSTER_PROVIDER_ANTHROPIC) == 0) {
         written = snprintf(encoding->body, sizeof(encoding->body),
-            "{\"model\":\"%s\",\"max_tokens\":%d,\"system\":\"%s\\n%s\","
+            "{\"model\":\"%s\",\"max_tokens\":%d,\"stream\":%s,\"system\":\"%s\\n%s\","
             "\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}",
-            encoding->model, HUSH_INFERENCE_OUTPUT_TOKENS, encoding->system,
-            encoding->rules, encoding->message);
+            encoding->model, HUSH_INFERENCE_OUTPUT_TOKENS, stream,
+            encoding->system, encoding->rules, encoding->message);
     } else if (strcmp(provider, HUSH_ROSTER_PROVIDER_GEMINI) == 0) {
         written = snprintf(encoding->body, sizeof(encoding->body),
             "{\"systemInstruction\":{\"parts\":[{\"text\":\"%s\\n%s\"}]},"
@@ -166,9 +151,10 @@ static hush_status_t hush_inference_format_body(hush_inference_encoding_t *encod
     } else {
         written = snprintf(encoding->body, sizeof(encoding->body),
             "{\"model\":\"%s\",\"messages\":[{\"role\":\"%s\",\"content\":\"%s\\n%s\"},"
-            "{\"role\":\"user\",\"content\":\"%s\"}],\"stream\":false}",
+            "{\"role\":\"user\",\"content\":\"%s\"}],\"stream\":%s}",
             encoding->model, strcmp(provider, HUSH_ROSTER_PROVIDER_OPENAI) == 0
-                ? "developer" : "system", encoding->system, encoding->rules, encoding->message);
+                ? "developer" : "system", encoding->system, encoding->rules,
+            encoding->message, stream);
     }
     if (written < 0 || (size_t)written >= sizeof(encoding->body))
         return HUSH_ERR_FULL;
@@ -368,4 +354,193 @@ static hush_status_t hush_inference_extract_parts(char *out, size_t outsz, const
         if (status != HUSH_OK) return status;
     }
     return HUSH_ERR_FULL;
+}
+
+/* Writes exactly len bytes, retrying short writes and EINTR. */
+static hush_status_t hush_inference_write_all(int fd, const char *text, size_t len)
+{
+    size_t off = 0;
+
+    assert(text != NULL);
+    while (off < len) {
+        ssize_t written = write(fd, text + off, len - off);
+        if (written < 0) {
+            if (errno == EINTR)
+                continue;
+            return HUSH_ERR_IO;
+        }
+        off += (size_t)written;
+    }
+    return HUSH_OK;
+}
+
+/* Appends one streamed delta to out and, when asked, to the live stream. */
+static hush_status_t hush_inference_take_delta(char *out, size_t outsz, int stream_fd,
+                                               const char *provider, const char *payload,
+                                               int *streamed)
+{
+    const char *path;
+    hush_json_value_t value = {0};
+    char text[HUSH_INFERENCE_TEXT_MAX + 1] = {0};
+    size_t used;
+    size_t len;
+
+    assert(out != NULL);
+    assert(provider != NULL);
+    assert(payload != NULL);
+    path = strcmp(provider, HUSH_ROSTER_PROVIDER_ANTHROPIC) == 0
+        ? "/delta/text" : "/choices/0/delta/content";
+    /* Keep-alives, role openers, usage tails and error events carry no text. */
+    if (hush_json_lookup(&value, payload, path) != HUSH_OK ||
+        hush_json_decode(text, sizeof(text), &value) != HUSH_OK)
+        return HUSH_OK;
+    len = strlen(text);
+    if (len == 0)
+        return HUSH_OK;
+    used = strlen(out);
+    if (used + len >= outsz)
+        return HUSH_ERR_FULL;
+    memcpy(out + used, text, len + 1);
+    if (stream_fd >= 0 && hush_inference_write_all(stream_fd, text, len) != HUSH_OK)
+        return HUSH_ERR_IO;
+    if (streamed != NULL)
+        *streamed = 1;
+    return HUSH_OK;
+}
+
+/* Runs curl unbuffered, forwarding each SSE delta as it arrives. */
+static hush_status_t hush_inference_stream_curl(FILE *configuration, const char *provider,
+                                                char *out, size_t outsz, int stream_fd,
+                                                int *streamed)
+{
+    int fds[2];
+    pid_t child;
+    FILE *response;
+    char line[HUSH_INFERENCE_LINE_MAX];
+    char raw[HUSH_INFERENCE_RESPONSE_MAX] = {0};
+    size_t raw_n = 0;
+    hush_status_t result = HUSH_OK;
+    int status = 0;
+
+    assert(configuration != NULL);
+    assert(provider != NULL);
+    assert(out != NULL && outsz > 0);
+    if (pipe(fds) != 0)
+        return HUSH_ERR_IO;
+    if (signal(SIGCHLD, SIG_DFL) == SIG_ERR) {
+        (void)close(fds[0]);
+        (void)close(fds[1]);
+        return HUSH_ERR_IO;
+    }
+    child = fork();
+    if (child < 0) {
+        (void)close(fds[0]);
+        (void)close(fds[1]);
+        return HUSH_ERR_IO;
+    }
+    if (child == 0) {
+        if (close(fds[0]) != 0 ||
+            dup2(fileno(configuration), STDIN_FILENO) < 0 ||
+            dup2(fds[1], STDOUT_FILENO) < 0)
+            _exit(HUSH_INFERENCE_EXEC_FAILURE);
+        execlp("curl", "curl", "--disable", "--silent", "--fail", "--no-buffer",
+               "--max-time", HUSH_INFERENCE_TIMEOUT, "--max-filesize", "131072",
+               "--proto", "=http,https", "--config", "-", (char *)NULL);
+        _exit(HUSH_INFERENCE_EXEC_FAILURE);
+    }
+    if (close(fds[1]) != 0)
+        result = HUSH_ERR_IO;
+    response = fdopen(fds[0], "r");
+    if (response == NULL) {
+        (void)close(fds[0]);
+        result = HUSH_ERR_IO;
+    }
+    while (result == HUSH_OK && response != NULL &&
+           fgets(line, sizeof(line), response) != NULL) {
+        size_t len = strlen(line);
+
+        if (raw_n + len < sizeof(raw)) {
+            memcpy(raw + raw_n, line, len);
+            raw_n += len;
+            raw[raw_n] = '\0';
+        }
+        if (strncmp(line, "data: ", 6) != 0 || strncmp(line + 6, "[DONE]", 6) == 0)
+            continue;
+        result = hush_inference_take_delta(out, outsz, stream_fd, provider, line + 6,
+                                           streamed);
+    }
+    if (response != NULL && fclose(response) != 0)
+        result = HUSH_ERR_IO;
+    if (waitpid(child, &status, 0) != child)
+        result = HUSH_ERR_IO;
+    else if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+        result = HUSH_ERR_IO;
+    /* A provider that ignored stream:true answered with one whole body. */
+    if (result == HUSH_OK && out[0] == '\0' && raw_n > 0)
+        result = hush_inference_extract(out, outsz, provider, raw);
+    return result;
+}
+
+/* Owns the anonymous curl configuration for one streamed request. */
+static hush_status_t hush_inference_stream_transport(const hush_provider_status_t *status,
+                                                     const char *body, char *out,
+                                                     size_t outsz, int stream_fd,
+                                                     int *streamed)
+{
+    FILE *configuration;
+    hush_status_t result;
+
+    assert(status != NULL);
+    assert(body != NULL);
+    configuration = tmpfile();
+    if (configuration == NULL)
+        return HUSH_ERR_IO;
+    result = hush_inference_configure(configuration, status, body);
+    if (result == HUSH_OK)
+        result = hush_inference_stream_curl(configuration, status->id, out, outsz,
+                                            stream_fd, streamed);
+    if (fclose(configuration) != 0)
+        result = HUSH_ERR_IO;
+    return result;
+}
+
+hush_status_t hush_inference_stream(char *out, size_t outsz,
+                                    const hush_inference_request_t *request,
+                                    int stream_fd, int *streamed)
+{
+    hush_provider_status_t status = {0};
+    hush_status_t result;
+    hush_inference_encoding_t *encoding;
+
+    if (out == NULL || outsz == 0 || request == NULL || request->provider == NULL ||
+        request->system == NULL || request->rules == NULL || request->message == NULL)
+        return HUSH_ERR_ARG;
+    out[0] = '\0';
+    if (streamed != NULL)
+        *streamed = 0;
+    result = hush_provider_status(&status, request->provider);
+    if (result != HUSH_OK)
+        return result;
+    if (!hush_inference_is_ready(&status))
+        return HUSH_ERR_DENIED;
+    encoding = calloc(1, sizeof(*encoding));
+    if (encoding == NULL)
+        return HUSH_ERR_IO;
+    /* Gemini answers a streamed call at a different endpoint; keep it whole. */
+    encoding->stream = stream_fd >= 0 &&
+        strcmp(status.id, HUSH_ROSTER_PROVIDER_GEMINI) != 0;
+    result = hush_inference_encode(encoding, &status, request);
+    if (result == HUSH_OK && encoding->stream) {
+        result = hush_inference_stream_transport(&status, encoding->body, out, outsz,
+                                                 stream_fd, streamed);
+    } else if (result == HUSH_OK) {
+        char response[HUSH_INFERENCE_RESPONSE_MAX] = {0};
+
+        result = hush_inference_transport(response, sizeof(response), &status,
+                                          encoding->body);
+        if (result == HUSH_OK)
+            result = hush_inference_extract(out, outsz, status.id, response);
+    }
+    free(encoding);
+    return result;
 }

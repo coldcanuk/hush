@@ -523,8 +523,9 @@ static hush_status_t hush_agent_capture_reply(char *out, size_t outsz, char *cap
 /* Reads required worker pipe until EOF or bounded output budget is exhausted. */
 static hush_status_t hush_agent_read_capture(char *out, size_t outsz, int input_fd);
 /* Owns the capture pipe for one required worker, retaining complete output only. */
-static hush_status_t hush_agent_capture_worker(char *out, size_t outsz,
+static hush_status_t hush_agent_capture_worker(char *out, size_t outsz, int forward_fd,
                                                const hush_agent_job_t *job);
+static hush_status_t hush_agent_pump_capture(int input_fd, int output_fd);
 /* Extracts the latest complete Cline text/completion message from NDJSON. */
 static hush_status_t hush_agent_capture_cline(char *out, size_t outsz, char *capture);
 /* Updates required output only for a complete user-facing Cline message. */
@@ -1984,7 +1985,45 @@ static hush_status_t hush_agent_read_capture(char *out, size_t outsz, int input_
     return HUSH_ERR_FULL;
 }
 
-static hush_status_t hush_agent_capture_worker(char *out, size_t outsz,
+/* Copies a child's streamed stdout to the relay pipe as it arrives. */
+static hush_status_t hush_agent_pump_capture(int input_fd, int output_fd)
+{
+    char buffer[4096];
+    size_t sent = 0;
+
+    assert(input_fd >= 0);
+    assert(output_fd >= 0);
+    for (;;) {
+        ssize_t count = read(input_fd, buffer, sizeof(buffer));
+        size_t usable;
+        size_t off = 0;
+
+        if (count < 0) {
+            if (errno == EINTR)
+                continue;
+            return HUSH_ERR_IO;
+        }
+        if (count == 0)
+            return HUSH_OK;
+        /* The relay stores one event of content; drain the rest silently so a
+         * long answer can neither overflow it nor block the writer. */
+        usable = (size_t)count;
+        if (usable > (size_t)HUSH_EVENT_MAX_CONTENT - sent)
+            usable = (size_t)HUSH_EVENT_MAX_CONTENT - sent;
+        while (off < usable) {
+            ssize_t written = write(output_fd, buffer + off, usable - off);
+            if (written < 0) {
+                if (errno == EINTR)
+                    continue;
+                return HUSH_ERR_IO;
+            }
+            off += (size_t)written;
+        }
+        sent += usable;
+    }
+}
+
+static hush_status_t hush_agent_capture_worker(char *out, size_t outsz, int forward_fd,
                                                const hush_agent_job_t *job)
 {
     assert(out != NULL && outsz > 0);
@@ -1999,7 +2038,10 @@ static hush_status_t hush_agent_capture_worker(char *out, size_t outsz,
     }
     hush_status_t status = close(capture[1]) == 0 ? HUSH_OK : HUSH_ERR_IO;
     if (child < 0) status = HUSH_ERR_IO;
-    if (status == HUSH_OK) status = hush_agent_read_capture(out, outsz, capture[0]);
+    if (status == HUSH_OK && forward_fd >= 0)
+        status = hush_agent_pump_capture(capture[0], forward_fd);
+    else if (status == HUSH_OK)
+        status = hush_agent_read_capture(out, outsz, capture[0]);
     if (status != HUSH_OK && child > 0 && kill(child, SIGKILL) != 0 && errno != ESRCH)
         status = HUSH_ERR_IO;
     if (close(capture[0]) != 0) status = HUSH_ERR_IO;
@@ -2034,8 +2076,15 @@ static void hush_agent_run_worker(int output_fd, const hush_agent_job_t *job)
     /* Only the supervisor keeps the relay pipe: executed harnesses cannot hold it. */
     if (fcntl(output_fd, F_SETFD, FD_CLOEXEC) < 0) _exit(HUSH_AGENT_EXEC_FAILURE);
     char capture[HUSH_AGENT_CAPTURE_MAX + 1] = {0};
-    if (hush_agent_capture_worker(capture, sizeof(capture), job) != HUSH_OK)
+    /* API providers stream deltas straight into the relay pipe, so the relay
+     * already holds the whole answer and the supervisor writes nothing more. */
+    int forward = hush_inference_is_api(job->provider) ? output_fd : -1;
+    if (hush_agent_capture_worker(capture, sizeof(capture), forward, job) != HUSH_OK)
         _exit(HUSH_AGENT_EXEC_FAILURE);
+    if (forward >= 0) {
+        if (close(output_fd) != 0) _exit(HUSH_AGENT_EXEC_FAILURE);
+        _exit(0);
+    }
     char reply[HUSH_EVENT_MAX_CONTENT + 1] = {0};
     if (hush_agent_capture_reply(reply, sizeof(reply), capture, job->provider) != HUSH_OK)
         _exit(HUSH_AGENT_EXEC_FAILURE);
@@ -2087,11 +2136,14 @@ static void hush_agent_exec_api(const hush_agent_job_t *job)
         .rules = job->rules, .message = job->note
     };
     /* The worker captures the whole provider answer; the reply cap applies
-     * only when the note is assembled. */
+     * only when the note is assembled. Deltas already forwarded to stdout must
+     * not be written a second time. */
     char response[HUSH_INFERENCE_TEXT_MAX + 1] = {0};
-    if (hush_inference_reply(response, sizeof(response), &request) != HUSH_OK)
+    int streamed = 0;
+    if (hush_inference_stream(response, sizeof(response), &request, STDOUT_FILENO,
+                              &streamed) != HUSH_OK)
         _exit(HUSH_AGENT_EXEC_FAILURE);
-    if (fputs(response, stdout) == EOF || fflush(stdout) != 0)
+    if (!streamed && (fputs(response, stdout) == EOF || fflush(stdout) != 0))
         _exit(HUSH_AGENT_EXEC_FAILURE);
     _exit(0);
 }
@@ -2405,6 +2457,27 @@ hush_status_t hush_agent_cancel(const char *root, const char *robot)
         job->cancelled = 1;
         job->kill_deadline = time(NULL) + HUSH_AGENT_CANCEL_GRACE_S;
         hush_agent_kill_job(job);
+        return HUSH_OK;
+    }
+    return HUSH_ERR_NOT_FOUND;
+}
+
+hush_status_t hush_agent_partial(char *out, size_t outsz, const char *root,
+                                 const char *robot)
+{
+    size_t i;
+
+    if (out == NULL || outsz == 0 || root == NULL || robot == NULL)
+        return HUSH_ERR_ARG;
+    out[0] = '\0';
+    for (i = 0; i < (size_t)HUSH_AGENT_JOBS_MAX; ++i) {
+        const hush_agent_job_t *job = &g_jobs[i];
+
+        if (!job->busy || job->kind == HUSH_AGENT_KIND_FIXUP)
+            continue;
+        if (!hush_agent_job_matches(job, root, robot))
+            continue;
+        hush_agent_copy(out, outsz, job->out);
         return HUSH_OK;
     }
     return HUSH_ERR_NOT_FOUND;

@@ -49,6 +49,11 @@ int hush_agent_channel_busy(const char *channel);
  * exit. Returns HUSH_ERR_NOT_FOUND when no live job matches. */
 hush_status_t hush_agent_cancel(const char *root, const char *robot);
 
+/* Copies the live job's partial answer for root and robot into out. Empty
+ * while nothing has arrived. Returns HUSH_ERR_NOT_FOUND when no job matches. */
+hush_status_t hush_agent_partial(char *out, size_t outsz, const char *root,
+                                 const char *robot);
+
 /* Starts a one-shot grok rewrite. Does not insert a hive note.
  * instruction and text may be empty; both are copied. Fails with
  * HUSH_ERR_ARG, HUSH_ERR_FULL, or HUSH_ERR_IO. Writes a token. */

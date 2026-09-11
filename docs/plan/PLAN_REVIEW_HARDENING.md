@@ -285,13 +285,24 @@ durable thread memory, streaming/cancellable/budgeted turns with a work ledger).
 
 ### Phase 9 — Feature 3: streaming, cancel, ledger (PR 7)
 
-- **M9.1 `hush_sse` parser** + unit tests (pure, bounded).
-- **M9.2 `stream:true` + `curl -N`** into the job pipe with non-streaming
-  fallback.
-- **M9.3 Job fds in the poll set** so partial output arrives without the 1 s
-  tick; per-job bounded output ring.
-- **M9.4 Reply delivery.** `GET /api/reply?root=…` long-poll/NDJSON for
-  partial text.
+- **M9.1 SSE parser.** ✅ `hush_inference_take_delta` turns one `data:` line
+  into text for the OpenAI family (`/choices/0/delta/content`) and Anthropic
+  (`/delta/text`); keep-alives, role openers, usage tails and error events are
+  not failures. Bounded line/raw buffers.
+- **M9.2 `stream:true` + `curl -N`.** ✅ `hush_inference_stream` asks the
+  provider to stream, runs curl unbuffered, forwards each delta to the job
+  pipe, and falls back to whole-body extraction when a provider ignores the
+  flag. Gemini answers `streamGenerateContent` at another endpoint, so it
+  stays whole. The supervisor pumps the child's stdout instead of buffering it,
+  capped at one event of content.
+- **M9.3 Partial output.** ✅ The supervisor writes deltas straight into the job
+  pipe, so the relay's existing poll loop accumulates them into `job->out`
+  without waiting for process exit.
+- **M9.4 Reply delivery.** ✅ `POST /api/reply {root, robot}` answers
+  `{"ok":true,"running":true,"text":"…"}` with the partial text while the job
+  runs, `running:false` once it is gone. PWA wiring is part of M9.7.
+  `check_collaboration.py` observes a partial that is a proper prefix of the
+  final answer, then the landed reply, then the idle result.
 - **M9.5 `POST /api/cancel`** ✅ `hush_agent_cancel(root, robot)` matches the live
   non-fixup job by thread root and robot (hex pubkey or roster name), sends
   SIGTERM to the process group, and escalates to SIGKILL after
