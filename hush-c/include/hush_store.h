@@ -13,6 +13,7 @@ enum {
 };
 
 #define HUSH_STORE_FILE "store.ring"
+#define HUSH_STORE_LOG_FILE "store.log"
 #define HUSH_STORE_MAGIC 0x31545348u
 
 typedef struct hush_store hush_store_t; /* opaque for MVP; or expose for tests */
@@ -20,13 +21,14 @@ typedef struct hush_store hush_store_t; /* opaque for MVP; or expose for tests *
 hush_status_t hush_store_create(hush_store_t **out_store);
 void hush_store_destroy(hush_store_t *store);
 
-/* Loads $HUSH_HOME/store.ring by inserting each record so addressable
- * replace re-applies. Enables fsync-on-insert. Missing file is OK.
- * Separate from wake.ledger. */
+/* Loads $HUSH_HOME/store.ring, replays $HUSH_HOME/store.log on top, and opens
+ * the log for appends. A missing or torn log tail is OK. Separate from
+ * wake.ledger. */
 hush_status_t hush_store_persist_open(hush_store_t *store);
 
 /* Insert. Evicts oldest when full. Addressable kinds replace on
- * (pubkey, kind, d). When persist is enabled, snapshots and fsyncs. */
+ * (pubkey, kind, d). When persist is enabled, appends one log record and
+ * snapshots every HUSH_STORE_SNAPSHOT_INSERTS inserts. */
 hush_status_t hush_store_insert(hush_store_t *store, const hush_event_t *ev);
 
 /* Collect up to max_events matching any filter. Returns count written. */
