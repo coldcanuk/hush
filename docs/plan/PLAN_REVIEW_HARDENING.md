@@ -236,16 +236,24 @@ durable thread memory, streaming/cancellable/budgeted turns with a work ledger).
 
 ### Phase 7 — Feature 1: signed identity (PR 5)
 
-- **M7.1 `sig` + id recompute.** Add `sig` to `hush_event_t`; fix
-  `hush_event_compute_id` empty-tag deviation; parse sig on the wire.
-- **M7.2 `hush_schnorr` verify.** OpenSSL BIGNUM/EC, x-only decompression,
-  tagged hashes, negation; unit test with all 19 official vectors.
-- **M7.3 Ingest gate.** Verify id + signature before store/ack; OK false with
-  reason; fan-out only for accepted events.
-- **M7.4 NIP-42 line-protocol AUTH** (challenge + kind 22242) if the milestone
-  budget allows; otherwise document the remaining gap.
-  Verify: `test_schnorr`; raw-socket invalid-signature test;
-  `check_collaboration.py` unchanged for valid internal events.
+- **M7.1 `sig` + id recompute.** ✅ `hush_event_t` carries `sig`; the wire parser
+  reads it and the serializer emits it; `hush_event_compute_id` now preserves
+  interior empty tag elements (trailing empties are omitted, the one documented
+  limit of the fixed tag layout).
+- **M7.2 `hush_schnorr` verify.** ✅ `hush_schnorr.c` implements BIP-340
+  verification on the already-linked OpenSSL BIGNUM/EC: x-only lift_x via
+  even-y decompression, tagged SHA-256 challenge, `R = sG - eP`, parity and x
+  checks, canonical range rejection. The 19 official vectors are vendored at
+  `hush-c/tests/vectors/bip340_test_vectors.csv` and all pass in
+  `test_schnorr`, including the four variable-length-message cases.
+- **M7.3 Ingest gate.** ✅ `hush_event_verify` recomputes the id and verifies the
+  signature; the relay answers `OK false` with `invalid: ...` and skips store,
+  wake ingest, and fan-out. `test_event` covers accept, id mismatch, bad
+  signature, and missing signature; `check_collaboration.py` proves a real
+  signed frame is accepted and a tampered one rejected end to end.
+- **M7.4 NIP-42.** ⏸ Deferred: no challenge/response, so a captured valid frame
+  can be replayed. Documented in `NOSTR.md` and `SECURITY.md`; the remaining
+  gap is tracked here for a later phase.
 
 ### Phase 8 — Feature 2: thread memory (PR 6)
 

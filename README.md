@@ -24,8 +24,8 @@ Developed with the Codex AI agent. All development uses worktrees **inside this 
 - REQ with filter matching (kinds, ids, authors, since/until, and `#e`/`#p`/`#h`/`#d`
   tag values, up to four filters)
 - CLOSE
-- No event signature verification yet; see [NOSTR.md](NOSTR.md) and
-  [SECURITY.md](SECURITY.md)
+- Wire `EVENT` frames are BIP-340 verified before store and fan-out; NIP-42
+  AUTH is still missing. See [NOSTR.md](NOSTR.md) and [SECURITY.md](SECURITY.md)
 - Simple TCP newline-delimited JSON protocol (MVP; WebSocket adapter later)
 - `poll(2)` single-threaded server
 - Same port also serves the chat **PWA** over HTTP (`GET /`, manifest, service worker, icons)

@@ -178,6 +178,10 @@ hush_status_t hush_proto_format_event(const char *sub_id, const hush_event_t *ev
         }
         HUSH_TRY(hush_proto_put_raw(&writer, "]"));
     }
+    if (ev->sig[0] != '\0') {
+        HUSH_TRY(hush_proto_put_raw(&writer, ",\"sig\":"));
+        HUSH_TRY(hush_proto_put_string(&writer, ev->sig));
+    }
     HUSH_TRY(hush_proto_put_raw(&writer, "]}]\n"));
     if (out_written != NULL)
         *out_written = writer.offset;
@@ -263,6 +267,10 @@ static hush_status_t hush_proto_parse_event(hush_event_t *out,
         return HUSH_ERR_FULL;
     (void)hush_proto_take_string(out->content, sizeof(out->content), json,
                                  path);
+    n = snprintf(path, sizeof(path), "%s/sig", root);
+    if (n <= 0 || (size_t)n >= sizeof(path))
+        return HUSH_ERR_FULL;
+    (void)hush_proto_take_string(out->sig, sizeof(out->sig), json, path);
     return hush_proto_parse_tags(out, json, root);
 }
 
