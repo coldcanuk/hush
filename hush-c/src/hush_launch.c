@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -25,11 +26,11 @@ enum {
     HUSH_LAUNCH_KIND_NOTE = 1,
     HUSH_LAUNCH_KIND_REPO = 30617,
     HUSH_LAUNCH_SLUG_FALLBACK = 'x',
-    HUSH_LAUNCH_CMD_MAX = 768,
     HUSH_LAUNCH_FILE_MAX = HUSH_LAUNCH_JSON_MAX,
     HUSH_LAUNCH_KEY_MAX = 48,
     HUSH_LAUNCH_COUNT_MAX = 8,
-    HUSH_LAUNCH_UUID_RAW = 16
+    HUSH_LAUNCH_UUID_RAW = 16,
+    HUSH_LAUNCH_DIR_MODE = 0755
 };
 
 /* Borrows the flat serializer's output buffer and cursor for channel writers. */
@@ -139,8 +140,23 @@ static size_t hush_launch_json_escape(const char *src, char *dst, size_t dstsz);
 static void hush_launch_try_save(hush_launch_t *launch, const char *path,
                                  const char *secret);
 
+/* Rejects NULL, non-absolute, root, overlong, control-character, or ".." paths. */
+static hush_status_t hush_launch_validate_project_path(const char *path);
+
+/* True when any path component is exactly "..". */
+static int hush_launch_path_has_parent_ref(const char *path);
+
 /* Runs git init at path. Succeeds if .git already exists. */
 static hush_status_t hush_launch_git_init(const char *path);
+
+/* Creates path and every missing parent directory. */
+static hush_status_t hush_launch_mkdir_parents(const char *path);
+
+/* Creates path when missing; tolerates an existing directory. */
+static hush_status_t hush_launch_mkdir_one(const char *path);
+
+/* Adapter over fork/execvp/waitpid running git init -q at path. */
+static hush_status_t hush_launch_run_git_init(const char *path);
 
 /* Writes the session header object fields. */
 static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
@@ -1081,8 +1097,11 @@ hush_status_t hush_launch_add_project(hush_launch_t *launch,
     memset(proj, 0, sizeof(*proj));
     hush_launch_copy_name(proj->name, sizeof(proj->name), name, "project");
     hush_launch_slugify(proj->slug, sizeof(proj->slug), proj->name);
-    if (path != NULL && path[0] != '\0')
+    if (path != NULL && path[0] != '\0') {
         hush_launch_copy_name(proj->path, sizeof(proj->path), path, "");
+        if (hush_launch_validate_project_path(proj->path) != HUSH_OK)
+            return HUSH_ERR_ARG;
+    }
     if (init_git && proj->path[0] != '\0') {
         if (hush_launch_git_init(proj->path) != HUSH_OK)
             return HUSH_ERR_IO;
@@ -1867,23 +1886,133 @@ static hush_status_t hush_launch_format_roster(const hush_launch_t *launch,
     return HUSH_OK;
 }
 
+/* Rejects NULL, non-absolute, root, overlong, control-character, or ".." paths. */
+static hush_status_t hush_launch_validate_project_path(const char *path)
+{
+    size_t i;
+
+    if (path == NULL || path[0] != '/')
+        return HUSH_ERR_ARG;
+    if (strlen(path) >= (size_t)HUSH_LAUNCH_PATH_MAX)
+        return HUSH_ERR_ARG;
+    if (strcmp(path, "/") == 0)
+        return HUSH_ERR_ARG;
+    for (i = 0; path[i] != '\0'; ++i) {
+        unsigned char ch = (unsigned char)path[i];
+
+        if (ch < 0x20u || ch == 0x7fu)
+            return HUSH_ERR_ARG;
+    }
+    if (hush_launch_path_has_parent_ref(path))
+        return HUSH_ERR_ARG;
+    return HUSH_OK;
+}
+
+/* True when any path component is exactly "..". */
+static int hush_launch_path_has_parent_ref(const char *path)
+{
+    const char *cursor = path;
+
+    assert(path != NULL);
+    while (*cursor != '\0') {
+        const char *component = cursor;
+        size_t len = 0;
+
+        while (component[len] != '\0' && component[len] != '/')
+            ++len;
+        if (len == 2 && component[0] == '.' && component[1] == '.')
+            return 1;
+        cursor = component + len;
+        while (*cursor == '/')
+            ++cursor;
+    }
+    return 0;
+}
+
+/* Runs git init at path. Succeeds if .git already exists. */
 static hush_status_t hush_launch_git_init(const char *path)
 {
-    char cmd[HUSH_LAUNCH_CMD_MAX];
     char gitdir[HUSH_LAUNCH_PATH_MAX + 8];
     struct stat st;
 
     assert(path != NULL);
+    assert(hush_launch_validate_project_path(path) == HUSH_OK);
     if (snprintf(gitdir, sizeof(gitdir), "%s/.git", path) >= (int)sizeof(gitdir))
         return HUSH_ERR_ARG;
     if (stat(gitdir, &st) == 0)
         return HUSH_OK;
-    if (snprintf(cmd, sizeof(cmd), "mkdir -p '%s' && git init -q '%s'",
-                 path, path) >= (int)sizeof(cmd))
-        return HUSH_ERR_ARG;
-    if (system(cmd) < 0 && stat(gitdir, &st) != 0)
+    if (hush_launch_mkdir_parents(path) != HUSH_OK)
+        return HUSH_ERR_IO;
+    if (hush_launch_run_git_init(path) != HUSH_OK)
         return HUSH_ERR_IO;
     if (stat(gitdir, &st) == 0)
+        return HUSH_OK;
+    return HUSH_ERR_IO;
+}
+
+/* Creates path and every missing parent directory. */
+static hush_status_t hush_launch_mkdir_parents(const char *path)
+{
+    char work[HUSH_LAUNCH_PATH_MAX];
+    size_t len;
+    size_t i;
+
+    assert(path != NULL);
+    len = strlen(path);
+    if (len == 0 || len >= sizeof(work))
+        return HUSH_ERR_ARG;
+    memcpy(work, path, len + 1);
+    for (i = 1; i < len; ++i) {
+        if (work[i] != '/')
+            continue;
+        work[i] = '\0';
+        if (hush_launch_mkdir_one(work) != HUSH_OK)
+            return HUSH_ERR_IO;
+        work[i] = '/';
+    }
+    return hush_launch_mkdir_one(work);
+}
+
+/* Creates path when missing; tolerates an existing directory. */
+static hush_status_t hush_launch_mkdir_one(const char *path)
+{
+    struct stat st;
+
+    assert(path != NULL);
+    if (mkdir(path, (mode_t)HUSH_LAUNCH_DIR_MODE) == 0)
+        return HUSH_OK;
+    if (errno != EEXIST)
+        return HUSH_ERR_IO;
+    if (stat(path, &st) != 0)
+        return HUSH_ERR_IO;
+    if (!S_ISDIR(st.st_mode))
+        return HUSH_ERR_IO;
+    return HUSH_OK;
+}
+
+/* Adapter over fork/execvp/waitpid running git init -q at path. */
+static hush_status_t hush_launch_run_git_init(const char *path)
+{
+    pid_t child = 0;
+    int status = 0;
+
+    assert(path != NULL);
+    child = fork();
+    if (child < 0)
+        return HUSH_ERR_IO;
+    if (child == 0) {
+        char *const argv[] = { (char *)"git", (char *)"init", (char *)"-q",
+                               (char *)path, NULL };
+
+        execvp(argv[0], argv);
+        _exit(127);
+    }
+    if (waitpid(child, &status, 0) < 0) {
+        /* The relay ignores SIGCHLD, so the kernel reaps the child before this
+         * wait. Treat ECHILD as "result unknown"; the caller verifies .git. */
+        return errno == ECHILD ? HUSH_OK : HUSH_ERR_IO;
+    }
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
         return HUSH_OK;
     return HUSH_ERR_IO;
 }

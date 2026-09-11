@@ -1,5 +1,14 @@
 # Using Third-Party Nostr Clients with Hush
 
+> **Status (0.0.1): this document does not describe the in-tree relay.**
+> It describes the upstream NIP-29 reference relay that Hush's wire format was
+> modelled on: NIP-29 groups, WebSocket transport, NIP-42 AUTH, Postgres, and
+> Docker. The current `hush-relay` speaks only newline-delimited JSON
+> (`EVENT` / `REQ` / `CLOSE`) over TCP and has none of those features. See
+> [README.md](README.md) and
+> [docs/research/REVIEW_HUSH_0.0.1.md](docs/research/REVIEW_HUSH_0.0.1.md) for
+> current behavior. This file is retained for the planned interop work.
+
 Hush is a Nostr relay that speaks NIP-29 (relay-based groups) natively. Third-party Nostr clients connect directly to `hush-relay` using NIP-29 and NIP-42 authentication. The old NIP-28 compatibility proxy has been removed.
 
 The local hive UI treats each channel as a NIP-29-shaped group with a

@@ -10,6 +10,7 @@
 
 struct hush_cli {
     uint16_t port;
+    const char *bind_addr;
     int open_ui;
     int want_quit;
     int want_close;
@@ -27,6 +28,7 @@ int main(int argc, char **argv)
     struct hush_cli cli;
 
     cli.port = (uint16_t)HUSH_DEFAULT_PORT;
+    cli.bind_addr = "127.0.0.1";
     cli.open_ui = hush_display_available();
     cli.want_quit = 0;
     cli.want_close = 0;
@@ -52,7 +54,7 @@ static int hush_cli_run(const struct hush_cli *cli)
         return (hush_relay_quit(cli->port) == HUSH_OK) ? 0 : 1;
     printf("hush-relay %s\n", HUSH_VERSION);
     fflush(stdout);
-    st = hush_relay_run(cli->port, cli->open_ui);
+    st = hush_relay_run(cli->port, cli->bind_addr, cli->open_ui);
     return (st == HUSH_OK) ? 0 : 1;
 }
 
@@ -65,6 +67,19 @@ static int hush_parse_args(struct hush_cli *cli, int argc, char **argv)
             cli->open_ui = 1;
         else if (strcmp(argv[i], "--no-open") == 0)
             cli->open_ui = 0;
+        else if (strncmp(argv[i], "--listen=", 9) == 0) {
+            if (argv[i][9] == '\0') {
+                fprintf(stderr, "hush-relay: --listen needs an address\n");
+                return 1;
+            }
+            cli->bind_addr = argv[i] + 9;
+        } else if (strcmp(argv[i], "--listen") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "hush-relay: --listen needs an address\n");
+                return 1;
+            }
+            cli->bind_addr = argv[++i];
+        }
         else if (strcmp(argv[i], "--quit") == 0)
             cli->want_quit = 1;
         else if (strcmp(argv[i], "--close") == 0)
@@ -100,8 +115,9 @@ static void hush_print_close_hint(uint16_t port)
 static void hush_print_help(void)
 {
     printf("hush-relay %s — local Nostr relay + chat UI\n", HUSH_VERSION);
-    printf("usage: hush-relay [port] [--open|--no-open|--close|--quit]\n");
+    printf("usage: hush-relay [port] [--listen ADDR] [--open|--no-open|--close|--quit]\n");
     printf("  port       listen port (default 10555)\n");
+    printf("  --listen   bind address (default 127.0.0.1; 0.0.0.0 for the LAN)\n");
     printf("  --open     open the chat as a standalone app window\n");
     printf("  --no-open  do not open a window (even on a graphical session)\n");
     printf("  --close    detach the GUI; the relay stays up (exit 0)\n");

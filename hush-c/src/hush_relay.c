@@ -2,6 +2,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <arpa/inet.h>
 #include <assert.h>
 #include <dirent.h>
 #include <errno.h>
@@ -20,6 +21,7 @@
 #include <unistd.h>
 
 #include "hush_agent.h"
+#include "hush_auth.h"
 #include "hush_canvas.h"
 #include "hush_home.h"
 #include "hush_presence.h"
@@ -98,6 +100,7 @@ static int g_pidfile_ready = 0;
 static pid_t g_children[HUSH_CHILD_MAX];
 static int g_nchildren = 0;
 static uint16_t g_listen_port = 0;
+static char g_bind_addr[64];
 static int g_leave_ack = 0;
 static int g_saw_app = 0;
 static pid_t g_leave_pid = 0;
@@ -105,6 +108,8 @@ static int g_leave_rd = HUSH_FD_NONE;
 
 static void hush_clients_reset(void);
 static int hush_listen_on(uint16_t port);
+/* Copies bind_addr into the process-wide bind address. Empty means loopback. */
+static void hush_relay_set_bind_addr(const char *bind_addr);
 static void hush_set_nonblock(int fd);
 /* Starts a browser child for port; fork/argument failure leaves the relay alive. */
 static void hush_open_app_window(uint16_t port);
@@ -141,7 +146,7 @@ static void hush_remove_pidfile(void);
 static hush_status_t hush_read_pidfile(uint16_t port, pid_t *out_pid);
 static int hush_pid_is_alive(pid_t pid);
 static void hush_wait_pid_gone(pid_t pid);
-static void hush_relay_prepare(uint16_t port);
+static void hush_relay_prepare(uint16_t port, const char *bind_addr);
 static int hush_relay_auto_update_on(void);
 static hush_status_t hush_relay_bind(uint16_t port, int open_ui, int *out_ls);
 static void hush_relay_announce(uint16_t port, int open_ui);
@@ -233,12 +238,12 @@ hush_status_t hush_relay_quit(uint16_t port)
     return HUSH_OK;
 }
 
-hush_status_t hush_relay_run(uint16_t port, int open_ui)
+hush_status_t hush_relay_run(uint16_t port, const char *bind_addr, int open_ui)
 {
     int ls = HUSH_FD_NONE;
     hush_status_t st;
 
-    hush_relay_prepare(port);
+    hush_relay_prepare(port, bind_addr);
     st = hush_relay_bind(port, open_ui, &ls);
     if (st != HUSH_OK)
         return st;
@@ -271,12 +276,42 @@ static void hush_clients_reset(void)
     }
 }
 
+static void hush_relay_set_bind_addr(const char *bind_addr)
+{
+    size_t len = 0;
+
+    if (bind_addr != NULL)
+        len = strlen(bind_addr);
+    if (len >= sizeof(g_bind_addr))
+        len = sizeof(g_bind_addr) - 1;
+    if (len == 0) {
+        memcpy(g_bind_addr, "127.0.0.1", sizeof("127.0.0.1"));
+        return;
+    }
+    memcpy(g_bind_addr, bind_addr, len);
+    g_bind_addr[len] = '\0';
+}
+
+/* Resolves the process bind address into an IPv4 address. */
+static int hush_resolve_bind_addr(struct in_addr *out)
+{
+    assert(out != NULL);
+    if (strcmp(g_bind_addr, "localhost") == 0)
+        return inet_pton(AF_INET, "127.0.0.1", out) == 1;
+    return inet_pton(AF_INET, g_bind_addr, out) == 1;
+}
+
 static int hush_listen_on(uint16_t port)
 {
+    struct in_addr resolved;
     int ls;
     int yes = 1;
     struct sockaddr_in addr;
 
+    if (!hush_resolve_bind_addr(&resolved)) {
+        errno = EINVAL;
+        return -1;
+    }
     ls = socket(AF_INET, SOCK_STREAM, 0);
     if (ls < 0)
         return -1;
@@ -284,7 +319,7 @@ static int hush_listen_on(uint16_t port)
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_addr = resolved;
     if (bind(ls, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         close(ls);
         return -1;
@@ -330,11 +365,15 @@ static hush_status_t hush_ui_prepare_browser(hush_ui_browser_t *browser, uint16_
 
 static hush_status_t hush_ui_format_address(hush_ui_browser_t *browser, uint16_t port)
 {
+    const char *host = g_bind_addr;
+
     assert(browser != NULL);
     assert(port != 0);
+    if (strcmp(host, "0.0.0.0") == 0)
+        host = "127.0.0.1";
     /* snprintf's return type is int. */
     int address_len = snprintf(browser->address, sizeof(browser->address),
-                               "http://127.0.0.1:%u/", (unsigned)port);
+                               "http://%s:%u/", host, (unsigned)port);
     int option_len = snprintf(browser->app_option, sizeof(browser->app_option),
                               "--app=%s", browser->address);
     if (address_len <= 0 || (size_t)address_len >= sizeof(browser->address) ||
@@ -603,12 +642,13 @@ static void hush_install_shutdown_handlers(void)
     signal(SIGTERM, hush_shutdown_handler);
 }
 
-static void hush_relay_prepare(uint16_t port)
+static void hush_relay_prepare(uint16_t port, const char *bind_addr)
 {
     g_shutdown = 0;
     g_pidfile_ready = 0;
     g_pidfile_path[0] = '\0';
     g_listen_port = port;
+    hush_relay_set_bind_addr(bind_addr);
     g_leave_ack = 0;
     g_saw_app = 0;
     g_leave_pid = 0;
@@ -619,7 +659,10 @@ static void hush_relay_prepare(uint16_t port)
     hush_install_shutdown_handlers();
     hush_clients_reset();
     hush_http_set_listen_port(port);
+    hush_http_set_bind_addr(g_bind_addr);
     (void)hush_home_ensure();
+    if (hush_auth_init() != HUSH_OK)
+        fprintf(stderr, "hush-relay: session token unavailable; API locked\n");
     hush_launch_init(&g_launch);
     (void)hush_launch_restore_identity(&g_launch);
     (void)hush_launch_restore_vibe(&g_launch);
@@ -659,21 +702,27 @@ static hush_status_t hush_relay_bind(uint16_t port, int open_ui, int *out_ls)
     }
     if (errno == EADDRINUSE && open_ui) {
         fprintf(stdout,
-                "hush-relay already running on http://127.0.0.1:%u/ — opening UI...\n"
+                "hush-relay already running on http://%s:%u/ — opening UI...\n"
                 "This is the process already listening. Exit or hush-relay --quit "
                 "before a new install can take the port.\n",
-                (unsigned)port);
+                g_bind_addr, (unsigned)port);
         hush_open_app_window(port);
         return HUSH_OK;
     }
-    fprintf(stderr, "hush-relay: cannot bind :%u: %s\n",
-            (unsigned)port, strerror(errno));
+    fprintf(stderr, "hush-relay: cannot bind %s:%u: %s\n",
+            g_bind_addr, (unsigned)port, strerror(errno));
     return HUSH_ERR_IO;
 }
 
 static void hush_relay_announce(uint16_t port, int open_ui)
 {
-    fprintf(stdout, "listening on http://127.0.0.1:%u/\n", (unsigned)port);
+    char root[HUSH_HOME_PATH_MAX];
+
+    fprintf(stdout, "listening on http://%s:%u/\n", g_bind_addr,
+            (unsigned)port);
+    hush_home_root(root, sizeof(root));
+    if (root[0] != '\0')
+        fprintf(stdout, "  api auth: %s/%s\n", root, HUSH_AUTH_FILE);
     fprintf(stdout, "  chat UI:  frameless standalone app window\n");
     fprintf(stdout, "  nostr:    newline JSON on the same port\n");
     fprintf(stdout, "  close:    Close in the hive (GUI gone, hive stays)\n");

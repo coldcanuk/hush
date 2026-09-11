@@ -2,6 +2,17 @@
 # Close stays up; Exit / --quit stop the process with code 0.
 set -eu
 cd "$(dirname "$0")/.."
+# Session-token gate plus a hermetic pass store, so the harness never reads the
+# operator's real credentials. curl() adds the hive token to every call.
+test_home="$(mktemp -d)"
+export HUSH_HOME="${HUSH_HOME:-$test_home/hush}"
+export HUSH_PASS_HELPER="$(pwd)/tests/fake-pass.sh"
+export HUSH_FAKE_PASS_DIR="$(mktemp -d)"
+curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" "$@"; }
+# The relay writes its pidfile under XDG_RUNTIME_DIR; keep it in the test tree.
+export XDG_RUNTIME_DIR="$test_home/run"
+mkdir -m 700 "$XDG_RUNTIME_DIR"
+
 bin=./hush-relay
 port=18768
 log=$(mktemp)

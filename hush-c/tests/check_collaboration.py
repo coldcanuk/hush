@@ -55,8 +55,10 @@ class Relay:
 
     def request(self, path, body=None, expected=200):
         payload = None if body is None else json.dumps(body, separators=(",", ":")).encode()
+        token = (self.directory / "home" / "session.token").read_text().strip()
         request = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=payload,
-                                         headers={"Content-Type": "application/json"})
+                                         headers={"Content-Type": "application/json",
+                                                  "X-Hush-Token": token})
         try:
             response = urllib.request.urlopen(request, timeout=5)
         except urllib.error.HTTPError as error:

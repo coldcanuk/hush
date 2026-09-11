@@ -12,10 +12,11 @@ enum {
     HUSH_DEFAULT_PORT = 10555
 };
 
-/* Run the relay on given TCP port. Blocks until error or shutdown.
- * If open_ui is non-zero, open the chat UI as a standalone app window.
- * If the port is already taken and open_ui is set, reopen the UI and return OK. */
-hush_status_t hush_relay_run(uint16_t port, int open_ui);
+/* Run the relay on given TCP port, bound to bind_addr (NULL or empty means
+ * 127.0.0.1). Blocks until error or shutdown. If open_ui is non-zero, open the
+ * chat UI as a standalone app window. If the port is already taken and open_ui
+ * is set, reopen the UI and return OK. */
+hush_status_t hush_relay_run(uint16_t port, const char *bind_addr, int open_ui);
 
 /* Ask a running poll loop to stop. Safe from HTTP handlers and signals. */
 void hush_relay_request_shutdown(void);

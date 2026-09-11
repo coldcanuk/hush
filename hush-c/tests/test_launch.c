@@ -316,6 +316,27 @@ int main(void)
     expect(hush_launch_add_project(&launch, store, "alpha", gitdir, 1) == HUSH_OK,
            "project");
     expect(launch.nprojects == 1, "one project");
+    {
+        char evil[HUSH_LAUNCH_PATH_MAX];
+        char marker[64];
+
+        snprintf(marker, sizeof(marker), "hush-launch-pwned-%d", (int)getpid());
+        (void)unlink(marker);
+        snprintf(evil, sizeof(evil),
+                 "/tmp/hush-launch-quote-%d/x'; touch %s; echo '", (int)getpid(),
+                 marker);
+        expect(hush_launch_add_project(&launch, store, "evil", evil, 1) == HUSH_OK,
+               "quote path stays literal");
+        expect(access(marker, F_OK) != 0, "no shell execution");
+    }
+    expect(hush_launch_add_project(&launch, store, "rel", "relative/dir", 1) ==
+               HUSH_ERR_ARG,
+           "relative path rejected");
+    expect(hush_launch_add_project(&launch, store, "up", "/tmp/hush-up/../escape",
+                                   1) == HUSH_ERR_ARG,
+           "dotdot path rejected");
+    expect(hush_launch_add_project(&launch, store, "root", "/", 1) == HUSH_ERR_ARG,
+           "root path rejected");
     expect(hush_launch_format_session(&launch, 10555, json, sizeof(json),
                                       &n) == HUSH_OK,
            "final session");
