@@ -156,6 +156,40 @@ else
     MISSING="$MISSING c11-strict"
 fi
 
+# Optional hardening: probe each flag so unknown-flag errors cannot break the
+# build on a platform whose toolchain lacks it.
+echo "Testing optional hardening flags..."
+cat > /tmp/hush_harden_probe.c << 'PROBE'
+int main(void) {
+    return 0;
+}
+PROBE
+HARDEN_CFLAGS=""
+HARDEN_LDFLAGS=""
+probe_cflag() {
+    if "$CC" $1 -c /tmp/hush_harden_probe.c -o /tmp/hush_harden_probe.o >/dev/null 2>&1; then
+        HARDEN_CFLAGS="$HARDEN_CFLAGS $1"
+        echo "HARDEN:  $1"
+    else
+        echo "SKIP:    $1 (unsupported)"
+    fi
+}
+probe_ldflag() {
+    if "$CC" $HARDEN_CFLAGS /tmp/hush_harden_probe.o $1 -o /tmp/hush_harden_probe >/dev/null 2>&1; then
+        HARDEN_LDFLAGS="$HARDEN_LDFLAGS $1"
+        echo "HARDEN:  $1"
+    else
+        echo "SKIP:    $1 (unsupported)"
+    fi
+}
+probe_cflag "-fstack-protector-strong"
+probe_cflag "-O2 -D_FORTIFY_SOURCE=2"
+probe_cflag "-fPIE"
+probe_ldflag "-Wl,-z,relro"
+probe_ldflag "-Wl,-z,now"
+probe_ldflag "-pie"
+rm -f /tmp/hush_harden_probe.c /tmp/hush_harden_probe.o /tmp/hush_harden_probe
+
 OPENSSL_CFLAGS=""
 OPENSSL_LIBS="-lcrypto"
 X11_CFLAGS=""
@@ -233,8 +267,8 @@ OS_UNAME := $OS_UNAME
 OS_ID    := ${OS_RELEASE_ID:-unknown}
 
 # Legible C11 flags (matching hush-c expectations)
-CFLAGS  := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2 -DHUSH_STUN_TURN=$ENABLE_STUN_TURN $OPENSSL_CFLAGS $X11_CFLAGS
-LDFLAGS := $OPENSSL_LIBS $X11_LIBS
+CFLAGS  := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2 -DHUSH_STUN_TURN=$ENABLE_STUN_TURN $OPENSSL_CFLAGS $X11_CFLAGS$HARDEN_CFLAGS
+LDFLAGS := $OPENSSL_LIBS $X11_LIBS$HARDEN_LDFLAGS
 
 ENABLE_STUN_TURN := $ENABLE_STUN_TURN
 TURNSERVER := $TURNSERVER

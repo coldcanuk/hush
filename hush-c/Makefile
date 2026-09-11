@@ -4,7 +4,10 @@
 # Icon: installs hush-relay.png into the hicolor theme (48/128/256).
 
 CC := gcc
-CFLAGS := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2
+# -fstack-protector-strong and -fPIE are supported by gcc/clang on every
+# supported platform; configure probes the linker-visible hardening flags.
+CFLAGS := -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O2 \
+	-fstack-protector-strong -fPIE
 LDFLAGS := -lcrypto
 # Parent ./configure writes HUSH_HAVE_X11 and -lX11 when Xlib is present.
 -include ../config.mk
@@ -30,6 +33,9 @@ SRCS := $(wildcard src/*.c)
 OBJS := $(SRCS:.c=.o)
 # Track header dependencies so a struct/enum change rebuilds every consumer.
 -include $(OBJS:.o=.d)
+# The generated .d files declare object targets; without this the first object
+# would become the default goal and a bare make would stop building the relay.
+.DEFAULT_GOAL := all
 ICON_PANELS := dogs cats sheep virus robots angevin
 ICON_PANEL_OBJS := $(foreach s,$(ICON_PANELS),src/hush_icon_panel_$(s).o)
 TESTS := $(wildcard tests/test_*.c)
