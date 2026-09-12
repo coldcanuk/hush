@@ -8,20 +8,27 @@
 #include "hush_filter.h"
 #include "hush_status.h"
 
+enum {
+    HUSH_PROTO_JOIN_MAX = 64
+};
+
 typedef enum {
     HUSH_MSG_EVENT,
     HUSH_MSG_REQ,
     HUSH_MSG_CLOSE,
     HUSH_MSG_COUNT,
+    HUSH_MSG_AUTH,
+    HUSH_MSG_JOIN,
     HUSH_MSG_UNKNOWN
 } hush_msg_type_t;
 
 typedef struct {
     hush_msg_type_t type;
     char sub_id[256 + 1];
-    hush_event_t event;          /* valid for EVENT */
+    hush_event_t event;          /* valid for EVENT and AUTH */
     hush_filter_t filters[4];
     size_t nfilters;
+    char join_token[HUSH_PROTO_JOIN_MAX + 1];  /* valid for JOIN */
 } hush_client_msg_t;
 
 /* Parse one line (NUL or \n terminated) into msg. Limited shapes only. */
@@ -38,5 +45,18 @@ hush_status_t hush_proto_format_ok(const char *ev_id, int ok, const char *msg,
 /* Serialize ["EOSE", sub]. */
 hush_status_t hush_proto_format_eose(const char *sub_id, char *out_buf, size_t bufsz,
                                      size_t *out_written);
+
+/* Serialize ["AUTH","<challenge>"]. */
+hush_status_t hush_proto_format_auth(const char *challenge, char *out_buf,
+                                     size_t bufsz, size_t *out_written);
+
+/* Serialize ["CLOSED","<sub_id>","<reason>"]. */
+hush_status_t hush_proto_format_closed(const char *sub_id, const char *reason,
+                                       char *out_buf, size_t bufsz,
+                                       size_t *out_written);
+
+/* Serialize ["NOTICE","<text>"]. */
+hush_status_t hush_proto_format_notice(const char *text, char *out_buf,
+                                       size_t bufsz, size_t *out_written);
 
 #endif /* HUSH_PROTO_H */

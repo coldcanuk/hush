@@ -129,6 +129,23 @@ hush_status_t hush_proto_parse_line(const char *line, hush_client_msg_t *out_msg
         out_msg->type = HUSH_MSG_COUNT;
         return HUSH_OK;
     }
+    if (strcmp(type, "AUTH") == 0) {
+        hush_json_value_t first = {0};
+
+        out_msg->type = HUSH_MSG_AUTH;
+        /* The client form carries the signed event at /1. The server form
+         * ["AUTH","<challenge>"] parses to an empty event and is ignored. */
+        if (hush_json_lookup(&first, line, "/1") != HUSH_OK ||
+            first.len == 0 || first.start[0] != '{')
+            return HUSH_OK;
+        return hush_proto_parse_event(&out_msg->event, line, "/1");
+    }
+    if (strcmp(type, "JOIN") == 0) {
+        out_msg->type = HUSH_MSG_JOIN;
+        (void)hush_proto_take_string(out_msg->join_token,
+                                     sizeof(out_msg->join_token), line, "/1");
+        return HUSH_OK;
+    }
     out_msg->type = HUSH_MSG_UNKNOWN;
     return HUSH_OK;
 }
@@ -225,6 +242,66 @@ hush_status_t hush_proto_format_eose(const char *sub_id, char *out_buf,
                                    .scratch_capacity = sizeof(scratch)};
     HUSH_TRY(hush_proto_put_raw(&writer, "[\"EOSE\","));
     HUSH_TRY(hush_proto_put_string(&writer, sub_id));
+    HUSH_TRY(hush_proto_put_raw(&writer, "]\n"));
+    if (out_written != NULL)
+        *out_written = writer.offset;
+    return HUSH_OK;
+}
+
+hush_status_t hush_proto_format_auth(const char *challenge, char *out_buf,
+                                     size_t bufsz, size_t *out_written)
+{
+    char scratch[HUSH_PROTO_TAG_ESCAPE_MAX];
+    hush_proto_writer_t writer;
+
+    if (challenge == NULL || out_buf == NULL)
+        return HUSH_ERR_ARG;
+    writer = (hush_proto_writer_t){.out = out_buf, .capacity = bufsz,
+                                   .offset = 0, .scratch = scratch,
+                                   .scratch_capacity = sizeof(scratch)};
+    HUSH_TRY(hush_proto_put_raw(&writer, "[\"AUTH\","));
+    HUSH_TRY(hush_proto_put_string(&writer, challenge));
+    HUSH_TRY(hush_proto_put_raw(&writer, "]\n"));
+    if (out_written != NULL)
+        *out_written = writer.offset;
+    return HUSH_OK;
+}
+
+hush_status_t hush_proto_format_closed(const char *sub_id, const char *reason,
+                                       char *out_buf, size_t bufsz,
+                                       size_t *out_written)
+{
+    char scratch[HUSH_PROTO_TAG_ESCAPE_MAX];
+    hush_proto_writer_t writer;
+
+    if (sub_id == NULL || reason == NULL || out_buf == NULL)
+        return HUSH_ERR_ARG;
+    writer = (hush_proto_writer_t){.out = out_buf, .capacity = bufsz,
+                                   .offset = 0, .scratch = scratch,
+                                   .scratch_capacity = sizeof(scratch)};
+    HUSH_TRY(hush_proto_put_raw(&writer, "[\"CLOSED\","));
+    HUSH_TRY(hush_proto_put_string(&writer, sub_id));
+    HUSH_TRY(hush_proto_put_raw(&writer, ","));
+    HUSH_TRY(hush_proto_put_string(&writer, reason));
+    HUSH_TRY(hush_proto_put_raw(&writer, "]\n"));
+    if (out_written != NULL)
+        *out_written = writer.offset;
+    return HUSH_OK;
+}
+
+hush_status_t hush_proto_format_notice(const char *text, char *out_buf,
+                                       size_t bufsz, size_t *out_written)
+{
+    char scratch[HUSH_PROTO_TAG_ESCAPE_MAX];
+    hush_proto_writer_t writer;
+
+    if (text == NULL || out_buf == NULL)
+        return HUSH_ERR_ARG;
+    writer = (hush_proto_writer_t){.out = out_buf, .capacity = bufsz,
+                                   .offset = 0, .scratch = scratch,
+                                   .scratch_capacity = sizeof(scratch)};
+    HUSH_TRY(hush_proto_put_raw(&writer, "[\"NOTICE\","));
+    HUSH_TRY(hush_proto_put_string(&writer, text));
     HUSH_TRY(hush_proto_put_raw(&writer, "]\n"));
     if (out_written != NULL)
         *out_written = writer.offset;
