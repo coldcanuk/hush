@@ -375,4 +375,25 @@ void hush_agent_humanize_ask(char *text, size_t textsz,
 /* Removes only an incomplete trailing UTF-8 scalar from a bounded snippet. */
 hush_status_t hush_agent_complete_snippet(char *text, size_t capacity);
 
+/* ---- agent_prompt.c: prompt and directive builders ---- */
+
+/* Fills the job's prompt, rules, peers, and note from a prepared input. */
+hush_status_t hush_agent_fill_job(hush_agent_job_t *job,
+                                  const hush_agent_job_in_t *in);
+
+/* Adds room/skill guidance to a prepared job. Borrowed pointers;
+ * propagates missing skill, malformed content, or prompt capacity errors. */
+hush_status_t hush_agent_add_guidance(hush_agent_job_t *job,
+                                      const hush_agent_robot_t *robot);
+
+/* True when the p-tag key names the given robot. */
+int hush_agent_key_matches(const char *mention, const char *npub,
+                           const char *hex);
+
+/* Picks the first ready provider for the robot, or NULL. */
+const char *hush_agent_pick_provider(const hush_agent_robot_t *bot);
+
+/* Mints a fresh unique job token. */
+void hush_agent_make_token(char *out, size_t outsz);
+
 #endif /* HUSH_AGENT_INTERNAL_H */
