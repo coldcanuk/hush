@@ -309,7 +309,7 @@ grep -q -- '--no-memory' src/agent_process.c || fail "grok argv missing --no-mem
 grep -q -- '--disallowed-tools' src/agent_process.c || fail "grok argv missing denylist"
 grep -q -- '--reasoning-effort' src/agent_process.c || fail "grok argv missing reasoning"
 grep -q 'HUSH_AGENT_GROK_EFFORT "low"' src/agent_process.c || fail "grok effort must be low"
-grep -q 'HUSH_AGENT_THREAD_HEAD' src/hush_agent.c || fail "grok must receive a thread transcript"
+grep -q 'HUSH_AGENT_THREAD_HEAD' src/agent_thread.c || fail "grok must receive a thread transcript"
 grep -q 'hush_agent_fill_thread' src/hush_agent.c || fail "missing thread transcript fill"
 grep -q 'No preamble-only replies' src/hush_agent.c || fail "hygiene must forbid preamble-only replies"
 grep -q 'Fulfill YOUR assignment' src/hush_agent.c || fail "hygiene must name the robot assignment"

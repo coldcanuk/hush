@@ -6,6 +6,7 @@
 #define HUSH_AGENT_INTERNAL_H
 
 #include <stddef.h>
+#include <sys/types.h>
 #include <time.h>
 
 #include "hush_event.h"
@@ -236,6 +237,32 @@ void hush_agent_event_channel(char *out, size_t outsz, const hush_event_t *ev);
 
 /* Writes the event's reply-to root into out. */
 void hush_agent_event_root(char *out, size_t outsz, const hush_event_t *ev);
+
+/* Looks up a robot by mention or hex. 0 when unknown. */
+int hush_agent_lookup_robot(hush_agent_robot_t *out, const hush_launch_t *launch, const char *mention);
+
+/* True when ev's root tag equals root. */
+int hush_agent_event_is_root(const hush_event_t *ev, const char *root);
+
+/* Snips a note line at the flattened cap. */
+void hush_agent_snip_line(char *out, size_t outsz, const char *src);
+
+/* Appends the turn marker line. */
+void hush_agent_append_turn(char *out, size_t outsz, const hush_event_t *ev,
+                            const char *who);
+
+/* True when content is a work note. */
+int hush_agent_is_work_note(const char *content);
+
+/* Fills the thread transcript for parent into out. */
+void hush_agent_fill_thread(char *out, size_t outsz, hush_store_t *store,
+                             const hush_launch_t *launch,
+                             const hush_event_t *parent,
+                             const hush_agent_thread_walk_t *names);
+
+/* Appends the robot's context notes to note. */
+void hush_agent_append_context(char *note, size_t notesz,
+                               const hush_agent_robot_t *bot);
 
 /* Writes the human display name into out. */
 void hush_agent_human_name(char *out, size_t outsz, const hush_launch_t *launch);
