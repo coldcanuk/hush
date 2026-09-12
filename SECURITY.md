@@ -42,7 +42,7 @@ All security fixes land on `main` first.
 
 ## Security Design Principles
 
-### Authentication — HTTP session token, NIP-42 planned for the line protocol
+### Authentication — HTTP session token and NIP-42 on the wire
 
 The HTTP API is gated by a per-hive session token. On first run the relay mints
 `session.token` (32 hex characters from `/dev/urandom`, mode 0600) inside
@@ -62,27 +62,54 @@ address) exposes it deliberately; remote clients must then present the token.
 `Access-Control-Allow-Origin` is not set, the `Host` header must name the local
 machine in loopback mode, and the browser cookie is `HttpOnly; SameSite=Strict`.
 
+On the line protocol, every connection receives a per-connection
+[NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md) challenge in
+response to its first wire frame (the transport cannot distinguish HTTP from
+line-protocol clients before their first bytes; see [NOSTR.md](NOSTR.md)). A
+client authenticates with a signed kind-22242 `["AUTH", <event>]` whose
+`challenge` tag echoes the challenge and whose `created_at` is within
+±600 s of now. The relay verifies the NIP-01 id and BIP-340 signature, binds
+the pubkey to that socket, and answers `OK true`; a failed attempt is answered
+`OK false` and receives a fresh challenge.
+
 Wire `EVENT` frames are authenticated: the relay recomputes the NIP-01 id and
 verifies the BIP-340 signature with OpenSSL against the claimed pubkey before
 store, `OK true`, and fan-out. A rejected event is answered
-`["OK", <id>, false, "invalid: ..."]` and dropped.
+`["OK", <id>, false, "invalid: ..."]` and dropped. Kind 22242 events are answered
+`restricted:` and are never stored, fanned out, or served.
 
-There is no [NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md)
-challenge yet, so an attacker who captured a valid frame can replay it, and
-locally created events (the HTTP path) carry no signature. Treat reachability
-of the port as the outer boundary until NIP-42 lands.
+Locally created events (the HTTP path) carry no signature; the HTTP session
+token is their credential.
 
-### Authorization — the session token, not channel membership
+### Authorization — private vibes are real boundaries
 
 Channel membership (`humans[]` / `robots[]`) is conversation metadata: it
 decides which robots the leash may dispatch and what the UI shows. It is **not**
-a request access-control mechanism, and the relay does not compare a caller's
-pubkey or address to channel membership. The session token is the access
-boundary.
+a request access-control mechanism by itself.
 
-A **vibe** has a `public` or `private` visibility flag and a join token that
-the UI displays for a human to share, but 0.0.1 does not check that token on any
-request path, so "private" is not a confidentiality boundary yet.
+A **vibe** has a `public` or `private` visibility flag. Public vibes admit
+signature-verified wire events and `REQ` from anyone; NIP-42 stays available but
+is not required for reads. Private vibes gate every wire operation until the
+connection proves membership:
+
+| Operation | Private-hive gate |
+|---|---|
+| `REQ` | `["CLOSED", sub, "auth-required: …"]` unless authorized |
+| `EVENT` | `["OK", id, false, "auth-required: …"]` unless authorized |
+| fan-out | delivered only to authorized connections |
+
+A connection becomes authorized by either
+
+1. NIP-42 AUTH with a member pubkey — the local human's key or any roster
+   member — after which published events must carry that same pubkey, or
+2. `["JOIN", "<token>"]` with the vibe join token, granting guest read and
+   write; a token guest may publish events signed by any key (documented
+   tradeoff until capability tokens land).
+
+The join token (16 hex chars) is shown once by the UI and persisted **only** as
+`vibe_token_hash` = hex(SHA-256(token)) in `vibe.json` (schema version 2;
+version-1 plaintext files are migrated on load). `POST /api/vibe` with
+`{"action":"rotate_token"}` mints a replacement and returns its plaintext once.
 
 ### STUN/TURN
 

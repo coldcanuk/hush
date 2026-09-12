@@ -25,13 +25,15 @@ Developed with the Codex AI agent. All development uses worktrees **inside this 
   tag values, up to four filters)
 - CLOSE
 - Wire `EVENT` frames are BIP-340 verified before store and fan-out; NIP-42
-  AUTH is still missing. See [NOSTR.md](NOSTR.md) and [SECURITY.md](SECURITY.md)
+  AUTH challenges authenticate connections and gate private hives. See
+  [NOSTR.md](NOSTR.md) and [SECURITY.md](SECURITY.md)
 - Simple TCP newline-delimited JSON protocol (MVP; WebSocket adapter later)
 - `poll(2)` single-threaded server
 - Same port also serves the chat **PWA** over HTTP (`GET /`, manifest, service worker, icons)
 - Optional **STUN/TURN** (coturn) from Settings, including systemd daemon mode
-- Vibes are **public** (discoverable) or **private** (a join token is shown; the
-  relay does not enforce it yet)
+- Vibes are **public** (discoverable) or **private**: wire reads, publishes,
+  and fan-out require member AUTH or the join token, and only a hash of the
+  token is persisted
 - HTTP API gated by a per-hive session token (`$HUSH_HOME/session.token`);
   the listener binds `127.0.0.1` unless `--listen` says otherwise
 - Mesh **conference calling** (humans and AI agents; agent voice needs Whisper)

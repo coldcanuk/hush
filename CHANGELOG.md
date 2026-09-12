@@ -4,6 +4,28 @@ Notable changes to Hush. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions come from
 the top-level `VERSION` file.
 
+## [Unreleased]
+
+### Added
+
+- NIP-42 AUTH on the line protocol: a per-connection challenge (sent on the
+  first wire frame), signed kind-22242 `["AUTH", <event>]` validation with a
+  ±600 s freshness window, challenge rotation after failed attempts, and
+  socket-bound auth state. Kind 22242 is answered `restricted:` and never
+  stored, fanned out, or served.
+- Private-vibe enforcement on the wire: REQ gets `CLOSED auth-required`, EVENT
+  gets `OK false`, and fan-out skips unauthorized connections until the client
+  AUTHs as a member (human or roster member; events must then carry the authed
+  pubkey) or presents the join token via `["JOIN", "<token>"]`.
+- Join tokens are persisted only as `vibe_token_hash` (hex SHA-256) in
+  `vibe.json` schema version 2, with one-shot migration of version-1 plaintext
+  files, display-once semantics, and `POST /api/vibe {"action":"rotate_token"}`
+  plus a rotate button in the PWA settings.
+- `hush_nip42` validation module, `hush_auth` challenge minting and SHA-256
+  helpers, `hush_proto` AUTH/JOIN/CLOSED frames, and an independent pure-Python
+  BIP-340 test signer (`tests/sign_bip340.py`, checked against the official
+  vectors) driving the new `check_authz.py` integration suite.
+
 ## [0.0.1] - 2026-09-11
 
 Hardening pass against the external technical review
