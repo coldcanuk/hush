@@ -14,6 +14,7 @@
 #include "hush_agent.h"
 #include "hush_agent_internal.h"
 #include "hush_cevent.h"
+#include "hush_provider.h"
 #include "hush_thread.h"
 #include "hush_wake.h"
 
@@ -158,10 +159,20 @@ static void hush_agent_note_failure(hush_store_t *store, const hush_agent_job_t 
     hush_agent_follow_t *follow = hush_agent_follow_find(job->parent_id);
     if (follow != NULL)
         follow->live = 0;
+    hush_provider_status_t status = {0};
+    char reason[HUSH_PROVIDER_ERR_MAX] = {0};
     char message[HUSH_EVENT_MAX_CONTENT] = {0};
-    int written = snprintf(message, sizeof(message),
-        "%s did not return a usable reply through %s. Check that provider's login, model, "
-        "and connection, then send your request again.", job->robot_name, job->provider);
+    int written;
+    if (hush_provider_status(&status, job->provider) == HUSH_OK)
+        hush_provider_missing_reason(reason, sizeof(reason), &status);
+    if (reason[0] != '\0')
+        written = snprintf(message, sizeof(message),
+            "%s did not return a usable reply through %s (%s). Fix that, then send your "
+            "request again.", job->robot_name, job->provider, reason);
+    else
+        written = snprintf(message, sizeof(message),
+            "%s did not return a usable reply through %s. Check that provider's login, model, "
+            "and connection, then send your request again.", job->robot_name, job->provider);
     if (written < 0 || (size_t)written >= sizeof(message))
         return;
     hush_agent_note_in_t notice = {.pubkey = job->robot_pub, .content = message,
@@ -170,6 +181,49 @@ static void hush_agent_note_failure(hush_store_t *store, const hush_agent_job_t 
         return;
     hush_agent_emit(HUSH_CEVENT_JOB_DONE, job->channel, job->parent_id,
                     job->robot_pub, "provider_failed");
+}
+
+/* Posts one line when the robot's first-choice provider is unready and a
+ * fallback will run instead. Borrowed pointers; no-op when the choice is
+ * the robot's own or nothing is missing. */
+static void hush_agent_note_fallback(hush_store_t *store, const hush_agent_robot_t *bot,
+                                     const hush_event_t *parent)
+{
+    hush_provider_status_t primary = {0};
+    hush_provider_status_t picked = {0};
+    char reason[HUSH_PROVIDER_ERR_MAX] = {0};
+    char message[HUSH_EVENT_MAX_CONTENT] = {0};
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+    char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
+    const char *choice;
+    const char *pick;
+    int written;
+
+    assert(bot != NULL);
+    assert(parent != NULL);
+    if (store == NULL)
+        return;
+    choice = bot->nproviders > 0 && bot->providers[0] != NULL
+        ? bot->providers[0] : bot->provider;
+    pick = hush_agent_pick_provider(bot);
+    if (choice == NULL || pick == NULL || strcmp(choice, pick) == 0)
+        return;
+    if (hush_provider_status(&primary, choice) != HUSH_OK || hush_provider_ready(&primary))
+        return;
+    hush_provider_missing_reason(reason, sizeof(reason), &primary);
+    if (reason[0] == '\0')
+        return;
+    (void)hush_provider_status(&picked, pick);
+    written = snprintf(message, sizeof(message), "%s is not ready (%s); using %s instead.",
+                       primary.label, reason,
+                       picked.label[0] != '\0' ? picked.label : pick);
+    if (written < 0 || (size_t)written >= sizeof(message))
+        return;
+    hush_agent_event_root(root, sizeof(root), parent);
+    hush_agent_event_channel(channel, sizeof(channel), parent);
+    hush_agent_note_in_t notice = {.pubkey = bot->hex, .content = message,
+        .channel = channel, .parent_id = root, .human_pub = parent->pubkey};
+    (void)hush_agent_insert_note(store, &notice);
 }
 
 /* Posts the honest note for a job the human stopped. */
@@ -1182,6 +1236,7 @@ static int hush_agent_begin_work(const hush_agent_job_in_t *in)
         hush_agent_note_no_runtime(in->store, in->bot, in->parent);
         return 0;
     }
+    hush_agent_note_fallback(in->store, in->bot, in->parent);
     job = *in;
     if (hush_agent_start_grok(&job) != HUSH_OK) {
         hush_agent_note_start_failed(in->store, in->bot, in->parent);

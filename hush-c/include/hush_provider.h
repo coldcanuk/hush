@@ -117,6 +117,13 @@ unsigned int hush_provider_flags(const char *id);
  * authentication: a successful request is the evidence for a working connection. */
 int hush_provider_ready(const hush_provider_status_t *status);
 
+/* Copies the human reason status is not ready: "no model selected",
+ * "no API token stored", "not logged in", "not configured", or
+ * "runtime not installed". Empty when ready or when no single missing
+ * piece explains the gap (remote auth/connection issues). */
+void hush_provider_missing_reason(char *out, size_t outsz,
+                                  const hush_provider_status_t *status);
+
 /* Fills status from home detect, overlay file, and pass. */
 hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id);
 
