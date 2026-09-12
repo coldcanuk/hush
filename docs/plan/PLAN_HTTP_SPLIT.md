@@ -58,11 +58,11 @@ land via PR only. Every moved function stays verbatim; only visibility
 
 ### Status note
 
-M4.2-M4.5 landed (internal surface, http_static.c, api_status.c,
-api_identity.c, api_agents.c). M4.6-M4.7 (api_channels.c, api_canvas.c,
-api_turn.c, api_provider.c) are the follow-on slice; the worktree branch was
-reverted to the green M4.5 state before landing, and the remaining moves will
-reuse the same range-extraction recipe with the compile-fix loop.
+All milestones landed: M4.2-M4.5 in PR #164; M4.6 (api_channels.c), M4.7
+(api_canvas.c), and M4.8 (api_provider.c + api_turn.c) completed in the
+follow-on worktree `http-split2`. The final core is 977 lines; the full
+suite is green after a clean rebuild. Lesson recorded: after every
+configure/config.mk churn, `make clean` (stale `hush_win.o` stubs).
 
 ### M4.8 — Docs + land
 - NOSTR/SECURITY untouched (no behavior change); CHANGELOG entry; line-count

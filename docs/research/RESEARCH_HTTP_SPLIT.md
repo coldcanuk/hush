@@ -68,3 +68,19 @@ Heavily shared helpers (293 use sites total): `hush_http_reply`,
    lines before delete.
 3. **Behavior change** — none intended; the full suite is the gate, and any
    fix must be a pure visibility/name repair.
+
+## (d) Final state (all milestones landed)
+
+| Module | Lines | Owns |
+|---|---|---|
+| `hush_http.c` | 977 | guard, host/auth/rate checks, limits, reply/session/JSON helpers, dispatch router, lifecycle |
+| `http_static.c` | 91 | PWA assets, icon panels |
+| `api_status.c` | 245 | status/events/session/chan-events/presence |
+| `api_identity.c` | 141 | identity/profile/member/vibe |
+| `api_agents.c` | 436 | agent/payne/skills/skillui/context |
+| `api_channels.c` | 519 | note POST/channel/group/project/signal |
+| `api_canvas.c` | 374 | canvas/complete/fixup/reply/cancel |
+| `api_provider.c` | 250 | provider CRUD/scan/login |
+| `api_turn.c` | 75 | coturn control/ICE |
+
+`hush_agent.c` (4,524 lines) remains the follow-on split.
