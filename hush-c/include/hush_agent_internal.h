@@ -216,6 +216,12 @@ typedef struct {
 } hush_agent_mentions_t;
 
 
+/* Forks the provider for job. Fails HUSH_ERR_IO/FULL. */
+hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job);
+
+/* Borrowed live job table. */
+hush_agent_job_t *hush_agent_jobs(void);
+
 /* Copies text into dst, truncated at dstsz. */
 void hush_agent_copy(char *dst, size_t dstsz, const char *src);
 

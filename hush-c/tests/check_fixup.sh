@@ -81,7 +81,7 @@ after=$(curl -sf "http://127.0.0.1:${port}/api/status")
 after_n=$(printf '%s' "$after" | sed -n 's/.*"events":\([0-9]*\).*/\1/p')
 test "$before_n" = "$after_n" || fail "fixup must not insert a hive note"
 
-grep -q 'HUSH_AGENT_FIXUP_TURNS "1"' src/hush_agent.c \
+grep -q 'HUSH_AGENT_FIXUP_TURNS "1"' src/agent_process.c \
     || fail "fixup turns must be 1"
 grep -q 'HUSH_AGENT_KIND_FIXUP' src/hush_agent.c \
     || fail "missing fixup job kind"
