@@ -436,18 +436,15 @@
     .pill button {
       background: none; border: 0; color: inherit; padding: 0; font: inherit; line-height: 1;
     }
-    .providers { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0 12px; }
+    .providers { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin: 8px 0 12px; }
     .providers label {
-      display: flex; align-items: center; gap: 6px; border: 1px solid var(--line);
-      border-radius: 12px; padding: 8px; font-size: 0.78rem; color: var(--muted); cursor: pointer;
+      display: flex; align-items: flex-start; gap: 6px; border: 1px solid var(--line);
+      border-radius: 12px; padding: 8px; font-size: 0.78rem; color: var(--fg); cursor: pointer;
+      background: none;
     }
-    .providers input { margin: 0; }
-    .providers label.picked { border-color: var(--accent-dim); color: var(--fg); }
-    .providers label.ready {
-      border-color: var(--accent); background: var(--accent-dim); color: var(--fg);
-    }
-    .providers label.ready .okmark { color: var(--accent); font-weight: 700; margin-left: auto; }
-    .providers label.ready .okhint { display: block; font-size: 0.68rem; color: var(--accent); }
+    .providers input { margin: 2px 0 0; }
+    .providers .prov-name { display: block; }
+    .providers .prov-status { display: block; font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
     .providers .cfg {
       margin-left: auto; background: none; border: 0; color: inherit;
       min-width: 44px; min-height: 44px; font: inherit; cursor: pointer;
@@ -2775,13 +2772,26 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       paintPayneOrder();
     }
 
+    function providerStatusText(id) {
+      const st = providerMap[id] || {};
+      if (!st.family) return "";
+      if (st.family === "api")
+        return (st.has_key || st.has_token) ? "api token present" : "no api token";
+      if (st.family === "local")
+        return st.has_binary ? "runtime installed" : "runtime not installed";
+      return st.has_home ? "authenticated" : "not authenticated";
+    }
+
     function paintProviderPencil() {
       document.querySelectorAll("#agent-providers label").forEach((label) => {
         const checkbox = label.querySelector("input");
         const id = checkbox.value;
-        label.classList.toggle("picked", checkbox.checked);
-        label.classList.toggle("ready", !!(providerMap[id] || {}).ready);
-        label.querySelectorAll(".provider-config").forEach((button) => button.remove());
+        const name = document.createElement("span");
+        name.className = "prov-name";
+        name.textContent = PROVIDERS[id] || id;
+        const status = document.createElement("span");
+        status.className = "prov-status";
+        status.textContent = providerStatusText(id);
         const configure = document.createElement("button");
         configure.type = "button";
         configure.className = "ghost provider-config";
@@ -2792,6 +2802,10 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
           event.stopPropagation();
           openProviderDrawer(id);
         });
+        while (label.firstChild) label.removeChild(label.firstChild);
+        label.appendChild(checkbox);
+        label.appendChild(name);
+        label.appendChild(status);
         label.appendChild(configure);
       });
     }
@@ -3205,7 +3219,14 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         fillProviderDrawer(cfgId);
         paintProvidersHub();
         $("provider-err").textContent = "";
-        $("provider-status").textContent = providerStatusLine(providerMap[cfgId]) + " Saved.";
+        {
+          const st = providerMap[cfgId] || {};
+          const hint = (st.family === "api" && !st.model)
+            ? " No model selected — turns skip this provider until you scan or type one."
+            : "";
+          $("provider-status").textContent =
+            providerStatusLine(st) + " Saved." + hint;
+        }
       } catch (e) {
         $("provider-err").textContent = "Could not save that configuration.";
       }
