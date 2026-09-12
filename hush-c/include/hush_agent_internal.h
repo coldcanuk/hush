@@ -267,4 +267,139 @@ void hush_agent_append_context(char *note, size_t notesz,
 /* Writes the human display name into out. */
 void hush_agent_human_name(char *out, size_t outsz, const hush_launch_t *launch);
 
+/* ---- shared prompt strings (core + agent_dispatch) ---- */
+
+#define HUSH_AGENT_INTRO_PREFIX "At ease."
+#define HUSH_AGENT_HUMAN_FALLBACK "you"
+#define HUSH_AGENT_ELECT_PROMPT \
+    " You are the election committee. Elect the single best leader for the " \
+    "task below from these candidates. Consider their skills and fit. Reply " \
+    "with exactly one candidate name and nothing else."
+
+/* ---- agent_dispatch.c: job lifecycle and dispatch/follow flow ---- */
+
+/* Clears the follow table. Called once from hush_agent_init(). */
+void hush_agent_follow_init(void);
+
+/* Dispatches one known eligible robot from required event context. */
+void hush_agent_handle_mention(hush_store_t *store, const hush_launch_t *launch,
+                               const hush_event_t *event, const char *mention);
+
+/* Reads pending output; more means progress is immediately available. */
+void hush_agent_read_job(hush_agent_job_t *job);
+
+/* Completes a finished job, posting its reply and handoffs. */
+void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job, int ok);
+
+/* True when the job outlived its provider turn budget. */
+int hush_agent_job_timed_out(const hush_agent_job_t *job, time_t now);
+
+/* True when the job's provider/roster turn is still enabled. */
+int hush_agent_job_enabled(const hush_agent_job_t *job);
+
+/* Publishes the job's current presence state. */
+void hush_agent_presence_put(hush_store_t *store, hush_agent_job_t *job,
+                             const char *slug);
+
+/* Posts a diagnostic when a running job stalls past its progress window. */
+void hush_agent_nudge_stuck(hush_store_t *store, hush_agent_job_t *job);
+
+/* Releases the job's wake line on the stored conversation. */
+void hush_agent_release_line(hush_store_t *store, hush_agent_job_t *job);
+
+/* Appends " @PeerName" when a scoped assignment is a dangling delegation. */
+void hush_agent_name_dangling_peer(hush_agent_job_t *job, int scoped);
+
+/* Appends one robot assignment line to the leader plan prompt. */
+void hush_agent_append_assign(char *prompt, size_t promptsz, const char *ask,
+                              const hush_launch_t *launch,
+                              const char *self_hex);
+
+/* Resolves a channel slug to its launch configuration. */
+const hush_launch_channel_t *hush_agent_channel(
+    const hush_launch_t *launch, const char *slug);
+
+/* Kicks the next follow wave for a newly posted human event. */
+void hush_agent_follow_kick(hush_store_t *store, const hush_launch_t *launch,
+                            const hush_event_t *ev);
+
+/* ---- hush_agent.c helpers shared with the per-cluster modules ---- */
+
+/* True when mention names the human creator. */
+int hush_agent_is_human(const hush_launch_t *launch, const char *mention);
+
+/* True when ch is space, tab, CR, or LF. Pure. */
+int hush_agent_is_space(char ch);
+
+/* Fills borrowed event fields from a prepared note input. */
+void hush_agent_fill_note(hush_event_t *ev, const hush_agent_note_in_t *in);
+
+/* Stores a filled robot note in the conversation. */
+hush_status_t hush_agent_insert_note(hush_store_t *store,
+                                     const hush_agent_note_in_t *in);
+
+/* Posts the robot's intro greeting for the parent event. */
+void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bot,
+                        const hush_event_t *parent, const char *why);
+
+/* Posts a note when the provider runtime is not ready. */
+void hush_agent_note_no_runtime(hush_store_t *store,
+                                const hush_agent_robot_t *bot,
+                                const hush_event_t *parent);
+
+/* Posts one diagnostic when no slot, lease, or claim was available. */
+void hush_agent_note_start_failed(hush_store_t *store,
+                                  const hush_agent_robot_t *bot,
+                                  const hush_event_t *parent);
+
+/* True when the robot's provider runtime is ready to execute a turn. */
+int hush_agent_can_start(const hush_launch_t *launch,
+                         const hush_agent_robot_t *bot);
+
+/* Starts one grok/provider job from a prepared input. */
+hush_status_t hush_agent_start_grok(const hush_agent_job_in_t *in);
+
+/* Releases the job's captured resources. */
+void hush_agent_close_job(hush_agent_job_t *job);
+
+/* Rewrites @npub1 to nostr:npub1, expands truncated npubs, maps @Name,
+ * then scrubs self-mentions, ask-echo, and last-robot handoff. */
+void hush_agent_rewrite_mentions(hush_agent_job_t *job);
+
+/* Rewrites nostr:npub1 tokens to @Name for prompt text. Drops the acting
+ * robot's own token and unknown tokens; keeps peers and the human readable. */
+void hush_agent_humanize_ask(char *text, size_t textsz,
+                             const hush_launch_t *launch,
+                             const char *self_hex);
+
+/* Removes only an incomplete trailing UTF-8 scalar from a bounded snippet. */
+hush_status_t hush_agent_complete_snippet(char *text, size_t capacity);
+
+/* ---- agent_prompt.c: prompt and directive builders ---- */
+
+/* Fills the job's prompt, rules, peers, and note from a prepared input. */
+hush_status_t hush_agent_fill_job(hush_agent_job_t *job,
+                                  const hush_agent_job_in_t *in);
+
+/* Adds room/skill guidance to a prepared job. Borrowed pointers;
+ * propagates missing skill, malformed content, or prompt capacity errors. */
+hush_status_t hush_agent_add_guidance(hush_agent_job_t *job,
+                                      const hush_agent_robot_t *robot);
+
+/* True when the p-tag key names the given robot. */
+int hush_agent_key_matches(const char *mention, const char *npub,
+                           const char *hex);
+
+/* Picks the first ready provider for the robot, or NULL. */
+const char *hush_agent_pick_provider(const hush_agent_robot_t *bot);
+
+/* Mints a fresh unique job token. */
+void hush_agent_make_token(char *out, size_t outsz);
+
+/* True when the grok provider binary is ready to run. */
+int hush_agent_grok_ready(void);
+
+/* Returns the next free job slot, or NULL when the table is full. */
+hush_agent_job_t *hush_agent_find_slot(void);
+
 #endif /* HUSH_AGENT_INTERNAL_H */

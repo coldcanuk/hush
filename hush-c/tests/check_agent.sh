@@ -310,13 +310,13 @@ grep -q -- '--disallowed-tools' src/agent_process.c || fail "grok argv missing d
 grep -q -- '--reasoning-effort' src/agent_process.c || fail "grok argv missing reasoning"
 grep -q 'HUSH_AGENT_GROK_EFFORT "low"' src/agent_process.c || fail "grok effort must be low"
 grep -q 'HUSH_AGENT_THREAD_HEAD' src/agent_thread.c || fail "grok must receive a thread transcript"
-grep -q 'hush_agent_fill_thread' src/hush_agent.c || fail "missing thread transcript fill"
-grep -q 'No preamble-only replies' src/hush_agent.c || fail "hygiene must forbid preamble-only replies"
-grep -q 'Fulfill YOUR assignment' src/hush_agent.c || fail "hygiene must name the robot assignment"
-grep -q 'Do not mention yourself' src/hush_agent.c || fail "hygiene must forbid self-mention"
-grep -q 'Fulfill the last human ask' src/hush_agent.c || fail "hygiene must fulfill the last human ask"
-grep -q 'exactly one joke' src/hush_agent.c || fail "hygiene must demand one joke"
-grep -q 'hush_agent_robot_busy' src/hush_agent.c || fail "must refuse a second job for a busy robot"
+grep -q 'hush_agent_fill_thread' src/agent_prompt.c || fail "missing thread transcript fill"
+grep -q 'No preamble-only replies' src/agent_prompt.c || fail "hygiene must forbid preamble-only replies"
+grep -q 'Fulfill YOUR assignment' src/agent_prompt.c || fail "hygiene must name the robot assignment"
+grep -q 'Do not mention yourself' src/agent_prompt.c || fail "hygiene must forbid self-mention"
+grep -q 'Fulfill the last human ask' src/agent_prompt.c || fail "hygiene must fulfill the last human ask"
+grep -q 'exactly one joke' src/agent_prompt.c || fail "hygiene must demand one joke"
+grep -q 'hush_agent_robot_busy' src/agent_dispatch.c || fail "must refuse a second job for a busy robot"
 i=0
 while [ "$i" -lt 40 ]; do
     if grep -q 'Byte me. go: fmt' "$HUSH_CONFIG_DIR/grok-p.log" 2>/dev/null; then
@@ -477,25 +477,25 @@ if echo "$html" | grep -q 'if (devLogEnabled) return events.slice()'; then
     fail "served UI must not un-hide logs when dest log is on"
 fi
 echo "$html" | grep -q '(now - created \* 1000) > 2000' || fail "served UI must skip ack gradient after 2s"
-grep -q 'HUSH_AGENT_PEER_STANDARD' src/hush_agent.c || fail "missing inter-robot standard constant"
-grep -q 'HUSH_AGENT_LAST_RULE' src/hush_agent.c || fail "missing last-robot stop rule"
-grep -q 'hush_agent_rewrite_mentions' src/hush_agent.c || fail "missing mention rewrite"
+grep -q 'HUSH_AGENT_PEER_STANDARD' src/agent_prompt.c || fail "missing inter-robot standard constant"
+grep -q 'HUSH_AGENT_LAST_RULE' src/agent_prompt.c || fail "missing last-robot stop rule"
+grep -q 'hush_agent_rewrite_mentions' src/agent_text.c || fail "missing mention rewrite"
 echo "$html" | grep -q 'function mentionHit' || fail "served UI missing mentionHit"
 echo "$html" | grep -A 20 'function renderPreservingMentions' | grep -q 'mentionHit' \
     || fail "pills must resolve via mentionHit"
 echo "$html" | grep -A 25 'function renderPreservingMentions' | grep -q 'if (!hit)' \
     || fail "unresolved npub tokens must not paint as @npub"
 grep -q 'hush_agent_intro_seen' src/hush_agent.c || fail "missing intro table"
-grep -q 'HUSH_AGENT_STRICT_SCOPE' src/hush_agent.c || fail "missing strict per-robot scope"
-grep -q 'HUSH_AGENT_COOPERATE' src/hush_agent.c || fail "missing two-robot cooperation prompt"
-grep -q 'hush_agent_leader_candidates' src/hush_agent.c || fail "missing leader candidate pool"
-grep -q 'HUSH_AGENT_LEADER_PROMPT' src/hush_agent.c || fail "missing leader plan prompt"
-grep -q 'hush_agent_parse_plan' src/hush_agent.c || fail "missing leader plan parser"
-grep -q 'hush_agent_begin_elect' src/hush_agent.c || fail "missing leader election pass"
-grep -q 'HUSH_AGENT_ELECT_PROMPT' src/hush_agent.c || fail "missing leader election prompt"
-grep -q 'slot->group' src/hush_agent.c || fail "missing parallel wave groups"
-grep -q 'system:hive-patterns' src/hush_agent.c || fail "missing leadership skill set"
-handle=$(sed -n '/static void hush_agent_handle_mention/,/hush_agent_start_grok/p' src/hush_agent.c)
+grep -q 'HUSH_AGENT_STRICT_SCOPE' src/agent_prompt.c || fail "missing strict per-robot scope"
+grep -q 'HUSH_AGENT_COOPERATE' src/agent_prompt.c || fail "missing two-robot cooperation prompt"
+grep -q 'hush_agent_leader_candidates' src/agent_dispatch.c || fail "missing leader candidate pool"
+grep -q 'HUSH_AGENT_LEADER_PROMPT' src/agent_prompt.c || fail "missing leader plan prompt"
+grep -q 'hush_agent_parse_plan' src/agent_dispatch.c || fail "missing leader plan parser"
+grep -q 'hush_agent_begin_elect' src/agent_dispatch.c || fail "missing leader election pass"
+grep -q 'HUSH_AGENT_ELECT_PROMPT' include/hush_agent_internal.h || fail "missing leader election prompt"
+grep -q 'slot->group' src/agent_dispatch.c || fail "missing parallel wave groups"
+grep -q 'system:hive-patterns' src/agent_dispatch.c || fail "missing leadership skill set"
+handle=$(sed -n '/void hush_agent_handle_mention/,/hush_agent_start_grok/p' src/agent_dispatch.c)
 echo "$handle" | grep -q 'hush_agent_on_deck' || fail "one intro must precede grok start"
 if echo "$handle" | grep -q 'dev_log_enabled'; then
     fail "intro must not be dest-log gated"
@@ -523,6 +523,6 @@ keep=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
     -d '{"action":"manage","slug":"general","kind":"open","robot_reply":"mention"}')
 echo "$keep" | grep -q 'jokes' || fail "manage without about must not wipe topics"
 
-grep -q 'hush_agent_scrub_reply' src/hush_agent.c || fail "missing reply scrub"
+grep -q 'hush_agent_scrub_reply' src/agent_text.c || fail "missing reply scrub"
 
 echo "agent mention reply ok"

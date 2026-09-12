@@ -32,3 +32,40 @@ green at every milestone.
 ### M5.5 — Docs + land
 - Update research (final map + remaining clusters), CHANGELOG. Push, PR,
   auto-merge, cleanup, clean `make test` on main.
+
+## Tranche 2 (worktree `agent-split2`, branch `gb/agent-split2`)
+
+Follows the same RDAP gate; research doc section (d) documents the final
+state. Commit per milestone; land via PR only.
+
+### M6.1 — `agent_dispatch.c`
+- Move the contiguous tail (job lifecycle, dispatch/follow flow, election
+  and planning waves) plus the follow table into `agent_dispatch.c`.
+- The follow table moves with its only users (follow_find/follow_take);
+  the core calls `hush_agent_follow_init()` once. Shared prompt strings
+  and cross-module entry points move to `hush_agent_internal.h`.
+- Verify: clean `make test` green.
+
+### M6.2 — `agent_text.c`
+- Move the text utilities (whitespace/npub scanning, line snipping,
+  snippet completion) and the mention-rewrite/alias/scrub cluster.
+- Verify: clean `make test` green (check_agent group-scenario prompt
+  assertions exercise the rewrite path).
+
+### M6.3 — `agent_prompt.c`
+- Move fill_prompt/fill_rules, the fill_job family, instruction/guidance
+  appends, and the peer/last-rule prompt rules. Export fill_job and
+  add_guidance; export the core helpers they need (key_matches,
+  pick_provider, make_token).
+- Verify: clean `make test` green.
+
+### M6.4 — `agent_fixup.c`
+- Move start_fixup/take_fixup, the token mint, token lookup, and the
+  fixup prompt fill, plus the token sequence and fixup strings. Export
+  grok_ready and find_slot; find_token borrows the job table through the
+  accessor.
+- Verify: clean `make test` green.
+
+### M6.5 — Docs + land
+- Update research (final map), CHANGELOG, retargeted test greps. Push, PR,
+  auto-merge, cleanup, clean `make test` on main.
