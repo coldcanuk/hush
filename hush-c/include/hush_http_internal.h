@@ -48,4 +48,7 @@ int hush_http_json_bare_field(const char *body, const char *key, char *out,
 /* Decodes JSON escapes in src into dst. */
 void hush_http_json_unescape_copy(const char *src, char *dst, size_t dstsz);
 
+/* Serves a PWA asset or icon panel for path. 0 when path is not ours. */
+int hush_http_serve_asset(int fd, const char *path);
+
 #endif /* HUSH_HTTP_INTERNAL_H */
