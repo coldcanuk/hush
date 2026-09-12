@@ -23,6 +23,7 @@
 #include "hush_http.h"
 #include "hush_intel.h"
 #include "hush_json.h"
+#include "hush_limiter.h"
 #include "hush_presence.h"
 #include "hush_provider.h"
 #include "hush_relay.h"
@@ -60,7 +61,17 @@ enum {
     HUSH_HTTP_WINDOW_ACT_MAX = 16,
     HUSH_HTTP_COMPLETE_JSON_MAX = 1536,
     HUSH_HTTP_HDR_VALUE_MAX = 512,
-    HUSH_HTTP_HOST_MAX = 128
+    HUSH_HTTP_HOST_MAX = 128,
+    /* Ingress throttling: per-IP API requests and per-hive provider quotas.
+     * Generous on purpose; the 429 is a flood defense, not a UX gate. */
+    HUSH_HTTP_IP_LIMITS_MAX = 16,
+    HUSH_HTTP_IP_REQ_PER_S = 60,
+    HUSH_HTTP_IP_REQ_BURST = 120,
+    HUSH_HTTP_COMPLETE_PER_MIN = 12,
+    HUSH_HTTP_COMPLETE_BURST = 12,
+    HUSH_HTTP_FIXUP_PER_MIN = 12,
+    HUSH_HTTP_FIXUP_BURST = 12,
+    HUSH_HTTP_SECONDS_PER_MIN = 60
 };
 
 #define HUSH_HTTP_CLOSE_JSON "{\"ok\":true,\"action\":\"close\"}\n"
@@ -76,6 +87,14 @@ enum {
 #define HUSH_HTTP_WINDOW_MIN "minimize"
 #define HUSH_HTTP_WINDOW_MAX "maximize"
 #define HUSH_HTTP_WINDOW_PREPARE "prepare"
+#define HUSH_HTTP_RATE_BODY "{\"ok\":false,\"error\":\"rate-limited\"}\n"
+
+/* Per-source-IP API request bucket. addr 0 marks a free slot (a real peer
+ * can never be 0.0.0.0). */
+typedef struct {
+    uint32_t addr;
+    hush_limiter_t req_lim;
+} hush_http_ip_limit_t;
 
 typedef struct {
     char api_key[HUSH_PROVIDER_KEY_MAX];
@@ -92,6 +111,10 @@ static hush_turn_t *g_turn;
 static char g_bind_addr[HUSH_HTTP_HOST_MAX];
 static int g_set_cookie;
 static char g_context_text[HUSH_ROSTER_CONTEXT_MAX][HUSH_ROSTER_CONTEXT_BYTES];
+static hush_http_ip_limit_t g_ip_req[HUSH_HTTP_IP_LIMITS_MAX];
+static hush_limiter_t g_complete_lim;
+static hush_limiter_t g_fixup_lim;
+static int g_limits_ready;
 
 const char *hush_http_headers_end(const char *buf, size_t len);
 static long hush_http_content_length(const char *buf, size_t hlen);
@@ -278,6 +301,11 @@ static void hush_http_host_strip_port(char *host);
 static int hush_http_host_ok(const char *req, size_t len);
 /* True when path is an API route that requires the session credential. */
 static int hush_http_needs_auth(const char *req, const char *path);
+/* Returns the per-IP request bucket for fd, creating it on first sight;
+ * NULL when the peer or the table is unavailable (fail open). */
+static hush_limiter_t *hush_http_ip_req_lim(int fd);
+/* Replies 429 with the rate-limit JSON. */
+static hush_status_t hush_http_reply_rate_limited(int fd);
 /* Replies 401/403 and returns DENIED when host or token checks fail. */
 static hush_status_t hush_http_guard(int fd, const char *req, size_t len,
                                      const char *path);
@@ -290,6 +318,21 @@ void hush_http_set_listen_port(uint16_t port)
 void hush_http_set_client_count(int n)
 {
     g_client_count = n;
+}
+
+void hush_http_init_limits(void)
+{
+    if (g_limits_ready)
+        return;
+    hush_limiter_init(&g_complete_lim,
+                      (double)HUSH_HTTP_COMPLETE_PER_MIN /
+                          (double)HUSH_HTTP_SECONDS_PER_MIN,
+                      (double)HUSH_HTTP_COMPLETE_BURST);
+    hush_limiter_init(&g_fixup_lim,
+                      (double)HUSH_HTTP_FIXUP_PER_MIN /
+                          (double)HUSH_HTTP_SECONDS_PER_MIN,
+                      (double)HUSH_HTTP_FIXUP_BURST);
+    g_limits_ready = 1;
 }
 
 void hush_http_set_bind_addr(const char *addr)
@@ -648,6 +691,41 @@ static int hush_http_peer_is_loopback(int fd)
     return 0;
 }
 
+static hush_limiter_t *hush_http_ip_req_lim(int fd)
+{
+    struct sockaddr_storage peer;
+    socklen_t peer_len = (socklen_t)sizeof(peer);
+    uint32_t addr = 0;
+    size_t idx;
+
+    if (getpeername(fd, (struct sockaddr *)&peer, &peer_len) != 0)
+        return NULL;
+    if (peer.ss_family != AF_INET)
+        return NULL; /* IPv6 peers are not tracked; fail open */
+    addr = ((const struct sockaddr_in *)&peer)->sin_addr.s_addr;
+    for (idx = 0; idx < (size_t)HUSH_HTTP_IP_LIMITS_MAX; ++idx) {
+        if (g_ip_req[idx].addr == addr && addr != 0)
+            return &g_ip_req[idx].req_lim;
+    }
+    for (idx = 0; idx < (size_t)HUSH_HTTP_IP_LIMITS_MAX; ++idx) {
+        if (g_ip_req[idx].addr == 0) {
+            g_ip_req[idx].addr = addr;
+            hush_limiter_init(&g_ip_req[idx].req_lim,
+                              (double)HUSH_HTTP_IP_REQ_PER_S,
+                              (double)HUSH_HTTP_IP_REQ_BURST);
+            return &g_ip_req[idx].req_lim;
+        }
+    }
+    return NULL; /* table full: fail open */
+}
+
+static hush_status_t hush_http_reply_rate_limited(int fd)
+{
+    hush_http_reply(fd, "429 Too Many Requests", "application/json",
+                    HUSH_HTTP_RATE_BODY, strlen(HUSH_HTTP_RATE_BODY));
+    return HUSH_ERR_DENIED;
+}
+
 static int hush_http_host_is_loopback(const char *host)
 {
     assert(host != NULL);
@@ -713,8 +791,20 @@ static hush_status_t hush_http_guard(int fd, const char *req, size_t len,
                         strlen(denied));
         return HUSH_ERR_DENIED;
     }
-    if (!hush_http_needs_auth(req, path) ||
-        hush_http_request_is_authed(req, len))
+    if (!hush_http_needs_auth(req, path))
+        return HUSH_OK; /* status and one-shot flows stay exempt */
+    /* Per-IP throttle before the auth compare: an unauthenticated flood
+     * costs the same 429 as an authenticated one. /api/event is exempt: it
+     * is a cheap store insert and message floods are paced by the intel
+     * burst holds and robot budgets on the dispatch path. */
+    if (strcmp(path, "/api/event") != 0) {
+        hush_limiter_t *req_lim = hush_http_ip_req_lim(fd);
+
+        if (req_lim != NULL &&
+            !hush_limiter_take(req_lim, hush_limiter_now_ms()))
+            return hush_http_reply_rate_limited(fd);
+    }
+    if (hush_http_request_is_authed(req, len))
         return HUSH_OK;
     denied = "{\"ok\":false,\"error\":\"session token required\"}\n";
     hush_http_reply(fd, "401 Unauthorized", "application/json", denied,
@@ -2410,10 +2500,16 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_cancel(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/reply") == 0)
         return hush_http_serve_reply(fd, hush_http_body(req, len));
-    if (strcmp(path, "/api/fixup") == 0)
+    if (strcmp(path, "/api/fixup") == 0) {
+        if (!hush_limiter_take(&g_fixup_lim, hush_limiter_now_ms()))
+            return hush_http_reply_rate_limited(fd);
         return hush_http_serve_fixup(fd, hush_http_body(req, len));
-    if (strcmp(path, "/api/complete") == 0)
+    }
+    if (strcmp(path, "/api/complete") == 0) {
+        if (!hush_limiter_take(&g_complete_lim, hush_limiter_now_ms()))
+            return hush_http_reply_rate_limited(fd);
         return hush_http_serve_complete_post(fd, hush_http_body(req, len));
+    }
     if (strcmp(path, "/api/turn") == 0)
         return hush_http_serve_turn_post(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/signal") == 0)

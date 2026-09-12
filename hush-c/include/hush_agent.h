@@ -11,7 +11,10 @@
 enum {
     /* Wall clock for a live grok job. hush_wake lease uses the same
      * number (HUSH_WAKE_LEASE_S). Not HUSH_PRESENCE_STALL_S. */
-    HUSH_AGENT_TIMEOUT_S = 90
+    HUSH_AGENT_TIMEOUT_S = 90,
+    /* Global concurrent job cap; the overload gate refuses new dispatches
+     * when every slot is busy. */
+    HUSH_AGENT_JOBS_MAX = 4
 };
 
 /* Zeros the job table and reloads the wake ledger. Safe to call twice.
@@ -42,6 +45,9 @@ void hush_agent_status(char *out, size_t outsz);
 
 /* Number of live jobs dispatched from this channel. 0 for NULL or empty. */
 int hush_agent_channel_busy(const char *channel);
+
+/* Number of busy jobs across all channels. */
+int hush_agent_jobs_active(void);
 
 /* Cancels the live job for robot on root. root is the thread's root event id;
  * robot matches the robot's hex pubkey or roster name. Sends SIGTERM to the

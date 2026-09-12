@@ -28,6 +28,7 @@
 #include "hush_http.h"
 #include "hush_intel.h"
 #include "hush_launch.h"
+#include "hush_limiter.h"
 #include "hush_nip42.h"
 #include "hush_proto.h"
 #include "hush_provider.h"
@@ -64,7 +65,30 @@ enum {
     HUSH_CHILD_CMDLINE_MAX = 512,
     HUSH_PROC_PATH_MAX = 64,
     HUSH_LEAVE_OUT_MAX = 256,
-    HUSH_LEAVE_MISSING = 127
+    HUSH_LEAVE_MISSING = 127,
+    /* Ingress token-bucket limits. Generous on purpose: the default hive is
+     * a local single-user app; the caps are flood defenses, not UX gates. */
+    HUSH_IP_LIMITS_MAX = 16,
+    HUSH_PUBKEY_LIMITS_MAX = 16,
+    HUSH_LIMIT_IP_EVENT_PER_S = 30,
+    HUSH_LIMIT_IP_EVENT_BURST = 60,
+    HUSH_LIMIT_EVENT_PER_S = 10,
+    HUSH_LIMIT_EVENT_BURST = 20,
+    HUSH_LIMIT_REQ_PER_S = 5,
+    HUSH_LIMIT_REQ_BURST = 10,
+    HUSH_LIMIT_PUBKEY_PER_MIN = 30,
+    HUSH_LIMIT_PUBKEY_BURST = 10,
+    HUSH_LIMIT_AUTH_ATTEMPTS = 8,
+    HUSH_LIMIT_JOIN_ATTEMPTS = 16,
+    HUSH_LIMIT_SECONDS_PER_MIN = 60,
+    /* Consecutive stalled flushes before a slow consumer is disconnected.
+     * An explicit threshold keeps the drop independent of kernel buffer
+     * sizes and the token buckets. */
+    HUSH_CLIENT_FLUSH_STALL_MAX = 8,
+    /* Per-connection send-buffer cap: without it, a loopback peer's kernel
+     * buffers can absorb the entire replay backlog, hiding slow consumers
+     * from the relay's outbox pressure. */
+    HUSH_CLIENT_SND_BUF = 16384
 };
 
 #define HUSH_PIDFILE_NAME_FMT "relay-%u.pid"
@@ -86,6 +110,7 @@ enum {
 #define HUSH_AUTH_VERIFY_ERR     "error: auth failed"
 #define HUSH_NIP42_RESTRICTED_TEXT \
     "restricted: this event is only accepted for authentication purposes"
+#define HUSH_RATE_TEXT "rate-limited: slow down"
 
 /* Options are terminated strings; both profile options identify the same
  * per-relay directory, isolated from the operator's ordinary browser. */
@@ -95,6 +120,21 @@ typedef struct {
     char profile_option[HUSH_UI_PROFILE_ARG_MAX];
     char filesystem_option[HUSH_UI_PROFILE_ARG_MAX];
 } hush_ui_browser_t;
+
+/* Per-source-IP wire event bucket. addr 0 marks a free slot (a real peer
+ * can never be 0.0.0.0). Connection counts are bounded by the client slot
+ * cap and the HTTP request bucket; a separate connection-rate bucket would
+ * RST legitimate one-request-per-connection HTTP traffic. */
+typedef struct {
+    uint32_t addr;
+    hush_limiter_t event_lim;
+} hush_ip_limit_t;
+
+/* Per-author-pubkey event bucket for verified events. Empty key = free. */
+typedef struct {
+    char pubkey[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+    hush_limiter_t event_lim;
+} hush_pubkey_limit_t;
 
 struct client {
     int fd;
@@ -120,9 +160,18 @@ struct client {
     char ws_msg[HUSH_WS_MSG_MAX];
     size_t ws_msg_len;
     int ws_frag;
+    /* Ingress limits: peer IPv4 address and per-connection buckets. */
+    uint32_t ip_addr;
+    hush_limiter_t event_lim;
+    hush_limiter_t req_lim;
+    int auth_attempts;
+    int join_attempts;
+    int flush_stalls;
 };
 
 static struct client clients[HUSH_MAX_CLIENTS];
+static hush_ip_limit_t g_ip_limits[HUSH_IP_LIMITS_MAX];
+static hush_pubkey_limit_t g_pubkey_limits[HUSH_PUBKEY_LIMITS_MAX];
 static hush_store_t *g_store = NULL;
 static hush_launch_t g_launch;
 static hush_turn_t g_turn;
@@ -164,8 +213,9 @@ static void hush_drop_client(struct client *c);
 static void hush_service_clients(struct pollfd *fds, int nf);
 static void hush_on_bytes(struct client *c);
 static void hush_on_nostr_line(struct client *c, const char *line);
-/* Writes queued output the non-blocking socket accepts now. */
-static void hush_client_flush(struct client *c);
+/* Writes queued output the non-blocking socket accepts now. Returns 0 when
+ * a slow consumer crossed the stall threshold and was dropped. */
+static int hush_client_flush(struct client *c);
 /* Queues one frame. Returns 0 when c must be dropped (queue full). */
 static int hush_send_str(struct client *c, const char *s);
 static void hush_handle_event_msg(struct client *c, const hush_client_msg_t *msg);
@@ -181,6 +231,12 @@ static int hush_client_is_authorized(const struct client *c);
 static int hush_pubkey_is_member(const char *pubkey_hex);
 /* Queues a fresh AUTH challenge. Returns 0 when the client must be dropped. */
 static int hush_send_challenge(struct client *c);
+/* Returns the per-IP entry for addr, creating it on first sight; NULL when
+ * the table is full (fail open). */
+static hush_ip_limit_t *hush_relay_ip_entry(uint32_t addr);
+/* Returns the per-pubkey limiter, creating it on first sight; NULL when the
+ * table is full (fail open). */
+static hush_limiter_t *hush_relay_pubkey_lim(const char *pubkey);
 /* Queues n raw bytes; returns 0 when the client must be dropped. */
 static int hush_send_buf(struct client *c, const char *data, size_t n);
 /* Completes a WebSocket upgrade: 101 reply, challenge, WS mode. Returns 0
@@ -531,6 +587,9 @@ static int hush_active_clients(void)
 
 static hush_status_t hush_accept_new(int ls)
 {
+    struct sockaddr_in peer;
+    socklen_t peer_len = (socklen_t)sizeof(peer);
+    uint32_t addr = 0;
     int cfd;
     int i;
 
@@ -538,6 +597,15 @@ static hush_status_t hush_accept_new(int ls)
     if (cfd < 0)
         return HUSH_ERR_IO;
     hush_set_nonblock(cfd);
+    {
+        int snd_buf = HUSH_CLIENT_SND_BUF;
+
+        (void)setsockopt(cfd, SOL_SOCKET, SO_SNDBUF, &snd_buf,
+                         sizeof(snd_buf));
+    }
+    if (getpeername(cfd, (struct sockaddr *)&peer, &peer_len) == 0 &&
+        peer.sin_family == AF_INET)
+        addr = peer.sin_addr.s_addr;
     for (i = 0; i < HUSH_MAX_CLIENTS; ++i) {
         if (clients[i].fd == HUSH_FD_NONE) {
             clients[i].fd = cfd;
@@ -553,6 +621,16 @@ static hush_status_t hush_accept_new(int ls)
             clients[i].is_ws = 0;
             clients[i].ws_msg_len = 0;
             clients[i].ws_frag = 0;
+            clients[i].ip_addr = addr;
+            hush_limiter_init(&clients[i].event_lim,
+                              (double)HUSH_LIMIT_EVENT_PER_S,
+                              (double)HUSH_LIMIT_EVENT_BURST);
+            hush_limiter_init(&clients[i].req_lim,
+                              (double)HUSH_LIMIT_REQ_PER_S,
+                              (double)HUSH_LIMIT_REQ_BURST);
+            clients[i].auth_attempts = 0;
+            clients[i].join_attempts = 0;
+            clients[i].flush_stalls = 0;
             return HUSH_OK;
         }
     }
@@ -576,6 +654,54 @@ static void hush_drop_client(struct client *c)
     c->is_ws = 0;
     c->ws_msg_len = 0;
     c->ws_frag = 0;
+    c->ip_addr = 0;
+    c->auth_attempts = 0;
+    c->join_attempts = 0;
+    c->flush_stalls = 0;
+}
+
+static hush_ip_limit_t *hush_relay_ip_entry(uint32_t addr)
+{
+    size_t idx;
+
+    for (idx = 0; idx < (size_t)HUSH_IP_LIMITS_MAX; ++idx) {
+        if (g_ip_limits[idx].addr == addr && addr != 0)
+            return &g_ip_limits[idx];
+    }
+    for (idx = 0; idx < (size_t)HUSH_IP_LIMITS_MAX; ++idx) {
+        if (g_ip_limits[idx].addr == 0) {
+            g_ip_limits[idx].addr = addr;
+            hush_limiter_init(&g_ip_limits[idx].event_lim,
+                              (double)HUSH_LIMIT_IP_EVENT_PER_S,
+                              (double)HUSH_LIMIT_IP_EVENT_BURST);
+            return &g_ip_limits[idx];
+        }
+    }
+    return NULL; /* table full: fail open */
+}
+
+static hush_limiter_t *hush_relay_pubkey_lim(const char *pubkey)
+{
+    size_t idx;
+
+    assert(pubkey != NULL);
+    for (idx = 0; idx < (size_t)HUSH_PUBKEY_LIMITS_MAX; ++idx) {
+        if (g_pubkey_limits[idx].pubkey[0] != '\0' &&
+            strcmp(g_pubkey_limits[idx].pubkey, pubkey) == 0)
+            return &g_pubkey_limits[idx].event_lim;
+    }
+    for (idx = 0; idx < (size_t)HUSH_PUBKEY_LIMITS_MAX; ++idx) {
+        if (g_pubkey_limits[idx].pubkey[0] == '\0') {
+            memcpy(g_pubkey_limits[idx].pubkey, pubkey,
+                   sizeof(g_pubkey_limits[idx].pubkey));
+            hush_limiter_init(&g_pubkey_limits[idx].event_lim,
+                              (double)HUSH_LIMIT_PUBKEY_PER_MIN /
+                                  (double)HUSH_LIMIT_SECONDS_PER_MIN,
+                              (double)HUSH_LIMIT_PUBKEY_BURST);
+            return &g_pubkey_limits[idx].event_lim;
+        }
+    }
+    return NULL; /* table full: fail open */
 }
 
 static int hush_send_challenge(struct client *c)
@@ -800,7 +926,7 @@ static void hush_service_clients(struct pollfd *fds, int nf)
         if (c == NULL)
             continue;
         if (fds[i].revents & POLLOUT)
-            hush_client_flush(c);
+            (void)hush_client_flush(c);
         if ((fds[i].revents & (POLLIN | POLLHUP | POLLERR)) == 0)
             continue;
         n = read(c->fd, c->buf + c->len, HUSH_BUF_SZ - c->len - 1);
@@ -909,22 +1035,40 @@ static void hush_on_nostr_line(struct client *c, const char *line)
         hush_handle_join_msg(c, &msg);
 }
 
-static void hush_client_flush(struct client *c)
+static int hush_client_flush(struct client *c)
 {
+    int progressed = 0;
+
     assert(c != NULL);
     while (c->out_off < c->out_end) {
         ssize_t w = write(c->fd, c->out + c->out_off, c->out_end - c->out_off);
 
         if (w > 0) {
             c->out_off += (size_t)w;
+            progressed = 1;
             continue;
         }
         if (w < 0 && errno == EINTR)
             continue;
-        return; /* EAGAIN or a dead socket: keep the remainder queued. */
+        /* EAGAIN or a dead socket: keep the remainder queued. A reader that
+         * makes no drain progress across this many consecutive flushes is
+         * disconnected, so one slow client can never pin the outbox. A
+         * client that drains even a little resets the counter. */
+        if (!progressed) {
+            c->flush_stalls++;
+            if (c->flush_stalls >= HUSH_CLIENT_FLUSH_STALL_MAX) {
+                hush_drop_client(c);
+                return 0;
+            }
+        } else {
+            c->flush_stalls = 0;
+        }
+        return 1;
     }
     c->out_off = 0;
     c->out_end = 0;
+    c->flush_stalls = 0;
+    return 1;
 }
 
 static int hush_send_buf(struct client *c, const char *data, size_t n)
@@ -933,7 +1077,8 @@ static int hush_send_buf(struct client *c, const char *data, size_t n)
 
     assert(c != NULL);
     assert(data != NULL || n == 0);
-    hush_client_flush(c);
+    if (!hush_client_flush(c))
+        return 0;
     pending = c->out_end - c->out_off;
     if (c->out_end + n > sizeof(c->out)) {
         if (c->out_off > 0) {
@@ -947,8 +1092,7 @@ static int hush_send_buf(struct client *c, const char *data, size_t n)
     if (n != 0)
         memcpy(c->out + c->out_end, data, n);
     c->out_end += n;
-    hush_client_flush(c);
-    return 1;
+    return hush_client_flush(c);
 }
 
 static int hush_send_str(struct client *c, const char *s)
@@ -1031,6 +1175,19 @@ static void hush_handle_event_msg(struct client *c, const hush_client_msg_t *msg
         hush_relay_send_ok(c, &msg->event, 0, HUSH_AUTH_PUBKEY_TEXT);
         return;
     }
+    /* Ingress buckets run before the ~300 us signature check so a flood of
+     * forged frames cannot pin the CPU. */
+    {
+        hush_ip_limit_t *ip_entry = hush_relay_ip_entry(c->ip_addr);
+        int64_t now = hush_limiter_now_ms();
+
+        if ((ip_entry != NULL &&
+             !hush_limiter_take(&ip_entry->event_lim, now)) ||
+            !hush_limiter_take(&c->event_lim, now)) {
+            hush_relay_send_ok(c, &msg->event, 0, HUSH_RATE_TEXT);
+            return;
+        }
+    }
     /* Wire events must carry a valid id and BIP-340 signature. A rejected
      * event is answered OK false and never stored or fanned out. */
     verified = hush_event_verify(&msg->event, reason, sizeof(reason));
@@ -1040,6 +1197,17 @@ static void hush_handle_event_msg(struct client *c, const hush_client_msg_t *msg
 
         hush_relay_send_ok(c, &msg->event, 0, text);
         return;
+    }
+    /* Verified events also draw from the author's budget: one key cannot
+     * flood a hive with valid frames. */
+    {
+        hush_limiter_t *pubkey_lim = hush_relay_pubkey_lim(msg->event.pubkey);
+
+        if (pubkey_lim != NULL &&
+            !hush_limiter_take(pubkey_lim, hush_limiter_now_ms())) {
+            hush_relay_send_ok(c, &msg->event, 0, HUSH_RATE_TEXT);
+            return;
+        }
     }
     (void)hush_store_insert(g_store, &msg->event);
     hush_thread_record(&msg->event);
@@ -1058,6 +1226,13 @@ static void hush_handle_req_msg(struct client *c, const hush_client_msg_t *msg)
     if (!hush_client_is_authorized(c)) {
         if (hush_proto_format_closed(msg->sub_id, HUSH_AUTH_REQUIRED_TEXT,
                                      line, sizeof(line), NULL) == HUSH_OK &&
+            !hush_send_str(c, line))
+            hush_drop_client(c);
+        return;
+    }
+    if (!hush_limiter_take(&c->req_lim, hush_limiter_now_ms())) {
+        if (hush_proto_format_closed(msg->sub_id, HUSH_RATE_TEXT, line,
+                                     sizeof(line), NULL) == HUSH_OK &&
             !hush_send_str(c, line))
             hush_drop_client(c);
         return;
@@ -1089,6 +1264,11 @@ static void hush_handle_auth_msg(struct client *c, const hush_client_msg_t *msg)
     /* The server form ["AUTH","<challenge>"] parses to an empty event. */
     if (msg->event.id[0] == '\0')
         return;
+    c->auth_attempts++;
+    if (c->auth_attempts > HUSH_LIMIT_AUTH_ATTEMPTS) {
+        hush_drop_client(c);
+        return;
+    }
     request = (hush_nip42_request_t){.event = &msg->event, .now = time(NULL),
                                      .challenge = c->challenge,
                                      .bind_addr = g_bind_addr};
@@ -1112,6 +1292,11 @@ static void hush_handle_join_msg(struct client *c, const hush_client_msg_t *msg)
     char line[HUSH_BUF_SZ];
     const char *text;
 
+    c->join_attempts++;
+    if (c->join_attempts > HUSH_LIMIT_JOIN_ATTEMPTS) {
+        hush_drop_client(c);
+        return;
+    }
     if (!g_launch.vibe_public && g_launch.has_vibe &&
         hush_launch_join_ok(&g_launch, msg->join_token)) {
         c->token_joined = 1;
@@ -1174,6 +1359,7 @@ static void hush_relay_prepare(uint16_t port, const char *bind_addr)
     hush_clients_reset();
     hush_http_set_listen_port(port);
     hush_http_set_bind_addr(g_bind_addr);
+    hush_http_init_limits();
     (void)hush_home_ensure();
     if (hush_auth_init() != HUSH_OK)
         fprintf(stderr, "hush-relay: session token unavailable; API locked\n");

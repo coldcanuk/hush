@@ -115,6 +115,33 @@ The join token (16 hex chars) is shown once by the UI and persisted **only** as
 version-1 plaintext files are migrated on load). `POST /api/vibe` with
 `{"action":"rotate_token"}` mints a replacement and returns its plaintext once.
 
+### Abuse controls — token buckets and quotas
+
+Every ingress path is throttled by monotonic-clock token buckets
+(`hush_limiter`); the defaults are generous because the default hive is a
+local single-user app, and the caps are flood defenses.
+
+| Path | Limit | On exhaustion |
+|---|---|---|
+| wire EVENT, per connection | 10/s (burst 20) | `OK false "rate-limited: …"` |
+| wire EVENT, per source IP | 30/s (burst 60) | `OK false` |
+| wire EVENT, per author pubkey (verified only) | 30/min (burst 10) | `OK false` |
+| wire REQ, per connection | 5/s (burst 10) | `CLOSED "rate-limited: …"` |
+| AUTH attempts / connection | 8 | connection dropped |
+| JOIN attempts / connection | 16 | connection dropped |
+| HTTP API, per source IP | 60/s (burst 120) | `429 Too Many Requests` |
+| `POST /api/fixup` | 12/min | `429` |
+| `POST /api/complete` | 12/min | `429` |
+| robot dispatch, per robot | 60/min (burst 20) | honest denial note |
+| concurrent AI jobs | 4 (global) | existing start-failure diagnostic |
+
+The per-IP and per-connection EVENT buckets run **before** signature
+verification, so a forged-frame flood cannot pin the ~300 µs BIP-340 check;
+the per-pubkey bucket runs after verification and only counts valid frames.
+Overload degrades gracefully: a full job queue refuses new AI work while chat
+and event delivery keep flowing. Small fixed tables fail open when full;
+`/api/status` stays exempt for liveness probes.
+
 ### STUN/TURN
 
 The optional coturn child/daemon is started with a generated long-term
