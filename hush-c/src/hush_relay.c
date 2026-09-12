@@ -38,6 +38,7 @@
 #include "hush_turn.h"
 #include "hush_wake.h"
 #include "hush_win.h"
+#include "hush_ws.h"
 
 enum {
     HUSH_MAX_CLIENTS = 16,
@@ -113,6 +114,12 @@ struct client {
     char challenge[HUSH_AUTH_CHALLENGE_BUF];
     char authed_pubkey[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
     int token_joined;
+    /* RFC 6455 state: is_ws marks a completed handshake; ws_msg reassembles
+     * a fragmented text message with ws_frag set between frames. */
+    int is_ws;
+    char ws_msg[HUSH_WS_MSG_MAX];
+    size_t ws_msg_len;
+    int ws_frag;
 };
 
 static struct client clients[HUSH_MAX_CLIENTS];
@@ -174,6 +181,30 @@ static int hush_client_is_authorized(const struct client *c);
 static int hush_pubkey_is_member(const char *pubkey_hex);
 /* Queues a fresh AUTH challenge. Returns 0 when the client must be dropped. */
 static int hush_send_challenge(struct client *c);
+/* Queues n raw bytes; returns 0 when the client must be dropped. */
+static int hush_send_buf(struct client *c, const char *data, size_t n);
+/* Completes a WebSocket upgrade: 101 reply, challenge, WS mode. Returns 0
+ * when the client must be dropped. */
+static int hush_relay_ws_upgrade(struct client *c, const char *key);
+/* Consumes buffered client frames; closes and drops on protocol errors. */
+static void hush_relay_ws_pump(struct client *c);
+/* Routes one parsed frame. Returns 0 when the client was dropped. */
+static int hush_relay_ws_dispatch(struct client *c,
+                                  const hush_ws_frame_t *frame);
+/* Feeds a data frame into message reassembly. Returns 0 when dropped. */
+static int hush_relay_ws_on_data(struct client *c,
+                                 const hush_ws_frame_t *frame);
+/* Appends payload to the reassembly buffer. Returns 0 when dropped. */
+static int hush_relay_ws_append(struct client *c, const unsigned char *payload,
+                                size_t payload_len);
+/* Delivers one complete text message to the wire dispatcher. */
+static int hush_relay_ws_deliver(struct client *c, const char *text,
+                                 size_t len);
+/* Replies to a ping with a pong echo. Returns 0 when dropped. */
+static int hush_relay_ws_pong(struct client *c, const unsigned char *payload,
+                              size_t payload_len);
+/* Sends a close frame with code and drops the connection. */
+static void hush_relay_ws_close(struct client *c, unsigned int code);
 static void hush_fanout(const hush_event_t *ev);
 static void hush_shutdown_handler(int sig);
 static void hush_install_shutdown_handlers(void);
@@ -519,6 +550,9 @@ static hush_status_t hush_accept_new(int ls)
             clients[i].challenge[0] = '\0';
             clients[i].authed_pubkey[0] = '\0';
             clients[i].token_joined = 0;
+            clients[i].is_ws = 0;
+            clients[i].ws_msg_len = 0;
+            clients[i].ws_frag = 0;
             return HUSH_OK;
         }
     }
@@ -539,6 +573,9 @@ static void hush_drop_client(struct client *c)
     c->challenge[0] = '\0';
     c->authed_pubkey[0] = '\0';
     c->token_joined = 0;
+    c->is_ws = 0;
+    c->ws_msg_len = 0;
+    c->ws_frag = 0;
 }
 
 static int hush_send_challenge(struct client *c)
@@ -552,6 +589,195 @@ static int hush_send_challenge(struct client *c)
         HUSH_OK)
         return 0;
     return hush_send_str(c, line);
+}
+
+static int hush_relay_ws_upgrade(struct client *c, const char *key)
+{
+    char accept[HUSH_WS_ACCEPT_LEN + 1];
+    char reply[256];
+    size_t reply_len = 0;
+
+    assert(c != NULL);
+    assert(key != NULL);
+    if (hush_ws_accept(key, accept, sizeof(accept)) != HUSH_OK ||
+        hush_ws_format_reply(accept, reply, sizeof(reply), &reply_len) !=
+            HUSH_OK ||
+        !hush_send_buf(c, reply, reply_len)) {
+        hush_drop_client(c);
+        return 0;
+    }
+    c->is_ws = 1;
+    if (!hush_send_challenge(c)) {
+        hush_drop_client(c);
+        return 0;
+    }
+    return 1;
+}
+
+static void hush_relay_ws_pump(struct client *c)
+{
+    size_t off = 0;
+
+    assert(c != NULL);
+    while (off < c->len) {
+        hush_ws_frame_t frame;
+        hush_ws_parse_t status;
+        size_t consumed = 0;
+
+        status = hush_ws_parse_frame((unsigned char *)c->buf + off,
+                                     c->len - off, &consumed, &frame);
+        if (status == HUSH_WS_PARSE_NEED_MORE)
+            break;
+        if (status != HUSH_WS_PARSE_OK) {
+            hush_relay_ws_close(c, status == HUSH_WS_PARSE_TOO_BIG
+                                       ? HUSH_WS_CLOSE_TOO_BIG
+                                       : HUSH_WS_CLOSE_PROTOCOL);
+            return;
+        }
+        off += consumed;
+        if (!hush_relay_ws_dispatch(c, &frame))
+            return; /* dropped */
+        if (c->fd == HUSH_FD_NONE)
+            return;
+    }
+    if (off == c->len) {
+        c->len = 0;
+        return;
+    }
+    memmove(c->buf, c->buf + off, c->len - off);
+    c->len -= off;
+}
+
+static int hush_relay_ws_dispatch(struct client *c,
+                                  const hush_ws_frame_t *frame)
+{
+    unsigned int code;
+
+    assert(c != NULL);
+    assert(frame != NULL);
+    switch (frame->opcode) {
+    case HUSH_WS_OP_TEXT:
+    case HUSH_WS_OP_CONT:
+        return hush_relay_ws_on_data(c, frame);
+    case HUSH_WS_OP_BINARY:
+        hush_relay_ws_close(c, HUSH_WS_CLOSE_UNSUPPORTED);
+        return 0;
+    case HUSH_WS_OP_PING:
+        return hush_relay_ws_pong(c, frame->payload, frame->payload_len);
+    case HUSH_WS_OP_CLOSE:
+        code = HUSH_WS_CLOSE_NORMAL;
+        if (frame->payload_len >= 2)
+            code = ((unsigned int)frame->payload[0] << 8) |
+                   (unsigned int)frame->payload[1];
+        hush_relay_ws_close(c, code);
+        return 0;
+    default:
+        return 1; /* PONG: ignored */
+    }
+}
+
+static int hush_relay_ws_on_data(struct client *c,
+                                 const hush_ws_frame_t *frame)
+{
+    assert(c != NULL);
+    assert(frame != NULL);
+    if (frame->opcode == HUSH_WS_OP_TEXT) {
+        if (c->ws_frag) {
+            hush_relay_ws_close(c, HUSH_WS_CLOSE_PROTOCOL);
+            return 0;
+        }
+        c->ws_msg_len = 0;
+        if (frame->fin)
+            return hush_relay_ws_deliver(c, (const char *)frame->payload,
+                                         frame->payload_len);
+        c->ws_frag = 1;
+        return hush_relay_ws_append(c, frame->payload, frame->payload_len);
+    }
+    if (!c->ws_frag) {
+        hush_relay_ws_close(c, HUSH_WS_CLOSE_PROTOCOL);
+        return 0;
+    }
+    if (!hush_relay_ws_append(c, frame->payload, frame->payload_len))
+        return 0;
+    if (!frame->fin)
+        return 1;
+    c->ws_frag = 0;
+    return hush_relay_ws_deliver(c, c->ws_msg, c->ws_msg_len);
+}
+
+static int hush_relay_ws_append(struct client *c, const unsigned char *payload,
+                                size_t payload_len)
+{
+    assert(c != NULL);
+    assert(payload != NULL || payload_len == 0);
+    if (payload_len > (size_t)HUSH_WS_MSG_MAX - c->ws_msg_len) {
+        hush_relay_ws_close(c, HUSH_WS_CLOSE_TOO_BIG);
+        return 0;
+    }
+    if (payload_len != 0)
+        memcpy(c->ws_msg + c->ws_msg_len, payload, payload_len);
+    c->ws_msg_len += payload_len;
+    return 1;
+}
+
+static int hush_relay_ws_deliver(struct client *c, const char *text, size_t len)
+{
+    char line[HUSH_WS_MSG_MAX + 1];
+
+    assert(c != NULL);
+    assert(text != NULL || len == 0);
+    if (!hush_ws_utf8_ok(text, len)) {
+        hush_relay_ws_close(c, HUSH_WS_CLOSE_INVALID);
+        return 0;
+    }
+    if (len + 1 > sizeof(line)) {
+        hush_relay_ws_close(c, HUSH_WS_CLOSE_TOO_BIG);
+        return 0;
+    }
+    if (len != 0)
+        memcpy(line, text, len);
+    line[len] = '\0';
+    hush_on_nostr_line(c, line);
+    return c->fd != HUSH_FD_NONE;
+}
+
+static int hush_relay_ws_pong(struct client *c, const unsigned char *payload,
+                              size_t payload_len)
+{
+    char framed[HUSH_WS_CONTROL_MAX + 16];
+    hush_ws_frame_out_t request;
+    size_t framed_len = 0;
+
+    assert(c != NULL);
+    assert(payload != NULL || payload_len == 0);
+    request = (hush_ws_frame_out_t){.opcode = HUSH_WS_OP_PONG,
+                                    .payload = (const char *)payload,
+                                    .payload_len = payload_len};
+    if (hush_ws_format_frame(&request, framed, sizeof(framed),
+                             &framed_len) != HUSH_OK ||
+        !hush_send_buf(c, framed, framed_len)) {
+        hush_drop_client(c);
+        return 0;
+    }
+    return 1;
+}
+
+static void hush_relay_ws_close(struct client *c, unsigned int code)
+{
+    char framed[HUSH_WS_CONTROL_MAX + 16];
+    char payload[2];
+    hush_ws_frame_out_t request;
+    size_t framed_len = 0;
+
+    assert(c != NULL);
+    payload[0] = (char)((code >> 8) & 0xFFu);
+    payload[1] = (char)(code & 0xFFu);
+    request = (hush_ws_frame_out_t){.opcode = HUSH_WS_OP_CLOSE,
+                                    .payload = payload, .payload_len = 2};
+    if (hush_ws_format_frame(&request, framed, sizeof(framed), &framed_len) ==
+        HUSH_OK)
+        (void)hush_send_buf(c, framed, framed_len);
+    hush_drop_client(c);
 }
 
 static void hush_service_clients(struct pollfd *fds, int nf)
@@ -597,7 +823,22 @@ static void hush_on_bytes(struct client *c)
         c->is_http = 1;
     if (c->is_http) {
         hush_event_t posted;
+        hush_ws_handshake_out_t handshake;
+        char key[HUSH_WS_KEY_LEN + 1];
 
+        handshake = (hush_ws_handshake_out_t){.key = key,
+                                              .key_size = sizeof(key)};
+        if (hush_ws_handshake_take(c->buf, c->len, &handshake) == HUSH_OK) {
+            if (!hush_relay_ws_upgrade(c, key))
+                return; /* dropped inside */
+            /* Bytes past the handshake already belong to the socket. */
+            memmove(c->buf, c->buf + handshake.req_len,
+                    c->len - handshake.req_len);
+            c->len -= handshake.req_len;
+            c->is_http = 0;
+            hush_relay_ws_pump(c);
+            return;
+        }
         if (!hush_http_is_complete(c->buf, c->len))
             return;
         memset(&posted, 0, sizeof(posted));
@@ -605,6 +846,10 @@ static void hush_on_bytes(struct client *c)
         if (posted.id[0] != '\0')
             hush_fanout(&posted);
         hush_drop_client(c);
+        return;
+    }
+    if (c->is_ws) {
+        hush_relay_ws_pump(c);
         return;
     }
     if (c->len >= (size_t)HUSH_BUF_SZ - 1 &&
@@ -682,15 +927,13 @@ static void hush_client_flush(struct client *c)
     c->out_end = 0;
 }
 
-static int hush_send_str(struct client *c, const char *s)
+static int hush_send_buf(struct client *c, const char *data, size_t n)
 {
     size_t pending;
-    size_t n;
 
     assert(c != NULL);
-    assert(s != NULL);
+    assert(data != NULL || n == 0);
     hush_client_flush(c);
-    n = strlen(s);
     pending = c->out_end - c->out_off;
     if (c->out_end + n > sizeof(c->out)) {
         if (c->out_off > 0) {
@@ -701,10 +944,32 @@ static int hush_send_str(struct client *c, const char *s)
         if (c->out_end + n > sizeof(c->out))
             return 0;
     }
-    memcpy(c->out + c->out_end, s, n);
+    if (n != 0)
+        memcpy(c->out + c->out_end, data, n);
     c->out_end += n;
     hush_client_flush(c);
     return 1;
+}
+
+static int hush_send_str(struct client *c, const char *s)
+{
+    char framed[HUSH_BUF_SZ + 16];
+    hush_ws_frame_out_t request;
+    size_t framed_len = 0;
+    size_t n;
+
+    assert(c != NULL);
+    assert(s != NULL);
+    if (!c->is_ws)
+        return hush_send_buf(c, s, strlen(s));
+    /* WS clients receive every wire line as one unmasked text frame. */
+    n = strlen(s);
+    request = (hush_ws_frame_out_t){.opcode = HUSH_WS_OP_TEXT, .payload = s,
+                                    .payload_len = n};
+    if (hush_ws_format_frame(&request, framed, sizeof(framed),
+                             &framed_len) != HUSH_OK)
+        return 0;
+    return hush_send_buf(c, framed, framed_len);
 }
 
 static int hush_client_is_authorized(const struct client *c)
@@ -973,7 +1238,7 @@ static void hush_relay_announce(uint16_t port, int open_ui)
     if (root[0] != '\0')
         fprintf(stdout, "  api auth: %s/%s\n", root, HUSH_AUTH_FILE);
     fprintf(stdout, "  chat UI:  frameless standalone app window\n");
-    fprintf(stdout, "  nostr:    newline JSON on the same port\n");
+    fprintf(stdout, "  nostr:    ws:// + newline JSON on the same port\n");
     fprintf(stdout, "  close:    Close in the hive (GUI gone, hive stays)\n");
     fprintf(stdout, "  exit:     Exit in the hive, --quit, or Ctrl+C\n");
     fflush(stdout);
