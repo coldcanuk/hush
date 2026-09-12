@@ -6,6 +6,19 @@ the top-level `VERSION` file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Provider troubleshooting: dispatch names the concrete missing piece. A
+  job that starts on a fallback because the robot's first-choice provider
+  is unready posts one line ("Deepseek API is not ready (no model
+  selected); using Grok Build instead."), and the failure note appends the
+  same reason when known. New helper `hush_provider_missing_reason()`.
+- Agent editor provider picker: three columns, one plain style (no
+  ready/picked fills), and explicit status text per provider —
+  "authenticated"/"not authenticated", "api token present"/"no api token",
+  "runtime installed"/"not installed". The provider drawer reminds you
+  when an API provider has no model selected.
+
 ### Changed
 
 - `hush_agent.c` split complete: from 4,524 lines to an 864-line core

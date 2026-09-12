@@ -248,6 +248,37 @@ int hush_provider_ready(const hush_provider_status_t *status)
     return status->has_home;
 }
 
+void hush_provider_missing_reason(char *out, size_t outsz,
+                                  const hush_provider_status_t *status)
+{
+    const char *reason = "";
+
+    if (out == NULL || outsz == 0)
+        return;
+    out[0] = '\0';
+    if (status == NULL || hush_provider_ready(status))
+        return;
+    if (strcmp(status->family, HUSH_PROVIDER_FAMILY_API) == 0) {
+        if (status->host[0] == '\0')
+            reason = "no host configured";
+        else if (status->model[0] == '\0')
+            reason = "no model selected";
+        else if (!status->has_key && !status->has_token &&
+                 strcmp(status->id, HUSH_ROSTER_PROVIDER_CUSTOM) != 0)
+            reason = "no API token stored";
+    } else if (!status->has_binary) {
+        reason = "runtime not installed";
+    } else if (strcmp(status->id, HUSH_ROSTER_PROVIDER_OLLAMA) == 0) {
+        if (status->model[0] == '\0')
+            reason = "no model selected";
+    } else if ((status->flags & HUSH_PROVIDER_FLAG_OAUTH) != 0) {
+        reason = "not logged in";
+    } else if (!status->has_home) {
+        reason = "not configured";
+    }
+    hush_provider_copy(out, outsz, reason);
+}
+
 hush_status_t hush_provider_status(hush_provider_status_t *out, const char *id)
 {
     const hush_provider_meta_t *meta;
