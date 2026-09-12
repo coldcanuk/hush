@@ -47,7 +47,6 @@ bind → 4. per-IP + per-connection EVENT buckets (cheap, before crypto) →
 
 | Scope | Rate | Burst | Exhaustion |
 |---|---|---|---|
-| per-IP connections | 10/s | 20 | accept, then close |
 | per-IP EVENTs (attempts) | 30/s | 60 | `OK false "rate-limited: …"` |
 | per-connection EVENTs | 10/s | 20 | `OK false` |
 | per-connection REQs | 5/s | 10 | `CLOSED "rate-limited: …"` |
@@ -60,6 +59,12 @@ AF_INET; `getpeername` at accept). Table full → fail open. Per-pubkey
 table: 16 entries keyed by 64-hex pubkey, linear scan, fail open when full.
 Defaults live in the relay enum block; generous on purpose — the default
 hive is a local single-user app.
+
+**Revision during implementation.** The planned per-IP connection bucket was
+removed: HTTP is one connection per request, so a connection-rate bucket would
+RST legitimate browser traffic before the (looser) HTTP request bucket could
+fire. Connection counts are already bounded by the 16-client slot cap; the
+HTTP per-IP request bucket covers request floods.
 
 ### HTTP limits (hush_http.c)
 
@@ -82,7 +87,8 @@ hive is a local single-user app.
   `"overloaded: job queue full"` line instead of silently dropping — chat and
   event delivery keep flowing, only new AI work is refused.
 - Per-robot provider budget: a table keyed by robot pubkey (reusing the
-  cooldown-table pattern, 20/min burst 5) denies dispatch with
+  cooldown-table pattern, 60/min burst 20 — generous so human-paced confirm
+  flows never hit it) denies dispatch at the fork with
   `"rate-limited: robot busy"`. Existing burst/cooldown policies still run
   first and are stricter by default; this bucket is the hard provider-cost
   ceiling. Test pace verified: check_agent.sh dispatches at channel-cooldown

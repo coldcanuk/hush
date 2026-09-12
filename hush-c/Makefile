@@ -83,6 +83,7 @@ test: $(TEST_BINS) hush-relay
 	@python3 tests/check_collaboration.py
 	@python3 tests/check_authz.py
 	@python3 tests/check_ws.py
+	@python3 tests/check_limits.py
 	@sh tests/check_fixup.sh
 	@sh tests/check_complete.sh
 	@sh tests/check_turn.sh

@@ -27,6 +27,8 @@ Developed with the Codex AI agent. All development uses worktrees **inside this 
 - Wire `EVENT` frames are BIP-340 verified before store and fan-out; NIP-42
   AUTH challenges authenticate connections and gate private hives. See
   [NOSTR.md](NOSTR.md) and [SECURITY.md](SECURITY.md)
+- Token-bucket rate limits on every ingress path (wire, HTTP, provider
+  quotas) with honest `rate-limited`/429 rejections and graceful overload
 - RFC 6455 WebSocket transport for stock Nostr clients (`ws://` on the
   same port: handshake, masked frames, fragmentation, ping/pong, close)
 - Simple TCP newline-delimited JSON protocol (debug/dev transport)

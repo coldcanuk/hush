@@ -102,11 +102,23 @@ Emitted events carry `id`, `pubkey`, `kind`, `created_at`, `content`, and
 - A captured valid event can still be replayed against a public hive (the
   store is idempotent); NIP-42 removes the freshness gap for AUTH-gated
   operations.
+- Ingress rate limits are token buckets. Per connection: 10 EVENT/s (burst
+  20), 5 REQ/s (burst 10), 8 AUTH attempts, 16 JOIN attempts. Per source IP:
+  30 wire EVENT/s (burst 60). Per author pubkey: 30 verified EVENT/min (burst
+  10). Exhaustion answers `["OK", <id>, false, "rate-limited: slow down"]` for
+  EVENT and `["CLOSED", sub, "rate-limited: slow down"]` for REQ; the AUTH and
+  JOIN caps drop the connection. The per-IP and per-connection EVENT buckets
+  run before signature verification, so a forged-frame flood cannot pin the
+  CPU; the per-pubkey bucket runs after verification and only counts valid
+  frames. Gate order on EVENT: restricted → authorization → pubkey bind →
+  per-IP/per-connection rate → verify → per-pubkey rate → store.
 
 ## HTTP side
 
-The same port serves the token-gated PWA API. See [SECURITY.md](SECURITY.md)
-and [README.md](README.md).
+The same port serves the token-gated PWA API. Throttled per source IP at
+60 requests/s (burst 120) with `429 Too Many Requests`; the provider routes
+`POST /api/fixup` and `POST /api/complete` draw from separate 12/min
+quotas. See [SECURITY.md](SECURITY.md) and [README.md](README.md).
 
 ## Deliberately not implemented
 

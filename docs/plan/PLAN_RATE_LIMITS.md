@@ -39,10 +39,12 @@ land via PR only. Every C change follows write-legible-c.
 
 ### M3.5 — AI budgets and overload (hush_intel.c / hush_agent.h)
 - Move `HUSH_AGENT_JOBS_MAX` to `hush_agent.h`; add
-  `hush_agent_jobs_active()`.
-- `hush_intel_policy_blocks`: overload denial when the table is full;
-  per-robot bucket denial last (new `HUSH_INTEL_DENY_*_RATE` texts +
-  table `g_robot_limits`).
+  `hush_agent_jobs_active()` (observability hook).
+- Per-robot bucket denial at `hush_intel_dispatch` (the actual provider
+  fork), not policy validation — policy checks stay UX-paced by design.
+  Overload denial relies on the existing agent start-failure diagnostic
+  (revision: the planned intel-side overload gate broke the confirm-hold
+  unit semantics and was dropped).
 - Verify: `make test` green (check_agent.sh exercises the real dispatch).
 
 ### M3.6 — Integration test + docs

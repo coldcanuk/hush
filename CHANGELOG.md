@@ -8,6 +8,20 @@ the top-level `VERSION` file.
 
 ### Added
 
+- Token-bucket rate limiting (`hush_limiter`, monotonic clock): per-connection
+  EVENT/REQ buckets, per-IP wire EVENT bucket, per-pubkey verified-EVENT
+  budget, AUTH/JOIN attempt caps (drop), per-IP HTTP throttling with
+  `429 Too Many Requests`, and 12/min quotas on `POST /api/fixup` and
+  `POST /api/complete`. Per-IP/per-connection EVENT buckets run before
+  signature verification so forged-frame floods cannot pin the CPU.
+- AI overload protection: a full global job queue refuses new dispatches via
+  the existing start-failure diagnostic, and a per-robot provider budget
+  (60/min, burst 20) caps dispatch cost at the fork; chat and event delivery
+  keep flowing.
+- New `check_limits.py` integration suite (EVENT flood, REQ flood, AUTH
+  attempt cap, HTTP 429) wired into `make test`.
+
+
 - RFC 6455 WebSocket transport for the Nostr wire protocol: upgrade handshake
   on the shared port (`Sec-WebSocket-Accept` via SHA-1), masked client
   frames, unmasked server text frames, fragmented-message reassembly,
