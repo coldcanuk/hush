@@ -8,12 +8,12 @@ the top-level `VERSION` file.
 
 ### Changed
 
-- `hush_http.c` split into a slim core plus per-family API modules behind
-  `hush_http_internal.h`: `http_static.c` (PWA assets/icon panels),
-  `api_status.c` (status/events/session/presence), `api_identity.c`
-  (identity/profile/member/vibe), `api_agents.c` (agent/payne/skill/skillui).
-  Behavior-preserving; the channels/canvas/turn/provider families follow in
-  the next slice.
+- `hush_http.c` split from 2,874 lines into a 977-line core (guard, auth,
+  rate, reply/session, JSON helpers, dispatch router, lifecycle) plus eight
+  per-family modules behind `hush_http_internal.h`: `http_static.c`,
+  `api_status.c`, `api_identity.c`, `api_agents.c`,
+  `api_channels.c`, `api_canvas.c`, `api_provider.c`, `api_turn.c`.
+  Strictly behavior-preserving; the full suite stays green.
 
 ### Added
 
