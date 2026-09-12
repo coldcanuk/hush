@@ -109,4 +109,15 @@ hush_status_t hush_http_serve_complete_get(int fd, const char *req);
 hush_status_t hush_http_serve_reply(int fd, const char *body);
 hush_status_t hush_http_serve_cancel(int fd, const char *body);
 
+/* api_provider.c entry points. */
+hush_status_t hush_http_serve_provider_get(int fd);
+hush_status_t hush_http_serve_provider_post(int fd, const char *body);
+hush_status_t hush_http_serve_provider_scan(int fd, const char *body);
+hush_status_t hush_http_serve_provider_login(int fd, const char *body);
+
+/* api_turn.c entry points. */
+void hush_http_serve_turn_get(int fd);
+void hush_http_serve_ice(int fd);
+hush_status_t hush_http_serve_turn_post(int fd, const char *body);
+
 #endif /* HUSH_HTTP_INTERNAL_H */
