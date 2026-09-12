@@ -46,7 +46,21 @@ header will export.
 4. **M5.5** — docs + land. Remaining clusters (text munging, prompts,
    dispatch/follow, fixup) documented as the follow-on tranche.
 
-## (d) Risks
+## (d) Final state (tranche 1 landed)
+
+| Module | Lines | Owns |
+|---|---|---|
+| `hush_agent.c` | 3,638 | public API, dispatch/follow flow, prompts, text munging, fixup, notes |
+| `agent_process.c` | 454 | worker exec, capture, provider CLIs, spawn |
+| `agent_thread.c` | 254 | thread walking, transcript + context assembly |
+| `hush_agent_internal.h` | — | all types/constants + shared helper surface |
+
+Remaining clusters for the follow-on tranche (definition-scattered): prompt
+builders (fill_leader/worker/directive/note/prompt/rules/guidance), text
+munging (mention rewriting, reply scrub), dispatch/follow flow
+(prepare_human_job, follow slots, election/plan), fixup.
+
+## (e) Risks
 
 1. **Interleaved definitions** — mitigated by moving only the two verified
    contiguous blocks; the compile loop catches every cross-reference.
