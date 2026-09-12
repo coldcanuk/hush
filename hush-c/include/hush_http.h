@@ -16,6 +16,9 @@ void hush_http_set_listen_port(uint16_t port);
 /* Records the configured bind address. Host checks stay on for loopback binds. */
 void hush_http_set_bind_addr(const char *addr);
 void hush_http_set_client_count(int n);
+
+/* Initializes the HTTP ingress buckets. Idempotent. */
+void hush_http_init_limits(void);
 void hush_http_set_launch(hush_launch_t *launch);
 void hush_http_set_turn(hush_turn_t *turn);
 
