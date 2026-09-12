@@ -22,6 +22,15 @@ void hush_http_set_turn(hush_turn_t *turn);
 /* 1 if the first bytes are an HTTP method. */
 int hush_http_looks_like(const char *buf, size_t len);
 
+/* Copies header name's value from a raw request into out. 0 when absent.
+ * Header names match case-insensitively; the value is whitespace-trimmed. */
+int hush_http_header_value(const char *req, size_t len, const char *name,
+                           char *out, size_t outsz);
+
+/* Returns the byte just past the header terminator, or NULL when the blank
+ * line has not arrived yet. */
+const char *hush_http_headers_end(const char *req, size_t len);
+
 /* 1 if headers (and Content-Length body, if any) are fully buffered. */
 int hush_http_is_complete(const char *buf, size_t len);
 
