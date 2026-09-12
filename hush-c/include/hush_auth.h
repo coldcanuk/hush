@@ -8,7 +8,11 @@
 
 enum {
     HUSH_AUTH_TOKEN_HEX = 32,
-    HUSH_AUTH_TOKEN_BUF = HUSH_AUTH_TOKEN_HEX + 1
+    HUSH_AUTH_TOKEN_BUF = HUSH_AUTH_TOKEN_HEX + 1,
+    HUSH_AUTH_CHALLENGE_HEX = 64,
+    HUSH_AUTH_CHALLENGE_BUF = HUSH_AUTH_CHALLENGE_HEX + 1,
+    HUSH_AUTH_SHA256_HEX = 64,
+    HUSH_AUTH_SHA256_BUF = HUSH_AUTH_SHA256_HEX + 1
 };
 
 #define HUSH_AUTH_FILE "session.token"
@@ -28,5 +32,18 @@ int hush_auth_token_matches(const char *presented);
 
 /* Constant-time equality for two NUL-terminated strings. */
 int hush_auth_tokens_equal(const char *a, const char *b);
+
+/* Mints a fresh NIP-42 challenge: 32 random bytes hex-encoded (64 chars).
+ * Fails HUSH_ERR_ARG on a short buffer, HUSH_ERR_IO when entropy is
+ * unavailable. */
+hush_status_t hush_auth_challenge_mint(char *out, size_t outsz);
+
+/* Writes hex(SHA-256(text)) into out. Fails HUSH_ERR_ARG on NULL or a
+ * short buffer, HUSH_ERR_CRYPTO on a digest failure. */
+hush_status_t hush_auth_sha256_hex(const char *text, char *out, size_t outsz);
+
+/* True when hex(SHA-256(presented)) equals the stored join-token hash.
+ * Constant time on the digest comparison. */
+int hush_auth_join_matches(const char *presented, const char *stored_hash);
 
 #endif /* HUSH_AUTH_H */
