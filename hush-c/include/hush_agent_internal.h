@@ -270,6 +270,7 @@ void hush_agent_human_name(char *out, size_t outsz, const hush_launch_t *launch)
 /* ---- shared prompt strings (core + agent_dispatch) ---- */
 
 #define HUSH_AGENT_INTRO_PREFIX "At ease."
+#define HUSH_AGENT_HUMAN_FALLBACK "you"
 #define HUSH_AGENT_ELECT_PROMPT \
     " You are the election committee. Elect the single best leader for the " \
     "task below from these candidates. Consider their skills and fit. Reply " \
@@ -370,5 +371,8 @@ void hush_agent_rewrite_mentions(hush_agent_job_t *job);
 void hush_agent_humanize_ask(char *text, size_t textsz,
                              const hush_launch_t *launch,
                              const char *self_hex);
+
+/* Removes only an incomplete trailing UTF-8 scalar from a bounded snippet. */
+hush_status_t hush_agent_complete_snippet(char *text, size_t capacity);
 
 #endif /* HUSH_AGENT_INTERNAL_H */

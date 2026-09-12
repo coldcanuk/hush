@@ -479,7 +479,7 @@ fi
 echo "$html" | grep -q '(now - created \* 1000) > 2000' || fail "served UI must skip ack gradient after 2s"
 grep -q 'HUSH_AGENT_PEER_STANDARD' src/hush_agent.c || fail "missing inter-robot standard constant"
 grep -q 'HUSH_AGENT_LAST_RULE' src/hush_agent.c || fail "missing last-robot stop rule"
-grep -q 'hush_agent_rewrite_mentions' src/hush_agent.c || fail "missing mention rewrite"
+grep -q 'hush_agent_rewrite_mentions' src/agent_text.c || fail "missing mention rewrite"
 echo "$html" | grep -q 'function mentionHit' || fail "served UI missing mentionHit"
 echo "$html" | grep -A 20 'function renderPreservingMentions' | grep -q 'mentionHit' \
     || fail "pills must resolve via mentionHit"
@@ -523,6 +523,6 @@ keep=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
     -d '{"action":"manage","slug":"general","kind":"open","robot_reply":"mention"}')
 echo "$keep" | grep -q 'jokes' || fail "manage without about must not wipe topics"
 
-grep -q 'hush_agent_scrub_reply' src/hush_agent.c || fail "missing reply scrub"
+grep -q 'hush_agent_scrub_reply' src/agent_text.c || fail "missing reply scrub"
 
 echo "agent mention reply ok"
