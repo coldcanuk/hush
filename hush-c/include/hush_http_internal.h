@@ -9,6 +9,10 @@
 
 #include "hush_event.h"
 #include "hush_launch.h"
+
+enum {
+    HUSH_HTTP_PATH_MAX = 128
+};
 #include "hush_status.h"
 #include "hush_store.h"
 #include "hush_turn.h"
@@ -85,5 +89,16 @@ hush_status_t hush_http_serve_agent(int fd, const char *body,
 void hush_http_serve_skills_get(int fd);
 hush_status_t hush_http_serve_skill_post(int fd, const char *body);
 hush_status_t hush_http_serve_skillui(int fd, const char *body);
+
+/* api_channels.c entry points. */
+hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
+                                   hush_store_t *store, hush_event_t *out);
+hush_status_t hush_http_serve_channel(int fd, const char *body);
+hush_status_t hush_http_serve_group(int fd, const char *body);
+hush_status_t hush_http_serve_project(int fd, const char *body,
+                                      hush_store_t *store);
+hush_status_t hush_http_serve_signal(int fd, const char *body,
+                                     hush_store_t *store,
+                                     hush_event_t *out);
 
 #endif /* HUSH_HTTP_INTERNAL_H */

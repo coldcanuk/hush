@@ -161,8 +161,8 @@ fi
 if echo "$html" | grep -q 'threadPills.pop()'; then
     fail "thread Backspace-at-0 must not pop pills"
 fi
-grep -q 'hush_http_json_has_key' src/hush_http.c || fail "manage about must use hush_http_json_has_key"
-manage=$(sed -n '/^static hush_status_t hush_http_channel_about/,/^}/p' src/hush_http.c)
+grep -q 'hush_http_json_has_key' src/api_channels.c || fail "manage about must use hush_http_json_has_key"
+manage=$(sed -n '/^static hush_status_t hush_http_channel_about/,/^}/p' src/api_channels.c)
 echo "$manage" | grep -q 'hush_http_json_has_key(body, "about")' \
     || fail "manage must no-op about when the field is absent"
 if echo "$html" | grep -q 'splitFences(prettyMentions'; then
