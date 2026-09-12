@@ -101,4 +101,12 @@ hush_status_t hush_http_serve_signal(int fd, const char *body,
                                      hush_store_t *store,
                                      hush_event_t *out);
 
+/* api_canvas.c entry points. */
+hush_status_t hush_http_serve_canvas(int fd, const char *body);
+hush_status_t hush_http_serve_fixup(int fd, const char *body);
+hush_status_t hush_http_serve_complete_post(int fd, const char *body);
+hush_status_t hush_http_serve_complete_get(int fd, const char *req);
+hush_status_t hush_http_serve_reply(int fd, const char *body);
+hush_status_t hush_http_serve_cancel(int fd, const char *body);
+
 #endif /* HUSH_HTTP_INTERNAL_H */
