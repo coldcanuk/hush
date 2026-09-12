@@ -316,7 +316,7 @@ grep -q 'Fulfill YOUR assignment' src/hush_agent.c || fail "hygiene must name th
 grep -q 'Do not mention yourself' src/hush_agent.c || fail "hygiene must forbid self-mention"
 grep -q 'Fulfill the last human ask' src/hush_agent.c || fail "hygiene must fulfill the last human ask"
 grep -q 'exactly one joke' src/hush_agent.c || fail "hygiene must demand one joke"
-grep -q 'hush_agent_robot_busy' src/hush_agent.c || fail "must refuse a second job for a busy robot"
+grep -q 'hush_agent_robot_busy' src/agent_dispatch.c || fail "must refuse a second job for a busy robot"
 i=0
 while [ "$i" -lt 40 ]; do
     if grep -q 'Byte me. go: fmt' "$HUSH_CONFIG_DIR/grok-p.log" 2>/dev/null; then
@@ -488,14 +488,14 @@ echo "$html" | grep -A 25 'function renderPreservingMentions' | grep -q 'if (!hi
 grep -q 'hush_agent_intro_seen' src/hush_agent.c || fail "missing intro table"
 grep -q 'HUSH_AGENT_STRICT_SCOPE' src/hush_agent.c || fail "missing strict per-robot scope"
 grep -q 'HUSH_AGENT_COOPERATE' src/hush_agent.c || fail "missing two-robot cooperation prompt"
-grep -q 'hush_agent_leader_candidates' src/hush_agent.c || fail "missing leader candidate pool"
+grep -q 'hush_agent_leader_candidates' src/agent_dispatch.c || fail "missing leader candidate pool"
 grep -q 'HUSH_AGENT_LEADER_PROMPT' src/hush_agent.c || fail "missing leader plan prompt"
-grep -q 'hush_agent_parse_plan' src/hush_agent.c || fail "missing leader plan parser"
-grep -q 'hush_agent_begin_elect' src/hush_agent.c || fail "missing leader election pass"
-grep -q 'HUSH_AGENT_ELECT_PROMPT' src/hush_agent.c || fail "missing leader election prompt"
-grep -q 'slot->group' src/hush_agent.c || fail "missing parallel wave groups"
-grep -q 'system:hive-patterns' src/hush_agent.c || fail "missing leadership skill set"
-handle=$(sed -n '/static void hush_agent_handle_mention/,/hush_agent_start_grok/p' src/hush_agent.c)
+grep -q 'hush_agent_parse_plan' src/agent_dispatch.c || fail "missing leader plan parser"
+grep -q 'hush_agent_begin_elect' src/agent_dispatch.c || fail "missing leader election pass"
+grep -q 'HUSH_AGENT_ELECT_PROMPT' include/hush_agent_internal.h || fail "missing leader election prompt"
+grep -q 'slot->group' src/agent_dispatch.c || fail "missing parallel wave groups"
+grep -q 'system:hive-patterns' src/agent_dispatch.c || fail "missing leadership skill set"
+handle=$(sed -n '/void hush_agent_handle_mention/,/hush_agent_start_grok/p' src/agent_dispatch.c)
 echo "$handle" | grep -q 'hush_agent_on_deck' || fail "one intro must precede grok start"
 if echo "$handle" | grep -q 'dev_log_enabled'; then
     fail "intro must not be dest-log gated"
