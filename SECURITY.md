@@ -62,15 +62,19 @@ address) exposes it deliberately; remote clients must then present the token.
 `Access-Control-Allow-Origin` is not set, the `Host` header must name the local
 machine in loopback mode, and the browser cookie is `HttpOnly; SameSite=Strict`.
 
-On the line protocol, every connection receives a per-connection
-[NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md) challenge in
-response to its first wire frame (the transport cannot distinguish HTTP from
-line-protocol clients before their first bytes; see [NOSTR.md](NOSTR.md)). A
-client authenticates with a signed kind-22242 `["AUTH", <event>]` whose
-`challenge` tag echoes the challenge and whose `created_at` is within
-±600 s of now. The relay verifies the NIP-01 id and BIP-340 signature, binds
-the pubkey to that socket, and answers `OK true`; a failed attempt is answered
-`OK false` and receives a fresh challenge.
+On the wire protocol — WebSocket or raw TCP — every connection receives a
+per-connection [NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md)
+challenge: WebSocket clients immediately after the `101`, raw clients in
+response to their first wire frame (the sniff cannot tell the protocols apart
+before the first bytes; see [NOSTR.md](NOSTR.md)). A client authenticates with
+a signed kind-22242 `["AUTH", <event>]` whose `challenge` tag echoes the
+challenge and whose `created_at` is within ±600 s of now. The relay verifies
+the NIP-01 id and BIP-340 signature, binds the pubkey to that socket, and
+answers `OK true`; a failed attempt is answered `OK false` and receives a
+fresh challenge. WebSocket framing follows RFC 6455 (masked client frames,
+unmasked server text frames, bounded reassembly, close/ping handling);
+malformed frames close `1002`, binary `1003`, invalid UTF-8 `1007`,
+oversized `1009`.
 
 Wire `EVENT` frames are authenticated: the relay recomputes the NIP-01 id and
 verifies the BIP-340 signature with OpenSSL against the claimed pubkey before

@@ -27,7 +27,9 @@ Developed with the Codex AI agent. All development uses worktrees **inside this 
 - Wire `EVENT` frames are BIP-340 verified before store and fan-out; NIP-42
   AUTH challenges authenticate connections and gate private hives. See
   [NOSTR.md](NOSTR.md) and [SECURITY.md](SECURITY.md)
-- Simple TCP newline-delimited JSON protocol (MVP; WebSocket adapter later)
+- RFC 6455 WebSocket transport for stock Nostr clients (`ws://` on the
+  same port: handshake, masked frames, fragmentation, ping/pong, close)
+- Simple TCP newline-delimited JSON protocol (debug/dev transport)
 - `poll(2)` single-threaded server
 - Same port also serves the chat **PWA** over HTTP (`GET /`, manifest, service worker, icons)
 - Optional **STUN/TURN** (coturn) from Settings, including systemd daemon mode

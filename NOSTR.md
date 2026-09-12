@@ -1,8 +1,9 @@
 # Hush line protocol
 
 > **Status: Hush 0.0.1.** This document describes what the in-tree
-> `hush-relay` actually speaks. It is Nostr-shaped, not Nostr: there is no
-> WebSocket transport. Event signatures are verified on ingest and
+> `hush-relay` actually speaks. It is Nostr-shaped: the same JSON lines ride
+> RFC 6455 WebSocket text frames (`ws://`) or newline-delimited raw TCP.
+> Event signatures are verified on ingest and
 > [NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md) AUTH
 > challenges gate private hives. Earlier revisions of this file described the
 > upstream NIP-29 reference relay that Hush's wire format was modelled on; that
@@ -10,18 +11,26 @@
 
 ## Transport
 
-- One TCP port serves both HTTP and the line protocol. The relay sniffs the
-  first bytes: HTTP methods go to the embedded PWA/API, anything else is
-  treated as newline-delimited JSON.
-- A NIP-42 challenge is sent in response to the client's first wire frame.
-  Because HTTP and the line protocol share the port and clients are told apart
-  by their first bytes, a client that has nothing to say yet sends any frame
-  (for example an empty line) and reads the challenge.
-- One JSON value per LF-terminated line. The receive buffer is 32 KiB; a line
-  that fills it receives `["NOTICE","line too long"]` and the connection closes.
+- One TCP port serves HTTP, WebSocket, and the raw line protocol. The relay
+  sniffs the first bytes: a `GET` carrying an RFC 6455 upgrade handshake
+  (`Upgrade: websocket`, `Sec-WebSocket-Version: 13`) gets a `101` and
+  switches to WebSocket framing; other HTTP methods go to the embedded
+  PWA/API; anything else is newline-delimited JSON.
+- WebSocket framing follows RFC 6455: client frames must be masked, server
+  frames are unmasked text frames, one wire line per message, fragmented text
+  is reassembled, ping is answered with a pong echo, and close is answered
+  with a close echo. A malformed frame earns close `1002`, a binary frame
+  `1003`, invalid UTF-8 `1007`, and an oversized message `1009`.
+- WebSocket clients receive the NIP-42 challenge immediately after the `101`.
+- Raw TCP clients receive the challenge in response to their first wire frame
+  (the sniff cannot tell the protocols apart before the first bytes), so a
+  raw client that has nothing to say yet sends any frame (for example an
+  empty line) and reads the challenge.
+- One JSON value per LF-terminated line. The receive buffer is 32 KiB; a raw
+  line that fills it receives `["NOTICE","line too long"]` and the connection
+  closes.
 - The listener binds `127.0.0.1` by default. `--listen ADDR` (for example
   `--listen 0.0.0.0`) exposes it deliberately.
-- There is no WebSocket endpoint, so stock Nostr clients cannot connect.
 
 ## Client to relay
 
@@ -101,5 +110,5 @@ and [README.md](README.md).
 
 ## Deliberately not implemented
 
-WebSocket transport, NIP-29 relay groups, NIP-50 search, NIP-17 DMs,
-message encryption, relay-to-relay federation, and `a`-tag deletion targets.
+NIP-29 relay groups, NIP-50 search, NIP-17 DMs, message encryption,
+relay-to-relay federation, and `a`-tag deletion targets.
