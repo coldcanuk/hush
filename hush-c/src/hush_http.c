@@ -93,7 +93,7 @@ static char g_bind_addr[HUSH_HTTP_HOST_MAX];
 static int g_set_cookie;
 static char g_context_text[HUSH_ROSTER_CONTEXT_MAX][HUSH_ROSTER_CONTEXT_BYTES];
 
-static const char *hush_find_headers_end(const char *buf, size_t len);
+const char *hush_http_headers_end(const char *buf, size_t len);
 static long hush_http_content_length(const char *buf, size_t hlen);
 static void hush_http_path(const char *req, char *out, size_t outsz);
 /* Writes required bytes with bounded backpressure; IO on disconnect or stalled reader. */
@@ -261,9 +261,6 @@ static int hush_http_line_has_name(const char *line, const char *name,
                                    size_t name_len);
 /* Copies a header value trimmed of leading blanks and trailing CR/LF. */
 static void hush_http_copy_value(const char *src, char *out, size_t outsz);
-/* Copies the named header value into out. 0 when absent or empty. */
-static int hush_http_header_value(const char *req, size_t len, const char *name,
-                                  char *out, size_t outsz);
 /* Copies the ?k= credential from the request line. 0 when absent. */
 static int hush_http_query_token(const char *req, char *out, size_t outsz);
 /* Copies cookie name's value from a Cookie header. 0 when absent. */
@@ -341,7 +338,7 @@ int hush_http_is_complete(const char *buf, size_t len)
 
     if (buf == NULL)
         return 0;
-    end = hush_find_headers_end(buf, len);
+    end = hush_http_headers_end(buf, len);
     if (end == NULL)
         return 0;
     hlen = (size_t)(end - buf) + 4;
@@ -416,7 +413,7 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
     return HUSH_ERR_NOT_FOUND;
 }
 
-static const char *hush_find_headers_end(const char *buf, size_t len)
+const char *hush_http_headers_end(const char *buf, size_t len)
 {
     size_t i;
 
@@ -493,8 +490,8 @@ static void hush_http_copy_value(const char *src, char *out, size_t outsz)
     out[n] = '\0';
 }
 
-static int hush_http_header_value(const char *req, size_t len, const char *name,
-                                  char *out, size_t outsz)
+int hush_http_header_value(const char *req, size_t len, const char *name,
+                            char *out, size_t outsz)
 {
     char block[HUSH_HTTP_HDR_MAX];
     const char *end;
@@ -508,7 +505,7 @@ static int hush_http_header_value(const char *req, size_t len, const char *name,
     if (outsz == 0)
         return 0;
     out[0] = '\0';
-    end = hush_find_headers_end(req, len);
+    end = hush_http_headers_end(req, len);
     if (end == NULL)
         return 0;
     hlen = (size_t)(end - req) + 4;
@@ -2793,7 +2790,7 @@ static const char *hush_http_body(const char *req, size_t len)
 
     if (req == NULL)
         return "";
-    end = hush_find_headers_end(req, len);
+    end = hush_http_headers_end(req, len);
     if (end == NULL)
         return "";
     return end + 4;

@@ -8,6 +8,17 @@ the top-level `VERSION` file.
 
 ### Added
 
+- RFC 6455 WebSocket transport for the Nostr wire protocol: upgrade handshake
+  on the shared port (`Sec-WebSocket-Accept` via SHA-1), masked client
+  frames, unmasked server text frames, fragmented-message reassembly,
+  ping/pong, close echo with proper status codes (1002/1003/1007/1009), and a
+  UTF-8 validator (`hush_ws` module with RFC 6455 §5.7 vector tests).
+  WebSocket clients receive the NIP-42 challenge immediately after the `101`;
+  all wire lines (OK/EOSE/EVENT/AUTH/CLOSED/NOTICE) are framed through one
+  send chokepoint, so AUTH, private-hive gating, and fan-out behave identically
+  over `ws://` and raw TCP. New `check_ws.py` integration suite.
+
+
 - NIP-42 AUTH on the line protocol: a per-connection challenge (sent on the
   first wire frame), signed kind-22242 `["AUTH", <event>]` validation with a
   ±600 s freshness window, challenge rotation after failed attempts, and
