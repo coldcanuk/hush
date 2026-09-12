@@ -29,7 +29,6 @@
 
 enum {
     HUSH_AGENT_INTRO_MAX = 32,
-    HUSH_AGENT_JOBS_MAX = 4,
     HUSH_AGENT_KIND_NOTE = 1,
     HUSH_AGENT_ARGV_MAX = 28,
     HUSH_AGENT_PATH_MAX = 256,
@@ -745,6 +744,18 @@ int hush_agent_channel_busy(const char *channel)
             busy++;
     }
     return busy;
+}
+
+int hush_agent_jobs_active(void)
+{
+    int active = 0;
+    size_t i;
+
+    for (i = 0; i < (size_t)HUSH_AGENT_JOBS_MAX; ++i) {
+        if (g_jobs[i].busy)
+            active++;
+    }
+    return active;
 }
 
 void hush_agent_poll(hush_store_t *store)

@@ -8,6 +8,7 @@
 
 #include "hush_agent.h"
 #include "hush_intel.h"
+#include "hush_limiter.h"
 
 enum {
     HUSH_INTEL_KIND_NOTE = 1,
@@ -32,6 +33,8 @@ enum {
 #define HUSH_INTEL_DENY_HOLDS "Holding. Too many live conversations; try again shortly."
 #define HUSH_INTEL_DENY_COOLDOWN \
     "Cooling down. This robot just answered here; try again shortly."
+#define HUSH_INTEL_DENY_ROBOT_RATE \
+    "Rate-limited. This robot needs a short break."
 
 typedef struct {
     int live;
@@ -56,11 +59,24 @@ typedef struct {
     time_t last;
 } hush_intel_cooldown_t;
 
+/* Per-robot provider budget: the hard ceiling on provider invocations. */
+typedef struct {
+    char robot[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+    hush_limiter_t lim;
+} hush_intel_robot_limit_t;
+
 enum {
-    HUSH_INTEL_COOLDOWN_MAX = 16
+    HUSH_INTEL_COOLDOWN_MAX = 16,
+    HUSH_INTEL_ROBOT_LIMITS_MAX = 16,
+    /* Generous backstop: human-paced bursts (confirm flows, follow-ups) must
+     * never hit this; it caps runaway dispatch loops at the provider fork. */
+    HUSH_INTEL_ROBOT_PER_MIN = 60,
+    HUSH_INTEL_ROBOT_BURST = 20,
+    HUSH_INTEL_SECONDS_PER_MIN = 60
 };
 
 static hush_intel_cooldown_t g_cooldowns[HUSH_INTEL_COOLDOWN_MAX];
+static hush_intel_robot_limit_t g_robot_limits[HUSH_INTEL_ROBOT_LIMITS_MAX];
 
 static void hush_intel_copy(char *dst, size_t dstsz, const char *src);
 static void hush_intel_lower(char *text);
@@ -101,6 +117,9 @@ static int hush_intel_cooldown_active(const char *channel, const char *robot,
                                       int cooldown_s);
 /* Records a dispatch time for (channel, robot), replacing the oldest slot. */
 static void hush_intel_cooldown_mark(const char *channel, const char *robot);
+/* Returns the robot's dispatch budget, creating it on first sight; NULL when
+ * the table is full (fail open). */
+static hush_limiter_t *hush_intel_robot_lim(const char *robot);
 /* Dispatches the hold's robot and starts its channel cooldown. */
 static void hush_intel_dispatch(hush_store_t *store, hush_launch_t *launch,
                                 const hush_event_t *ev, hush_intel_hold_t *hold);
@@ -131,6 +150,7 @@ void hush_intel_init(void)
 {
     memset(g_holds, 0, sizeof(g_holds));
     memset(g_cooldowns, 0, sizeof(g_cooldowns));
+    memset(g_robot_limits, 0, sizeof(g_robot_limits));
 }
 
 void hush_intel_consider(hush_store_t *store, hush_launch_t *launch,
@@ -518,10 +538,47 @@ static void hush_intel_cooldown_mark(const char *channel, const char *robot)
     g_cooldowns[free_slot].last = time(NULL);
 }
 
+static hush_limiter_t *hush_intel_robot_lim(const char *robot)
+{
+    size_t idx;
+
+    assert(robot != NULL);
+    for (idx = 0; idx < (size_t)HUSH_INTEL_ROBOT_LIMITS_MAX; ++idx) {
+        if (g_robot_limits[idx].robot[0] != '\0' &&
+            strcmp(g_robot_limits[idx].robot, robot) == 0)
+            return &g_robot_limits[idx].lim;
+    }
+    for (idx = 0; idx < (size_t)HUSH_INTEL_ROBOT_LIMITS_MAX; ++idx) {
+        if (g_robot_limits[idx].robot[0] == '\0') {
+            hush_intel_copy(g_robot_limits[idx].robot,
+                            sizeof(g_robot_limits[idx].robot), robot);
+            hush_limiter_init(&g_robot_limits[idx].lim,
+                              (double)HUSH_INTEL_ROBOT_PER_MIN /
+                                  (double)HUSH_INTEL_SECONDS_PER_MIN,
+                              (double)HUSH_INTEL_ROBOT_BURST);
+            return &g_robot_limits[idx].lim;
+        }
+    }
+    return NULL; /* table full: fail open */
+}
+
 static void hush_intel_dispatch(hush_store_t *store, hush_launch_t *launch,
                                 const hush_event_t *ev, hush_intel_hold_t *hold)
 {
+    hush_limiter_t *robot_lim;
+
     assert(hold != NULL);
+    /* The provider budget gates the actual fork: policy checks (burst hold,
+     * cooldown, caps) already ran, so a denial here is a hard ceiling on
+     * provider invocations, not a UX gate. */
+    robot_lim = hush_intel_robot_lim(hold->robot);
+    if (robot_lim != NULL &&
+        !hush_limiter_take(robot_lim, hush_limiter_now_ms())) {
+        hush_intel_post_line(store, ev, hold->robot,
+                             HUSH_INTEL_DENY_ROBOT_RATE);
+        hush_intel_clear_hold(hold);
+        return;
+    }
     hush_intel_cooldown_mark(hold->channel, hold->robot);
     hush_agent_mention(store, launch, ev, hold->robot);
     hush_intel_clear_hold(hold);
