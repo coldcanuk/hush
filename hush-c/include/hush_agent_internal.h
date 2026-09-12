@@ -396,4 +396,10 @@ const char *hush_agent_pick_provider(const hush_agent_robot_t *bot);
 /* Mints a fresh unique job token. */
 void hush_agent_make_token(char *out, size_t outsz);
 
+/* True when the grok provider binary is ready to run. */
+int hush_agent_grok_ready(void);
+
+/* Returns the next free job slot, or NULL when the table is full. */
+hush_agent_job_t *hush_agent_find_slot(void);
+
 #endif /* HUSH_AGENT_INTERNAL_H */
