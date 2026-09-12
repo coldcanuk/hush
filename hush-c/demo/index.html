@@ -952,6 +952,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         <label class="switch"><input id="vibe-public" type="checkbox" checked><span class="slider"></span></label>
       </div>
       <p id="vibe-token" class="help"></p>
+      <button class="btn" id="vibe-rotate" type="button">Rotate join token</button>
       <div class="row">
         <label for="dev-log">Developer Logging (syslog panel; default off)</label>
         <label class="switch"><input id="dev-log" type="checkbox"><span class="slider"></span></label>
@@ -3279,7 +3280,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     $("invite-human").addEventListener("click", () => {
       $("member-err").textContent = "";
       $("member-token").textContent = (session.vibe && session.vibe.visibility === "private")
-        ? ("Join token: " + (session.vibe.join_token || ""))
+        ? ("Join token: " + (session.vibe.join_token || "unavailable after restart — rotate to issue a new one"))
         : "Public vibe — no token required.";
       $("member-drawer").classList.add("show");
     });
@@ -3789,6 +3790,14 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     $("turn-on").addEventListener("change", () => postTurn());
     $("turn-daemon").addEventListener("change", () => postTurn());
     $("turn-host").addEventListener("change", () => postTurn());
+    if ($("vibe-rotate")) $("vibe-rotate").addEventListener("click", async () => {
+      try {
+        const rotated = await api("/api/vibe", { action: "rotate_token" });
+        if (rotated && rotated.join_token) {
+          $("vibe-token").textContent = "Join token: " + rotated.join_token;
+        }
+      } catch (e) {}
+    });
     $("vibe-public").addEventListener("change", async () => {
       const visibility = $("vibe-public").checked ? "public" : "private";
       try { applySession(await api("/api/vibe", { visibility: visibility })); }
@@ -3840,7 +3849,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       if (session.vibe) {
         $("vibe-public").checked = session.vibe.visibility !== "private";
         $("vibe-token").textContent = session.vibe.visibility === "private"
-          ? ("Join token: " + (session.vibe.join_token || ""))
+          ? ("Join token: " + (session.vibe.join_token || "unavailable after restart — rotate to issue a new one"))
           : "Public vibes are discoverable and joinable.";
       }
       // M4.3 dev log flag from session (persisted server side via launch)

@@ -47,7 +47,9 @@ typedef struct {
 #define HUSH_LAUNCH_CHAN_WELCOME "welcome"
 #define HUSH_LAUNCH_CHAN_AGENTS "agents"
 #define HUSH_LAUNCH_VIBE_FILE "vibe.json"
-#define HUSH_LAUNCH_VIBE_VERSION "1"
+/* v1 stored the join token as plaintext "vibe_token"; v2 persists
+ * "vibe_token_hash" (hex SHA-256) and loads v1 files by migration. */
+#define HUSH_LAUNCH_VIBE_VERSION "2"
 
 /* Appends guidance from a required borrowed channel to a bounded JSON output.
  * Required output/offset; FULL on insufficient space. */
@@ -132,6 +134,10 @@ static void hush_launch_fill_event(hush_event_t *ev, const char *pubkey_hex,
 
 /* Writes a 16-char hex join token. */
 static hush_status_t hush_launch_make_token(char *out, size_t outsz);
+
+/* Mints a fresh join token and its stored hash. Fails HUSH_ERR_IO or
+ * HUSH_ERR_CRYPTO. */
+static hush_status_t hush_launch_mint_token(hush_launch_t *launch);
 
 /* JSON-escapes src into dst. */
 static size_t hush_launch_json_escape(const char *src, char *dst, size_t dstsz);
@@ -799,9 +805,12 @@ hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
     hush_launch_copy_name(launch->vibe_about, sizeof(launch->vibe_about),
                           about, "Primary Hush endpoint.");
     launch->vibe_public = 1;
-    if (hush_launch_make_token(launch->vibe_token,
-                               sizeof(launch->vibe_token)) != HUSH_OK)
-        return HUSH_ERR_IO;
+    {
+        hush_status_t minted = hush_launch_mint_token(launch);
+
+        if (minted != HUSH_OK)
+            return minted;
+    }
     launch->nchannels = 0;
     launch->nprojects = 0;
     hush_identity_clear(&launch->payne);
@@ -832,10 +841,37 @@ hush_status_t hush_launch_set_vibe_visibility(hush_launch_t *launch,
         return HUSH_ERR_ARG;
     launch->vibe_public = is_public ? 1 : 0;
     if (!launch->vibe_public && launch->vibe_token[0] == '\0') {
-        if (hush_launch_make_token(launch->vibe_token,
-                                   sizeof(launch->vibe_token)) != HUSH_OK)
-            return HUSH_ERR_IO;
+        hush_status_t minted = hush_launch_mint_token(launch);
+
+        if (minted != HUSH_OK)
+            return minted;
     }
+    return hush_launch_save_vibe(launch);
+}
+
+int hush_launch_join_ok(const hush_launch_t *launch, const char *presented)
+{
+    if (launch == NULL || presented == NULL || presented[0] == '\0')
+        return 0;
+    if (launch->vibe_token[0] != '\0' &&
+        hush_auth_tokens_equal(presented, launch->vibe_token))
+        return 1;
+    if (launch->vibe_token_hash[0] == '\0')
+        return 0;
+    return hush_auth_join_matches(presented, launch->vibe_token_hash);
+}
+
+hush_status_t hush_launch_rotate_token(hush_launch_t *launch)
+{
+    hush_status_t minted;
+
+    if (launch == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->has_vibe)
+        return HUSH_ERR_ARG;
+    minted = hush_launch_mint_token(launch);
+    if (minted != HUSH_OK)
+        return minted;
     return hush_launch_save_vibe(launch);
 }
 
@@ -2066,6 +2102,19 @@ static hush_status_t hush_launch_make_token(char *out, size_t outsz)
     return HUSH_OK;
 }
 
+static hush_status_t hush_launch_mint_token(hush_launch_t *launch)
+{
+    assert(launch != NULL);
+    if (hush_launch_make_token(launch->vibe_token,
+                               sizeof(launch->vibe_token)) != HUSH_OK)
+        return HUSH_ERR_IO;
+    if (hush_auth_sha256_hex(launch->vibe_token, launch->vibe_token_hash,
+                             sizeof(launch->vibe_token_hash)) != HUSH_OK)
+        return HUSH_ERR_CRYPTO;
+    assert(launch->vibe_token_hash[0] != '\0');
+    return HUSH_OK;
+}
+
 static void hush_launch_config_dir(char *out, size_t outsz)
 {
     assert(out != NULL);
@@ -2261,8 +2310,8 @@ static hush_status_t hush_launch_put_vibe_head(const hush_launch_t *launch,
     HUSH_TRY(hush_launch_put_field(out, outsz, off, "vibe_public", flag));
     flag[0] = launch->dev_log_enabled ? '1' : '0';
     HUSH_TRY(hush_launch_put_field(out, outsz, off, "dev_log_enabled", flag));
-    return hush_launch_put_field(out, outsz, off, "vibe_token",
-                                 launch->vibe_token);
+    return hush_launch_put_field(out, outsz, off, "vibe_token_hash",
+                                 launch->vibe_token_hash);
 }
 
 static hush_status_t hush_launch_put_channels(const hush_launch_t *launch,
@@ -2548,9 +2597,18 @@ static hush_status_t hush_launch_take_vibe_head(hush_launch_t *launch,
         return HUSH_ERR_PARSE;
     (void)hush_launch_json_string(json, "vibe_about", launch->vibe_about,
                                   sizeof(launch->vibe_about));
-    if (!hush_launch_json_string(json, "vibe_token", launch->vibe_token,
-                                 sizeof(launch->vibe_token)))
-        return HUSH_ERR_PARSE;
+    (void)hush_launch_json_string(json, "vibe_token_hash",
+                                  launch->vibe_token_hash,
+                                  sizeof(launch->vibe_token_hash));
+    if (hush_launch_json_string(json, "vibe_token", launch->vibe_token,
+                                sizeof(launch->vibe_token)) &&
+        launch->vibe_token[0] != '\0' && launch->vibe_token_hash[0] == '\0') {
+        /* Version-1 file: migrate the plaintext token to a stored hash,
+         * keeping it live for this run. */
+        if (hush_auth_sha256_hex(launch->vibe_token, launch->vibe_token_hash,
+                                 sizeof(launch->vibe_token_hash)) != HUSH_OK)
+            return HUSH_ERR_PARSE;
+    }
     launch->vibe_public = 1;
     if (hush_launch_json_string(json, "vibe_public", flag, sizeof(flag))
         && flag[0] == '0')

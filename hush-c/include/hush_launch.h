@@ -5,6 +5,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "hush_auth.h"
 #include "hush_identity.h"
 #include "hush_json.h"
 #include "hush_pass.h"
@@ -134,6 +135,9 @@ typedef struct {
     char vibe_about[HUSH_LAUNCH_ABOUT_MAX];
     int vibe_public;
     char vibe_token[HUSH_LAUNCH_NAME_MAX];
+    /* hex(SHA-256(vibe_token)) persisted in vibe.json; the plaintext stays
+     * in memory only for the run that created or rotated it. */
+    char vibe_token_hash[HUSH_AUTH_SHA256_BUF];
     /* Developer Logging (default 0 = off/disabled).
      * When 1: "Mention received.", on-deck intros, internal debug route to
      * a separate panel (syslog format). Suppressed from main chat stream.
@@ -231,6 +235,14 @@ hush_status_t hush_launch_create_vibe(hush_launch_t *launch,
 /* public=1 discoverable; public=0 requires join token. */
 hush_status_t hush_launch_set_vibe_visibility(hush_launch_t *launch,
                                               int is_public);
+
+/* True when presented equals the live join token or its stored hash. */
+int hush_launch_join_ok(const hush_launch_t *launch, const char *presented);
+
+/* Replaces the join token and persists its hash, keeping the plaintext in
+ * memory for one display. Fails HUSH_ERR_ARG without a vibe, HUSH_ERR_IO
+ * when minting fails. */
+hush_status_t hush_launch_rotate_token(hush_launch_t *launch);
 
 /* Adds an open channel. Fails HUSH_ERR_FULL at cap. */
 hush_status_t hush_launch_add_channel(hush_launch_t *launch,

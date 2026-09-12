@@ -157,6 +157,8 @@ static hush_status_t hush_http_read_legacy_context(hush_roster_context_in_t *slo
                                                    const char *body);
 static hush_status_t hush_http_serve_vibe(int fd, const char *body,
                                           hush_store_t *store);
+/* Rotates the join token and returns the new plaintext exactly once. */
+static hush_status_t hush_http_serve_vibe_rotate(int fd);
 /* Decodes optional required room guidance into borrowed caller storage.
  * Missing field preserves the supplied default; invalid or oversized fields fail. */
 static hush_status_t hush_http_take_room_prompt(char *out, size_t outsz, const char *body);
@@ -1760,10 +1762,14 @@ static hush_status_t hush_http_serve_vibe(int fd, const char *body,
     char name[HUSH_LAUNCH_NAME_MAX];
     char about[HUSH_LAUNCH_ABOUT_MAX];
     char vis[16];
+    char action[16];
     int is_public = 1;
 
     if (g_launch == NULL || body == NULL || store == NULL)
         return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    if (hush_json_field(body, "action", action, sizeof(action)) &&
+        strcmp(action, "rotate_token") == 0)
+        return hush_http_serve_vibe_rotate(fd);
     if (hush_json_field(body, "visibility", vis, sizeof(vis)) &&
         strcmp(vis, "private") == 0)
         is_public = 0;
@@ -1781,6 +1787,26 @@ static hush_status_t hush_http_serve_vibe(int fd, const char *body,
     return hush_http_reply_session(fd,
                                    hush_launch_set_vibe_visibility(g_launch,
                                                                    is_public));
+}
+
+/* Rotates the join token and returns the new plaintext exactly once. */
+static hush_status_t hush_http_serve_vibe_rotate(int fd)
+{
+    char out[HUSH_LAUNCH_NAME_MAX + 48];
+    hush_status_t rotated;
+    int n;
+
+    assert(g_launch != NULL);
+    rotated = hush_launch_rotate_token(g_launch);
+    if (rotated != HUSH_OK)
+        return hush_http_reply_session(fd, rotated);
+    n = snprintf(out, sizeof(out),
+                 "{\"ok\":true,\"action\":\"rotate_token\",\"join_token\":\"%s\"}\n",
+                 g_launch->vibe_token);
+    if (n <= 0 || (size_t)n >= sizeof(out))
+        return hush_http_reply_session(fd, HUSH_ERR_FULL);
+    hush_http_reply(fd, "200 OK", "application/json", out, (size_t)n);
+    return HUSH_OK;
 }
 
 static hush_status_t hush_http_serve_channel(int fd, const char *body)
