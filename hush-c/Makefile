@@ -61,6 +61,7 @@ src/hush_ui_html.h: demo/index.html demo/sw.js demo/manifest.webmanifest \
 	tmp=$@.tmp.$$$$; sh ../scripts/embed-ui.sh demo > $$tmp && mv $$tmp $@
 
 src/hush_http.o: src/hush_ui_html.h
+src/http_static.o: src/hush_ui_html.h
 
 src/%.o: src/%.c
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
