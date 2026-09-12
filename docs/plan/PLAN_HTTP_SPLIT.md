@@ -56,6 +56,14 @@ land via PR only. Every moved function stays verbatim; only visibility
   `hush_http_provider_scan_serve`, `hush_http_provider_login_serve`).
 - Verify: `make test` green (check_fixup/complete/turn/provider suites).
 
+### Status note
+
+M4.2-M4.5 landed (internal surface, http_static.c, api_status.c,
+api_identity.c, api_agents.c). M4.6-M4.7 (api_channels.c, api_canvas.c,
+api_turn.c, api_provider.c) are the follow-on slice; the worktree branch was
+reverted to the green M4.5 state before landing, and the remaining moves will
+reuse the same range-extraction recipe with the compile-fix loop.
+
 ### M4.8 — Docs + land
 - NOSTR/SECURITY untouched (no behavior change); CHANGELOG entry; line-count
   before/after in the PR body. Push, PR, auto-merge, cleanup, clean

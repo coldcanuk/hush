@@ -6,6 +6,15 @@ the top-level `VERSION` file.
 
 ## [Unreleased]
 
+### Changed
+
+- `hush_http.c` split into a slim core plus per-family API modules behind
+  `hush_http_internal.h`: `http_static.c` (PWA assets/icon panels),
+  `api_status.c` (status/events/session/presence), `api_identity.c`
+  (identity/profile/member/vibe), `api_agents.c` (agent/payne/skill/skillui).
+  Behavior-preserving; the channels/canvas/turn/provider families follow in
+  the next slice.
+
 ### Added
 
 - Token-bucket rate limiting (`hush_limiter`, monotonic clock): per-connection
