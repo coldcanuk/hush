@@ -81,6 +81,7 @@ test: $(TEST_BINS) hush-relay
 	@sh tests/check_ollama.sh
 	@sh tests/check_failover.sh
 	@python3 tests/check_collaboration.py
+	@python3 tests/check_authz.py
 	@sh tests/check_fixup.sh
 	@sh tests/check_complete.sh
 	@sh tests/check_turn.sh

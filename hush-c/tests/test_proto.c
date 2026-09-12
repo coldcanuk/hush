@@ -110,6 +110,42 @@ int main(void)
            "ok");
     expect(strcmp(buf, "[\"OK\",\"ab\",true,\"\"]\n") == 0, "ok text");
 
+    {
+        const char *auth =
+            "[\"AUTH\",{\"id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\","
+            "\"pubkey\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\","
+            "\"kind\":22242,\"created_at\":1720000999,\"content\":\"\","
+            "\"tags\":[[\"relay\",\"ws://localhost:1234\"],[\"challenge\",\"abc\"]]}]";
+
+        expect(hush_proto_parse_line(auth, &msg) == HUSH_OK, "parse AUTH");
+        expect(msg.type == HUSH_MSG_AUTH, "type AUTH");
+        expect(msg.event.kind == 22242, "AUTH kind");
+        expect(strcmp(msg.event.tags[0][0], "relay") == 0, "AUTH relay tag");
+        expect(strcmp(msg.event.tags[1][1], "abc") == 0, "AUTH challenge");
+    }
+
+    expect(hush_proto_parse_line("[\"AUTH\",\"deadbeef\"]", &msg) == HUSH_OK,
+           "parse AUTH server form");
+    expect(msg.type == HUSH_MSG_AUTH && msg.event.id[0] == '\0',
+           "server form ignored");
+
+    expect(hush_proto_parse_line("[\"JOIN\",\"0123456789abcdef\"]", &msg) == HUSH_OK,
+           "parse JOIN");
+    expect(msg.type == HUSH_MSG_JOIN, "type JOIN");
+    expect(strcmp(msg.join_token, "0123456789abcdef") == 0, "join token");
+
+    expect(hush_proto_format_auth("deadbeef", buf, sizeof(buf), NULL) == HUSH_OK,
+           "format auth");
+    expect(strcmp(buf, "[\"AUTH\",\"deadbeef\"]\n") == 0, "auth text");
+    expect(hush_proto_format_closed("s9", "auth-required: no", buf, sizeof(buf),
+                                    NULL) == HUSH_OK,
+           "format closed");
+    expect(strcmp(buf, "[\"CLOSED\",\"s9\",\"auth-required: no\"]\n") == 0,
+           "closed text");
+    expect(hush_proto_format_notice("joined", buf, sizeof(buf), NULL) == HUSH_OK,
+           "format notice");
+    expect(strcmp(buf, "[\"NOTICE\",\"joined\"]\n") == 0, "notice text");
+
     if (g_fail)
         return 1;
     printf("test_proto ok\n");

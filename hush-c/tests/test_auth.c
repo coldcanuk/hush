@@ -54,6 +54,39 @@ int main(void)
     expect(hush_auth_token_copy(again, sizeof(again)) == HUSH_OK, "copy again");
     expect(strcmp(token, again) == 0, "token is stable");
     expect(hush_auth_token_copy(again, 4) == HUSH_ERR_ARG, "short output");
+    {
+        char challenge[HUSH_AUTH_CHALLENGE_BUF];
+        char other[HUSH_AUTH_CHALLENGE_BUF];
+
+        expect(hush_auth_challenge_mint(challenge, sizeof(challenge)) == HUSH_OK,
+               "challenge mint");
+        expect(strlen(challenge) == (size_t)HUSH_AUTH_CHALLENGE_HEX,
+               "challenge length");
+        for (i = 0; i < (size_t)HUSH_AUTH_CHALLENGE_HEX; ++i)
+            expect(isxdigit((unsigned char)challenge[i]) != 0, "challenge hex");
+        expect(hush_auth_challenge_mint(other, sizeof(other)) == HUSH_OK,
+               "second mint");
+        expect(strcmp(challenge, other) != 0, "challenges differ");
+        expect(hush_auth_challenge_mint(challenge, 4) == HUSH_ERR_ARG,
+               "challenge short buffer");
+    }
+    {
+        char hash[HUSH_AUTH_SHA256_BUF];
+        static const char abc[] =
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+        expect(hush_auth_sha256_hex("abc", hash, sizeof(hash)) == HUSH_OK,
+               "sha256");
+        expect(strcmp(hash, abc) == 0, "sha256(abc) vector");
+        expect(hush_auth_sha256_hex("abc", hash, 4) == HUSH_ERR_ARG,
+               "sha256 short buffer");
+        expect(hush_auth_sha256_hex(NULL, hash, sizeof(hash)) == HUSH_ERR_ARG,
+               "sha256 NULL text");
+        expect(hush_auth_join_matches("abc", hash) == 1, "join matches");
+        expect(hush_auth_join_matches("abd", hash) == 0, "join mismatch");
+        expect(hush_auth_join_matches(NULL, hash) == 0, "join NULL");
+        expect(hush_auth_join_matches("", hash) == 0, "join empty");
+    }
     if (g_fail)
         return 1;
     printf("test_auth ok\n");

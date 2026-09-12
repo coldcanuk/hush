@@ -2,16 +2,21 @@
 
 > **Status: Hush 0.0.1.** This document describes what the in-tree
 > `hush-relay` actually speaks. It is Nostr-shaped, not Nostr: there is no
-> WebSocket transport and no NIP-42 AUTH. Event signatures are verified on
-> ingest. Earlier revisions of this file described the upstream NIP-29 reference relay
-> that Hush's wire format was modelled on; that description was wrong for this
-> codebase and has been replaced.
+> WebSocket transport. Event signatures are verified on ingest and
+> [NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md) AUTH
+> challenges gate private hives. Earlier revisions of this file described the
+> upstream NIP-29 reference relay that Hush's wire format was modelled on; that
+> description was wrong for this codebase and has been replaced.
 
 ## Transport
 
 - One TCP port serves both HTTP and the line protocol. The relay sniffs the
   first bytes: HTTP methods go to the embedded PWA/API, anything else is
   treated as newline-delimited JSON.
+- A NIP-42 challenge is sent in response to the client's first wire frame.
+  Because HTTP and the line protocol share the port and clients are told apart
+  by their first bytes, a client that has nothing to say yet sends any frame
+  (for example an empty line) and reads the challenge.
 - One JSON value per LF-terminated line. The receive buffer is 32 KiB; a line
   that fills it receives `["NOTICE","line too long"]` and the connection closes.
 - The listener binds `127.0.0.1` by default. `--listen ADDR` (for example
@@ -26,7 +31,9 @@
 | `["EVENT", <sub_id>, <event>]` | Same; the subscription id is accepted and ignored on publish. |
 | `["REQ", <sub_id>, <filter>, ...]` | Subscribe. Up to four filters. A new REQ replaces the connection's previous subscription. |
 | `["CLOSE", <sub_id>]` | Cancel the connection's subscription. |
-| `["COUNT", ...]` / `["AUTH", ...]` | Parsed as typed frames and otherwise ignored. |
+| `["COUNT", ...]` | Parsed as a typed frame and otherwise ignored. |
+| `["AUTH", <event>]` | NIP-42 authentication. The event must be kind 22242 and echo the connection's challenge tag. Success binds the event pubkey to the socket and answers `OK true`; failure answers `OK false` and mints a fresh challenge. A client echo of `["AUTH", "<challenge>"]` is ignored. |
+| `["JOIN", "<token>"]` | Hush extension: present the private-vibe join token. Success answers `["NOTICE","joined"]` and grants guest access; otherwise `["NOTICE","invalid: bad join token"]`. |
 
 The event object parses `id`, `pubkey`, `kind`, `created_at`, `content`, and
 `tags`, and `sig`. A wire EVENT must carry a valid BIP-340 signature over
@@ -52,7 +59,9 @@ an event matching any filter is delivered (OR).
 | `["EVENT", <sub_id>, <event>]` | A stored event matching the subscription. |
 | `["EOSE", <sub_id>]` | End of stored events; later matches stream as they arrive. |
 | `["OK", <event_id>, true\|false, "<message>"]` | Publish result. `true` means stored. |
-| `["NOTICE", "<message>"]` | Protocol notice, such as an oversized line. |
+| `["NOTICE", "<message>"]` | Protocol notice, such as an oversized line or a JOIN result. |
+| `["AUTH", "<challenge>"]` | Per-connection NIP-42 challenge, 64 hex chars. |
+| `["CLOSED", <sub_id>, "<reason>"]` | A subscription was refused (e.g. `auth-required: …`). |
 
 Emitted events carry `id`, `pubkey`, `kind`, `created_at`, `content`, and
 `tags`; every string is JSON-escaped.
@@ -73,8 +82,17 @@ Emitted events carry `id`, `pubkey`, `kind`, `created_at`, `content`, and
 - Wire events are authenticated: the id is recomputed and the BIP-340
   signature is verified against the claimed pubkey. Rejected events get
   `["OK", <id>, false, "invalid: ..."]` and are neither stored nor fanned out.
-- There is no NIP-42 challenge yet, so a captured valid event can be replayed,
-  and locally created events (the HTTP path) carry no signature.
+- Kind 22242 events are answered `["OK", <id>, false, "restricted: ..."]` and
+  are never stored, fanned out, or served.
+- Public vibes: `REQ` and signature-valid `EVENT` are open; AUTH is optional.
+  Private vibes: `REQ` is answered `["CLOSED", sub, "auth-required: ..."]`,
+  `EVENT` is answered `OK false` with the same prefix, and fan-out skips
+  unauthorized connections, until the connection either AUTHs as a member
+  (local human or roster member; published events must then carry the authed
+  pubkey) or JOINs with the vibe token (guest read and write).
+- A captured valid event can still be replayed against a public hive (the
+  store is idempotent); NIP-42 removes the freshness gap for AUTH-gated
+  operations.
 
 ## HTTP side
 
@@ -83,7 +101,5 @@ and [README.md](README.md).
 
 ## Deliberately not implemented
 
-WebSocket transport, NIP-42 AUTH (only ingest signatures exist), NIP-29 relay
-groups, NIP-50 search, NIP-17
-DMs, message encryption, relay-to-relay federation, and `a`-tag deletion
-targets.
+WebSocket transport, NIP-29 relay groups, NIP-50 search, NIP-17 DMs,
+message encryption, relay-to-relay federation, and `a`-tag deletion targets.

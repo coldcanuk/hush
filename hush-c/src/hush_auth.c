@@ -6,6 +6,8 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <openssl/evp.h>
+#include <openssl/rand.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -101,6 +103,54 @@ int hush_auth_token_matches(const char *presented)
     if (!g_ready || presented == NULL || presented[0] == '\0')
         return 0;
     return hush_auth_tokens_equal(presented, g_token);
+}
+
+hush_status_t hush_auth_challenge_mint(char *out, size_t outsz)
+{
+    unsigned char raw[HUSH_AUTH_CHALLENGE_HEX / 2];
+
+    if (out == NULL || outsz < (size_t)HUSH_AUTH_CHALLENGE_BUF)
+        return HUSH_ERR_ARG;
+    if (RAND_bytes(raw, (int)sizeof(raw)) != 1)
+        return HUSH_ERR_IO;
+    hush_auth_hex_encode(raw, sizeof(raw), out);
+    return HUSH_OK;
+}
+
+hush_status_t hush_auth_sha256_hex(const char *text, char *out, size_t outsz)
+{
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_len = 0;
+    EVP_MD_CTX *ctx;
+
+    if (text == NULL || out == NULL || outsz < (size_t)HUSH_AUTH_SHA256_BUF)
+        return HUSH_ERR_ARG;
+    ctx = EVP_MD_CTX_new();
+    if (ctx == NULL)
+        return HUSH_ERR_CRYPTO;
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1 ||
+        EVP_DigestUpdate(ctx, text, strlen(text)) != 1 ||
+        EVP_DigestFinal_ex(ctx, digest, &digest_len) != 1) {
+        EVP_MD_CTX_free(ctx);
+        return HUSH_ERR_CRYPTO;
+    }
+    EVP_MD_CTX_free(ctx);
+    assert(digest_len == (unsigned int)(HUSH_AUTH_SHA256_HEX / 2));
+    hush_auth_hex_encode(digest, digest_len, out);
+    return HUSH_OK;
+}
+
+int hush_auth_join_matches(const char *presented, const char *stored_hash)
+{
+    char computed[HUSH_AUTH_SHA256_BUF];
+
+    if (presented == NULL || stored_hash == NULL)
+        return 0;
+    if (presented[0] == '\0' || stored_hash[0] == '\0')
+        return 0;
+    if (hush_auth_sha256_hex(presented, computed, sizeof(computed)) != HUSH_OK)
+        return 0;
+    return hush_auth_tokens_equal(computed, stored_hash);
 }
 
 static void hush_auth_hex_encode(const unsigned char *raw, size_t raw_len,

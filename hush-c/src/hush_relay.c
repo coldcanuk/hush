@@ -28,6 +28,7 @@
 #include "hush_http.h"
 #include "hush_intel.h"
 #include "hush_launch.h"
+#include "hush_nip42.h"
 #include "hush_proto.h"
 #include "hush_provider.h"
 #include "hush_relay.h"
@@ -76,6 +77,14 @@ enum {
 #define HUSH_UI_NAME_OPTION   "--name=Hush"
 #define HUSH_UI_X11_OPTION    "--ozone-platform=x11"
 #define HUSH_UI_FLATPAK       "flatpak"
+#define HUSH_AUTH_REQUIRED_TEXT \
+    "auth-required: authenticate or join with the hive token"
+#define HUSH_AUTH_PUBKEY_TEXT    "auth-required: pubkey mismatch"
+#define HUSH_AUTH_JOINED_TEXT    "joined"
+#define HUSH_AUTH_JOIN_DENY_TEXT "invalid: bad join token"
+#define HUSH_AUTH_VERIFY_ERR     "error: auth failed"
+#define HUSH_NIP42_RESTRICTED_TEXT \
+    "restricted: this event is only accepted for authentication purposes"
 
 /* Options are terminated strings; both profile options identify the same
  * per-relay directory, isolated from the operator's ordinary browser. */
@@ -99,6 +108,11 @@ struct client {
     char out[HUSH_CLIENT_OUT_SZ];
     size_t out_off;
     size_t out_end;
+    /* NIP-42 per-connection state: the live challenge, the pubkey a
+     * successful AUTH bound to this socket, and the JOIN-token guest flag. */
+    char challenge[HUSH_AUTH_CHALLENGE_BUF];
+    char authed_pubkey[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+    int token_joined;
 };
 
 static struct client clients[HUSH_MAX_CLIENTS];
@@ -149,6 +163,17 @@ static void hush_client_flush(struct client *c);
 static int hush_send_str(struct client *c, const char *s);
 static void hush_handle_event_msg(struct client *c, const hush_client_msg_t *msg);
 static void hush_handle_req_msg(struct client *c, const hush_client_msg_t *msg);
+static void hush_handle_auth_msg(struct client *c, const hush_client_msg_t *msg);
+static void hush_handle_join_msg(struct client *c, const hush_client_msg_t *msg);
+/* Queues ["OK", ev->id, ok, text]; drops the client on a full queue. */
+static void hush_relay_send_ok(struct client *c, const hush_event_t *ev,
+                               int ok, const char *text);
+/* True when the connection may use a private hive. */
+static int hush_client_is_authorized(const struct client *c);
+/* True when pubkey_hex is the local human or a roster member. */
+static int hush_pubkey_is_member(const char *pubkey_hex);
+/* Queues a fresh AUTH challenge. Returns 0 when the client must be dropped. */
+static int hush_send_challenge(struct client *c);
 static void hush_fanout(const hush_event_t *ev);
 static void hush_shutdown_handler(int sig);
 static void hush_install_shutdown_handlers(void);
@@ -491,6 +516,9 @@ static hush_status_t hush_accept_new(int ls)
             clients[i].sub_id[0] = '\0';
             clients[i].out_off = 0;
             clients[i].out_end = 0;
+            clients[i].challenge[0] = '\0';
+            clients[i].authed_pubkey[0] = '\0';
+            clients[i].token_joined = 0;
             return HUSH_OK;
         }
     }
@@ -508,6 +536,22 @@ static void hush_drop_client(struct client *c)
     c->has_sub = 0;
     c->out_off = 0;
     c->out_end = 0;
+    c->challenge[0] = '\0';
+    c->authed_pubkey[0] = '\0';
+    c->token_joined = 0;
+}
+
+static int hush_send_challenge(struct client *c)
+{
+    char line[HUSH_AUTH_CHALLENGE_BUF + 16];
+
+    assert(c != NULL);
+    if (hush_auth_challenge_mint(c->challenge, sizeof(c->challenge)) != HUSH_OK)
+        return 0;
+    if (hush_proto_format_auth(c->challenge, line, sizeof(line), NULL) !=
+        HUSH_OK)
+        return 0;
+    return hush_send_str(c, line);
 }
 
 static void hush_service_clients(struct pollfd *fds, int nf)
@@ -581,6 +625,12 @@ static void hush_on_bytes(struct client *c)
         hush_drop_client(c);
         return;
     }
+    /* The first wire line triggers the NIP-42 challenge. Sent lazily so
+     * HTTP requests never see a stray AUTH frame before their parse. */
+    if (c->challenge[0] == '\0' && !hush_send_challenge(c)) {
+        hush_drop_client(c);
+        return;
+    }
     start = c->buf;
     while ((nl = strchr(start, '\n')) != NULL) {
         *nl = '\0';
@@ -608,6 +658,10 @@ static void hush_on_nostr_line(struct client *c, const char *line)
         hush_handle_req_msg(c, &msg);
     else if (msg.type == HUSH_MSG_CLOSE)
         c->has_sub = 0;
+    else if (msg.type == HUSH_MSG_AUTH)
+        hush_handle_auth_msg(c, &msg);
+    else if (msg.type == HUSH_MSG_JOIN)
+        hush_handle_join_msg(c, &msg);
 }
 
 static void hush_client_flush(struct client *c)
@@ -653,12 +707,65 @@ static int hush_send_str(struct client *c, const char *s)
     return 1;
 }
 
-static void hush_handle_event_msg(struct client *c, const hush_client_msg_t *msg)
+static int hush_client_is_authorized(const struct client *c)
+{
+    assert(c != NULL);
+    if (g_launch.vibe_public)
+        return 1;
+    if (c->token_joined)
+        return 1;
+    return c->authed_pubkey[0] != '\0' &&
+           hush_pubkey_is_member(c->authed_pubkey);
+}
+
+static int hush_pubkey_is_member(const char *pubkey_hex)
+{
+    size_t idx;
+
+    assert(pubkey_hex != NULL);
+    if (g_launch.logged_in &&
+        strcmp(pubkey_hex, g_launch.human.pubkey_hex) == 0)
+        return 1;
+    for (idx = 0; idx < g_launch.roster.nmembers; ++idx) {
+        if (strcmp(pubkey_hex, g_launch.roster.members[idx].pubkey_hex) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static void hush_relay_send_ok(struct client *c, const hush_event_t *ev,
+                               int ok, const char *text)
 {
     char line[HUSH_BUF_SZ];
+
+    assert(c != NULL);
+    assert(ev != NULL);
+    assert(text != NULL);
+    if (hush_proto_format_ok(ev->id, ok, text, line, sizeof(line), NULL) ==
+            HUSH_OK &&
+        !hush_send_str(c, line))
+        hush_drop_client(c);
+}
+
+static void hush_handle_event_msg(struct client *c, const hush_client_msg_t *msg)
+{
     char reason[HUSH_EVENT_REASON_MAX];
     hush_status_t verified;
 
+    /* NIP-42: kind 22242 is never stored, fanned out, or served. */
+    if (msg->event.kind == (uint32_t)HUSH_NIP42_KIND_AUTH) {
+        hush_relay_send_ok(c, &msg->event, 0, HUSH_NIP42_RESTRICTED_TEXT);
+        return;
+    }
+    if (!hush_client_is_authorized(c)) {
+        hush_relay_send_ok(c, &msg->event, 0, HUSH_AUTH_REQUIRED_TEXT);
+        return;
+    }
+    if (c->authed_pubkey[0] != '\0' &&
+        strcmp(c->authed_pubkey, msg->event.pubkey) != 0) {
+        hush_relay_send_ok(c, &msg->event, 0, HUSH_AUTH_PUBKEY_TEXT);
+        return;
+    }
     /* Wire events must carry a valid id and BIP-340 signature. A rejected
      * event is answered OK false and never stored or fanned out. */
     verified = hush_event_verify(&msg->event, reason, sizeof(reason));
@@ -666,18 +773,13 @@ static void hush_handle_event_msg(struct client *c, const hush_client_msg_t *msg
         const char *text = verified == HUSH_ERR_DENIED ? reason
                                                        : "error: verify failed";
 
-        if (hush_proto_format_ok(msg->event.id, 0, text, line, sizeof(line),
-                                 NULL) == HUSH_OK &&
-            !hush_send_str(c, line))
-            hush_drop_client(c);
+        hush_relay_send_ok(c, &msg->event, 0, text);
         return;
     }
     (void)hush_store_insert(g_store, &msg->event);
     hush_thread_record(&msg->event);
     (void)hush_wake_ingest(&msg->event);
-    if (hush_proto_format_ok(msg->event.id, 1, "", line, sizeof(line), NULL) == HUSH_OK &&
-        !hush_send_str(c, line))
-        hush_drop_client(c);
+    hush_relay_send_ok(c, &msg->event, 1, "");
     hush_fanout(&msg->event);
 }
 
@@ -688,6 +790,13 @@ static void hush_handle_req_msg(struct client *c, const hush_client_msg_t *msg)
     size_t i;
     char line[HUSH_BUF_SZ];
 
+    if (!hush_client_is_authorized(c)) {
+        if (hush_proto_format_closed(msg->sub_id, HUSH_AUTH_REQUIRED_TEXT,
+                                     line, sizeof(line), NULL) == HUSH_OK &&
+            !hush_send_str(c, line))
+            hush_drop_client(c);
+        return;
+    }
     memcpy(c->sub_id, msg->sub_id, sizeof(c->sub_id));
     c->filter = msg->filters[0];
     c->has_sub = 1;
@@ -706,6 +815,50 @@ static void hush_handle_req_msg(struct client *c, const hush_client_msg_t *msg)
         hush_drop_client(c);
 }
 
+static void hush_handle_auth_msg(struct client *c, const hush_client_msg_t *msg)
+{
+    char reason[HUSH_EVENT_REASON_MAX];
+    hush_nip42_request_t request;
+    hush_status_t st;
+
+    /* The server form ["AUTH","<challenge>"] parses to an empty event. */
+    if (msg->event.id[0] == '\0')
+        return;
+    request = (hush_nip42_request_t){.event = &msg->event, .now = time(NULL),
+                                     .challenge = c->challenge,
+                                     .bind_addr = g_bind_addr};
+    st = hush_nip42_validate(&request, reason, sizeof(reason));
+    if (st != HUSH_OK) {
+        /* A fresh challenge after every failure: a stale challenge cannot
+         * be replayed into a session. */
+        if (!hush_send_challenge(c))
+            hush_drop_client(c);
+        hush_relay_send_ok(c, &msg->event, 0,
+                           st == HUSH_ERR_DENIED ? reason
+                                                 : HUSH_AUTH_VERIFY_ERR);
+        return;
+    }
+    memcpy(c->authed_pubkey, msg->event.pubkey, sizeof(c->authed_pubkey));
+    hush_relay_send_ok(c, &msg->event, 1, "");
+}
+
+static void hush_handle_join_msg(struct client *c, const hush_client_msg_t *msg)
+{
+    char line[HUSH_BUF_SZ];
+    const char *text;
+
+    if (!g_launch.vibe_public && g_launch.has_vibe &&
+        hush_launch_join_ok(&g_launch, msg->join_token)) {
+        c->token_joined = 1;
+        text = HUSH_AUTH_JOINED_TEXT;
+    } else {
+        text = HUSH_AUTH_JOIN_DENY_TEXT;
+    }
+    if (hush_proto_format_notice(text, line, sizeof(line), NULL) == HUSH_OK &&
+        !hush_send_str(c, line))
+        hush_drop_client(c);
+}
+
 static void hush_fanout(const hush_event_t *ev)
 {
     int i;
@@ -713,6 +866,8 @@ static void hush_fanout(const hush_event_t *ev)
 
     for (i = 0; i < HUSH_MAX_CLIENTS; ++i) {
         if (clients[i].fd == HUSH_FD_NONE || !clients[i].has_sub)
+            continue;
+        if (!hush_client_is_authorized(&clients[i]))
             continue;
         if (!hush_filter_match(&clients[i].filter, ev))
             continue;
