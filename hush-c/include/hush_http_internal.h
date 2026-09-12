@@ -69,4 +69,21 @@ void hush_http_serve_presence_get(int fd);
 hush_status_t hush_http_serve_presence_post(int fd, const char *body,
                                             hush_store_t *store);
 
+/* True when body requests pass-backed backup. */
+int hush_http_want_save_pass(const char *body);
+
+/* api_identity.c entry points. */
+hush_status_t hush_http_serve_identity(int fd, const char *body);
+hush_status_t hush_http_serve_profile(int fd, const char *body);
+hush_status_t hush_http_serve_member(int fd, const char *body);
+hush_status_t hush_http_serve_vibe(int fd, const char *body,
+                                   hush_store_t *store);
+
+/* api_agents.c entry points. */
+hush_status_t hush_http_serve_agent(int fd, const char *body,
+                                    hush_store_t *store);
+void hush_http_serve_skills_get(int fd);
+hush_status_t hush_http_serve_skill_post(int fd, const char *body);
+hush_status_t hush_http_serve_skillui(int fd, const char *body);
+
 #endif /* HUSH_HTTP_INTERNAL_H */
