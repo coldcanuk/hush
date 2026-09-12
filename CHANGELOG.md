@@ -8,11 +8,15 @@ the top-level `VERSION` file.
 
 ### Changed
 
-- `hush_agent.c` split tranche 1: shared types/constants/helpers move to
-  `hush_agent_internal.h`; provider worker execution and reply capture move
-  to `agent_process.c`; thread walking and context assembly move to
-  `agent_thread.c`. Behavior-preserving; the prompt/text-munging/
-  dispatch-follow/fixup clusters remain the follow-on tranche.
+- `hush_agent.c` split complete: from 4,524 lines to an 864-line core
+  (public API, job table, notes, runtime readiness, grok start) plus six
+  per-cluster modules behind `hush_agent_internal.h`: `agent_dispatch.c`
+  (job lifecycle + dispatch/follow flow), `agent_process.c` (worker exec
+  and provider CLIs), `agent_thread.c` (thread walking and context),
+  `agent_text.c` (mention rewrite, alias mapping, reply scrub),
+  `agent_prompt.c` (prompt and directive builders), and
+  `agent_fixup.c` (the fixup pass). Behavior-preserving; the full suite
+  stays green with the source-grep tests retargeted to the new files.
 
 ### Added
 

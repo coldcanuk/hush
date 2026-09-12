@@ -46,19 +46,26 @@ header will export.
 4. **M5.5** — docs + land. Remaining clusters (text munging, prompts,
    dispatch/follow, fixup) documented as the follow-on tranche.
 
-## (d) Final state (tranche 1 landed)
+## (d) Final state (tranche 2 landed)
 
 | Module | Lines | Owns |
 |---|---|---|
-| `hush_agent.c` | 3,638 | public API, dispatch/follow flow, prompts, text munging, fixup, notes |
+| `hush_agent.c` | 864 | public API, job table, notes, runtime readiness, cancel/partial, grok start |
+| `agent_dispatch.c` | 1,591 | job lifecycle, dispatch/follow flow, election/planning waves, follow table |
 | `agent_process.c` | 454 | worker exec, capture, provider CLIs, spawn |
 | `agent_thread.c` | 254 | thread walking, transcript + context assembly |
+| `agent_text.c` | 722 | text utilities, mention rewrite, alias mapping, reply scrub |
+| `agent_prompt.c` | 338 | prompt/directive builders, instruction/guidance appends, peer rules |
+| `agent_fixup.c` | 122 | fixup token mint, fixup prompt fill, start/take fixup |
 | `hush_agent_internal.h` | — | all types/constants + shared helper surface |
 
-Remaining clusters for the follow-on tranche (definition-scattered): prompt
-builders (fill_leader/worker/directive/note/prompt/rules/guidance), text
-munging (mention rewriting, reply scrub), dispatch/follow flow
-(prepare_human_job, follow slots, election/plan), fixup.
+Tranche 2 moved the remaining clusters: dispatch/follow flow
+(M6.1, 2185→EOF plus the follow table), text munging (M6.2, two blocks),
+prompt builders (M6.3, three blocks), and the fixup pass (M6.4). The core
+shrank from 4,524 lines to 864. Cross-module entry points and shared prompt
+strings live in `hush_agent_internal.h`; module-local constants follow
+their only users. Behavior preserved: every milestone kept the full suite
+green, and the source-grep tests were retargeted to the new module files.
 
 ## (e) Risks
 
