@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include "hush_agent.h"
+#include "hush_agent_internal.h"
 #include "hush_codex.h"
 #include "hush_cevent.h"
 #include "hush_dir.h"
@@ -27,60 +28,8 @@
 #include "hush_thread.h"
 #include "hush_wake.h"
 
-enum {
-    HUSH_AGENT_INTRO_MAX = 32,
-    HUSH_AGENT_KIND_NOTE = 1,
-    HUSH_AGENT_ARGV_MAX = 28,
-    HUSH_AGENT_PATH_MAX = 256,
-    HUSH_AGENT_FD_NONE = -1,
-    HUSH_AGENT_THREAD_MAX = 6,
-    /* Seconds a cancelled job gets to exit on SIGTERM before SIGKILL. */
-    HUSH_AGENT_CANCEL_GRACE_S = 3,
-    HUSH_AGENT_PAIR_COUNT = 2,
-    /* Soft cap for flattened thread/assignment lines. Two nostr:npub
-     * tokens are 138 bytes; 160 cut the second token and the LLM
-     * copied the stump as @npub1t337pnf. Tokens themselves are copied
-     * atomically even when they overrun this cap, up to outsz. */
-    HUSH_AGENT_SNIP_MAX = 384,
-    HUSH_AGENT_NPUB_MIN = 12,
-    HUSH_AGENT_ECHO_MIN = 20,
-    HUSH_AGENT_NOSTR_NPUB_LEN = 11,
-    HUSH_AGENT_NPUB_HEAD_LEN = 5,
-    HUSH_AGENT_NOSTR_HEAD_LEN = 6,
-    HUSH_AGENT_AT_NPUB_LEN = 6,
-    HUSH_AGENT_SCAN_MAX = 64,
-    HUSH_AGENT_TASK_MAX = 512,
-    HUSH_AGENT_KIND_NOTE_JOB = 0,
-    HUSH_AGENT_KIND_FIXUP = 1,
-    HUSH_AGENT_KIND_PLAN = 2,
-    HUSH_AGENT_KIND_ELECT = 3,
-    HUSH_AGENT_TOKEN_MAX = 16,
-    HUSH_AGENT_FOLLOW_MAX = 8,
-    /* Two prompt strings contribute their own NUL allowance; the note's
-     * extra byte covers the two joining newlines plus the final NUL. */
-    HUSH_AGENT_NOTE_MAX = HUSH_EVENT_MAX_CONTENT * 3 + 1,
-    HUSH_AGENT_SYSTEM_MAX = HUSH_ROSTER_PROMPT_MAX * 2 + HUSH_SKILL_CHAR_HIGH +
-                            HUSH_LAUNCH_PROMPT_BYTES +
-                            HUSH_SKILL_EQUIP_MAX * (HUSH_SKILL_ID_MAX + 1),
-    HUSH_AGENT_COMBINED_PROMPT_MAX = HUSH_AGENT_SYSTEM_MAX + HUSH_ROSTER_PROMPT_MAX +
-                                     HUSH_AGENT_NOTE_MAX + 1,
-    HUSH_AGENT_EXEC_FAILURE = 127,
-    HUSH_AGENT_CAPTURE_MAX = 131072,
-    HUSH_AGENT_WAIT_MAX = 8,
-    HUSH_AGENT_FOLLOW_ROBOTS = 8
-};
 
-#define HUSH_AGENT_GROK_BIN "grok"
-#define HUSH_AGENT_COPILOT_BIN "copilot"
-#define HUSH_AGENT_CODEX_BIN "codex"
-#define HUSH_AGENT_GOOSE_BIN "goose"
-#define HUSH_AGENT_OLLAMA_BIN "ollama"
-#define HUSH_AGENT_DEVNULL "/dev/null"
 #define HUSH_AGENT_CHAN_FALLBACK "general"
-#define HUSH_AGENT_ENV_CONFIG "HUSH_CONFIG_DIR"
-#define HUSH_AGENT_CWD_LEAF "agent-cwd"
-#define HUSH_AGENT_CWD_TMP "hush-agent-cwd"
-#define HUSH_AGENT_TMP_FALLBACK "/tmp"
 #define HUSH_AGENT_PROMPT_FALLBACK \
     "You are a robot in the Hush hive. Fulfill the last human ask (only your part) in one note."
 #define HUSH_AGENT_ONE_JOKE \
@@ -139,17 +88,11 @@ enum {
     "with exactly one candidate name and nothing else."
 #define HUSH_AGENT_PLAN_FENCE "```plan"
 #define HUSH_AGENT_PLAN_END "```"
-#define HUSH_AGENT_DISALLOWED \
-    "run_terminal_cmd,web_search,web_fetch,read_file,search_replace,list_dir,grep,todo_write,task,Agent"
 #define HUSH_AGENT_RULES \
     "Fulfill YOUR assignment as the named robot. Do not mention yourself. " \
     "Include asked code. Address the human by first name. No tools. " \
     HUSH_AGENT_ONE_JOKE HUSH_AGENT_PEER_STANDARD
 #define HUSH_AGENT_HUMAN_FALLBACK "you"
-#define HUSH_AGENT_GROK_EFFORT "low"
-#define HUSH_AGENT_GROK_TURNS "2"
-#define HUSH_AGENT_FIXUP_TURNS "1"
-#define HUSH_AGENT_GROK_NOMEM "--no-memory"
 #define HUSH_AGENT_FIXUP_PROMPT \
     "Rewrite only the given text per the instruction. " \
     "Return only the rewritten text. No fences. No preamble."
@@ -157,9 +100,6 @@ enum {
     "Return only the rewritten selection. No markdown fences. No chatter."
 #define HUSH_AGENT_FIXUP_HEAD "Instruction:\n"
 #define HUSH_AGENT_FIXUP_MID "\n\nText:\n"
-#define HUSH_AGENT_THREAD_HEAD \
-    "Thread so far. Do not repeat a prior joke. " \
-    "Fulfill only your specific part of the last human ask.\n"
 #define HUSH_AGENT_ASSIGN " YOUR assignment: "
 #define HUSH_AGENT_INTRO_PREFIX "At ease."
 #define HUSH_AGENT_ACK_LINE "Mention received."
@@ -168,176 +108,32 @@ enum {
 #define HUSH_AGENT_CHAPERON_LINE \
     "That's enough robot talk. Standing by for the human."
 
-typedef struct {
-    int busy;
-    int kind;
-    int done;
-    int ok;
-    int cancelled;
-    pid_t pid;
-    time_t kill_deadline;
-    int fd;
-    time_t started;
-    char token[HUSH_AGENT_TOKEN_MAX];
-    char parent_id[HUSH_EVENT_ID_HEX_LEN + 1];
-    char trigger_id[HUSH_EVENT_ID_HEX_LEN + 1];
-    char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
-    char human_pub[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
-    char robot_pub[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
-    char robot_name[HUSH_ROSTER_NAME_MAX];
-    char robot_role[HUSH_ROSTER_NAME_MAX];
-    char provider[HUSH_ROSTER_PROVIDER_MAX];
-    char presence_slug[HUSH_PRESENCE_SLUG_MAX];
-    char human_name[HUSH_ROSTER_NAME_MAX];
-    char prompt[HUSH_AGENT_SYSTEM_MAX];
-    char rules[HUSH_ROSTER_PROMPT_MAX];
-    char cwd[HUSH_AGENT_PATH_MAX];
-    char note[HUSH_AGENT_NOTE_MAX];
-    char out[HUSH_EVENT_MAX_CONTENT + 1];
-    size_t out_n;
-    /* Co-robots mentioned together with this one on the triggering note.
-     * Enables group negotiation: robots can see peers and p-mention back. */
-    char co_npubs[4][HUSH_IDENTITY_NPUB_MAX];
-    char co_names[4][HUSH_ROSTER_NAME_MAX];
-    int n_co_robots;
-    /* True when this robot is in the last follow wave for the note. */
-    int last;
-    const hush_launch_t *launch;
-    char ask[HUSH_EVENT_MAX_CONTENT + 1];
-} hush_agent_job_t;
-
-typedef struct {
-    int live;
-    size_t nnext;
-    size_t at;
-    char root[HUSH_EVENT_ID_HEX_LEN + 1];
-    char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
-    char human_pub[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
-    char ask[HUSH_EVENT_MAX_CONTENT + 1];
-    char next[HUSH_AGENT_FOLLOW_ROBOTS][HUSH_EVENT_PUBKEY_HEX_LEN + 1];
-    /* Per-robot sub-task (explicit clause or leader plan task). Empty means
-     * fall back to slot->ask. Indexed in parallel with next[]. */
-    char next_ask[HUSH_AGENT_FOLLOW_ROBOTS][HUSH_AGENT_TASK_MAX];
-    /* Parallel wave (group) per task. Tasks sharing a group run in parallel;
-     * groups run in order. 0 = unassigned (serial). */
-    int group[HUSH_AGENT_FOLLOW_ROBOTS];
-    int scoped;
-    int mode;
-    int order;    /* 0 = fifo, 1 = lifo */
-    int parallel; /* 0 = serial, 1 = all-tasks-parallel (legacy plan-level) */
-    int inflight; /* tasks dispatched in the current group not yet finished */
-    int electing; /* 1 while waiting for the leader election to finish */
-    char convener[HUSH_EVENT_PUBKEY_HEX_LEN + 1]; /* runs election + fallback */
-} hush_agent_follow_t;
-
-/* How a human note is interpreted for the tagged robot group. */
-typedef enum {
-    HUSH_AGENT_MODE_SOLO = 0,
-    HUSH_AGENT_MODE_EXPLICIT,
-    HUSH_AGENT_MODE_BROADCAST,
-    HUSH_AGENT_MODE_AMBIGUOUS
-} hush_agent_mode_t;
-
-/* One robot's extracted assignment (clause) from an explicit delegation. */
-typedef struct {
-    char hex[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
-    char ask[HUSH_AGENT_TASK_MAX];
-    int has_ask;
-} hush_agent_assign_t;
-
-typedef struct {
-    const char *name;
-    const char *npub;
-    const char *hex;
-    const char *provider;
-    /* Ranked provider list (index 0 = primary). Populated from the roster
-     * agent; may be empty for Payne (which has its own payne_providers). */
-    const char *providers[HUSH_ROSTER_PROVIDERS_MAX];
-    size_t nproviders;
-    const char *prompt;
-    const char *slug;
-    const char *role;
-    const char *intro;
-    int intro_enabled;
-    /* Attached file context (points into the roster agent). Empty when the
-     * robot carries no files. Consumed by hush_agent_append_context(). */
-    const hush_roster_context_t *context;
-    size_t ncontext;
-    const char (*skills)[HUSH_SKILL_ID_MAX];
-    size_t nskills;
-} hush_agent_robot_t;
-
-typedef struct {
-    const char *pubkey;
-    const char *content;
-    const char *channel;
-    const char *parent_id;
-    const char *human_pub;
-    /* Optional additional p-npubs (for group mention seam: robots addressing peers).
-     * Null-terminated list or up to 4. Values are npub strings. */
-    const char *extra_p[4];
-} hush_agent_note_in_t;
-
-typedef struct {
-    const hush_launch_t *launch;
-    const char *root;
-    const char *human_pub;
-    const char *human;
-    const char *robot;
-} hush_agent_thread_walk_t;
-
-typedef struct {
-    hush_store_t *store;
-    const hush_launch_t *launch;
-    const hush_agent_robot_t *bot;
-    const hush_event_t *parent;
-    const char *ask;
-    /* True when this robot's ask is a strict per-robot sub-task (explicit
-     * delegation or a leader plan task), not the shared human ask. */
-    int scoped;
-    /* How the human note was classified (solo / explicit / broadcast /
-     * ambiguous). Drives cooperation vs leader vs strict-scope prompting. */
-    int mode;
-    /* True when this job is the leader's division-of-labor planning pass. */
-    int leader;
-    /* True when this job is the leader-election pass. */
-    int elect;
-    /* Prebuilt system-prompt override (election prompt). May be NULL. */
-    const char *prompt_override;
-    /* True when this robot is in the last follow wave (or is solo). */
-    int last;
-} hush_agent_job_in_t;
-
-typedef struct {
-    const char *name;
-    const char *npub;
-} hush_agent_alias_t;
-
-typedef struct {
-    const hush_agent_alias_t *aliases;
-    size_t naliases;
-} hush_agent_alias_set_t;
 
 static hush_agent_job_t g_jobs[HUSH_AGENT_JOBS_MAX];
 static hush_agent_follow_t g_follow[HUSH_AGENT_FOLLOW_MAX];
 
 static unsigned g_id_seq;
 
-static void hush_agent_copy(char *dst, size_t dstsz, const char *src);
-static void hush_agent_trim(char *text);
+hush_agent_job_t *hush_agent_jobs(void)
+{
+    return g_jobs;
+}
+
+void hush_agent_copy(char *dst, size_t dstsz, const char *src);
+void hush_agent_trim(char *text);
+static void hush_agent_fill_fixup(hush_agent_job_t *job, const char *instruction,
+                                            const char *text);
 static hush_agent_job_t *hush_agent_find_slot(void);
 static int hush_agent_key_matches(const char *mention, const char *npub,
                                   const char *hex);
 static int hush_agent_is_human(const hush_launch_t *launch,
                                const char *mention);
-/* One human dispatch owns its bounded classification scratch. */
-typedef struct {
-    char hexes[HUSH_AGENT_FOLLOW_ROBOTS][HUSH_EVENT_PUBKEY_HEX_LEN + 1];
-    hush_agent_assign_t assigns[HUSH_AGENT_FOLLOW_ROBOTS];
-    size_t count;
-    hush_agent_mode_t mode;
-} hush_agent_mentions_t;
+#define HUSH_AGENT_ENV_CONFIG "HUSH_CONFIG_DIR"
+#define HUSH_AGENT_CWD_LEAF "agent-cwd"
+#define HUSH_AGENT_CWD_TMP "hush-agent-cwd"
+#define HUSH_AGENT_TMP_FALLBACK "/tmp"
 
+/* One human dispatch owns its bounded classification scratch. */
 /* Dispatches a known eligible robot from required event context. */
 static void hush_agent_handle_mention(hush_store_t *store, const hush_launch_t *launch,
                                       const hush_event_t *event, const char *mention);
@@ -376,20 +172,20 @@ static hush_status_t hush_agent_fill_directive(hush_agent_job_t *job,
                                                const hush_agent_job_in_t *in);
 /* Builds required job's current request with recent conversation/file context. */
 static void hush_agent_fill_job_note(hush_agent_job_t *job, const hush_agent_job_in_t *in);
-static int hush_agent_lookup_robot(hush_agent_robot_t *out,
+int hush_agent_lookup_robot(hush_agent_robot_t *out,
                                    const hush_launch_t *launch,
                                    const char *mention);
-static void hush_agent_event_channel(char *out, size_t outsz,
+void hush_agent_event_channel(char *out, size_t outsz,
                                      const hush_event_t *ev);
-static void hush_agent_event_root(char *out, size_t outsz,
+void hush_agent_event_root(char *out, size_t outsz,
                                   const hush_event_t *ev);
-static void hush_agent_human_name(char *out, size_t outsz,
+void hush_agent_human_name(char *out, size_t outsz,
                                   const hush_launch_t *launch);
 static void hush_agent_fill_prompt(char *out, size_t outsz,
                                    const hush_agent_robot_t *bot,
                                    const char *human);
 static void hush_agent_fill_rules(char *out, size_t outsz, const char *human);
-static void hush_agent_prepare_cwd(char *out, size_t outsz);
+void hush_agent_prepare_cwd(char *out, size_t outsz);
 static int hush_agent_status_append(char *out, size_t outsz, size_t *off,
                                     const hush_agent_job_t *job);
 static void hush_agent_fill_note(hush_event_t *ev, const hush_agent_note_in_t *in);
@@ -419,7 +215,7 @@ static hush_status_t hush_agent_add_instruction(hush_agent_job_t *job, const cha
                                                 const char *text);
 static hush_status_t hush_agent_fill_job(hush_agent_job_t *job,
                                 const hush_agent_job_in_t *in);
-static int hush_agent_event_is_root(const hush_event_t *ev, const char *root);
+int hush_agent_event_is_root(const hush_event_t *ev, const char *root);
 /* True when ch is space, tab, CR, or LF. Pure. */
 static int hush_agent_is_space(char ch);
 /* True when ch is a bech32/npub body character [0-9a-z]. Pure. */
@@ -430,7 +226,7 @@ static size_t hush_agent_npub_span(const char *src, size_t i);
 static size_t hush_agent_put_gap(char *out, size_t o, size_t cap);
 /* Copies src into out, collapsing whitespace to one space. Soft-capped
  * at SNIP_MAX; npub tokens are copied whole up to outsz. */
-static void hush_agent_snip_line(char *out, size_t outsz, const char *src);
+void hush_agent_snip_line(char *out, size_t outsz, const char *src);
 /* Rewrites @npub1 to nostr:npub1, expands truncated npubs, maps @Name,
  * then scrubs self-mentions, ask-echo, and last-robot handoff. */
 static void hush_agent_rewrite_mentions(hush_agent_job_t *job);
@@ -492,62 +288,11 @@ static size_t hush_agent_alias_at(const char *src,
                                   const hush_agent_alias_set_t *set);
 /* Removes only an incomplete trailing UTF-8 scalar from required bounded snippet. */
 static hush_status_t hush_agent_complete_snippet(char *text, size_t capacity);
-static void hush_agent_append_turn(char *out, size_t outsz,
+void hush_agent_append_turn(char *out, size_t outsz,
                                    const hush_event_t *ev, const char *who);
-static size_t hush_agent_thread_skip(const hush_event_t *evs, size_t n,
-                                    const char *root);
-static void hush_agent_walk_thread(char *out, size_t outsz,
-                                   const hush_event_t *evs, size_t n,
-                                   const hush_agent_thread_walk_t *walk);
 /* Collects the latest bounded conversation notes, excluding the current trigger.
  * Required borrowed store, root, trigger and fixed output. */
 /* Appends to the required six-event window, dropping its oldest note when full. */
-static void hush_agent_push_thread(hush_event_t *out, size_t *count, const hush_event_t *event);
-static size_t hush_agent_collect_thread(const hush_store_t *store, hush_event_t *out,
-                                         const char *root, const char *trigger);
-static void hush_agent_fill_thread(char *out, size_t outsz,
-                                   hush_store_t *store,
-                                   const hush_launch_t *launch,
-                                   const hush_event_t *parent,
-                                   const hush_agent_thread_walk_t *names);
-static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job);
-/* Supervises one required job, emitting stdout only after successful completion.
- * The fork boundary terminates with _exit; it never returns to the relay loop. */
-static void hush_agent_run_worker(int output_fd, const hush_agent_job_t *job);
-/* Waits for this worker's child; IO on failed exit or interrupted wait budget. */
-static hush_status_t hush_agent_wait_worker(pid_t child);
-/* Copies complete captured output into required reply storage. */
-static hush_status_t hush_agent_capture_reply(char *out, size_t outsz, char *capture,
-                                             const char *provider);
-/* Reads required worker pipe until EOF or bounded output budget is exhausted. */
-static hush_status_t hush_agent_read_capture(char *out, size_t outsz, int input_fd);
-/* Owns the capture pipe for one required worker, retaining complete output only. */
-static hush_status_t hush_agent_capture_worker(char *out, size_t outsz, int forward_fd,
-                                               const hush_agent_job_t *job);
-static hush_status_t hush_agent_pump_capture(int input_fd, int output_fd);
-/* Extracts the latest complete Cline text/completion message from NDJSON. */
-static hush_status_t hush_agent_capture_cline(char *out, size_t outsz, char *capture);
-/* Updates required output only for a complete user-facing Cline message. */
-static hush_status_t hush_agent_take_cline_line(char *out, size_t outsz, const char *line);
-/* Resets inherited process state in a private worker process group. */
-static hush_status_t hush_agent_prepare_worker(void);
-/* Executes required API job in this isolated worker; exits with provider status. */
-static void hush_agent_exec_api(const hush_agent_job_t *job);
-/* Executes required Cline job with its own home configuration. */
-static void hush_agent_exec_cline(const hush_agent_job_t *job);
-static void hush_agent_exec_grok(const hush_agent_job_t *job);
-static void hush_agent_exec_copilot(const hush_agent_job_t *job);
-/* Executes Codex for a borrowed non-NULL job; exits on exec failure.
- * Process boundary keeps POSIX exec/exit semantics instead of a status return. */
-static void hush_agent_exec_codex(const hush_agent_job_t *job);
-static void hush_agent_exec_goose(const hush_agent_job_t *job);
-static void hush_agent_exec_ollama(const hush_agent_job_t *job);
-static void hush_agent_build_combined(char *out, size_t outsz,
-                                      const hush_agent_job_t *job);
-static hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job);
-static void hush_agent_fill_fixup(hush_agent_job_t *job,
-                                  const char *instruction,
-                                  const char *text);
 static void hush_agent_make_token(char *out, size_t outsz);
 static hush_agent_job_t *hush_agent_find_token(const char *token);
 static void hush_agent_close_job(hush_agent_job_t *job);
@@ -651,7 +396,7 @@ static size_t hush_agent_count_turns(hush_store_t *store,
                                      const hush_launch_t *launch,
                                      const char *root);
 /* True when content is a robot work note, not an ack, intro, or deny. */
-static int hush_agent_is_work_note(const char *content);
+int hush_agent_is_work_note(const char *content);
 static int hush_agent_turns_full(hush_store_t *store,
                                  const hush_launch_t *launch,
                                  const hush_event_t *ev);
@@ -867,7 +612,7 @@ hush_status_t hush_agent_take_fixup(const char *token, char *out, size_t outsz)
     return HUSH_OK;
 }
 
-static void hush_agent_copy(char *dst, size_t dstsz, const char *src)
+void hush_agent_copy(char *dst, size_t dstsz, const char *src)
 {
     size_t n;
 
@@ -882,7 +627,7 @@ static void hush_agent_copy(char *dst, size_t dstsz, const char *src)
     dst[n] = '\0';
 }
 
-static void hush_agent_trim(char *text)
+void hush_agent_trim(char *text)
 {
     size_t n;
 
@@ -932,7 +677,7 @@ static int hush_agent_is_human(const hush_launch_t *launch,
                                   launch->human.pubkey_hex);
 }
 
-static int hush_agent_lookup_robot(hush_agent_robot_t *out,
+int hush_agent_lookup_robot(hush_agent_robot_t *out,
                                    const hush_launch_t *launch, const char *mention)
 {
     assert(out != NULL);
@@ -994,7 +739,7 @@ static void hush_agent_bind_roster(hush_agent_robot_t *out, const hush_roster_ag
     out->ncontext = robot->ncontext;
 }
 
-static void hush_agent_event_channel(char *out, size_t outsz,
+void hush_agent_event_channel(char *out, size_t outsz,
                                      const hush_event_t *ev)
 {
     size_t i;
@@ -1010,7 +755,7 @@ static void hush_agent_event_channel(char *out, size_t outsz,
     }
 }
 
-static void hush_agent_event_root(char *out, size_t outsz,
+void hush_agent_event_root(char *out, size_t outsz,
                                  const hush_event_t *ev)
 {
     size_t i;
@@ -1026,7 +771,7 @@ static void hush_agent_event_root(char *out, size_t outsz,
     }
 }
 
-static void hush_agent_human_name(char *out, size_t outsz,
+void hush_agent_human_name(char *out, size_t outsz,
                                  const hush_launch_t *launch)
 {
     const char *name;
@@ -1077,7 +822,7 @@ static void hush_agent_fill_rules(char *out, size_t outsz, const char *human)
         hush_agent_copy(out, outsz, HUSH_AGENT_RULES);
 }
 
-static void hush_agent_prepare_cwd(char *out, size_t outsz)
+void hush_agent_prepare_cwd(char *out, size_t outsz)
 {
     const char *cfg;
     const char *base;
@@ -1374,7 +1119,7 @@ static int hush_agent_can_start(const hush_launch_t *launch,
     return hush_agent_pick_provider(bot) != NULL;
 }
 
-static int hush_agent_event_is_root(const hush_event_t *ev, const char *root)
+int hush_agent_event_is_root(const hush_event_t *ev, const char *root)
 {
     size_t i;
 
@@ -1435,7 +1180,7 @@ static size_t hush_agent_put_gap(char *out, size_t o, size_t cap)
     return o + 1;
 }
 
-static void hush_agent_snip_line(char *out, size_t outsz, const char *src)
+void hush_agent_snip_line(char *out, size_t outsz, const char *src)
 {
     size_t i;
     size_t o;
@@ -1496,7 +1241,7 @@ static hush_status_t hush_agent_complete_snippet(char *text, size_t capacity)
     return HUSH_ERR_PARSE;
 }
 
-static void hush_agent_append_turn(char *out, size_t outsz,
+void hush_agent_append_turn(char *out, size_t outsz,
                                   const hush_event_t *ev, const char *who)
 {
     char line[HUSH_AGENT_SNIP_MAX + HUSH_IDENTITY_NPUB_MAX + 1];
@@ -1512,243 +1257,6 @@ static void hush_agent_append_turn(char *out, size_t outsz,
     if (used + 8 >= outsz)
         return;
     (void)snprintf(out + used, outsz - used, "%s: %s\n", who, line);
-}
-
-static size_t hush_agent_thread_skip(const hush_event_t *evs, size_t n,
-                                    const char *root)
-{
-    size_t i;
-    size_t kept;
-    size_t start;
-
-    assert(evs != NULL);
-    assert(root != NULL);
-    kept = 0;
-    start = 0;
-    for (i = 0; i < n; i++) {
-        if (!hush_agent_event_is_root(&evs[i], root))
-            continue;
-        kept++;
-        if (kept > (size_t)HUSH_AGENT_THREAD_MAX)
-            start++;
-    }
-    return start;
-}
-
-static void hush_agent_walk_thread(char *out, size_t outsz,
-                                  const hush_event_t *evs, size_t n,
-                                  const hush_agent_thread_walk_t *walk)
-{
-    size_t i;
-    size_t start;
-    size_t seen;
-    const char *who;
-
-    assert(out != NULL);
-    assert(evs != NULL);
-    assert(walk != NULL);
-    assert(walk->root != NULL);
-    assert(walk->human_pub != NULL);
-    assert(walk->human != NULL);
-    assert(walk->robot != NULL);
-    start = hush_agent_thread_skip(evs, n, walk->root);
-    seen = 0;
-    for (i = 0; i < n; i++) {
-        if (!hush_agent_event_is_root(&evs[i], walk->root))
-            continue;
-        if (seen < start) {
-            seen++;
-            continue;
-        }
-        who = walk->human;
-        if (strcmp(evs[i].pubkey, walk->human_pub) != 0) {
-            hush_agent_robot_t peer;
-            if (walk->launch != NULL && hush_agent_lookup_robot(&peer, walk->launch, evs[i].pubkey))
-                who = peer.name;
-            else
-                who = walk->robot;
-        }
-        hush_agent_append_turn(out, outsz, &evs[i], who);
-        seen++;
-    }
-}
-
-static size_t hush_agent_collect_thread(const hush_store_t *store, hush_event_t *out,
-                                         const char *root, const char *trigger)
-{
-    assert(store != NULL && out != NULL);
-    assert(root != NULL && trigger != NULL);
-    size_t found = 0;
-    size_t count = hush_store_count(store);
-    for (size_t i = 0; i < count && i < (size_t)HUSH_STORE_CAPACITY; ++i) {
-        hush_event_t event = {0};
-        if (hush_store_get(store, i, &event) != HUSH_OK) break;
-        if (event.kind != HUSH_AGENT_KIND_NOTE || strcmp(event.id, trigger) == 0 ||
-            strcmp(event.id, root) == 0 || !hush_agent_event_is_root(&event, root) ||
-            !hush_agent_is_work_note(event.content))
-            continue;
-        hush_agent_push_thread(out, &found, &event);
-    }
-    return found;
-}
-
-static void hush_agent_push_thread(hush_event_t *out, size_t *count, const hush_event_t *event)
-{
-    assert(out != NULL && count != NULL && event != NULL);
-    assert(*count <= (size_t)HUSH_AGENT_THREAD_MAX);
-    if (*count == (size_t)HUSH_AGENT_THREAD_MAX) {
-        memmove(out, out + 1, (*count - 1) * sizeof(*out));
-        --*count;
-    }
-    out[(*count)++] = *event;
-}
-
-/* Appends prefix + text as one line, rolling back on overflow. */
-static void hush_agent_append_line(char *out, size_t outsz, const char *prefix,
-                                   const char *text)
-{
-    size_t used;
-    int written;
-
-    assert(out != NULL && outsz > 0);
-    assert(prefix != NULL);
-    assert(text != NULL);
-    used = strlen(out);
-    if (used + 2 >= outsz)
-        return;
-    written = snprintf(out + used, outsz - used, "%s%s\n", prefix, text);
-    if (written < 0 || (size_t)written >= outsz - used)
-        out[used] = '\0';
-}
-
-/* Renders the durable transcript when the live store lost the thread. */
-static void hush_agent_append_durable(char *out, size_t outsz,
-                                      const hush_event_t *parent,
-                                      const hush_agent_thread_walk_t *walk)
-{
-    hush_thread_turn_t turns[HUSH_AGENT_THREAD_MAX];
-    size_t count;
-    size_t i;
-
-    assert(out != NULL && outsz > 0);
-    assert(parent != NULL);
-    assert(walk != NULL);
-    assert(walk->root != NULL);
-    count = hush_thread_read(walk->root, turns, HUSH_AGENT_THREAD_MAX);
-    for (i = 0; i < count; ++i) {
-        hush_agent_robot_t peer;
-        const char *who = walk->robot;
-        hush_event_t ev = {0};
-
-        if (strcmp(turns[i].id, parent->id) == 0)
-            continue;
-        hush_agent_copy(ev.content, sizeof(ev.content), turns[i].content);
-        if (strcmp(turns[i].pubkey, walk->human_pub) == 0)
-            who = walk->human;
-        else if (walk->launch != NULL &&
-                 hush_agent_lookup_robot(&peer, walk->launch, turns[i].pubkey))
-            who = peer.name;
-        hush_agent_append_turn(out, outsz, &ev, who);
-    }
-}
-
-/* Renders the thread: live store turns when present, durable otherwise. */
-static void hush_agent_fill_thread(char *out, size_t outsz,
-                                  hush_store_t *store,
-                                  const hush_launch_t *launch,
-                                  const hush_event_t *parent,
-                                  const hush_agent_thread_walk_t *names)
-{
-    assert(out != NULL && outsz > 0);
-    assert(parent != NULL && names != NULL);
-    out[0] = '\0';
-    if (store == NULL)
-        return;
-    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
-    hush_agent_event_root(root, sizeof(root), parent);
-    hush_event_t original = {0};
-    const char *human = parent->pubkey;
-    if (hush_store_find(store, &original, root) == HUSH_OK)
-        human = original.pubkey;
-    hush_event_t events[HUSH_AGENT_THREAD_MAX] = {0};
-    size_t count = hush_agent_collect_thread(store, events, root, parent->id);
-    hush_agent_thread_walk_t walk = *names;
-    walk.launch = launch;
-    walk.root = root;
-    walk.human_pub = human;
-    int owner = original.id[0] != '\0' && strcmp(original.id, parent->id) != 0;
-    char brief[HUSH_THREAD_BRIEF_MAX + 1];
-    char line[HUSH_AGENT_SNIP_MAX + 1];
-    hush_agent_copy(out, outsz, HUSH_AGENT_THREAD_HEAD);
-    hush_thread_brief_get(root, brief, sizeof(brief));
-    hush_agent_snip_line(line, sizeof(line), brief);
-    if (line[0] != '\0')
-        hush_agent_append_line(out, outsz, "Thread brief: ", line);
-    if (owner)
-        hush_agent_append_turn(out, outsz, &original, "Conversation owner");
-    if (count > 0)
-        hush_agent_walk_thread(out, outsz, events, count, &walk);
-    else if (!owner)
-        hush_agent_append_durable(out, outsz, parent, &walk);
-    size_t used = strlen(out);
-    int written = snprintf(out + used, outsz - used, "\nCurrent message: %s", parent->content);
-    if (written < 0 || (size_t)written >= outsz - used)
-        hush_agent_copy(out, outsz, parent->content);
-}
-
-/* True when a context MIME is Markdown (chunk with fence awareness). */
-static int hush_agent_is_markdown(const char *mime)
-{
-    if (mime == NULL)
-        return 0;
-    return strcmp(mime, HUSH_ROSTER_MIME_MARKDOWN) == 0 ||
-           strcmp(mime, HUSH_ROSTER_MIME_XMARKDOWN) == 0;
-}
-
-/* Appends bounded, structurally-chunked file context to the robot note.
- * hush_seg splits each body so the first included chunk ends on a semantic
- * boundary (sentence/paragraph, or a markdown fence) rather than mid-word.
- * Stops when the note buffer is full. No-op when the robot has no files. */
-static void hush_agent_append_context(char *note, size_t notesz,
-                                      const hush_agent_robot_t *bot)
-{
-    size_t off;
-    size_t i;
-
-    assert(note != NULL);
-    assert(notesz > 0);
-    assert(bot != NULL);
-    off = strlen(note);
-    for (i = 0; i < bot->ncontext && i < (size_t)HUSH_ROSTER_CONTEXT_MAX; i++) {
-        const hush_roster_context_t *ctx = &bot->context[i];
-        hush_seg_span_t span;
-        size_t len;
-        int n;
-
-        if (off + 2 >= notesz)
-            return;
-        if (ctx->text[0] == '\0')
-            continue;
-        n = snprintf(note + off, notesz - off, "\n[file: %s]\n", ctx->name);
-        if (n < 0 || (size_t)n >= notesz - off)
-            return;
-        off += (size_t)n;
-        if (off + 2 >= notesz)
-            return;
-        if (hush_seg_split(ctx->text, ctx->bytes,
-                           hush_agent_is_markdown(ctx->mime),
-                           notesz - off - 1, notesz - off - 1,
-                           &span, 1) != 1)
-            continue;
-        len = span.len;
-        if (len > notesz - off - 1)
-            len = notesz - off - 1;
-        if (len == 0)
-            return;
-        memcpy(note + off, ctx->text + span.off, len);
-        off += len;
-        note[off] = '\0';
-    }
 }
 
 static hush_status_t hush_agent_fill_job(hush_agent_job_t *job,
@@ -1913,411 +1421,6 @@ static hush_status_t hush_agent_add_guidance(hush_agent_job_t *job,
         HUSH_TRY(hush_skill_read_instructions(instructions, sizeof(instructions), robot->skills[i]));
         HUSH_TRY(hush_agent_add_instruction(job, robot->skills[i], instructions));
     }
-    return HUSH_OK;
-}
-
-static hush_status_t hush_agent_prepare_worker(void)
-{
-    if (setpgid(0, 0) != 0 || signal(SIGCHLD, SIG_DFL) == SIG_ERR ||
-        signal(SIGTERM, SIG_DFL) == SIG_ERR || signal(SIGINT, SIG_DFL) == SIG_ERR)
-        return HUSH_ERR_IO;
-    for (size_t i = 0; i < (size_t)HUSH_AGENT_JOBS_MAX; ++i) {
-        if (g_jobs[i].busy && g_jobs[i].fd >= 0 && close(g_jobs[i].fd) != 0)
-            return HUSH_ERR_IO;
-    }
-    return HUSH_OK;
-}
-
-static hush_status_t hush_agent_wait_worker(pid_t child)
-{
-    assert(child > 0);
-    int status = 0;
-    for (size_t i = 0; i < (size_t)HUSH_AGENT_WAIT_MAX; ++i) {
-        pid_t result = waitpid(child, &status, 0);
-        if (result == child)
-            return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? HUSH_OK : HUSH_ERR_IO;
-        if (errno != EINTR)
-            return HUSH_ERR_IO;
-    }
-    if (kill(child, SIGKILL) != 0 && errno != ESRCH)
-        return HUSH_ERR_IO;
-    return HUSH_ERR_IO;
-}
-
-static hush_status_t hush_agent_take_cline_line(char *out, size_t outsz, const char *line)
-{
-    assert(out != NULL && outsz > 0);
-    assert(line != NULL);
-    hush_json_value_t value = {0};
-    if (hush_json_lookup(&value, line, "/partial") == HUSH_OK &&
-        value.len == strlen("true") && memcmp(value.start, "true", value.len) == 0)
-        return HUSH_OK;
-    char subtype[HUSH_AGENT_TOKEN_MAX * 2] = {0};
-    hush_status_t status = hush_json_lookup(&value, line, "/say");
-    if (status == HUSH_ERR_NOT_FOUND)
-        status = hush_json_lookup(&value, line, "/ask");
-    if (status != HUSH_OK)
-        return status == HUSH_ERR_NOT_FOUND ? HUSH_OK : status;
-    HUSH_TRY(hush_json_decode(subtype, sizeof(subtype), &value));
-    if (strcmp(subtype, "text") != 0 && strcmp(subtype, "completion_result") != 0)
-        return HUSH_OK;
-    HUSH_TRY(hush_json_lookup(&value, line, "/text"));
-    return hush_json_decode(out, outsz, &value);
-}
-
-static hush_status_t hush_agent_capture_cline(char *out, size_t outsz, char *capture)
-{
-    assert(out != NULL && outsz > 0);
-    assert(capture != NULL);
-    char *cursor = capture;
-    for (size_t i = 0; i < (size_t)HUSH_AGENT_CAPTURE_MAX && *cursor != '\0'; ++i) {
-        char *end = strchr(cursor, '\n');
-        if (end != NULL) *end = '\0';
-        if (*cursor != '\0') HUSH_TRY(hush_agent_take_cline_line(out, outsz, cursor));
-        if (end == NULL) break;
-        cursor = end + 1;
-    }
-    return out[0] == '\0' ? HUSH_ERR_PARSE : HUSH_OK;
-}
-
-static hush_status_t hush_agent_read_capture(char *out, size_t outsz, int input_fd)
-{
-    assert(out != NULL && outsz > 0);
-    assert(input_fd >= 0);
-    size_t used = 0;
-    for (size_t i = 0; i < outsz && used < outsz - 1; ++i) {
-        ssize_t count = read(input_fd, out + used, outsz - 1 - used);
-        if (count == 0) { out[used] = '\0'; return HUSH_OK; }
-        if (count < 0 && errno == EINTR) continue;
-        if (count < 0) return HUSH_ERR_IO;
-        if (memchr(out + used, '\0', (size_t)count) != NULL) return HUSH_ERR_PARSE;
-        used += (size_t)count;
-    }
-    return HUSH_ERR_FULL;
-}
-
-/* Copies a child's streamed stdout to the relay pipe as it arrives. */
-static hush_status_t hush_agent_pump_capture(int input_fd, int output_fd)
-{
-    char buffer[4096];
-    size_t sent = 0;
-
-    assert(input_fd >= 0);
-    assert(output_fd >= 0);
-    for (;;) {
-        ssize_t count = read(input_fd, buffer, sizeof(buffer));
-        size_t usable;
-        size_t off = 0;
-
-        if (count < 0) {
-            if (errno == EINTR)
-                continue;
-            return HUSH_ERR_IO;
-        }
-        if (count == 0)
-            return HUSH_OK;
-        /* The relay stores one event of content; drain the rest silently so a
-         * long answer can neither overflow it nor block the writer. */
-        usable = (size_t)count;
-        if (usable > (size_t)HUSH_EVENT_MAX_CONTENT - sent)
-            usable = (size_t)HUSH_EVENT_MAX_CONTENT - sent;
-        while (off < usable) {
-            ssize_t written = write(output_fd, buffer + off, usable - off);
-            if (written < 0) {
-                if (errno == EINTR)
-                    continue;
-                return HUSH_ERR_IO;
-            }
-            off += (size_t)written;
-        }
-        sent += usable;
-    }
-}
-
-static hush_status_t hush_agent_capture_worker(char *out, size_t outsz, int forward_fd,
-                                               const hush_agent_job_t *job)
-{
-    assert(out != NULL && outsz > 0);
-    assert(job != NULL);
-    int capture[2] = {-1, -1};
-    if (pipe(capture) != 0) return HUSH_ERR_IO;
-    pid_t child = fork();
-    if (child == 0) {
-        if (close(capture[0]) != 0) _exit(HUSH_AGENT_EXEC_FAILURE);
-        hush_agent_exec_child(capture[1], job);
-        _exit(HUSH_AGENT_EXEC_FAILURE);
-    }
-    hush_status_t status = close(capture[1]) == 0 ? HUSH_OK : HUSH_ERR_IO;
-    if (child < 0) status = HUSH_ERR_IO;
-    if (status == HUSH_OK && forward_fd >= 0)
-        status = hush_agent_pump_capture(capture[0], forward_fd);
-    else if (status == HUSH_OK)
-        status = hush_agent_read_capture(out, outsz, capture[0]);
-    if (status != HUSH_OK && child > 0 && kill(child, SIGKILL) != 0 && errno != ESRCH)
-        status = HUSH_ERR_IO;
-    if (close(capture[0]) != 0) status = HUSH_ERR_IO;
-    if (child > 0 && hush_agent_wait_worker(child) != HUSH_OK) status = HUSH_ERR_IO;
-    return status;
-}
-
-static hush_status_t hush_agent_capture_reply(char *out, size_t outsz, char *capture,
-                                             const char *provider)
-{
-    assert(out != NULL && outsz > 0);
-    assert(capture != NULL && provider != NULL);
-    if (strcmp(provider, HUSH_ROSTER_PROVIDER_CLINE) == 0)
-        return hush_agent_capture_cline(out, outsz, capture);
-    size_t len = strlen(capture);
-    if (len >= outsz) {
-        /* A verbose answer is truncated to the event content cap so the note
-         * still lands; the job must not fail for being longer than the cap. */
-        len = outsz - 1;
-    }
-    memcpy(out, capture, len);
-    out[len] = '\0';
-    return len == 0 ? HUSH_ERR_PARSE : HUSH_OK;
-}
-
-static void hush_agent_run_worker(int output_fd, const hush_agent_job_t *job)
-{
-    assert(output_fd >= 0);
-    assert(job != NULL);
-    if (hush_agent_prepare_worker() != HUSH_OK)
-        _exit(HUSH_AGENT_EXEC_FAILURE);
-    /* Only the supervisor keeps the relay pipe: executed harnesses cannot hold it. */
-    if (fcntl(output_fd, F_SETFD, FD_CLOEXEC) < 0) _exit(HUSH_AGENT_EXEC_FAILURE);
-    char capture[HUSH_AGENT_CAPTURE_MAX + 1] = {0};
-    /* API providers stream deltas straight into the relay pipe, so the relay
-     * already holds the whole answer and the supervisor writes nothing more. */
-    int forward = hush_inference_is_api(job->provider) ? output_fd : -1;
-    if (hush_agent_capture_worker(capture, sizeof(capture), forward, job) != HUSH_OK)
-        _exit(HUSH_AGENT_EXEC_FAILURE);
-    if (forward >= 0) {
-        if (close(output_fd) != 0) _exit(HUSH_AGENT_EXEC_FAILURE);
-        _exit(0);
-    }
-    char reply[HUSH_EVENT_MAX_CONTENT + 1] = {0};
-    if (hush_agent_capture_reply(reply, sizeof(reply), capture, job->provider) != HUSH_OK)
-        _exit(HUSH_AGENT_EXEC_FAILURE);
-    /* PIPE_BUF is at least one event on this Linux relay; incomplete writes fail closed. */
-    size_t len = strlen(reply);
-    if (write(output_fd, reply, len) != (ssize_t)len) _exit(HUSH_AGENT_EXEC_FAILURE);
-    if (close(output_fd) != 0) _exit(HUSH_AGENT_EXEC_FAILURE);
-    _exit(0);
-}
-
-static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job)
-{
-    int dn;
-
-    assert(job != NULL);
-    assert(write_fd >= 0);
-    if (dup2(write_fd, STDOUT_FILENO) < 0 || close(write_fd) != 0)
-        _exit(HUSH_AGENT_EXEC_FAILURE);
-    dn = open(HUSH_AGENT_DEVNULL, O_WRONLY);
-    if (dn < 0) _exit(HUSH_AGENT_EXEC_FAILURE);
-    if (dup2(dn, STDERR_FILENO) < 0 || close(dn) != 0)
-        _exit(HUSH_AGENT_EXEC_FAILURE);
-    if (hush_inference_is_api(job->provider)) {
-        hush_agent_exec_api(job);
-        return;
-    }
-    if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_COPILOT) == 0)
-        hush_agent_exec_copilot(job);
-    else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_CODEX) == 0)
-        hush_agent_exec_codex(job);
-    else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_GOOSE) == 0)
-        hush_agent_exec_goose(job);
-    else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_OLLAMA) == 0)
-        hush_agent_exec_ollama(job);
-    else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_CLINE) == 0)
-        hush_agent_exec_cline(job);
-    else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0)
-        hush_agent_exec_grok(job);
-    else
-        _exit(HUSH_AGENT_EXEC_FAILURE);
-}
-
-static void hush_agent_exec_api(const hush_agent_job_t *job)
-{
-    assert(job != NULL);
-    assert(job->provider[0] != '\0');
-    hush_inference_request_t request = {
-        .provider = job->provider, .system = job->prompt,
-        .rules = job->rules, .message = job->note
-    };
-    /* The worker captures the whole provider answer; the reply cap applies
-     * only when the note is assembled. Deltas already forwarded to stdout must
-     * not be written a second time. */
-    char response[HUSH_INFERENCE_TEXT_MAX + 1] = {0};
-    int streamed = 0;
-    if (hush_inference_stream(response, sizeof(response), &request, STDOUT_FILENO,
-                              &streamed) != HUSH_OK)
-        _exit(HUSH_AGENT_EXEC_FAILURE);
-    if (!streamed && (fputs(response, stdout) == EOF || fflush(stdout) != 0))
-        _exit(HUSH_AGENT_EXEC_FAILURE);
-    _exit(0);
-}
-
-static void hush_agent_exec_cline(const hush_agent_job_t *job)
-{
-    assert(job != NULL);
-    char combined[HUSH_AGENT_COMBINED_PROMPT_MAX] = {0};
-    hush_agent_build_combined(combined, sizeof(combined), job);
-    /* POSIX exec borrows mutable argv. Non-TTY stdout selects Cline headless mode. */
-    char *arguments[] = {(char *)"cline", (char *)"--json", (char *)"--cwd", (char *)job->cwd,
-        (char *)"--auto-approve", (char *)"false", (char *)"--timeout",
-        (char *)"80", combined, NULL};
-    execvp(arguments[0], arguments);
-    _exit(HUSH_AGENT_EXEC_FAILURE);
-}
-
-static void hush_agent_exec_grok(const hush_agent_job_t *job)
-{
-    char *argv[HUSH_AGENT_ARGV_MAX];
-
-    assert(job != NULL);
-    argv[0] = (char *)HUSH_AGENT_GROK_BIN;
-    argv[1] = (char *)"-p";
-    argv[2] = (char *)job->note;
-    argv[3] = (char *)"--system-prompt-override";
-    argv[4] = (char *)job->prompt;
-    argv[5] = (char *)"--output-format";
-    argv[6] = (char *)"plain";
-    argv[7] = (char *)"--always-approve";
-    argv[8] = (char *)"--no-plan";
-    argv[9] = (char *)"--no-subagents";
-    argv[10] = (char *)"--disable-web-search";
-    argv[11] = (char *)"--max-turns";
-    argv[12] = (char *)(job->kind == HUSH_AGENT_KIND_FIXUP
-                       ? HUSH_AGENT_FIXUP_TURNS : HUSH_AGENT_GROK_TURNS);
-    argv[13] = (char *)"--reasoning-effort";
-    argv[14] = (char *)HUSH_AGENT_GROK_EFFORT;
-    argv[15] = (char *)"--cwd";
-    argv[16] = (char *)job->cwd;
-    argv[17] = (char *)"--disallowed-tools";
-    argv[18] = (char *)HUSH_AGENT_DISALLOWED;
-    argv[19] = (char *)"--rules";
-    argv[20] = (char *)job->rules;
-    argv[21] = (char *)HUSH_AGENT_GROK_NOMEM;
-    argv[22] = NULL;
-    execvp(HUSH_AGENT_GROK_BIN, argv);
-    _exit(127);
-}
-
-static void hush_agent_build_combined(char *out, size_t outsz,
-                                      const hush_agent_job_t *job)
-{
-    int n;
-
-    assert(out != NULL);
-    assert(outsz > 0);
-    assert(job != NULL);
-    n = snprintf(out, outsz, "%s\n%s\n%s",
-                 job->prompt, job->rules, job->note);
-    if (n < 0 || (size_t)n >= outsz)
-        out[outsz - 1] = '\0';
-}
-
-static void hush_agent_exec_copilot(const hush_agent_job_t *job)
-{
-    char combined[HUSH_AGENT_COMBINED_PROMPT_MAX];
-    char *argv[5];
-
-    assert(job != NULL);
-    hush_agent_build_combined(combined, sizeof(combined), job);
-    argv[0] = (char *)HUSH_AGENT_COPILOT_BIN;
-    argv[1] = (char *)"-p";
-    argv[2] = combined;
-    argv[3] = (char *)"--allow-all";
-    argv[4] = NULL;
-    execvp(argv[0], argv);
-    _exit(127);
-}
-
-static void hush_agent_exec_codex(const hush_agent_job_t *job)
-{
-    assert(job != NULL);
-    if (hush_codex_prepare_skills(job->cwd) != HUSH_OK)
-        _exit(HUSH_AGENT_EXEC_FAILURE);
-    char combined[HUSH_AGENT_COMBINED_PROMPT_MAX] = {0};
-    hush_agent_build_combined(combined, sizeof(combined), job);
-    /* POSIX execvp requires a mutable argv; borrowed strings remain unchanged. */
-    char *arguments[] = {
-        (char *)HUSH_AGENT_CODEX_BIN, (char *)"exec",
-        (char *)"--cd", (char *)job->cwd,
-        (char *)"--skip-git-repo-check", (char *)"--sandbox", (char *)"read-only",
-        combined, NULL
-    };
-    execvp(arguments[0], arguments);
-    _exit(HUSH_AGENT_EXEC_FAILURE);
-}
-
-static void hush_agent_exec_goose(const hush_agent_job_t *job)
-{
-    char combined[HUSH_AGENT_COMBINED_PROMPT_MAX];
-    char *argv[5];
-
-    assert(job != NULL);
-    hush_agent_build_combined(combined, sizeof(combined), job);
-    argv[0] = (char *)HUSH_AGENT_GOOSE_BIN;
-    argv[1] = (char *)"run";
-    argv[2] = (char *)"--text";
-    argv[3] = combined;
-    argv[4] = NULL;
-    execvp(argv[0], argv);
-    _exit(127);
-}
-
-static void hush_agent_exec_ollama(const hush_agent_job_t *job)
-{
-    char combined[HUSH_AGENT_COMBINED_PROMPT_MAX];
-    hush_provider_status_t st;
-    char *argv[6];
-
-    assert(job != NULL);
-    hush_agent_build_combined(combined, sizeof(combined), job);
-    /* Local inference: the model is configured on the Ollama provider overlay
-     * (providers.json -> model). runtime_ready() already requires one, so the
-     * model field is non-empty here; guard anyway. */
-    (void)hush_provider_status(&st, HUSH_ROSTER_PROVIDER_OLLAMA);
-    if (st.model[0] == '\0')
-        _exit(127);
-    argv[0] = (char *)HUSH_AGENT_OLLAMA_BIN;
-    argv[1] = (char *)"run";
-    argv[2] = st.model;
-    argv[3] = combined;
-    argv[4] = NULL;
-    execvp(argv[0], argv);
-    _exit(127);
-}
-
-static hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job)
-{
-    int fds[2];
-    pid_t pid;
-    int flags;
-
-    assert(job != NULL);
-    if (pipe(fds) != 0)
-        return HUSH_ERR_IO;
-    pid = fork();
-    if (pid < 0) {
-        close(fds[0]);
-        close(fds[1]);
-        return HUSH_ERR_IO;
-    }
-    if (pid == 0) {
-        close(fds[0]);
-        hush_agent_run_worker(fds[1], job);
-    }
-    close(fds[1]);
-    flags = fcntl(fds[0], F_GETFL, 0);
-    if (flags >= 0)
-        (void)fcntl(fds[0], F_SETFL, flags | O_NONBLOCK);
-    job->pid = pid;
-    job->fd = fds[0];
-    hush_relay_track_child(pid);
     return HUSH_OK;
 }
 
@@ -4433,7 +3536,7 @@ static size_t hush_agent_count_turns(hush_store_t *store,
     return turns;
 }
 
-static int hush_agent_is_work_note(const char *content)
+int hush_agent_is_work_note(const char *content)
 {
     static const char *const skip[] = {
         HUSH_AGENT_INTRO_PREFIX,

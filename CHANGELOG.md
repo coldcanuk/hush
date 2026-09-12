@@ -8,6 +8,14 @@ the top-level `VERSION` file.
 
 ### Changed
 
+- `hush_agent.c` split tranche 1: shared types/constants/helpers move to
+  `hush_agent_internal.h`; provider worker execution and reply capture move
+  to `agent_process.c`; thread walking and context assembly move to
+  `agent_thread.c`. Behavior-preserving; the prompt/text-munging/
+  dispatch-follow/fixup clusters remain the follow-on tranche.
+
+### Added
+
 - `hush_http.c` split from 2,874 lines into a 977-line core (guard, auth,
   rate, reply/session, JSON helpers, dispatch router, lifecycle) plus eight
   per-family modules behind `hush_http_internal.h`: `http_static.c`,
