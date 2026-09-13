@@ -8,6 +8,14 @@ the top-level `VERSION` file.
 
 ### Fixed
 
+- Worker failures are no longer silent: a dying worker writes a
+  HUSH_JOB_ERR line into its output stream, the relay carries the reason
+  into job->diag, and the failure note prints it ("...through deepseek-api
+  (provider transport failed (curl: ...))"). API transport failures now
+  embed curl's own stderr; the marker never reaches the channel.
+
+### Fixed
+
 - Provider troubleshooting: dispatch names the concrete missing piece. A
   job that starts on a fallback because the robot's first-choice provider
   is unready posts one line ("Deepseek API is not ready (no model
