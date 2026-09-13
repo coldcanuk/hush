@@ -17,6 +17,8 @@
 #include "hush_status.h"
 #include "hush_store.h"
 
+#define HUSH_AGENT_ERR_MARK "HUSH_JOB_ERR:"
+
 enum {
     HUSH_AGENT_INTRO_MAX = 32,
     HUSH_AGENT_KIND_NOTE = 1,
@@ -56,6 +58,10 @@ enum {
                                      HUSH_AGENT_NOTE_MAX + 1,
     HUSH_AGENT_EXEC_FAILURE = 127,
     HUSH_AGENT_CAPTURE_MAX = 131072,
+    HUSH_AGENT_DIAG_MAX = 256,
+
+    /* In-stream prefix a dying worker writes before its failure reason. */
+    HUSH_AGENT_ERR_MARK_LEN = 13,
     HUSH_AGENT_WAIT_MAX = 8,
     HUSH_AGENT_FOLLOW_ROBOTS = 8
 };
@@ -96,6 +102,9 @@ typedef struct {
     int last;
     const hush_launch_t *launch;
     char ask[HUSH_EVENT_MAX_CONTENT + 1];
+    /* Worker failure reason, carried from the provider process when it
+     * exits without a usable reply. Empty while the job is healthy. */
+    char diag[HUSH_AGENT_DIAG_MAX];
 } hush_agent_job_t;
 
 typedef struct {

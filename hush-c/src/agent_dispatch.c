@@ -163,8 +163,11 @@ static void hush_agent_note_failure(hush_store_t *store, const hush_agent_job_t 
     char reason[HUSH_PROVIDER_ERR_MAX] = {0};
     char message[HUSH_EVENT_MAX_CONTENT] = {0};
     int written;
-    if (hush_provider_status(&status, job->provider) == HUSH_OK)
+    if (job->diag[0] != '\0') {
+        hush_agent_copy(reason, sizeof(reason), job->diag);
+    } else if (hush_provider_status(&status, job->provider) == HUSH_OK) {
         hush_provider_missing_reason(reason, sizeof(reason), &status);
+    }
     if (reason[0] != '\0')
         written = snprintf(message, sizeof(message),
             "%s did not return a usable reply through %s (%s). Fix that, then send your "
@@ -360,7 +363,26 @@ void hush_agent_read_job(hush_agent_job_t *job)
         return;
     for (size_t i = 0; i < sizeof(job->out); ++i) {
         int more = 0;
+        char *mark;
+
         if (hush_agent_read_chunk(job, &more) != HUSH_OK) { job->out[0] = '\0'; return; }
+        /* A worker that dies mid-answer writes one HUSH_JOB_ERR line into
+         * the stream. Keep the text before it; carry the reason to the
+         * failure note instead of publishing the marker. */
+        mark = strstr(job->out, HUSH_AGENT_ERR_MARK);
+        if (mark != NULL) {
+            char *line_end;
+
+            hush_agent_copy(job->diag, sizeof(job->diag),
+                            mark + HUSH_AGENT_ERR_MARK_LEN);
+            line_end = strchr(job->diag, '\n');
+            if (line_end != NULL)
+                *line_end = '\0';
+            hush_agent_trim(job->diag);
+            *mark = '\0';
+            job->done = 1;
+            return;
+        }
         if (!more) return;
     }
 }
