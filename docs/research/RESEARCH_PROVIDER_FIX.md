@@ -37,6 +37,25 @@ plus explicit auth/token text labels.
   `has_token`, `has_home`, `has_binary`, `family`) but is not
   shown as text.
 
+## (b2) Follow-on: worker failures were invisible
+
+The live relay kept failing with the generic note, so the worker's failure
+surface was instrumented end-to-end:
+
+- A dying worker writes HUSH_JOB_ERR:<reason> into its output stream; the
+  relay splits the reason into job->diag and never publishes the marker
+  (verified with a fake failing grok: the note now reads "worker exited
+  with an error").
+- The API transport now captures curl's own stderr and embeds it
+  ("provider transport failed (curl: ...)"), so the next live failure
+  names the actual network/HTTP problem.
+- note_failure prefers the worker's diagnosis over the generic
+  provider-config hint.
+
+With the real overlay, host, model, and key, the full deepseek turn was
+verified end-to-end against the live API from a scratch relay: the robot
+answered a real mention.
+
 ## (c) Plan
 
 1. **M1.2** — `hush_provider_missing_reason()` in hush_provider.c/h:

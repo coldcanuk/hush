@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -413,43 +414,59 @@ static hush_status_t hush_inference_stream_curl(FILE *configuration, const char 
                                                 char *out, size_t outsz, int stream_fd,
                                                 int *streamed)
 {
-    int fds[2];
+    int fds[2] = {-1, -1};
+    int errfds[2] = {-1, -1};
     pid_t child;
     FILE *response;
     char line[HUSH_INFERENCE_LINE_MAX];
     char raw[HUSH_INFERENCE_RESPONSE_MAX] = {0};
+    char detail[HUSH_INFERENCE_LINE_MAX] = {0};
     size_t raw_n = 0;
+    size_t detail_n = 0;
     hush_status_t result = HUSH_OK;
     int status = 0;
+    int flags;
 
     assert(configuration != NULL);
     assert(provider != NULL);
     assert(out != NULL && outsz > 0);
-    if (pipe(fds) != 0)
+    if (pipe(fds) != 0 || pipe(errfds) != 0) {
+        if (fds[0] >= 0) { (void)close(fds[0]); (void)close(fds[1]); }
+        if (errfds[0] >= 0) { (void)close(errfds[0]); (void)close(errfds[1]); }
         return HUSH_ERR_IO;
+    }
     if (signal(SIGCHLD, SIG_DFL) == SIG_ERR) {
         (void)close(fds[0]);
         (void)close(fds[1]);
+        (void)close(errfds[0]);
+        (void)close(errfds[1]);
         return HUSH_ERR_IO;
     }
     child = fork();
     if (child < 0) {
         (void)close(fds[0]);
         (void)close(fds[1]);
+        (void)close(errfds[0]);
+        (void)close(errfds[1]);
         return HUSH_ERR_IO;
     }
     if (child == 0) {
+        (void)close(errfds[0]);
         if (close(fds[0]) != 0 ||
             dup2(fileno(configuration), STDIN_FILENO) < 0 ||
-            dup2(fds[1], STDOUT_FILENO) < 0)
+            dup2(fds[1], STDOUT_FILENO) < 0 ||
+            dup2(errfds[1], STDERR_FILENO) < 0)
             _exit(HUSH_INFERENCE_EXEC_FAILURE);
         execlp("curl", "curl", "--disable", "--silent", "--fail", "--no-buffer",
                "--max-time", HUSH_INFERENCE_TIMEOUT, "--max-filesize", "131072",
                "--proto", "=http,https", "--config", "-", (char *)NULL);
         _exit(HUSH_INFERENCE_EXEC_FAILURE);
     }
-    if (close(fds[1]) != 0)
+    if (close(fds[1]) != 0 || close(errfds[1]) != 0)
         result = HUSH_ERR_IO;
+    flags = fcntl(errfds[0], F_GETFL, 0);
+    if (flags >= 0)
+        (void)fcntl(errfds[0], F_SETFL, flags | O_NONBLOCK);
     response = fdopen(fds[0], "r");
     if (response == NULL) {
         (void)close(fds[0]);
@@ -471,10 +488,42 @@ static hush_status_t hush_inference_stream_curl(FILE *configuration, const char 
     }
     if (response != NULL && fclose(response) != 0)
         result = HUSH_ERR_IO;
+    for (;;) {
+        ssize_t got = read(errfds[0], detail + detail_n,
+                           sizeof(detail) - 1 - detail_n);
+        if (got <= 0)
+            break;
+        detail_n += (size_t)got;
+        if (detail_n >= sizeof(detail) - 1)
+            break;
+    }
+    detail[detail_n] = '\0';
+    (void)close(errfds[0]);
     if (waitpid(child, &status, 0) != child)
         result = HUSH_ERR_IO;
-    else if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+    else if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        /* Carry curl's own words into the failure note. */
+        char why[HUSH_INFERENCE_LINE_MAX] = {0};
+        char *end = strchr(detail, '\n');
+        size_t dlen;
+
         result = HUSH_ERR_IO;
+        if (end != NULL)
+            *end = '\0';
+        dlen = strlen(detail);
+        while (dlen > 0 && (detail[dlen - 1] == ' ' || detail[dlen - 1] == '\r'))
+            detail[--dlen] = '\0';
+        if (detail[0] != '\0')
+            (void)snprintf(why, sizeof(why),
+                           "HUSH_JOB_ERR:provider transport failed (curl: %s)\n",
+                           detail);
+        else
+            (void)snprintf(why, sizeof(why),
+                           "HUSH_JOB_ERR:provider transport failed\n");
+        size_t used = strlen(out);
+        if (used + strlen(why) < outsz)
+            memcpy(out + used, why, strlen(why) + 1);
+    }
     /* A provider that ignored stream:true answered with one whole body. */
     if (result == HUSH_OK && out[0] == '\0' && raw_n > 0)
         result = hush_inference_extract(out, outsz, provider, raw);

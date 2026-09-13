@@ -209,27 +209,51 @@ static hush_status_t hush_agent_capture_reply(char *out, size_t outsz, char *cap
     return len == 0 ? HUSH_ERR_PARSE : HUSH_OK;
 }
 
+/* Writes the worker failure marker plus one reason to fd, bounded. */
+static void hush_agent_worker_err(int fd, const char *reason)
+{
+    char line[HUSH_AGENT_DIAG_MAX];
+
+    assert(reason != NULL);
+    if (fd < 0)
+        return;
+    if (snprintf(line, sizeof(line), "%s%s\n", HUSH_AGENT_ERR_MARK, reason)
+        >= (int)sizeof(line))
+        line[sizeof(line) - 2] = '\n';
+    if (write(fd, line, strlen(line)) < 0)
+        return;
+}
+
 static void hush_agent_run_worker(int output_fd, const hush_agent_job_t *job)
 {
     assert(output_fd >= 0);
     assert(job != NULL);
-    if (hush_agent_prepare_worker() != HUSH_OK)
+    if (hush_agent_prepare_worker() != HUSH_OK) {
+        hush_agent_worker_err(output_fd, "worker setup failed");
         _exit(HUSH_AGENT_EXEC_FAILURE);
+    }
     /* Only the supervisor keeps the relay pipe: executed harnesses cannot hold it. */
-    if (fcntl(output_fd, F_SETFD, FD_CLOEXEC) < 0) _exit(HUSH_AGENT_EXEC_FAILURE);
+    if (fcntl(output_fd, F_SETFD, FD_CLOEXEC) < 0) {
+        hush_agent_worker_err(output_fd, "worker pipe setup failed");
+        _exit(HUSH_AGENT_EXEC_FAILURE);
+    }
     char capture[HUSH_AGENT_CAPTURE_MAX + 1] = {0};
     /* API providers stream deltas straight into the relay pipe, so the relay
      * already holds the whole answer and the supervisor writes nothing more. */
     int forward = hush_inference_is_api(job->provider) ? output_fd : -1;
-    if (hush_agent_capture_worker(capture, sizeof(capture), forward, job) != HUSH_OK)
+    if (hush_agent_capture_worker(capture, sizeof(capture), forward, job) != HUSH_OK) {
+        hush_agent_worker_err(output_fd, "worker exited with an error");
         _exit(HUSH_AGENT_EXEC_FAILURE);
+    }
     if (forward >= 0) {
         if (close(output_fd) != 0) _exit(HUSH_AGENT_EXEC_FAILURE);
         _exit(0);
     }
     char reply[HUSH_EVENT_MAX_CONTENT + 1] = {0};
-    if (hush_agent_capture_reply(reply, sizeof(reply), capture, job->provider) != HUSH_OK)
+    if (hush_agent_capture_reply(reply, sizeof(reply), capture, job->provider) != HUSH_OK) {
+        hush_agent_worker_err(output_fd, "provider returned no usable text");
         _exit(HUSH_AGENT_EXEC_FAILURE);
+    }
     /* PIPE_BUF is at least one event on this Linux relay; incomplete writes fail closed. */
     size_t len = strlen(reply);
     if (write(output_fd, reply, len) != (ssize_t)len) _exit(HUSH_AGENT_EXEC_FAILURE);
@@ -265,8 +289,27 @@ static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job)
         hush_agent_exec_cline(job);
     else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0)
         hush_agent_exec_grok(job);
-    else
-        _exit(HUSH_AGENT_EXEC_FAILURE);
+    hush_agent_worker_err(STDOUT_FILENO, "provider executable failed to start");
+    _exit(HUSH_AGENT_EXEC_FAILURE);
+}
+
+/* Copies the human reason for an inference status, or "unknown error". */
+static const char *hush_agent_inference_reason(hush_status_t status)
+{
+    switch (status) {
+    case HUSH_ERR_DENIED:
+        return "provider not ready (model or token missing)";
+    case HUSH_ERR_IO:
+        return "provider connection or HTTP transport failed";
+    case HUSH_ERR_PARSE:
+        return "provider returned no readable text";
+    case HUSH_ERR_FULL:
+        return "prompt too large for the provider request";
+    case HUSH_ERR_ARG:
+        return "provider request rejected (bad endpoint or model)";
+    default:
+        return "provider failed with an unknown error";
+    }
 }
 
 static void hush_agent_exec_api(const hush_agent_job_t *job)
@@ -282,9 +325,19 @@ static void hush_agent_exec_api(const hush_agent_job_t *job)
      * not be written a second time. */
     char response[HUSH_INFERENCE_TEXT_MAX + 1] = {0};
     int streamed = 0;
-    if (hush_inference_stream(response, sizeof(response), &request, STDOUT_FILENO,
-                              &streamed) != HUSH_OK)
+    hush_status_t status = hush_inference_stream(response, sizeof(response), &request,
+                                                 STDOUT_FILENO, &streamed);
+    if (status != HUSH_OK) {
+        /* The inference layer may have already embedded a detailed marker. */
+        if (response[0] != '\0' &&
+            strncmp(response, HUSH_AGENT_ERR_MARK, HUSH_AGENT_ERR_MARK_LEN) == 0) {
+            if (fputs(response, stdout) == EOF || fflush(stdout) != 0)
+                _exit(HUSH_AGENT_EXEC_FAILURE);
+        } else {
+            hush_agent_worker_err(STDOUT_FILENO, hush_agent_inference_reason(status));
+        }
         _exit(HUSH_AGENT_EXEC_FAILURE);
+    }
     if (!streamed && (fputs(response, stdout) == EOF || fflush(stdout) != 0))
         _exit(HUSH_AGENT_EXEC_FAILURE);
     _exit(0);
