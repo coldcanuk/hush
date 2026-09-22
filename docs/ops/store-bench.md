@@ -16,7 +16,7 @@ it does not gate latency.
 
 ## Measurement metadata
 
-- Host: `kiff` (Linux 6.16.3-76061603-generic x86_64, 16 nproc)
+- Host: `kiff` (Linux 7.1.5-76070105-generic x86_64, 16 nproc)
 - Repo: https://github.com/coldcanuk/hush
 - Measured SHA: `c8a7529f84baef287a889d4722ec587f5714c586` (pre-WS1 tip when Floor ran the harness)
 - Date: `2026-09-22T23:40:25Z` (UTC)
