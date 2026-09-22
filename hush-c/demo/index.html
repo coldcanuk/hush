@@ -676,19 +676,6 @@
 .skill-gem:hover { background: var(--surface-2); }
 .skill-gem:active { transform: translateY(1px); }
 button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
-.robot-directory { display: flex; flex-direction: column; gap: 4px; width: 100%; }
-.directory-row { display: flex; align-items: center; gap: 4px; border-radius: 10px; }
-.directory-row:hover { background: var(--surface-2); }
-.directory-chat, .directory-edit {
-  border: 0; background: transparent; color: var(--fg); min-height: 44px;
-  padding: 8px; border-radius: 8px; font-family: var(--sans);
-}
-.directory-chat { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; text-align: left; }
-.directory-avatar { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 8px; background-color: var(--surface-2); }
-.directory-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.directory-copy strong { font-size: 0.85rem; font-weight: 600; overflow-wrap: anywhere; }
-.directory-copy small { font-size: 0.72rem; color: var(--muted); }
-.directory-edit { width: 44px; }
 .send-error:empty { display: none; }
 .send-error { padding: 0 16px; margin: 6px 0; }
 .provider-config { margin-left: auto; min-height: 32px; padding: 6px 8px;
@@ -778,7 +765,6 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
   #agent-identity .field-wide, #forge-drawer .forge-grid .field-wide { grid-column: auto; }
 }
 
-.directory-avatar { display: grid; place-items: center; font-weight: 650; }
 #nav-toggle { display: none; min-width: 44px; min-height: 44px; }
 @media (max-width: 640px) {
   #nav-toggle { display: block; }
@@ -5232,46 +5218,6 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         composerPills.push({name: bot.name, npub: bot.npub});
       paintComposerPills();
       $("msg").focus();
-    }
-
-    /* Superseded compact list; compact now renders the cell grid above. Retained unused. */
-    function paintRobotDirectory(grid) {
-      grid.replaceChildren();
-      grid.removeAttribute("style");
-      grid.className = "robot-directory";
-      robotModels().forEach((bot) => {
-        const row = document.createElement("div");
-        row.className = "directory-row";
-        row.dataset.slug = bot.slug;
-        const chat = document.createElement("button");
-        chat.type = "button";
-        chat.className = "directory-chat";
-        chat.disabled = !bot.enabled || bot.role === "chaperon";
-        chat.setAttribute("aria-label", "Chat with " + bot.name);
-        const avatar = document.createElement("span");
-        avatar.className = "directory-avatar";
-        avatar.setAttribute("aria-hidden", "true");
-        avatar.style.cssText = picCellStyle(bot.picture, 36) || "";
-        if (!bot.picture) avatar.textContent = bot.name.slice(0, 1);
-        const label = document.createElement("span");
-        label.className = "directory-copy";
-        const name = document.createElement("strong");
-        name.textContent = bot.name;
-        const status = document.createElement("small");
-        status.textContent = !bot.enabled ? "Paused" : bot.role === "chaperon"
-          ? "Room moderator" : providerLabel(bot.provider);
-        label.append(name, status);
-        chat.append(avatar, label);
-        chat.addEventListener("click", () => startRobotConversation(bot));
-        const edit = document.createElement("button");
-        edit.type = "button";
-        edit.className = "directory-edit";
-        edit.textContent = "•••";
-        edit.setAttribute("aria-label", "Edit " + bot.name);
-        edit.addEventListener("click", () => openAgentDrawer(bot));
-        row.append(chat, edit);
-        grid.appendChild(row);
-      });
     }
 
     function renderInventory(grid, cols, rows, cell, compact) {
