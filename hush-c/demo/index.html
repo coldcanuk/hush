@@ -601,8 +601,12 @@
       .lbl { display: none; }
     }
   
-/* Named robot directory fits the navigation column. */
-#robot-inventory { margin: 0; padding: 0; max-width: 100%; }
+/* Compact 4x3 inventory grid fits the navigation column. */
+#robot-inventory {
+  display: block; position: relative; margin: 0 auto;
+  background: var(--surface); padding: 4px; border: 1px solid var(--line); border-radius: 8px;
+  max-width: 100%; box-sizing: border-box;
+}
 #robot-inventory-full {
   display: block; position: relative; margin: 0 auto;
   background: var(--surface); padding: 4px; border: 1px solid var(--line); border-radius: 8px;
@@ -619,7 +623,7 @@
 .inv-header { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .inv-header .inv-title-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .inv-header .inv-title { font-size: 0.7rem; letter-spacing: 0.04em; color: var(--muted); text-transform: uppercase; }
-.inv-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
+.inv-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; width: 100%; }
 .inv-btn {
   min-height: 44px; width: 100%; box-sizing: border-box;
   font: 650 0.72rem/1 var(--sans); padding: 6px 0; margin: 0;
@@ -902,8 +906,9 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
           <button class="inv-expand-link" id="inv-expand" type="button">Arrange</button>
         </div>
         <div class="inv-btns">
-          <button class="inv-btn" id="inv-seed" type="button" title="Create a team from a shared brief">New team</button>
-          <button class="inv-btn" id="inv-raise" type="button" title="Raise a robot">New robot</button>
+          <button class="inv-btn" id="inv-seed" type="button" title="Create a team from a shared brief">Seed</button>
+          <button class="inv-btn" id="inv-clear" type="button" title="Reset saved slot layout">Clear</button>
+          <button class="inv-btn" id="inv-raise" type="button" title="Raise a robot">Raise</button>
         </div>
       </div>
       <div id="robot-inventory" aria-label="Robot Inventory Grid"></div>
@@ -5096,6 +5101,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     /* ========== Inventory: live roster on compact 4x3, expand 8x5 ========== */
     function invId() { return "inv" + (invNextId++); }
 
+    /* Retained for reference; UI_SPEC forces every robot to 1x1. */
     function sizeForKey(key) {
       if (key === "1x3") return { w: 1, h: 3 };
       if (key === "2x2") return { w: 2, h: 2 };
@@ -5111,7 +5117,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     function saveInvLayout() {
       const o = {};
       invItems.forEach((it) => {
-        if (it.slug) o[it.slug] = { gx: it.gx, gy: it.gy, w: it.w, h: it.h };
+        if (it.slug) o[it.slug] = { gx: it.gx, gy: it.gy, w: 1, h: 1 };
       });
       try { localStorage.setItem("hush-inv", JSON.stringify(o)); } catch (e) {}
     }
@@ -5141,7 +5147,9 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 
     function addToInventory(bot, sizeKey) {
       if (bot && bot.slug && invItems.some((it) => it.slug === bot.slug)) return null;
-      const sz = sizeForKey(sizeKey || "1x1");
+      /* UI_SPEC: every robot is 1x1; sizeKey is ignored. */
+      void sizeKey;
+      const sz = { w: 1, h: 1 };
       let slot = findFreeSlot(sz.w, sz.h, INV_COLS, INV_ROWS);
       if (!slot) slot = findFreeSlot(sz.w, sz.h, INV_EXPAND_COLS, INV_EXPAND_ROWS);
       if (!slot) slot = { gx: 0, gy: 0 };
@@ -5171,6 +5179,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
           it.name = bot.name;
           it.picture = bot.picture || it.picture;
           it.enabled = bot.enabled !== false;
+          it.w = 1; it.h = 1;
           return;
         }
         const sz = { w: 1, h: 1 };
@@ -5225,6 +5234,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       $("msg").focus();
     }
 
+    /* Superseded compact list; compact now renders the cell grid above. Retained unused. */
     function paintRobotDirectory(grid) {
       grid.replaceChildren();
       grid.removeAttribute("style");
@@ -5266,7 +5276,8 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 
     function renderInventory(grid, cols, rows, cell, compact) {
       if (!grid) return;
-      if (compact) { paintRobotDirectory(grid); return; }
+      /* Compact sidebar renders the same cell grid as expand (UI_SPEC Hive). */
+      grid.className = "";
       grid.innerHTML = "";
       grid.style.position = "relative";
       grid.style.width = (cols * cell + 8) + "px";
@@ -5525,7 +5536,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         if (!rows.length) return;
         const lbl = document.createElement("div");
         lbl.className = "skill-scope-lbl";
-        lbl.textContent = scope === "robot" ? "This robot" : "Shared skills";
+        lbl.textContent = scope === "robot" ? "This robot" : "System";
         armory.appendChild(lbl);
         rows.forEach((s) => armory.appendChild(makeSkillGem(s, {})));
       });
@@ -5599,12 +5610,13 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       renderAllInventories();
     }
 
+    /* Clear resets the saved slot layout only; robots and secrets stay. */
     function clearInventory() {
-      invItems.forEach((it) => { it.gx = 0; it.gy = 0; });
+      invItems.forEach((it) => { it.w = 1; it.h = 1; it.gx = 0; it.gy = 0; });
       const packed = [];
       invItems.forEach((it) => {
-        const slot = findFreeSlot(it.w, it.h, INV_COLS, INV_ROWS)
-          || findFreeSlot(it.w, it.h, INV_EXPAND_COLS, INV_EXPAND_ROWS)
+        const slot = findFreeSlot(1, 1, INV_COLS, INV_ROWS)
+          || findFreeSlot(1, 1, INV_EXPAND_COLS, INV_EXPAND_ROWS)
           || { gx: 0, gy: 0 };
         packed.push({ gx: slot.gx, gy: slot.gy, w: it.w, h: it.h, ignore: it.id });
         it.gx = slot.gx; it.gy = slot.gy;
@@ -6088,6 +6100,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 
     /* Inventory header: Seed wizard, layout reset, raise, expand. */
     if ($("inv-seed")) $("inv-seed").addEventListener("click", () => { openSeedDrawer(); });
+    if ($("inv-clear")) $("inv-clear").addEventListener("click", () => { clearInventory(); });
     if ($("inv-raise")) $("inv-raise").addEventListener("click", () => { openAgentDrawer(null); });
     if ($("skill-forge-open")) $("skill-forge-open").addEventListener("click", () => {
       if ($("forge-err")) $("forge-err").textContent = "";

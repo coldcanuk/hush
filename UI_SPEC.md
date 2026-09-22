@@ -80,7 +80,11 @@ holds an nsec or provider secret. Install and first-run create
   Create/raise from rail or inventory header. Payne (`Major`) is a live
   roster tile. Persist slot layout by slug (always 1×1).
   Seed / Clear / Raise are one equal button class. Seed is a Payne-gated
-  team briefing (not local Cosplay tiles).
+  team briefing (not local Cosplay tiles). Clear resets the saved slot
+  layout only; robots and secrets stay.
+  Delta 2026-09-22 (WS6 compact-grid pass): compact `#robot-inventory`
+  renders the 4×3 cell grid (not the directory list); Clear repacks 1×1
+  slots and persists the reset layout.
   Create lives on `#tool-rail` (§15) and inside inventory.
   Skills do **not** live on this nav. Edit (right-click, or `i` on a selected
   robot tile) is the Diablo II inventory screen. Raise is the same panel
