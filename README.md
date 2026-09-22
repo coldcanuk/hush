@@ -370,6 +370,7 @@ Plans and research live under `docs/`. Do not leave `PLAN_*.md` or `RESEARCH*.md
 | Plans | [`docs/plan/`](docs/plan/) |
 | Research | [`docs/research/`](docs/research/) |
 | `pass` | [`docs/pass-integration.md`](docs/pass-integration.md) |
+| Store bench (OBSERVED baseline) | [`docs/ops/store-bench.md`](docs/ops/store-bench.md) |
 
 ## Skills for Codex
 
