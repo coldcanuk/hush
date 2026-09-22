@@ -15,7 +15,8 @@
 enum {
     BACKUP_SEED_COUNT = 3,
     BACKUP_CMD_LEN = 1024,
-    BACKUP_PATH_LEN = 512
+    BACKUP_PATH_LEN = 512,
+    BACKUP_CONTENT_LEN = 32
 };
 
 static int g_fail;
@@ -35,6 +36,12 @@ static void expect(int cond, const char *msg);
 /* Fills a kind 1 note with fixed author. Borrowed ev, id, content. */
 static void fill_note(hush_event_t *ev, const char *id, const char *content);
 
+/* Formats the seed note content for idx. Empty on overflow. */
+static void seed_content(char *out, size_t outsz, size_t idx);
+
+/* Inserts one seed note. Borrowed store. */
+static void insert_seed(hush_store_t *store, size_t idx);
+
 /* Runs the backup script with one verb and one dir. Returns exit status. */
 static int run_script(const char *verb, const char *dir);
 
@@ -45,13 +52,13 @@ static int path_exists(const char *path);
 static void join_path(char *out, size_t outsz, const char *home,
                        const char *name);
 
-/* Inserts the seed notes into a fresh persisted store, then closes it. */
+/* Materializes the seed fixtures in a fresh persisted store. */
 static void insert_seeds(void);
 
 /* Removes the live pair from home. Borrowed home. */
 static void wipe_pair(const char *home);
 
-/* Reopens the store and checks every seed survived with its content. */
+/* Asserts the restored store holds every seed with its content. */
 static void check_restored(void);
 
 int main(void)
@@ -147,10 +154,32 @@ static void join_path(char *out, size_t outsz, const char *home,
         out[0] = '\0';
 }
 
+static void seed_content(char *out, size_t outsz, size_t idx)
+{
+    int wrote;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    wrote = snprintf(out, outsz, "backup seed %zu", idx);
+    if (wrote <= 0 || (size_t)wrote >= outsz)
+        out[0] = '\0';
+}
+
+static void insert_seed(hush_store_t *store, size_t idx)
+{
+    hush_event_t ev;
+    char content[BACKUP_CONTENT_LEN];
+
+    assert(store != NULL);
+    assert(idx < (size_t)BACKUP_SEED_COUNT);
+    seed_content(content, sizeof(content), idx);
+    fill_note(&ev, k_ids[idx], content);
+    expect(hush_store_insert(store, &ev) == HUSH_OK, "insert seed");
+}
+
 static void insert_seeds(void)
 {
     hush_store_t *store = NULL;
-    hush_event_t ev;
     size_t i;
 
     expect(hush_home_ensure() == HUSH_OK, "home");
@@ -159,11 +188,7 @@ static void insert_seeds(void)
         return;
     expect(hush_store_persist_open(store) == HUSH_OK, "persist open");
     for (i = 0; i < (size_t)BACKUP_SEED_COUNT; i++) {
-        char content[32];
-
-        snprintf(content, sizeof(content), "backup seed %zu", i);
-        fill_note(&ev, k_ids[i], content);
-        expect(hush_store_insert(store, &ev) == HUSH_OK, "insert seed");
+        insert_seed(store, i);
     }
     expect(hush_store_count(store) == (size_t)BACKUP_SEED_COUNT,
            "seed count");
@@ -198,13 +223,13 @@ static void check_restored(void)
     expect(hush_store_count(store) == (size_t)BACKUP_SEED_COUNT,
            "count after restore");
     for (i = 0; i < (size_t)BACKUP_SEED_COUNT; i++) {
-        char content[32];
-        hush_status_t st;
+        char content[BACKUP_CONTENT_LEN];
+        hush_status_t status;
 
-        snprintf(content, sizeof(content), "backup seed %zu", i);
-        st = hush_store_find(store, &found, k_ids[i]);
-        expect(st == HUSH_OK, "seed id restored");
-        if (st != HUSH_OK)
+        seed_content(content, sizeof(content), i);
+        status = hush_store_find(store, &found, k_ids[i]);
+        expect(status == HUSH_OK, "seed id restored");
+        if (status != HUSH_OK)
             continue;
         expect(strcmp(found.content, content) == 0, "seed content matches");
     }
