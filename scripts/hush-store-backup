@@ -1,0 +1,89 @@
+#!/bin/sh
+# hush-store-backup — file-level backup/restore for the event-store pair.
+#
+# Usage:
+#   hush-store-backup backup <dest-dir>
+#   hush-store-backup restore <src-dir>
+#
+# The pair is $HUSH_HOME/store.ring (HUSH_STORE_FILE) plus
+# $HUSH_HOME/store.log (HUSH_STORE_LOG_FILE); $HUSH_HOME defaults to
+# ~/.hush. Copies go through a temp file plus rename and land mode 0600,
+# matching the store writer. See docs/ops/store-backup.md: back up with
+# the relay stopped for a consistent pair, restore with it stopped, then
+# start it again.
+
+set -eu
+
+RING="store.ring"
+LOG="store.log"
+
+die() { echo "hush-store-backup: $1" >&2; exit 1; }
+
+usage() {
+    cat >&2 <<'EOF'
+usage: hush-store-backup backup <dest-dir>
+       hush-store-backup restore <src-dir>
+EOF
+    exit 1
+}
+
+store_home() {
+    if [ -n "${HUSH_HOME:-}" ]; then
+        printf '%s' "$HUSH_HOME"
+    elif [ -n "${HOME:-}" ]; then
+        printf '%s/.hush' "$HOME"
+    else
+        die "neither HUSH_HOME nor HOME is set"
+    fi
+}
+
+# Copies src to dst through a temp file plus rename, mode 0600.
+# Variable names stay unique: sh functions share one global scope, so a
+# generic name here would clobber the caller's (restore's $src did).
+copy_one() {
+    copy_src="$1"
+    copy_dst="$2"
+    copy_tmp="$copy_dst.tmp.$$"
+    cp "$copy_src" "$copy_tmp"
+    chmod 600 "$copy_tmp"
+    mv "$copy_tmp" "$copy_dst"
+}
+
+cmd_backup() {
+    dest="${1:-}"
+    [ -n "$dest" ] || usage
+    home="$(store_home)"
+    [ -d "$home" ] || die "store home missing: $home"
+    mkdir -p "$dest"
+    have=0
+    for name in "$RING" "$LOG"; do
+        if [ -f "$home/$name" ]; then
+            copy_one "$home/$name" "$dest/$name"
+            have=$((have + 1))
+        fi
+    done
+    [ "$have" -gt 0 ] || die "nothing to back up in $home"
+    echo "backup: $have file(s) $home -> $dest"
+}
+
+cmd_restore() {
+    src="${1:-}"
+    [ -n "$src" ] || usage
+    home="$(store_home)"
+    [ -f "$src/$RING" ] || die "source missing $RING: $src"
+    [ -f "$src/$LOG" ] || die "source missing $LOG: $src"
+    mkdir -p "$home"
+    copy_one "$src/$RING" "$home/$RING"
+    copy_one "$src/$LOG" "$home/$LOG"
+    echo "restore: $src -> $home"
+}
+
+if [ $# -lt 1 ]; then
+    usage
+fi
+case "$1" in
+backup) shift; cmd_backup "$@" ;;
+restore) shift; cmd_restore "$@" ;;
+-h | --help) usage ;;
+*) usage ;;
+esac
