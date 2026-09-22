@@ -1654,7 +1654,12 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     let skillVoices = [];
     let skillWatermarks = {};
     let skillLocked = false;
-    const SKILL_SLOTS = 8;
+    const SKILL_SLOTS = 8; /* sockets around the doll portrait; matches HUSH_SKILL_EQUIP_MAX */
+    let skillCycleIdx = 0;
+    let skillHeld = null; /* {skill, fromSlot} while a gem is lifted */
+    let skillPending = null; /* {id, fromSlot, x, y} press that may become a drag */
+    let skillSuppressClick = false;
+    const SKILL_DRAG_PX = 6;
     let ackClock = {};
     let manageTopics = [];
     let draftPicture = "";
@@ -2345,6 +2350,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
           if ($("agent-picture")) $("agent-picture").value = id;
           if (editSlug) savePicId(editSlug, id);
           paintAgentPicPicker();
+          refreshDollPortrait();
         });
         box.appendChild(btn);
       }
@@ -2396,6 +2402,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
           if (editSlug) savePicId(editSlug, id);
           paintAgentPicPicker();
           paintAvatarPicker();
+          refreshDollPortrait();
         });
         box.appendChild(btn);
       }
@@ -2597,6 +2604,10 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       if ($("agent-delete")) $("agent-delete").disabled = true;
       if ($("agent-clone")) $("agent-clone").disabled = true;
       skillLocked = false;
+      skillHeld = null;
+      skillPending = null;
+      document.body.classList.remove("skill-holding");
+      hideSkillGhost();
       if ($("agent-err")) $("agent-err").textContent = "";
       if ($("agent-identity")) $("agent-identity").hidden = false;
       if ($("agent-pass")) $("agent-pass").closest("label").hidden = false;
@@ -3128,6 +3139,8 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         el.checked = el.value === ((bot && bot.role) || "worker");
       });
       equippedSkills = (bot && bot.skills) ? bot.skills.slice() : [];
+      skillCycleIdx = 0;
+      cancelSkillHold(false);
       if ($("agent-clone"))
         $("agent-clone").disabled = !(bot && bot.slug && bot.slug !== PAYNE_SLUG);
       paintVoiceRow(bot && bot.voice);
@@ -3144,7 +3157,10 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     }
 
     $("raise-agent").addEventListener("click", () => openAgentDrawer(null));
-    $("agent-close").addEventListener("click", () => $("agent-drawer").classList.remove("show"));
+    $("agent-close").addEventListener("click", () => {
+      cancelSkillHold(false);
+      $("agent-drawer").classList.remove("show");
+    });
     if ($("agent-pic-enlarge")) $("agent-pic-enlarge").addEventListener("click", () => {
       paintAvatarPicker();
       $("avatar-drawer").classList.add("show");
@@ -3801,6 +3817,11 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     });
     window.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape") {
+        if (skillHeld || skillPending) {
+          skillPending = null;
+          cancelSkillHold(true);
+          return;
+        }
         const d = $("hive-leave");
         if (d && d.classList.contains("show")) hideLeave();
         return;
@@ -5505,6 +5526,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       }
       if (armory) paintSkillArmory(armory, robotSlug);
       if (loadout) paintSkillDoll(loadout);
+      paintSkillCycle(robotSlug);
     }
     function paintSkillArmory(armory, robotSlug) {
       const list = armorySkills(robotSlug);
@@ -5523,15 +5545,58 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         rows.forEach((s) => armory.appendChild(makeSkillGem(s, {})));
       });
     }
+    /* 3x3 doll: 8 sockets around the portrait (UI_SPEC §9). Sockets fill in
+       order; idx < equipped.length is worn, the rest are empty sockets. */
     function paintSkillDoll(loadout) {
       loadout.innerHTML = "";
       loadout.className = "skill-loadout skill-doll";
-      if (!equippedSkills.length) {
-        loadout.textContent = "No skills assigned yet. Choose from the available skills.";
-      }
-      equippedSkills.forEach((id, index) => {
-        loadout.appendChild(makeSkillGem(skillById(id), {slot: index}));
+      const order = [0, 1, 2, 3, "pic", 4, 5, 6, 7];
+      order.forEach((key) => {
+        if (key === "pic") {
+          const pic = document.createElement("div");
+          pic.className = "skill-doll-pic";
+          pic.id = "skill-doll-pic";
+          const css = picCellStyle(draftPicture, 56);
+          if (css) pic.setAttribute("style", css);
+          pic.title = draftName || editSlug || "robot";
+          pic.setAttribute("aria-label", "Robot portrait");
+          loadout.appendChild(pic);
+          return;
+        }
+        const slot = document.createElement("div");
+        slot.className = "skill-slot" + (key < equippedSkills.length ? " filled" : " open");
+        slot.dataset.idx = String(key);
+        if (key < equippedSkills.length) {
+          const id = equippedSkills[key];
+          slot.title = skillById(id).name || id;
+          slot.appendChild(makeSkillGem(skillById(id), { slot: key }));
+        } else {
+          slot.title = "Empty socket";
+          slot.setAttribute("aria-label", "Empty socket");
+        }
+        loadout.appendChild(slot);
       });
+    }
+    function paintSkillCycle(robotSlug) {
+      const box = $("skill-cycle");
+      if (!box) return;
+      const list = armorySkills(robotSlug);
+      box.innerHTML = "";
+      if (!list.length) {
+        box.textContent = "No more skills in this role.";
+        return;
+      }
+      if (skillCycleIdx >= list.length) skillCycleIdx = 0;
+      if (skillCycleIdx < 0) skillCycleIdx = list.length - 1;
+      box.appendChild(makeSkillGem(list[skillCycleIdx], {}));
+    }
+    function refreshDollPortrait() {
+      const pic = $("skill-doll-pic");
+      if (!pic) return;
+      const css = picCellStyle(draftPicture, 56);
+      if (css) pic.setAttribute("style", css);
+      else pic.removeAttribute("style");
+      pic.title = draftName || editSlug || "robot";
     }
 
     function attachLoadout(body) {
@@ -5540,12 +5605,138 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       if (!equippedSkills.length) body.skill_0 = "";
       body.nskills = equippedSkills.length;
     }
+    function loadoutCanTake(ids, skill) {
+      if (!skill) return false;
+      return loadoutRefuseReason(ids, skill) === "";
+    }
+    function assignSkill(skill) {
+      const reason = loadoutRefuseReason(equippedSkills, skill);
+      if (reason) { skillNotice(reason); return; }
+      equippedSkills.push(skill.id);
+      skillNotice("Skill assigned. Save the robot to apply the change.");
+      paintSkillBoard(editSlug);
+    }
+    function pruneSkillAt(slot) {
+      if (slot < 0 || slot >= equippedSkills.length) return;
+      equippedSkills.splice(slot, 1);
+      skillNotice("Skill removed. Save the robot to apply the change.");
+      paintSkillBoard(editSlug);
+    }
+    function restoreHeldSkill() {
+      if (!skillHeld || skillHeld.fromSlot === null) return;
+      if (equippedSkills.indexOf(skillHeld.skill.id) < 0)
+        equippedSkills.splice(Math.min(skillHeld.fromSlot, equippedSkills.length), 0, skillHeld.skill.id);
+    }
+    function settleSkillHold(msg) {
+      skillHeld = null;
+      document.body.classList.remove("skill-holding");
+      hideSkillGhost();
+      paintSkillBoard(editSlug);
+      if (msg) skillNotice(msg);
+    }
+    function cancelSkillHold(restore) {
+      if (!skillHeld) return;
+      if (restore) restoreHeldSkill();
+      settleSkillHold(restore ? "Cycle a skill. Wear it on a socket." : "");
+    }
+    function pickUpSkill(pending) {
+      const skill = skillById(pending.id);
+      skillPending = null;
+      if (!skill || !skill.id || skillLocked) return;
+      const slot = (typeof pending.fromSlot === "number") ? pending.fromSlot : null;
+      skillHeld = { skill: skill, fromSlot: slot };
+      if (slot !== null && slot >= 0 && slot < equippedSkills.length)
+        equippedSkills.splice(slot, 1);
+      document.body.classList.add("skill-holding");
+      paintSkillBoard(editSlug);
+      paintSkillGhost();
+      markSkillDropTargets();
+      skillNotice(slot !== null
+        ? "Gem lifted. Drop it on an empty socket, or release elsewhere to prune."
+        : "Pick a gem, drop it on an empty socket. Escape cancels.");
+    }
+    function dropSkillHold(ev) {
+      if (!skillHeld) return;
+      const skill = skillHeld.skill;
+      const fromSlot = skillHeld.fromSlot;
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const slotEl = (el && el.closest) ? el.closest(".skill-slot") : null;
+      const picEl = (el && el.closest) ? el.closest(".skill-doll-pic") : null;
+      skillSuppressClick = true;
+      setTimeout(() => { skillSuppressClick = false; }, 0);
+      const place = () => {
+        if (!skillFitsRole(skill, robotRole())) {
+          restoreHeldSkill();
+          settleSkillHold("That skill does not fit this robot.");
+          return;
+        }
+        const reason = loadoutRefuseReason(equippedSkills, skill);
+        if (reason) {
+          restoreHeldSkill();
+          settleSkillHold(reason);
+          return;
+        }
+        equippedSkills.push(skill.id);
+        settleSkillHold("Worn. Save the robot to keep the loadout.");
+      };
+      if (picEl) { place(); return; }
+      if (slotEl && slotEl.dataset.idx !== undefined) {
+        if (parseInt(slotEl.dataset.idx, 10) < equippedSkills.length) {
+          restoreHeldSkill();
+          settleSkillHold("That socket is worn. Lift the gem first.");
+          return;
+        }
+        place();
+        return;
+      }
+      settleSkillHold(fromSlot !== null
+        ? "Skill removed. Save the robot to apply the change."
+        : "Drop it on an empty socket. Escape cancels.");
+    }
+    function paintSkillGhost() {
+      const g = $("skill-ghost");
+      if (!g) return;
+      if (!skillHeld) {
+        g.hidden = true;
+        g.innerHTML = "";
+        return;
+      }
+      g.hidden = false;
+      g.innerHTML = "";
+      const gem = makeSkillGem(skillHeld.skill, {});
+      gem.style.pointerEvents = "none";
+      gem.disabled = true;
+      g.appendChild(gem);
+    }
+    function hideSkillGhost() {
+      const g = $("skill-ghost");
+      if (!g) return;
+      g.hidden = true;
+      g.innerHTML = "";
+    }
+    function moveSkillGhost(x, y) {
+      const g = $("skill-ghost");
+      if (!g || !skillHeld) return;
+      g.style.left = x + "px";
+      g.style.top = y + "px";
+      if (g.hidden) paintSkillGhost();
+    }
+    function markSkillDropTargets() {
+      document.querySelectorAll(".skill-slot, .skill-doll-pic").forEach((el) => {
+        el.classList.remove("drop-ok", "drop-no");
+        if (!skillHeld) return;
+        const empty = el.classList.contains("skill-doll-pic") ||
+          !(parseInt(el.dataset.idx, 10) < equippedSkills.length);
+        el.classList.add(empty && loadoutCanTake(equippedSkills, skillHeld.skill) ? "drop-ok" : "drop-no");
+      });
+    }
 
     function makeSkillGem(skill, opts) {
       const o = opts || {};
       const b = document.createElement("button");
       b.type = "button";
-      b.className = "skill-gem";
+      b.className = "skill-gem" +
+        ((skillHeld && skillHeld.skill && skillHeld.skill.id === skill.id) ? " held" : "");
       b.dataset.scope = skill.scope || "system";
       b.dataset.id = skill.id;
       b.title = (skill.name || skill.id) + (skill.summary ? " — " + skill.summary : "");
@@ -5556,16 +5747,18 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       b.setAttribute("aria-pressed", String(assigned));
       b.disabled = skillLocked;
       b.addEventListener("click", () => {
-        if (assigned) {
-          equippedSkills.splice(o.slot, 1);
-          skillNotice("Skill removed. Save the robot to apply the change.");
-        } else {
-          const reason = loadoutRefuseReason(equippedSkills, skill);
-          if (reason) { skillNotice(reason); return; }
-          equippedSkills.push(skill.id);
-          skillNotice("Skill assigned. Save the robot to apply the change.");
-        }
-        paintSkillBoard(editSlug);
+        if (skillSuppressClick) return;
+        if (skillLocked) return;
+        if (assigned) pruneSkillAt(o.slot);
+        else assignSkill(skill);
+      });
+      b.addEventListener("pointerdown", (ev) => {
+        if (ev.button !== 0 || skillLocked || skillHeld) return;
+        skillPending = {
+          id: skill.id,
+          fromSlot: assigned ? o.slot : null,
+          x: ev.clientX, y: ev.clientY
+        };
       });
       return b;
     }
@@ -6033,6 +6226,15 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       }
     });
     window.addEventListener("pointermove", (ev) => {
+      if (skillPending) {
+        const dx = ev.clientX - skillPending.x;
+        const dy = ev.clientY - skillPending.y;
+        if (dx * dx + dy * dy > SKILL_DRAG_PX * SKILL_DRAG_PX) pickUpSkill(skillPending);
+      }
+      if (skillHeld) {
+        moveSkillGhost(ev.clientX, ev.clientY);
+        markSkillDropTargets();
+      }
       if (railDrag) {
         placeRail(ev.clientX - railDrag.dx, ev.clientY - railDrag.dy);
         return;
@@ -6054,6 +6256,8 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       });
     });
     window.addEventListener("pointerup", (ev) => {
+      if (skillHeld) dropSkillHold(ev);
+      skillPending = null;
       if (railDrag) {
         railDrag = null;
         saveRail();
@@ -6065,6 +6269,8 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       }
     });
     window.addEventListener("pointercancel", () => {
+      skillPending = null;
+      cancelSkillHold(true);
       railDrag = null;
       if (threadDrag && threadDrag.raf) cancelAnimationFrame(threadDrag.raf);
       threadDrag = null;
@@ -6089,6 +6295,19 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       $("forge-drawer").classList.add("show");
     });
     if ($("skill-enlarge")) $("skill-enlarge").addEventListener("click", openSkillSheet);
+    if ($("skill-cycle-prev")) $("skill-cycle-prev").addEventListener("click", () => {
+      skillCycleIdx--;
+      paintSkillCycle(editSlug);
+    });
+    if ($("skill-cycle-next")) $("skill-cycle-next").addEventListener("click", () => {
+      skillCycleIdx++;
+      paintSkillCycle(editSlug);
+    });
+    if ($("skill-cycle-row")) $("skill-cycle-row").addEventListener("wheel", (ev) => {
+      ev.preventDefault();
+      skillCycleIdx += ev.deltaY > 0 ? 1 : -1;
+      paintSkillBoard(editSlug);
+    }, { passive: false });
     if ($("skill-sheet-close")) $("skill-sheet-close").addEventListener("click", () => $("skill-drawer").classList.remove("show"));
     if ($("skill-flip-robot")) $("skill-flip-robot").addEventListener("click", () => { skillSheetView = "robot"; paintSkillSheet(); });
     if ($("skill-flip-chaperon")) $("skill-flip-chaperon").addEventListener("click", () => { skillSheetView = "chaperon"; paintSkillSheet(); });
