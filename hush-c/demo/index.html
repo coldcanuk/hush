@@ -655,26 +655,56 @@
 .inv-item.has-pic { background-size: cover; background-position: center; }
 .inv-item.disabled { filter: grayscale(1); opacity: 0.55; }
 .inv-item.has-pic .nm { display: none; }
-/* Skills use immediate, keyboard-accessible assignment controls. */
+/* Skills: armory tiles + 3x3 loadout doll around the portrait (UI_SPEC §9).
+   8 sockets + portrait center = 9 cells; maps 1:1 to HUSH_SKILL_EQUIP_MAX. */
 .skill-board { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 12px 0; }
+.skill-belt { align-items: center; justify-content: center; gap: 6px; margin: 8px 0; }
+.skill-cycle-stage {
+  flex: 1; min-height: 56px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); padding: 6px;
+}
+#skill-cycle-row .icon-minus, #skill-cycle-row .icon-plus { width: 44px; height: 44px; }
 .skill-pool, .skill-loadout {
   min-height: 96px; border: 1px solid var(--line); border-radius: 12px;
-  padding: 10px; display: flex; flex-direction: column; gap: 8px;
-  background: var(--surface-2); color: var(--muted); font-size: 0.85rem;
+  padding: 10px; background: var(--surface-2); color: var(--muted); font-size: 0.85rem;
 }
-.skill-scope-lbl { font-size: 0.75rem; color: var(--muted); margin: 4px 0; }
+.skill-pool { display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
+.skill-scope-lbl { font-size: 0.75rem; color: var(--muted); margin: 4px 0; width: 100%; }
 .skill-gem {
-  font: 500 0.85rem/1.4 var(--sans); min-height: 44px; padding: 10px;
-  border: 1px solid var(--line); background: var(--surface); color: var(--fg);
-  border-radius: 8px; display: flex; align-items: center; gap: 10px; text-align: left;
+  width: 52px; height: 52px; flex: 0 0 auto; cursor: grab; user-select: none; touch-action: none;
+  border: 2px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font: 650 0.62rem/1.2 var(--sans); text-align: center; padding: 2px;
 }
-.skill-gem .sig { display: none; }
-.skill-gem .nm { flex: 1; }
-.skill-gem::after { content: "+"; font-size: 1.1rem; color: var(--muted); }
-.skill-gem[aria-pressed="true"] { border-color: var(--accent); }
-.skill-gem[aria-pressed="true"]::after { content: "−"; }
-.skill-gem:hover { background: var(--surface-2); }
-.skill-gem:active { transform: translateY(1px); }
+.skill-gem .sig { font-size: 0.95rem; letter-spacing: 0.04em; }
+.skill-gem .nm { font-size: 0.55rem; max-width: 48px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skill-gem[data-scope="system"] { border-color: #d4a017; box-shadow: 0 0 6px #d4a01755; }
+.skill-gem[data-scope="user"] { border-color: #0ff; box-shadow: 0 0 6px #0ff4; }
+.skill-gem[data-scope="robot"] { border-color: #c6f; box-shadow: 0 0 6px #c6f4; }
+.skill-gem:hover, .skill-gem:focus-visible { box-shadow: 0 0 10px currentColor; }
+.skill-gem.held { opacity: 0.4; }
+.skill-gem:active { cursor: grabbing; }
+.skill-loadout.skill-doll {
+  display: grid; grid-template-columns: repeat(3, 56px); grid-auto-rows: 56px;
+  gap: 8px; justify-content: center; align-content: start;
+}
+.skill-slot {
+  width: 56px; height: 56px; border: 2px dashed var(--line); border-radius: 8px;
+  background: var(--surface); display: flex; align-items: center; justify-content: center;
+}
+.skill-slot .skill-gem { width: 48px; height: 48px; }
+.skill-slot.open { box-shadow: inset 0 0 8px #d4a01766; }
+.skill-slot.filled { border-style: solid; }
+.skill-slot.drop-ok { border-style: solid; border-color: #0ff; box-shadow: 0 0 8px #0ff; }
+.skill-slot.drop-no { border-color: #f66; }
+.skill-doll-pic {
+  width: 56px; height: 56px; border: 2px solid #0ff; border-radius: 8px;
+  background-color: var(--surface); background-size: cover; background-position: center;
+}
+.skill-doll-pic.drop-ok { box-shadow: 0 0 8px #0ff; }
+.skill-ghost { position: fixed; z-index: 80; pointer-events: none; width: 52px; height: 52px; margin-left: -26px; margin-top: -26px; }
+.skill-ghost * { pointer-events: none; }
+body.skill-holding, body.skill-holding * { cursor: grabbing; }
 button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 .send-error:empty { display: none; }
 .send-error { padding: 0 16px; margin: 6px 0; }
@@ -1160,15 +1190,20 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         <p class="help">Heard in calls when a Whisper model is ready.</p>
       </div>
       <div id="agent-skills">
-        <p class="help">Choose a skill to assign it. Choose an assigned skill to remove it. Save the robot to apply your changes.</p>
+        <p class="help">Pick a gem, drop it on an empty socket. Lift a worn gem to prune. Save the robot to apply your changes.</p>
         <p class="help" id="skill-watermark"></p>
+        <div class="pill-row skill-belt" id="skill-cycle-row">
+          <button class="icon-minus" id="skill-cycle-prev" type="button" aria-label="Previous skill">◀</button>
+          <div id="skill-cycle" class="skill-cycle-stage" aria-label="Cycled skill"></div>
+          <button class="icon-plus" id="skill-cycle-next" type="button" aria-label="Next skill">▶</button>
+        </div>
         <div class="skill-board">
           <div>
-            <div class="lbl">Available skills</div>
+            <div class="lbl">Skill armory</div>
             <div id="skill-armory" class="skill-pool" aria-label="Skill armory"></div>
           </div>
           <div>
-            <div class="lbl">Assigned skills</div>
+            <div class="lbl">Skill loadout</div>
             <div id="skill-loadout" class="skill-loadout skill-doll" aria-label="Skill loadout"></div>
           </div>
         </div>
@@ -1493,6 +1528,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       </div>
     </div>
   </div>
+  <div id="skill-ghost" class="skill-ghost" hidden></div>
 
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
