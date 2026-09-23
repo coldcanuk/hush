@@ -715,6 +715,27 @@ a pressed inset on `:active` and a faint accent glow on slot hover.
 Slots gain `min-width: 0` + label ellipsis so ~390px never overflows;
 `body` bottom clearance tracks the 40px-tall bar plus safe-area.
 Drawers, menus, and cards keep their 12px+ radii.
+Delta 2026-09-23 (UI-M4 residuals pass): no journey, shortcut, guard,
+or skin wiring changes (`i`/`c` + `navTyping`, 4 slots + gear + 1–4 +
+`quickbarTyping`, M3 etched bevels all untouched).
+Escape single-dismiss contract: opening any journey layer
+(`#agent-drawer`, `#inv-expand-drawer`, `#profile`) hides its peers
+(`hideJourneyPeers`), so inventory never stacks over the character
+sheet (or vice versa). One Escape press dismisses exactly one layer,
+topmost first: held skill gem, `#hive-leave`, robot editor and its
+sub-panels (`#avatar-drawer`, `#forge-drawer`, `#skill-drawer`),
+`#agent-drawer`, `#inv-expand-drawer`, `#profile`, `#qb-editor`,
+then the phone overflow nav (`closeNavigation`). A press already
+consumed by a focused control (`defaultPrevented`: canvas FIM,
+fixup box) dismisses nothing further. Thread pane, composer/thread
+mention boxes, and canvas keep their existing Escape paths.
+Phone thin-nav contract: at `≤640px` `#quick-nav` (Inventory +
+Character tabs, `i`/`c` keys, `#quick-bar` unchanged) is the primary
+nav — it is relocated to the top of `<main>` (`placeQuickNav`,
+restored into the sidebar on desktop) so it stays visible without
+opening a drawer. `#nav-toggle` (hamburger) remains as
+channels/inventory overflow only, and Escape closes that overflow.
+No fat menus; no new chrome.
 
 ### 16. Mention + manage pills
 
