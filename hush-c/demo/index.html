@@ -936,6 +936,10 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 #nav-toggle { display: none; min-width: 44px; min-height: 44px; }
 @media (max-width: 640px) {
   #nav-toggle { display: block; }
+  /* UI-M4 phone thin nav: #quick-nav is relocated to the top of <main>
+     (see placeQuickNav), so the primary journey stays a thin tab strip
+     and the hamburger drawer is channels/overflow only. */
+  main > #quick-nav { padding: 8px 12px 0; margin: 0; }
   header { gap: 10px; }
   header #badge { max-width: 95px; overflow: hidden; margin-right: 48px; }
   .hive > nav { display: none; position: fixed; top: 66px; bottom: 0; left: 0;
@@ -950,7 +954,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 </head>
 <body>
   <header>
-    <button class="btn ghost" id="nav-toggle" type="button" aria-expanded="false" aria-label="Toggle navigation">☰</button>
+    <button class="btn ghost" id="nav-toggle" type="button" aria-expanded="false" aria-label="Channels and overflow navigation" title="Channels and overflow navigation">☰</button>
     <div class="brand">
       <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
         <rect width="64" height="64" rx="14" fill="#064e3b"/>
@@ -3210,6 +3214,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 
     function openAgentDrawer(bot) {
       closeNavigation();
+      hideJourneyPeers("agent-drawer");
       resetAgentDraft();
       if (bot && bot.slug === PAYNE_SLUG) {
         editingPayne = true;
@@ -3895,10 +3900,13 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       syncSettings();
     });
     $("settings-close").addEventListener("click", () => $("settings").classList.remove("show"));
-    /* UI-M1: Character sheet (Profile drawer) shared by rail button, quick tab, and `c`. */
+    /* UI-M1: Character sheet (Profile drawer) shared by rail button, quick tab, and `c`.
+       UI-M4: taking the character journey hides the inventory layers, so
+       the sheet never stacks over (or under) them. */
     function openCharacterSheet() {
       const p = $("profile");
       if (!p) return;
+      hideJourneyPeers("profile");
       p.classList.add("show");
       const np = $("profile-npub");
       if (np) np.textContent = (session.npub || session.pubkey || "no identity yet");
@@ -3995,15 +4003,48 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       if (ev.target && ev.target.isContentEditable) return true;
       return false;
     }
+    /* UI-M4: journey layers never stack. Opening one hides its peers,
+       so inventory never sits over the character sheet (or vice versa). */
+    function hideJourneyPeers(except) {
+      ["agent-drawer", "inv-expand-drawer", "profile"].forEach((id) => {
+        if (id !== except && $(id)) $(id).classList.remove("show");
+      });
+    }
+    /* UI-M4: single-dismiss Escape contract. Exactly one layer per press,
+       topmost first: held skill gem, leave chooser, robot editor and its
+       sub-panels, expanded inventory, character sheet, quick-slot picker,
+       phone overflow nav. Typing guards (navTyping / quickbarTyping) are
+       untouched: they guard the i/c/1-4 shortcuts, not Escape. */
+    function dismissJourneyLayer() {
+      const order = ["avatar-drawer", "forge-drawer", "skill-drawer",
+        "agent-drawer", "inv-expand-drawer", "profile"];
+      for (let k = 0; k < order.length; k++) {
+        const el = $(order[k]);
+        if (el && el.classList.contains("show")) {
+          el.classList.remove("show");
+          return true;
+        }
+      }
+      const ed = $("qb-editor");
+      if (ed && !ed.hidden) {
+        ed.hidden = true;
+        if ($("qb-config")) $("qb-config").setAttribute("aria-expanded", "false");
+        return true;
+      }
+      return false;
+    }
     window.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape") {
+        if (ev.defaultPrevented) return;
         if (skillHeld || skillPending) {
           skillPending = null;
           cancelSkillHold(true);
           return;
         }
         const d = $("hive-leave");
-        if (d && d.classList.contains("show")) hideLeave();
+        if (d && d.classList.contains("show")) { hideLeave(); return; }
+        if (dismissJourneyLayer()) return;
+        closeNavigation();
         return;
       }
       if (ev.key !== "i" && ev.key !== "I" && ev.key !== "c" && ev.key !== "C") return;
@@ -4031,9 +4072,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       }
     }
     function quickCharacter() {
-      const p = $("profile");
-      if (p && p.classList.contains("show")) { p.classList.remove("show"); return; }
-      if ($("profile-btn")) $("profile-btn").click();
+      toggleCharacterSheet();
     }
     function quickNewChannel() {
       if ($("nav-new-channel")) { $("nav-new-channel").click(); return; }
@@ -6161,8 +6200,13 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       const hover = document.querySelector(".inv-item:hover");
       const slug = (hover && hover.dataset.slug) || invSelectedSlug;
       if (!slug) {
-        /* UI-M1: `i` with no tile selected opens the inventory grid itself. */
-        if (expand) { renderAllInventories(); expand.classList.toggle("show"); }
+        /* UI-M1: `i` with no tile selected opens the inventory grid itself.
+           UI-M4: taking the inventory journey hides the character sheet. */
+        if (expand) {
+          renderAllInventories();
+          expand.classList.toggle("show");
+          if (expand.classList.contains("show")) hideJourneyPeers("inv-expand-drawer");
+        }
         return;
       }
       if (expand) expand.classList.remove("show");
@@ -6729,6 +6773,8 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       }
     });
     if ($("inv-expand")) $("inv-expand").addEventListener("click", () => {
+      closeNavigation();
+      hideJourneyPeers("inv-expand-drawer");
       renderAllInventories();
       $("inv-expand-drawer").classList.add("show");
     });
@@ -6744,6 +6790,26 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     if ($("inv-expand-close")) $("inv-expand-close").addEventListener("click", () => {
       $("inv-expand-drawer").classList.remove("show");
     });
+    /* UI-M4 phone thin nav: on narrow viewports the same Inventory +
+       Character tabs (with i/c keys and #quick-bar) are the primary nav.
+       #quick-nav moves to the top of <main> so it stays visible without
+       the hamburger drawer. The hamburger (#nav-toggle) remains as
+       channels/inventory overflow only. */
+    const phoneNavMedia = window.matchMedia("(max-width: 640px)");
+    function placeQuickNav() {
+      const qn = $("quick-nav");
+      const nav = document.querySelector(".hive > nav");
+      const main = document.querySelector(".hive > main");
+      if (!qn || !nav || !main) return;
+      if (phoneNavMedia.matches) {
+        if (qn.parentElement !== main) main.insertBefore(qn, main.firstChild);
+      } else if (qn.parentElement !== nav) {
+        nav.insertBefore(qn, nav.firstChild);
+      }
+    }
+    if (phoneNavMedia.addEventListener) phoneNavMedia.addEventListener("change", placeQuickNav);
+    else if (phoneNavMedia.addListener) phoneNavMedia.addListener(placeQuickNav);
+    placeQuickNav();
     if ($("seed-close")) $("seed-close").addEventListener("click", () => $("seed-drawer").classList.remove("show"));
     if ($("seed-cancel")) $("seed-cancel").addEventListener("click", () => $("seed-drawer").classList.remove("show"));
     if ($("seed-submit")) $("seed-submit").addEventListener("click", () => { seedTeam(); });
