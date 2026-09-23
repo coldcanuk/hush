@@ -806,6 +806,27 @@ leash notes read as red dashed stamp traffic; overlays dim warm
 steps, no glow. Supersedes every soft/modern chrome line above
 (M3 etched bevels stay for the other six themes; flattened here)
 under field-office only.
+Delta 2026-09-23 (UI-M8 overlay-drawer + paperfeel pass): the left nav
+(`nav#fo-drawer`) is an animated overlay strip over the dispatch log on
+every width, not a permanent column — `.shell.hive` is center +
+`#roster-pane` only, and the drawer slides in/out via `#hive.nav-open`
+(`transform` + `visibility`, `prefers-reduced-motion` respected).
+Closed = full-width messaging + thin expand controls only (header
+**BOARDS** `#nav-toggle` stamp, now visible on desktop, plus the `#fo-expand`
+edge tab, hidden while open); open = overlay strip with the unchanged
+menu/boards/kit items, messaging keeps its full real-estate underneath.
+Selecting a board/individual closes it (`closeNavigation`); Escape closes
+it as the tail of the UI-M4 single-dismiss stack (journey layers first,
+drawer last — one press dismisses exactly one layer). BOARDS/KIT stamps
+stay (zero hamburger return); right personnel pane, center dispatch,
+`i`/`c` + `navTyping`, 1–4 + gear + `quickbarTyping`, live roster/status,
+and `#badge` all untouched. Paperfeel extends the M5 field-office theme
+only: denser two-layer grain, ribbon-ink type (`Special Elite` + ink
+`text-shadow` on notes/room/channels/composer), ruled dispatch slips and
+stream ledger lines, cut-paper inner edge + deeper offset shadows.
+Stacked on the M7 chrome-hard pass: drawer + edge tab are new here;
+ruled slips/ledger lines and ink type extend M7 without touching its
+`fo-chrome-hard` / `fo-caret` surfaces.
 
 ### 16. Mention + manage pills
 
