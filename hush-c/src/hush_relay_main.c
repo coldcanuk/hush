@@ -3,10 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "hush_build.h"
 #include "hush_relay.h"
-
-/* Canonical product version (keep in sync with top-level VERSION). */
-#define HUSH_VERSION "0.0.1"
 
 struct hush_cli {
     uint16_t port;
@@ -52,7 +50,7 @@ static int hush_cli_run(const struct hush_cli *cli)
     }
     if (cli->want_quit)
         return (hush_relay_quit(cli->port) == HUSH_OK) ? 0 : 1;
-    printf("hush-relay %s\n", HUSH_VERSION);
+    printf("hush-relay %s (%s)\n", HUSH_BUILD_VERSION, HUSH_BUILD_SHA);
     fflush(stdout);
     st = hush_relay_run(cli->port, cli->bind_addr, cli->open_ui);
     return (st == HUSH_OK) ? 0 : 1;
@@ -114,7 +112,8 @@ static void hush_print_close_hint(uint16_t port)
 
 static void hush_print_help(void)
 {
-    printf("hush-relay %s — local Nostr relay + chat UI\n", HUSH_VERSION);
+    printf("hush-relay %s (%s) — local Nostr relay + chat UI\n", HUSH_BUILD_VERSION,
+           HUSH_BUILD_SHA);
     printf("usage: hush-relay [port] [--listen ADDR] [--open|--no-open|--close|--quit]\n");
     printf("  port       listen port (default 10555)\n");
     printf("  --listen   bind address (default 127.0.0.1; 0.0.0.0 for the LAN)\n");
