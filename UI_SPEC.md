@@ -227,6 +227,42 @@ tile. Cycle `#skill-cycle`; armory groups **System** (application-wide) and
 **This robot** only. `#skill-loadout` is a 3×3 doll around the portrait.
 Pick a gem, drop it on an empty socket. Lift a worn gem to prune. Forge
 radios: System (`scope=user`, hive-wide file) / This robot (`scope=robot`).
+Delta 2026-09-23 (PE-1 skill/loadout contracts, spec only — no Armory
+build; that is PE-2+): CoS-locked product contracts for PROD-EVAL
+journeys A–D, folded with the CoS full inventory handoff (OBSERVED on
+main `0c9a2c245`). Lifetime is orthogonal to scope: the product target
+labels every skill ALWAYS-ON (injected into every prompt for that
+robot) or ON-CALL (injected only when equipped/called for the task),
+independent of the System / This-robot scope facet, which stays as-is.
+Honest runtime note: today ALL equipped SKILL.md bodies inject every
+job (`agent_prompt.c`) — there is no on-call / progressive injection,
+and catalog role/category are metadata only. So ALWAYS-ON / ON-CALL
+are product labels (Armory shelves + gem badges; scope remains a
+secondary facet as tabs or chips) with no third disk tree in v1 — disk
+stays `$HOME/.hush/skills/{system,user,robots}/` — and real prompt
+tiers need future work if Chuck wants them. Min-1 is NEW law, not
+current behavior: empty equip is NOT enforced today
+(`HUSH_SKILL_EQUIP_LOW` is a watermark only,
+`hush_http_check_loadout` allows `nskills==0`, tests assert empty OK).
+PE-1 contracts the rejection — every enabled robot, including Payne
+(identity lock only; skills editable; inventory found no Major
+exemption), keeps ≥1 equipped skill, and any unequip / Clear / unload
+that would leave 0 is refused with inline copy (“Keep at least one
+skill equipped.”) — and PE-3 implements it client + server + tests.
+Favorites: none today (`hush-quickbar` is journey shortcuts, not skill
+loadouts). Favorites v1: per-robot named JSON sets under
+`$HOME/.hush/robots/<slug>/loadouts/`, each 1–8 skills; load replaces
+the doll atomically (never passes through empty); unload clears the
+favorite association only, never the doll. Equip stays on `i` =
+inventory doll (`#skill-loadout` / `#agent-drawer`); `c` = character
+shows a read-only equipped strip + favorite picker only (no full
+Armory forge on Character). Journeys: (A) Armory ALWAYS-ON | ON-CALL
+shelves + gem chips, Character read-only strip; (B) equip gem→empty
+socket, lift gem→its shelf, last-gem lift blocked per C; (C) min-1
+block copy above, swap via atomic favorite load; (D) save named
+favorite from a legal (≥1) doll, load atomically, unload ≠ empty.
+Preserved: M9 folder tabs, zero tool rail, M8 overlay, M7 chrome.
+Gate: keep this PE-1 draft until UI-M10 #195 merges (or rebase after).
 Delta 2026-09-22 (WS6 loadout-doll pass): `#skill-cycle` lives in
 `#agent-drawer` only (no hive-nav cycle); the doll is 8 sockets around
 the portrait center (9 cells = `HUSH_SKILL_EQUIP_MAX` 8 + portrait);
@@ -992,6 +1028,8 @@ when policy flips; new considers honor the new leash.
 - Skills: `$HOME/.hush/skills/{system,user,robots}/`. Product buckets are
   System (application-wide: shipped `system/` + hive-forged `user/`) and
   This robot (`robots/<slug>/`). Catalog JSON `"scopes":["system","robot"]`.
+- Favorites v1: `$HOME/.hush/robots/<slug>/loadouts/` named JSON sets,
+  1–8 skills each (PE-1 2026-09-23; spec only).
 - Avatar on disk: sniffed JPEG/PNG only; client downscales ≤96px.
 - Kind 0 `picture` is a URL, never a data URI (`HUSH_EVENT_MAX_CONTENT = 4096`).
 
