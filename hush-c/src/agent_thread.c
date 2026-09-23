@@ -13,6 +13,16 @@
 #define HUSH_AGENT_THREAD_HEAD \
     "Thread so far. Do not repeat a prior joke. " \
 
+/* Window slots the live ring cannot fill. All pointers borrowed. */
+typedef struct {
+    const hush_event_t *ring;
+    size_t nring;
+    size_t room;
+    const char *root;
+    const char *parent_id;
+    int owner_shown;
+} hush_agent_backfill_t;
+
 static size_t hush_agent_thread_skip(const hush_event_t *evs, size_t n,
                                     const char *root)
 {
@@ -35,6 +45,30 @@ static size_t hush_agent_thread_skip(const hush_event_t *evs, size_t n,
 }
 
 static void hush_agent_push_thread(hush_event_t *out, size_t *count, const hush_event_t *event);
+
+/* Renders the rolled brief line when the root has one. */
+static void hush_agent_append_brief(char *out, size_t outsz, const char *root);
+
+/* Writes the stored opening note into original and returns its author's
+ * pubkey, or the parent's pubkey when the root has left the ring. */
+static const char *hush_agent_resolve_owner(hush_store_t *store,
+                                            hush_event_t *original,
+                                            const char *root,
+                                            const hush_event_t *parent);
+
+/* True when the durable turn belongs in the job note: not the parent
+ * trigger, not an already-shown opening, not already held by the ring. */
+static int hush_agent_backfill_wants(const hush_agent_backfill_t *fill,
+                                     const hush_thread_turn_t *turn);
+
+/* Renders one durable turn under the walk's display name. */
+static void hush_agent_append_backfill_turn(char *out, size_t outsz,
+                                            const hush_agent_thread_walk_t *walk,
+                                            const hush_thread_turn_t *turn);
+
+/* Appends the verbatim current message, replacing the note on overflow. */
+static void hush_agent_append_current(char *out, size_t outsz,
+                                      const hush_event_t *parent);
 
 static void hush_agent_walk_thread(char *out, size_t outsz,
                                   const hush_event_t *evs, size_t n,
@@ -122,79 +156,181 @@ static void hush_agent_append_line(char *out, size_t outsz, const char *prefix,
         out[used] = '\0';
 }
 
-/* Renders the durable transcript when the live store lost the thread. */
-static void hush_agent_append_durable(char *out, size_t outsz,
-                                      const hush_event_t *parent,
-                                      const hush_agent_thread_walk_t *walk)
+/* Renders the rolled brief line when the root has one. */
+static void hush_agent_append_brief(char *out, size_t outsz, const char *root)
 {
-    hush_thread_turn_t turns[HUSH_AGENT_THREAD_MAX];
-    size_t count;
-    size_t i;
+    char brief[HUSH_THREAD_BRIEF_MAX + 1];
+    char line[HUSH_AGENT_SNIP_MAX + 1];
 
     assert(out != NULL && outsz > 0);
-    assert(parent != NULL);
-    assert(walk != NULL);
-    assert(walk->root != NULL);
-    count = hush_thread_read(walk->root, turns, HUSH_AGENT_THREAD_MAX);
-    for (i = 0; i < count; ++i) {
-        hush_agent_robot_t peer;
-        const char *who = walk->robot;
-        hush_event_t ev = {0};
+    assert(root != NULL);
+    hush_thread_brief_get(root, brief, sizeof(brief));
+    hush_agent_snip_line(line, sizeof(line), brief);
+    if (line[0] != '\0')
+        hush_agent_append_line(out, outsz, "Thread brief: ", line);
+}
 
-        if (strcmp(turns[i].id, parent->id) == 0)
+/* Writes the stored opening note into original and returns its author's
+ * pubkey, or the parent's pubkey when the root has left the ring. */
+static const char *hush_agent_resolve_owner(hush_store_t *store,
+                                            hush_event_t *original,
+                                            const char *root,
+                                            const hush_event_t *parent)
+{
+    assert(store != NULL && original != NULL);
+    assert(root != NULL && parent != NULL);
+    if (hush_store_find(store, original, root) == HUSH_OK)
+        return original->pubkey;
+    return parent->pubkey;
+}
+
+/* True when the durable turn belongs in the job note: not the parent
+ * trigger, not an already-shown opening, not already held by the ring. */
+static int hush_agent_backfill_wants(const hush_agent_backfill_t *fill,
+                                     const hush_thread_turn_t *turn)
+{
+    size_t i;
+
+    assert(fill != NULL);
+    assert(turn != NULL);
+    if (strcmp(turn->id, fill->parent_id) == 0)
+        return 0;
+    if (fill->owner_shown && strcmp(turn->id, fill->root) == 0)
+        return 0;
+    for (i = 0; i < fill->nring; ++i) {
+        if (strcmp(turn->id, fill->ring[i].id) == 0)
+            return 0;
+    }
+    return 1;
+}
+
+/* Renders one durable turn under the walk's display name. */
+static void hush_agent_append_backfill_turn(char *out, size_t outsz,
+                                            const hush_agent_thread_walk_t *walk,
+                                            const hush_thread_turn_t *turn)
+{
+    hush_agent_robot_t peer;
+    hush_event_t ev = {0};
+    const char *who = walk->robot;
+
+    assert(out != NULL && outsz > 0);
+    assert(walk != NULL && turn != NULL);
+    hush_agent_copy(ev.content, sizeof(ev.content), turn->content);
+    if (strcmp(turn->pubkey, walk->human_pub) == 0)
+        who = walk->human;
+    else if (walk->launch != NULL &&
+             hush_agent_lookup_robot(&peer, walk->launch, turn->pubkey))
+        who = peer.name;
+    hush_agent_append_turn(out, outsz, &ev, who);
+}
+
+/* Renders durable turns for the window slots the ring cannot fill. Keeps the
+ * newest fitting turns so the backfill abuts the live window. */
+static void hush_agent_append_durable(char *out, size_t outsz,
+                                      const hush_agent_thread_walk_t *walk,
+                                      const hush_agent_backfill_t *fill)
+{
+    hush_thread_turn_t turns[HUSH_AGENT_THREAD_MAX];
+    size_t wanted = 0;
+    size_t skip;
+    size_t i;
+    size_t got;
+
+    assert(out != NULL && outsz > 0);
+    assert(walk != NULL && walk->root != NULL);
+    assert(fill != NULL);
+    if (fill->room == 0)
+        return;
+    got = hush_thread_read(walk->root, turns, HUSH_AGENT_THREAD_MAX);
+    for (i = 0; i < got; ++i) {
+        if (hush_agent_backfill_wants(fill, &turns[i]))
+            wanted++;
+    }
+    skip = wanted > fill->room ? wanted - fill->room : 0;
+    for (i = 0; i < got; ++i) {
+        if (!hush_agent_backfill_wants(fill, &turns[i]))
             continue;
-        hush_agent_copy(ev.content, sizeof(ev.content), turns[i].content);
-        if (strcmp(turns[i].pubkey, walk->human_pub) == 0)
-            who = walk->human;
-        else if (walk->launch != NULL &&
-                 hush_agent_lookup_robot(&peer, walk->launch, turns[i].pubkey))
-            who = peer.name;
-        hush_agent_append_turn(out, outsz, &ev, who);
+        if (skip > 0) {
+            skip--;
+            continue;
+        }
+        hush_agent_append_backfill_turn(out, outsz, walk, &turns[i]);
     }
 }
 
-/* Renders the thread: live store turns when present, durable otherwise. */
-void hush_agent_fill_thread(char *out, size_t outsz,
-                                  hush_store_t *store,
-                                  const hush_launch_t *launch,
-                                  const hush_event_t *parent,
-                                  const hush_agent_thread_walk_t *names)
+/* Renders the window in budget order: durable backfill, live ring turns,
+ * then the verbatim current message. */
+static void hush_agent_render_window(char *out, size_t outsz,
+                                     const hush_agent_thread_walk_t *walk,
+                                     const hush_agent_backfill_t *fill,
+                                     const hush_event_t *parent)
 {
+    assert(out != NULL && outsz > 0);
+    assert(walk != NULL && fill != NULL && parent != NULL);
+    hush_agent_append_durable(out, outsz, walk, fill);
+    if (fill->nring > 0)
+        hush_agent_walk_thread(out, outsz, fill->ring, fill->nring, walk);
+    hush_agent_append_current(out, outsz, parent);
+}
+
+/* Appends the verbatim current message, replacing the note on overflow. */
+static void hush_agent_append_current(char *out, size_t outsz,
+                                      const hush_event_t *parent)
+{
+    size_t used;
+    int written;
+
+    assert(out != NULL && outsz > 0);
+    assert(parent != NULL);
+    used = strlen(out);
+    written = snprintf(out + used, outsz - used, "\nCurrent message: %s",
+                       parent->content);
+    if (written < 0 || (size_t)written >= outsz - used)
+        hush_agent_copy(out, outsz, parent->content);
+}
+
+/* Renders the thread: brief, opening, durable backfill, live ring turns,
+ * current message. The ring is preferred; durable turns cover only the
+ * window slots the ring cannot fill, so root eviction or restart degrades
+ * to brief plus transcript instead of current-message-only. */
+void hush_agent_fill_thread(char *out, size_t outsz, hush_store_t *store,
+                            const hush_launch_t *launch, const hush_event_t *parent,
+                            const hush_agent_thread_walk_t *names)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    hush_event_t original = {0};
+    hush_event_t events[HUSH_AGENT_THREAD_MAX] = {0};
+    hush_agent_thread_walk_t walk;
+    hush_agent_backfill_t fill;
+    const char *human;
+    size_t count;
+    int owner;
+
     assert(out != NULL && outsz > 0);
     assert(parent != NULL && names != NULL);
     out[0] = '\0';
     if (store == NULL)
         return;
-    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
     hush_agent_event_root(root, sizeof(root), parent);
-    hush_event_t original = {0};
-    const char *human = parent->pubkey;
-    if (hush_store_find(store, &original, root) == HUSH_OK)
-        human = original.pubkey;
-    hush_event_t events[HUSH_AGENT_THREAD_MAX] = {0};
-    size_t count = hush_agent_collect_thread(store, events, root, parent->id);
-    hush_agent_thread_walk_t walk = *names;
+    human = hush_agent_resolve_owner(store, &original, root, parent);
+    count = hush_agent_collect_thread(store, events, root, parent->id);
+    assert(count <= (size_t)HUSH_AGENT_THREAD_MAX);
+    walk = *names;
     walk.launch = launch;
     walk.root = root;
     walk.human_pub = human;
-    int owner = original.id[0] != '\0' && strcmp(original.id, parent->id) != 0;
-    char brief[HUSH_THREAD_BRIEF_MAX + 1];
-    char line[HUSH_AGENT_SNIP_MAX + 1];
+    owner = original.id[0] != '\0' && strcmp(original.id, parent->id) != 0;
     hush_agent_copy(out, outsz, HUSH_AGENT_THREAD_HEAD);
-    hush_thread_brief_get(root, brief, sizeof(brief));
-    hush_agent_snip_line(line, sizeof(line), brief);
-    if (line[0] != '\0')
-        hush_agent_append_line(out, outsz, "Thread brief: ", line);
+    hush_agent_append_brief(out, outsz, root);
     if (owner)
         hush_agent_append_turn(out, outsz, &original, "Conversation owner");
-    if (count > 0)
-        hush_agent_walk_thread(out, outsz, events, count, &walk);
-    else if (!owner)
-        hush_agent_append_durable(out, outsz, parent, &walk);
-    size_t used = strlen(out);
-    int written = snprintf(out + used, outsz - used, "\nCurrent message: %s", parent->content);
-    if (written < 0 || (size_t)written >= outsz - used)
-        hush_agent_copy(out, outsz, parent->content);
+    fill.ring = events;
+    fill.nring = count;
+    fill.room = (size_t)HUSH_AGENT_THREAD_MAX - count;
+    fill.root = root;
+    fill.parent_id = parent->id;
+    fill.owner_shown = owner;
+    hush_agent_render_window(out, outsz, &walk, &fill, parent);
 }
 
 /* True when a context MIME is Markdown (chunk with fence awareness). */

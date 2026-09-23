@@ -10,8 +10,15 @@
 
 #include "hush_event.h"
 #include "hush_thread.h"
+#include "hush_agent_internal.h"
+#include "hush_store.h"
 
 static int g_fail;
+
+enum {
+    /* Rolled markers proving first-in eviction past the brief cap. */
+    TEST_ROLL_COUNT = 12
+};
 
 static void expect(int cond, const char *msg)
 {
@@ -254,6 +261,162 @@ static void test_privacy_and_symlink(const char *home)
         expect(hush_thread_count(id) == 0, "symlinked log refused");
 }
 
+/* Records a fixed opening plus turns notes onto root; writes the last id. */
+static void record_thread(const char *root, unsigned base, unsigned turns,
+                          char last[HUSH_EVENT_ID_HEX_LEN + 1])
+{
+    hush_event_t ev;
+    char id[HUSH_EVENT_ID_HEX_LEN + 1];
+    char content[64];
+    unsigned i;
+
+    make_note(&ev, root, "OPENING-SUBSTANCE greeting the relay");
+    hush_thread_record(&ev);
+    for (i = 0; i < turns; ++i) {
+        id_for(id, base + i);
+        (void)snprintf(content, sizeof(content), "durable turn %u", i + 1);
+        make_note(&ev, id, content);
+        add_root_tag(&ev, root);
+        hush_thread_record(&ev);
+    }
+    memcpy(last, id, HUSH_EVENT_ID_HEX_LEN + 1);
+}
+
+/* Builds the incoming parent event carrying root's e tag. */
+static void make_parent(hush_event_t *ev, const char *id, const char *root,
+                        const char *content)
+{
+    make_note(ev, id, content);
+    add_root_tag(ev, root);
+}
+
+static void test_roll(void)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+    char brief[HUSH_THREAD_BRIEF_MAX + 1];
+    char marker[192];
+    unsigned i;
+
+    id_for(root, 400);
+    hush_thread_brief_get(root, brief, sizeof(brief));
+    expect(brief[0] == '\0', "roll root starts empty");
+    hush_thread_brief_roll(root, "alpha answer");
+    hush_thread_brief_get(root, brief, sizeof(brief));
+    expect(strcmp(brief, "alpha answer") == 0, "first roll seeds");
+    hush_thread_brief_roll(root, "beta answer");
+    hush_thread_brief_get(root, brief, sizeof(brief));
+    expect(strcmp(brief, "alpha answer | beta answer") == 0, "rolls join");
+    hush_thread_brief_roll(root, "  \n\t ");
+    hush_thread_brief_roll(root, NULL);
+    hush_thread_brief_get(root, brief, sizeof(brief));
+    expect(strcmp(brief, "alpha answer | beta answer") == 0, "blank rolls keep");
+    hush_thread_brief_roll(root, "line one\n  line two\tend");
+    hush_thread_brief_get(root, brief, sizeof(brief));
+    expect(strstr(brief, "line one line two end") != NULL, "rolls flatten");
+
+    id_for(root, 401);
+    hush_thread_brief_set(root, "keep me");
+    hush_thread_brief_roll(root, "   ");
+    hush_thread_brief_get(root, brief, sizeof(brief));
+    expect(strcmp(brief, "keep me") == 0, "blank never clears");
+    hush_thread_brief_roll("../escape", "nope");
+    expect(hush_thread_count("../escape") == 0, "bad roll is a no-op");
+
+    id_for(root, 402);
+    for (i = 0; i < (unsigned)TEST_ROLL_COUNT; ++i) {
+        int n = snprintf(marker, sizeof(marker), "m%02u ", i);
+
+        if (n > 0 && (size_t)n < sizeof(marker))
+            memset(marker + n, 'x', sizeof(marker) - 1 - (size_t)n);
+        hush_thread_brief_roll(root, marker);
+    }
+    hush_thread_brief_get(root, brief, sizeof(brief));
+    expect(strlen(brief) <= (size_t)HUSH_THREAD_BRIEF_MAX, "roll stays capped");
+    expect(strstr(brief, "m11 ") != NULL, "roll keeps newest");
+    expect(strstr(brief, "m02 ") != NULL, "roll keeps the window");
+    expect(strstr(brief, "m01 ") == NULL, "roll evicts oldest");
+    expect(strstr(brief, "m00 ") == NULL, "roll evicts first");
+}
+
+/* Fixed script: five-turn thread, then a restart with an empty store. The
+ * job note must still carry the brief and the opening substance. */
+static void test_fill_restart(void)
+{
+    hush_store_t *store = NULL;
+    hush_event_t parent;
+    hush_agent_thread_walk_t names;
+    char note[HUSH_AGENT_NOTE_MAX];
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+    char id[HUSH_EVENT_ID_HEX_LEN + 1];
+    char tmp[HUSH_EVENT_ID_HEX_LEN + 1];
+
+    id_for(root, 500);
+    record_thread(root, 501, 3, tmp);
+    id_for(id, 504);
+    make_parent(&parent, id, root, "latest ask after restart");
+    hush_thread_record(&parent);
+    hush_thread_brief_roll(root, "BRIEF-SUBSTANCE shipping summary");
+    expect(hush_store_create(&store) == HUSH_OK, "restart store");
+    memset(&names, 0, sizeof(names));
+    names.human = "human";
+    names.robot = "bot";
+    hush_agent_fill_thread(note, sizeof(note), store, NULL, &parent, &names);
+    expect(strstr(note, "Thread brief:") != NULL, "restart keeps brief line");
+    expect(strstr(note, "BRIEF-SUBSTANCE") != NULL, "restart keeps brief");
+    expect(strstr(note, "OPENING-SUBSTANCE") != NULL, "restart keeps opening");
+    expect(strstr(note, "durable turn 1") != NULL, "restart keeps turns");
+    expect(strstr(note, "Current message: latest ask after restart") != NULL,
+           "restart keeps ask");
+    hush_store_destroy(store);
+}
+
+/* Fixed script: nine-turn thread where the ring kept the root plus the two
+ * newest replies. The note must merge durable backfill before ring turns. */
+static void test_fill_partial(void)
+{
+    hush_store_t *store = NULL;
+    hush_event_t ev;
+    hush_event_t parent;
+    hush_agent_thread_walk_t names;
+    char note[HUSH_AGENT_NOTE_MAX];
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+    char id[HUSH_EVENT_ID_HEX_LEN + 1];
+    char tmp[HUSH_EVENT_ID_HEX_LEN + 1];
+    const char *old_turn;
+    const char *ring_turn;
+
+    id_for(root, 600);
+    record_thread(root, 601, 7, tmp);
+    id_for(id, 608);
+    make_parent(&parent, id, root, "eighth ask");
+    hush_thread_record(&parent);
+    hush_thread_brief_roll(root, "partial brief one");
+    hush_thread_brief_roll(root, "partial brief two");
+    expect(hush_store_create(&store) == HUSH_OK, "partial store");
+    make_note(&ev, root, "OPENING-SUBSTANCE greeting the relay");
+    expect(hush_store_insert(store, &ev) == HUSH_OK, "partial root");
+    id_for(id, 606);
+    make_parent(&ev, id, root, "durable turn 6");
+    expect(hush_store_insert(store, &ev) == HUSH_OK, "partial ring turn");
+    id_for(id, 607);
+    make_parent(&ev, id, root, "durable turn 7");
+    expect(hush_store_insert(store, &ev) == HUSH_OK, "partial ring turn");
+    memset(&names, 0, sizeof(names));
+    names.human = "human";
+    names.robot = "bot";
+    hush_agent_fill_thread(note, sizeof(note), store, NULL, &parent, &names);
+    expect(strstr(note, "Conversation owner:") != NULL, "partial keeps owner");
+    expect(strstr(note, "partial brief two") != NULL, "partial keeps brief");
+    expect(strstr(note, "durable turn 3") != NULL, "partial backfills");
+    old_turn = strstr(note, "durable turn 3");
+    ring_turn = strstr(note, "durable turn 6");
+    expect(old_turn != NULL && ring_turn != NULL && old_turn < ring_turn,
+           "backfill precedes ring");
+    expect(strstr(note, "Current message: eighth ask") != NULL,
+           "partial keeps ask");
+    hush_store_destroy(store);
+}
+
 int main(void)
 {
     char home[] = "/tmp/hush-thread-XXXXXX";
@@ -269,6 +432,9 @@ int main(void)
     test_escaping();
     test_truncation();
     test_brief(root);
+    test_roll();
+    test_fill_restart();
+    test_fill_partial();
     test_bad_roots();
     test_ignored();
     test_privacy_and_symlink(home);
