@@ -677,6 +677,16 @@ one to open files in the canvas.”
 
 Header Hick: brand + badge only. Drawer Close buttons stay local.
 
+Delta 2026-09-23 (UI-M1 nav pass): the primary journey entries are two
+thin game tabs at the top of the sidebar nav (`#quick-nav`: Inventory,
+Character), reusing the `.inv-btn` inventory chrome with `kbd` key
+hints. `i` keeps its selected-tile edit behavior and opens the expanded
+8×5 inventory when no tile is selected; `c` toggles the Profile
+character sheet. Both shortcuts ignore keystrokes typed in inputs,
+textareas, selects, or contenteditable. The hamburger rail
+(`#rail-toggle` + `#tool-rail`) and `#nav-toggle` remain as
+overflow/settings only, not the primary journey entry.
+
 ### 16. Mention + manage pills
 
 Same `.pill` / `.icon-plus` / `.icon-minus` language as Raise-robot.
