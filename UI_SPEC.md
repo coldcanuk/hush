@@ -783,6 +783,29 @@ No new fat nav: the overflow panel still exists on phone, opened via
 the BOARDS stamp; desktop has no overflow control at all (three-pane
 + `#quick-nav` thin tabs + `#quick-bar` 1–4 + gear unchanged).
 Supersedes every "hamburger remains as overflow-only" line above.
+Delta 2026-09-23 (UI-M7 chrome-hard pass): harder field-office
+materials over M5+M6 — CSS only, same hooks/layout/behaviors. M5
+applied paper tokens lightly on still-rounded chat parts; M7
+hardens every surface under `html[data-theme="field-office"]`
+(marker `fo-chrome-hard`) toward the mockup: grain goes two-layer
+(M5 dust at 0.16 + coarse `body::after` fiber,
+`baseFrequency='0.012 0.09'`); masthead gains a 3px ink top rule, a
+bolder edition strip, and the HQ span as a rotated stamp plate;
+typewriter density rises (note slips 0.9rem/1.5, meta kickers
+0.66rem caps, telegram eyebrow rule). Radius kill: all paper
+surfaces sharp-or-3px (cards, panels, dialogs, menus, notes,
+thread slips, pills, buttons, inputs, rails, tiles, avatars,
+skill gems, switch track; status dots stay round). Shadow kill:
+no blur/bloom/gradient/glow under this theme — paper depth is
+`2px 2px 0 #5c4a3d` on slips, plates, and stamps; big paper
+(`.panel`, `.card`, `dialog.secret`, `#thread-pane`) adds a carved
+double rule (2px border + 1px outline); thread notes lose sided
+bubbles (full-width slips, `.note.reply` gets a red inset spine);
+leash notes read as red dashed stamp traffic; overlays dim warm
+(`rgba(42,36,30,0.72)`); canvas caret blinks via `fo-caret`
+steps, no glow. Supersedes every soft/modern chrome line above
+(M3 etched bevels stay for the other six themes; flattened here)
+under field-office only.
 
 ### 16. Mention + manage pills
 

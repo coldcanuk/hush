@@ -275,6 +275,8 @@ if echo "$html" | grep -qi 'hamburger'; then fail "hamburger chrome must be gone
 echo "$html" | grep -q 'id="nav-toggle"' || fail "HTML missing BOARDS stamp"
 echo "$html" | grep -q '>Boards<' || fail "HTML nav-toggle must read Boards (UI-M6)"
 echo "$html" | grep -q '>Kit<' || fail "HTML rail-toggle must read Kit (UI-M6)"
+echo "$html" | grep -q 'fo-chrome-hard' || fail "HTML missing UI-M7 chrome-hard materials"
+echo "$html" | grep -q 'fo-caret' || fail "HTML missing UI-M7 paper caret"
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + pills"
 echo "$html" | grep -q 'id="provider-username"' || fail "HTML missing provider username"

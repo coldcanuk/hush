@@ -1109,6 +1109,284 @@ html[data-theme="field-office"] .avatar-preview {
 html[data-theme="field-office"] .fo-person-kind,
 html[data-theme="field-office"] .fo-person-slug,
 html[data-theme="field-office"] .fo-feed-line { letter-spacing: 0.08em; }
+
+/* ===== UI-M7 chrome-hard: harder field-office materials =====
+   North star: field-office-dispatch-mockup.jpeg (manila folders,
+   typewriter ribbon, paper cutouts, rubber stamps, sharp paper
+   shadows). M5 applied tokens lightly on still-rounded chat parts;
+   this pass hardens every surface under field-office so the whole
+   shell matches the mockup, not just the theme variables.
+   Marker: fo-chrome-hard. Supersedes soft/modern chrome (rounded
+   bubbles, gray panels, blur shadows, gradients, glow) under this
+   theme only. Hooks, layout, and behaviors unchanged. */
+/* Grain: raise the M5 dust layer + add a coarse fiber second layer. */
+html[data-theme="field-office"] body::before { opacity: 0.16; }
+html[data-theme="field-office"] body::after {
+  content: ""; position: fixed; inset: 0; z-index: 201; pointer-events: none;
+  opacity: 0.1; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.012 0.09' numOctaves='2'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23f)' opacity='0.5'/%3E%3C/svg%3E");
+}
+/* Masthead: ink rule over the header, edition strip bolder, HQ as a stamp. */
+html[data-theme="field-office"] header { border-top: 3px solid #2a241e; }
+html[data-theme="field-office"] .fo-edition { letter-spacing: 0.22em; font-weight: 700; color: #2a241e; }
+html[data-theme="field-office"] .fo-hq > span {
+  color: #2a241e; border: 2px solid #5c4a3d; border-radius: 3px;
+  padding: 2px 8px; transform: rotate(1deg); box-shadow: 2px 2px 0 #5c4a3d;
+  background: #ebdcb9;
+}
+html[data-theme="field-office"] .fo-log-eyebrow {
+  border-bottom: 1px solid #5c4a3d; padding-bottom: 6px;
+}
+html[data-theme="field-office"] .fo-log-eyebrow > span:first-child { letter-spacing: 0.24em; font-weight: 700; }
+/* Denser typewriter type: note slips, meta kickers, composer ribbon. */
+html[data-theme="field-office"] .note .body { font-size: 0.9rem; line-height: 1.5; }
+html[data-theme="field-office"] .note .meta {
+  font-size: 0.66rem; letter-spacing: 0.14em; font-weight: 700;
+}
+html[data-theme="field-office"] .room h1 { font-size: 1.05rem; letter-spacing: 0.14em; }
+html[data-theme="field-office"] #msg, html[data-theme="field-office"] #thread-msg { letter-spacing: 0.02em; }
+/* Radius kill: every paper surface is sharp or 3px max. Dots stay round. */
+html[data-theme="field-office"] .card,
+html[data-theme="field-office"] .panel,
+html[data-theme="field-office"] dialog.secret,
+html[data-theme="field-office"] .menu,
+html[data-theme="field-office"] .mention-box,
+html[data-theme="field-office"] .qb-editor,
+html[data-theme="field-office"] #canvas-k,
+html[data-theme="field-office"] .rail-pop,
+html[data-theme="field-office"] #thread-pane,
+html[data-theme="field-office"] #code-canvas-hi,
+html[data-theme="field-office"] #code-canvas-edit,
+html[data-theme="field-office"] #canvas-file,
+html[data-theme="field-office"] #canvas-k-ask,
+html[data-theme="field-office"] #canvas-k .row button,
+html[data-theme="field-office"] .code-block,
+html[data-theme="field-office"] .note-files button,
+html[data-theme="field-office"] #thread-stream .note,
+html[data-theme="field-office"] #thread-stream .note.mine,
+html[data-theme="field-office"] .robot-ack,
+html[data-theme="field-office"] .mention-pill,
+html[data-theme="field-office"] .pill,
+html[data-theme="field-office"] .composer-pill,
+html[data-theme="field-office"] .think-stop,
+html[data-theme="field-office"] .btn,
+html[data-theme="field-office"] .mini,
+html[data-theme="field-office"] .iconbtn,
+html[data-theme="field-office"] .icon-plus,
+html[data-theme="field-office"] .icon-minus,
+html[data-theme="field-office"] .icon-edit,
+html[data-theme="field-office"] .toggle,
+html[data-theme="field-office"] .drawer-x,
+html[data-theme="field-office"] .card input[type="text"],
+html[data-theme="field-office"] .card input[type="password"],
+html[data-theme="field-office"] .card textarea,
+html[data-theme="field-office"] .panel input[type="text"],
+html[data-theme="field-office"] .panel input[type="email"],
+html[data-theme="field-office"] .panel textarea,
+html[data-theme="field-office"] .rail-pop input,
+html[data-theme="field-office"] .qb-row select,
+html[data-theme="field-office"] .providers label,
+html[data-theme="field-office"] .prov-row,
+html[data-theme="field-office"] .vis label,
+html[data-theme="field-office"] .keybox,
+html[data-theme="field-office"] .provider-config,
+html[data-theme="field-office"] .agent,
+html[data-theme="field-office"] .robot-card,
+html[data-theme="field-office"] #tool-rail,
+html[data-theme="field-office"] #rail-toggle,
+html[data-theme="field-office"] #rail-grip,
+html[data-theme="field-office"] .qb-slot,
+html[data-theme="field-office"] #robot-inventory,
+html[data-theme="field-office"] #robot-inventory-full,
+html[data-theme="field-office"] .inv-btn,
+html[data-theme="field-office"] .inv-cell,
+html[data-theme="field-office"] .inv-item,
+html[data-theme="field-office"] .tile,
+html[data-theme="field-office"] .tile span,
+html[data-theme="field-office"] .tile-mute,
+html[data-theme="field-office"] .feather,
+html[data-theme="field-office"] .avatar-preview,
+html[data-theme="field-office"] .avatar-cell,
+html[data-theme="field-office"] .agent-pic-cell,
+html[data-theme="field-office"] .agent-pic-sheet,
+html[data-theme="field-office"] .skill-gem,
+html[data-theme="field-office"] .skill-slot,
+html[data-theme="field-office"] .skill-doll-pic,
+html[data-theme="field-office"] .skill-pool,
+html[data-theme="field-office"] .skill-loadout,
+html[data-theme="field-office"] .skill-cycle-stage,
+html[data-theme="field-office"] .skill-sheet-card,
+html[data-theme="field-office"] .slider {
+  border-radius: 3px;
+}
+html[data-theme="field-office"] #thread-stream .note.reply { border-radius: 3px; }
+html[data-theme="field-office"] .slider:before { border-radius: 0; }
+/* Soft-shadow kill: no blur/bloom under field-office; paper depth is
+   sharp 2px offsets on slips, plates, and stamps only. */
+html[data-theme="field-office"] header,
+html[data-theme="field-office"] #quick-bar,
+html[data-theme="field-office"] .menu,
+html[data-theme="field-office"] .mention-box,
+html[data-theme="field-office"] #thread-pane,
+html[data-theme="field-office"] #code-canvas,
+html[data-theme="field-office"] .qb-editor,
+html[data-theme="field-office"] #canvas-k,
+html[data-theme="field-office"] .rail-pop,
+html[data-theme="field-office"] #tool-rail,
+html[data-theme="field-office"] .qb-slot,
+html[data-theme="field-office"] .qb-slot:hover,
+html[data-theme="field-office"] .qb-gear,
+html[data-theme="field-office"] .inv-btn,
+html[data-theme="field-office"] #send,
+html[data-theme="field-office"] #thread-send,
+html[data-theme="field-office"] .composer-box:focus-within,
+html[data-theme="field-office"] .agent-pic-cell.on,
+html[data-theme="field-office"] .avatar-cell.on,
+html[data-theme="field-office"] .avatar-preview,
+html[data-theme="field-office"] .skill-gem,
+html[data-theme="field-office"] .skill-gem:hover,
+html[data-theme="field-office"] .skill-gem:focus-visible,
+html[data-theme="field-office"] .skill-slot.open,
+html[data-theme="field-office"] .skill-slot.drop-ok,
+html[data-theme="field-office"] .skill-doll-pic.drop-ok,
+html[data-theme="field-office"] .skill-slot.drop-no,
+html[data-theme="field-office"] .inv-item.dragging,
+html[data-theme="field-office"] .quick-tab kbd,
+html[data-theme="field-office"] .qb-slot kbd,
+html[data-theme="field-office"] #badge {
+  box-shadow: none;
+}
+html[data-theme="field-office"] .note,
+html[data-theme="field-office"] #thread-stream .note,
+html[data-theme="field-office"] #thread-stream .note.mine,
+html[data-theme="field-office"] .panel,
+html[data-theme="field-office"] .card,
+html[data-theme="field-office"] dialog.secret,
+html[data-theme="field-office"] #thread-pane,
+html[data-theme="field-office"] .menu,
+html[data-theme="field-office"] .mention-box,
+html[data-theme="field-office"] .qb-editor,
+html[data-theme="field-office"] #canvas-k,
+html[data-theme="field-office"] .code-block {
+  box-shadow: 2px 2px 0 #5c4a3d;
+}
+html[data-theme="field-office"] #badge { box-shadow: 2px 2px 0 #5c4a3d; }
+html[data-theme="field-office"] #send:hover, html[data-theme="field-office"] #thread-send:hover { filter: none; }
+/* Gradient kill: flat paper under field-office. */
+html[data-theme="field-office"] header,
+html[data-theme="field-office"] #quick-bar,
+html[data-theme="field-office"] .composer { background: #e2d5b8; }
+html[data-theme="field-office"] #rail-grip { background: #d4c5a3; border: 2px solid #5c4a3d; border-radius: 3px; }
+html[data-theme="field-office"] #thread-resize { background: #d4c5a3; border: 2px solid #5c4a3d; }
+/* Carved dossier frames: double rules on the big paper surfaces. */
+html[data-theme="field-office"] .panel,
+html[data-theme="field-office"] .card,
+html[data-theme="field-office"] dialog.secret,
+html[data-theme="field-office"] #thread-pane {
+  border: 2px solid #5c4a3d; outline: 1px solid #5c4a3d; outline-offset: 2px;
+}
+html[data-theme="field-office"] .menu,
+html[data-theme="field-office"] .mention-box,
+html[data-theme="field-office"] .qb-editor,
+html[data-theme="field-office"] #canvas-k { border: 2px solid #5c4a3d; }
+/* Thread slips: no sided chat bubbles; every note is a square paper slip. */
+html[data-theme="field-office"] #thread-stream .note,
+html[data-theme="field-office"] #thread-stream .note.mine {
+  max-width: none; background: #ebdcb9; border: 2px solid #5c4a3d;
+  align-self: stretch;
+}
+html[data-theme="field-office"] #thread-stream .note.reply {
+  margin-left: 0; border: 2px solid #5c4a3d; padding-left: 12px;
+}
+html[data-theme="field-office"] .note.reply {
+  box-shadow: inset 4px 0 0 #a3352c, 2px 2px 0 #5c4a3d;
+}
+/* Ink density: leash notes read as red-stamped relay traffic. */
+html[data-theme="field-office"] .note.leash { border: 2px dashed #a3352c; }
+html[data-theme="field-office"] .note.leash .meta { color: #a3352c; letter-spacing: 0.14em; font-weight: 700; }
+html[data-theme="field-office"] .robot-ack,
+html[data-theme="field-office"] .mention-pill,
+html[data-theme="field-office"] .pill {
+  border: 1px solid #5c4a3d; text-transform: uppercase; letter-spacing: 0.06em;
+}
+html[data-theme="field-office"] .think-stop {
+  border: 2px solid #a3352c; color: #a3352c; text-transform: uppercase; letter-spacing: 0.08em;
+}
+html[data-theme="field-office"] .partial { border-left: 3px solid #a3352c; }
+/* Buttons/inputs: 2px ink borders, telegram caps, no glow hovers. */
+html[data-theme="field-office"] .btn,
+html[data-theme="field-office"] .mini,
+html[data-theme="field-office"] .iconbtn,
+html[data-theme="field-office"] .icon-plus,
+html[data-theme="field-office"] .icon-minus,
+html[data-theme="field-office"] .icon-edit,
+html[data-theme="field-office"] .toggle,
+html[data-theme="field-office"] .drawer-x,
+html[data-theme="field-office"] .providers label,
+html[data-theme="field-office"] .prov-row,
+html[data-theme="field-office"] .vis label,
+html[data-theme="field-office"] .card input[type="text"],
+html[data-theme="field-office"] .card input[type="password"],
+html[data-theme="field-office"] .card textarea,
+html[data-theme="field-office"] .panel input[type="text"],
+html[data-theme="field-office"] .panel input[type="email"],
+html[data-theme="field-office"] .panel textarea,
+html[data-theme="field-office"] .rail-pop input,
+html[data-theme="field-office"] .qb-row select,
+html[data-theme="field-office"] #canvas-file,
+html[data-theme="field-office"] #canvas-k-ask,
+html[data-theme="field-office"] #code-canvas-hi,
+html[data-theme="field-office"] #code-canvas-edit {
+  border: 2px solid #5c4a3d; background: #ebdcb9;
+}
+html[data-theme="field-office"] .btn,
+html[data-theme="field-office"] .thread-btn,
+html[data-theme="field-office"] #thread-send { text-transform: uppercase; letter-spacing: 0.1em; }
+html[data-theme="field-office"] .btn.ghost { background: #ebdcb9; }
+html[data-theme="field-office"] .btn.danger { border: 2px solid #a3352c; transform: rotate(-1deg); }
+html[data-theme="field-office"] .prov-row.ready { background: #ebdcb9; border-color: #a3352c; }
+html[data-theme="field-office"] .iconbtn.on { border-color: #a3352c; color: #a3352c; }
+/* Boards/channels/rails: carved plates, red spine stays. */
+html[data-theme="field-office"] #tool-rail { border: 2px solid #5c4a3d; box-shadow: 2px 2px 0 #5c4a3d; }
+html[data-theme="field-office"] nav { border-right: 2px solid #5c4a3d; }
+html[data-theme="field-office"] #roster-pane { border-left: 2px solid #5c4a3d; }
+html[data-theme="field-office"] .chan:hover { background: #ebdcb9; }
+html[data-theme="field-office"] .fo-person:hover { background: #ebdcb9; }
+html[data-theme="field-office"] .fo-person { border-radius: 3px; }
+html[data-theme="field-office"] .fo-feed-line { border-left: 3px solid #a3352c; color: #2a241e; }
+html[data-theme="field-office"] .stats:hover, html[data-theme="field-office"] .stats:focus { background: #ebdcb9; }
+html[data-theme="field-office"] .robot-head:hover { background: #ebdcb9; }
+html[data-theme="field-office"] .robot-card,
+html[data-theme="field-office"] .agent { border: 2px solid #5c4a3d; background: #ebdcb9; border-radius: 3px; }
+html[data-theme="field-office"] .robot-copy strong { color: #a3352c; }
+html[data-theme="field-office"] .keybox { border: 2px solid #5c4a3d; }
+/* Avatars + media: sepia prints pinned with ink borders. */
+html[data-theme="field-office"] .inv-item.has-pic,
+html[data-theme="field-office"] .agent-pic-cell,
+html[data-theme="field-office"] .avatar-cell,
+html[data-theme="field-office"] .avatar-preview {
+  border: 2px solid #5c4a3d; box-shadow: 2px 2px 0 #5c4a3d;
+}
+html[data-theme="field-office"] .avatar-cell.on,
+html[data-theme="field-office"] .agent-pic-cell.on { border-color: #a3352c; box-shadow: 2px 2px 0 #a3352c; }
+html[data-theme="field-office"] .tile { border: 2px solid #5c4a3d; }
+html[data-theme="field-office"] .tile span,
+html[data-theme="field-office"] .tile-mute { border: 1px solid #5c4a3d; }
+html[data-theme="field-office"] .feather { border: 2px solid #5c4a3d; box-shadow: 2px 2px 0 #5c4a3d; }
+/* Canvas/code: paper slips, typewriter caret blink without the glow. */
+html[data-theme="field-office"] #code-canvas { border-left: 2px solid #5c4a3d; box-shadow: none; }
+html[data-theme="field-office"] #code-canvas-hi .fim-caret {
+  background: #a3352c; box-shadow: none; animation: fo-caret 0.7s steps(1) infinite;
+}
+@keyframes fo-caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+html[data-theme="field-office"] .inv-item.dragging { opacity: 1; border-color: #a3352c; box-shadow: 2px 2px 0 #a3352c; }
+html[data-theme="field-office"] .skill-gem[data-scope="system"],
+html[data-theme="field-office"] .skill-gem[data-scope="user"],
+html[data-theme="field-office"] .skill-gem[data-scope="robot"] { border-color: #5c4a3d; }
+/* Warm dim for overlays instead of cold black. */
+html[data-theme="field-office"] .drawer,
+html[data-theme="field-office"] .stage { background: rgba(42, 36, 30, 0.72); }
+html[data-theme="field-office"] dialog.secret::backdrop { background: rgba(42, 36, 30, 0.72); }
 </style>
 </head>
 <body>
