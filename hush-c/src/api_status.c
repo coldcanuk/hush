@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "hush_agent.h"
+#include "hush_build.h"
 #include "hush_cevent.h"
 #include "hush_http_internal.h"
 #include "hush_presence.h"
@@ -49,9 +50,10 @@ void hush_http_serve_status(int fd, const hush_store_t *store)
     vibe_pub = (hush_http_launch() == NULL || !hush_http_launch()->has_vibe || hush_http_launch()->vibe_public);
     hush_agent_status(thinking, sizeof(thinking));
     w = snprintf(body, sizeof(body),
-                 "{\"ok\":true,\"version\":\"0.0.1\",\"events\":%zu,"
+                 "{\"ok\":true,\"version\":\"%s\",\"build\":\"%s\",\"events\":%zu,"
                  "\"clients\":%d,\"port\":%u,\"whisper\":%s,"
                  "\"turn_running\":%s,\"vibe_public\":%s,\"thinking\":%s}\n",
+                 HUSH_BUILD_VERSION, HUSH_BUILD_SHA,
                  n, hush_http_client_count(), (unsigned)hush_http_listen_port(),
                  whisper ? "true" : "false",
                  turn_on ? "true" : "false",

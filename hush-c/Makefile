@@ -29,6 +29,13 @@ CODEX_SKILL_SHARE := $(HUSHSHARE)/codex/skills/write-legible-c
 override CFLAGS += -DHUSH_CODEX_SKILL_SOURCE=\"$(CODEX_SKILL_SOURCE)\"
 override CFLAGS += -DHUSH_CODEX_SKILL_SHARE=\"$(CODEX_SKILL_SHARE)\"
 
+# Build stamp baked by ./configure into ../config.mk (git describe + short
+# HEAD). Defaults keep non-configure builds working; hush_build.h agrees.
+HUSH_BUILD_VERSION ?= 0.0.1
+HUSH_BUILD_SHA ?= unknown
+override CFLAGS += -DHUSH_BUILD_VERSION=\"$(HUSH_BUILD_VERSION)\"
+override CFLAGS += -DHUSH_BUILD_SHA=\"$(HUSH_BUILD_SHA)\"
+
 SRCS := $(wildcard src/*.c)
 OBJS := $(SRCS:.c=.o)
 # Track header dependencies so a struct/enum change rebuilds every consumer.
@@ -72,6 +79,7 @@ tests/test_%: tests/test_%.c libhush.a
 test: $(TEST_BINS) hush-relay
 	@for t in $(TEST_BINS); do echo "RUN $$t"; ./$$t || exit 1; done
 	@sh tests/check_pwa.sh
+	@sh tests/check_build.sh
 	@sh tests/check_launch.sh
 	@CC="$(CC)" python3 tests/check_win.py
 	@python3 tests/check_browser_launch.py

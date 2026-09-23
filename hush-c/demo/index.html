@@ -5051,7 +5051,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     function paintRelayDrawer(status) {
       const proj = (session.projects || []);
       const lines = [
-        "Version " + (status.version || "0.0.1"),
+        "Version " + (status.version || "0.0.1") + " (" + (status.build || "unknown") + ")",
         "Port " + (status.port || "—"),
         (status.events || 0) + " stored",
         proj.length ? (proj.map((p) => p.name || p.slug).join(", ")) : "no projects",
@@ -5080,7 +5080,10 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         (status.ok ? "relay live" : "relay down") + "<br>" +
         status.events + " stored<br>" +
         projN + " project" + (projN === 1 ? "" : "s") + "<br>" +
-        status.clients + " sockets";
+        status.clients + " sockets<br>" +
+        "v" + (status.version || "?") + " " + (status.build || "?");
+      document.title = "Hush " + (status.version || "0.0.1") +
+        " (" + (status.build || "unknown") + ")";
       paintRelayDrawer(status);
       const thinkKey = ((status.thinking || []).map((t) => t.parent + ":" + t.name).join(","));
       const ackKey = roots.map((e) => ackStampFor(e, thinkingFor(e.id, status))).join("");
