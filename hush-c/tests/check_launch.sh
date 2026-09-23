@@ -89,21 +89,23 @@ fi
 if echo "$html" | grep -F 'r.style.left = "360px"'; then
     fail "rail nanny must be gone"
 fi
-echo "$html" | grep -q 'saved.x' || fail "loadRail must restore saved.x"
-echo "$html" | grep -q 'saved.y' || fail "loadRail must restore saved.y"
-echo "$html" | grep -q 'saved.collapsed' || fail "loadRail must restore saved.collapsed"
-echo "$html" | grep -q 'function saveRail' || fail "HTML missing saveRail"
 echo "$html" | grep -q 'function presenceSlugFor' || fail "HTML missing presenceSlugFor"
 echo "$html" | grep -q '/api/presence' || fail "HTML missing /api/presence tick"
 pres=$(curl -sf "http://127.0.0.1:${port}/api/presence")
 echo "$pres" | grep -q '"ok":true' || fail "presence json"
 echo "$pres" | grep -q '"lines"' || fail "presence missing lines"
 echo "$html" | grep -q '30315' || fail "HTML missing NIP-38 kind filter"
-save_body=$(printf '%s' "$html" | awk '/function saveRail/,/function applyThreadSize/')
-echo "$save_body" | grep -q 'homed:' && fail "saveRail must persist {x,y,collapsed} only"
-echo "$html" | awk '/rail-toggle"\)\.addEventListener\("dblclick"/,/rail-grip"\)\.addEventListener\("pointerdown"/' \
-    | grep -q 'placeRailAtBrand' \
-    || fail "rail-toggle dblclick must home at brand"
+# UI-M9: no persistent tool rail. Drag/park persistence helpers are gone;
+# the header KIT stamp toggles the #kit-menu overlay only.
+if echo "$html" | grep -q 'function saveRail'; then
+    fail "tool rail saveRail must be gone (UI-M9)"
+fi
+if echo "$html" | grep -q 'placeRailAtBrand'; then
+    fail "tool rail placeRailAtBrand must be gone (UI-M9)"
+fi
+if echo "$html" | grep -q 'hush-rail'; then
+    fail "tool rail hush-rail persistence must be gone (UI-M9)"
+fi
 echo "$html" | grep -q 'class=\\\"feather\\\"' || fail "HTML missing feather splash"
 echo "$html" | grep -q '/icon-192.png' || fail "HTML missing feather src"
 echo "$html" | grep -q 'stepBar' || fail "HTML missing wizard progress"
@@ -230,9 +232,25 @@ echo "$html" | grep -q 'chan-options' || fail "HTML missing channel options"
 echo "$html" | grep -q 'chan-voice' || fail "HTML missing channel voice"
 echo "$html" | grep -q 'robot-call' || fail "HTML missing robot call"
 echo "$html" | grep -q 'tile-mute' || fail "HTML missing tile mute"
-echo "$html" | grep -q 'id="tool-rail"' || fail "HTML missing tool rail"
-echo "$html" | grep -q 'placeRailAtBrand' || fail "HTML missing rail brand home"
-echo "$html" | grep -q 'dblclick' || fail "HTML missing rail double-click"
+# UI-M9: persistent tool rail deleted; header KIT menu only. Boards access
+# stays the M8 overlay drawer. Fat bottom pills are folder tabs now.
+if echo "$html" | grep -q 'id="tool-rail"'; then fail "tool rail must be gone (UI-M9)"; fi
+if echo "$html" | grep -q 'rail-grip'; then fail "rail grip must be gone (UI-M9)"; fi
+if echo "$html" | grep -q 'rail-body'; then fail "rail body must be gone (UI-M9)"; fi
+if echo "$html" | grep -q 'rail-grid'; then fail "rail grid must be gone (UI-M9)"; fi
+if echo "$html" | grep -q 'rail-pop'; then fail "rail popovers must be gone (UI-M9)"; fi
+if echo "$html" | grep -q 'utility-rail'; then fail "utility rail must be gone (UI-M9)"; fi
+if echo "$html" | grep -q 'repeat(4, 1fr) auto'; then fail "fat bottom-pill grid must be gone (UI-M9)"; fi
+echo "$html" | grep -q 'id="kit-menu"' || fail "HTML missing KIT menu overlay (UI-M9)"
+echo "$html" | grep -q 'id="folder-tabs"' || fail "HTML missing folder-tab strip (UI-M9)"
+echo "$html" | grep -q 'folder-tab' || fail "HTML missing folder-tab markers (UI-M9)"
+echo "$html" | grep -q 'fo-folder-tabs' || fail "HTML missing fo-folder-tabs marker (UI-M9)"
+echo "$html" | grep -q 'UI-M9' || fail "HTML missing UI-M9 markers"
+echo "$html" | grep -q 'id="qb-1"' || fail "HTML missing spellbar slot 1 (UI-M9 keeps 1-4)"
+echo "$html" | grep -q 'id="qb-4"' || fail "HTML missing spellbar slot 4 (UI-M9 keeps 1-4)"
+echo "$html" | grep -q 'id="qb-config"' || fail "HTML missing spellbar gear (UI-M9 keeps gear)"
+echo "$html" | grep -q 'id="qb-editor"' || fail "HTML missing spellbar picker (UI-M9 keeps gear)"
+echo "$html" | grep -q 'quickbarTyping' || fail "HTML missing spellbar typing guard (UI-M9)"
 echo "$html" | grep -q 'id="thread-resize"' || fail "HTML missing thread resize"
 echo "$html" | grep -q 'id="thread-pills"' || fail "HTML missing thread pills"
 echo "$html" | grep -q 'id="thread-mention"' || fail "HTML missing thread mention"
@@ -268,7 +286,8 @@ echo "$html" | grep -q 'sole.length === 1' \
   || fail "1:1 follow-up must inherit the sole member robot"
 echo "$html" | grep -q 'localThink' \
   || fail "HTML missing optimistic thread think"
-echo "$html" | grep -q 'id="install-help"' || fail "HTML missing install help"
+echo "$html" | grep -q 'id="install"' || fail "HTML missing install (KIT menu)"
+echo "$html" | grep -q 'Install puts Hush on your app launcher' || fail "HTML missing install copy"
 echo "$html" | grep -q 'id="rail-toggle"' || fail "HTML missing rail KIT stamp"
 if echo "$html" | grep -q '☰'; then fail "burger glyph must be gone (UI-M6)"; fi
 if echo "$html" | grep -qi 'hamburger'; then fail "hamburger chrome must be gone (UI-M6)"; fi

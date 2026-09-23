@@ -514,26 +514,21 @@
     .iconbtn.danger {
       background: var(--warn); color: #fff; border-color: var(--warn);
     }
-    .rail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-    .rail-rule { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
-    .rail-info-row { display: flex; align-items: flex-start; gap: 6px; position: relative; }
-    .rail-i {
-      width: 22px; height: 22px; border-radius: 12px; border: 1px solid var(--line);
-      background: var(--bg); color: var(--muted); font: italic 0.78rem/1 Georgia, serif;
-      padding: 0; flex: 0 0 22px;
+    /* UI-M9: no persistent tool rail. The former vertical strip is gone;
+       the header KIT stamp toggles #kit-menu (an overlay popup holding the
+       same action hooks). No drag grip, no rail body/grid/pop classes. */
+    #kit-menu {
+      position: fixed; z-index: 70; top: 64px; right: 12px;
+      display: flex; flex-direction: column; gap: 6px;
+      background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+      padding: 10px; box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+      width: min(17rem, 92vw); max-height: calc(100vh - 90px); overflow: auto;
     }
-    .rail-i[aria-expanded="true"] { color: var(--accent); border-color: var(--accent-dim); }
-    .rail-pop {
-      display: none; position: absolute; left: 0; top: 28px; z-index: 2;
-      font-size: 0.72rem; color: var(--fg); width: 14rem; line-height: 1.4;
-      margin: 0; padding: 6px 8px; background: var(--surface); border: 1px solid var(--line);
-      border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.35);
-    }
-    .rail-pop.show { display: block; }
-    .rail-pop p { margin: 0 0 6px; }
-    .rail-pop input {
+    #kit-menu[hidden] { display: none; }
+    #kit-menu .iconbtn { width: 100%; text-align: left; }
+    #kit-menu input {
       width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
-      border-radius: 12px; padding: 6px 8px; font: inherit;
+      border-radius: 8px; padding: 6px 8px; font: inherit; box-sizing: border-box;
     }
     #install { flex: 1; min-width: 0; }
     #hive-banner {
@@ -589,29 +584,14 @@
     .tile-mute.on { background: var(--warn); border-color: var(--warn); }
     .wide { width: min(52rem, 100%); }
     .badge-vis { font-size: 0.7rem; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
-    #tool-rail {
-      position: fixed; z-index: 30; top: 10px; right: 12px;
-      display: flex; flex-direction: column; gap: 8px;
-      background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
-      padding: 8px; box-shadow: 0 10px 28px rgba(0,0,0,0.35); min-width: 44px;
-      user-select: none;
-    }
-    #tool-rail.collapsed { padding: 6px; }
-    #tool-rail.collapsed .rail-body { display: none; }
-    #tool-rail.collapsed #rail-grip { min-width: 44px; flex: 0 0 44px; }
-    .rail-bar { display: flex; align-items: center; gap: 6px; }
-    #rail-grip {
-      flex: 1; min-height: 44px; cursor: grab; border-radius: 12px;
-      touch-action: none;
-      background: repeating-linear-gradient(90deg, var(--line), var(--line) 2px, transparent 2px, transparent 6px);
-    }
-    #rail-grip:active { cursor: grabbing; }
+    /* UI-M9: header stamps only (BOARDS + KIT). No persistent rail chrome. */
+    header .stamp-row { display: flex; align-items: center; gap: 8px; }
     #rail-toggle {
-      width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line);
-      background: var(--bg); color: var(--fg); font-size: 0.72rem; font-family: var(--display); line-height: 1;
-      text-transform: uppercase; letter-spacing: 0.08em;
+      min-width: 44px; min-height: 44px; border-radius: 6px; border: 2px solid var(--line);
+      background: var(--bg); color: var(--fg); font-size: 0.68rem; font-family: var(--mono); line-height: 1;
+      text-transform: uppercase; letter-spacing: 0.12em; transform: rotate(1deg);
+      padding: 0 10px; cursor: pointer;
     }
-    .rail-body { display: flex; flex-direction: column; gap: 6px; }
     /* #install-help popover styles live with the rail grid */
     .pool-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
     .pool-row span { flex: 1; font-size: 0.86rem; }
@@ -665,13 +645,24 @@
 /* UI-M2 quick bar: thin bottom spellbar reusing the inventory micro-button
    language. Fixed 4 slots + a gear; the editor pops above the bar so the
    chrome stays one thin strip. Coexists with UI-M1 #quick-nav (top tabs). */
+/* UI-M9 folder tabs: thin overlapping manila folder-tab strip, NOT fat
+   full-width bottom pills. Markers: folder-tabs / folder-tab /
+   fo-folder-tabs / UI-M9. The spellbar wiring stays on #quick-bar:
+   4 slots (keys 1-4) + gear (#qb-config) + picker (#qb-editor) untouched. */
 #quick-bar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
   background: var(--surface); border-top: 1px solid var(--line);
-  padding: 4px 8px; box-sizing: border-box;
+  padding: 0 8px; box-sizing: border-box;
 }
-.qb-slots { display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 6px; align-items: center; }
-.qb-slot { min-height: 32px; font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.qb-slots.folder-tabs, .qb-slots.fo-folder-tabs {
+  display: flex; align-items: flex-end; gap: 0; padding: 6px 4px 0;
+}
+.qb-slot.folder-tab {
+  min-height: 30px; font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase;
+  border: 1px solid var(--line); border-bottom: 0; border-radius: 8px 10px 0 0;
+  padding: 6px 12px 7px; margin-right: -8px; position: relative;
+  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 100%, 0 100%);
+}
 .qb-slot kbd {
   font: 600 0.62rem/1 var(--mono); border: 1px solid var(--line);
   border-radius: 4px; padding: 1px 4px; margin-left: 4px; color: var(--muted);
@@ -727,23 +718,24 @@ nav { padding: 10px 8px; gap: 12px; }
   background: var(--bg);
   box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.45);
 }
-/* Spellbar: raised etched strip; slots are gem sockets with a faint
-   accent glow on hover. 4 slots + gear + 1-4 wiring untouched. */
+/* UI-M9 folder tabs over the spellbar: the 4 slots read as overlapping
+   manila folder tabs (thin strip, staggered overlap, tab on top when
+   hovered/focused). Keys 1-4 + gear + picker wiring untouched. */
 #quick-bar {
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  padding: 0 8px calc(0px + env(safe-area-inset-bottom, 0px));
   background: linear-gradient(var(--surface-2), var(--surface));
   box-shadow: 0 -1px 0 rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.06);
 }
-.qb-slot {
-  min-width: 0; min-height: 40px; overflow: hidden;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06),
-    inset 0 -2px 0 rgb(0 0 0 / 0.3), 0 0 0 1px rgb(0 0 0 / 0.2);
+.qb-slot.folder-tab {
+  min-width: 0; min-height: 30px; overflow: hidden;
+  flex: 0 1 11rem;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
 }
-.qb-slot:hover {
-  border-color: var(--accent);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06),
-    inset 0 -2px 0 rgb(0 0 0 / 0.3), 0 0 8px var(--accent-dim);
-}
+.qb-slot.folder-tab:nth-child(1) { z-index: 1; }
+.qb-slot.folder-tab:nth-child(2) { z-index: 2; }
+.qb-slot.folder-tab:nth-child(3) { z-index: 3; }
+.qb-slot.folder-tab:nth-child(4) { z-index: 4; }
+.qb-slot.folder-tab:hover, .qb-slot.folder-tab:focus-visible { z-index: 6; border-color: var(--accent); }
 .qb-label {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -895,26 +887,8 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 }
 .avatar-cell.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 
-/* Tool rail: compact vertical activity bar (VS Code activity-bar model).
-   One column, tight, info popovers hidden behind the buttons' own titles. */
-#tool-rail {
-  gap: 4px; padding: 6px; border-radius: 12px; width: 176px; max-width: 176px;
-  align-items: stretch;
-}
-#tool-rail .rail-body { gap: 4px; }
-#tool-rail .rail-grid { grid-template-columns: 1fr; gap: 4px; }
-#tool-rail .rail-info-row { display: block; }
-#tool-rail .rail-i { display: none; }
-#tool-rail .iconbtn {
-  width: 100%; padding: 7px 10px; font-size: 0.72rem; font-weight: 600; font-family: var(--display);
-  text-align: left; border-radius: 12px;
-}
-#tool-rail #install { font-size: 0.72rem; padding: 7px 10px; }
-#tool-rail .rail-rule { margin: 2px 0; }
-#tool-rail #rail-toggle { width: 100%; }
-#tool-rail.collapsed { width: 44px; }
-#tool-rail.collapsed #rail-grip { display: none; }
-#tool-rail.collapsed #rail-toggle { flex: 1; min-width: 32px; }
+/* UI-M9: persistent vertical tool rail deleted. No activity-bar strip, no
+   drag grip, no collapsed stamp box. Header KIT stamp + #kit-menu only. */
 
 /* Enlarged skill sheet (spacious cards, robot/chaperon flip). */
 .skill-sheet-list {
@@ -1054,7 +1028,7 @@ html[data-theme="field-office"] #badge {
   border: 2px solid #5c4a3d; border-radius: 3px; background: #ebdcb9;
   box-shadow: 2px 2px 0 #5c4a3d; text-transform: uppercase;
 }
-html[data-theme="field-office"] #tool-rail,
+html[data-theme="field-office"] #kit-menu,
 html[data-theme="field-office"] nav,
 html[data-theme="field-office"] #roster-pane { background: #e2d5b8; }
 html[data-theme="field-office"] .lbl,
@@ -1153,7 +1127,7 @@ html[data-theme="field-office"] .menu,
 html[data-theme="field-office"] .mention-box,
 html[data-theme="field-office"] .qb-editor,
 html[data-theme="field-office"] #canvas-k,
-html[data-theme="field-office"] .rail-pop,
+html[data-theme="field-office"] #kit-menu,
 html[data-theme="field-office"] #thread-pane,
 html[data-theme="field-office"] #code-canvas-hi,
 html[data-theme="field-office"] #code-canvas-edit,
@@ -1183,7 +1157,7 @@ html[data-theme="field-office"] .card textarea,
 html[data-theme="field-office"] .panel input[type="text"],
 html[data-theme="field-office"] .panel input[type="email"],
 html[data-theme="field-office"] .panel textarea,
-html[data-theme="field-office"] .rail-pop input,
+html[data-theme="field-office"] #kit-menu input,
 html[data-theme="field-office"] .qb-row select,
 html[data-theme="field-office"] .providers label,
 html[data-theme="field-office"] .prov-row,
@@ -1192,9 +1166,9 @@ html[data-theme="field-office"] .keybox,
 html[data-theme="field-office"] .provider-config,
 html[data-theme="field-office"] .agent,
 html[data-theme="field-office"] .robot-card,
-html[data-theme="field-office"] #tool-rail,
+html[data-theme="field-office"] #kit-menu,
 html[data-theme="field-office"] #rail-toggle,
-html[data-theme="field-office"] #rail-grip,
+html[data-theme="field-office"] #kit-menu,
 html[data-theme="field-office"] .qb-slot,
 html[data-theme="field-office"] #robot-inventory,
 html[data-theme="field-office"] #robot-inventory-full,
@@ -1231,8 +1205,8 @@ html[data-theme="field-office"] #thread-pane,
 html[data-theme="field-office"] #code-canvas,
 html[data-theme="field-office"] .qb-editor,
 html[data-theme="field-office"] #canvas-k,
-html[data-theme="field-office"] .rail-pop,
-html[data-theme="field-office"] #tool-rail,
+html[data-theme="field-office"] #kit-menu,
+html[data-theme="field-office"] #kit-menu,
 html[data-theme="field-office"] .qb-slot,
 html[data-theme="field-office"] .qb-slot:hover,
 html[data-theme="field-office"] .qb-gear,
@@ -1276,7 +1250,7 @@ html[data-theme="field-office"] #send:hover, html[data-theme="field-office"] #th
 html[data-theme="field-office"] header,
 html[data-theme="field-office"] #quick-bar,
 html[data-theme="field-office"] .composer { background: #e2d5b8; }
-html[data-theme="field-office"] #rail-grip { background: #d4c5a3; border: 2px solid #5c4a3d; border-radius: 3px; }
+html[data-theme="field-office"] #kit-menu { border: 2px solid #5c4a3d; background: #e2d5b8; }
 html[data-theme="field-office"] #thread-resize { background: #d4c5a3; border: 2px solid #5c4a3d; }
 /* Carved dossier frames: double rules on the big paper surfaces. */
 html[data-theme="field-office"] .panel,
@@ -1331,7 +1305,7 @@ html[data-theme="field-office"] .card textarea,
 html[data-theme="field-office"] .panel input[type="text"],
 html[data-theme="field-office"] .panel input[type="email"],
 html[data-theme="field-office"] .panel textarea,
-html[data-theme="field-office"] .rail-pop input,
+html[data-theme="field-office"] #kit-menu input,
 html[data-theme="field-office"] .qb-row select,
 html[data-theme="field-office"] #canvas-file,
 html[data-theme="field-office"] #canvas-k-ask,
@@ -1347,7 +1321,7 @@ html[data-theme="field-office"] .btn.danger { border: 2px solid #a3352c; transfo
 html[data-theme="field-office"] .prov-row.ready { background: #ebdcb9; border-color: #a3352c; }
 html[data-theme="field-office"] .iconbtn.on { border-color: #a3352c; color: #a3352c; }
 /* Boards/channels/rails: carved plates, red spine stays. */
-html[data-theme="field-office"] #tool-rail { border: 2px solid #5c4a3d; box-shadow: 2px 2px 0 #5c4a3d; }
+html[data-theme="field-office"] #kit-menu { border: 2px solid #5c4a3d; box-shadow: 2px 2px 0 #5c4a3d; }
 html[data-theme="field-office"] nav { border-right: 2px solid #5c4a3d; }
 html[data-theme="field-office"] #roster-pane { border-left: 2px solid #5c4a3d; }
 html[data-theme="field-office"] .chan:hover { background: #ebdcb9; }
@@ -1473,11 +1447,40 @@ html[data-theme="field-office"] .hive > nav,
 html[data-theme="field-office"] #fo-expand {
   box-shadow: 4px 4px 0 #5c4a3d; border-color: #5c4a3d;
 }
+/* ===== UI-M9 folder tabs + no tool rail =====
+   Bottom bar: the 4 quick slots are thin overlapping manila folder tabs
+   (fo-folder-tabs / folder-tabs / folder-tab markers), not fat pills.
+   Spellbar wiring (keys 1-4 + gear + picker) is untouched; only the
+   tab silhouette + manila/paper styling is new here. The persistent
+   vertical tool rail is deleted: #kit-menu is a header-KIT overlay only.
+   fo-chrome-hard / fo-caret surfaces from M7 are unchanged. */
+.qb-slots.folder-tabs .qb-gear { margin-left: 10px; }
+html[data-theme="field-office"] #quick-bar { border-top: 3px double #5c4a3d; }
+html[data-theme="field-office"] .qb-slot.folder-tab {
+  background: #d4c5a3; color: #2a241e;
+  border: 2px solid #5c4a3d; border-bottom: 0; border-radius: 6px 8px 0 0;
+  box-shadow: 2px -2px 0 #5c4a3d;
+  font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+html[data-theme="field-office"] .qb-slot.folder-tab:hover,
+html[data-theme="field-office"] .qb-slot.folder-tab:focus-visible {
+  background: #ebdcb9; border-color: #5c4a3d;
+}
+html[data-theme="field-office"] .qb-slot.folder-tab kbd {
+  border: 1px solid #5c4a3d; color: #5c4a3d; background: #ebdcb9;
+}
+html[data-theme="field-office"] #kit-menu {
+  background: #e2d5b8; border: 2px solid #5c4a3d; box-shadow: 3px 3px 0 #5c4a3d;
+}
 </style>
 </head>
 <body>
   <header>
-    <button class="btn ghost" id="nav-toggle" type="button" aria-expanded="false" aria-label="Open bulletin boards drawer" title="Open bulletin boards drawer">Boards</button>
+    <div class="stamp-row">
+      <button class="btn ghost" id="nav-toggle" type="button" aria-expanded="false" aria-label="Open bulletin boards drawer" title="Open bulletin boards drawer">Boards</button>
+      <button id="rail-toggle" type="button" aria-expanded="false" aria-controls="kit-menu" aria-label="Open field kit" title="Field kit">Kit</button>
+    </div>
     <div class="brand">
       <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
         <rect width="64" height="64" rx="14" fill="#064e3b"/>
@@ -1492,86 +1495,28 @@ html[data-theme="field-office"] #fo-expand {
     </div>
     <div class="fo-hq"><span>HQ — Global Operations</span><div id="badge">connecting…</div></div>
   </header>
-  <aside id="tool-rail" aria-label="Tools">
-    <div class="rail-bar">
-      <div id="rail-grip" title="Move the tool rail"></div>
-      <button id="rail-toggle" type="button" aria-expanded="true" aria-label="Collapse field kit" title="Field kit">Kit</button>
-    </div>
-    <div class="rail-body" id="rail-body">
-      <div class="rail-info-row">
-        <button id="install" type="button" title="Install puts Hush on your app launcher as its own window. It does not start a second hive.">Install</button>
-        <button class="rail-i" id="rail-info" type="button" aria-expanded="false" aria-controls="install-help" title="Install help">i</button>
-        <p class="rail-pop" id="install-help">Install puts Hush on your app launcher as its own window. It does not start a second hive.</p>
-      </div>
-      <hr class="rail-rule">
-      <div class="rail-grid">
-        <div class="rail-info-row">
-          <button class="iconbtn" id="profile-btn" type="button">Profile</button>
-          <button class="rail-i" id="profile-info" type="button" aria-expanded="false" aria-controls="profile-help" title="Profile help">i</button>
-          <p class="rail-pop" id="profile-help">Your name, npub, and logout. This is you, not a robot.</p>
-        </div>
-        <div class="rail-info-row">
-          <button class="iconbtn" id="settings-btn" type="button">Settings</button>
-          <button class="rail-i" id="settings-info" type="button" aria-expanded="false" aria-controls="settings-help" title="Settings help">i</button>
-          <p class="rail-pop" id="settings-help">Theme, vibe visibility, and the local STUN/TURN server for calls.</p>
-        </div>
-      </div>
-      <div class="rail-grid">
-        <div class="rail-info-row">
-          <button class="iconbtn" id="call-btn" type="button" hidden>Call</button>
-          <button class="rail-i" id="call-info" type="button" aria-expanded="false" aria-controls="call-help-pop" title="Call help">i</button>
-          <p class="rail-pop" id="call-help-pop">Start a mesh conference on this channel. Agents need Whisper to hear.</p>
-        </div>
-        <div class="rail-info-row">
-          <button class="iconbtn" id="invite-human" type="button">Invite</button>
-          <button class="rail-i" id="invite-info" type="button" aria-expanded="false" aria-controls="invite-help" title="Invite help">i</button>
-          <p class="rail-pop" id="invite-help">Click to invite a human to your vibe.</p>
-        </div>
-      </div>
-      <hr class="rail-rule">
-      <div class="rail-grid">
-        <div class="rail-info-row">
-          <button class="iconbtn" id="add-chan" type="button">Add Channel</button>
-          <button class="rail-i" id="chan-info" type="button" aria-expanded="false" aria-controls="chan-help" title="Channel help">i</button>
-          <div class="rail-pop" id="chan-help">
-            <p>A channel is a named room in this hive. Notes you post there stay on that channel.</p>
-          </div>
-        </div>
-        <div class="rail-info-row">
-          <button class="iconbtn" id="providers-btn" type="button">Configure Providers</button>
-          <button class="rail-i" id="prov-info" type="button" aria-expanded="false" aria-controls="prov-help" title="Provider help">i</button>
-          <p class="rail-pop" id="prov-help">Hive-wide credentials and OAuth for every runtime. Robots pick which one they use; secrets live once, here.</p>
-        </div>
-      </div>
-      <hr class="rail-rule">
-      <div class="rail-grid">
-        <div class="rail-info-row">
-          <button class="iconbtn" id="raise-agent" type="button">New Robot</button>
-          <button class="rail-i" id="robot-info" type="button" aria-expanded="false" aria-controls="robot-help" title="Robot help">i</button>
-          <p class="rail-pop" id="robot-help">Raise a new robot. It gets its own name, provider, and system prompt.</p>
-        </div>
-        <div class="rail-info-row">
-          <button class="iconbtn" id="add-proj" type="button">New Project</button>
-          <button class="rail-i" id="proj-info" type="button" aria-expanded="false" aria-controls="proj-help" title="Project help">i</button>
-          <div class="rail-pop" id="proj-help">
-            <p>A project is a folder the hive can write to. Create one to open files in the canvas.</p>
-            <input id="new-proj" maxlength="48" placeholder="new project">
-          </div>
-        </div>
-      </div>
-      <hr class="rail-rule">
-      <div class="rail-grid">
-        <button class="iconbtn" id="rail-min" type="button">Minimize</button>
-        <button class="iconbtn" id="rail-max" type="button">Maximize</button>
-      </div>
-      <div class="rail-grid">
-        <button class="iconbtn" id="hive-close" type="button"
-                title="Close the window. Hive stays standing.">Close</button>
-        <button class="iconbtn danger" id="hive-exit" type="button"
-                title="Quit the hive. Every process stops.">Exit</button>
-      </div>
-    </div>
-  </aside>
+  <!-- UI-M9: persistent tool rail deleted. Header KIT stamp toggles this
+       overlay menu only (no draggable strip, no grip, no rail body/grid).
+       Same action hooks preserved: install/profile/settings/call/invite/
+       channels/providers/robots/projects/min/max/close/exit. -->
+  <div id="kit-menu" hidden aria-label="Field kit">
+    <button id="install" type="button" title="Install puts Hush on your app launcher as its own window. It does not start a second hive.">Install</button>
+    <button class="iconbtn" id="profile-btn" type="button" title="Your name, npub, and logout. This is you, not a robot.">Profile</button>
+    <button class="iconbtn" id="settings-btn" type="button" title="Theme, vibe visibility, and the local STUN/TURN server for calls.">Settings</button>
+    <button class="iconbtn" id="call-btn" type="button" hidden title="Start a mesh conference on this channel. Agents need Whisper to hear.">Call</button>
+    <button class="iconbtn" id="invite-human" type="button" title="Click to invite a human to your vibe.">Invite</button>
+    <button class="iconbtn" id="add-chan" type="button" title="A channel is a named room in this hive. Notes you post there stay on that channel.">Add Channel</button>
+    <button class="iconbtn" id="providers-btn" type="button" title="Hive-wide credentials and OAuth for every runtime. Robots pick which one they use; secrets live once, here.">Configure Providers</button>
+    <button class="iconbtn" id="raise-agent" type="button" title="Raise a new robot. It gets its own name, provider, and system prompt.">New Robot</button>
+    <button class="iconbtn" id="add-proj" type="button" title="A project is a folder the hive can write to. Create one to open files in the canvas.">New Project</button>
+    <input id="new-proj" maxlength="48" placeholder="new project" aria-label="New project name">
+    <button class="iconbtn" id="rail-min" type="button">Minimize</button>
+    <button class="iconbtn" id="rail-max" type="button">Maximize</button>
+    <button class="iconbtn" id="hive-close" type="button"
+            title="Close the window. Hive stays standing.">Close</button>
+    <button class="iconbtn danger" id="hive-exit" type="button"
+            title="Quit the hive. Every process stops.">Exit</button>
+  </div>
   <div id="hive-banner" role="status">Window stays open here. Close this window. The hive is still standing.</div>
   <section class="gate" id="gate" aria-live="polite"></section>
   <div class="shell hive" id="hive">
@@ -1651,15 +1596,17 @@ html[data-theme="field-office"] #fo-expand {
       </div>
     </aside>
   </div>
-  <!-- UI-M2 quick bar: bottom 4-slot spellbar. Keys 1-4 fire the slots when
-       not typing. Slots persist in localStorage.hush-quickbar; the gear
-       opens the per-slot picker. Thin by design; coexists with #quick-nav. -->
+  <!-- UI-M9 folder tabs: bottom file-folder tab strip (manila/typewriter
+       field-office style). Markers: fo-folder-tabs / folder-tabs /
+       folder-tab / UI-M9. Thin overlapping tabs, NOT fat full-width pills.
+       Spellbar behavior intact: 4 slots fire on keys 1-4 (same typing
+       guard), gear (#qb-config) opens the per-slot picker. -->
   <div id="quick-bar" aria-label="Quick actions">
-    <div class="qb-slots" role="toolbar" aria-label="Quick slots">
-      <button class="inv-btn qb-slot" id="qb-1" type="button" aria-keyshortcuts="1"><span class="qb-label">Inventory</span><kbd>1</kbd></button>
-      <button class="inv-btn qb-slot" id="qb-2" type="button" aria-keyshortcuts="2"><span class="qb-label">Character</span><kbd>2</kbd></button>
-      <button class="inv-btn qb-slot" id="qb-3" type="button" aria-keyshortcuts="3"><span class="qb-label">New channel</span><kbd>3</kbd></button>
-      <button class="inv-btn qb-slot" id="qb-4" type="button" aria-keyshortcuts="4"><span class="qb-label">Stop</span><kbd>4</kbd></button>
+    <div class="qb-slots folder-tabs fo-folder-tabs" id="folder-tabs" role="toolbar" aria-label="Folder tabs">
+      <button class="inv-btn qb-slot folder-tab fo-folder-tab" id="qb-1" type="button" aria-keyshortcuts="1" data-folder-tab="1"><span class="qb-label">Inventory</span><kbd>1</kbd></button>
+      <button class="inv-btn qb-slot folder-tab fo-folder-tab" id="qb-2" type="button" aria-keyshortcuts="2" data-folder-tab="2"><span class="qb-label">Character</span><kbd>2</kbd></button>
+      <button class="inv-btn qb-slot folder-tab fo-folder-tab" id="qb-3" type="button" aria-keyshortcuts="3" data-folder-tab="3"><span class="qb-label">New channel</span><kbd>3</kbd></button>
+      <button class="inv-btn qb-slot folder-tab fo-folder-tab" id="qb-4" type="button" aria-keyshortcuts="4" data-folder-tab="4"><span class="qb-label">Stop</span><kbd>4</kbd></button>
       <button class="qb-gear" id="qb-config" type="button" aria-expanded="false" aria-controls="qb-editor" title="Configure quick slots">⋯</button>
     </div>
     <div class="qb-editor" id="qb-editor" hidden>
@@ -2322,11 +2269,8 @@ html[data-theme="field-office"] #fo-expand {
     let manageHumanPills = [];
     let manageRobotPills = [];
     let whisperReady = false;
-    let railDrag = null;
-    let railSaved = null;
-    let railParked = false;
-    let railHomed = false;
-    let railClickTimer = 0;
+    /* UI-M9: no persistent tool rail state. The header KIT stamp toggles
+       #kit-menu (overlay only); thread park/restore are no-ops. */
     let threadDrag = null;
     let lastEvents = [];
     let sendingMessage = false;
@@ -4268,8 +4212,7 @@ html[data-theme="field-office"] #fo-expand {
     $("add-proj").addEventListener("click", async () => {
       const name = $("new-proj").value.trim();
       if (!name) {
-        openRailPop("proj-info");
-        $("new-proj").focus();
+        if ($("new-proj")) $("new-proj").focus();
         return;
       }
       $("new-proj").value = "";
@@ -4600,33 +4543,19 @@ html[data-theme="field-office"] #fo-expand {
     };
     $("hive-close").addEventListener("click", openLeave);
     $("hive-exit").addEventListener("click", openLeave);
-    function hideRailPops() {
-      document.querySelectorAll(".rail-pop").forEach((el) => el.classList.remove("show"));
-      document.querySelectorAll(".rail-i").forEach((el) => el.setAttribute("aria-expanded", "false"));
+    /* UI-M9: header KIT stamp toggles the #kit-menu overlay (no persistent
+       rail, no grip, no popovers). Escape closes it via the tail below. */
+    function hideKitMenu() {
+      if ($("kit-menu")) $("kit-menu").hidden = true;
+      if ($("rail-toggle")) $("rail-toggle").setAttribute("aria-expanded", "false");
     }
-    function openRailPop(infoId) {
-      const btn = $(infoId);
-      const id = btn && btn.getAttribute("aria-controls");
-      const pop = id ? $(id) : null;
-      if (!btn || !pop) return;
-      hideRailPops();
-      pop.classList.add("show");
-      btn.setAttribute("aria-expanded", "true");
+    function toggleKitMenu() {
+      const menu = $("kit-menu");
+      if (!menu) return;
+      const open = menu.hidden;
+      menu.hidden = !open;
+      if ($("rail-toggle")) $("rail-toggle").setAttribute("aria-expanded", String(open));
     }
-    document.querySelectorAll(".rail-i").forEach((btn) => {
-      btn.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const id = btn.getAttribute("aria-controls");
-        const pop = id ? $(id) : null;
-        if (!pop) return;
-        const on = !pop.classList.contains("show");
-        hideRailPops();
-        if (on) {
-          pop.classList.add("show");
-          btn.setAttribute("aria-expanded", "true");
-        }
-      });
-    });
     $("rail-min").addEventListener("click", async () => {
       try { await api("/api/window", { action: "minimize" }); } catch (err) {}
     });
@@ -4679,6 +4608,12 @@ html[data-theme="field-office"] #fo-expand {
       if (ed && !ed.hidden) {
         ed.hidden = true;
         if ($("qb-config")) $("qb-config").setAttribute("aria-expanded", "false");
+        return true;
+      }
+      /* UI-M9: header KIT menu dismisses as one layer before the boards drawer. */
+      const kit = $("kit-menu");
+      if (kit && !kit.hidden) {
+        hideKitMenu();
         return true;
       }
       return false;
@@ -7124,159 +7059,29 @@ html[data-theme="field-office"] #fo-expand {
       }
     });
 
-    const RAIL_PAD = 10;
+    /* UI-M9: no persistent tool rail. Header KIT stamp toggles the
+       #kit-menu overlay; thread park/restore are intentional no-ops so the
+       overlay drawer keeps its full real-estate underneath. */
     const THREAD_MIN_W = 280;
     const THREAD_MIN_H = 240;
-    function placeRail(x, y) {
-      const rail = $("tool-rail");
-      const w = rail.offsetWidth || 160;
-      const h = rail.offsetHeight || 220;
-      const maxX = Math.max(0, window.innerWidth - w);
-      const maxY = Math.max(0, window.innerHeight - h);
-      const nx = Math.max(0, Math.min(maxX, x));
-      const ny = Math.max(0, Math.min(maxY, y));
-      rail.style.left = nx + "px";
-      rail.style.top = ny + "px";
-      rail.style.right = "auto";
-      rail.style.bottom = "auto";
-    }
-    function setRailCollapsed(on) {
-      const rail = $("tool-rail");
-      rail.classList.toggle("collapsed", !!on);
-      $("rail-toggle").setAttribute("aria-expanded", on ? "false" : "true");
-      $("rail-toggle").setAttribute("aria-label", on ? "Expand field kit" : "Collapse field kit");
-    }
-    function releaseBrandPad() {
-      const head = document.querySelector("header");
-      if (head) head.style.paddingLeft = "";
-      railHomed = false;
-    }
-    function placeRailAtBrand() {
-      const brand = document.querySelector("header .brand");
-      const head = document.querySelector("header");
-      const rail = $("tool-rail");
-      if (!brand || !rail) return;
-      setRailCollapsed(true);
-      const w = rail.offsetWidth || 56;
-      if (head) head.style.paddingLeft = (w + 16) + "px";
-      const b = brand.getBoundingClientRect();
-      const y = Math.max(4, b.top + (b.height - (rail.offsetHeight || 56)) / 2);
-      placeRail(8, y);
-      railHomed = true;
-    }
-    function parkRailForThread() {
-      if (railParked) return;
-      const rail = $("tool-rail");
-      const rect = rail.getBoundingClientRect();
-      railSaved = {
-        x: rect.left,
-        y: rect.top,
-        collapsed: rail.classList.contains("collapsed"),
-        homed: railHomed
-      };
-      railParked = true;
-      placeRailAtBrand();
-    }
-    function restoreRailAfterThread() {
-      if (!railParked) return;
-      railParked = false;
-      const saved = railSaved;
-      railSaved = null;
-      if (saved && saved.homed) {
-        placeRailAtBrand();
-        saveRail();
-        return;
-      }
-      releaseBrandPad();
-      if (!saved) return;
-      setRailCollapsed(!!saved.collapsed);
-      placeRail(saved.x, saved.y);
-      saveRail();
-    }
-    function loadRail() {
-      const rail = $("tool-rail");
-      let saved = {};
-      try { saved = JSON.parse(localStorage.getItem("hush-rail") || "{}"); } catch (e) { saved = {}; }
-      setRailCollapsed(saved.collapsed !== false);
-      if (typeof saved.x === "number" && typeof saved.y === "number")
-        placeRail(saved.x, saved.y);
-      else {
-        const w = rail.offsetWidth || 160;
-        placeRail(Math.max(0, window.innerWidth - w - RAIL_PAD), RAIL_PAD);
-      }
-    }
-    function saveRail() {
-      if (railParked) return;
-      const rail = $("tool-rail");
-      const rect = rail.getBoundingClientRect();
-      localStorage.setItem("hush-rail", JSON.stringify({
-        x: rect.left,
-        y: rect.top,
-        collapsed: rail.classList.contains("collapsed")
-      }));
-    }
-    function applyThreadSize() {
-      const pane = $("thread-pane");
-      let saved = {};
-      try { saved = JSON.parse(localStorage.getItem("hush-thread") || "{}"); } catch (e) { saved = {}; }
-      const maxW = Math.max(THREAD_MIN_W, window.innerWidth - 24);
-      const maxH = Math.max(THREAD_MIN_H, window.innerHeight - 72);
-      const w = typeof saved.w === "number" ? saved.w : Math.min(672, maxW);
-      const h = typeof saved.h === "number" ? saved.h : Math.min(640, Math.round(window.innerHeight * 0.7));
-      pane.style.width = Math.max(THREAD_MIN_W, Math.min(maxW, w)) + "px";
-      pane.style.height = Math.max(THREAD_MIN_H, Math.min(maxH, h)) + "px";
-    }
-    function saveThreadSize() {
-      const pane = $("thread-pane");
-      const rect = pane.getBoundingClientRect();
-      localStorage.setItem("hush-thread", JSON.stringify({ w: rect.width, h: rect.height }));
-    }
-    $("rail-toggle").addEventListener("click", () => {
-      if (railParked) return;
-      clearTimeout(railClickTimer);
-      railClickTimer = setTimeout(() => {
-        const rail = $("tool-rail");
-        setRailCollapsed(!rail.classList.contains("collapsed"));
-        if (railHomed) {
-          const brand = document.querySelector("header .brand");
-          const head = document.querySelector("header");
-          const w = rail.offsetWidth || 56;
-          if (head) head.style.paddingLeft = (w + 16) + "px";
-          if (brand) {
-            const b = brand.getBoundingClientRect();
-            const y = Math.max(4, b.top + (b.height - (rail.offsetHeight || 56)) / 2);
-            placeRail(8, y);
-          }
-        }
-        saveRail();
-      }, 220);
-    });
-    $("rail-toggle").addEventListener("dblclick", (ev) => {
-      ev.preventDefault();
+    function parkRailForThread() { hideKitMenu(); }
+    function restoreRailAfterThread() {}
+    if ($("rail-toggle")) $("rail-toggle").addEventListener("click", (ev) => {
       ev.stopPropagation();
-      clearTimeout(railClickTimer);
-      placeRailAtBrand();
-      if (!railParked) saveRail();
+      toggleKitMenu();
     });
-    $("rail-grip").addEventListener("pointerdown", (ev) => {
-      const rail = $("tool-rail");
-      const rect = rail.getBoundingClientRect();
-      railDrag = { dx: ev.clientX - rect.left, dy: ev.clientY - rect.top };
-      if (railParked) {
-        railParked = false;
-        railSaved = null;
-      }
-      releaseBrandPad();
-      ev.preventDefault();
+    document.addEventListener("click", (ev) => {
+      const menu = $("kit-menu");
+      if (!menu || menu.hidden) return;
+      if (menu.contains(ev.target)) return;
+      if (ev.target && ev.target.id === "rail-toggle") return;
+      hideKitMenu();
     });
-    /* Double-click the grip or the KIT stamp to home the collapsed rail beside .brand. */
-    $("rail-grip").addEventListener("dblclick", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      clearTimeout(railClickTimer);
-      railDrag = null;
-      placeRailAtBrand();
-      if (!railParked) saveRail();
+    ["install", "profile-btn", "settings-btn", "call-btn", "invite-human",
+     "add-chan", "providers-btn", "raise-agent", "add-proj",
+     "rail-min", "rail-max", "hive-close", "hive-exit"].forEach((id) => {
+      const el = $(id);
+      if (el) el.addEventListener("click", () => hideKitMenu(), { capture: true });
     });
 
     $("thread-resize").addEventListener("pointerdown", (ev) => {
@@ -7324,10 +7129,6 @@ html[data-theme="field-office"] #fo-expand {
         moveSkillGhost(ev.clientX, ev.clientY);
         markSkillDropTargets();
       }
-      if (railDrag) {
-        placeRail(ev.clientX - railDrag.dx, ev.clientY - railDrag.dy);
-        return;
-      }
       if (!threadDrag) return;
       threadDrag.currentX = ev.clientX;
       threadDrag.currentY = ev.clientY;
@@ -7347,10 +7148,6 @@ html[data-theme="field-office"] #fo-expand {
     window.addEventListener("pointerup", (ev) => {
       if (skillHeld) dropSkillHold(ev);
       skillPending = null;
-      if (railDrag) {
-        railDrag = null;
-        saveRail();
-      }
       if (threadDrag) {
         if (threadDrag.raf) cancelAnimationFrame(threadDrag.raf);
         threadDrag = null;
@@ -7360,18 +7157,10 @@ html[data-theme="field-office"] #fo-expand {
     window.addEventListener("pointercancel", () => {
       skillPending = null;
       cancelSkillHold(true);
-      railDrag = null;
       if (threadDrag && threadDrag.raf) cancelAnimationFrame(threadDrag.raf);
       threadDrag = null;
     });
     window.addEventListener("resize", () => {
-      if (railParked) placeRailAtBrand();
-      else {
-        const rail = $("tool-rail");
-        const rect = rail.getBoundingClientRect();
-        placeRail(rect.left, rect.top);
-        saveRail();
-      }
       if ($("thread-pane").classList.contains("show")) applyThreadSize();
     });
 
@@ -7488,7 +7277,7 @@ html[data-theme="field-office"] #fo-expand {
     tick();
     setInterval(tick, 1000);
 
-    loadRail();
+    hideKitMenu();
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
