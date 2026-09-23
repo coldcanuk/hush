@@ -686,6 +686,22 @@ character sheet. Both shortcuts ignore keystrokes typed in inputs,
 textareas, selects, or contenteditable. The hamburger rail
 (`#rail-toggle` + `#tool-rail`) and `#nav-toggle` remain as
 overflow/settings only, not the primary journey entry.
+Delta 2026-09-23 (UI-M2 quickbar pass): a thin bottom spellbar
+(`#quick-bar`, fixed, one strip, 32px micro-buttons in the
+inventory/armory language with `kbd` key hints) holds 4
+user-configurable slots (`#qb-1`…`#qb-4`, `aria-keyshortcuts` 1–4).
+Defaults are Inventory / Character / New channel / Stop, each wired to
+the existing action it names (inventory opens the selected tile's
+editor else the expanded 8×5 grid; character toggles Profile; new
+channel opens the channel drawer; stop clicks the first live WS4
+`.think-stop`). The `⋯` gear (`#qb-config`) opens `#qb-editor`: one
+`<select>` per slot over the catalog (inventory, character,
+new-channel, new-robot, stop, leave), persisted in
+`localStorage.hush-quickbar`. Keys 1–4 fire the slots with the same
+focus protection as the `i` shortcut (no firing from `input`,
+`textarea`, `select`, or `contenteditable`; Ctrl/Meta/Alt combos
+ignored), so chat and drawer keystrokes are never stolen. Coexists
+with UI-M1 `#quick-nav` top tabs; neither chrome grows.
 
 ### 16. Mention + manage pills
 
