@@ -608,7 +608,8 @@
     #rail-grip:active { cursor: grabbing; }
     #rail-toggle {
       width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line);
-      background: var(--bg); color: var(--fg); font-size: 1.25rem; font-family: var(--display); line-height: 1;
+      background: var(--bg); color: var(--fg); font-size: 0.72rem; font-family: var(--display); line-height: 1;
+      text-transform: uppercase; letter-spacing: 0.08em;
     }
     .rail-body { display: flex; flex-direction: column; gap: 6px; }
     /* #install-help popover styles live with the rail grid */
@@ -652,7 +653,7 @@
 }
 .inv-btn:hover { border-color: var(--accent); }
 /* UI-M1 primary quick-nav: thin game tabs reusing the inventory chrome.
-   Primary journey entries live here; the hamburger rail is overflow/settings. */
+   Primary journey entries live here; the field-kit rail is overflow/settings. */
 #quick-nav { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 8px; }
 .quick-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
 .quick-tab { min-height: 32px; font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -937,10 +938,16 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 
 #nav-toggle { display: none; min-width: 44px; min-height: 44px; }
 @media (max-width: 640px) {
-  #nav-toggle { display: block; }
+  /* UI-M6 boards stamp: phone-only drawer handle for the bulletin-boards
+     nav. Same #nav-toggle hook + .nav-open toggle, stamp text only. */
+  #nav-toggle {
+    display: block; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase;
+    font-family: var(--mono); border: 2px solid var(--line); border-radius: 6px;
+    padding: 0 10px; transform: rotate(-1deg);
+  }
   /* UI-M4 phone thin nav: #quick-nav is relocated to the top of <main>
      (see placeQuickNav), so the primary journey stays a thin tab strip
-     and the hamburger drawer is channels/overflow only. */
+     and the boards drawer is channels/overflow only. */
   main > #quick-nav { padding: 8px 12px 0; margin: 0; }
   header { gap: 10px; }
   header #badge { max-width: 95px; overflow: hidden; margin-right: 48px; }
@@ -960,7 +967,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
    under html[data-theme="field-office"] (the default theme as of M5).
    Preserved untouched: #quick-nav + i/c + navTyping, #quick-bar 1-4 +
    gear + quickbarTyping, Escape single-dismiss, phone thin tabs +
-   overflow hamburger, version stamp, channels/robots behaviors. */
+   boards stamp drawer, version stamp, channels/robots behaviors. */
 .shell.hive { grid-template-columns: 200px minmax(0, 1fr) 248px; }
 #roster-pane {
   border-left: 1px solid var(--line); background: var(--surface);
@@ -1018,7 +1025,7 @@ button.fo-person:hover { background: var(--surface-2); }
   }
 }
 /* Phone: single column; roster stacks under the composer. Thin tabs +
-   overflow hamburger contract (UI-M4) unchanged. */
+   boards stamp drawer contract (UI-M6) unchanged. */
 @media (max-width: 640px) {
   #hive.shell.hive { grid-template-columns: 1fr; }
   #roster-pane { grid-column: auto; border-left: 0; border-top: 1px solid var(--line); display: flex; }
@@ -1084,7 +1091,9 @@ html[data-theme="field-office"] .chan.on {
 html[data-theme="field-office"] .inv-btn,
 html[data-theme="field-office"] .quick-tab,
 html[data-theme="field-office"] .qb-slot,
-html[data-theme="field-office"] .qb-gear {
+html[data-theme="field-office"] .qb-gear,
+html[data-theme="field-office"] #nav-toggle,
+html[data-theme="field-office"] #rail-toggle {
   border-radius: 3px; text-transform: uppercase; letter-spacing: 0.06em;
   box-shadow: 2px 2px 0 #5c4a3d;
 }
@@ -1104,7 +1113,7 @@ html[data-theme="field-office"] .fo-feed-line { letter-spacing: 0.08em; }
 </head>
 <body>
   <header>
-    <button class="btn ghost" id="nav-toggle" type="button" aria-expanded="false" aria-label="Channels and overflow navigation" title="Channels and overflow navigation">☰</button>
+    <button class="btn ghost" id="nav-toggle" type="button" aria-expanded="false" aria-label="Open bulletin boards drawer" title="Open bulletin boards drawer">Boards</button>
     <div class="brand">
       <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
         <rect width="64" height="64" rx="14" fill="#064e3b"/>
@@ -1122,7 +1131,7 @@ html[data-theme="field-office"] .fo-feed-line { letter-spacing: 0.08em; }
   <aside id="tool-rail" aria-label="Tools">
     <div class="rail-bar">
       <div id="rail-grip" title="Move the tool rail"></div>
-      <button id="rail-toggle" type="button" aria-expanded="true" aria-label="Collapse tools">☰</button>
+      <button id="rail-toggle" type="button" aria-expanded="true" aria-label="Collapse field kit" title="Field kit">Kit</button>
     </div>
     <div class="rail-body" id="rail-body">
       <div class="rail-info-row">
@@ -6752,7 +6761,7 @@ html[data-theme="field-office"] .fo-feed-line { letter-spacing: 0.08em; }
       const rail = $("tool-rail");
       rail.classList.toggle("collapsed", !!on);
       $("rail-toggle").setAttribute("aria-expanded", on ? "false" : "true");
-      $("rail-toggle").setAttribute("aria-label", on ? "Expand tools" : "Collapse tools");
+      $("rail-toggle").setAttribute("aria-label", on ? "Expand field kit" : "Collapse field kit");
     }
     function releaseBrandPad() {
       const head = document.querySelector("header");
@@ -6877,7 +6886,7 @@ html[data-theme="field-office"] .fo-feed-line { letter-spacing: 0.08em; }
       releaseBrandPad();
       ev.preventDefault();
     });
-    /* Double-click the grip or the ☰ to home the collapsed rail beside .brand. */
+    /* Double-click the grip or the KIT stamp to home the collapsed rail beside .brand. */
     $("rail-grip").addEventListener("dblclick", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -7052,7 +7061,7 @@ html[data-theme="field-office"] .fo-feed-line { letter-spacing: 0.08em; }
     /* UI-M4 phone thin nav: on narrow viewports the same Inventory +
        Character tabs (with i/c keys and #quick-bar) are the primary nav.
        #quick-nav moves to the top of <main> so it stays visible without
-       the hamburger drawer. The hamburger (#nav-toggle) remains as
+       the boards drawer. The BOARDS stamp (#nav-toggle) remains as
        channels/inventory overflow only. */
     const phoneNavMedia = window.matchMedia("(max-width: 640px)");
     function placeQuickNav() {

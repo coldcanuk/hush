@@ -65,7 +65,7 @@ humans / robots / mixed; robots reply off, when mentioned, or confirm
 first). Chatty multi-send bursts coalesce; robots confirm they heard
 the ask before spending a Grok turn. Install, Profile, Settings, Call,
 Close, and Exit live on a movable tool rail that collapses to a
-hamburger. Install puts Hush on the app launcher as its own window; it
+KIT stamp. Install puts Hush on the app launcher as its own window; it
 does not start a second hive. When Whisper is on PATH (or
 `HUSH_WHISPER` is set), robot cards show a 1:1 Call icon and channels
 show a Voice icon; mute any tile in the conference. After Grok/Codex
@@ -75,7 +75,7 @@ and tells you to close the extra windows. Mention a Grok Build robot
 to start a thread; a thinking chip shows while it works, a Thread
 button opens a resizable hive chat (1:1 or 1:n). In a 1:1 pane a
 follow-up without a new `@` still addresses that sole robot. The tool rail is a
-free-drag hamburger (no docks); double-click parks it left of the
+free-drag field kit (no docks, no burger glyph); double-click parks it left of the
 brand. Expanded, it is compact two-column pairs (Profile/Settings,
 Call/Invite, Add Channel/Configure Providers, New Robot/New Project,
 Minimize/Maximize, Close/Exit) under Install; Profile, Settings,

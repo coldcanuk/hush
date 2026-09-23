@@ -269,7 +269,12 @@ echo "$html" | grep -q 'sole.length === 1' \
 echo "$html" | grep -q 'localThink' \
   || fail "HTML missing optimistic thread think"
 echo "$html" | grep -q 'id="install-help"' || fail "HTML missing install help"
-echo "$html" | grep -q 'id="rail-toggle"' || fail "HTML missing rail hamburger"
+echo "$html" | grep -q 'id="rail-toggle"' || fail "HTML missing rail KIT stamp"
+if echo "$html" | grep -q '☰'; then fail "burger glyph must be gone (UI-M6)"; fi
+if echo "$html" | grep -qi 'hamburger'; then fail "hamburger chrome must be gone (UI-M6)"; fi
+echo "$html" | grep -q 'id="nav-toggle"' || fail "HTML missing BOARDS stamp"
+echo "$html" | grep -q '>Boards<' || fail "HTML nav-toggle must read Boards (UI-M6)"
+echo "$html" | grep -q '>Kit<' || fail "HTML rail-toggle must read Kit (UI-M6)"
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + pills"
 echo "$html" | grep -q 'id="provider-username"' || fail "HTML missing provider username"
