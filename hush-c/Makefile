@@ -2,6 +2,10 @@
 # Full workflow support: ./configure, make, make install, make uninstall
 # Desktop: installs hush-relay.desktop into the application launcher directory.
 # Icon: installs hush-relay.png into the hicolor theme (48/128/256).
+# Uninstall removes every PREFIX artifact install owns (bins, desktop entry,
+# icons, Hush-owned files under share/hush, staged systemd unit). It never
+# touches $(HOME)/.hush/ runtime data or /etc/hush/turnserver.conf, and it is
+# idempotent (safe on an already-virgin PREFIX).
 
 CC := gcc
 # -fstack-protector-strong and -fPIE are supported by gcc/clang on every
@@ -179,12 +183,29 @@ ifneq ($(ENABLE_STUN_TURN),0)
 endif
 
 uninstall:
-	rm -f $(DESTDIR)$(CODEX_SKILL_SHARE)/SKILL.md $(DESTDIR)$(CODEX_SKILL_SHARE)/LICENSE \
-		$(DESTDIR)$(CODEX_SKILL_SHARE)/UPSTREAM.md \
-		$(DESTDIR)$(CODEX_SKILL_SHARE)/references/c-standard.md
-	rm -f $(DESTDIR)$(BINDIR)/hush-relay
+	rm -f $(DESTDIR)$(BINDIR)/hush-relay $(DESTDIR)$(BINDIR)/hush-pass
 	rm -f $(DESTDIR)$(APPDIR)/hush-relay.desktop
 	@for size in $(ICON_SIZES); do \
 		rm -f $(DESTDIR)$(ICONDIR)/$${size}x$${size}/apps/hush-relay.png; \
+		rmdir $(DESTDIR)$(ICONDIR)/$${size}x$${size}/apps 2>/dev/null || true; \
+		rmdir $(DESTDIR)$(ICONDIR)/$${size}x$${size} 2>/dev/null || true; \
 	done
-	@echo "Removed hush-relay, desktop entry, and launcher icons."
+	rm -f $(DESTDIR)$(CODEX_SKILL_SHARE)/SKILL.md $(DESTDIR)$(CODEX_SKILL_SHARE)/LICENSE \
+		$(DESTDIR)$(CODEX_SKILL_SHARE)/UPSTREAM.md \
+		$(DESTDIR)$(CODEX_SKILL_SHARE)/references/c-standard.md
+	rm -rf $(DESTDIR)$(HUSHSHARE)/skills/system
+	rm -f $(DESTDIR)$(HUSHSHARE)/systemd/hush-turn.service \
+		$(DESTDIR)$(HUSHSHARE)/turnserver.conf.in
+	rm -f $(DESTDIR)/lib/systemd/system/hush-turn.service
+	@for d in $(DESTDIR)$(HUSHSHARE)/skills \
+		$(DESTDIR)$(CODEX_SKILL_SHARE)/references \
+		$(DESTDIR)$(CODEX_SKILL_SHARE) \
+		$(DESTDIR)$(HUSHSHARE)/codex/skills \
+		$(DESTDIR)$(HUSHSHARE)/codex \
+		$(DESTDIR)$(HUSHSHARE)/systemd \
+		$(DESTDIR)$(HUSHSHARE); do \
+		rmdir "$$d" 2>/dev/null || true; \
+	done
+	@echo "Removed hush-relay, hush-pass, desktop entry, launcher icons,"
+	@echo "and Hush-owned files under $(DESTDIR)$(HUSHSHARE)."
+	@echo "Kept: ~/.hush/ runtime data and /etc/hush/turnserver.conf."
