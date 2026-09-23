@@ -240,6 +240,43 @@ def check_private_gates(relay):
         sock.close()
 
 
+def check_membership_matrix(relay):
+    """Membership, not bare signature validity, gates a private hive."""
+    sock = connect(relay)
+    try:
+        challenge = take_challenge(sock)
+        auth_event = sign(GUEST_SECKEY, challenge, relay.port)
+        sock.sendall(b'["AUTH",' + json.dumps(auth_event, separators=(",", ":")).encode() + b"]\n")
+        buffer = read_until(sock, b'"OK"')
+        assert b"true" in buffer, buffer[:200]
+        sock.sendall(b'["REQ","nonmember",{"kinds":[1]}]\n')
+        buffer = read_until(sock, b'"CLOSED"')
+        assert b"auth-required" in buffer, buffer[:200]
+        other_event = sign(GUEST_SECKEY, "whatever", relay.port, kind=1, content="nonmember write")
+        send_event(sock, other_event)
+        buffer = read_until(sock, b'"OK"')
+        assert b"false" in buffer and b"auth-required" in buffer, buffer[:200]
+        print("private hive: valid non-member AUTH still gated on REQ/EVENT OK")
+    finally:
+        sock.close()
+
+    relay.request("/api/vibe", {"visibility": "public"})
+    sock = connect(relay)
+    try:
+        take_challenge(sock)
+        guest_event = sign(GUEST_SECKEY, "whatever", relay.port, kind=1, content="public hello")
+        send_event(sock, guest_event)
+        buffer = read_until(sock, b'"OK","' + guest_event["id"].encode())
+        assert b"true" in buffer, buffer[:200]
+        print("public hive: signed guest EVENT accepted OK")
+    finally:
+        sock.close()
+    before = relay.request("/api/session")["vibe"]["join_token"]
+    session = relay.request("/api/vibe", {"visibility": "private"})
+    assert session["vibe"]["visibility"] == "private"
+    assert session["vibe"]["join_token"] == before, "visibility flip must keep the token"
+
+
 def check_fanout_privacy(relay, token):
     """Only authorized connections receive private-hive fanout."""
     reader = connect(relay)
@@ -273,6 +310,8 @@ def check_rotation_and_restart(relay):
     new_token = rotated["join_token"]
     assert new_token and new_token != before, (before, new_token)
     assert relay.request("/api/session")["vibe"]["join_token"] == new_token
+    for seen in (before, new_token):
+        assert len(seen) == 16 and all(c in "0123456789abcdef" for c in seen), seen
 
     candidates = [relay.directory / "config" / "vibe.json", relay.directory / "home" / "vibe.json"]
     vibe_path = next(p for p in candidates if p.exists())
@@ -289,6 +328,22 @@ def check_rotation_and_restart(relay):
     finally:
         sock.close()
 
+    twice = relay.request("/api/vibe", {"action": "rotate_token"})["join_token"]
+    assert twice and twice != new_token, (new_token, twice)
+    assert len(twice) == 16 and all(c in "0123456789abcdef" for c in twice), twice
+    sock = connect(relay)
+    try:
+        take_challenge(sock)
+        sock.sendall(b'["JOIN","' + new_token.encode() + b'"]\n')
+        buffer = read_until(sock, b'"NOTICE"')
+        assert b"invalid" in buffer, buffer[:200]
+        sock.sendall(b'["JOIN","' + twice.encode() + b'"]\n')
+        buffer = read_until(sock, b'"NOTICE"')
+        assert b"joined" in buffer, buffer[:200]
+        print("rotation chain: superseded token rejected, fresh token joins OK")
+    finally:
+        sock.close()
+
     directory = relay.directory
     relay.stop()
     restarted = Relay(directory)
@@ -299,7 +354,7 @@ def check_rotation_and_restart(relay):
         sock = connect(restarted)
         try:
             take_challenge(sock)
-            sock.sendall(b'["JOIN","' + new_token.encode() + b'"]\n')
+            sock.sendall(b'["JOIN","' + twice.encode() + b'"]\n')
             buffer = read_until(sock, b'"NOTICE"')
             assert b"joined" in buffer, buffer[:200]
         finally:
@@ -316,6 +371,7 @@ def main():
             relay.start()
             check_public_hive(relay)
             check_private_gates(relay)
+            check_membership_matrix(relay)
             token = relay.request("/api/session")["vibe"]["join_token"]
             check_fanout_privacy(relay, token)
             check_rotation_and_restart(relay)

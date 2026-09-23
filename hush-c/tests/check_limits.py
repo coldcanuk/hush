@@ -154,6 +154,30 @@ def check_auth_attempts(relay):
         sock.close()
 
 
+def check_join_attempts(relay):
+    """JOIN attempts past 16 earn no further NOTICE: the cap holds."""
+    sock = connect(relay)
+    try:
+        take_challenge(sock)
+        sock.sendall(b'["JOIN","deadbeef"]\n' * 17)
+        sock.settimeout(5)
+        got = b""
+        while True:
+            try:
+                chunk = sock.recv(65536)
+            except socket.timeout:
+                break
+            if not chunk:
+                break
+            got += chunk
+            if len(got) > 262144:
+                break
+        assert got.count(b'"NOTICE"') == 16, got[-200:]
+        print("wire: JOIN attempts stop answering after 16 NOTICEs OK")
+    finally:
+        sock.close()
+
+
 def status_of(relay, path, body=None):
     payload = None if body is None else json.dumps(body, separators=(",", ":")).encode()
     token = (relay.directory / "home" / "session.token").read_text().strip()
@@ -188,6 +212,7 @@ def main():
             check_event_flood(relay)
             check_req_flood(relay)
             check_auth_attempts(relay)
+            check_join_attempts(relay)
             check_http_flood(relay)
         finally:
             relay.stop()
