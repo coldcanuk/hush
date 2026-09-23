@@ -1387,6 +1387,92 @@ html[data-theme="field-office"] .skill-gem[data-scope="robot"] { border-color: #
 html[data-theme="field-office"] .drawer,
 html[data-theme="field-office"] .stage { background: rgba(42, 36, 30, 0.72); }
 html[data-theme="field-office"] dialog.secret::backdrop { background: rgba(42, 36, 30, 0.72); }
+/* ===== UI-M8 overlay drawer + typewriter paperfeel =====
+   Left nav (#fo-drawer) is an animated overlay strip over the dispatch
+   log, not a permanent width column: closed = full-width messaging +
+   thin expand control (#nav-toggle BOARDS stamp + #fo-expand edge tab);
+   open = overlay strip via #hive.nav-open. Escape closes it through the
+   existing closeNavigation() tail of the UI-M4 single-dismiss stack.
+   Paperfeel extends the M5 field-office tokens (denser grain, ribbon
+   ink, ruled slips, cut-paper edges). Stacked on the M7 chrome-hard
+   pass above: drawer + edge tab are new here; ruled slips, ledger
+   lines, and ink type extend M7 without touching fo-chrome-hard
+   or fo-caret surfaces. */
+.shell.hive { grid-template-columns: minmax(0, 1fr) 248px; position: relative; }
+.hive > nav {
+  display: flex; position: fixed; top: 72px; bottom: 60px; left: 10px;
+  width: min(288px, 88vw); overflow-y: auto; flex-direction: column; flex-wrap: nowrap;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 4px 4px 0 rgb(0 0 0 / 0.35); z-index: 30;
+  transform: translateX(calc(-100% - 18px)); visibility: hidden;
+  transition: transform 180ms ease-out, visibility 180ms;
+}
+.hive.nav-open > nav { transform: translateX(0); visibility: visible; }
+#nav-toggle {
+  display: block; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase;
+  font-family: var(--mono); border: 2px solid var(--line); border-radius: 6px;
+  padding: 0 10px; transform: rotate(-1deg); min-width: 44px; min-height: 44px;
+}
+/* UI-M8 thin edge tab: only present while the drawer is closed. Same
+   toggle as the BOARDS stamp; stamp text only, no burger glyph. */
+#fo-expand {
+  position: fixed; left: 0; top: 46%; z-index: 29;
+  display: none; width: 30px; min-height: 96px; padding: 10px 0;
+  writing-mode: vertical-rl; text-orientation: mixed;
+  font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase;
+  font-family: var(--mono); color: var(--fg);
+  background: var(--surface); border: 1px solid var(--line); border-left: 0;
+  border-radius: 0 6px 6px 0; box-shadow: 2px 2px 0 rgb(0 0 0 / 0.3);
+  cursor: pointer;
+}
+.hive:not(.nav-open) #fo-expand { display: block; }
+#fo-expand:hover { border-color: var(--accent); color: var(--accent); }
+@media (max-width: 1100px) {
+  /* UI-M8: no permanent left width; roster becomes the full-width strip. */
+  .shell.hive { grid-template-columns: minmax(0, 1fr); }
+  #roster-pane {
+    grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  }
+}
+@media (max-width: 640px) {
+  /* UI-M8: overlay drawer keeps the phone thin-tab + BOARDS contract. */
+  #hive.shell.hive { grid-template-columns: 1fr; }
+  .hive > nav { top: 64px; bottom: 0; left: 0; border-radius: 0 8px 8px 0; }
+  #roster-pane { grid-column: auto; border-left: 0; border-top: 1px solid var(--line); display: flex; }
+  .fo-hq > span, .fo-edition { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hive > nav { transition: none; }
+}
+/* UI-M8 paperfeel: denser grain over the M5 feTurbulence sheet (larger
+   blotches + fine tooth), ribbon-ink type, ruled dispatch slips with a
+   cut-paper inner edge. Field-office theme only; all other themes keep
+   their M3 etched chrome untouched. */
+html[data-theme="field-office"] body::before {
+  opacity: 0.16;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.7'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.012' numOctaves='4'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23b)' opacity='0.5'/%3E%3C/svg%3E");
+}
+html[data-theme="field-office"] #stream {
+  background-color: #d4c5a3;
+  background-image: repeating-linear-gradient(transparent 0 27px, rgb(92 74 61 / 0.1) 27px 28px);
+}
+html[data-theme="field-office"] .note {
+  box-shadow: 3px 3px 0 #5c4a3d; outline: 1px solid rgb(92 74 61 / 0.4); outline-offset: -4px;
+  background-image: repeating-linear-gradient(transparent 0 21px, rgb(92 74 61 / 0.14) 21px 22px);
+}
+html[data-theme="field-office"] .note .body,
+html[data-theme="field-office"] .room h1,
+html[data-theme="field-office"] .chan,
+html[data-theme="field-office"] #msg {
+  font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
+  text-shadow: 0 0 0.5px currentColor; letter-spacing: 0.01em;
+}
+html[data-theme="field-office"] .hive > nav,
+html[data-theme="field-office"] #fo-expand {
+  box-shadow: 4px 4px 0 #5c4a3d; border-color: #5c4a3d;
+}
 </style>
 </head>
 <body>
@@ -1489,7 +1575,10 @@ html[data-theme="field-office"] dialog.secret::backdrop { background: rgba(42, 3
   <div id="hive-banner" role="status">Window stays open here. Close this window. The hive is still standing.</div>
   <section class="gate" id="gate" aria-live="polite"></section>
   <div class="shell hive" id="hive">
-    <nav aria-label="Workspace navigation">
+    <!-- UI-M8 thin edge tab: opens the overlay boards drawer while it is
+         closed (hidden once #hive.nav-open). Same toggle as BOARDS. -->
+    <button id="fo-expand" type="button" aria-expanded="false" aria-controls="fo-drawer" aria-label="Open bulletin boards drawer" title="Open bulletin boards">Boards</button>
+    <nav id="fo-drawer" aria-label="Workspace navigation">
       <div id="quick-nav" aria-label="Primary">
         <div class="lbl">Journey</div>
         <div class="quick-tabs">
@@ -3248,13 +3337,29 @@ html[data-theme="field-office"] dialog.secret::backdrop { background: rgba(42, 3
       $(input).addEventListener("input", () => updateRoomPromptCount(input, count));
     });
 
+    /* UI-M8 overlay drawer: same #nav-toggle hook + .nav-open toggle as the
+       phone boards drawer, now on every width. #fo-expand is the thin edge
+       tab shown only while closed; both stay stamps, no burger return.
+       Escape closes the drawer via the closeNavigation() tail below, after
+       the UI-M4 single-dismiss stack (one press = one layer). */
+    function syncFoExpand(open) {
+      const edge = $("fo-expand");
+      if (edge) edge.setAttribute("aria-expanded", String(open));
+    }
     function closeNavigation() {
       $("hive").classList.remove("nav-open");
       $("nav-toggle").setAttribute("aria-expanded", "false");
+      syncFoExpand(false);
     }
     $("nav-toggle").addEventListener("click", () => {
       const open = $("hive").classList.toggle("nav-open");
       $("nav-toggle").setAttribute("aria-expanded", String(open));
+      syncFoExpand(open);
+    });
+    $("fo-expand").addEventListener("click", () => {
+      $("hive").classList.add("nav-open");
+      $("nav-toggle").setAttribute("aria-expanded", "true");
+      syncFoExpand(true);
     });
     ["add-chan", "nav-new-channel"].forEach((id) => $(id).addEventListener("click", () => {
       closeNavigation();
