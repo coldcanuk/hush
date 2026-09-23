@@ -20,6 +20,7 @@ SIGNER = ROOT / "tests" / "sign_bip340.py"
 
 HUMAN_SECKEY = "0000000000000000000000000000000000000000000000000000000000000001"
 HUMAN_PUBKEY = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+GUEST_SECKEY = "0000000000000000000000000000000000000000000000000000000000000003"
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
@@ -288,6 +289,44 @@ def check_auth_and_gating(relay):
         ws.close()
 
 
+def check_private_event_and_close_codes(relay):
+    """Private-hive EVENT is gated over WebSocket; bad frames earn 1007/1009."""
+    ws = WsClient(relay)
+    try:
+        ws.handshake()
+        take_challenge(ws)
+        sneaky = sign(GUEST_SECKEY, "whatever", relay.port, kind=1, content="ws sneaky")
+        ws.send_text('["EVENT",' + json.dumps(sneaky, separators=(",", ":")) + ']\n')
+        ok = ws.read_text()
+        assert '"OK","' + sneaky["id"] + '",false' in ok, ok[:200]
+        assert "auth-required" in ok, ok[:200]
+        print("ws: private-hive EVENT gated without AUTH OK")
+    finally:
+        ws.close()
+
+    ws = WsClient(relay)
+    try:
+        ws.handshake()
+        take_challenge(ws)
+        ws.send_frame(1, b"\xff\xfe invalid")
+        opcode, payload = ws.read_frame()
+        assert opcode == 8 and struct.unpack(">H", payload[:2])[0] == 1007, (opcode, payload)
+        print("ws: invalid UTF-8 closes 1007 OK")
+    finally:
+        ws.close()
+
+    ws = WsClient(relay)
+    try:
+        ws.handshake()
+        take_challenge(ws)
+        ws.send_text("X" * 300000)
+        opcode, payload = ws.read_frame()
+        assert opcode == 8 and struct.unpack(">H", payload[:2])[0] == 1009, (opcode, payload)
+        print("ws: oversized message closes 1009 OK")
+    finally:
+        ws.close()
+
+
 def check_fragmentation_and_errors(relay):
     ws = WsClient(relay)
     try:
@@ -349,6 +388,7 @@ def main():
             relay.start()
             check_handshake_and_req(relay)
             check_auth_and_gating(relay)
+            check_private_event_and_close_codes(relay)
             check_fragmentation_and_errors(relay)
         finally:
             relay.stop()
