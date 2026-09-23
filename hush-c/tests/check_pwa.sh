@@ -43,18 +43,17 @@ echo "$html" | grep -q 'THREAD_PIN_PX' || fail "HTML missing thread pin"
 echo "$html" | grep -q 'id="code-canvas-hi"' || fail "HTML missing canvas highlight"
 echo "$html" | grep -q 'id="canvas-k"' || fail "HTML missing canvas Ctrl+K"
 echo "$html" | grep -q 'golang' || fail "HTML missing golang alias"
-echo "$html" | grep -q 'id="rail-info"' || fail "HTML missing rail info"
-echo "$html" | grep -q 'id="profile-info"' || fail "HTML missing profile info"
-echo "$html" | grep -q 'id="settings-info"' || fail "HTML missing settings info"
-echo "$html" | grep -q 'id="call-info"' || fail "HTML missing call info"
-echo "$html" | grep -q 'id="invite-info"' || fail "HTML missing invite info"
-echo "$html" | grep -q 'id="chan-info"' || fail "HTML missing channel info"
-echo "$html" | grep -q 'id="prov-info"' || fail "HTML missing provider info"
+# UI-M9: persistent tool rail deleted; header KIT menu only. The rail-i
+# micro-UX info buttons are gone with the strip; action hooks stay.
+if echo "$html" | grep -q 'id="tool-rail"'; then fail "tool rail must be gone (UI-M9)"; fi
+if echo "$html" | grep -q 'rail-grip'; then fail "rail grip must be gone (UI-M9)"; fi
+if echo "$html" | grep -q 'rail-body'; then fail "rail body must be gone (UI-M9)"; fi
+if echo "$html" | grep -q 'id="rail-info"'; then fail "rail info must be gone (UI-M9)"; fi
+echo "$html" | grep -q 'id="kit-menu"' || fail "HTML missing KIT menu overlay (UI-M9)"
 echo "$html" | grep -q 'id="providers-btn"' || fail "HTML missing configure providers"
 echo "$html" | grep -q 'id="providers-hub"' || fail "HTML missing providers hub"
 echo "$html" | grep -q 'openProviderDrawer' || fail "HTML missing openProviderDrawer"
-echo "$html" | grep -q 'id="robot-info"' || fail "HTML missing robot info"
-echo "$html" | grep -q 'id="proj-info"' || fail "HTML missing project info"
+echo "$html" | grep -q 'Raise a new robot' || fail "HTML missing robot copy"
 echo "$html" | grep -q 'id="invite-human"' || fail "HTML missing invite"
 echo "$html" | grep -q 'id="add-chan"' || fail "HTML missing add channel"
 echo "$html" | grep -q 'id="raise-agent"' || fail "HTML missing new robot"

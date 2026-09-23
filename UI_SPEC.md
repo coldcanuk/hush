@@ -827,6 +827,28 @@ stream ledger lines, cut-paper inner edge + deeper offset shadows.
 Stacked on the M7 chrome-hard pass: drawer + edge tab are new here;
 ruled slips/ledger lines and ink type extend M7 without touching its
 `fo-chrome-hard` / `fo-caret` surfaces.
+Delta 2026-09-23 (UI-M9 folder-tabs + no-tool-rail pass): the bottom bar
+is a thin overlapping manila folder-tab strip (`#quick-bar` >
+`#folder-tabs.folder-tabs.fo-folder-tabs`, slots `#qb-1`…`#qb-4` as
+`.folder-tab.fo-folder-tab` with `data-folder-tab`, markers `UI-M9`),
+not fat full-width pills — the old 4-up fat grid is gone. Spellbar
+behavior is untouched by decision: keys 1–4 fire the same
+`QUICKBAR_ACTIONS` through `runQuickSlot` with the same
+`quickbarTyping` focus guard, and the `⋯` gear (`#qb-config`) + picker
+(`#qb-editor`) stay on the spellbar. The persistent vertical tool rail
+is deleted entirely (`#tool-rail`, grip, body/grid/popovers, drag +
+park persistence all gone; no utility strip to manage, no permanent
+left column): the header **KIT** stamp (`#rail-toggle`, still reading
+`Kit`, zero hamburger return) toggles the `#kit-menu` overlay popup,
+which keeps the same action hooks (`#install`, `#profile-btn`,
+`#settings-btn`, `#call-btn`, `#invite-human`, `#add-chan`,
+`#providers-btn`, `#raise-agent`, `#add-proj` + `#new-proj`,
+`#rail-min`, `#rail-max`, `#hive-close`, `#hive-exit`). Escape closes
+`#kit-menu` as one single-dismiss layer before the boards drawer.
+Preserved: M8 overlay drawer (`#fo-drawer` / `#fo-expand` /
+`#hive.nav-open` / `closeNavigation`), M7 `fo-chrome-hard` /
+`fo-caret`, BOARDS (`#nav-toggle`) + KIT (`#rail-toggle`) stamps,
+`i`/`c` + `navTyping`, live roster/status, `#badge`, no Discord DNA.
 
 ### 16. Mention + manage pills
 
