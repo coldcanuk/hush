@@ -659,6 +659,40 @@
   border-radius: 4px; padding: 1px 4px; margin-left: 4px; color: var(--muted);
 }
 .quick-tab:hover kbd { border-color: var(--accent); color: var(--fg); }
+/* UI-M2 quick bar: thin bottom spellbar reusing the inventory micro-button
+   language. Fixed 4 slots + a gear; the editor pops above the bar so the
+   chrome stays one thin strip. Coexists with UI-M1 #quick-nav (top tabs). */
+#quick-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  background: var(--surface); border-top: 1px solid var(--line);
+  padding: 4px 8px; box-sizing: border-box;
+}
+.qb-slots { display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 6px; align-items: center; }
+.qb-slot { min-height: 32px; font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.qb-slot kbd {
+  font: 600 0.62rem/1 var(--mono); border: 1px solid var(--line);
+  border-radius: 4px; padding: 1px 4px; margin-left: 4px; color: var(--muted);
+}
+.qb-slot:hover kbd { border-color: var(--accent); color: var(--fg); }
+.qb-gear {
+  min-width: 32px; min-height: 32px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--muted);
+  font-size: 0.9rem; line-height: 1;
+}
+.qb-gear:hover { border-color: var(--accent); color: var(--fg); }
+.qb-editor {
+  position: absolute; right: 8px; bottom: calc(100% + 6px); width: min(19rem, 92vw);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
+  box-shadow: 0 8px 24px #0006;
+}
+.qb-editor[hidden] { display: none; }
+.qb-row { display: grid; grid-template-columns: 4.5rem 1fr; gap: 8px; align-items: center; font-size: 0.75rem; color: var(--muted); }
+.qb-row select {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 8px; font: inherit; min-height: 32px;
+}
+body { padding-bottom: 44px; }
 .inv-expand-link {
   font-size: 0.62rem; background: none; border: 0; color: var(--accent);
   cursor: pointer; padding: 0;
@@ -986,6 +1020,24 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         <button id="send" type="submit">Send</button>
       </form>
     </main>
+  </div>
+  <!-- UI-M2 quick bar: bottom 4-slot spellbar. Keys 1-4 fire the slots when
+       not typing. Slots persist in localStorage.hush-quickbar; the gear
+       opens the per-slot picker. Thin by design; coexists with #quick-nav. -->
+  <div id="quick-bar" aria-label="Quick actions">
+    <div class="qb-slots" role="toolbar" aria-label="Quick slots">
+      <button class="inv-btn qb-slot" id="qb-1" type="button" aria-keyshortcuts="1"><span class="qb-label">Inventory</span><kbd>1</kbd></button>
+      <button class="inv-btn qb-slot" id="qb-2" type="button" aria-keyshortcuts="2"><span class="qb-label">Character</span><kbd>2</kbd></button>
+      <button class="inv-btn qb-slot" id="qb-3" type="button" aria-keyshortcuts="3"><span class="qb-label">New channel</span><kbd>3</kbd></button>
+      <button class="inv-btn qb-slot" id="qb-4" type="button" aria-keyshortcuts="4"><span class="qb-label">Stop</span><kbd>4</kbd></button>
+      <button class="qb-gear" id="qb-config" type="button" aria-expanded="false" aria-controls="qb-editor" title="Configure quick slots">⋯</button>
+    </div>
+    <div class="qb-editor" id="qb-editor" hidden>
+      <div class="qb-row"><label for="qb-sel-0">Slot 1</label><select id="qb-sel-0"></select></div>
+      <div class="qb-row"><label for="qb-sel-1">Slot 2</label><select id="qb-sel-1"></select></div>
+      <div class="qb-row"><label for="qb-sel-2">Slot 3</label><select id="qb-sel-2"></select></div>
+      <div class="qb-row"><label for="qb-sel-3">Slot 4</label><select id="qb-sel-3"></select></div>
+    </div>
   </div>
   <div class="drawer" id="settings" role="dialog" aria-label="Settings">
     <div class="panel">
@@ -3884,6 +3936,117 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       ev.preventDefault();
       if (ev.key === "c" || ev.key === "C") toggleCharacterSheet();
       else toggleRobotInventory();
+    });
+    /* UI-M2 quick bar: 4 configurable slots wired to existing actions.
+       Keys 1-4 fire the slots. Same focus protection as the `i` shortcut:
+       never steal keystrokes from inputs, textareas, selects, or
+       contenteditable (chat/thread composers and drawer fields stay safe).
+       Slot layout persists in localStorage.hush-quickbar. */
+    const QUICKBAR_DEFAULTS = ["inventory", "character", "new-channel", "stop"];
+    function quickInventory() {
+      if (!$("hive") || !$("hive").classList.contains("show")) return;
+      toggleRobotInventory();
+      const drawer = $("agent-drawer");
+      const expand = $("inv-expand-drawer");
+      if ((!drawer || !drawer.classList.contains("show"))
+          && expand && !expand.classList.contains("show")) {
+        renderAllInventories();
+        expand.classList.add("show");
+      }
+    }
+    function quickCharacter() {
+      const p = $("profile");
+      if (p && p.classList.contains("show")) { p.classList.remove("show"); return; }
+      if ($("profile-btn")) $("profile-btn").click();
+    }
+    function quickNewChannel() {
+      if ($("nav-new-channel")) { $("nav-new-channel").click(); return; }
+      if ($("add-chan")) $("add-chan").click();
+    }
+    function quickStop() {
+      const btn = document.querySelector(".think-stop:not([disabled])");
+      if (btn) btn.click();
+    }
+    const QUICKBAR_ACTIONS = {
+      "inventory": { label: "Inventory", run: quickInventory },
+      "character": { label: "Character", run: quickCharacter },
+      "new-channel": { label: "New channel", run: quickNewChannel },
+      "new-robot": { label: "New robot", run: () => openAgentDrawer(null) },
+      "stop": { label: "Stop", run: quickStop },
+      "leave": { label: "Leave…", run: () => { if ($("hive-close")) $("hive-close").click(); } }
+    };
+    function loadQuickbar() {
+      try {
+        const raw = JSON.parse(localStorage.getItem("hush-quickbar") || "null");
+        if (Array.isArray(raw) && raw.length === 4
+            && raw.every((id) => typeof id === "string" && QUICKBAR_ACTIONS[id])) return raw.slice();
+      } catch (err) {}
+      return QUICKBAR_DEFAULTS.slice();
+    }
+    let quickSlots = loadQuickbar();
+    function saveQuickbar() {
+      try { localStorage.setItem("hush-quickbar", JSON.stringify(quickSlots)); } catch (err) {}
+    }
+    function paintQuickbar() {
+      for (let i = 0; i < 4; i++) {
+        const btn = $("qb-" + (i + 1));
+        const sel = $("qb-sel-" + i);
+        const act = QUICKBAR_ACTIONS[quickSlots[i]] || QUICKBAR_ACTIONS[QUICKBAR_DEFAULTS[i]];
+        if (btn) {
+          const lab = btn.querySelector(".qb-label");
+          if (lab) lab.textContent = act.label;
+          btn.title = act.label + " (" + (i + 1) + ")";
+          btn.setAttribute("aria-keyshortcuts", String(i + 1));
+          btn.dataset.action = quickSlots[i];
+        }
+        if (sel) sel.value = quickSlots[i];
+      }
+    }
+    function runQuickSlot(i) {
+      const act = QUICKBAR_ACTIONS[quickSlots[i]];
+      if (act) act.run();
+    }
+    function quickbarTyping(ev) {
+      const t = ev.target;
+      const tag = (t && t.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return true;
+      if (t && t.isContentEditable) return true;
+      return false;
+    }
+    for (let i = 0; i < 4; i++) {
+      const sel = $("qb-sel-" + i);
+      if (sel) {
+        Object.keys(QUICKBAR_ACTIONS).forEach((id) => {
+          const opt = document.createElement("option");
+          opt.value = id;
+          opt.textContent = QUICKBAR_ACTIONS[id].label;
+          sel.appendChild(opt);
+        });
+        sel.addEventListener("change", () => {
+          if (QUICKBAR_ACTIONS[sel.value]) {
+            quickSlots[i] = sel.value;
+            saveQuickbar();
+            paintQuickbar();
+          }
+        });
+      }
+      const btn = $("qb-" + (i + 1));
+      if (btn) btn.addEventListener("click", () => runQuickSlot(i));
+    }
+    paintQuickbar();
+    if ($("qb-config")) $("qb-config").addEventListener("click", () => {
+      const ed = $("qb-editor");
+      if (!ed) return;
+      const open = ed.hidden;
+      ed.hidden = !open;
+      $("qb-config").setAttribute("aria-expanded", String(open));
+    });
+    window.addEventListener("keydown", (ev) => {
+      if (ev.key < "1" || ev.key > "4") return;
+      if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      if (quickbarTyping(ev)) return;
+      ev.preventDefault();
+      runQuickSlot(Number(ev.key) - 1);
     });
     $("profile-logout").addEventListener("click", async () => {
       if (!confirm("Logout and use a different key?")) return;
