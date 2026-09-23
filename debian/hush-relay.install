@@ -1,1 +1,2 @@
 hush-relay.desktop usr/share/applications
+scripts/hush-relay-stop usr/share/hush
