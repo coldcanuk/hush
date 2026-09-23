@@ -227,6 +227,10 @@ tile. Cycle `#skill-cycle`; armory groups **System** (application-wide) and
 **This robot** only. `#skill-loadout` is a 3×3 doll around the portrait.
 Pick a gem, drop it on an empty socket. Lift a worn gem to prune. Forge
 radios: System (`scope=user`, hive-wide file) / This robot (`scope=robot`).
+Delta 2026-09-22 (WS6 loadout-doll pass): `#skill-cycle` lives in
+`#agent-drawer` only (no hive-nav cycle); the doll is 8 sockets around
+the portrait center (9 cells = `HUSH_SKILL_EQUIP_MAX` 8 + portrait);
+click assigns/prunes, pointer drag drops onto an empty socket.
 A `robot:<other>:<name>` skill is refused on this slug. Forge still writes
 a SKILL.md. `POST /api/agent` with the
 Payne slug updates providers, picture, voice, skills, and `enabled`.

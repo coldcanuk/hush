@@ -655,40 +655,57 @@
 .inv-item.has-pic { background-size: cover; background-position: center; }
 .inv-item.disabled { filter: grayscale(1); opacity: 0.55; }
 .inv-item.has-pic .nm { display: none; }
-/* Skills use immediate, keyboard-accessible assignment controls. */
+/* Skills: armory tiles + 3x3 loadout doll around the portrait (UI_SPEC §9).
+   8 sockets + portrait center = 9 cells; maps 1:1 to HUSH_SKILL_EQUIP_MAX. */
 .skill-board { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 12px 0; }
+.skill-belt { align-items: center; justify-content: center; gap: 6px; margin: 8px 0; }
+.skill-cycle-stage {
+  flex: 1; min-height: 56px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); padding: 6px;
+}
+#skill-cycle-row .icon-minus, #skill-cycle-row .icon-plus { width: 44px; height: 44px; }
 .skill-pool, .skill-loadout {
   min-height: 96px; border: 1px solid var(--line); border-radius: 12px;
-  padding: 10px; display: flex; flex-direction: column; gap: 8px;
-  background: var(--surface-2); color: var(--muted); font-size: 0.85rem;
+  padding: 10px; background: var(--surface-2); color: var(--muted); font-size: 0.85rem;
 }
-.skill-scope-lbl { font-size: 0.75rem; color: var(--muted); margin: 4px 0; }
+.skill-pool { display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
+.skill-scope-lbl { font-size: 0.75rem; color: var(--muted); margin: 4px 0; width: 100%; }
 .skill-gem {
-  font: 500 0.85rem/1.4 var(--sans); min-height: 44px; padding: 10px;
-  border: 1px solid var(--line); background: var(--surface); color: var(--fg);
-  border-radius: 8px; display: flex; align-items: center; gap: 10px; text-align: left;
+  width: 52px; height: 52px; flex: 0 0 auto; cursor: grab; user-select: none; touch-action: none;
+  border: 2px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font: 650 0.62rem/1.2 var(--sans); text-align: center; padding: 2px;
 }
-.skill-gem .sig { display: none; }
-.skill-gem .nm { flex: 1; }
-.skill-gem::after { content: "+"; font-size: 1.1rem; color: var(--muted); }
-.skill-gem[aria-pressed="true"] { border-color: var(--accent); }
-.skill-gem[aria-pressed="true"]::after { content: "−"; }
-.skill-gem:hover { background: var(--surface-2); }
-.skill-gem:active { transform: translateY(1px); }
+.skill-gem .sig { font-size: 0.95rem; letter-spacing: 0.04em; }
+.skill-gem .nm { font-size: 0.55rem; max-width: 48px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skill-gem[data-scope="system"] { border-color: #d4a017; box-shadow: 0 0 6px #d4a01755; }
+.skill-gem[data-scope="user"] { border-color: #0ff; box-shadow: 0 0 6px #0ff4; }
+.skill-gem[data-scope="robot"] { border-color: #c6f; box-shadow: 0 0 6px #c6f4; }
+.skill-gem:hover, .skill-gem:focus-visible { box-shadow: 0 0 10px currentColor; }
+.skill-gem.held { opacity: 0.4; }
+.skill-gem:active { cursor: grabbing; }
+.skill-loadout.skill-doll {
+  display: grid; grid-template-columns: repeat(3, 56px); grid-auto-rows: 56px;
+  gap: 8px; justify-content: center; align-content: start;
+}
+.skill-slot {
+  width: 56px; height: 56px; border: 2px dashed var(--line); border-radius: 8px;
+  background: var(--surface); display: flex; align-items: center; justify-content: center;
+}
+.skill-slot .skill-gem { width: 48px; height: 48px; }
+.skill-slot.open { box-shadow: inset 0 0 8px #d4a01766; }
+.skill-slot.filled { border-style: solid; }
+.skill-slot.drop-ok { border-style: solid; border-color: #0ff; box-shadow: 0 0 8px #0ff; }
+.skill-slot.drop-no { border-color: #f66; }
+.skill-doll-pic {
+  width: 56px; height: 56px; border: 2px solid #0ff; border-radius: 8px;
+  background-color: var(--surface); background-size: cover; background-position: center;
+}
+.skill-doll-pic.drop-ok { box-shadow: 0 0 8px #0ff; }
+.skill-ghost { position: fixed; z-index: 80; pointer-events: none; width: 52px; height: 52px; margin-left: -26px; margin-top: -26px; }
+.skill-ghost * { pointer-events: none; }
+body.skill-holding, body.skill-holding * { cursor: grabbing; }
 button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
-.robot-directory { display: flex; flex-direction: column; gap: 4px; width: 100%; }
-.directory-row { display: flex; align-items: center; gap: 4px; border-radius: 10px; }
-.directory-row:hover { background: var(--surface-2); }
-.directory-chat, .directory-edit {
-  border: 0; background: transparent; color: var(--fg); min-height: 44px;
-  padding: 8px; border-radius: 8px; font-family: var(--sans);
-}
-.directory-chat { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; text-align: left; }
-.directory-avatar { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 8px; background-color: var(--surface-2); }
-.directory-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.directory-copy strong { font-size: 0.85rem; font-weight: 600; overflow-wrap: anywhere; }
-.directory-copy small { font-size: 0.72rem; color: var(--muted); }
-.directory-edit { width: 44px; }
 .send-error:empty { display: none; }
 .send-error { padding: 0 16px; margin: 6px 0; }
 .provider-config { margin-left: auto; min-height: 32px; padding: 6px 8px;
@@ -778,7 +795,6 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
   #agent-identity .field-wide, #forge-drawer .forge-grid .field-wide { grid-column: auto; }
 }
 
-.directory-avatar { display: grid; place-items: center; font-weight: 650; }
 #nav-toggle { display: none; min-width: 44px; min-height: 44px; }
 @media (max-width: 640px) {
   #nav-toggle { display: block; }
@@ -1174,15 +1190,20 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         <p class="help">Heard in calls when a Whisper model is ready.</p>
       </div>
       <div id="agent-skills">
-        <p class="help">Choose a skill to assign it. Choose an assigned skill to remove it. Save the robot to apply your changes.</p>
+        <p class="help">Pick a gem, drop it on an empty socket. Lift a worn gem to prune. Save the robot to apply your changes.</p>
         <p class="help" id="skill-watermark"></p>
+        <div class="pill-row skill-belt" id="skill-cycle-row">
+          <button class="icon-minus" id="skill-cycle-prev" type="button" aria-label="Previous skill">◀</button>
+          <div id="skill-cycle" class="skill-cycle-stage" aria-label="Cycled skill"></div>
+          <button class="icon-plus" id="skill-cycle-next" type="button" aria-label="Next skill">▶</button>
+        </div>
         <div class="skill-board">
           <div>
-            <div class="lbl">Available skills</div>
+            <div class="lbl">Skill armory</div>
             <div id="skill-armory" class="skill-pool" aria-label="Skill armory"></div>
           </div>
           <div>
-            <div class="lbl">Assigned skills</div>
+            <div class="lbl">Skill loadout</div>
             <div id="skill-loadout" class="skill-loadout skill-doll" aria-label="Skill loadout"></div>
           </div>
         </div>
@@ -1507,6 +1528,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       </div>
     </div>
   </div>
+  <div id="skill-ghost" class="skill-ghost" hidden></div>
 
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
@@ -1632,7 +1654,12 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     let skillVoices = [];
     let skillWatermarks = {};
     let skillLocked = false;
-    const SKILL_SLOTS = 8;
+    const SKILL_SLOTS = 8; /* sockets around the doll portrait; matches HUSH_SKILL_EQUIP_MAX */
+    let skillCycleIdx = 0;
+    let skillHeld = null; /* {skill, fromSlot} while a gem is lifted */
+    let skillPending = null; /* {id, fromSlot, x, y} press that may become a drag */
+    let skillSuppressClick = false;
+    const SKILL_DRAG_PX = 6;
     let ackClock = {};
     let manageTopics = [];
     let draftPicture = "";
@@ -2323,6 +2350,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
           if ($("agent-picture")) $("agent-picture").value = id;
           if (editSlug) savePicId(editSlug, id);
           paintAgentPicPicker();
+          refreshDollPortrait();
         });
         box.appendChild(btn);
       }
@@ -2374,6 +2402,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
           if (editSlug) savePicId(editSlug, id);
           paintAgentPicPicker();
           paintAvatarPicker();
+          refreshDollPortrait();
         });
         box.appendChild(btn);
       }
@@ -2575,6 +2604,10 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       if ($("agent-delete")) $("agent-delete").disabled = true;
       if ($("agent-clone")) $("agent-clone").disabled = true;
       skillLocked = false;
+      skillHeld = null;
+      skillPending = null;
+      document.body.classList.remove("skill-holding");
+      hideSkillGhost();
       if ($("agent-err")) $("agent-err").textContent = "";
       if ($("agent-identity")) $("agent-identity").hidden = false;
       if ($("agent-pass")) $("agent-pass").closest("label").hidden = false;
@@ -3106,6 +3139,8 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         el.checked = el.value === ((bot && bot.role) || "worker");
       });
       equippedSkills = (bot && bot.skills) ? bot.skills.slice() : [];
+      skillCycleIdx = 0;
+      cancelSkillHold(false);
       if ($("agent-clone"))
         $("agent-clone").disabled = !(bot && bot.slug && bot.slug !== PAYNE_SLUG);
       paintVoiceRow(bot && bot.voice);
@@ -3122,7 +3157,10 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     }
 
     $("raise-agent").addEventListener("click", () => openAgentDrawer(null));
-    $("agent-close").addEventListener("click", () => $("agent-drawer").classList.remove("show"));
+    $("agent-close").addEventListener("click", () => {
+      cancelSkillHold(false);
+      $("agent-drawer").classList.remove("show");
+    });
     if ($("agent-pic-enlarge")) $("agent-pic-enlarge").addEventListener("click", () => {
       paintAvatarPicker();
       $("avatar-drawer").classList.add("show");
@@ -3779,6 +3817,11 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     });
     window.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape") {
+        if (skillHeld || skillPending) {
+          skillPending = null;
+          cancelSkillHold(true);
+          return;
+        }
         const d = $("hive-leave");
         if (d && d.classList.contains("show")) hideLeave();
         return;
@@ -5234,46 +5277,6 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       $("msg").focus();
     }
 
-    /* Superseded compact list; compact now renders the cell grid above. Retained unused. */
-    function paintRobotDirectory(grid) {
-      grid.replaceChildren();
-      grid.removeAttribute("style");
-      grid.className = "robot-directory";
-      robotModels().forEach((bot) => {
-        const row = document.createElement("div");
-        row.className = "directory-row";
-        row.dataset.slug = bot.slug;
-        const chat = document.createElement("button");
-        chat.type = "button";
-        chat.className = "directory-chat";
-        chat.disabled = !bot.enabled || bot.role === "chaperon";
-        chat.setAttribute("aria-label", "Chat with " + bot.name);
-        const avatar = document.createElement("span");
-        avatar.className = "directory-avatar";
-        avatar.setAttribute("aria-hidden", "true");
-        avatar.style.cssText = picCellStyle(bot.picture, 36) || "";
-        if (!bot.picture) avatar.textContent = bot.name.slice(0, 1);
-        const label = document.createElement("span");
-        label.className = "directory-copy";
-        const name = document.createElement("strong");
-        name.textContent = bot.name;
-        const status = document.createElement("small");
-        status.textContent = !bot.enabled ? "Paused" : bot.role === "chaperon"
-          ? "Room moderator" : providerLabel(bot.provider);
-        label.append(name, status);
-        chat.append(avatar, label);
-        chat.addEventListener("click", () => startRobotConversation(bot));
-        const edit = document.createElement("button");
-        edit.type = "button";
-        edit.className = "directory-edit";
-        edit.textContent = "•••";
-        edit.setAttribute("aria-label", "Edit " + bot.name);
-        edit.addEventListener("click", () => openAgentDrawer(bot));
-        row.append(chat, edit);
-        grid.appendChild(row);
-      });
-    }
-
     function renderInventory(grid, cols, rows, cell, compact) {
       if (!grid) return;
       /* Compact sidebar renders the same cell grid as expand (UI_SPEC Hive). */
@@ -5523,6 +5526,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       }
       if (armory) paintSkillArmory(armory, robotSlug);
       if (loadout) paintSkillDoll(loadout);
+      paintSkillCycle(robotSlug);
     }
     function paintSkillArmory(armory, robotSlug) {
       const list = armorySkills(robotSlug);
@@ -5541,15 +5545,58 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         rows.forEach((s) => armory.appendChild(makeSkillGem(s, {})));
       });
     }
+    /* 3x3 doll: 8 sockets around the portrait (UI_SPEC §9). Sockets fill in
+       order; idx < equipped.length is worn, the rest are empty sockets. */
     function paintSkillDoll(loadout) {
       loadout.innerHTML = "";
       loadout.className = "skill-loadout skill-doll";
-      if (!equippedSkills.length) {
-        loadout.textContent = "No skills assigned yet. Choose from the available skills.";
-      }
-      equippedSkills.forEach((id, index) => {
-        loadout.appendChild(makeSkillGem(skillById(id), {slot: index}));
+      const order = [0, 1, 2, 3, "pic", 4, 5, 6, 7];
+      order.forEach((key) => {
+        if (key === "pic") {
+          const pic = document.createElement("div");
+          pic.className = "skill-doll-pic";
+          pic.id = "skill-doll-pic";
+          const css = picCellStyle(draftPicture, 56);
+          if (css) pic.setAttribute("style", css);
+          pic.title = draftName || editSlug || "robot";
+          pic.setAttribute("aria-label", "Robot portrait");
+          loadout.appendChild(pic);
+          return;
+        }
+        const slot = document.createElement("div");
+        slot.className = "skill-slot" + (key < equippedSkills.length ? " filled" : " open");
+        slot.dataset.idx = String(key);
+        if (key < equippedSkills.length) {
+          const id = equippedSkills[key];
+          slot.title = skillById(id).name || id;
+          slot.appendChild(makeSkillGem(skillById(id), { slot: key }));
+        } else {
+          slot.title = "Empty socket";
+          slot.setAttribute("aria-label", "Empty socket");
+        }
+        loadout.appendChild(slot);
       });
+    }
+    function paintSkillCycle(robotSlug) {
+      const box = $("skill-cycle");
+      if (!box) return;
+      const list = armorySkills(robotSlug);
+      box.innerHTML = "";
+      if (!list.length) {
+        box.textContent = "No more skills in this role.";
+        return;
+      }
+      if (skillCycleIdx >= list.length) skillCycleIdx = 0;
+      if (skillCycleIdx < 0) skillCycleIdx = list.length - 1;
+      box.appendChild(makeSkillGem(list[skillCycleIdx], {}));
+    }
+    function refreshDollPortrait() {
+      const pic = $("skill-doll-pic");
+      if (!pic) return;
+      const css = picCellStyle(draftPicture, 56);
+      if (css) pic.setAttribute("style", css);
+      else pic.removeAttribute("style");
+      pic.title = draftName || editSlug || "robot";
     }
 
     function attachLoadout(body) {
@@ -5558,12 +5605,138 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       if (!equippedSkills.length) body.skill_0 = "";
       body.nskills = equippedSkills.length;
     }
+    function loadoutCanTake(ids, skill) {
+      if (!skill) return false;
+      return loadoutRefuseReason(ids, skill) === "";
+    }
+    function assignSkill(skill) {
+      const reason = loadoutRefuseReason(equippedSkills, skill);
+      if (reason) { skillNotice(reason); return; }
+      equippedSkills.push(skill.id);
+      skillNotice("Skill assigned. Save the robot to apply the change.");
+      paintSkillBoard(editSlug);
+    }
+    function pruneSkillAt(slot) {
+      if (slot < 0 || slot >= equippedSkills.length) return;
+      equippedSkills.splice(slot, 1);
+      skillNotice("Skill removed. Save the robot to apply the change.");
+      paintSkillBoard(editSlug);
+    }
+    function restoreHeldSkill() {
+      if (!skillHeld || skillHeld.fromSlot === null) return;
+      if (equippedSkills.indexOf(skillHeld.skill.id) < 0)
+        equippedSkills.splice(Math.min(skillHeld.fromSlot, equippedSkills.length), 0, skillHeld.skill.id);
+    }
+    function settleSkillHold(msg) {
+      skillHeld = null;
+      document.body.classList.remove("skill-holding");
+      hideSkillGhost();
+      paintSkillBoard(editSlug);
+      if (msg) skillNotice(msg);
+    }
+    function cancelSkillHold(restore) {
+      if (!skillHeld) return;
+      if (restore) restoreHeldSkill();
+      settleSkillHold(restore ? "Cycle a skill. Wear it on a socket." : "");
+    }
+    function pickUpSkill(pending) {
+      const skill = skillById(pending.id);
+      skillPending = null;
+      if (!skill || !skill.id || skillLocked) return;
+      const slot = (typeof pending.fromSlot === "number") ? pending.fromSlot : null;
+      skillHeld = { skill: skill, fromSlot: slot };
+      if (slot !== null && slot >= 0 && slot < equippedSkills.length)
+        equippedSkills.splice(slot, 1);
+      document.body.classList.add("skill-holding");
+      paintSkillBoard(editSlug);
+      paintSkillGhost();
+      markSkillDropTargets();
+      skillNotice(slot !== null
+        ? "Gem lifted. Drop it on an empty socket, or release elsewhere to prune."
+        : "Pick a gem, drop it on an empty socket. Escape cancels.");
+    }
+    function dropSkillHold(ev) {
+      if (!skillHeld) return;
+      const skill = skillHeld.skill;
+      const fromSlot = skillHeld.fromSlot;
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const slotEl = (el && el.closest) ? el.closest(".skill-slot") : null;
+      const picEl = (el && el.closest) ? el.closest(".skill-doll-pic") : null;
+      skillSuppressClick = true;
+      setTimeout(() => { skillSuppressClick = false; }, 0);
+      const place = () => {
+        if (!skillFitsRole(skill, robotRole())) {
+          restoreHeldSkill();
+          settleSkillHold("That skill does not fit this robot.");
+          return;
+        }
+        const reason = loadoutRefuseReason(equippedSkills, skill);
+        if (reason) {
+          restoreHeldSkill();
+          settleSkillHold(reason);
+          return;
+        }
+        equippedSkills.push(skill.id);
+        settleSkillHold("Worn. Save the robot to keep the loadout.");
+      };
+      if (picEl) { place(); return; }
+      if (slotEl && slotEl.dataset.idx !== undefined) {
+        if (parseInt(slotEl.dataset.idx, 10) < equippedSkills.length) {
+          restoreHeldSkill();
+          settleSkillHold("That socket is worn. Lift the gem first.");
+          return;
+        }
+        place();
+        return;
+      }
+      settleSkillHold(fromSlot !== null
+        ? "Skill removed. Save the robot to apply the change."
+        : "Drop it on an empty socket. Escape cancels.");
+    }
+    function paintSkillGhost() {
+      const g = $("skill-ghost");
+      if (!g) return;
+      if (!skillHeld) {
+        g.hidden = true;
+        g.innerHTML = "";
+        return;
+      }
+      g.hidden = false;
+      g.innerHTML = "";
+      const gem = makeSkillGem(skillHeld.skill, {});
+      gem.style.pointerEvents = "none";
+      gem.disabled = true;
+      g.appendChild(gem);
+    }
+    function hideSkillGhost() {
+      const g = $("skill-ghost");
+      if (!g) return;
+      g.hidden = true;
+      g.innerHTML = "";
+    }
+    function moveSkillGhost(x, y) {
+      const g = $("skill-ghost");
+      if (!g || !skillHeld) return;
+      g.style.left = x + "px";
+      g.style.top = y + "px";
+      if (g.hidden) paintSkillGhost();
+    }
+    function markSkillDropTargets() {
+      document.querySelectorAll(".skill-slot, .skill-doll-pic").forEach((el) => {
+        el.classList.remove("drop-ok", "drop-no");
+        if (!skillHeld) return;
+        const empty = el.classList.contains("skill-doll-pic") ||
+          !(parseInt(el.dataset.idx, 10) < equippedSkills.length);
+        el.classList.add(empty && loadoutCanTake(equippedSkills, skillHeld.skill) ? "drop-ok" : "drop-no");
+      });
+    }
 
     function makeSkillGem(skill, opts) {
       const o = opts || {};
       const b = document.createElement("button");
       b.type = "button";
-      b.className = "skill-gem";
+      b.className = "skill-gem" +
+        ((skillHeld && skillHeld.skill && skillHeld.skill.id === skill.id) ? " held" : "");
       b.dataset.scope = skill.scope || "system";
       b.dataset.id = skill.id;
       b.title = (skill.name || skill.id) + (skill.summary ? " — " + skill.summary : "");
@@ -5574,16 +5747,18 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       b.setAttribute("aria-pressed", String(assigned));
       b.disabled = skillLocked;
       b.addEventListener("click", () => {
-        if (assigned) {
-          equippedSkills.splice(o.slot, 1);
-          skillNotice("Skill removed. Save the robot to apply the change.");
-        } else {
-          const reason = loadoutRefuseReason(equippedSkills, skill);
-          if (reason) { skillNotice(reason); return; }
-          equippedSkills.push(skill.id);
-          skillNotice("Skill assigned. Save the robot to apply the change.");
-        }
-        paintSkillBoard(editSlug);
+        if (skillSuppressClick) return;
+        if (skillLocked) return;
+        if (assigned) pruneSkillAt(o.slot);
+        else assignSkill(skill);
+      });
+      b.addEventListener("pointerdown", (ev) => {
+        if (ev.button !== 0 || skillLocked || skillHeld) return;
+        skillPending = {
+          id: skill.id,
+          fromSlot: assigned ? o.slot : null,
+          x: ev.clientX, y: ev.clientY
+        };
       });
       return b;
     }
@@ -6051,6 +6226,15 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       }
     });
     window.addEventListener("pointermove", (ev) => {
+      if (skillPending) {
+        const dx = ev.clientX - skillPending.x;
+        const dy = ev.clientY - skillPending.y;
+        if (dx * dx + dy * dy > SKILL_DRAG_PX * SKILL_DRAG_PX) pickUpSkill(skillPending);
+      }
+      if (skillHeld) {
+        moveSkillGhost(ev.clientX, ev.clientY);
+        markSkillDropTargets();
+      }
       if (railDrag) {
         placeRail(ev.clientX - railDrag.dx, ev.clientY - railDrag.dy);
         return;
@@ -6072,6 +6256,8 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       });
     });
     window.addEventListener("pointerup", (ev) => {
+      if (skillHeld) dropSkillHold(ev);
+      skillPending = null;
       if (railDrag) {
         railDrag = null;
         saveRail();
@@ -6083,6 +6269,8 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       }
     });
     window.addEventListener("pointercancel", () => {
+      skillPending = null;
+      cancelSkillHold(true);
       railDrag = null;
       if (threadDrag && threadDrag.raf) cancelAnimationFrame(threadDrag.raf);
       threadDrag = null;
@@ -6107,6 +6295,19 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       $("forge-drawer").classList.add("show");
     });
     if ($("skill-enlarge")) $("skill-enlarge").addEventListener("click", openSkillSheet);
+    if ($("skill-cycle-prev")) $("skill-cycle-prev").addEventListener("click", () => {
+      skillCycleIdx--;
+      paintSkillCycle(editSlug);
+    });
+    if ($("skill-cycle-next")) $("skill-cycle-next").addEventListener("click", () => {
+      skillCycleIdx++;
+      paintSkillCycle(editSlug);
+    });
+    if ($("skill-cycle-row")) $("skill-cycle-row").addEventListener("wheel", (ev) => {
+      ev.preventDefault();
+      skillCycleIdx += ev.deltaY > 0 ? 1 : -1;
+      paintSkillBoard(editSlug);
+    }, { passive: false });
     if ($("skill-sheet-close")) $("skill-sheet-close").addEventListener("click", () => $("skill-drawer").classList.remove("show"));
     if ($("skill-flip-robot")) $("skill-flip-robot").addEventListener("click", () => { skillSheetView = "robot"; paintSkillSheet(); });
     if ($("skill-flip-chaperon")) $("skill-flip-chaperon").addEventListener("click", () => { skillSheetView = "chaperon"; paintSkillSheet(); });
