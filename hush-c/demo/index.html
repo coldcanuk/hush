@@ -649,6 +649,16 @@
   border-radius: 8px; cursor: pointer;
 }
 .inv-btn:hover { border-color: var(--accent); }
+/* UI-M1 primary quick-nav: thin game tabs reusing the inventory chrome.
+   Primary journey entries live here; the hamburger rail is overflow/settings. */
+#quick-nav { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 8px; }
+.quick-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
+.quick-tab { min-height: 32px; font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.quick-tab kbd {
+  font: 600 0.62rem/1 var(--mono); border: 1px solid var(--line);
+  border-radius: 4px; padding: 1px 4px; margin-left: 4px; color: var(--muted);
+}
+.quick-tab:hover kbd { border-color: var(--accent); color: var(--fg); }
 .inv-expand-link {
   font-size: 0.62rem; background: none; border: 0; color: var(--accent);
   cursor: pointer; padding: 0;
@@ -928,6 +938,15 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
   <section class="gate" id="gate" aria-live="polite"></section>
   <div class="shell hive" id="hive">
     <nav aria-label="Workspace navigation">
+      <div id="quick-nav" aria-label="Primary">
+        <div class="lbl">Journey</div>
+        <div class="quick-tabs">
+          <button class="inv-btn quick-tab" id="nav-inventory" type="button"
+            title="Open the robot inventory (i)" aria-keyshortcuts="i">Inventory<kbd>i</kbd></button>
+          <button class="inv-btn quick-tab" id="nav-character" type="button"
+            title="Open your character sheet (c)" aria-keyshortcuts="c">Character<kbd>c</kbd></button>
+        </div>
+      </div>
       <button class="inv-btn" id="nav-new-channel" type="button">New channel</button>
       <div id="chan-list">
         <div class="lbl">Channels</div>
@@ -3748,18 +3767,26 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       syncSettings();
     });
     $("settings-close").addEventListener("click", () => $("settings").classList.remove("show"));
-    $("profile-btn").addEventListener("click", () => {
+    /* UI-M1: Character sheet (Profile drawer) shared by rail button, quick tab, and `c`. */
+    function openCharacterSheet() {
       const p = $("profile");
-      if (p) {
-        p.classList.add("show");
-        const np = $("profile-npub");
-        if (np) np.textContent = (session.npub || session.pubkey || "no identity yet");
-        const prof = session.profile || {};
-        if ($("prof-first")) $("prof-first").value = prof.first_name || "";
-        if ($("prof-last")) $("prof-last").value = prof.last_name || "";
-        if ($("prof-email")) $("prof-email").value = prof.email || "";
-        if ($("prof-org")) $("prof-org").value = prof.organization || "";
-      }
+      if (!p) return;
+      p.classList.add("show");
+      const np = $("profile-npub");
+      if (np) np.textContent = (session.npub || session.pubkey || "no identity yet");
+      const prof = session.profile || {};
+      if ($("prof-first")) $("prof-first").value = prof.first_name || "";
+      if ($("prof-last")) $("prof-last").value = prof.last_name || "";
+      if ($("prof-email")) $("prof-email").value = prof.email || "";
+      if ($("prof-org")) $("prof-org").value = prof.organization || "";
+    }
+    function toggleCharacterSheet() {
+      const p = $("profile");
+      if (p && p.classList.contains("show")) { p.classList.remove("show"); return; }
+      openCharacterSheet();
+    }
+    $("profile-btn").addEventListener("click", () => {
+      openCharacterSheet();
     });
     $("profile-close").addEventListener("click", () => { const p=$("profile"); if (p) p.classList.remove("show"); });
     $("profile-copy").addEventListener("click", async () => {
@@ -3833,6 +3860,13 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       try { await api("/api/exit", {}); } catch (err) { /* process may already be gone */ }
       window.close();
     });
+    /* UI-M1: typing guard shared by the `i` / `c` journey shortcuts. */
+    function navTyping(ev) {
+      const tag = (ev.target && ev.target.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return true;
+      if (ev.target && ev.target.isContentEditable) return true;
+      return false;
+    }
     window.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape") {
         if (skillHeld || skillPending) {
@@ -3844,13 +3878,12 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         if (d && d.classList.contains("show")) hideLeave();
         return;
       }
-      if (ev.key !== "i" && ev.key !== "I") return;
+      if (ev.key !== "i" && ev.key !== "I" && ev.key !== "c" && ev.key !== "C") return;
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
-      const tag = (ev.target && ev.target.tagName || "").toLowerCase();
-      if (tag === "input" || tag === "textarea" || tag === "select") return;
-      if (ev.target && ev.target.isContentEditable) return;
+      if (navTyping(ev)) return;
       ev.preventDefault();
-      toggleRobotInventory();
+      if (ev.key === "c" || ev.key === "C") toggleCharacterSheet();
+      else toggleRobotInventory();
     });
     $("profile-logout").addEventListener("click", async () => {
       if (!confirm("Logout and use a different key?")) return;
@@ -5885,9 +5918,15 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         return;
       }
       if (!$("hive") || !$("hive").classList.contains("show")) return;
+      const expand = $("inv-expand-drawer");
       const hover = document.querySelector(".inv-item:hover");
       const slug = (hover && hover.dataset.slug) || invSelectedSlug;
-      if (!slug) return;
+      if (!slug) {
+        /* UI-M1: `i` with no tile selected opens the inventory grid itself. */
+        if (expand) { renderAllInventories(); expand.classList.toggle("show"); }
+        return;
+      }
+      if (expand) expand.classList.remove("show");
       const bot = robotModels().find((b) => b.slug === slug);
       if (bot) openAgentDrawer(bot);
     }
@@ -6453,6 +6492,15 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     if ($("inv-expand")) $("inv-expand").addEventListener("click", () => {
       renderAllInventories();
       $("inv-expand-drawer").classList.add("show");
+    });
+    /* UI-M1 primary quick-nav: thin tabs over the same drawers the shortcuts use. */
+    if ($("nav-inventory")) $("nav-inventory").addEventListener("click", () => {
+      closeNavigation();
+      toggleRobotInventory();
+    });
+    if ($("nav-character")) $("nav-character").addEventListener("click", () => {
+      closeNavigation();
+      toggleCharacterSheet();
     });
     if ($("inv-expand-close")) $("inv-expand-close").addEventListener("click", () => {
       $("inv-expand-drawer").classList.remove("show");
