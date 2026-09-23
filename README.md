@@ -373,6 +373,7 @@ Plans and research live under `docs/`. Do not leave `PLAN_*.md` or `RESEARCH*.md
 | Store bench (OBSERVED baseline) | [`docs/ops/store-bench.md`](docs/ops/store-bench.md) |
 | Store backup/restore | [`docs/ops/store-backup.md`](docs/ops/store-backup.md) |
 | `/api/status` healthprobe (ops) | [`docs/ops/api-status.md`](docs/ops/api-status.md) |
+| Reliability ops index (single-hive) | [`docs/ops/reliability.md`](docs/ops/reliability.md) |
 
 ## Skills for Codex
 
