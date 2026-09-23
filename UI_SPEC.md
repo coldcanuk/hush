@@ -736,6 +736,41 @@ restored into the sidebar on desktop) so it stays visible without
 opening a drawer. `#nav-toggle` (hamburger) remains as
 channels/inventory overflow only, and Escape closes that overflow.
 No fat menus; no new chrome.
+Delta 2026-09-23 (UI-M5 field-office pass): materials PLUS reshape
+toward the 1930s–1940s military field-office three-pane dispatch UI
+(mockup: field-office-dispatch-mockup.jpeg — Wolfstein grit + Diablo
+IV / BG3 thin game chrome, NOT dark Discord with RPG stickers). No
+Tailwind rewrite; tokens land in the existing demo CSS/HTML.
+Layout: thin outer category strip (`#tool-rail`, unchanged hooks) +
+bulletin boards (`#chan-list`, label now “Bulletin boards”, same
+channel rows) / individuals (`#fo-individuals`, painted from the
+live `mentionRoster()` — you + robots + invited humans; robot rows
+reuse `startRobotConversation`, human rows address `#msg`; no fake
+rows) on the left; Official Dispatch Log (`main`: same
+`#room`/`#count`/`#vibe-vis`/`#stream` hooks under a telegram
+eyebrow) + `SEND DISPATCH` composer (`#send` relabeled, same submit
+path) in the center; `#roster-pane` right rail with Active
+personnel (roster + `presenceSlugFor` slugs + `thinking` live flag)
+and Status feed (`/api/status` snapshot: live/down, port, stored,
+sockets, whisper, TURN; channel note counts; thinking jobs) — all
+real surfaces, static aside so the Escape single-dismiss contract
+is untouched. Grid: `200px minmax(0,1fr) 248px` on desktop, roster
+as a full-width strip at `≤1100px`, single column at `≤640px`
+(phone thin tabs + overflow hamburger, `placeQuickNav`, and Escape
+overflow close all unchanged).
+Tokens (`html[data-theme="field-office"]`, the default theme as of
+M5; stored user choice still wins, all seven prior themes kept):
+Special Elite with Courier Prime / VT323 / mono fallback;
+ink `#2a241e`; paper `#e2d5b8` / `#d4c5a3` / chat `#ebdcb9`;
+stamp red `#a3352c`; `#5c4a3d` thick/solid/double borders, sharp
+or 3px radii only; sharp `2px 2px 0` offset shadows, no gradients
+or blur glow (M3 etched bevels flattened under this theme only);
+SVG `feTurbulence` paper grain over the main container; avatars
+grayscale + sepia/contrast; uppercase / small-caps telegram labels.
+Version stamp (`#badge`, `#stats`, relay drawer) and every real
+behavior (channels, robots, providers, threads, call gating)
+unchanged. `i`/`c` + `navTyping`, 4 slots + gear + 1–4 +
+`quickbarTyping` untouched.
 
 ### 16. Mention + manage pills
 

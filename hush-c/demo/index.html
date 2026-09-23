@@ -12,6 +12,8 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <!-- UI-M5 field office: typewriter face; offline falls back to Courier Prime / VT323 / mono. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Special+Elite&display=swap">
   <style>
     :root, html[data-theme="dark"] {
       --bg: oklch(15.3% 0.006 107.1); --surface: oklch(22.8% 0.013 107.4); --surface-2: oklch(28.6% 0.016 107.4); --line: oklch(39.4% 0.023 107.4);
@@ -950,6 +952,154 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
   #agent-providers { grid-template-columns: 1fr; }
   .skill-board .lbl { display: block; }
 }
+
+/* ===== UI-M5 field office dispatch: three-pane materials + layout =====
+   Mockup: field-office-dispatch-mockup.jpeg (Wolfstein grit + thin game
+   chrome as a 1930s-40s military dispatch office). Layout is global so
+   every theme gets the three-pane read; paper/typewriter materials live
+   under html[data-theme="field-office"] (the default theme as of M5).
+   Preserved untouched: #quick-nav + i/c + navTyping, #quick-bar 1-4 +
+   gear + quickbarTyping, Escape single-dismiss, phone thin tabs +
+   overflow hamburger, version stamp, channels/robots behaviors. */
+.shell.hive { grid-template-columns: 200px minmax(0, 1fr) 248px; }
+#roster-pane {
+  border-left: 1px solid var(--line); background: var(--surface);
+  padding: 14px 10px; display: flex; flex-direction: column; gap: 16px;
+  overflow-y: auto; min-height: 0;
+}
+.fo-roster-sec { display: flex; flex-direction: column; gap: 6px; }
+#fo-roster-list, #fo-individual-list { display: flex; flex-direction: column; gap: 4px; }
+#fo-individuals { display: flex; flex-direction: column; gap: 4px; }
+.fo-person {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: transparent; color: var(--fg); border: 0; border-radius: 6px;
+  padding: 7px 8px; font-size: 0.85rem;
+}
+button.fo-person { cursor: pointer; }
+button.fo-person:hover { background: var(--surface-2); }
+.fo-person .dot { flex: 0 0 auto; }
+.fo-person-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fo-person-kind, .fo-person-slug { font-size: 0.66rem; color: var(--faint); font-family: var(--mono); }
+.fo-person.live .fo-person-kind { color: var(--accent); }
+.fo-feed-line {
+  font-family: var(--mono); font-size: 0.68rem; line-height: 1.5; color: var(--muted);
+  border-left: 2px solid var(--accent-dim); padding-left: 8px; margin: 0 2px 6px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+/* Masthead + dispatch-log eyebrows: telegram language over the same
+   brand/badge/room/count hooks (no behavior change). */
+.fo-edition {
+  font-size: 0.62rem; letter-spacing: 0.18em; color: var(--muted);
+  text-transform: uppercase; font-family: var(--mono); white-space: nowrap;
+}
+.fo-hq { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.fo-hq > span {
+  font-size: 0.66rem; letter-spacing: 0.16em; color: var(--muted);
+  text-transform: uppercase; font-family: var(--mono); white-space: nowrap;
+}
+.fo-log-eyebrow {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 18px 0; font-family: var(--mono);
+}
+.fo-log-eyebrow > span:first-child {
+  font-size: 0.7rem; letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase;
+}
+.fo-log-stamp {
+  font-size: 0.64rem; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--warn); border: 2px solid var(--warn); border-radius: 3px;
+  padding: 2px 8px; transform: rotate(2deg);
+}
+/* Mid widths: roster drops to a full-width strip under the log. */
+@media (max-width: 1100px) {
+  .shell.hive { grid-template-columns: 200px minmax(0, 1fr); }
+  #roster-pane {
+    grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  }
+}
+/* Phone: single column; roster stacks under the composer. Thin tabs +
+   overflow hamburger contract (UI-M4) unchanged. */
+@media (max-width: 640px) {
+  #hive.shell.hive { grid-template-columns: 1fr; }
+  #roster-pane { grid-column: auto; border-left: 0; border-top: 1px solid var(--line); display: flex; }
+  .fo-hq > span, .fo-edition { display: none; }
+}
+/* Field-office paper theme: manila + typewriter ribbon. Sharp offset
+   shadows only (2px 2px 0); no gradients, blur glow, or large radii. */
+html[data-theme="field-office"] {
+  --bg: #d4c5a3; --surface: #e2d5b8; --surface-2: #ebdcb9; --line: #5c4a3d;
+  --fg: #2a241e; --muted: #5c4a3d; --faint: #7a6752; --accent: #a3352c;
+  --accent-ink: #e2d5b8; --accent-dim: #c86a5a; --warn: #a3352c;
+  --sans: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
+  --mono: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
+  --display: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
+}
+html[data-theme="field-office"] body::before {
+  content: ""; position: fixed; inset: 0; z-index: 200; pointer-events: none;
+  opacity: 0.09; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+}
+html[data-theme="field-office"] header {
+  background: #e2d5b8; border-bottom: 3px double #5c4a3d; box-shadow: none;
+}
+html[data-theme="field-office"] .title { text-transform: uppercase; letter-spacing: 0.12em; }
+html[data-theme="field-office"] #badge {
+  border: 2px solid #5c4a3d; border-radius: 3px; background: #ebdcb9;
+  box-shadow: 2px 2px 0 #5c4a3d; text-transform: uppercase;
+}
+html[data-theme="field-office"] #tool-rail,
+html[data-theme="field-office"] nav,
+html[data-theme="field-office"] #roster-pane { background: #e2d5b8; }
+html[data-theme="field-office"] .lbl,
+html[data-theme="field-office"] .inv-title,
+html[data-theme="field-office"] .group-lbl {
+  color: #5c4a3d; letter-spacing: 0.2em;
+}
+html[data-theme="field-office"] .room { border-bottom: 3px double #5c4a3d; background: #e2d5b8; }
+html[data-theme="field-office"] .room h1 { text-transform: uppercase; letter-spacing: 0.1em; }
+html[data-theme="field-office"] #stream { background: #d4c5a3; }
+html[data-theme="field-office"] .note {
+  background: #ebdcb9; border: 2px solid #5c4a3d; border-radius: 3px;
+  box-shadow: 2px 2px 0 #5c4a3d;
+}
+html[data-theme="field-office"] .note .meta { color: #5c4a3d; text-transform: uppercase; }
+html[data-theme="field-office"] .thread-btn {
+  border: 2px solid #a3352c; color: #a3352c; border-radius: 3px;
+  text-transform: uppercase; letter-spacing: 0.1em; transform: rotate(-1deg);
+  background: transparent;
+}
+html[data-theme="field-office"] .composer { background: #e2d5b8; border-top: 3px double #5c4a3d; }
+html[data-theme="field-office"] .composer-box {
+  background: #ebdcb9; border: 2px solid #5c4a3d; border-radius: 3px; box-shadow: none;
+}
+html[data-theme="field-office"] .composer-box:focus-within { box-shadow: 2px 2px 0 #5c4a3d; }
+html[data-theme="field-office"] #send {
+  background: #2a241e; color: #e2d5b8; border: 2px solid #2a241e; border-radius: 3px;
+  text-transform: uppercase; letter-spacing: 0.12em; box-shadow: 2px 2px 0 #5c4a3d;
+}
+html[data-theme="field-office"] .chan { border-radius: 3px; }
+html[data-theme="field-office"] .chan.on {
+  background: #ebdcb9; box-shadow: inset 2px 0 0 #a3352c; border-radius: 0 3px 3px 0;
+}
+html[data-theme="field-office"] .inv-btn,
+html[data-theme="field-office"] .quick-tab,
+html[data-theme="field-office"] .qb-slot,
+html[data-theme="field-office"] .qb-gear {
+  border-radius: 3px; text-transform: uppercase; letter-spacing: 0.06em;
+  box-shadow: 2px 2px 0 #5c4a3d;
+}
+html[data-theme="field-office"] #quick-bar {
+  background: #e2d5b8; border-top: 3px double #5c4a3d; box-shadow: none;
+}
+html[data-theme="field-office"] .inv-item.has-pic,
+html[data-theme="field-office"] .agent-pic-cell,
+html[data-theme="field-office"] .avatar-cell,
+html[data-theme="field-office"] .avatar-preview {
+  filter: grayscale(1) sepia(0.3) contrast(1.05);
+}
+html[data-theme="field-office"] .fo-person-kind,
+html[data-theme="field-office"] .fo-person-slug,
+html[data-theme="field-office"] .fo-feed-line { letter-spacing: 0.08em; }
 </style>
 </head>
 <body>
@@ -962,11 +1112,12 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         <path d="M20 40c7-10 10-20 10-28 2 6 8 14 16 18" fill="none" stroke="#ecfdf5" stroke-width="2.2" stroke-linecap="round"/>
       </svg>
       <div>
+        <div class="fo-edition">Field Office Dispatch · 1943 Edition</div>
         <div class="title">hush</div>
         <div class="sub" id="vibe-sub">local hive mind</div>
       </div>
     </div>
-    <div id="badge">connecting…</div>
+    <div class="fo-hq"><span>HQ — Global Operations</span><div id="badge">connecting…</div></div>
   </header>
   <aside id="tool-rail" aria-label="Tools">
     <div class="rail-bar">
@@ -1079,11 +1230,20 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         </div>
       </div>
       <div id="robot-inventory" aria-label="Robot Inventory Grid"></div>
+      <!-- UI-M5 individuals: the live mention roster (humans + robots as
+           already mapped in the demo). Robot rows open the existing 1:1
+           thread path; human rows address the composer. No fake rows. -->
+      <div id="fo-individuals" aria-label="Individuals">
+        <div class="lbl">Individuals</div>
+        <div id="fo-individual-list"></div>
+      </div>
 
       <button class="stats" id="stats" type="button" role="button" tabindex="0"
               aria-label="Relay details">waiting for relay</button>
     </nav>
     <main>
+      <!-- UI-M5 dispatch log: same #room/#count/#vibe-vis hooks, telegram eyebrow. -->
+      <div class="fo-log-eyebrow"><span>Official Dispatch Log</span><span class="fo-log-stamp">HQ · Global Operations</span></div>
       <div class="room">
         <h1 id="room">#general</h1>
         <span id="count">0 notes</span>
@@ -1095,11 +1255,25 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         <div class="mention-box" id="mention-box" hidden></div>
         <div class="composer-box">
           <div id="composer-pills"></div>
-          <textarea id="msg" rows="3" maxlength="2000" placeholder="Write to the hive… @ a human or robot"></textarea>
+          <textarea id="msg" rows="3" maxlength="2000" placeholder="TYPE NEW MESSAGE HERE — @ a human or robot"></textarea>
         </div>
-        <button id="send" type="submit">Send</button>
+        <button id="send" type="submit">Send Dispatch</button>
       </form>
     </main>
+    <!-- UI-M5 right rail: active personnel + status feed, painted only from
+         real surfaces (mention roster, presence slugs, status thinking
+         jobs, /api/status snapshot, channel note counts). Static aside, so
+         the Escape single-dismiss contract is untouched. -->
+    <aside id="roster-pane" aria-label="Active personnel and status">
+      <div class="fo-roster-sec">
+        <div class="lbl">Active personnel</div>
+        <div id="fo-roster-list"></div>
+      </div>
+      <div class="fo-roster-sec">
+        <div class="lbl">Status feed</div>
+        <div id="fo-status-feed" aria-live="polite"></div>
+      </div>
+    </aside>
   </div>
   <!-- UI-M2 quick bar: bottom 4-slot spellbar. Keys 1-4 fire the slots when
        not typing. Slots persist in localStorage.hush-quickbar; the gear
@@ -1155,6 +1329,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         <label><input type="radio" name="theme" value="desert"> desert</label>
         <label><input type="radio" name="theme" value="monochrome"> monochrome</label>
         <label><input type="radio" name="theme" value="christmas"> christmas</label>
+        <label><input type="radio" name="theme" value="field-office"> field office</label>
       </div>
       <p class="help">AI voice in a call needs a speech model such as Whisper. Without it, agents can join but cannot hear.</p>
       <div class="actions">
@@ -1848,8 +2023,8 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     }
 
     function applyTheme(name) {
-      const allowed = ["dark", "light", "color-blind", "dracula", "desert", "monochrome", "christmas"];
-      const theme = allowed.indexOf(name) >= 0 ? name : (localStorage.getItem("hush-theme") || "dark");
+      const allowed = ["dark", "light", "color-blind", "dracula", "desert", "monochrome", "christmas", "field-office"];
+      const theme = allowed.indexOf(name) >= 0 ? name : (localStorage.getItem("hush-theme") || "field-office");
       document.documentElement.setAttribute("data-theme", theme);
       localStorage.setItem("hush-theme", theme);
       const meta = document.querySelector("meta[name='theme-color']");
@@ -1905,6 +2080,9 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       lastGateHtml = "";
       paintChannels();
       paintRobots();
+      /* UI-M5 field office: individuals + right rail from real surfaces. */
+      paintFieldOfficeIndividuals();
+      paintRosterPane();
       if (typeof syncInventoryFromRoster === "function") syncInventoryFromRoster();
     }
 
@@ -2089,7 +2267,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         : [{ name: "general", slug: "general", id: "", group_id: "" }];
       if (!chans.some((c) => c.slug === channel))
         channel = chans[0].slug;
-      box.innerHTML = "<div class=\"lbl\">Channels</div>";
+      box.innerHTML = "<div class=\"lbl\">Bulletin boards</div>";
       const groups = session.groups || [];
       groups.forEach((g) => {
         const kids = chans.filter((c) => c.group_id && c.group_id === g.id);
@@ -2687,6 +2865,86 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         card.appendChild(body);
         box.appendChild(card);
       });
+    }
+
+    /* UI-M5 field office: Individuals = the live mention roster (you +
+       robots + invited humans, as already mapped in the demo). Robot rows
+       reuse the existing 1:1 thread path; human rows address the
+       composer. No fake rows; static list, so Escape is untouched. */
+    function paintFieldOfficeIndividuals() {
+      const box = $("fo-individual-list");
+      if (!box) return;
+      box.innerHTML = "";
+      mentionRoster().forEach((person) => {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "fo-person";
+        const slug = presenceSlugFor(person.pubkey || person.npub);
+        row.innerHTML = "<span class=\"dot" + (slug ? " on" : "") + "\"></span>" +
+          "<span class=\"fo-person-name\">" + esc(person.name) + "</span>" +
+          "<span class=\"fo-person-kind\">" + esc(person.kind || "human") + "</span>" +
+          (slug ? "<span class=\"fo-person-slug\">" + esc(slug) + "</span>" : "");
+        if (person.kind === "robot") {
+          row.title = "Open 1:1 thread with " + person.name;
+          row.addEventListener("click", () => {
+            const bot = robotModels().find((b) => b.npub === person.npub) ||
+              { name: person.name, npub: person.npub };
+            startRobotConversation(bot);
+          });
+        } else {
+          row.title = "Address " + person.name + " in the dispatch composer";
+          row.addEventListener("click", () => {
+            closeNavigation();
+            const input = $("msg");
+            if (input && input.value.indexOf("@" + person.name) < 0)
+              input.value = ("@" + person.name + " " + input.value).slice(0, 2000);
+            if (input) input.focus();
+          });
+        }
+        box.appendChild(row);
+      });
+    }
+
+    /* UI-M5 field office: right rail maps real surfaces only — the
+       mention roster for personnel, presence slugs for whereabouts,
+       status thinking jobs for live activity, and the /api/status
+       snapshot plus channel note counts for the status feed. Static
+       aside, so the Escape single-dismiss contract is untouched. */
+    function paintRosterPane(status) {
+      const roster = $("fo-roster-list");
+      const feed = $("fo-status-feed");
+      const st = status || lastStatus || {};
+      if (roster) {
+        roster.innerHTML = "";
+        mentionRoster().forEach((person) => {
+          const slug = presenceSlugFor(person.pubkey || person.npub);
+          const live = ((st.thinking || []).some((t) => t && t.name === person.name));
+          const div = document.createElement("div");
+          div.className = "fo-person static" + (live ? " live" : "");
+          div.innerHTML = "<span class=\"dot" + ((slug || live) ? " on" : "") + "\"></span>" +
+            "<span class=\"fo-person-name\">" + esc(person.name) + "</span>" +
+            "<span class=\"fo-person-kind\">" + esc(live ? "thinking" : (person.kind || "human")) + "</span>" +
+            (slug ? "<span class=\"fo-person-slug\">" + esc(slug) + "</span>" : "");
+          roster.appendChild(div);
+        });
+      }
+      if (feed) {
+        const roots = channelNotes(visibleNotes(lastEvents || []));
+        const lines = [
+          (st.ok ? "RELAY LIVE" : "RELAY DOWN") + " · PORT " + (st.port || "—"),
+          (st.events || 0) + " STORED · " + (st.clients || 0) + " SOCKETS",
+          roots.length + (roots.length === 1 ? " NOTE" : " NOTES") + " ON #" + channel,
+          "WHISPER " + (st.whisper ? "READY" : "OFF") + " · TURN " + (st.turn_running ? "RUNNING" : "OFF")
+        ];
+        const jobs = (st.thinking || []).map((t) => (t.name || "robot") + " THINKING").slice(0, 4);
+        feed.innerHTML = "";
+        lines.concat(jobs).forEach((line) => {
+          const p = document.createElement("div");
+          p.className = "fo-feed-line";
+          p.textContent = line;
+          feed.appendChild(p);
+        });
+      }
     }
 
     const ROOM_PROMPT_MAX = 500;
@@ -5396,6 +5654,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       document.title = "Hush " + (status.version || "0.0.1") +
         " (" + (status.build || "unknown") + ")";
       paintRelayDrawer(status);
+      paintRosterPane(status);
       const thinkKey = ((status.thinking || []).map((t) => t.parent + ":" + t.name).join(","));
       const ackKey = roots.map((e) => ackStampFor(e, thinkingFor(e.id, status))).join("");
       const key = roots.map((e) => e.id).join(",") + "|" +
@@ -6832,7 +7091,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     }
 
     prepareNativeWindow();
-    applyTheme(localStorage.getItem("hush-theme") || "dark");
+    applyTheme(localStorage.getItem("hush-theme") || "field-office");
     paint();
     tick();
     setInterval(tick, 1000);
