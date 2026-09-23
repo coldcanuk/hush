@@ -150,6 +150,46 @@ used as a DDoS reflector. TLS/DTLS for TURN is out of this slice; put
 coturn behind a firewall and set `external-ip` when NATed. Daemon mode
 installs a systemd unit but does not enable it until the operator asks.
 
+### Provider scan and ICE (trust boundary)
+
+`GET /api/ice` and `POST /api/provider/scan` sit behind the HTTP session
+token (401 without it) and behind the Host allowlist (403 on a foreign
+Host), like every other non-liveness `/api/*` route. Regression coverage:
+`hush-c/tests/check_trust.py`.
+
+- Scan fails closed: an unreachable host answers `{"ok":false}` and the
+  reply never echoes the submitted `api_key`. Saved providers never persist
+  secrets to the overlay, the session payload, or later GETs
+  (`hush-c/tests/check_provider.sh`).
+- ICE with TURN idle returns only the public STUN entry
+  (`stun:stun.l.google.com:19302`) with no `credential` field. With TURN
+  enabled the reply carries the live TURN username and password, so the
+  session token is what stands between a remote caller and relay
+  credentials: keep the default loopback bind unless remote UI access is
+  intended, and never re-add a wildcard `Access-Control-Allow-Origin`
+  (the suite fails if one appears).
+
+### Operator checklist (short runbook)
+
+1. Bind: default listens on loopback. A non-loopback `--listen` makes the
+   session token the only boundary; the Host check stays advisory then.
+2. Token: `$HUSH_HOME/session.token` (0600) is the credential for every
+   `/api/*` route except `/api/status` and one-shot
+   `GET /api/complete?t=<job-token>`. Cookie, `X-Hush-Token`,
+   `Authorization: Bearer`, and `?k=` all carry it; all four are exercised
+   by `check_trust.py`.
+3. Join tokens: `POST /api/vibe {"action":"rotate_token"}` when membership
+   changes. Rotation invalidates the previous token immediately; the file
+   persists only `vibe_token_hash`, and a restart clears the displayed
+   plaintext (display-once). Flipping visibility never mints a replacement.
+4. Floods: per-connection/per-IP/per-pubkey EVENT buckets answer
+   `OK false "rate-limited"`, REQ floods earn `CLOSED "rate-limited"`, AUTH
+   is capped at 8 attempts and JOIN at 16 per connection, HTTP per-IP flood
+   earns 429. `check_limits.py` pins each cap.
+5. After any suspicion of exposure: rotate the join token, restart the relay
+   (fresh session token), and re-check `GET /api/provider` for unexpected
+   hosts or models.
+
 ### Event Store
 
 The store is a bounded 1,024-event ring. Every insert appends one record to
