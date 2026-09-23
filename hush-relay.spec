@@ -26,13 +26,76 @@ Developed with the Codex AI agent. Designed for set-and-forget
 self-hosting and embedding.
 
 %pre
-# Stop any running hush-relay before the new binary lands (install + upgrade),
-# so an upgrade never leaves a stale process serving the old code.
-pids=$(ps -axo pid=,comm= 2>/dev/null | awk '$2 == "hush-relay" {print $1}')
-if [ -n "$pids" ]; then
-    kill $pids 2>/dev/null || true
-    sleep 1
-    for p in $pids; do kill -0 "$p" 2>/dev/null && kill -KILL "$p" 2>/dev/null || true; done
+# Stop-before-upgrade belongs here: this %pre (from the NEW package) runs
+# before the new binary lands ($1 == 2 on upgrade, $1 == 1 on fresh
+# install), which mirrors Debian's old-prerm-upgrade ordering so deb and
+# rpm stay aligned. Upgrade is graceful-only: SIGTERM, then a generous
+# poll so agent jobs can reap. There is deliberately NO SIGKILL on
+# upgrade — a survivor keeps serving the old binary until the operator
+# restarts it. Erase handling lives in %preun below.
+if [ "${1:-0}" = "2" ]; then
+    if [ -x %{_datadir}/hush/hush-relay-stop ]; then
+        %{_datadir}/hush/hush-relay-stop upgrade || true
+    else
+        # Fallback with identical semantics for upgrades from
+        # helper-less packages: SIGTERM + poll, no SIGKILL on upgrade.
+        grace="${HUSH_STOP_GRACE_S:-30}"
+        case "$grace" in ''|*[!0-9]*) grace=30 ;; esac
+        pids=$(ps -axo pid=,comm= 2>/dev/null | awk '$2 == "hush-relay" {print $1}') || true
+        if [ -n "$pids" ]; then
+            kill $pids 2>/dev/null || true
+            waited=0
+            while [ "$waited" -lt "$grace" ]; do
+                rest=""
+                for p in $pids; do
+                    if kill -0 "$p" 2>/dev/null; then
+                        if [ -z "$rest" ]; then rest="$p"; else rest="$rest $p"; fi
+                    fi
+                done
+                [ -z "$rest" ] && break
+                pids=$rest
+                sleep 1
+                waited=$((waited + 1))
+            done
+        fi
+    fi
+fi
+exit 0
+
+%preun
+# $1 == 1 upgrade (old package on the way out after the new one is in),
+# $1 == 0 erase. Upgrade stays graceful-only like %pre; SIGKILL after the
+# grace is reserved for erase, so a remove never leaves a stale relay
+# behind. Canonical logic is scripts/hush-relay-stop (shipped as
+# %{_datadir}/hush/hush-relay-stop); the inline branch below is the same
+# fallback as in %pre for helper-less systems.
+mode=upgrade
+if [ "${1:-0}" = "0" ]; then mode=remove; fi
+if [ -x %{_datadir}/hush/hush-relay-stop ]; then
+    %{_datadir}/hush/hush-relay-stop "$mode" || true
+else
+    grace="${HUSH_STOP_GRACE_S:-30}"
+    case "$grace" in ''|*[!0-9]*) grace=30 ;; esac
+    pids=$(ps -axo pid=,comm= 2>/dev/null | awk '$2 == "hush-relay" {print $1}') || true
+    if [ -n "$pids" ]; then
+        kill $pids 2>/dev/null || true
+        waited=0
+        while [ "$waited" -lt "$grace" ]; do
+            rest=""
+            for p in $pids; do
+                if kill -0 "$p" 2>/dev/null; then
+                    if [ -z "$rest" ]; then rest="$p"; else rest="$rest $p"; fi
+                fi
+            done
+            [ -z "$rest" ] && break
+            pids=$rest
+            sleep 1
+            waited=$((waited + 1))
+        done
+        if [ -n "$pids" ] && { [ "$mode" = "remove" ] || [ "${HUSH_RELAY_ALLOW_KILL:-}" = "1" ]; }; then
+            kill -KILL $pids 2>/dev/null || true # remove-gated last resort only
+        fi
+    fi
 fi
 exit 0
 
@@ -45,10 +108,12 @@ exit 0
 
 %install
 %make_install PREFIX=/usr DESTDIR=%{buildroot}
+install -D -m 0755 scripts/hush-relay-stop %{buildroot}%{_datadir}/hush/hush-relay-stop
 
 %files
 /usr/bin/hush-relay
 %{_datadir}/applications/hush-relay.desktop
+%{_datadir}/hush/hush-relay-stop
 %{_datadir}/hush/turnserver.conf.in
 %{_datadir}/hush/systemd/hush-turn.service
 /lib/systemd/system/hush-turn.service

@@ -76,6 +76,7 @@ test: $(TEST_BINS) hush-relay
 	@CC="$(CC)" python3 tests/check_win.py
 	@python3 tests/check_browser_launch.py
 	@sh tests/check_exit.sh
+	@sh tests/check_pkg_upgrade.sh
 	@sh tests/check_provider.sh
 	@sh tests/check_agent.sh
 	@sh tests/check_codex.sh

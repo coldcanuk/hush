@@ -1,18 +1,70 @@
 #!/bin/sh
 # prerm — stop any running hush-relay before the package is removed or upgraded.
-# Called with `upgrade <new-version>` or `remove`; both should blast a live relay.
+#
+# Debian calls the OLD package's prerm as `prerm upgrade <new-version>`
+# before unpacking the new files, and as `prerm remove` before removal
+# (purge runs this same `remove` path; `deconfigure` / `failed-upgrade`
+# leave the package installed, so they take the graceful path too).
+#
+# Upgrade is graceful-only: SIGTERM, then a generous poll (default 30s)
+# so agent jobs can reap. There is deliberately NO SIGKILL on upgrade —
+# a survivor keeps serving the old binary until the operator restarts it,
+# which beats a surprise kill mid-chat. SIGKILL remains only for
+# remove/purge, after the same grace period, so a removal never leaves a
+# stale relay behind.
+#
+# Canonical logic lives in scripts/hush-relay-stop (shipped as
+# /usr/share/hush/hush-relay-stop); this wrapper delegates to it and keeps
+# a small inline fallback with identical semantics for systems whose
+# installed files predate the helper.
+
+HELPER=/usr/share/hush/hush-relay-stop
+
+mode=upgrade
+case "${1:-}" in
+    remove) mode=remove ;;
+    *) mode=upgrade ;;
+esac
+
+if [ -x "$HELPER" ]; then
+    "$HELPER" "$mode" || true
+    exit 0
+fi
+
+# Fallback: same semantics as the helper (SIGTERM + poll; SIGKILL on
+# remove only). Kept inline so upgrades from helper-less packages still
+# stop gracefully instead of failing open.
+grace="${HUSH_STOP_GRACE_S:-30}"
+case "$grace" in
+    ''|*[!0-9]*) grace=30 ;;
+esac
 
 pids=$(ps -axo pid=,comm= 2>/dev/null | awk '$2 == "hush-relay" {print $1}') || true
 if [ -n "$pids" ]; then
-    # SIGTERM first so the relay can reap its agent jobs, then a short grace
-    # period, then force anything still alive.
     kill $pids 2>/dev/null || true
-    sleep 1
-    for p in $pids; do
-        if kill -0 "$p" 2>/dev/null; then
-            kill -KILL "$p" 2>/dev/null || true
+    waited=0
+    while [ "$waited" -lt "$grace" ]; do
+        rest=""
+        for p in $pids; do
+            if kill -0 "$p" 2>/dev/null; then
+                if [ -z "$rest" ]; then
+                    rest="$p"
+                else
+                    rest="$rest $p"
+                fi
+            fi
+        done
+        if [ -z "$rest" ]; then
+            pids=""
+            break
         fi
+        pids=$rest
+        sleep 1
+        waited=$((waited + 1))
     done
+    if [ -n "$pids" ] && { [ "$mode" = "remove" ] || [ "${HUSH_RELAY_ALLOW_KILL:-}" = "1" ]; }; then
+        kill -KILL $pids 2>/dev/null || true # remove-gated last resort only
+    fi
 fi
 
 exit 0

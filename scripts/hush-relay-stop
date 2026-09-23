@@ -1,0 +1,108 @@
+#!/bin/sh
+# hush-relay-stop — gracefully stop running hush-relay processes.
+#
+# Shared stop helper for Debian (debian/hush-relay.prerm) and RPM
+# (hush-relay.spec %pre / %preun), plus a test seam for
+# hush-c/tests/check_pkg_upgrade.sh. Packaging calls it; operators
+# normally never run it by hand (use `hush-relay --quit` / Exit instead).
+#
+# Usage: hush-relay-stop [upgrade|remove]
+#
+#   upgrade (default) — SIGTERM every hush-relay process, then poll up to
+#       HUSH_STOP_GRACE_S seconds (default 30) for each one to exit so
+#       agent jobs can reap. Never sends SIGKILL unless HUSH_RELAY_ALLOW_KILL=1
+#       is set (explicit operator opt-in). Survivors keep serving the old
+#       binary and are reported on stderr; the caller still exits 0 so the
+#       package transaction is never failed by a lingering process.
+#   remove — same graceful stop, but processes still alive after the grace
+#       period get SIGKILL as a last resort, so a remove/purge never leaves
+#       a stale relay behind.
+#
+# SIGTERM and --quit share one cleanup path in the relay (the SIGTERM
+# handler, --quit, and /api/exit all reap agent children and exit 0), so
+# SIGTERM to every hush-relay pid is equivalent to --quit on each live
+# port without needing to know which ports are in use. A best-effort
+# `hush-relay --quit` for the default port runs first when the helper is
+# not in test mode.
+#
+# Test seam: HUSH_RELAY_PIDS="pid pid ..." replaces the ps scan (the real
+# scan matches comm == "hush-relay", which a test cannot fake portably),
+# HUSH_STOP_GRACE_S shortens the poll, and HUSH_RELAY_SKIP_QUIT=1 skips
+# the --quit probe. See hush-c/tests/check_pkg_upgrade.sh.
+
+mode="${1:-upgrade}"
+case "$mode" in
+    upgrade|remove) ;;
+    *)
+        echo "hush-relay-stop: unknown mode '$mode' (want upgrade|remove); assuming upgrade" >&2
+        mode=upgrade
+        ;;
+esac
+
+grace="${HUSH_STOP_GRACE_S:-30}"
+case "$grace" in
+    ''|*[!0-9]*) grace=30 ;;
+esac
+if [ "$grace" -le 0 ] 2>/dev/null; then
+    grace=30
+fi
+
+find_pids() {
+    if [ -n "${HUSH_RELAY_PIDS:-}" ]; then
+        printf '%s\n' ${HUSH_RELAY_PIDS:-}
+        return
+    fi
+    ps -axo pid=,comm= 2>/dev/null | awk '$2 == "hush-relay" {print $1}'
+}
+
+pids=$(find_pids) || true
+pids=$(printf '%s\n' "$pids" | awk 'NF') || true
+
+# Best-effort --quit for the default port before the broadcast SIGTERM.
+# Skipped under the test seam so tests never touch a real relay.
+if [ -z "${HUSH_RELAY_PIDS:-}" ] && [ -z "${HUSH_RELAY_SKIP_QUIT:-}" ]; then
+    if command -v hush-relay >/dev/null 2>&1; then
+        hush-relay --quit >/dev/null 2>&1 || true
+    fi
+    pids=$(find_pids) || true
+    pids=$(printf '%s\n' "$pids" | awk 'NF') || true
+fi
+
+if [ -z "$pids" ]; then
+    exit 0
+fi
+
+# shellcheck disable=SC2086: $pids is a pid list by construction.
+kill $pids 2>/dev/null || true
+
+waited=0
+while [ "$waited" -lt "$grace" ]; do
+    rest=""
+    # shellcheck disable=SC2086: $pids is a pid list by construction.
+    for p in $pids; do
+        if kill -0 "$p" 2>/dev/null; then
+            if [ -z "$rest" ]; then
+                rest="$p"
+            else
+                rest="$rest $p"
+            fi
+        fi
+    done
+    if [ -z "$rest" ]; then
+        exit 0
+    fi
+    pids=$rest
+    sleep 1
+    waited=$((waited + 1))
+done
+
+if [ "$mode" = "remove" ] || [ "${HUSH_RELAY_ALLOW_KILL:-}" = "1" ]; then
+    echo "hush-relay-stop: $mode: SIGKILL after ${grace}s grace: $pids" >&2
+    # shellcheck disable=SC2086: $pids is a pid list by construction.
+    kill -KILL $pids 2>/dev/null || true
+else
+    echo "hush-relay-stop: upgrade: still running after ${grace}s grace (left alone, no SIGKILL): $pids" >&2
+    echo "hush-relay-stop: upgrade: restart at your convenience (hush-relay --quit, then start the new build)" >&2
+fi
+
+exit 0

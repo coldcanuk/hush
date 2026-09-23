@@ -31,3 +31,10 @@ make dist
   `make flatpak`, `make openbsd`, `make freebsd`) are **not** part of the
   blocking CI path and are not smoked here; see `README.md` installation
   sections when cutting platform packages.
+
+## Package upgrade stops
+
+Upgrades stop the running relay gracefully (SIGTERM + 30s poll, no
+SIGKILL on upgrade; SIGKILL only on remove/purge after the same grace).
+See [`docs/ops/package-upgrade.md`](ops/package-upgrade.md) for the
+deb/RPM scriptlet mapping and verification.
