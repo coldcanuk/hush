@@ -480,7 +480,7 @@ new robot reply arrives. `#thread-close`
 [x] and Escape return to the channel. The same Thread button reopens
 the same root.
 
-While the pane is open the tool rail is forced to its hamburger and
+While the pane is open the tool rail is forced to its collapsed KIT stamp and
 parked at the brand home (§15). It must not paint inside the pane.
 
 A Grok Build robot with `has_home` is invoked via `grok -p` in an
@@ -604,7 +604,7 @@ Payne: “Leash the robots. They speak when mentioned, or not at all.”
 `#tool-rail` is a `position:fixed` strip the human can drag by
 `#rail-grip` (≥44px, `touch-action:none`). Pointer tracking is on
 `window`, not the grip alone. Collapse (`#rail-toggle`) shrinks it to
-a hamburger. There are **no docks**, no snap squares, and no
+a KIT stamp. There are **no docks**, no snap squares, and no
 `#rail-docks`. The rail stays where the human drops it and is clamped
 on screen. `localStorage.hush-rail` stores `{x,y,collapsed}` only.
 
@@ -617,7 +617,7 @@ primary actions. Progressive disclosure for advanced (STUN host,
 policy details). Small labels/hints added for first-time users without
 increasing cognitive load.
 
-**Brand home.** `placeRailAtBrand()` puts the collapsed hamburger
+**Brand home.** `placeRailAtBrand()` puts the collapsed KIT stamp
 immediately to the left of `.brand` (`hush` / vibe name, e.g.
 `LOCAL HIVE`). Double-click `#rail-toggle` collapses (if needed) and
 homes there.
@@ -683,9 +683,10 @@ Character), reusing the `.inv-btn` inventory chrome with `kbd` key
 hints. `i` keeps its selected-tile edit behavior and opens the expanded
 8×5 inventory when no tile is selected; `c` toggles the Profile
 character sheet. Both shortcuts ignore keystrokes typed in inputs,
-textareas, selects, or contenteditable. The hamburger rail
+textareas, selects, or contenteditable. The field-kit rail
 (`#rail-toggle` + `#tool-rail`) and `#nav-toggle` remain as
 overflow/settings only, not the primary journey entry.
+(UI-M6: both are stamps — KIT + BOARDS — never a burger glyph.)
 Delta 2026-09-23 (UI-M2 quickbar pass): a thin bottom spellbar
 (`#quick-bar`, fixed, one strip, 32px micro-buttons in the
 inventory/armory language with `kbd` key hints) holds 4
@@ -733,7 +734,7 @@ Phone thin-nav contract: at `≤640px` `#quick-nav` (Inventory +
 Character tabs, `i`/`c` keys, `#quick-bar` unchanged) is the primary
 nav — it is relocated to the top of `<main>` (`placeQuickNav`,
 restored into the sidebar on desktop) so it stays visible without
-opening a drawer. `#nav-toggle` (hamburger) remains as
+opening a drawer. `#nav-toggle` (BOARDS stamp as of UI-M6) remains as
 channels/inventory overflow only, and Escape closes that overflow.
 No fat menus; no new chrome.
 Delta 2026-09-23 (UI-M5 field-office pass): materials PLUS reshape
@@ -756,7 +757,7 @@ sockets, whisper, TURN; channel note counts; thinking jobs) — all
 real surfaces, static aside so the Escape single-dismiss contract
 is untouched. Grid: `200px minmax(0,1fr) 248px` on desktop, roster
 as a full-width strip at `≤1100px`, single column at `≤640px`
-(phone thin tabs + overflow hamburger, `placeQuickNav`, and Escape
+(phone thin tabs + BOARDS stamp drawer, `placeQuickNav`, and Escape
 overflow close all unchanged).
 Tokens (`html[data-theme="field-office"]`, the default theme as of
 M5; stored user choice still wins, all seven prior themes kept):
@@ -771,6 +772,17 @@ Version stamp (`#badge`, `#stats`, relay drawer) and every real
 behavior (channels, robots, providers, threads, call gating)
 unchanged. `i`/`c` + `navTyping`, 4 slots + gear + 1–4 +
 `quickbarTyping` untouched.
+Delta 2026-09-23 (UI-M6 no-burger pass): every burger glyph is gone
+— no `☰` in the demo, no hamburger class/label as primary chrome.
+`#nav-toggle` keeps its hook and `.nav-open` toggle but is now a
+phone-only **BOARDS** stamp (uppercase mono, 2px border, slight
+rotate) that opens the bulletin-boards drawer; `#rail-toggle` keeps
+its collapse + double-click-home hooks but is now a **KIT** stamp
+(field kit, `Collapse/Expand field kit` labels) instead of a glyph.
+No new fat nav: the overflow panel still exists on phone, opened via
+the BOARDS stamp; desktop has no overflow control at all (three-pane
++ `#quick-nav` thin tabs + `#quick-bar` 1–4 + gear unchanged).
+Supersedes every "hamburger remains as overflow-only" line above.
 
 ### 16. Mention + manage pills
 
