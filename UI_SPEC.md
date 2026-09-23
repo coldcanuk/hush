@@ -510,6 +510,19 @@ composer — not on the scrolled-away root — and Send is disabled until
 the job leaves the array. A second mention of that robot on the same
 root while the job is busy does not start another grok child.
 
+Delta 2026-09-23 (WS4 stream/cancel pass): every `.think` chip carries
+one **Stop** button per live job (`Stop <name>` → `POST /api/cancel`
+`{root: parent, robot: name}`; the relay SIGTERMs the job's process
+group, SIGKILLs past the grace period, and posts an honest
+"<name> stopped on request …" note). Each 1 s `tick()` also polls
+`POST /api/reply {root, robot}` for live jobs and paints the newest
+partial into a `.partial` preview under the chip (channel root and
+`#thread-think` alike); the slot fills in place so scroll is never
+yanked, and it clears when the final note lands. A provider that
+cannot stream simply shows no partial — the chip and the final note
+still work. Send stays disabled while a job is live on the open
+thread; Stop stays enabled.
+
 JSON strings on `GET /api/events` (and every other `hush_json_escape`
 site) must be RFC 8259: `"`, `\`, `\n`, `\r`, `\t`, and every other
 C0 byte as `\u00HH`. A raw TAB in a Go snippet must not break
@@ -727,6 +740,20 @@ A robot spends tokens only when all of these hold:
 Otherwise the robot stays silent or posts one on-deck line. Recap /
 confirm notes are kind 1, `e` = root, `t` = `hush-confirm`. Intel
 ignores those tags so a confirm does not start another hold.
+
+Delta 2026-09-23 (WS4 budgets pass): every leash refusal already posts
+an honest in-thread note — per-robot provider budget (60/min, burst 20)
+posts "Rate-limited. …", `max_jobs` / holds / cooldown post
+"Holding. …" / "Cooling down. …", a full job table posts
+"<name> could not start a turn: every job slot is busy. …", and a
+missing runtime posts "No selected provider is ready for <name>. …".
+The client paints any note opening with one of these markers (plus the
+"stopped on request" and "did not return a usable reply" lines and the
+"I heard:" recaps) as `.note.leash`: dashed border, `--warn` meta —
+the relay speaking, never a robot answer. Budgets stay enforced at the
+dispatch fork; `#manage-policy` (kind / reply / burst / max_jobs /
+cooldown) is the enforceable surface, and this styling is the visible
+one. The marker list lives in `LEASH_MARKS` next to `paintThink`.
 
 | Field | Values | Default |
 |---|---|---|

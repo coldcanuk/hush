@@ -278,6 +278,7 @@ else:
         check_cline(relay, host)
         check_cancel(relay, bot)
         check_streaming(relay, bot)
+        check_jobcap(relay, bot)
         server.shutdown()
         thread.join(timeout=5)
     print("providers: six API routes, model selection, identity, room and equipped skill instructions OK")
@@ -356,6 +357,29 @@ def wait_request_count(expected):
             return
         time.sleep(0.05)
     raise AssertionError("Provider request never arrived")
+
+
+def check_jobcap(relay, bot):
+    """A channel at max_jobs refuses the next dispatch with an honest note."""
+    wait_idle(relay)
+    relay.request("/api/channel", {"action": "manage", "slug": "research", "max_jobs": 1})
+    hold = threading.Event()
+    Endpoint.hold = hold
+    count = len(Endpoint.requests)
+    try:
+        post_thread(relay, bot, "JOBCAP_FIRST please take your time")
+        wait_request_count(count + 1)
+        second = post_thread(relay, bot, "JOBCAP_SECOND while the channel is busy")
+        refused = wait_reply(relay, "at its job cap")
+        assert refused.get("reply_to") == second["id"], refused
+        assert refused["content"] == "Holding. This channel is at its job cap.", refused
+    finally:
+        hold.set()
+        Endpoint.hold = None
+    wait_idle(relay)
+    relay.request("/api/channel", {"action": "manage", "slug": "research", "max_jobs": 2})
+    wait_idle(relay)
+    print("budgets: channel at max_jobs refuses the next dispatch with an honest note OK")
 
 
 def wait_idle(relay):

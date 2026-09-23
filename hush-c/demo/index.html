@@ -140,6 +140,21 @@
       animation: think-pulse 1.1s ease-in-out infinite;
     }
     @keyframes think-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+    /* WS4: Stop on the thinking chip posts POST /api/cancel for that job. */
+    .think-stop {
+      min-height: 32px; padding: 2px 10px; border-radius: 10px;
+      border: 1px solid var(--warn); background: transparent; color: var(--warn);
+      font-size: 0.72rem; font-weight: 650;
+    }
+    .think-stop:hover { background: var(--surface-2); }
+    .think-stop:disabled { opacity: 0.55; }
+    /* WS4: live partial answer while the provider streams. */
+    .partial {
+      margin-top: 4px; font-size: 0.78rem; color: var(--muted);
+      white-space: pre-wrap; word-break: break-word;
+      border-left: 2px solid var(--accent-dim); padding-left: 8px;
+    }
+    .partial:empty { display: none; }
     .thread-btn {
       margin-top: 8px; min-height: 32px; padding: 4px 10px; border-radius: 12px;
       border: 1px solid var(--accent-dim); background: transparent; color: var(--accent);
@@ -199,6 +214,9 @@
     .note.reply {
       margin-left: 1.4rem; border-left: 2px solid var(--accent-dim); padding-left: 10px;
     }
+    /* WS4: leash/refusal notes are the relay speaking, not a robot answer. */
+    .note.leash { border-style: dashed; }
+    .note.leash .meta { color: var(--warn); }
     .code-block {
       margin: 8px 0 0; padding: 10px 12px; overflow: auto;
       background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
@@ -4300,6 +4318,78 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       return names.join(", ") + (names.length === 1 ? " is thinking" : " are thinking");
     }
 
+    /* WS4 leash markers: every line the relay itself posts when it refuses,
+     * stops, or fails a turn instead of answering. Mirrors HUSH_INTEL_DENY_*
+     * in hush_intel.c plus note_start_failed / note_no_runtime /
+     * note_failure / note_stopped in hush_agent.c and agent_dispatch.c.
+     * A robot answer never opens with one of these, so prefix match is safe.
+     * Keep this list in step with UI_SPEC.md §20. */
+    const LEASH_MARKS = [
+      "Rate-limited.",
+      "Holding.",
+      "Cooling down.",
+      "could not start a turn",
+      "stopped on request",
+      "did not return a usable reply",
+      "No selected provider is ready",
+      "Not on this channel.",
+      "humans talking.",
+      "Say the ask.",
+      "Robots do not chain here.",
+      "needs unstuck or disable.",
+      "I heard:",
+      "I heard several asks."
+    ];
+
+    function isLeashNote(text) {
+      const s = String(text || "");
+      return LEASH_MARKS.some((m) => s.indexOf(m) === 0);
+    }
+
+    /* WS4: live streamed answers, keyed by thread + robot. */
+    const partials = {};
+
+    function partialKey(parent, name) {
+      return String(parent || "") + "|" + String(name || "");
+    }
+
+    /* WS4: Stop on the thinking chip. The server SIGTERMs the job's process
+     * group and posts an honest stopped note; an absent job is a no-op OK,
+     * so an optimistic chip can stop safely too. */
+    async function stopJob(root, name, btn) {
+      if (btn) { btn.disabled = true; btn.textContent = "Stopping…"; }
+      try {
+        await api("/api/cancel", { root: root, robot: name });
+        await tick();
+      } catch (err) { /* the next tick repairs the chip either way */ }
+      if (btn && btn.isConnected) { btn.textContent = "Stop"; btn.disabled = false; }
+    }
+
+    /* WS4: poll POST /api/reply for every live job and paint the newest
+     * partial into its preview slot. Entries for finished jobs are dropped;
+     * the final note arrives through the normal events tick. */
+    async function refreshPartials(status) {
+      const jobs = (status && status.thinking) || [];
+      const live = {};
+      for (const job of jobs) {
+        if (!job || !job.parent || !job.name) continue;
+        const key = partialKey(job.parent, job.name);
+        live[key] = true;
+        try {
+          const ans = await api("/api/reply", { root: job.parent, robot: job.name });
+          if (ans && ans.running && ans.text) {
+            partials[key] = ans.text;
+            document.querySelectorAll('[data-partial="' + CSS.escape(key) + '"]').forEach((el) => {
+              el.textContent = ans.text;
+            });
+          } else if (partials[key]) {
+            delete partials[key];
+          }
+        } catch (err) { /* keep the last partial; the next tick retries */ }
+      }
+      Object.keys(partials).forEach((key) => { if (!live[key]) delete partials[key]; });
+    }
+
     function mentionAckPhase(parentId, bot, jobs) {
       const key = String(parentId || "") + ":" + (bot && (bot.slug || bot.npub) || "");
       const now = Date.now();
@@ -4337,7 +4427,28 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
       dot.className = "think-dot";
       chip.appendChild(dot);
       chip.appendChild(document.createTextNode(thinkLabel(jobs)));
+      jobs.forEach((job) => {
+        if (!job || !job.name || !job.parent) return;
+        const stop = document.createElement("button");
+        stop.type = "button";
+        stop.className = "think-stop";
+        stop.textContent = "Stop";
+        stop.title = "Stop " + job.name + " on this thread.";
+        stop.addEventListener("click", () => stopJob(job.parent, job.name, stop));
+        chip.appendChild(stop);
+      });
       node.appendChild(chip);
+      /* WS4: one live preview slot per job; refreshPartials fills it in
+       * place so a 1s tick never yanks scroll or rebuilds the stream. */
+      jobs.forEach((job) => {
+        if (!job || !job.parent) return;
+        const prev = document.createElement("div");
+        prev.className = "partial";
+        prev.setAttribute("data-partial", partialKey(job.parent, job.name));
+        const text = partials[partialKey(job.parent, job.name)];
+        if (text) prev.textContent = text;
+        node.appendChild(prev);
+      });
     }
 
     function paintThreadThink(jobs) {
@@ -4787,7 +4898,8 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
     function paintNote(e, extra) {
       const n = document.createElement("div");
       const mine = isMineNote(e);
-      n.className = (e.reply_to ? "note reply" : "note") + (mine ? " mine" : "");
+      n.className = (e.reply_to ? "note reply" : "note") + (mine ? " mine" : "") +
+        (isLeashNote(e.content) ? " leash" : "");
       const meta = document.createElement("div");
       meta.className = "meta";
       meta.textContent = who(e.pubkey) + " · " + ago(e.created_at);
@@ -5952,9 +6064,10 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         badge(true, session.npub ? session.npub.slice(0, 12) + "…" : ("listening :" + (st.port || "")));
         let ev = null;
         try { ev = await evRes.json(); } catch (parseErr) { ev = null; }
-        if (session.ready && ev)
+        if (session.ready && ev) {
           render(ev.events || ev || [], st);
-        else if (st && st.thinking && !st.thinking.length)
+          await refreshPartials(st);
+        } else if (st && st.thinking && !st.thinking.length)
           localThink = [];
       } catch (err) {
         badge(false, "relay unreachable");
