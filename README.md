@@ -372,6 +372,7 @@ Plans and research live under `docs/`. Do not leave `PLAN_*.md` or `RESEARCH*.md
 | `pass` | [`docs/pass-integration.md`](docs/pass-integration.md) |
 | Store bench (OBSERVED baseline) | [`docs/ops/store-bench.md`](docs/ops/store-bench.md) |
 | Store backup/restore | [`docs/ops/store-backup.md`](docs/ops/store-backup.md) |
+| `/api/status` healthprobe (ops) | [`docs/ops/api-status.md`](docs/ops/api-status.md) |
 
 ## Skills for Codex
 
