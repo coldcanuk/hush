@@ -849,6 +849,16 @@ Preserved: M8 overlay drawer (`#fo-drawer` / `#fo-expand` /
 `#hive.nav-open` / `closeNavigation`), M7 `fo-chrome-hard` /
 `fo-caret`, BOARDS (`#nav-toggle`) + KIT (`#rail-toggle`) stamps,
 `i`/`c` + `navTyping`, live roster/status, `#badge`, no Discord DNA.
+Delta 2026-09-23 (UI-M10 dispatch-scrollbar pass): the dispatch log
+(`#stream`, inside `#fo-log-wrap`) owns a custom vertical scrollbar
+(`#fo-scrollbar`, markers `UI-M10`) instead of the native fat bar —
+hidden on that surface via `scrollbar-width: none` + `::-webkit-scrollbar`.
+The chrome is a straight black line track (`#fo-scroll-track`) with a
+bold tracking dot (`#fo-scroll-dot`, follows scroll/resize/paints, drags
+and jumps on track click) plus up/down step arrows at the extremities
+(`#fo-scroll-up` / `#fo-scroll-down`, step the log 120px). Wheel and
+keyboard still scroll the log itself; no new layers, so the Escape
+single-dismiss stack and every M9 preserve stay untouched.
 
 ### 16. Mention + manage pills
 

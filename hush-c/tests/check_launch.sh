@@ -300,6 +300,19 @@ echo "$html" | grep -q 'id="fo-drawer"' || fail "HTML missing fo-drawer overlay 
 echo "$html" | grep -q 'id="fo-expand"' || fail "HTML missing fo-expand thin control (UI-M8)"
 echo "$html" | grep -q 'syncFoExpand' || fail "HTML missing fo-expand aria sync (UI-M8)"
 echo "$html" | grep -q 'UI-M8' || fail "HTML missing UI-M8 markers"
+# UI-M10: custom dispatch scrollbar on #stream. The native fat bar is
+# hidden; a straight black line track + bold tracking dot + end arrows
+# owns the log position. Wheel/keyboard still scroll the log itself.
+echo "$html" | grep -q 'id="fo-log-wrap"' || fail "HTML missing log wrap (UI-M10)"
+echo "$html" | grep -q 'id="fo-scrollbar"' || fail "HTML missing custom scrollbar (UI-M10)"
+echo "$html" | grep -q 'id="fo-scroll-track"' || fail "HTML missing scrollbar track (UI-M10)"
+echo "$html" | grep -q 'id="fo-scroll-dot"' || fail "HTML missing scrollbar dot (UI-M10)"
+echo "$html" | grep -q 'id="fo-scroll-up"' || fail "HTML missing scrollbar up arrow (UI-M10)"
+echo "$html" | grep -q 'id="fo-scroll-down"' || fail "HTML missing scrollbar down arrow (UI-M10)"
+echo "$html" | grep -q 'scrollbar-width: none' || fail "HTML must hide native scrollbar (UI-M10)"
+echo "$html" | grep -q '::-webkit-scrollbar' || fail "HTML must hide webkit scrollbar (UI-M10)"
+echo "$html" | grep -q 'syncFoScrollbar' || fail "HTML missing scrollbar sync (UI-M10)"
+echo "$html" | grep -q 'UI-M10' || fail "HTML missing UI-M10 markers"
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + pills"
 echo "$html" | grep -q 'id="provider-username"' || fail "HTML missing provider username"

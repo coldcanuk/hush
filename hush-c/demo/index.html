@@ -1473,6 +1473,35 @@ html[data-theme="field-office"] .qb-slot.folder-tab kbd {
 html[data-theme="field-office"] #kit-menu {
   background: #e2d5b8; border: 2px solid #5c4a3d; box-shadow: 3px 3px 0 #5c4a3d;
 }
+/* ===== UI-M10 custom dispatch scrollbar =====
+   The dispatch log (#stream) hides the native fat scrollbar and owns a
+   thin field-office chrome instead: straight black line track, bold
+   tracking dot, up/down step arrows at the extremities. Wheel and
+   keyboard keep scrolling the log itself; the arrows step it. */
+#fo-log-wrap { display: flex; flex: 1; min-height: 0; align-items: stretch; }
+#fo-log-wrap #stream { flex: 1; min-width: 0; scrollbar-width: none; -ms-overflow-style: none; }
+#fo-log-wrap #stream::-webkit-scrollbar { display: none; width: 0; height: 0; }
+#fo-scrollbar {
+  flex: 0 0 auto; width: 30px; display: flex; flex-direction: column;
+  align-items: center; padding: 10px 0; gap: 6px;
+}
+#fo-scroll-up, #fo-scroll-down {
+  width: 24px; min-height: 24px; padding: 2px 0; cursor: pointer;
+  background: #e2d5b8; color: #2a241e; border: 2px solid #5c4a3d;
+  border-radius: 3px; font-size: 0.62rem; line-height: 1;
+  font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
+  box-shadow: 2px 2px 0 #5c4a3d;
+}
+#fo-scroll-up:active, #fo-scroll-down:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 #5c4a3d; }
+#fo-scroll-track {
+  position: relative; flex: 1; min-height: 40px; width: 2px;
+  background: #000; cursor: pointer;
+}
+#fo-scroll-dot {
+  position: absolute; top: 0; left: 50%; width: 14px; height: 14px;
+  border-radius: 50%; background: #000; border: 2px solid #e2d5b8;
+  outline: 1px solid #000; transform: translate(-50%, 0); cursor: grab;
+}
 </style>
 </head>
 <body>
@@ -1570,7 +1599,18 @@ html[data-theme="field-office"] #kit-menu {
         <span id="count">0 notes</span>
         <span class="badge-vis" id="vibe-vis"></span>
       </div>
-      <div id="stream"></div>
+      <!-- UI-M10: dispatch log owns a custom vertical scrollbar
+           (#fo-scrollbar: up/down step arrows + straight black line track
+           with a bold tracking dot). The native fat bar is hidden on
+           #stream via CSS; wheel/keyboard still scroll the log itself. -->
+      <div id="fo-log-wrap">
+        <div id="stream"></div>
+        <div id="fo-scrollbar" aria-label="Dispatch log scrollbar">
+          <button id="fo-scroll-up" type="button" aria-label="Scroll dispatch log up" title="Scroll up">▲</button>
+          <div id="fo-scroll-track" role="scrollbar" aria-controls="stream" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" title="Dispatch log position"><div id="fo-scroll-dot"></div></div>
+          <button id="fo-scroll-down" type="button" aria-label="Scroll dispatch log down" title="Scroll down">▼</button>
+        </div>
+      </div>
       <p id="send-error" class="warn send-error" role="status"></p>
       <form class="composer" id="form">
         <div class="mention-box" id="mention-box" hidden></div>
@@ -3305,6 +3345,65 @@ html[data-theme="field-office"] #kit-menu {
       $("nav-toggle").setAttribute("aria-expanded", "true");
       syncFoExpand(true);
     });
+    /* UI-M10 custom dispatch scrollbar: the native bar on #stream is
+       hidden (CSS); this chrome tracks it. Arrows step the log, a track
+       click jumps, the dot drags, and the dot follows every scroll,
+       resize, and content paint. Wheel/keyboard paths are untouched. */
+    const FO_SCROLL_STEP = 120;
+    function syncFoScrollbar() {
+      const s = $("stream"), track = $("fo-scroll-track"), dot = $("fo-scroll-dot");
+      if (!s || !track || !dot) return;
+      const max = s.scrollHeight - s.clientHeight;
+      const ratio = max > 0 ? (s.scrollTop / max) : 0;
+      const travel = Math.max(0, track.clientHeight - dot.offsetHeight);
+      dot.style.transform = "translate(-50%, " + Math.round(ratio * travel) + "px)";
+      track.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+    }
+    function foScrollStep(dir) {
+      const s = $("stream");
+      if (!s) return;
+      s.scrollTop += dir * FO_SCROLL_STEP;
+      syncFoScrollbar();
+    }
+    function foScrollJump(ev) {
+      const s = $("stream"), track = $("fo-scroll-track"), dot = $("fo-scroll-dot");
+      if (!s || !track || !dot) return;
+      const box = track.getBoundingClientRect();
+      const y = (ev.clientY - box.top - dot.offsetHeight / 2) / Math.max(1, box.height - dot.offsetHeight);
+      const max = s.scrollHeight - s.clientHeight;
+      s.scrollTop = Math.max(0, Math.min(max, y * max));
+      syncFoScrollbar();
+    }
+    $("fo-scroll-up").addEventListener("click", () => foScrollStep(-1));
+    $("fo-scroll-down").addEventListener("click", () => foScrollStep(1));
+    $("fo-scroll-track").addEventListener("pointerdown", (ev) => {
+      if (ev.target.id === "fo-scroll-dot") return;
+      foScrollJump(ev);
+    });
+    $("fo-scroll-dot").addEventListener("pointerdown", (ev) => {
+      const s = $("stream"), track = $("fo-scroll-track"), dot = $("fo-scroll-dot");
+      if (!s || !track || !dot || typeof dot.setPointerCapture !== "function") return;
+      ev.preventDefault();
+      dot.setPointerCapture(ev.pointerId);
+      const move = (mv) => {
+        const box = track.getBoundingClientRect();
+        const y = (mv.clientY - box.top - dot.offsetHeight / 2) / Math.max(1, box.height - dot.offsetHeight);
+        const max = s.scrollHeight - s.clientHeight;
+        s.scrollTop = Math.max(0, Math.min(max, y * max));
+      };
+      const up = () => {
+        dot.removeEventListener("pointermove", move);
+        dot.removeEventListener("pointerup", up);
+        dot.removeEventListener("pointercancel", up);
+      };
+      dot.addEventListener("pointermove", move);
+      dot.addEventListener("pointerup", up);
+      dot.addEventListener("pointercancel", up);
+    });
+    $("stream").addEventListener("scroll", syncFoScrollbar, {passive: true});
+    window.addEventListener("resize", syncFoScrollbar);
+    new MutationObserver(syncFoScrollbar).observe($("stream"), {childList: true, subtree: true});
+    syncFoScrollbar();
     ["add-chan", "nav-new-channel"].forEach((id) => $(id).addEventListener("click", () => {
       closeNavigation();
       $("new-chan-drawer").classList.add("show");
