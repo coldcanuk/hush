@@ -1,0 +1,144 @@
+#!/bin/sh
+# check_make_guard.sh — the rebuild guard fails loud on a live relay and
+# passes when the port is free; `make clean`'s pre-kill reaps CHILD-mode
+# turnserver only and never touches the systemd daemon.
+#
+# Covers scripts/check-relay-port.sh (wired into top-level `make` / `make
+# install` via the `guard` target) and scripts/kill-relay.sh (wired into
+# top-level `make clean`). Packaging-only: no relay behavior is changed.
+set -eu
+cd "$(dirname "$0")/.."
+
+root=$(cd .. && pwd)
+guard="$root/scripts/check-relay-port.sh"
+killsh="$root/scripts/kill-relay.sh"
+topmk="$root/Makefile"
+
+fail() { echo "make guard check failed: $1" >&2; exit 1; }
+
+[ -x "$guard" ] || fail "guard missing or not executable ($guard)"
+[ -x "$killsh" ] || [ -f "$killsh" ] || fail "kill script missing ($killsh)"
+sh -n "$guard" || fail "guard has a syntax error"
+sh -n "$killsh" || fail "kill script has a syntax error"
+
+# --- static: make wires the guard into build + install, never clean ---
+grep -q 'check-relay-port' "$topmk" || fail "top Makefile never calls the guard"
+grep -q '^all: guard' "$topmk" || fail "top 'all' skips the guard"
+grep -q '^install: guard' "$topmk" || fail "top 'install' skips the guard"
+grep -q 'kill-relay' "$topmk" || fail "top Makefile lost the clean pre-kill"
+
+# --- static: kill script reaps CHILD state only, never the daemon ---
+# (Strip comment lines: the header names the daemon paths it avoids.)
+grep -q 'turnserver.pid' "$killsh" || fail "kill script ignores CHILD turnserver"
+code=$(grep -v '^[[:space:]]*#' "$killsh")
+echo "$code" | grep -q 'systemctl' && fail "kill script must never call systemctl"
+echo "$code" | grep -q 'hush-turn.service' && fail "kill script must never reference the daemon unit"
+echo "$code" | grep -q '/run/hush-turn' && fail "kill script must never touch the daemon pidfile"
+
+# --- hermetic harness (never the operator's hive or state) ---
+test_home="$(mktemp -d)"
+export HUSH_HOME="$test_home/hush"
+export HUSH_CONFIG_DIR="$test_home/cfg"
+export XDG_RUNTIME_DIR="$test_home/run"
+export HUSH_STATE_DIR="$test_home/state"
+export HUSH_PASS_HELPER="$(pwd)/tests/fake-pass.sh"
+export HUSH_FAKE_PASS_DIR="$test_home/pass"
+mkdir -p "$HUSH_CONFIG_DIR" "$XDG_RUNTIME_DIR" "$HUSH_STATE_DIR" "$HUSH_FAKE_PASS_DIR"
+
+bin=./hush-relay
+port=18783
+log="$test_home/relay.log"
+pid=""
+child_pid=""
+daemon_pid=""
+
+cleanup() {
+    if [ -n "$child_pid" ]; then
+        kill -KILL "$child_pid" 2>/dev/null || true
+    fi
+    if [ -n "$daemon_pid" ]; then
+        kill -KILL "$daemon_pid" 2>/dev/null || true
+    fi
+    if [ -n "$pid" ]; then
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+    fi
+    rm -rf "$test_home"
+}
+trap cleanup EXIT
+
+wait_up() {
+    i=0
+    while [ "$i" -lt 100 ]; do
+        if curl -sf "http://127.0.0.1:${port}/api/status" >/dev/null 2>&1; then
+            return 0
+        fi
+        i=$((i + 1))
+        sleep 0.05
+    done
+    return 1
+}
+
+wait_down() {
+    i=0
+    while [ "$i" -lt 100 ]; do
+        if ! kill -0 "$1" 2>/dev/null; then
+            return 0
+        fi
+        i=$((i + 1))
+        sleep 0.05
+    done
+    return 1
+}
+
+# --- guard passes when the port is free ---
+HUSH_PORT="$port" sh "$guard" || fail "guard tripped with nothing running"
+
+# --- guard trips with a live --no-open relay: quit command + pid ---
+"$bin" --no-open "$port" >"$log" 2>&1 &
+pid=$!
+wait_up || fail "relay did not start on $port"
+
+out=""
+if HUSH_PORT="$port" sh "$guard" >"$test_home/guard.out" 2>&1; then
+    fail "guard passed with a live relay on $port"
+fi
+out=$(cat "$test_home/guard.out")
+echo "$out" | grep -q -- '--quit' || fail "guard hides the quit command"
+echo "$out" | grep -q "$port" || fail "guard hides the port"
+echo "$out" | grep -q "$pid" || fail "guard hides the owner pid ($pid)"
+
+# --- guard passes again once the relay is quit ---
+"$bin" --quit "$port" >/dev/null 2>&1 || fail "--quit failed"
+wait_down "$pid" || fail "--quit left the relay running"
+wait "$pid" 2>/dev/null || true
+pid=""
+HUSH_PORT="$port" sh "$guard" || fail "guard still trips after --quit"
+
+# --- kill-relay.sh reaps the CHILD turnserver named by the state pidfile ---
+# comm must read "turnserver", so run a copy of sleep under that basename.
+cp "$(command -v sleep)" "$test_home/turnserver"
+"$test_home/turnserver" 60 >/dev/null 2>&1 < /dev/null &
+child_pid=$!
+kill -0 "$child_pid" 2>/dev/null || fail "child fixture did not start"
+printf '%s\n' "$child_pid" >"$HUSH_STATE_DIR/turnserver.pid"
+
+# A fake daemon turnserver outside the state dir must survive.
+sleep 60 >/dev/null 2>&1 < /dev/null &
+daemon_pid=$!
+daemon_dir="$test_home/daemon-run"
+mkdir -p "$daemon_dir"
+printf '%s\n' "$daemon_pid" >"$daemon_dir/turnserver.pid"
+
+sh "$killsh" || fail "kill script exited non-zero"
+if kill -0 "$child_pid" 2>/dev/null; then
+    fail "kill script left the CHILD turnserver running"
+fi
+child_pid=""
+kill -0 "$daemon_pid" 2>/dev/null \
+    || fail "kill script stopped a non-CHILD (daemon-stand-in) process"
+test "$(cat "$daemon_dir/turnserver.pid")" = "$daemon_pid" \
+    || fail "kill script touched a non-CHILD pidfile"
+daemon_note="daemon stand-in survived"
+
+echo "make guard ok (guard trips + passes; CHILD reaped, $daemon_note)"

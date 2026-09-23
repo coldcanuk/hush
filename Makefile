@@ -27,10 +27,21 @@
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share
+# Rebuild guard port: $HUSH_PORT, else 10555 (HUSH_DEFAULT_PORT).
+# Override per-invocation, e.g. `HUSH_PORT=10556 make`.
+GUARD_PORT ?= $(HUSH_PORT)
 
-.PHONY: all test clean install uninstall package-deb package-rpm packages deb rpm flatpak openbsd freebsd bsd dist
+.PHONY: all test clean install uninstall guard package-deb package-rpm packages deb rpm flatpak openbsd freebsd bsd dist
+# guard: is defined below but must never become the default goal.
+.DEFAULT_GOAL := all
 
-all:
+# Fail-loud when a live relay owns the guard port: never build or install
+# over a running hive. Stop it first (`hush-relay --quit <port>`); `make
+# clean` (kill-relay.sh) is the only path that kills.
+guard:
+	@sh scripts/check-relay-port.sh $(GUARD_PORT)
+
+all: guard
 	$(MAKE) -C hush-c all CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)"
 
 test:
@@ -42,7 +53,7 @@ clean:
 	$(MAKE) uninstall
 	rm -f *.tar.gz
 
-install:
+install: guard
 	$(MAKE) -C hush-c install \
 		DESTDIR="$(DESTDIR)" \
 		PREFIX="$(PREFIX)" \
