@@ -196,7 +196,9 @@ uninstall:
 	rm -rf $(DESTDIR)$(HUSHSHARE)/skills/system
 	rm -f $(DESTDIR)$(HUSHSHARE)/systemd/hush-turn.service \
 		$(DESTDIR)$(HUSHSHARE)/turnserver.conf.in
-	rm -f $(DESTDIR)/lib/systemd/system/hush-turn.service
+	@if [ -n "$(DESTDIR)" ] || [ "$$(id -u)" = "0" ]; then \
+		rm -f $(DESTDIR)/lib/systemd/system/hush-turn.service; \
+	fi
 	@for d in $(DESTDIR)$(HUSHSHARE)/skills \
 		$(DESTDIR)$(CODEX_SKILL_SHARE)/references \
 		$(DESTDIR)$(CODEX_SKILL_SHARE) \
