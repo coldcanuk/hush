@@ -19,6 +19,7 @@
 #define HUSH_THREAD_DIR "threads"
 #define HUSH_THREAD_LOG_SUFFIX ".log"
 #define HUSH_THREAD_BRIEF_SUFFIX ".brief"
+#define HUSH_THREAD_BRIEF_SEP " | "
 
 enum {
     /* Escaped content scratch plus JSON framing. */
@@ -55,6 +56,19 @@ static void hush_thread_read_file(const char *path, char *out, size_t outsz);
 
 /* Writes text to path through a 0600 temp file and rename. */
 static hush_status_t hush_thread_write_file(const char *path, const char *text);
+
+/* Flattens text into out: whitespace runs become one space, ends trimmed,
+ * output capped at outsz. Pure. */
+static void hush_thread_flatten_snip(char *out, size_t outsz, const char *text);
+
+/* Joins old_text and snip with the brief separator into out, evicting the
+ * oldest entries from the front when over outsz. Pure. */
+static void hush_thread_join_evict(char *out, size_t outsz,
+                                   const char *old_text, const char *snip);
+
+/* Returns the kept tail past an evicted prefix: the first separator at or
+ * after start (exclusive), else a hard trim at start. Pure. */
+static const char *hush_thread_kept_tail(const char *text, const char *start);
 
 void hush_thread_record(const hush_event_t *ev)
 {
@@ -200,6 +214,22 @@ void hush_thread_brief_set(const char *root, const char *text)
         return;
     (void)snprintf(capped, sizeof(capped), "%s", text);
     (void)hush_thread_write_file(brief_path, capped);
+}
+
+void hush_thread_brief_roll(const char *root, const char *text)
+{
+    char old_text[HUSH_THREAD_BRIEF_MAX + 1];
+    char snip[HUSH_THREAD_ROLL_SNIP_MAX + 1];
+    char next[HUSH_THREAD_BRIEF_MAX + 1];
+
+    if (text == NULL || text[0] == '\0')
+        return;
+    hush_thread_flatten_snip(snip, sizeof(snip), text);
+    if (snip[0] == '\0')
+        return;
+    hush_thread_brief_get(root, old_text, sizeof(old_text));
+    hush_thread_join_evict(next, sizeof(next), old_text, snip);
+    hush_thread_brief_set(root, next);
 }
 
 static void hush_thread_root_of(const hush_event_t *ev,
@@ -373,4 +403,87 @@ static hush_status_t hush_thread_write_file(const char *path, const char *text)
         return HUSH_ERR_IO;
     }
     return HUSH_OK;
+}
+
+static void hush_thread_flatten_snip(char *out, size_t outsz, const char *text)
+{
+    size_t i;
+    size_t o = 0;
+    int gap = 0;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    assert(text != NULL);
+    out[0] = '\0';
+    for (i = 0; text[i] != '\0' && i < (size_t)HUSH_EVENT_MAX_CONTENT; ++i) {
+        char ch = text[i];
+
+        if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+            if (o > 0)
+                gap = 1;
+            continue;
+        }
+        if (gap) {
+            if (o + 1 >= outsz)
+                break;
+            out[o++] = ' ';
+            gap = 0;
+        }
+        if (o + 1 >= outsz)
+            break;
+        out[o++] = ch;
+    }
+    out[o] = '\0';
+}
+
+static void hush_thread_join_evict(char *out, size_t outsz,
+                                   const char *old_text, const char *snip)
+{
+    size_t seplen = strlen(HUSH_THREAD_BRIEF_SEP);
+    const char *keep = old_text;
+    size_t keep_len;
+    size_t snip_len;
+    size_t o = 0;
+
+    assert(out != NULL);
+    assert(outsz > seplen);
+    assert(old_text != NULL);
+    assert(snip != NULL);
+    if (keep[0] != '\0') {
+        size_t total = strlen(keep) + seplen + strlen(snip);
+
+        if (total >= outsz)
+            keep = hush_thread_kept_tail(keep, keep + (total - (outsz - 1)));
+    }
+    keep_len = strlen(keep);
+    snip_len = strlen(snip);
+    if (keep_len + seplen + snip_len >= outsz) {
+        /* Unreachable with the documented caller buffers; stay bounded. */
+        keep = "";
+        keep_len = 0;
+    }
+    if (keep_len > 0) {
+        memcpy(out + o, keep, keep_len);
+        o += keep_len;
+        memcpy(out + o, HUSH_THREAD_BRIEF_SEP, seplen);
+        o += seplen;
+    }
+    if (snip_len > outsz - o - 1)
+        snip_len = outsz - o - 1;
+    memcpy(out + o, snip, snip_len);
+    o += snip_len;
+    out[o] = '\0';
+}
+
+static const char *hush_thread_kept_tail(const char *text, const char *start)
+{
+    const char *cut;
+
+    assert(text != NULL);
+    assert(start != NULL);
+    assert(start >= text);
+    cut = strstr(start, HUSH_THREAD_BRIEF_SEP);
+    if (cut != NULL)
+        return cut + strlen(HUSH_THREAD_BRIEF_SEP);
+    return start;
 }

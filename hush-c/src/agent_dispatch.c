@@ -332,7 +332,7 @@ static void hush_agent_brief_update(const hush_event_t *posted, const char *answ
     assert(posted != NULL);
     assert(answer != NULL);
     hush_agent_event_root(root, sizeof(root), posted);
-    hush_thread_brief_set(root, answer);
+    hush_thread_brief_roll(root, answer);
 }
 
 static hush_status_t hush_agent_publish_reply(hush_store_t *store, const hush_agent_job_t *job)

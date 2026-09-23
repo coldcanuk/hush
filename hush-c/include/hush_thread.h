@@ -1,4 +1,14 @@
-/* hush_thread.h: durable per-thread transcripts and rolling briefs. */
+/* hush_thread.h: durable per-thread transcripts and rolling briefs.
+ *
+ * Context-budget policy (WS5 M1): the live ring is preferred, the durable
+ * transcript fills only window slots the ring cannot, and the rolling brief
+ * carries the pinned summary. Per root, newest wins: up to
+ * HUSH_AGENT_THREAD_MAX newest ring turns (each snipped to
+ * HUSH_AGENT_SNIP_MAX bytes), durable turns backfill uncovered slots
+ * oldest-available-first, and every published robot reply rolls one
+ * HUSH_THREAD_ROLL_SNIP_MAX-byte snip onto the brief, evicting from the
+ * front past HUSH_THREAD_BRIEF_MAX. The job note assembles brief, opening,
+ * backfill, ring turns, then the verbatim current message. */
 
 #ifndef HUSH_THREAD_H
 #define HUSH_THREAD_H
@@ -13,6 +23,8 @@ enum {
     HUSH_THREAD_CONTENT_MAX = 2048,
     /* Rolling brief cap. */
     HUSH_THREAD_BRIEF_MAX = 2048,
+    /* One rolled answer contributes at most this many flattened bytes. */
+    HUSH_THREAD_ROLL_SNIP_MAX = 200,
     /* Turns a single read returns at most. */
     HUSH_THREAD_TURNS_MAX = 32
 };
@@ -37,6 +49,11 @@ void hush_thread_brief_get(const char *root, char *out, size_t outsz);
 
 /* Replaces the rolling brief for root. Empty text removes it. */
 void hush_thread_brief_set(const char *root, const char *text);
+
+/* Rolls one flattened snip of text onto the root's brief, evicting the
+ * oldest entries past HUSH_THREAD_BRIEF_MAX. Blank text and invalid roots
+ * are no-ops; never removes an existing brief. */
+void hush_thread_brief_roll(const char *root, const char *text);
 
 /* Number of transcript turns for root. */
 size_t hush_thread_count(const char *root);
