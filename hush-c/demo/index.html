@@ -838,6 +838,45 @@ body { padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
 .skill-ghost { position: fixed; z-index: 80; pointer-events: none; width: 52px; height: 52px; margin-left: -26px; margin-top: -26px; }
 .skill-ghost * { pointer-events: none; }
 body.skill-holding, body.skill-holding * { cursor: grabbing; }
+/* PE-2 Armory lifetime shelves (ALWAYS-ON | ON-CALL) + gem chips + scope facet.
+   Lifetime is a product label only; every equipped skill still injects every job. */
+.skill-facet-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; width: 100%; }
+.skill-facet {
+  min-height: 32px; padding: 4px 10px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--fg); border-radius: 6px;
+  font: 600 0.7rem var(--sans); cursor: pointer;
+}
+.skill-facet.on { box-shadow: 0 0 0 2px var(--accent-dim); border-color: var(--accent); }
+.skill-shelf-lbl {
+  font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em;
+  color: var(--fg); margin: 8px 0 4px; width: 100%;
+}
+.skill-shelf {
+  display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start;
+  width: 100%; min-height: 60px; border: 1px dashed var(--line);
+  border-radius: 8px; padding: 8px;
+}
+.skill-shelf-empty { font-size: 0.75rem; color: var(--faint); }
+.skill-gem-wrap { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
+.skill-gem .life {
+  display: block; font-size: 0.5rem; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.9;
+}
+.skill-gem[data-lifetime="always"] .life { color: #ffd75e; }
+.skill-gem[data-lifetime="oncall"] .life { color: #8fd3ff; }
+.skill-life {
+  min-height: 20px; padding: 0 6px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface); color: var(--muted); font: 700 0.55rem/1.6 var(--mono);
+  letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer;
+}
+.skill-life[data-lifetime="always"] { border-color: #d4a017; color: #ffd75e; }
+.skill-life[data-lifetime="oncall"] { border-color: #0ff; color: #8fd3ff; }
+#profile-loadout {
+  margin: 8px 0; border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; background: var(--surface-2);
+}
+#profile-loadout .lbl { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
+#profile-loadout-text { font-size: 0.8rem; color: var(--fg); margin: 4px 0; line-height: 1.5; }
 button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 .send-error:empty { display: none; }
 .send-error { padding: 0 16px; margin: 6px 0; }
@@ -1187,6 +1226,10 @@ html[data-theme="field-office"] .skill-gem,
 html[data-theme="field-office"] .skill-slot,
 html[data-theme="field-office"] .skill-doll-pic,
 html[data-theme="field-office"] .skill-pool,
+html[data-theme="field-office"] .skill-shelf,
+html[data-theme="field-office"] .skill-facet,
+html[data-theme="field-office"] .skill-life,
+html[data-theme="field-office"] #profile-loadout,
 html[data-theme="field-office"] .skill-loadout,
 html[data-theme="field-office"] .skill-cycle-stage,
 html[data-theme="field-office"] .skill-sheet-card,
@@ -1809,6 +1852,11 @@ html[data-theme="field-office"] #kit-menu {
       <label for="prof-avatar">Avatar</label>
       <input id="prof-avatar" type="file" accept="image/jpeg,image/png,image/webp">
       <p class="help" id="prof-avatar-status">Optional. JPEG or PNG, stored as a Nostr picture URL.</p>
+      <!-- PE-2: Character read-only equipped strip (Always-on names + On-call count). -->
+      <div id="profile-loadout" aria-label="Robot loadout summary">
+        <div class="lbl">Equipped skills</div>
+        <p class="help" id="profile-loadout-text">Select a robot tile, then press c.</p>
+      </div>
       <div class="actions">
         <button class="btn" id="profile-save" type="button">Save profile</button>
         <button class="btn ghost" id="profile-copy" type="button">Copy npub</button>
@@ -1907,6 +1955,8 @@ html[data-theme="field-office"] #kit-menu {
         <div class="skill-board">
           <div>
             <div class="lbl">Skill armory</div>
+            <!-- PE-2: ALWAYS-ON | ON-CALL lifetime shelves; scope stays a secondary facet. -->
+            <p class="help" id="skill-life-note">Shelves are product labels only — every equipped skill injects every job.</p>
             <div id="skill-armory" class="skill-pool" aria-label="Skill armory"></div>
           </div>
           <div>
@@ -2358,6 +2408,15 @@ html[data-theme="field-office"] #kit-menu {
     let skillVoices = [];
     let skillWatermarks = {};
     let skillLocked = false;
+    /* PE-2 Armory lifetime: product labels only (client-side). "always" paints
+       the ALWAYS-ON shelf, "oncall" the ON-CALL shelf. Not prompt tiers:
+       agent_prompt.c still injects every equipped SKILL.md body on every job. */
+    let skillScopeFacet = "all"; /* PE-2 secondary scope facet: all|system|robot */
+    let skillLifeOverride = {}; /* PE-2 persisted lifetime labels {skillId: "always"|"oncall"} */
+    try {
+      const rawLife = localStorage.getItem("hush-skill-lifetime");
+      if (rawLife) skillLifeOverride = JSON.parse(rawLife) || {};
+    } catch (e) { skillLifeOverride = {}; }
     const SKILL_SLOTS = 8; /* sockets around the doll portrait; matches HUSH_SKILL_EQUIP_MAX */
     let skillCycleIdx = 0;
     let skillHeld = null; /* {skill, fromSlot} while a gem is lifted */
@@ -4595,6 +4654,29 @@ html[data-theme="field-office"] #kit-menu {
     /* UI-M1: Character sheet (Profile drawer) shared by rail button, quick tab, and `c`.
        UI-M4: taking the character journey hides the inventory layers, so
        the sheet never stacks over (or under) them. */
+    /* PE-2: Character read-only equipped strip (Always-on names + On-call
+       count/short list). Equip stays on `i`; this surface never assigns. */
+    function paintCharacterStrip() {
+      const el = $("profile-loadout-text");
+      if (!el) return;
+      const slug = invSelectedSlug || editSlug;
+      const bot = robotModels().find((x) => x.slug === slug) || null;
+      if (!bot) {
+        el.textContent = "Select a robot tile, then press c.";
+        return;
+      }
+      const ids = (bot.skills || []).slice();
+      const nm = (id) => skillById(id).name || id;
+      const always = ids.filter((id) => skillLifetime(skillById(id)) === "always");
+      const oncall = ids.filter((id) => skillLifetime(skillById(id)) !== "always");
+      let text = (bot.name || bot.slug) + " wears " + ids.length + "/8: ";
+      text += "Always-on " + (always.length ? always.map(nm).join(", ") : "—") + " · ";
+      text += "On-call " + (oncall.length
+        ? oncall.length + " (" + oncall.map(nm).slice(0, 4).join(", ") +
+          (oncall.length > 4 ? ", …" : "") + ")"
+        : "0");
+      el.textContent = text;
+    }
     function openCharacterSheet() {
       const p = $("profile");
       if (!p) return;
@@ -4607,6 +4689,7 @@ html[data-theme="field-office"] #kit-menu {
       if ($("prof-last")) $("prof-last").value = prof.last_name || "";
       if ($("prof-email")) $("prof-email").value = prof.email || "";
       if ($("prof-org")) $("prof-org").value = prof.organization || "";
+      paintCharacterStrip();
     }
     function toggleCharacterSheet() {
       const p = $("profile");
@@ -6553,6 +6636,30 @@ html[data-theme="field-office"] #kit-menu {
       const who = role || robotRole();
       return need === who;
     }
+    /* PE-2: lifetime label for a catalog skill. System scope defaults to
+       ALWAYS-ON, This-robot scope to ON-CALL; per-skill overrides persist
+       in localStorage.hush-skill-lifetime. Product labels only. */
+    function skillLifetime(s) {
+      const id = s && s.id;
+      if (id && (skillLifeOverride[id] === "always" || skillLifeOverride[id] === "oncall"))
+        return skillLifeOverride[id];
+      return (s && s.scope === "robot") ? "oncall" : "always";
+    }
+    function skillLifetimeName(lt) { return lt === "always" ? "Always" : "On-call"; }
+    function skillLifetimeShelf(lt) { return lt === "always" ? "ALWAYS-ON" : "ON-CALL"; }
+    function setSkillLifetime(id, lt) {
+      if (!id) return;
+      skillLifeOverride[id] = lt;
+      try { localStorage.setItem("hush-skill-lifetime", JSON.stringify(skillLifeOverride)); } catch (e) {}
+      paintSkillBoard(editSlug);
+      paintSkillSheet();
+      paintCharacterStrip();
+    }
+    function skillFitsFacet(s) {
+      if (skillScopeFacet === "system") return s.scope !== "robot";
+      if (skillScopeFacet === "robot") return s.scope === "robot";
+      return true;
+    }
     function armorySkills(robotSlug) {
       return skillCatalog.filter((s) => {
         if (equippedSkills.indexOf(s.id) >= 0) return false;
@@ -6609,6 +6716,7 @@ html[data-theme="field-office"] #kit-menu {
       }
       ids.forEach((id) => {
         const s = skillById(id);
+        const lt = skillLifetime(s);
         const card = document.createElement("div");
         card.className = "skill-sheet-card";
         card.innerHTML =
@@ -6616,7 +6724,21 @@ html[data-theme="field-office"] #kit-menu {
           "<div class='nm'>" + esc(s.name || s.id) + "</div>" +
           (s.summary ? "<div class='sum'>" + esc(s.summary) + "</div>" : "") +
           "<div class='meta'>" + (s.chars || 0) + " chars · " +
-          (s.complexity || 0) + " complexity · " + esc(s.scope || "system") + "</div>";
+          (s.complexity || 0) + " complexity · " + esc(s.scope || "system") +
+          " · " + esc(skillLifetimeShelf(lt)) + "</div>";
+        /* PE-2: sheet gems show the lifetime chip with a label-only toggle. */
+        const flip = document.createElement("button");
+        flip.type = "button";
+        flip.className = "skill-life";
+        flip.dataset.lifetime = lt;
+        flip.textContent = skillLifetimeName(lt);
+        flip.title = "Toggle Always / On-call (product label only).";
+        flip.setAttribute("aria-label", "Lifetime " + skillLifetimeName(lt) +
+          " for " + (s.name || s.id) + ". Activate to toggle.");
+        flip.addEventListener("click", () => {
+          setSkillLifetime(s.id, flip.dataset.lifetime === "always" ? "oncall" : "always");
+        });
+        card.appendChild(flip);
         list.appendChild(card);
       });
     }
@@ -6639,21 +6761,57 @@ html[data-theme="field-office"] #kit-menu {
       if (loadout) paintSkillDoll(loadout);
       paintSkillCycle(robotSlug);
     }
+    /* PE-2: Armory paints two lifetime shelves (ALWAYS-ON | ON-CALL); the
+       System / This-robot scope stays as a secondary facet tab row. Lifting
+       a worn gem returns it to its lifetime shelf on the next repaint. */
     function paintSkillArmory(armory, robotSlug) {
-      const list = armorySkills(robotSlug);
+      const list = armorySkills(robotSlug).filter(skillFitsFacet);
       armory.innerHTML = "";
-      if (!list.length) {
-        armory.textContent = "No available skills for this role.";
+      const row = document.createElement("div");
+      row.className = "skill-facet-row";
+      row.setAttribute("role", "group");
+      row.setAttribute("aria-label", "Scope facet");
+      [["all", "All"], ["system", "System"], ["robot", "This robot"]].forEach(([val, label]) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "skill-facet" + (skillScopeFacet === val ? " on" : "");
+        b.textContent = label;
+        b.setAttribute("aria-pressed", String(skillScopeFacet === val));
+        b.addEventListener("click", () => {
+          skillScopeFacet = val;
+          skillCycleIdx = 0;
+          paintSkillBoard(editSlug);
+        });
+        row.appendChild(b);
+      });
+      armory.appendChild(row);
+      if (!armorySkills(robotSlug).length) {
+        const none = document.createElement("p");
+        none.className = "help";
+        none.textContent = "No available skills for this role.";
+        armory.appendChild(none);
         return;
       }
-      ["system", "robot"].forEach((scope) => {
-        const rows = list.filter((s) => s.scope === scope);
-        if (!rows.length) return;
+      ["always", "oncall"].forEach((lt) => {
         const lbl = document.createElement("div");
-        lbl.className = "skill-scope-lbl";
-        lbl.textContent = scope === "robot" ? "This robot" : "System";
+        lbl.className = "skill-shelf-lbl";
+        lbl.textContent = skillLifetimeShelf(lt);
         armory.appendChild(lbl);
-        rows.forEach((s) => armory.appendChild(makeSkillGem(s, {})));
+        const shelf = document.createElement("div");
+        shelf.className = "skill-shelf";
+        shelf.dataset.lifetime = lt;
+        const rows = list.filter((s) => skillLifetime(s) === lt);
+        if (!rows.length) {
+          const empty = document.createElement("span");
+          empty.className = "skill-shelf-empty";
+          empty.textContent = lt === "always"
+            ? "No Always-on gems in this view."
+            : "No On-call gems in this view.";
+          shelf.appendChild(empty);
+        } else {
+          rows.forEach((s) => shelf.appendChild(makeSkillGem(s, {})));
+        }
+        armory.appendChild(shelf);
       });
     }
     /* 3x3 doll: 8 sockets around the portrait (UI_SPEC §9). Sockets fill in
@@ -6814,7 +6972,7 @@ html[data-theme="field-office"] #kit-menu {
       }
       g.hidden = false;
       g.innerHTML = "";
-      const gem = makeSkillGem(skillHeld.skill, {});
+      const gem = makeSkillGem(skillHeld.skill, { ghost: true });
       gem.style.pointerEvents = "none";
       gem.disabled = true;
       g.appendChild(gem);
@@ -6842,19 +7000,27 @@ html[data-theme="field-office"] #kit-menu {
       });
     }
 
+    /* PE-2: every gem carries a lifetime chip (Always / On-call wording).
+       Doll + ghost gems show it inline; armory + cycle gems pair it with a
+       toggle that moves the gem between lifetime shelves (label only). */
     function makeSkillGem(skill, opts) {
       const o = opts || {};
+      const lt = skillLifetime(skill);
       const b = document.createElement("button");
       b.type = "button";
       b.className = "skill-gem" +
         ((skillHeld && skillHeld.skill && skillHeld.skill.id === skill.id) ? " held" : "");
       b.dataset.scope = skill.scope || "system";
+      b.dataset.lifetime = lt;
       b.dataset.id = skill.id;
-      b.title = (skill.name || skill.id) + (skill.summary ? " — " + skill.summary : "");
+      b.title = (skill.name || skill.id) + (skill.summary ? " — " + skill.summary : "") +
+        " (" + skillLifetimeShelf(lt) + ")";
       b.innerHTML = "<span class=\"sig\">" + esc(skillSig(skill)) +
-        "</span><span class=\"nm\">" + esc(skill.name || skill.id) + "</span>";
+        "</span><span class=\"nm\">" + esc(skill.name || skill.id) + "</span>" +
+        "<span class=\"life\">" + esc(skillLifetimeName(lt)) + "</span>";
       const assigned = typeof o.slot === "number";
-      b.setAttribute("aria-label", (assigned ? "Remove " : "Assign ") + (skill.name || skill.id));
+      b.setAttribute("aria-label", (assigned ? "Remove " : "Assign ") + (skill.name || skill.id) +
+        ", " + skillLifetimeName(lt));
       b.setAttribute("aria-pressed", String(assigned));
       b.disabled = skillLocked;
       b.addEventListener("click", () => {
@@ -6871,7 +7037,30 @@ html[data-theme="field-office"] #kit-menu {
           x: ev.clientX, y: ev.clientY
         };
       });
-      return b;
+      if (o.compact || o.ghost || assigned) return b;
+      const next = lt === "always" ? "oncall" : "always";
+      const wrap = document.createElement("span");
+      wrap.className = "skill-gem-wrap";
+      wrap.dataset.lifetime = lt;
+      wrap.appendChild(b);
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "skill-life";
+      chip.dataset.lifetime = lt;
+      chip.textContent = skillLifetimeName(lt);
+      chip.title = "Lifetime: " + skillLifetimeName(lt) +
+        ". Activate to move to " + skillLifetimeShelf(next) + " (label only).";
+      chip.setAttribute("aria-label", "Lifetime " + skillLifetimeName(lt) +
+        " for " + (skill.name || skill.id) +
+        ". Activate to move to " + skillLifetimeShelf(next) + ".");
+      chip.disabled = skillLocked;
+      chip.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        setSkillLifetime(skill.id, next);
+      });
+      chip.addEventListener("pointerdown", (ev) => { ev.stopPropagation(); });
+      wrap.appendChild(chip);
+      return wrap;
     }
 
     function toggleRobotInventory() {
