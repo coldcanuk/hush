@@ -702,6 +702,19 @@ focus protection as the `i` shortcut (no firing from `input`,
 `textarea`, `select`, or `contenteditable`; Ctrl/Meta/Alt combos
 ignored), so chat and drawer keystrokes are never stolen. Coexists
 with UI-M1 `#quick-nav` top tabs; neither chrome grows.
+Delta 2026-09-23 (UI-M3 skin pass): CSS-only reskin of the primary
+chrome over M1+M2 — no journey, shortcut, or guard wiring changes
+(`i`/`c` + `navTyping`, 4 slots + gear + 1–4 + `quickbarTyping` all
+untouched). Primary radii move to 6–8px and depth comes from 1px
+etched bevels (translucent white top light + black low light, so all
+seven themes inherit it): header and `#quick-bar` read as raised
+etched strips, `#badge` and `kbd` chips as engraved plates, `.chan.on`
+as a sheet row with an accent spine, and `.inv-btn` / `.quick-tab` /
+`.qb-slot` / `.qb-gear` share one beveled micro-button language with
+a pressed inset on `:active` and a faint accent glow on slot hover.
+Slots gain `min-width: 0` + label ellipsis so ~390px never overflows;
+`body` bottom clearance tracks the 40px-tall bar plus safe-area.
+Drawers, menus, and cards keep their 12px+ radii.
 
 ### 16. Mention + manage pills
 
