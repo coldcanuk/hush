@@ -5081,7 +5081,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
         status.events + " stored<br>" +
         projN + " project" + (projN === 1 ? "" : "s") + "<br>" +
         status.clients + " sockets<br>" +
-        "v" + (status.version || "?") + " " + (status.build || "?");
+        (((status.version || "?").charAt(0) === "v" ? "" : "v") + (status.version || "?")) + " " + (status.build || "?");
       document.title = "Hush " + (status.version || "0.0.1") +
         " (" + (status.build || "unknown") + ")";
       paintRelayDrawer(status);
