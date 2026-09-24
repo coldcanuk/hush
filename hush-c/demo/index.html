@@ -1521,12 +1521,15 @@ html[data-theme="field-office"] #kit-menu {
    chrome (no track, dot, or end arrows). Scroll lives on a stereo-style
    VOLUME dial in the empty chrome above Send Dispatch (#fo-dial-row).
    Wheel over the dial scrolls the log; click-drag rotates clockwise to
-   scroll down, counter-clockwise to scroll up. Physical knob plates,
+   scroll down, counter-clockwise to scroll up. The wrap stays row-flex
+   so #stream keeps a bounded height and scrolls internally — block would
+   let the stream grow unbounded, kill overflow, and paint under the dial.
+   Physical knob plates,
    sharp corners, existing tokens only — never a range input. */
-#fo-log-wrap { display: block; flex: 1; min-height: 0; }
-#fo-log-wrap #stream { scrollbar-width: none; -ms-overflow-style: none; }
+#fo-log-wrap { display: flex; flex: 1; min-height: 0; }
+#fo-log-wrap #stream { flex: 1; min-width: 0; min-height: 0; scrollbar-width: none; -ms-overflow-style: none; }
 #fo-log-wrap #stream::-webkit-scrollbar { display: none; width: 0; height: 0; }
-#fo-dial-row { display: flex; justify-content: flex-end; padding: 4px 18px 0; }
+#fo-dial-row { display: flex; flex: 0 0 auto; justify-content: flex-end; padding: 4px 18px 0; }
 #fo-dial {
   display: inline-flex; align-items: center; gap: 8px;
   background: var(--surface); color: var(--fg); border: 1px solid var(--line);
