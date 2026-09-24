@@ -54,7 +54,7 @@ Run it:
 ~/.local/bin/hush-relay --no-open 10555   # default port 10555
 ```
 
-Then open `http://127.0.0.1:10555/` in a Chromium-family browser. First launch walks Identity → Backup (`pass` checked by default) → Vibe → Meet Major. `Close` dismisses the window and leaves the hive standing; `Exit` (`--quit`) stops every process with exit code 0.
+Then open `http://127.0.0.1:10555/` in a Chromium-family browser. First launch walks Identity → Backup (`pass` checked by default) → Vibe → Meet Major. `Close` dismisses the window and leaves the hive standing; `Exit` (`POST /api/exit`) stops every process. Note: `hush-relay --quit` currently exits `0` but leaves the relay serving (known bug, fix tracked separately) — see [Close vs Exit](docs/OPERATIONS.md#close-vs-exit).
 
 Isolated demo run (how the screenshot above was produced):
 
@@ -112,11 +112,14 @@ Not on `main`. That is the PE-4 roadmap item above.
 Only in `pass` (plus foreign homes Hush never copies: `~/.config/goose`, `~/.grok/auth.json`, `~/.codex`). `GET` routes never return secret values.
 
 **How do Close and Exit differ?**
-Close dismisses the window; the hive keeps listening (re-attach from the launcher). Exit stops every process (exit code 0).
+Close dismisses the window; the hive keeps listening (re-attach from the launcher). Exit (`POST /api/exit`) stops every process. Full table, including the known `--quit` issue, in [`docs/OPERATIONS.md`](docs/OPERATIONS.md#close-vs-exit).
+
+**Where is the operator manual?**
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md) (run, stop, threads, STUN/TURN, calls) and [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) (install per distro, env vars, file layout, providers).
 
 ## Docs and development
 
-Plans and research live under `docs/` — never `PLAN_*.md` at the root. Key entries: [`docs/CODEX.md`](docs/CODEX.md), [`docs/pass-integration.md`](docs/pass-integration.md), [`docs/plan/`](docs/plan/), [`docs/research/`](docs/research/), [`docs/ops/`](docs/ops/).
+Plans and research live under `docs/` — never `PLAN_*.md` at the root. Key entries: [`docs/OPERATIONS.md`](docs/OPERATIONS.md), [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md), [`docs/CODEX.md`](docs/CODEX.md), [`docs/pass-integration.md`](docs/pass-integration.md), [`docs/plan/`](docs/plan/), [`docs/research/`](docs/research/), [`docs/ops/`](docs/ops/).
 
 Development uses Codex with worktrees (`gb/<slug>` branches, PR → review → auto-merge, never direct `main` writes). Law: [`PRIME_DIRECTIVE.md`](PRIME_DIRECTIVE.md), [`AGENTS.md`](AGENTS.md), [`BRANCHING.md`](BRANCHING.md). Every `.c`/`.h` follows the machine-legibility standard (`.agents/skills/write-legible-c/SKILL.md`), strict C11 build, `./configure && make && make test`.
 
