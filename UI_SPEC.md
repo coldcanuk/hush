@@ -317,6 +317,24 @@ relay state until their loadout is edited. Doll/sheet stay
 draft-until-Save; the Character strip still reports relay-saved counts.
 PE-4 favorites save/load stay out of scope — no `loadouts/` writes,
 no favorite picker.
+Delta 2026-09-24 (PE-4 favorite loadouts — Journey D, relay-saved): the
+`#agent-drawer` gains a Favorites strip under the doll. Save snapshots
+the current doll (≥1 skill) under a typed name and refuses an empty
+name or a 0-skill doll; Load swaps the whole doll in one assignment
+(never through empty) and refuses a favorite with zero skills still on
+this relay, skipping missing ids with inline copy; Unload clears the
+active highlight only, never the doll; Delete removes the list entry
+only, never the doll. Persistence is relay-side: per-robot named JSON
+sets (`{"name":..,"skills":[..]}`, 1–8 ids each) under
+`$HOME/.hush/robots/<slug>/loadouts/`, served by `POST /api/loadout`
+(`save` / `list` / `load` / `delete`); unknown or `robot:<other>:` ids
+are refused at save. Favorites survive leave→return; the active
+highlight does not. PE-3 min-1 still holds everywhere (last-gem lift,
+empty-draft save, empty loadout write, empty favorite). Lifetime
+labels stay browser-only per the honesty polish; favorites are the
+only new relay-saved skill state, and the strip says so inline.
+Preserved: M11 dial, M9 folder tabs + zero tool rail, M8 overlay, M7
+chrome-hard / field-office.
 Delta 2026-09-22 (WS6 loadout-doll pass): `#skill-cycle` lives in
 `#agent-drawer` only (no hive-nav cycle); the doll is 8 sockets around
 the portrait center (9 cells = `HUSH_SKILL_EQUIP_MAX` 8 + portrait);
@@ -1128,7 +1146,7 @@ when policy flips; new considers honor the new leash.
   System (application-wide: shipped `system/` + hive-forged `user/`) and
   This robot (`robots/<slug>/`). Catalog JSON `"scopes":["system","robot"]`.
 - Favorites v1: `$HOME/.hush/robots/<slug>/loadouts/` named JSON sets,
-  1–8 skills each (PE-1 2026-09-23; spec only).
+  1–8 skills each (PE-4 2026-09-24; relay-saved via `POST /api/loadout`).
 - Avatar on disk: sniffed JPEG/PNG only; client downscales ≤96px.
 - Kind 0 `picture` is a URL, never a data URI (`HUSH_EVENT_MAX_CONTENT = 4096`).
 
