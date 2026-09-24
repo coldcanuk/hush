@@ -28,16 +28,22 @@ hush-relay --no-open 10555   # default port is 10555 (HUSH_DEFAULT_PORT)
 | Verb | In the hive | CLI | What happens (verified live on a cloud VM) |
 |---|---|---|---|
 | **Close** | chooser **Close the window** | `hush-relay --close <port>` | GUI goes away. The relay keeps listening (`POST /api/close` answers `{"ok":true,"action":"close"}` and the port keeps serving). |
-| **Exit** | chooser **Exit the application** | `POST /api/exit` | Every process stops. `POST /api/exit` answers `{"ok":true,"action":"exit"}` and the port goes dark. |
+| **Exit** | chooser **Exit the application** | `hush-relay --quit <port>` or `POST /api/exit` | Every process stops. `POST /api/exit` answers `{"ok":true,"action":"exit"}` and the port goes dark. |
 | **Cancel** | chooser **Cancel** | — | Stay put. |
 
-Known issue (CoS hold, product bug tracked separately): `hush-relay --quit
-<port>` exits `0` but the relay **keeps serving**. Floor is handling the
-`--quit` bug as product work. Until that lands, do not claim `--quit` stops
-anything: to actually stop a relay, use `POST /api/exit` (with the session
-token) or stop the process itself. Verified 2026-09-24 on base `44c66f88`:
-`--quit 18085` → exit `0`, port still `200`; `POST /api/exit` → connection
-refused afterwards. `make clean` stops relays via `scripts/kill-relay.sh`
+### Stopping with `--quit` (behavior as of Floor's PR #207)
+
+On Linux, `hush-relay --quit` verifies the target process is hush-relay before
+signalling it. Bare `--quit` targets port `10555` only — pass the port
+explicitly (`hush-relay --quit <port>`) for relays on any other port. It exits
+`0` only after the relay is confirmed stopped, and exits `1` when no relay is
+running on that port.
+
+On OpenBSD and FreeBSD, `hush-relay --quit` refuses to stop the relay (exit code 2) because it cannot verify the process identity on those systems yet. Stop the relay with Exit in the hive, Ctrl+C, or `curl -X POST http://127.0.0.1:<port>/api/exit -H "X-Hush-Token: $(cat ~/.hush/session.token)"`. Tracked in #209.
+
+History: verified pre-#207 on base `44c66f88` (2026-09-24) — `--quit` exited
+`0` while the port kept serving. #207 fixed this on Linux; Floor owns the
+product change. `make clean` stops relays via `scripts/kill-relay.sh`
 (SIGTERM, then SIGKILL past a grace period), which also reaps the
 CHILD-mode turnserver from its pidfile but never touches the systemd
 `hush-turn.service` daemon.

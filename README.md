@@ -54,7 +54,7 @@ Run it:
 ~/.local/bin/hush-relay --no-open 10555   # default port 10555
 ```
 
-Then open `http://127.0.0.1:10555/` in a Chromium-family browser. First launch walks Identity → Backup (`pass` checked by default) → Vibe → Meet Major. `Close` dismisses the window and leaves the hive standing; `Exit` (`POST /api/exit`) stops every process. Note: `hush-relay --quit` currently exits `0` but leaves the relay serving (known bug, fix tracked separately) — see [Close vs Exit](docs/OPERATIONS.md#close-vs-exit).
+Then open `http://127.0.0.1:10555/` in a Chromium-family browser. First launch walks Identity → Backup (`pass` checked by default) → Vibe → Meet Major. `Close` dismisses the window and leaves the hive standing; `Exit` stops every process (`hush-relay --quit <port>` on Linux, `POST /api/exit` elsewhere — on OpenBSD/FreeBSD `--quit` refuses with exit 2). Details: [Close vs Exit](docs/OPERATIONS.md#close-vs-exit).
 
 Isolated demo run (how the screenshot above was produced):
 
@@ -112,7 +112,7 @@ Not on `main`. That is the PE-4 roadmap item above.
 Only in `pass` (plus foreign homes Hush never copies: `~/.config/goose`, `~/.grok/auth.json`, `~/.codex`). `GET` routes never return secret values.
 
 **How do Close and Exit differ?**
-Close dismisses the window; the hive keeps listening (re-attach from the launcher). Exit (`POST /api/exit`) stops every process. Full table, including the known `--quit` issue, in [`docs/OPERATIONS.md`](docs/OPERATIONS.md#close-vs-exit).
+Close dismisses the window; the hive keeps listening (re-attach from the launcher). Exit stops every process (`--quit <port>` on Linux; `POST /api/exit` elsewhere — on OpenBSD/FreeBSD `--quit` refuses with exit 2). Full table in [`docs/OPERATIONS.md`](docs/OPERATIONS.md#close-vs-exit).
 
 **Where is the operator manual?**
 [`docs/OPERATIONS.md`](docs/OPERATIONS.md) (run, stop, threads, STUN/TURN, calls) and [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) (install per distro, env vars, file layout, providers).
