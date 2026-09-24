@@ -52,7 +52,17 @@ ICON_PANEL_OBJS := $(foreach s,$(ICON_PANELS),src/hush_icon_panel_$(s).o)
 TESTS := $(wildcard tests/test_*.c)
 TEST_BINS := $(TESTS:.c=)
 
-.PHONY: all test clean demo install uninstall
+.PHONY: all test clean demo install uninstall check-prefix
+
+# An empty PREFIX would resolve BINDIR to /bin and let install/uninstall
+# scribble outside any prefix. The top-level Makefile guards too; this
+# covers direct `make -C hush-c install PREFIX=` invocations.
+check-prefix:
+	@if [ -z "$(PREFIX)" ]; then \
+		echo "error: empty PREFIX. Pass a real prefix, e.g. make install PREFIX=/tmp/hush-eval,"; \
+		echo "or unset PREFIX to use the configured default (\$$HOME/.local)."; \
+		exit 1; \
+	fi
 
 all: libhush.a hush-relay
 
@@ -90,6 +100,7 @@ test: $(TEST_BINS) hush-relay
 	@sh tests/check_exit.sh
 	@sh tests/check_pkg_upgrade.sh
 	@sh tests/check_make_guard.sh
+	@sh tests/check_prefix.sh
 	@sh tests/check_provider.sh
 	@sh tests/check_agent.sh
 	@sh tests/check_codex.sh
@@ -113,7 +124,7 @@ clean:
 demo:
 	@echo "See hush-c/demo/ for the chat UI (also served by hush-relay on /)"
 
-install: all
+install: check-prefix all
 	install -d $(DESTDIR)$(CODEX_SKILL_SHARE)/references
 	install -m 0644 $(CODEX_SKILL_SOURCE)/SKILL.md $(CODEX_SKILL_SOURCE)/LICENSE \
 		$(CODEX_SKILL_SOURCE)/UPSTREAM.md $(DESTDIR)$(CODEX_SKILL_SHARE)/
@@ -191,7 +202,7 @@ ifneq ($(ENABLE_STUN_TURN),0)
 	fi
 endif
 
-uninstall:
+uninstall: check-prefix
 	rm -f $(DESTDIR)$(BINDIR)/hush-relay $(DESTDIR)$(BINDIR)/hush-pass
 	rm -f $(DESTDIR)$(APPDIR)/hush-relay.desktop
 	@for size in $(ICON_SIZES); do \
