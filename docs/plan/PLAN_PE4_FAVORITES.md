@@ -45,6 +45,12 @@
   `armory-honesty.sh`, `pe3-min1.sh`, `pe4-favorites.sh`,
   `check_collaboration.py`, live `/api/loadout` round-trip. DRAFT PR
   with OBSERVED-only body.
+- Round-2 hardening (same branch, gauge re-review): shared slugify /
+  join / mkdir via `hush_skill.h` + `hush_home.h` (tree creation lives
+  in `hush_home_ensure_loadouts`); scan IO surfaces instead of empty
+  lists; save–list aggregate fit gate; flattened validators; alias
+  addressing documented; concurrent same-name saves are last-writer-wins
+  on an atomic rename (single-user relay assumption).
 
 ## Out of scope
 

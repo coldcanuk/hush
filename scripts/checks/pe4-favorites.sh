@@ -85,25 +85,39 @@ for fn in 'hush_favorite_save' 'hush_favorite_load' 'hush_favorite_delete' \
 done
 n=$(grep -c 'hush_favorite_loadouts(dir, sizeof dir, robot)' "$fav_c" || true)
 [ "$n" -eq 4 ] || fail "all 4 entries must validate robot first, found $n"
-grep -q 'hush_favorite_under_dir' "$fav_c" || fail "dir containment missing"
+grep -q 'hush_favorite_is_under_dir' "$fav_c" \
+    || fail "dir containment missing"
 if grep -A20 'hush_status_t hush_favorite_load(' "$fav_c" \
-    | grep -q 'make_tree'; then
+    | grep -q 'ensure_loadouts'; then
     fail "load must never mkdir"
 fi
 if grep -A20 'hush_status_t hush_favorite_delete(' "$fav_c" \
-    | grep -q 'make_tree'; then
+    | grep -q 'ensure_loadouts'; then
     fail "delete must never mkdir"
 fi
-if [ "$(grep -c 'hush_favorite_make_tree' "$fav_c")" -ne 3 ]; then
-    fail "only save may create dirs (proto, one call, def)"
+if [ "$(grep -c 'hush_home_ensure_loadouts' "$fav_c")" -ne 1 ]; then
+    fail "only the save commit path may create dirs"
 fi
+grep -q 'hush_home_ensure_loadouts' hush-c/include/hush_home.h \
+    || fail "tree creation must live in the home module"
+for dup in 'hush_favorite_slugify' 'hush_favorite_make_tree' \
+    'hush_favorite_join' 'static hush_status_t hush_favorite_mkdir'; do
+    if grep -q "$dup" "$fav_c"; then
+        fail "shared helper copied instead of reused: $dup"
+    fi
+done
+grep -q 'void hush_skill_slugify' hush-c/include/hush_skill.h \
+    || fail "slugify must be shared through hush_skill.h"
 
 # 7. Caps, clashes, cleanup, escapes: honest errors, no silent loss.
 grep -q 'HUSH_ERR_DENIED' "$fav_h" || fail "DENIED contract missing"
 grep -q 'count >= (size_t)HUSH_FAVORITE_COUNT_MAX' "$fav_c" \
     || fail "33rd favorite must be refused"
-grep -q 'scan.dropped' "$fav_c" || fail "list must report truncation"
-grep -q 'strcmp(stored, clean) != 0' "$fav_c" || fail "clash check missing"
+grep -q 'scan->dropped' "$fav_c" || fail "list must report truncation"
+grep -q 'JSON_MAX' "$fav_c" || fail "save must fit the list envelope"
+grep -q 'strcmp(stored, draft->name) != 0' "$fav_c" \
+    || fail "clash check missing"
+grep -q 'alias' "$fav_h" || fail "alias addressing must be documented"
 grep -q 'clashes with a saved favorite' "$html" || fail "clash copy missing"
 n=$(grep -c 'unlink(tmp)' "$fav_c" || true)
 [ "$n" -ge 3 ] || fail "tmp file must be cleaned on error, found $n"
@@ -121,6 +135,9 @@ if grep -q '\[24\]' "$api" hush-c/src/hush_favorite.c; then
 fi
 if grep -q '0700' hush-c/src/hush_favorite.c; then
     fail "dir mode must be the shared constant"
+fi
+if grep -q 'strcpy' "$fav_c"; then
+    fail "bounded copies must use memcpy"
 fi
 
 echo "PASS: PE-4 favorites hold (save/load/unload/delete, relay-saved)."

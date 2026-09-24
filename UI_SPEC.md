@@ -342,6 +342,14 @@ robot (the 33rd save is refused, so the list never drops entries); a
 `skill_8` overflow, overlong name/robot/skill values, repeated skill
 ids, and non-UTF-8 or control-character names are refused instead of
 truncated or skipped.
+Hardening round 2 (same scope): unreadable loadouts trees report IO
+instead of an empty list (missing trees still list empty, creating
+nothing); saves are refused when the 32-cap aggregate could not fit
+the list envelope, so no accepted favorite is ever unlistable (proven
+by a full cap of maximum-length names listing completely); load and
+delete resolve any alias of the stored name and report the stored
+name; save/delete replies carry no echoed request text; refused saves
+create no directories.
 Preserved: M11 dial, M9 folder tabs + zero tool rail, M8 overlay, M7
 chrome-hard / field-office.
 Delta 2026-09-22 (WS6 loadout-doll pass): `#skill-cycle` lives in
