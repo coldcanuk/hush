@@ -363,6 +363,8 @@ make
 sudo make install PREFIX=/usr
 ```
 
+`make install PREFIX=…` re-derives `BINDIR`/`DATADIR` from `PREFIX` unless they are also given on the command line, so this recipe never leaks the `~/.local` paths baked by `./configure`.
+
 ## Docs
 
 Plans and research live under `docs/`. Do not leave `PLAN_*.md` or `RESEARCH*.md` at the repo root.

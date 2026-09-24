@@ -56,8 +56,8 @@ for arg in "$@"; do
             echo "  --datadir=PATH  Data directory     (default: \$PREFIX/share)"
             echo "  --cc=COMPILER   C compiler"
             echo "  --make=MAKE     make or gmake"
-            echo "  --enable-stun-turn   compile STUN/TURN manager (default)"
-            echo "  --disable-stun-turn  omit STUN/TURN manager"
+            echo "  --enable-stun-turn   STUN/TURN runtime + templates (default; hush_turn.c always compiles)"
+            echo "  --disable-stun-turn  soft-off: skip STUN/TURN templates + runtime (hush_turn.c still compiles)"
             echo ""
             echo "VAR=value assignments are also honored (PREFIX=/tmp/hush-eval"
             echo "./configure, or ./configure PREFIX=/tmp/hush-eval); flags win."
@@ -137,9 +137,9 @@ fi
 echo "Using CC:   $CC"
 echo "Using MAKE: $MAKE_CMD"
 if [ "$ENABLE_STUN_TURN" = "1" ]; then
-    echo "STUN/TURN:  enabled (default; --disable-stun-turn to omit)"
+    echo "STUN/TURN:  enabled (default; --disable-stun-turn for soft-off)"
 else
-    echo "STUN/TURN:  disabled"
+    echo "STUN/TURN:  soft-off (templates skipped; hush_turn.c still compiles)"
 fi
 echo
 

@@ -27,11 +27,24 @@
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share
+# Isolated-eval honesty: `make install PREFIX=/tmp/x` re-derives BINDIR and
+# DATADIR from PREFIX unless they were also given on the command line.
+# Otherwise a stale config.mk baked by an earlier ./configure (e.g. ~/.local)
+# would scatter files outside the requested PREFIX. Values from the
+# environment or command line (origin != file) are always honored.
+ifeq ($(origin PREFIX),command line)
+ifeq ($(origin BINDIR),file)
+BINDIR := $(PREFIX)/bin
+endif
+ifeq ($(origin DATADIR),file)
+DATADIR := $(PREFIX)/share
+endif
+endif
 # Rebuild guard port: $HUSH_PORT, else 10555 (HUSH_DEFAULT_PORT).
 # Override per-invocation, e.g. `HUSH_PORT=10556 make`.
 GUARD_PORT ?= $(HUSH_PORT)
 
-.PHONY: all test clean install uninstall guard check-prefix package-deb package-rpm packages deb rpm flatpak openbsd freebsd bsd dist
+.PHONY: all test clean install uninstall guard check-prefix check-stamp package-deb package-rpm packages deb rpm flatpak openbsd freebsd bsd dist
 # guard: is defined below but must never become the default goal.
 .DEFAULT_GOAL := all
 
@@ -42,16 +55,45 @@ guard:
 	@sh scripts/check-relay-port.sh $(GUARD_PORT)
 
 # An empty PREFIX would resolve BINDIR to /bin and let install/uninstall
-# scribble outside any prefix. configure refuses to generate one; this
-# catches `make install PREFIX=` style overrides instead.
+# scribble outside any prefix; an empty BINDIR would resolve install targets
+# to /hush-relay (root). configure refuses to generate an empty PREFIX; this
+# catches `make install PREFIX=` / `make install BINDIR=` style overrides
+# instead. DATADIR is guarded for the same reason (empty DATADIR would drop
+# desktop entries and icons at /applications and /icons).
 check-prefix:
 	@if [ -z "$(PREFIX)" ]; then \
 		echo "error: empty PREFIX. Pass a real prefix, e.g. make install PREFIX=/tmp/hush-eval,"; \
 		echo "or unset PREFIX to use the configured default (\$$HOME/.local)."; \
 		exit 1; \
+	fi; \
+	if [ -z "$(BINDIR)" ]; then \
+		echo "error: empty BINDIR. Pass a real bindir, e.g. make install BINDIR=/tmp/hush-eval/bin,"; \
+		echo "or unset BINDIR to derive it from PREFIX."; \
+		exit 1; \
+	fi; \
+	if [ -z "$(DATADIR)" ]; then \
+		echo "error: empty DATADIR. Pass a real datadir, e.g. make install DATADIR=/tmp/hush-eval/share,"; \
+		echo "or unset DATADIR to derive it from PREFIX."; \
+		exit 1; \
 	fi
 
-all: guard
+# Stale-stamp tripwire (warn-only): config.mk bakes HUSH_BUILD_SHA at
+# configure time, so committing after configure leaves the binary stamped
+# with the old SHA. tests/check_build.sh still fails the suite on mismatch;
+# this just warns early during make/install without breaking tarball builds
+# (no git) or unconfigured trees (no config.mk, empty HUSH_BUILD_SHA).
+check-stamp:
+	@baked="$(HUSH_BUILD_SHA)"; \
+	head=""; \
+	if command -v git >/dev/null 2>&1; then \
+		head=$$(git rev-parse --short HEAD 2>/dev/null || true); \
+	fi; \
+	if [ -n "$$baked" ] && [ "$$baked" != "unknown" ] \
+		&& [ -n "$$head" ] && [ "$$baked" != "$$head" ]; then \
+		echo "warning: baked build SHA ($$baked) != HEAD short ($$head); re-run ./configure."; \
+	fi
+
+all: guard check-stamp
 	$(MAKE) -C hush-c all CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)"
 
 test:
@@ -63,7 +105,7 @@ clean: check-prefix
 	$(MAKE) uninstall
 	rm -f *.tar.gz
 
-install: guard check-prefix
+install: guard check-prefix check-stamp
 	$(MAKE) -C hush-c install \
 		DESTDIR="$(DESTDIR)" \
 		PREFIX="$(PREFIX)" \

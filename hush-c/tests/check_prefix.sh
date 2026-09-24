@@ -6,7 +6,9 @@
 # clobbered the shared user prefix the caller tried to avoid. configure
 # must now refuse an explicit empty PREFIX, accept VAR=value assignments,
 # and both Makefiles must refuse `make ... PREFIX=` (which would otherwise
-# resolve BINDIR to /bin). Packaging/build only: no relay behavior changes.
+# resolve BINDIR to /bin) and `make ... BINDIR=` (which would otherwise
+# resolve install targets to /hush-relay, root). Packaging/build only: no
+# relay behavior changes.
 set -eu
 cd "$(dirname "$0")/../.."
 
@@ -28,9 +30,10 @@ grep -q 'empty PREFIX' "$configure" \
 grep -q -- '--prefix=/tmp/hush-eval' "$configure" \
     || fail "configure hides the isolated-install recipe"
 
-# --- static: both Makefiles guard install/uninstall against empty PREFIX ---
+# --- static: both Makefiles guard install/uninstall against empty dirs ---
 for mk in "$topmk" "$submk"; do
     grep -q 'check-prefix' "$mk" || fail "$mk has no check-prefix guard"
+    grep -q 'empty BINDIR' "$mk" || fail "$mk has no empty-BINDIR refusal"
 done
 grep -q '^install:.*check-prefix' "$topmk" \
     || fail "top install skips check-prefix"
@@ -92,5 +95,21 @@ if make -C "$root/hush-c" check-prefix PREFIX= >/dev/null 2>&1; then
 fi
 make -C "$root/hush-c" check-prefix "PREFIX=$tmp/iso" >/dev/null 2>&1 \
     || fail "hush-c make check-prefix refused a real PREFIX"
+
+# --- behavior: make refuses an empty BINDIR before touching any prefix ---
+# An empty BINDIR would install the relay to /hush-relay (root).
+if make -C "$root" check-prefix BINDIR= >/dev/null 2>&1; then
+    fail "top make check-prefix accepted an empty BINDIR"
+fi
+make -C "$root" check-prefix "BINDIR=$tmp/iso/bin" >/dev/null 2>&1 \
+    || fail "top make check-prefix refused a real BINDIR"
+if make -C "$root/hush-c" check-prefix BINDIR= >/dev/null 2>&1; then
+    fail "hush-c make check-prefix accepted an empty BINDIR"
+fi
+make -C "$root/hush-c" check-prefix "BINDIR=$tmp/iso/bin" >/dev/null 2>&1 \
+    || fail "hush-c make check-prefix refused a real BINDIR"
+# The refusal must name the problem, not fail opaquely.
+(make -C "$root" check-prefix BINDIR= 2>&1 || true) | grep -q 'empty BINDIR' \
+    || fail "empty-BINDIR refusal never says 'empty BINDIR'"
 
 echo "prefix check ok (explicit PREFIX honored; empty PREFIX refused)"
