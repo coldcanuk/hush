@@ -20,6 +20,10 @@ enum {
 #define HUSH_HOME_DIR_ROBOTS "robots"
 #define HUSH_HOME_DIR_LOADOUTS "loadouts"
 
+enum {
+    HUSH_HOME_DIR_MODE = 0700
+};
+
 /* Writes the hush home root into out. Empty on overflow. */
 void hush_home_root(char *out, size_t outsz);
 
@@ -41,6 +45,9 @@ hush_status_t hush_home_skills_dir(char *out, size_t outsz,
  * Fails with HUSH_ERR_ARG on a bad robot slug. */
 hush_status_t hush_home_loadouts_dir(char *out, size_t outsz,
                                      const char *robot);
+
+/* True when slug is a bounded file-safe robot slug (a-z0-9-_). */
+int hush_home_is_robot_slug(const char *slug);
 
 /* mkdir 0700 config/agents/skills trees. Seeds forge-skill when missing.
  * When HUSH_CONFIG_DIR is set and HUSH_HOME is not, skips $HOME/.hush so

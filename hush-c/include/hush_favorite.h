@@ -13,35 +13,60 @@ enum {
     HUSH_FAVORITE_SLUG_MAX = 64,
     HUSH_FAVORITE_COUNT_MAX = 32,
     HUSH_FAVORITE_FILE_MAX = 4096,
-    HUSH_FAVORITE_JSON_MAX = 16384
+    HUSH_FAVORITE_JSON_MAX = 16384,
+    HUSH_FAVORITE_KEY_MAX = 12,
+    HUSH_FAVORITE_SCAN_MAX = 256
 };
 
 typedef struct {
     char name[HUSH_FAVORITE_NAME_MAX];
     char skills[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
+    /* nskills always holds 1..HUSH_SKILL_EQUIP_MAX after a successful call. */
     size_t nskills;
 } hush_favorite_t;
 
 /* Saves name as the 1..8 skill ids under robots/<robot>/loadouts/.
- * Fails with HUSH_ERR_ARG on bad pointers, HUSH_ERR_PARSE on an empty
- * name or bad robot slug, HUSH_ERR_DENIED on unknown or cross-slug
- * skills, HUSH_ERR_FULL over cap or overflow, HUSH_ERR_IO on disk. */
+ * Overwrites only the exact same display name; a slug clash with a
+ * different stored name is refused. Creates the loadouts tree; the only
+ * entry that may create directories. Fails with HUSH_ERR_ARG on bad
+ * pointers or a bad robot slug, HUSH_ERR_PARSE on an empty or unlawful
+ * favorite name, HUSH_ERR_DENIED on an empty set or unknown, cross-slug,
+ * repeated, or clashing skills, HUSH_ERR_FULL over 8 skills, over 32
+ * favorites, or on overflow, HUSH_ERR_IO on disk errors. */
 hush_status_t hush_favorite_save(const char *robot, const char *name,
                                  char ids[][HUSH_SKILL_ID_MAX], size_t nids);
 
-/* Reads name into out. Fails with HUSH_ERR_ARG, HUSH_ERR_NOT_FOUND,
- * HUSH_ERR_IO, or HUSH_ERR_PARSE on a corrupt file. */
+/* Reads name into out. Creates no directories. Fails with HUSH_ERR_ARG
+ * on bad pointers or a bad robot slug, HUSH_ERR_PARSE on a bad name or
+ * a corrupt file, HUSH_ERR_NOT_FOUND when missing, HUSH_ERR_FULL on
+ * overflow, HUSH_ERR_IO on disk errors. */
 hush_status_t hush_favorite_load(const char *robot, const char *name,
                                  hush_favorite_t *out);
 
-/* Removes name from the list only; the worn doll is untouched.
- * Fails with HUSH_ERR_ARG, HUSH_ERR_NOT_FOUND, or HUSH_ERR_IO. */
+/* Removes only the stored file for name. Creates no directories.
+ * Fails with HUSH_ERR_ARG on bad pointers or a bad robot slug,
+ * HUSH_ERR_PARSE on a bad name, HUSH_ERR_NOT_FOUND when missing,
+ * HUSH_ERR_FULL on overflow, HUSH_ERR_IO on disk errors. */
 hush_status_t hush_favorite_delete(const char *robot, const char *name);
 
-/* Writes {"ok":true,"robot":..,"favorites":[..]} into out.
- * Missing robots/<robot>/loadouts/ lists empty. Fails with
- * HUSH_ERR_ARG, HUSH_ERR_FULL, or HUSH_ERR_IO. */
+/* Writes {"ok":true,"robot":..,"favorites":[..]} into out, creating no
+ * directories; a missing tree lists empty. Skips unreadable files.
+ * Fails with HUSH_ERR_ARG on bad pointers or a bad robot slug,
+ * HUSH_ERR_FULL on overflow or past HUSH_FAVORITE_COUNT_MAX valid
+ * favorites (save refuses the excess, so this stays unreachable),
+ * HUSH_ERR_IO on disk errors. */
 hush_status_t hush_favorite_list_json(const char *robot, char *out,
                                       size_t outsz, size_t *out_len);
+
+/* Escapes src into dst, measuring first so truncation fails instead of
+ * cutting. Fails with HUSH_ERR_ARG on bad pointers, HUSH_ERR_FULL when
+ * dst cannot hold the escaped form. */
+hush_status_t hush_favorite_escape(char *dst, size_t dstsz, const char *src);
+
+/* Appends the nids quoted ids to the open skills array at out+*off.
+ * Fails with HUSH_ERR_FULL on overflow. */
+hush_status_t hush_favorite_put_ids(char *out, size_t outsz, size_t *off,
+                                    const char ids[][HUSH_SKILL_ID_MAX],
+                                    size_t nids);
 
 #endif /* HUSH_FAVORITE_H */

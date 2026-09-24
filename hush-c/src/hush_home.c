@@ -10,10 +10,6 @@
 #include "hush_home.h"
 #include "hush_skill.h"
 
-enum {
-    HUSH_HOME_MODE = 0700
-};
-
 #define HUSH_HOME_LEGACY_TAIL ".config/hush"
 
 /* Copies src into dst. Empty on overflow or NULL src. */
@@ -31,9 +27,6 @@ static hush_status_t hush_home_mkdir(const char *path);
 /* Joins root/name and mkdir. */
 static hush_status_t hush_home_mkdir_child(char *out, size_t outsz,
                                            const char *root, const char *name);
-
-/* True when slug is a bounded file-safe robot slug (a-z0-9-_). */
-static int hush_home_is_robot_slug(const char *slug);
 
 /* mkdir config, agents, skills/{system,user,robots} under root. */
 static hush_status_t hush_home_make_tree(const char *root);
@@ -168,6 +161,15 @@ hush_status_t hush_home_loadouts_dir(char *out, size_t outsz,
     return HUSH_OK;
 }
 
+int hush_home_is_robot_slug(const char *slug)
+{
+    if (slug == NULL)
+        return 0;
+    if (slug[0] == '\0' || strlen(slug) >= (size_t)HUSH_SKILL_ROBOT_MAX)
+        return 0;
+    return strspn(slug, "abcdefghijklmnopqrstuvwxyz0123456789-_") == strlen(slug);
+}
+
 hush_status_t hush_home_ensure(void)
 {
     char root[HUSH_HOME_PATH_MAX];
@@ -217,14 +219,6 @@ static void hush_home_join(char *out, size_t outsz, const char *a, const char *b
         out[0] = '\0';
 }
 
-static int hush_home_is_robot_slug(const char *slug)
-{
-    assert(slug != NULL);
-    if (slug[0] == '\0' || strlen(slug) >= (size_t)HUSH_HOME_PATH_MAX)
-        return 0;
-    return strspn(slug, "abcdefghijklmnopqrstuvwxyz0123456789-_") == strlen(slug);
-}
-
 static int hush_home_should_make_tree(void)
 {
     const char *home_env;
@@ -244,7 +238,7 @@ static hush_status_t hush_home_mkdir(const char *path)
     assert(path != NULL);
     if (path[0] == '\0')
         return HUSH_ERR_IO;
-    if (mkdir(path, HUSH_HOME_MODE) != 0 && errno != EEXIST)
+    if (mkdir(path, HUSH_HOME_DIR_MODE) != 0 && errno != EEXIST)
         return HUSH_ERR_IO;
     return HUSH_OK;
 }
