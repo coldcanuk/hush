@@ -217,7 +217,7 @@ the hive, Ctrl+C, or `POST /api/exit` with `X-Hush-Token` (the session
 token file). `POST /api/close` acknowledges Close and does not stop
 the process. `POST /api/exit` sets the same shutdown flag as SIGTERM.
 
-Rebuild guard: `make` / `make install` refuse while a live relay owns port 10555 — run `hush-relay --quit` (Exit) first; Close is not enough since the hive keeps the port. The guard is port-scoped: it checks `$HUSH_PORT` if set, else `10555`, so a relay on another port does not block the build unless `HUSH_PORT` matches. `make clean` stops the relay and its CHILD turnserver, never the systemd `hush-turn.service` daemon.
+Rebuild guard: `make` / `make install` refuse while a live relay owns port 10555 — run `hush-relay --quit` (Exit) first (Linux; elsewhere Exit in the hive or Ctrl+C); Close is not enough since the hive keeps the port. The guard is port-scoped: it checks `$HUSH_PORT` if set, else `10555`, so a relay on another port does not block the build unless `HUSH_PORT` matches. `make clean` stops the relay and its CHILD turnserver, never the systemd `hush-turn.service` daemon.
 
 ### Threads, streaming, and stop
 

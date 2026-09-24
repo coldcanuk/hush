@@ -318,17 +318,16 @@ static int hush_path_is_dir_follow(const char *path);
 static hush_status_t hush_parse_uint_field(char **out_end,
                                            unsigned long long *out_value,
                                            const char *text);
-/* Parses a pidfile body: pid, or pid plus start time and port. Missing
- * trailing fields read as zero (legacy files). Fails PARSE on any
- * non-decimal content. */
+/* Parses a pidfile body: pid-only (legacy) or exactly pid start port;
+ * anything else is PARSE. Legacy fields read as zero. */
 static hush_status_t hush_parse_pid_line(const char *body, pid_t *out_pid,
                                          unsigned long long *out_start,
                                          uint16_t *out_fileport);
 /* True when dir is a usable pidfile dir: a real directory (lstat, never a
  * symlink) owned by this user and closed to group and other. */
 static int hush_pidfile_dir_ok(const char *dir);
-/* Creates missing ancestors of dir. Fails ARG on an empty path, IO when a
- * component is unusable. */
+/* Creates missing ancestors of dir. Fails ARG on an empty or too-long
+ * path, IO when a component is unusable. */
 static hush_status_t hush_pidfile_ensure_parents(const char *dir);
 /* Writes this process's pid for port. Fails ARG when unconfigured, IO on any
  * mkdir/open/write/close failure. The relay still starts; the caller warns. */
@@ -1989,13 +1988,15 @@ static hush_status_t hush_write_pidfile(uint16_t port)
 static hush_status_t hush_pidfile_dir_ensure(uint16_t port)
 {
     char dir[HUSH_PIDFILE_PATH_MAX];
+    hush_status_t parents = HUSH_OK;
 
     assert(port != 0);
     hush_pidfile_dir(dir, sizeof(dir));
     if (dir[0] == '\0')
         return HUSH_ERR_ARG;
-    if (hush_pidfile_ensure_parents(dir) != HUSH_OK)
-        return HUSH_ERR_IO;
+    parents = hush_pidfile_ensure_parents(dir);
+    if (parents != HUSH_OK)
+        return parents;
     if (mkdir(dir, HUSH_PIDFILE_DIR_MODE) != 0 && errno != EEXIST)
         return HUSH_ERR_IO;
     if (!hush_pidfile_dir_ok(dir))

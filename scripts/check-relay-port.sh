@@ -9,14 +9,14 @@
 # hush-c/include/hush_relay.h). Usage: sh scripts/check-relay-port.sh [port]
 #
 # Ownership is resolved exactly like the relay resolves its pidfile
-# (hush-c/src/hush_relay.c: absolute XDG_RUNTIME_DIR/hush, else absolute
-# HOME/.local/state/hush; no /tmp fallback; file relay-<port>.pid holds
-# "pid starttime port", older files pid only). A live pid in that file owns
-# the port. Without a live pidfile, a probe of
-# http://127.0.0.1:<port>/api/status plus a live hush-relay process also
-# counts (covers a relay started under a different XDG/HOME). curl is
-# required for the probe: without a pidfile owner and without curl the
-# guard fails instead of silently passing over a possibly live relay.
+# (hush_pidfile_dir in hush-c/src/hush_relay.c: absolute
+# XDG_RUNTIME_DIR/hush, else absolute HOME/.local/state/hush; no /tmp
+# fallback; file relay-<port>.pid holds "pid starttime port", older files
+# pid only). A live pid in that file owns the port. Without a live pidfile,
+# a probe of http://127.0.0.1:<port>/api/status plus a live hush-relay
+# process also counts (covers a relay started under a different XDG/HOME).
+# curl is required for the probe: without a pidfile owner and without curl
+# the guard fails instead of silently passing over a possibly live relay.
 
 set -eu
 
@@ -26,13 +26,15 @@ case "$port" in
 esac
 
 pidfile_dir() {
-    if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
-        printf '%s/hush' "$XDG_RUNTIME_DIR"
-    elif [ -n "${HOME:-}" ]; then
-        printf '%s/.local/state/hush' "$HOME"
-    else
-        printf '/tmp/hush'
-    fi
+    # Mirrors hush_pidfile_dir: absolute paths only, no /tmp fallback.
+    # Fails (non-zero) when neither variable gives an absolute dir.
+    case "${XDG_RUNTIME_DIR:-}" in
+        /*) printf '%s/hush' "$XDG_RUNTIME_DIR"; return 0 ;;
+    esac
+    case "${HOME:-}" in
+        /*) printf '%s/.local/state/hush' "$HOME"; return 0 ;;
+    esac
+    return 1
 }
 
 comm_of() {
@@ -59,9 +61,13 @@ port_answers() {
 }
 
 owner=""
-dir=$(pidfile_dir)
-pidfile="${dir}/relay-${port}.pid"
-if [ -f "$pidfile" ]; then
+dir=""
+dir=$(pidfile_dir) || dir=""
+pidfile=""
+if [ -n "$dir" ]; then
+    pidfile="${dir}/relay-${port}.pid"
+fi
+if [ -n "$pidfile" ] && [ -f "$pidfile" ]; then
     # Pidfile holds "pid starttime port" (older files: pid only); the
     # owner is always the first field.
     # shellcheck disable=SC2162,SC2034: fixed field layout; _rest unused.
