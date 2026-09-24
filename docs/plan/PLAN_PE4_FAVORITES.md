@@ -16,8 +16,12 @@
 - Persistence is relay-side: per-robot named JSON sets
   (`{"name":..,"skills":[..]}`, 1–8 skill ids each) under
   `$HOME/.hush/robots/<slug>/loadouts/`, served by `POST /api/loadout`
-  (`save` / `list` / `load` / `delete`). Unknown or `robot:<other>:` ids
-  are refused at save. Favorites survive leave→return; the highlight
+  (`save` / `list` / `load` / `delete`). Unknown, `robot:<other>:` or
+  repeated ids are refused at save, as are slug clashes with a different
+  stored name (exact-name overwrite allowed), a 33rd favorite, a
+  `skill_8` overflow, overlong values, and non-UTF-8 names. Robot slugs
+  and names are allowlist-validated at every entry; load/delete/list
+  create no directories. Favorites survive leave→return; the highlight
   does not. New robots (no slug yet) cannot save favorites.
 - PE-3 min-1 holds everywhere: last-gem lift, empty-draft save, empty
   loadout write, and empty favorite all refuse with

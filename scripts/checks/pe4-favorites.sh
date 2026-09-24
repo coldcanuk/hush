@@ -20,8 +20,8 @@ fail() { echo "FAIL: $1" >&2; exit 1; }
 
 # 1. Relay persists per-robot JSON sets under robots/<slug>/loadouts/.
 grep -q 'hush_home_loadouts_dir' "$home" || fail "home loadouts path missing"
-grep -q 'robots/sentry/loadouts\|robots.*loadouts' "$fav_c" \
-    || fail "favorite module must target robots/<slug>/loadouts"
+grep -q 'hush_home_loadouts_dir' "$fav_c" \
+    || fail "favorite paths must build through hush_home_loadouts_dir"
 grep -q 'HUSH_HOME_DIR_LOADOUTS' hush-c/include/hush_home.h \
     || fail "loadouts dir constant missing"
 grep -q 'HUSH_SKILL_EQUIP_LOW' "$fav_c" || fail "favorites min bound missing"
@@ -36,7 +36,7 @@ grep -q '"/api/loadout"' "$http" || fail "/api/loadout path missing"
 for act in '"save"' '"list"' '"load"' '"delete"'; do
     grep -q "$act" "$api" || fail "loadout action $act missing"
 done
-grep -q 'empty' "$fav_c" || fail "favorite module must name empty refusal"
+grep -q 'nids == 0' "$fav_c" || fail "favorite save must refuse the empty set"
 
 # 3. Drawer strip: save refuses empty name / 0 skills; load is atomic;
 #    unload clears the highlight only; delete never touches the doll.
@@ -74,6 +74,53 @@ if grep -rn 'lifetime' hush-c/src/hush_favorite.c hush-c/src/api_favorite.c \
 fi
 if grep -q 'favorite' hush-c/src/agent_prompt.c 2>/dev/null; then
     fail "prompt tiers must stay untouched by PE-4"
+fi
+
+# 6. Traversal: robot slug allowlisted at every entry; paths stay put.
+grep -q 'hush_home_is_robot_slug' hush-c/include/hush_home.h \
+    || fail "shared slug validator missing"
+for fn in 'hush_favorite_save' 'hush_favorite_load' 'hush_favorite_delete' \
+    'hush_favorite_list_json'; do
+    grep -q "$fn" "$fav_c" || fail "missing $fn"
+done
+n=$(grep -c 'hush_favorite_loadouts(dir, sizeof dir, robot)' "$fav_c" || true)
+[ "$n" -eq 4 ] || fail "all 4 entries must validate robot first, found $n"
+grep -q 'hush_favorite_under_dir' "$fav_c" || fail "dir containment missing"
+if grep -A20 'hush_status_t hush_favorite_load(' "$fav_c" \
+    | grep -q 'make_tree'; then
+    fail "load must never mkdir"
+fi
+if grep -A20 'hush_status_t hush_favorite_delete(' "$fav_c" \
+    | grep -q 'make_tree'; then
+    fail "delete must never mkdir"
+fi
+if [ "$(grep -c 'hush_favorite_make_tree' "$fav_c")" -ne 3 ]; then
+    fail "only save may create dirs (proto, one call, def)"
+fi
+
+# 7. Caps, clashes, cleanup, escapes: honest errors, no silent loss.
+grep -q 'HUSH_ERR_DENIED' "$fav_h" || fail "DENIED contract missing"
+grep -q 'count >= (size_t)HUSH_FAVORITE_COUNT_MAX' "$fav_c" \
+    || fail "33rd favorite must be refused"
+grep -q 'scan.dropped' "$fav_c" || fail "list must report truncation"
+grep -q 'strcmp(stored, clean) != 0' "$fav_c" || fail "clash check missing"
+grep -q 'clashes with a saved favorite' "$html" || fail "clash copy missing"
+n=$(grep -c 'unlink(tmp)' "$fav_c" || true)
+[ "$n" -ge 3 ] || fail "tmp file must be cleaned on error, found $n"
+grep -q 'hush_favorite_escape' "$api" || fail "API must check escapes"
+if grep -q 'hush_json_escape(' "$api"; then
+    fail "API must use the checked escape wrapper"
+fi
+if [ "$(grep -c 'hush_json_escape(' "$fav_c")" -ne 1 ]; then
+    fail "exactly one raw escape site (inside the wrapper)"
+fi
+grep -q 'hush_loadout_reply_favorite' "$api" || fail "load split missing"
+grep -q '"skill_8"' "$api" || fail "skill_8 overflow must be refused"
+if grep -q '\[24\]' "$api" hush-c/src/hush_favorite.c; then
+    fail "key buffers must be named constants"
+fi
+if grep -q '0700' hush-c/src/hush_favorite.c; then
+    fail "dir mode must be the shared constant"
 fi
 
 echo "PASS: PE-4 favorites hold (save/load/unload/delete, relay-saved)."

@@ -7308,6 +7308,24 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     function favKnown(id) {
       return skillCatalog.some((s) => s.id === id);
     }
+    /* Mirrors the relay slug rule (lowercase alnum, separators to one
+       dash) so the drawer can warn about name clashes before POSTing. */
+    function favSlug(name) {
+      let out = "";
+      let dash = false;
+      const s = String(name || "").toLowerCase();
+      for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if ((c >= "a" && c <= "z") || (c >= "0" && c <= "9")) {
+          out += c;
+          dash = false;
+        } else if ((c === " " || c === "-" || c === "_") && out && !dash) {
+          out += "-";
+          dash = true;
+        }
+      }
+      return out.replace(/-+$/, "");
+    }
     function clearActiveFavorite() {
       if (!activeFavorite) return;
       activeFavorite = "";
@@ -7377,6 +7395,8 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       const name = ($("fav-name") && $("fav-name").value || "").trim();
       if (!name) { skillNotice("Name the favorite before saving."); return; }
       if (!equippedSkills.length) { skillNotice("Keep at least one skill equipped."); return; }
+      const clash = favList.some((f) => f.name !== name && favSlug(f.name) === favSlug(name) && favSlug(name));
+      if (clash) { skillNotice("That name clashes with a saved favorite. Rename it, or delete the old one first."); return; }
       const body = { action: "save", robot: editSlug, name: name };
       equippedSkills.forEach((id, i) => { body["skill_" + i] = id; });
       try {
