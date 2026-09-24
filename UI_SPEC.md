@@ -350,6 +350,15 @@ by a full cap of maximum-length names listing completely); load and
 delete resolve any alias of the stored name and report the stored
 name; save/delete replies carry no echoed request text; refused saves
 create no directories.
+Ops visual hardening (same scope): the name input is full-width and
+legible; row names ellipsize with the full name on hover (title) and
+on keyboard focus (focus-visible expansion plus outline), and nothing
+overflows the drawer edge at desktop or phone widths. Refusals name
+the exact rule: names allow letters, digits, spaces, - or _ (max 47);
+skills 1–8; at most 32 favorites; no slug collisions. The drawer
+validates names against the identical allowlist before POSTing, so a
+refused save sends no request and logs no console error; the relay
+stays the authority and refuses anything else with 400.
 Preserved: M11 dial, M9 folder tabs + zero tool rail, M8 overlay, M7
 chrome-hard / field-office.
 Delta 2026-09-22 (WS6 loadout-doll pass): `#skill-cycle` lives in

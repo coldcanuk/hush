@@ -140,6 +140,31 @@ if grep -q 'strcpy' "$fav_c"; then
     fail "bounded copies must use memcpy"
 fi
 
+# 8. Ops visual + refusal honesty: full-width input, ellipsis rows,
+#    exact allowlist copies, client validation before any POST.
+grep -q 'flex: 1 1 100%' "$html" || fail "fav-name must be full-width"
+grep -q 'fav-item .nm:focus-visible' "$html" \
+    || fail "row names need a keyboard-focus treatment"
+grep -q 'nm.title = fav.name' "$html" || fail "row names need a title"
+grep -q 'tabIndex' "$html" || fail "row names must be focusable"
+grep -q 'Use letters, digits, spaces, - or _ (max 47)' "$html" \
+    || fail "name-rule copy missing or wrong max"
+grep -q 'already has 32 favorites' "$html" || fail "cap copy missing"
+grep -q 'Favorites hold 1–8 skills' "$html" || fail "skill-count copy missing"
+grep -q 'function favNameError' "$html" || fail "client validator missing"
+grep -q 'A-Za-z0-9 _-' "$html" || fail "client allowlist missing"
+if grep -q 'isalnum(' "$fav_c"; then
+    fail "server allowlist must be explicit ranges, never isalnum"
+fi
+grep -q '%2e%2e' hush-c/tests/test_favorite.c \
+    || fail "percent-name test missing"
+awk '/async function saveFavorite/,/^    \}/' "$html" > /tmp/pe4-savefn.txt
+vo=$(grep -n 'favNameError(raw)' /tmp/pe4-savefn.txt | head -n 1 | cut -d: -f1)
+po=$(grep -n 'api("/api/loadout"' /tmp/pe4-savefn.txt | head -n 1 | cut -d: -f1)
+[ -n "$vo" ] && [ -n "$po" ] && [ "$vo" -lt "$po" ] \
+    || fail "refused saves must validate before POSTing"
+rm -f /tmp/pe4-savefn.txt
+
 echo "PASS: PE-4 favorites hold (save/load/unload/delete, relay-saved)."
 echo "- Drawer: empty-name and 0-skill saves refused; load atomic, never empty."
 echo "- Unload clears the highlight only; delete removes the entry only."

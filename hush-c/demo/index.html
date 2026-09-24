@@ -871,22 +871,33 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
 .skill-life[data-lifetime="always"] { border-color: #d4a017; color: #ffd75e; }
 .skill-life[data-lifetime="oncall"] { border-color: #0ff; color: #8fd3ff; }
 /* PE-4 favorites: named loadout shortcuts, saved per robot on the relay. */
-#fav-strip { margin: 12px 0; }
+#fav-strip { margin: 12px 0; min-width: 0; }
 #fav-strip .lbl { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
-.fav-row { align-items: center; gap: 6px; margin: 6px 0; }
+.fav-row { align-items: center; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
 #fav-name {
-  flex: 1; min-height: 32px; padding: 4px 8px; border: 1px solid var(--line);
+  flex: 1 1 100%; min-width: 0; min-height: 36px; padding: 4px 8px;
+  border: 1px solid var(--line);
   background: var(--surface); color: var(--fg); border-radius: 6px;
-  font: 500 0.8rem var(--sans);
+  font: 500 0.85rem var(--sans);
 }
-.fav-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.fav-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; min-width: 0; }
 .fav-item {
   display: flex; align-items: center; gap: 8px; border: 1px solid var(--line);
   border-radius: 8px; padding: 6px 8px; background: var(--surface);
+  min-width: 0; overflow: hidden;
 }
 .fav-item.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
-.fav-item .nm { flex: 1; font: 600 0.8rem var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fav-item .ct { font: 500 0.7rem var(--mono); color: var(--muted); }
+.fav-item .nm {
+  flex: 1 1 auto; min-width: 0;
+  font: 600 0.8rem var(--sans);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fav-item .nm:focus-visible {
+  white-space: normal; overflow: visible;
+  outline: 2px solid var(--fg); outline-offset: 2px;
+}
+.fav-item .ct { font: 500 0.7rem var(--mono); color: var(--muted); flex-shrink: 0; }
+.fav-item .inv-btn { flex: 0 0 auto; width: auto; padding: 6px 10px; }
 .fav-item .tag {
   font: 700 0.6rem var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
   border: 1px solid var(--accent); border-radius: 8px; padding: 0 6px; color: var(--accent);
@@ -2012,7 +2023,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         </div>
         <div id="fav-strip">
           <div class="lbl">Favorite loadouts · saved on this relay</div>
-          <p class="help" id="fav-note">Name the current doll to reuse it later. Saved per robot under robots/&lt;slug&gt;/loadouts/. Load swaps the whole doll at once; unload only clears the highlight.</p>
+          <p class="help" id="fav-note">Name the current doll to reuse it later. Saved per robot under robots/&lt;slug&gt;/loadouts/. Load swaps the whole doll at once; unload only clears the highlight. Names use letters, digits, spaces, - or _ (max 47), up to 32 per robot.</p>
           <div class="pill-row fav-row">
             <input id="fav-name" type="text" maxlength="48" placeholder="Favorite name">
             <button class="inv-btn" id="fav-save" type="button">Save favorite</button>
@@ -7305,6 +7316,9 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
        doll; Load replaces the doll atomically (never through empty);
        Unload clears the active highlight only; Delete removes the list
        entry only. The doll always keeps min-1 (PE-3). */
+    const FAV_NAME_MAX = 47; /* max favorite name chars; matches the relay HUSH_FAVORITE_NAME_MAX - 1 */
+    const FAV_COUNT_MAX = 32; /* max favorites per robot; matches the relay HUSH_FAVORITE_COUNT_MAX */
+    const FAV_NAME_RULE = "Use letters, digits, spaces, - or _ (max 47).";
     function favKnown(id) {
       return skillCatalog.some((s) => s.id === id);
     }
@@ -7325,6 +7339,19 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         }
       }
       return out.replace(/-+$/, "");
+    }
+    /* Identical to the relay name rule (hush_favorite_is_name):
+       allowlist only, so a refused name never POSTs and never logs a
+       console 400. The relay stays the authority; this saves a trip. */
+    function favNameError(raw) {
+      const name = String(raw || "").trim();
+      if (!name) return "Name the favorite before saving. " + FAV_NAME_RULE;
+      if (name.length > FAV_NAME_MAX)
+        return "That name is " + name.length + " characters. " + FAV_NAME_RULE;
+      if (!/^[A-Za-z0-9 _-]+$/.test(name)) return FAV_NAME_RULE;
+      if (favSlug(name) === "")
+        return "That name has no letters or numbers to save under. " + FAV_NAME_RULE;
+      return "";
     }
     function clearActiveFavorite() {
       if (!activeFavorite) return;
@@ -7349,6 +7376,8 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         const nm = document.createElement("span");
         nm.className = "nm";
         nm.textContent = fav.name;
+        nm.title = fav.name;
+        nm.tabIndex = 0;
         row.appendChild(nm);
         const ct = document.createElement("span");
         ct.className = "ct";
@@ -7392,11 +7421,18 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     }
     async function saveFavorite() {
       if (!editSlug) { skillNotice("Raise the robot before saving favorites."); return; }
-      const name = ($("fav-name") && $("fav-name").value || "").trim();
-      if (!name) { skillNotice("Name the favorite before saving."); return; }
+      const raw = ($("fav-name") && $("fav-name").value || "");
+      const name = raw.trim();
+      const why = favNameError(raw);
+      if (why) { skillNotice(why); return; }
       if (!equippedSkills.length) { skillNotice("Keep at least one skill equipped."); return; }
-      const clash = favList.some((f) => f.name !== name && favSlug(f.name) === favSlug(name) && favSlug(name));
+      if (equippedSkills.length > SKILL_SLOTS) { skillNotice("Favorites hold 1–8 skills."); return; }
+      const clash = favList.some((f) => f.name !== name && favSlug(f.name) === favSlug(name));
       if (clash) { skillNotice("That name clashes with a saved favorite. Rename it, or delete the old one first."); return; }
+      if (favList.length >= FAV_COUNT_MAX && !favList.some((f) => f.name === name)) {
+        skillNotice("This robot already has 32 favorites. Delete one to save another.");
+        return;
+      }
       const body = { action: "save", robot: editSlug, name: name };
       equippedSkills.forEach((id, i) => { body["skill_" + i] = id; });
       try {
