@@ -16,6 +16,8 @@ Captured 2026-09-24 from a throwaway relay on this base (`44c66f88`, port 18083)
 
 ![Hush field-office dispatch UI — splash with Major reporting for duty and the Inventory/Character/New channel/Stop quick bar](docs/assets/hush-field-office.png)
 
+More captures (desktop + phone): [`screenshots.md`](screenshots.md) — Armory shelves, Character sheet, three-pane, quick bar, volume dial, thread view.
+
 ## Features (only what is verifiably on `main`)
 
 Checked against [`UI_SPEC.md`](UI_SPEC.md) and the served demo (`hush-c/demo/index.html`). Honesty notes included — no phantom claims.
