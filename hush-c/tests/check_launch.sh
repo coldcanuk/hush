@@ -300,19 +300,26 @@ echo "$html" | grep -q 'id="fo-drawer"' || fail "HTML missing fo-drawer overlay 
 echo "$html" | grep -q 'id="fo-expand"' || fail "HTML missing fo-expand thin control (UI-M8)"
 echo "$html" | grep -q 'syncFoExpand' || fail "HTML missing fo-expand aria sync (UI-M8)"
 echo "$html" | grep -q 'UI-M8' || fail "HTML missing UI-M8 markers"
-# UI-M10: custom dispatch scrollbar on #stream. The native fat bar is
-# hidden; a straight black line track + bold tracking dot + end arrows
-# owns the log position. Wheel/keyboard still scroll the log itself.
-echo "$html" | grep -q 'id="fo-log-wrap"' || fail "HTML missing log wrap (UI-M10)"
-echo "$html" | grep -q 'id="fo-scrollbar"' || fail "HTML missing custom scrollbar (UI-M10)"
-echo "$html" | grep -q 'id="fo-scroll-track"' || fail "HTML missing scrollbar track (UI-M10)"
-echo "$html" | grep -q 'id="fo-scroll-dot"' || fail "HTML missing scrollbar dot (UI-M10)"
-echo "$html" | grep -q 'id="fo-scroll-up"' || fail "HTML missing scrollbar up arrow (UI-M10)"
-echo "$html" | grep -q 'id="fo-scroll-down"' || fail "HTML missing scrollbar down arrow (UI-M10)"
-echo "$html" | grep -q 'scrollbar-width: none' || fail "HTML must hide native scrollbar (UI-M10)"
-echo "$html" | grep -q '::-webkit-scrollbar' || fail "HTML must hide webkit scrollbar (UI-M10)"
-echo "$html" | grep -q 'syncFoScrollbar' || fail "HTML missing scrollbar sync (UI-M10)"
-echo "$html" | grep -q 'UI-M10' || fail "HTML missing UI-M10 markers"
+# UI-M11: volume dial owns dispatch-log scroll. The native fat bar stays
+# hidden, but the message column owns NO in-column chrome: no track, dot,
+# or end-arrow bar. A stereo-style VOLUME dial above Send Dispatch scrolls
+# the log (wheel over dial, clockwise/counter-clockwise drag, keys).
+echo "$html" | grep -q 'id="fo-log-wrap"' || fail "HTML missing log wrap (UI-M11)"
+if echo "$html" | grep -q 'id="fo-scrollbar"'; then fail "M10 scrollbar must be gone (UI-M11)"; fi
+if echo "$html" | grep -q 'id="fo-scroll-track"'; then fail "M10 scroll track must be gone (UI-M11)"; fi
+if echo "$html" | grep -q 'id="fo-scroll-dot"'; then fail "M10 scroll dot must be gone (UI-M11)"; fi
+if echo "$html" | grep -q 'id="fo-scroll-up"'; then fail "M10 scroll up arrow must be gone (UI-M11)"; fi
+if echo "$html" | grep -q 'id="fo-scroll-down"'; then fail "M10 scroll down arrow must be gone (UI-M11)"; fi
+if echo "$html" | grep -q 'syncFoScrollbar'; then fail "M10 scrollbar sync must be gone (UI-M11)"; fi
+echo "$html" | grep -q 'id="fo-dial"' || fail "HTML missing volume dial (UI-M11)"
+echo "$html" | grep -q 'id="fo-dial-knob"' || fail "HTML missing dial knob (UI-M11)"
+echo "$html" | grep -q 'id="fo-dial-row"' || fail "HTML missing dial row above Send (UI-M11)"
+echo "$html" | grep -q 'scrollbar-width: none' || fail "HTML must hide native scrollbar (UI-M11)"
+echo "$html" | grep -q '::-webkit-scrollbar' || fail "HTML must hide webkit scrollbar (UI-M11)"
+echo "$html" | grep -q 'syncFoDial' || fail "HTML missing dial sync (UI-M11)"
+echo "$html" | grep -q 'foDialScrollBy' || fail "HTML missing dial scroll driver (UI-M11)"
+echo "$html" | grep -q 'foDialAngle' || fail "HTML missing dial drag angle (UI-M11)"
+echo "$html" | grep -q 'UI-M11' || fail "HTML missing UI-M11 markers"
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + pills"
 echo "$html" | grep -q 'id="provider-username"' || fail "HTML missing provider username"

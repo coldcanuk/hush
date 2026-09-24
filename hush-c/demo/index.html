@@ -1515,35 +1515,52 @@ html[data-theme="field-office"] .qb-slot.folder-tab kbd {
 html[data-theme="field-office"] #kit-menu {
   background: #e2d5b8; border: 2px solid #5c4a3d; box-shadow: 3px 3px 0 #5c4a3d;
 }
-/* ===== UI-M10 custom dispatch scrollbar =====
-   The dispatch log (#stream) hides the native fat scrollbar and owns a
-   thin field-office chrome instead: straight black line track, bold
-   tracking dot, up/down step arrows at the extremities. Wheel and
-   keyboard keep scrolling the log itself; the arrows step it. */
-#fo-log-wrap { display: flex; flex: 1; min-height: 0; align-items: stretch; }
-#fo-log-wrap #stream { flex: 1; min-width: 0; scrollbar-width: none; -ms-overflow-style: none; }
+/* ===== UI-M11 volume-dial scroll control =====
+   Supersedes the UI-M10 scrollbar-in-message-column: the dispatch log
+   (#stream) keeps the native fat bar hidden but owns NO in-column
+   chrome (no track, dot, or end arrows). Scroll lives on a stereo-style
+   VOLUME dial in the empty chrome above Send Dispatch (#fo-dial-row).
+   Wheel over the dial scrolls the log; click-drag rotates clockwise to
+   scroll down, counter-clockwise to scroll up. Physical knob plates,
+   sharp corners, existing tokens only — never a range input. */
+#fo-log-wrap { display: block; flex: 1; min-height: 0; }
+#fo-log-wrap #stream { scrollbar-width: none; -ms-overflow-style: none; }
 #fo-log-wrap #stream::-webkit-scrollbar { display: none; width: 0; height: 0; }
-#fo-scrollbar {
-  flex: 0 0 auto; width: 30px; display: flex; flex-direction: column;
-  align-items: center; padding: 10px 0; gap: 6px;
-}
-#fo-scroll-up, #fo-scroll-down {
-  width: 24px; min-height: 24px; padding: 2px 0; cursor: pointer;
-  background: #e2d5b8; color: #2a241e; border: 2px solid #5c4a3d;
-  border-radius: 3px; font-size: 0.62rem; line-height: 1;
+#fo-dial-row { display: flex; justify-content: flex-end; padding: 4px 18px 0; }
+#fo-dial {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--surface); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 4px 8px; cursor: grab; touch-action: none;
+  user-select: none; -webkit-user-select: none;
   font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
-  box-shadow: 2px 2px 0 #5c4a3d;
 }
-#fo-scroll-up:active, #fo-scroll-down:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 #5c4a3d; }
-#fo-scroll-track {
-  position: relative; flex: 1; min-height: 40px; width: 2px;
-  background: #000; cursor: pointer;
+#fo-dial:active { cursor: grabbing; }
+#fo-dial-caption, #fo-dial-sub {
+  font-size: 0.62rem; line-height: 1; text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--muted);
 }
-#fo-scroll-dot {
-  position: absolute; top: 0; left: 50%; width: 14px; height: 14px;
-  border-radius: 50%; background: #000; border: 2px solid #e2d5b8;
-  outline: 1px solid #000; transform: translate(-50%, 0); cursor: grab;
+#fo-dial-knob {
+  --dial-rot: 135deg;
+  position: relative; width: 40px; height: 40px; border-radius: 50%;
+  background: var(--surface-2); border: 2px solid var(--line);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 -2px 0 rgb(0 0 0 / 0.25);
+  flex: 0 0 auto;
 }
+#fo-dial-pointer { position: absolute; inset: 0; transform: rotate(var(--dial-rot)); }
+#fo-dial-pointer::before {
+  content: ""; position: absolute; left: 50%; top: 3px;
+  width: 4px; height: 12px; background: var(--accent); transform: translateX(-50%);
+}
+html[data-theme="field-office"] #fo-dial {
+  background: #e2d5b8; color: #2a241e; border: 2px solid #5c4a3d;
+  border-radius: 3px; box-shadow: 2px 2px 0 #5c4a3d;
+}
+html[data-theme="field-office"] #fo-dial-caption,
+html[data-theme="field-office"] #fo-dial-sub { color: #5c4a3d; }
+html[data-theme="field-office"] #fo-dial-knob {
+  background: #2a241e; border: 2px solid #5c4a3d; box-shadow: none;
+}
+html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; }
 </style>
 </head>
 <body>
@@ -1641,19 +1658,21 @@ html[data-theme="field-office"] #kit-menu {
         <span id="count">0 notes</span>
         <span class="badge-vis" id="vibe-vis"></span>
       </div>
-      <!-- UI-M10: dispatch log owns a custom vertical scrollbar
-           (#fo-scrollbar: up/down step arrows + straight black line track
-           with a bold tracking dot). The native fat bar is hidden on
-           #stream via CSS; wheel/keyboard still scroll the log itself. -->
+      <!-- UI-M11: the dispatch log owns NO in-column scrollbar chrome.
+           The native fat bar stays hidden on #stream via CSS; scroll lives
+           on the stereo-style VOLUME dial below, in the empty chrome above
+           Send Dispatch. Markers: fo-dial / UI-M11. -->
       <div id="fo-log-wrap">
         <div id="stream"></div>
-        <div id="fo-scrollbar" aria-label="Dispatch log scrollbar">
-          <button id="fo-scroll-up" type="button" aria-label="Scroll dispatch log up" title="Scroll up">▲</button>
-          <div id="fo-scroll-track" role="scrollbar" aria-controls="stream" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" title="Dispatch log position"><div id="fo-scroll-dot"></div></div>
-          <button id="fo-scroll-down" type="button" aria-label="Scroll dispatch log down" title="Scroll down">▼</button>
-        </div>
       </div>
       <p id="send-error" class="warn send-error" role="status"></p>
+      <div id="fo-dial-row">
+        <div id="fo-dial" role="slider" tabindex="0" aria-label="Dispatch log scroll dial" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-orientation="vertical" title="Scroll dispatch log: wheel, or drag clockwise to go down">
+          <span id="fo-dial-caption" aria-hidden="true">Volume</span>
+          <div id="fo-dial-knob" aria-hidden="true"><span id="fo-dial-pointer"></span></div>
+          <span id="fo-dial-sub" aria-hidden="true">Scroll</span>
+        </div>
+      </div>
       <form class="composer" id="form">
         <div class="mention-box" id="mention-box" hidden></div>
         <div class="composer-box">
@@ -3403,65 +3422,83 @@ html[data-theme="field-office"] #kit-menu {
       $("nav-toggle").setAttribute("aria-expanded", "true");
       syncFoExpand(true);
     });
-    /* UI-M10 custom dispatch scrollbar: the native bar on #stream is
-       hidden (CSS); this chrome tracks it. Arrows step the log, a track
-       click jumps, the dot drags, and the dot follows every scroll,
-       resize, and content paint. Wheel/keyboard paths are untouched. */
-    const FO_SCROLL_STEP = 120;
-    function syncFoScrollbar() {
-      const s = $("stream"), track = $("fo-scroll-track"), dot = $("fo-scroll-dot");
-      if (!s || !track || !dot) return;
+    /* UI-M11 volume-dial scroll control: supersedes the UI-M10
+       scrollbar-in-message-column. The native bar on #stream stays hidden
+       (CSS) and the log owns no in-column chrome; this stereo-style VOLUME
+       dial in the empty chrome above Send Dispatch owns the position.
+       Wheel over the dial scrolls the log, click-drag rotates clockwise to
+       scroll down (counter-clockwise to scroll up), and the pointer follows
+       every scroll, resize, and content paint. No new layers, so the
+       Escape single-dismiss stack and every M1-M9 preserve stay untouched. */
+    const FO_DIAL_MIN_DEG = -135, FO_DIAL_MAX_DEG = 135, FO_DIAL_PX_PER_DEG = 2;
+    function syncFoDial() {
+      const s = $("stream"), dial = $("fo-dial"), knob = $("fo-dial-knob");
+      if (!s || !dial || !knob) return;
       const max = s.scrollHeight - s.clientHeight;
-      const ratio = max > 0 ? (s.scrollTop / max) : 0;
-      const travel = Math.max(0, track.clientHeight - dot.offsetHeight);
-      dot.style.transform = "translate(-50%, " + Math.round(ratio * travel) + "px)";
-      track.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+      const ratio = max > 0 ? (s.scrollTop / max) : 1;
+      const deg = FO_DIAL_MIN_DEG + ratio * (FO_DIAL_MAX_DEG - FO_DIAL_MIN_DEG);
+      knob.style.setProperty("--dial-rot", deg + "deg");
+      dial.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
     }
-    function foScrollStep(dir) {
+    function foDialScrollBy(px) {
       const s = $("stream");
       if (!s) return;
-      s.scrollTop += dir * FO_SCROLL_STEP;
-      syncFoScrollbar();
+      s.scrollTop += px;
+      syncFoDial();
     }
-    function foScrollJump(ev) {
-      const s = $("stream"), track = $("fo-scroll-track"), dot = $("fo-scroll-dot");
-      if (!s || !track || !dot) return;
-      const box = track.getBoundingClientRect();
-      const y = (ev.clientY - box.top - dot.offsetHeight / 2) / Math.max(1, box.height - dot.offsetHeight);
-      const max = s.scrollHeight - s.clientHeight;
-      s.scrollTop = Math.max(0, Math.min(max, y * max));
-      syncFoScrollbar();
+    function foDialAngle(ev, el) {
+      const box = el.getBoundingClientRect();
+      const dx = ev.clientX - (box.left + box.width / 2);
+      const dy = ev.clientY - (box.top + box.height / 2);
+      return Math.atan2(dy, dx) * 180 / Math.PI;
     }
-    $("fo-scroll-up").addEventListener("click", () => foScrollStep(-1));
-    $("fo-scroll-down").addEventListener("click", () => foScrollStep(1));
-    $("fo-scroll-track").addEventListener("pointerdown", (ev) => {
-      if (ev.target.id === "fo-scroll-dot") return;
-      foScrollJump(ev);
-    });
-    $("fo-scroll-dot").addEventListener("pointerdown", (ev) => {
-      const s = $("stream"), track = $("fo-scroll-track"), dot = $("fo-scroll-dot");
-      if (!s || !track || !dot || typeof dot.setPointerCapture !== "function") return;
-      ev.preventDefault();
-      dot.setPointerCapture(ev.pointerId);
-      const move = (mv) => {
-        const box = track.getBoundingClientRect();
-        const y = (mv.clientY - box.top - dot.offsetHeight / 2) / Math.max(1, box.height - dot.offsetHeight);
-        const max = s.scrollHeight - s.clientHeight;
-        s.scrollTop = Math.max(0, Math.min(max, y * max));
-      };
-      const up = () => {
-        dot.removeEventListener("pointermove", move);
-        dot.removeEventListener("pointerup", up);
-        dot.removeEventListener("pointercancel", up);
-      };
-      dot.addEventListener("pointermove", move);
-      dot.addEventListener("pointerup", up);
-      dot.addEventListener("pointercancel", up);
-    });
-    $("stream").addEventListener("scroll", syncFoScrollbar, {passive: true});
-    window.addEventListener("resize", syncFoScrollbar);
-    new MutationObserver(syncFoScrollbar).observe($("stream"), {childList: true, subtree: true});
-    syncFoScrollbar();
+    const foDial = $("fo-dial");
+    if (foDial) {
+      foDial.addEventListener("wheel", (ev) => {
+        ev.preventDefault();
+        let dy = ev.deltaY;
+        if (ev.deltaMode === 1) dy *= 16;
+        else if (ev.deltaMode === 2) dy *= 400;
+        foDialScrollBy(dy);
+      }, {passive: false});
+      foDial.addEventListener("pointerdown", (ev) => {
+        const s = $("stream");
+        if (!s || typeof foDial.setPointerCapture !== "function") return;
+        ev.preventDefault();
+        foDial.setPointerCapture(ev.pointerId);
+        let last = foDialAngle(ev, foDial);
+        const move = (mv) => {
+          const now = foDialAngle(mv, foDial);
+          let delta = now - last;
+          if (delta > 180) delta -= 360;
+          else if (delta < -180) delta += 360;
+          last = now;
+          foDialScrollBy(delta * FO_DIAL_PX_PER_DEG);
+        };
+        const up = () => {
+          foDial.removeEventListener("pointermove", move);
+          foDial.removeEventListener("pointerup", up);
+          foDial.removeEventListener("pointercancel", up);
+        };
+        foDial.addEventListener("pointermove", move);
+        foDial.addEventListener("pointerup", up);
+        foDial.addEventListener("pointercancel", up);
+      });
+      foDial.addEventListener("keydown", (ev) => {
+        const s = $("stream");
+        if (!s) return;
+        if (ev.key === "ArrowDown" || ev.key === "ArrowRight") { ev.preventDefault(); foDialScrollBy(120); }
+        else if (ev.key === "ArrowUp" || ev.key === "ArrowLeft") { ev.preventDefault(); foDialScrollBy(-120); }
+        else if (ev.key === "PageDown") { ev.preventDefault(); foDialScrollBy(s.clientHeight); }
+        else if (ev.key === "PageUp") { ev.preventDefault(); foDialScrollBy(-s.clientHeight); }
+        else if (ev.key === "Home") { ev.preventDefault(); s.scrollTop = 0; syncFoDial(); }
+        else if (ev.key === "End") { ev.preventDefault(); s.scrollTop = s.scrollHeight; syncFoDial(); }
+      });
+    }
+    $("stream").addEventListener("scroll", syncFoDial, {passive: true});
+    window.addEventListener("resize", syncFoDial);
+    new MutationObserver(syncFoDial).observe($("stream"), {childList: true, subtree: true});
+    syncFoDial();
     ["add-chan", "nav-new-channel"].forEach((id) => $(id).addEventListener("click", () => {
       closeNavigation();
       $("new-chan-drawer").classList.add("show");
