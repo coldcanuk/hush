@@ -31,7 +31,7 @@ DATADIR ?= $(PREFIX)/share
 # Override per-invocation, e.g. `HUSH_PORT=10556 make`.
 GUARD_PORT ?= $(HUSH_PORT)
 
-.PHONY: all test clean install uninstall guard package-deb package-rpm packages deb rpm flatpak openbsd freebsd bsd dist
+.PHONY: all test clean install uninstall guard check-prefix package-deb package-rpm packages deb rpm flatpak openbsd freebsd bsd dist
 # guard: is defined below but must never become the default goal.
 .DEFAULT_GOAL := all
 
@@ -41,19 +41,29 @@ GUARD_PORT ?= $(HUSH_PORT)
 guard:
 	@sh scripts/check-relay-port.sh $(GUARD_PORT)
 
+# An empty PREFIX would resolve BINDIR to /bin and let install/uninstall
+# scribble outside any prefix. configure refuses to generate one; this
+# catches `make install PREFIX=` style overrides instead.
+check-prefix:
+	@if [ -z "$(PREFIX)" ]; then \
+		echo "error: empty PREFIX. Pass a real prefix, e.g. make install PREFIX=/tmp/hush-eval,"; \
+		echo "or unset PREFIX to use the configured default (\$$HOME/.local)."; \
+		exit 1; \
+	fi
+
 all: guard
 	$(MAKE) -C hush-c all CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)"
 
 test:
 	$(MAKE) -C hush-c test CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)"
 
-clean:
+clean: check-prefix
 	@sh scripts/kill-relay.sh
 	$(MAKE) -C hush-c clean
 	$(MAKE) uninstall
 	rm -f *.tar.gz
 
-install: guard
+install: guard check-prefix
 	$(MAKE) -C hush-c install \
 		DESTDIR="$(DESTDIR)" \
 		PREFIX="$(PREFIX)" \
@@ -67,7 +77,7 @@ install: guard
 	@echo
 	@echo "hush-relay should now appear in your menu / launcher."
 
-uninstall:
+uninstall: check-prefix
 	$(MAKE) -C hush-c uninstall \
 		DESTDIR="$(DESTDIR)" \
 		PREFIX="$(PREFIX)" \

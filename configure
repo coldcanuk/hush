@@ -14,24 +14,39 @@
 
 set -e
 
-# Start with environment values if present
-PREFIX="${PREFIX:-$HOME/.local}"
+# Start with environment values if present. `${PREFIX+x}` distinguishes
+# "unset" from "set but empty": an explicitly empty PREFIX is a caller
+# error (refused below), never a silent fallback to $HOME/.local.
+PREFIX_EXPLICIT=0
+if [ -z "${PREFIX+x}" ]; then
+    PREFIX="$HOME/.local"
+else
+    PREFIX_EXPLICIT=1
+fi
 BINDIR="${BINDIR:-}"
 DATADIR="${DATADIR:-}"
 CC="${CC:-}"
 MAKE_CMD="${MAKE:-}"
 ENABLE_STUN_TURN="${ENABLE_STUN_TURN:-1}"
 
-# Parse command-line options (override env)
+# Parse command-line options (override env). Both `--opt=val` flags and
+# autoconf-style `VAR=value` assignments are honored; flags win when both
+# set the same variable.
 for arg in "$@"; do
     case "$arg" in
-        --prefix=*)   PREFIX="${arg#--prefix=}" ;;
+        --prefix=*)   PREFIX="${arg#--prefix=}"; PREFIX_EXPLICIT=1 ;;
         --bindir=*)   BINDIR="${arg#--bindir=}" ;;
         --datadir=*)  DATADIR="${arg#--datadir=}" ;;
         --cc=*)       CC="${arg#--cc=}" ;;
         --make=*)     MAKE_CMD="${arg#--make=}" ;;
         --enable-stun-turn)  ENABLE_STUN_TURN=1 ;;
         --disable-stun-turn) ENABLE_STUN_TURN=0 ;;
+        PREFIX=*)     PREFIX="${arg#PREFIX=}"; PREFIX_EXPLICIT=1 ;;
+        BINDIR=*)     BINDIR="${arg#BINDIR=}" ;;
+        DATADIR=*)    DATADIR="${arg#DATADIR=}" ;;
+        CC=*)         CC="${arg#CC=}" ;;
+        MAKE=*)       MAKE_CMD="${arg#MAKE=}" ;;
+        ENABLE_STUN_TURN=*) ENABLE_STUN_TURN="${arg#ENABLE_STUN_TURN=}" ;;
         -h|--help)
             echo "configure for Hush (hush-relay - legible C11 Nostr relay)"
             echo ""
@@ -44,11 +59,33 @@ for arg in "$@"; do
             echo "  --enable-stun-turn   compile STUN/TURN manager (default)"
             echo "  --disable-stun-turn  omit STUN/TURN manager"
             echo ""
-            echo "Environment variables are also honored (PREFIX=... ./configure)"
+            echo "VAR=value assignments are also honored (PREFIX=/tmp/hush-eval"
+            echo "./configure, or ./configure PREFIX=/tmp/hush-eval); flags win."
+            echo ""
+            echo "Isolated eval install (never touches \$HOME/.local):"
+            echo "  ./configure --prefix=/tmp/hush-eval && make && make install"
+            echo ""
+            echo "An explicitly empty PREFIX is refused: unset PREFIX to accept"
+            echo "the default instead of passing an empty value."
             exit 0
+            ;;
+        *)
+            echo "configure: warning: ignoring unknown argument: $arg" >&2
             ;;
     esac
 done
+
+# An explicitly empty PREFIX (./configure PREFIX=, ./configure --prefix=,
+# or PREFIX= ./configure) is refused: deriving BINDIR from it would yield
+# /bin, and silently falling back to $HOME/.local would clobber the shared
+# user prefix the caller tried to avoid.
+if [ "$PREFIX_EXPLICIT" = "1" ] && [ -z "$PREFIX" ]; then
+    echo "configure: error: empty PREFIX was explicitly requested." >&2
+    echo "configure: error: for an isolated install, pass a real prefix:" >&2
+    echo "configure: error:   ./configure --prefix=/tmp/hush-eval" >&2
+    echo "configure: error: or unset PREFIX to accept the default ($HOME/.local)." >&2
+    exit 1
+fi
 
 # Derive BINDIR and DATADIR from PREFIX only if they were not explicitly provided
 if [ -z "$BINDIR" ]; then
