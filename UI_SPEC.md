@@ -333,6 +333,8 @@ highlight does not. PE-3 min-1 still holds everywhere (last-gem lift,
 empty-draft save, empty loadout write, empty favorite). Lifetime
 labels stay browser-only per the honesty polish; favorites are the
 only new relay-saved skill state, and the strip says so inline.
+List and delete resolve any alias of the stored name; load reports
+the stored name while delete replies ok.
 Hardening (same PE-4 scope): robot slugs and favorite names are
 allowlist-validated at every entry — `../` and separators never leave
 `robots/<slug>/loadouts/`; load/delete/list create no directories;
@@ -340,15 +342,16 @@ saves overwrite only the exact same display name (a slug clash with a
 different name is refused with inline copy); at most 32 favorites per
 robot (the 33rd save is refused, so the list never drops entries); a
 `skill_8` overflow, overlong name/robot/skill values, repeated skill
-ids, and non-UTF-8 or control-character names are refused instead of
+ids, and non-allowlist names are refused instead of
 truncated or skipped.
 Hardening round 2 (same scope): unreadable loadouts trees report IO
 instead of an empty list (missing trees still list empty, creating
 nothing); saves are refused when the 32-cap aggregate could not fit
-the list envelope, so no accepted favorite is ever unlistable (proven
-by a full cap of maximum-length names listing completely); load and
-delete resolve any alias of the stored name and report the stored
-name; save/delete replies carry no echoed request text; refused saves
+the list envelope on either path, so no accepted favorite is ever
+unlistable (proven by full caps of maximum-length names and long ids
+listing completely); load and delete resolve any alias of the stored
+name, load reports the stored name, and delete replies ok; save/delete
+replies carry no echoed request text; refused saves
 create no directories.
 Ops visual hardening (same scope): the name input is full-width and
 legible; row names ellipsize with the full name on hover (title) and

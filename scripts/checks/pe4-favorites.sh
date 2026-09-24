@@ -113,9 +113,11 @@ grep -q 'void hush_skill_slugify' hush-c/include/hush_skill.h \
 grep -q 'HUSH_ERR_DENIED' "$fav_h" || fail "DENIED contract missing"
 grep -q 'count >= (size_t)HUSH_FAVORITE_COUNT_MAX' "$fav_c" \
     || fail "33rd favorite must be refused"
-grep -q 'scan->dropped' "$fav_c" || fail "list must report truncation"
+grep -q 'bytes - replace' "$fav_c" || fail "overwrite must size-check growth"
+grep -q 'Could not read favorites on this relay' "$html" \
+    || fail "list errors need a real error state"
 grep -q 'JSON_MAX' "$fav_c" || fail "save must fit the list envelope"
-grep -q 'strcmp(stored, draft->name) != 0' "$fav_c" \
+grep -q 'strcmp(stored.name, draft->name) != 0' "$fav_c" \
     || fail "clash check missing"
 grep -q 'alias' "$fav_h" || fail "alias addressing must be documented"
 grep -q 'clashes with a saved favorite' "$html" || fail "clash copy missing"
@@ -170,5 +172,13 @@ echo "- Drawer: empty-name and 0-skill saves refused; load atomic, never empty."
 echo "- Unload clears the highlight only; delete removes the entry only."
 echo "- Relay: robots/<slug>/loadouts/ JSON sets, 1-8 ids, save-time validation."
 echo "- PE-3 min-1 + armory honesty preserved."
+
+# 9. Behavior, not grep: the built unit test asserts the refusal
+#    matrix, the planted-33rd FULL, the envelope fit on both paths,
+#    traversal containment, and the IO paths.
+if [ ! -x hush-c/tests/test_favorite ]; then
+    fail "build first (make); test_favorite binary missing"
+fi
+./hush-c/tests/test_favorite || fail "test_favorite failed"
 echo "Live proof: sh hush-c/tests/check_launch.sh + sh scripts/checks/pe3-min1.sh"
 echo "  + sh scripts/checks/armory-honesty.sh + python3 hush-c/tests/check_collaboration.py"

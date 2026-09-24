@@ -2496,6 +2496,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
        only — unload clears it, never the doll. */
     let favList = [];
     let activeFavorite = "";
+    let favLoadError = false;
     let ackClock = {};
     let manageTopics = [];
     let draftPicture = "";
@@ -7366,6 +7367,10 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         box.innerHTML = "<p class='help'>Raise the robot before saving favorites.</p>";
         return;
       }
+      if (favLoadError) {
+        box.innerHTML = "<p class='help'>Could not read favorites on this relay.</p>";
+        return;
+      }
       if (!favList.length) {
         box.innerHTML = "<p class='help'>No favorites yet. Name this doll above to save one.</p>";
         return;
@@ -7408,12 +7413,14 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     }
     async function refreshFavorites() {
       favList = [];
+      favLoadError = false;
       if (!editSlug) { paintFavorites(); return; }
       try {
         const data = await api("/api/loadout", { action: "list", robot: editSlug });
         favList = (data && data.favorites) ? data.favorites : [];
       } catch (e) {
         favList = [];
+        favLoadError = true;
       }
       if (activeFavorite && !favList.some((f) => f.name === activeFavorite))
         activeFavorite = "";
