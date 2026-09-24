@@ -333,7 +333,7 @@ highlight does not. PE-3 min-1 still holds everywhere (last-gem lift,
 empty-draft save, empty loadout write, empty favorite). Lifetime
 labels stay browser-only per the honesty polish; favorites are the
 only new relay-saved skill state, and the strip says so inline.
-List and delete resolve any alias of the stored name; load reports
+Load and delete resolve any alias of the stored name; load reports
 the stored name while delete replies ok.
 Hardening (same PE-4 scope): robot slugs and favorite names are
 allowlist-validated at every entry — `../` and separators never leave
