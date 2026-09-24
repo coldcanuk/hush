@@ -135,7 +135,7 @@ static void hush_print_help(void)
     printf("  --close    detach the GUI; the relay stays up (exit 0)\n");
     printf("  --quit     stop the relay on [port] (default %u;\n", (unsigned)HUSH_DEFAULT_PORT);
     printf("             exit 0 stopped, 1 nothing to stop, 2 stop failed or refused)\n");
-    printf("             off Linux, --quit cannot verify the relay and refuses (exit 2)\n");
+    printf("             off Linux, --quit refuses (exit 2); use POST /api/exit\n");
     printf("Close vs Exit:\n");
     printf("  Close dismisses the window. The hive keeps listening.\n");
     printf("  Exit / --quit stops the relay on that port and the children it forked.\n");

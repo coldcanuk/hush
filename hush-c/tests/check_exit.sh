@@ -32,6 +32,7 @@ noset_pid=""
 link_pid=""
 repl_pid=""
 mm_a_pid=""
+mm_b_pid=""
 mode_pid=""
 acc_pid=""
 sym_xdg=""
@@ -102,6 +103,10 @@ cleanup() {
         kill "$mm_a_pid" 2>/dev/null || true
         wait "$mm_a_pid" 2>/dev/null || true
     fi
+    if [ -n "${mm_b_pid:-}" ]; then
+        kill "$mm_b_pid" 2>/dev/null || true
+        wait "$mm_b_pid" 2>/dev/null || true
+    fi
     if [ -n "${mode_pid:-}" ]; then
         kill "$mode_pid" 2>/dev/null || true
         wait "$mode_pid" 2>/dev/null || true
@@ -144,14 +149,18 @@ wait_down() {
 
 "$bin" --help | grep -q -- '--quit' || fail "help missing --quit"
 "$bin" --help | grep -q -- '--close' || fail "help missing --close"
-"$bin" --help | grep -q -- 'off Linux, --quit cannot verify' \
+"$bin" --help | grep -q -- 'off Linux, --quit refuses' \
     || fail "help missing non-Linux refusal"
+"$bin" --help | grep -q -- 'POST /api/exit' \
+    || fail "help missing POST /api/exit pointer"
 # The non-Linux --quit refusal cannot execute on this Linux harness, so the
 # suite checks it structurally: the exact refusal text is present, and the
 # off-Linux branch still compiles (syntax-only with __linux__ undefined;
 # unused-function relaxed for the pre-existing Linux-only sweep helpers).
 grep -q "cannot verify the relay's identity on this platform" src/hush_relay.c \
     || fail "non-Linux refusal text missing"
+grep -q "POST /api/exit (X-Hush-Token from" src/hush_relay.c \
+    || fail "non-Linux refusal must name POST /api/exit"
 if command -v gcc >/dev/null 2>&1; then
     gcc -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Wno-unused-function \
         -Iinclude -O2 -DHUSH_STUN_TURN=1 -DHUSH_HAVE_X11=1 -U__linux__ \
@@ -455,18 +464,28 @@ mm_b_port=$((port + 19))
 "$bin" --no-open "$mm_a_port" >"$log" 2>&1 &
 mm_a_pid=$!
 wait_up "$mm_a_port" || fail "mismatch relay A did not start"
+"$bin" --no-open "$mm_b_port" >"$log" 2>&1 &
+mm_b_pid=$!
+wait_up "$mm_b_port" || fail "mismatch relay B did not start"
 cp "$XDG_RUNTIME_DIR/hush/relay-$mm_a_port.pid" \
     "$XDG_RUNTIME_DIR/hush/relay-$mm_b_port.pid"
 quit_code=0
 "$bin" --quit "$mm_b_port" 2>"$quit_err" || quit_code=$?
 test "$quit_code" -eq 2 || fail "wrong-port quit must exit 2 (got $quit_code)"
 kill -0 "$mm_a_pid" 2>/dev/null || fail "wrong-port quit killed relay A"
+kill -0 "$mm_b_pid" 2>/dev/null || fail "wrong-port quit killed relay B"
 grep -q 'is not the relay on port' "$quit_err" || fail "wrong-port message wrong"
 rm -f "$XDG_RUNTIME_DIR/hush/relay-$mm_b_port.pid"
 "$bin" --quit "$mm_a_port" || fail "relay A quit must still exit 0"
 wait_down "$mm_a_pid" || fail "relay A did not stop"
 wait "$mm_a_pid" 2>/dev/null || true
 mm_a_pid=""
+curl -sf -X POST "http://127.0.0.1:${mm_b_port}/api/exit" \
+    -H 'Content-Type: application/json' -d '{}' >/dev/null \
+    || fail "relay B exit failed"
+wait_down "$mm_b_pid" || fail "relay B did not stop"
+wait "$mm_b_pid" 2>/dev/null || true
+mm_b_pid=""
 
 # A group/other-accessible pidfile dir is refused loudly (mode check).
 mode_base="$(mktemp -d)"
@@ -487,7 +506,9 @@ wait_down "$mode_pid" || fail "mode-test relay did not stop"
 wait "$mode_pid" 2>/dev/null || true
 mode_pid=""
 
-# An unwritable state parent fails loudly too (EACCES on mkdir).
+# An unwritable state parent fails loudly too (EACCES on mkdir). Requires
+# a non-root operator: root can create anywhere, so the refusal would not
+# trigger. No pidfile may be written on this path.
 acc_base="$(mktemp -d)"
 mkdir -p "$acc_base/run"
 chmod 555 "$acc_base/run"
@@ -496,6 +517,7 @@ HOME="$mode_home" XDG_RUNTIME_DIR="$acc_base/run" "$bin" --no-open "$acc_port" >
 acc_pid=$!
 wait_up "$acc_port" || fail "acc-test relay must serve anyway"
 grep -q 'no pidfile for port' "$log" || fail "acc refusal was silent"
+test ! -e "$acc_base/run/hush/relay-$acc_port.pid" || fail "acc-test wrote a pidfile"
 curl -sf -X POST "http://127.0.0.1:${acc_port}/api/exit" \
     -H 'Content-Type: application/json' -d '{}' >/dev/null \
     || fail "acc-test exit failed"

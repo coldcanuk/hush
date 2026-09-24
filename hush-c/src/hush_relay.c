@@ -83,6 +83,8 @@ enum {
     HUSH_PID_STR_BASE = 10,
     /* Nanoseconds per millisecond for stop polling. */
     HUSH_NS_PER_MS = 1000000,
+    /* wait_ms ceiling for stop polling: tv_nsec must stay below one second. */
+    HUSH_WAIT_MS_MAX = 1000,
     /* Largest valid TCP port. */
     HUSH_PORT_MAX = 65535,
     /* EINTR retries before a pidfile write gives up. */
@@ -90,7 +92,8 @@ enum {
     HUSH_CHILD_CMDLINE_MAX = 512,
     /* /proc stat buffer: comm plus all numeric fields. */
     HUSH_PROC_STAT_MAX = 512,
-    /* Offset of the state field past ')' in /proc stat. */
+    /* Offset of the separator and state field past ')' in /proc stat. */
+    HUSH_PROC_STAT_SEP_OFF = 1,
     HUSH_PROC_STAT_STATE_OFF = 2,
     /* First numeric field past ')' (state) and the starttime field. */
     HUSH_PROC_STAT_FIRST_FIELD = 3,
@@ -337,9 +340,9 @@ static void hush_unlink_pidfile(uint16_t port, pid_t expect_pid,
 /* Reads the owner pid, start time, and port for port. Fields absent in
  * legacy files read as zero. NOT_FOUND when no pidfile exists, PARSE when
  * its content is not decimal fields, IO on other filesystem errors. */
-static hush_status_t hush_read_pidfile(uint16_t port, pid_t *out_pid,
+static hush_status_t hush_read_pidfile(pid_t *out_pid,
                                        unsigned long long *out_start,
-                                       uint16_t *out_fileport);
+                                       uint16_t *out_fileport, uint16_t port);
 /* True when pid names a live, non-zombie process. */
 static int hush_pid_is_alive(pid_t pid);
 #ifdef __linux__
@@ -458,7 +461,7 @@ hush_status_t hush_relay_quit(uint16_t port)
 
     if (port == 0)
         port = (uint16_t)HUSH_DEFAULT_PORT;
-    st = hush_read_pidfile(port, &pid, &start, &fileport);
+    st = hush_read_pidfile(&pid, &start, &fileport, port);
     if (st == HUSH_OK)
         st = hush_quit_verify_owner(port, pid, start, fileport);
     if (st == HUSH_ERR_NOT_FOUND && pid > HUSH_PID_RESERVED_MAX)
@@ -606,7 +609,8 @@ static int hush_stat_starttime(const char *body, unsigned long long *out_start)
     assert(body != NULL);
     assert(out_start != NULL);
     paren = strrchr(body, ')');
-    if (paren == NULL || paren[1] != ' ' || paren[2] == '\0')
+    if (paren == NULL || paren[HUSH_PROC_STAT_SEP_OFF] != ' ' ||
+        paren[HUSH_PROC_STAT_STATE_OFF] == '\0')
         return 0;
     field = paren + HUSH_PROC_STAT_STATE_OFF;
     for (idx = HUSH_PROC_STAT_FIRST_FIELD; idx < HUSH_PROC_STAT_STARTTIME_FIELD; ++idx) {
@@ -664,7 +668,7 @@ static hush_status_t hush_pid_stop_timed(pid_t pid, int tries, int wait_ms)
 
     assert(pid > HUSH_PID_RESERVED_MAX);
     assert(tries > 0);
-    assert(wait_ms > 0 && wait_ms < 1000);
+    assert(wait_ms > 0 && wait_ms < HUSH_WAIT_MS_MAX);
     if (kill(pid, SIGTERM) != 0 && errno != ESRCH)
         return HUSH_ERR_IO;
     for (i = 0; i < tries; ++i) {
@@ -2030,7 +2034,7 @@ static int hush_pidfile_holds(uint16_t port, pid_t expect_pid,
 
     assert(port != 0);
     assert(expect_pid > HUSH_PID_RESERVED_MAX);
-    if (hush_read_pidfile(port, &current, &current_start, &current_port) != HUSH_OK)
+    if (hush_read_pidfile(&current, &current_start, &current_port, port) != HUSH_OK)
         return 0;
     return current == expect_pid && current_start == expect_start;
 }
@@ -2049,9 +2053,9 @@ static void hush_unlink_pidfile(uint16_t port, pid_t expect_pid,
         unlink(path);
 }
 
-static hush_status_t hush_read_pidfile(uint16_t port, pid_t *out_pid,
+static hush_status_t hush_read_pidfile(pid_t *out_pid,
                                        unsigned long long *out_start,
-                                       uint16_t *out_fileport)
+                                       uint16_t *out_fileport, uint16_t port)
 {
     char path[HUSH_PIDFILE_PATH_MAX];
     char body[HUSH_PIDFILE_BODY_MAX];
@@ -2137,7 +2141,8 @@ static int hush_pid_is_zombie(pid_t pid)
     if (hush_proc_read(body, sizeof(body), pid, "stat") <= 0)
         return 0;
     paren = strrchr(body, ')');
-    if (paren == NULL || paren[1] != ' ' || paren[2] == '\0')
+    if (paren == NULL || paren[HUSH_PROC_STAT_SEP_OFF] != ' ' ||
+        paren[HUSH_PROC_STAT_STATE_OFF] == '\0')
         return 0;
     return paren[HUSH_PROC_STAT_STATE_OFF] == HUSH_PROC_STATE_ZOMBIE;
 }
