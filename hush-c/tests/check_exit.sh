@@ -23,6 +23,7 @@ pidfile=""
 pid=""
 virgin_pid=""
 virgin_fake_pid=""
+starttime_pid=""
 virgin_home=""
 virgin_fake_bin=""
 stop_pid=""
@@ -73,6 +74,10 @@ cleanup() {
     if [ -n "${virgin_fake_pid:-}" ]; then
         kill "$virgin_fake_pid" 2>/dev/null || true
         wait "$virgin_fake_pid" 2>/dev/null || true
+    fi
+    if [ -n "${starttime_pid:-}" ]; then
+        kill "$starttime_pid" 2>/dev/null || true
+        wait "$starttime_pid" 2>/dev/null || true
     fi
     if [ -n "${stop_pid:-}" ]; then
         kill -CONT "$stop_pid" 2>/dev/null || true
@@ -294,8 +299,8 @@ mkdir -p "$refuse_dir"
 refuse_pidfile="$refuse_dir/relay-$refuse_port.pid"
 quit_err=$(mktemp)
 
-# Foreign live pid: sleep is not hush-relay. Exit 2, process untouched,
-# pidfile left alone (not proven stale).
+# Foreign live pid in legacy (pid-only) format: exit 2, process untouched,
+# pidfile left alone (not proven stale), legacy-format message.
 sleep 60 &
 foreign_pid=$!
 printf '%s\n' "$foreign_pid" >"$refuse_pidfile"
@@ -304,9 +309,24 @@ quit_code=0
 test "$quit_code" -eq 2 || fail "foreign-pid quit must exit 2 (got $quit_code)"
 kill -0 "$foreign_pid" 2>/dev/null || fail "quit signalled a foreign process"
 test -f "$refuse_pidfile" || fail "quit removed an unproven pidfile"
-grep -q 'is not the relay on port' "$quit_err" || fail "foreign-pid message wrong"
+grep -q 'old/unrecognized format' "$quit_err" || fail "foreign-pid message wrong"
 kill "$foreign_pid" 2>/dev/null || true
 wait "$foreign_pid" 2>/dev/null || true
+
+# Start-time mismatch: live foreign pid, wrong start time 1, correct port.
+# --quit must refuse (exit 2) without signalling, keeping the pidfile.
+sleep 60 &
+starttime_pid=$!
+printf '%s 1 %s\n' "$starttime_pid" "$refuse_port" >"$refuse_pidfile"
+quit_code=0
+"$bin" --quit "$refuse_port" 2>"$quit_err" || quit_code=$?
+test "$quit_code" -eq 2 || fail "starttime quit must exit 2 (got $quit_code)"
+kill -0 "$starttime_pid" 2>/dev/null || fail "quit signalled on starttime mismatch"
+test -f "$refuse_pidfile" || fail "quit removed pidfile on starttime mismatch"
+grep -q 'is not the relay on port' "$quit_err" || fail "starttime message wrong"
+kill "$starttime_pid" 2>/dev/null || true
+wait "$starttime_pid" 2>/dev/null || true
+starttime_pid=""
 
 # Stale pid: already dead. Exit 1, pidfile removed.
 sh -c 'exit 0' &

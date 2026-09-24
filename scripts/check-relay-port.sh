@@ -9,11 +9,14 @@
 # hush-c/include/hush_relay.h). Usage: sh scripts/check-relay-port.sh [port]
 #
 # Ownership is resolved exactly like the relay resolves its pidfile
-# (hush-c/src/hush_relay.c: XDG_RUNTIME_DIR/hush, then
-# HOME/.local/state/hush, then /tmp/hush, file relay-<port>.pid). A live
-# pid in that file owns the port. Without a live pidfile, a probe of
+# (hush-c/src/hush_relay.c: absolute XDG_RUNTIME_DIR/hush, else absolute
+# HOME/.local/state/hush; no /tmp fallback; file relay-<port>.pid holds
+# "pid starttime port", older files pid only). A live pid in that file owns
+# the port. Without a live pidfile, a probe of
 # http://127.0.0.1:<port>/api/status plus a live hush-relay process also
-# counts (covers a relay started under a different XDG/HOME).
+# counts (covers a relay started under a different XDG/HOME). curl is
+# required for the probe: without a pidfile owner and without curl the
+# guard fails instead of silently passing over a possibly live relay.
 
 set -eu
 
@@ -59,8 +62,10 @@ owner=""
 dir=$(pidfile_dir)
 pidfile="${dir}/relay-${port}.pid"
 if [ -f "$pidfile" ]; then
-    # shellcheck disable=SC2162: pidfile holds one pid by construction.
-    read -r owner <"$pidfile" 2>/dev/null || owner=""
+    # Pidfile holds "pid starttime port" (older files: pid only); the
+    # owner is always the first field.
+    # shellcheck disable=SC2162,SC2034: fixed field layout; _rest unused.
+    read -r owner _rest <"$pidfile" 2>/dev/null || owner=""
     case "$owner" in
         ''|*[!0-9]*) owner="" ;;
         *) pid_alive "$owner" || owner="" ;;
@@ -92,6 +97,11 @@ Stop it first, then rebuild:
 Close only dismisses the window — the hive keeps the port. See README "Close vs Exit".
 EOF
     exit 1
+fi
+
+if ! command -v curl >/dev/null 2>&1; then
+    echo "check-relay-port: cannot verify port ${port} is free (curl missing)" >&2
+    exit 2
 fi
 
 exit 0
