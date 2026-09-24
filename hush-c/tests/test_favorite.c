@@ -20,10 +20,15 @@ enum {
     FAV_TEST_MAX_NAME = 47,
     FAV_TEST_LONG_SLUG_LEN = 90,
     FAV_TEST_HOSTILE_BYTE = 0x01,
-    /* Hostile entries measure 4401 B, so 43 + k x 4402 < 27429
-     * holds through k = 6 and fails at k = 7. */
+    /* Hostile entries measure 4375 B: 9 + 9 + 12 + 8 x (2 + 540) + 7
+     * + 2. Envelope for robot "hostile" is 45, so saves total
+     * 44 + k x 4376: six fit (26300), the seventh is refused. */
     FAV_TEST_HOSTILE_FITS = 6,
-    FAV_TEST_HOSTILE_TRIES = 8
+    FAV_TEST_HOSTILE_TRIES = 8,
+    /* Boundary robot: a 63-char slug with 32 maximum (853 B) entries
+     * plus an unchanged re-save totals exactly 27428 content bytes,
+     * which lists fine. The one-comma over-count refuses it. */
+    FAV_TEST_EDGE_SLUG = 63
 };
 
 typedef struct {
@@ -464,11 +469,11 @@ static void check_overfill(fav_fixture_t *fx)
 }
 
 /* Long catalog ids on the new-name path plus overwrite growth: a full
- * cap of 85-char ids still lists completely. */
+ * cap of 95-char ids still lists completely. */
 static void check_giant(fav_fixture_t *fx)
 {
     char slugs[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {{0}};
-    char ids[8][HUSH_SKILL_ID_MAX] = {{0}};
+    char ids[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {{0}};
     char all[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {{0}};
     size_t out_len = 0;
 
@@ -516,12 +521,53 @@ static void check_giant(fav_fixture_t *fx)
            "sprout lists all 32");
 }
 
-/* Escape-hostile ids trip the envelope gate: 4401 B entries fit six
+/* Boundary overwrite: a 63-char robot holding 32 maximum (853 B)
+ * entries re-saves one unchanged for exactly 27428 content bytes,
+ * which lists fine. The one-comma over-count refuses it with FULL. */
+static void check_edge(fav_fixture_t *fx)
+{
+    char edgeslug[FAV_TEST_EDGE_SLUG + 1] = {0};
+    char slugs[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {{0}};
+    char ids[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {{0}};
+    char all[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {{0}};
+    char first[HUSH_FAVORITE_NAME_MAX] = {0};
+    size_t out_len = 0;
+
+    memset(edgeslug, 'e', (size_t)FAV_TEST_EDGE_SLUG);
+    for (size_t i = 0; i < (size_t)HUSH_SKILL_EQUIP_MAX; i++) {
+        memset(slugs[i], 'x', (size_t)FAV_TEST_LONG_SLUG_LEN);
+        slugs[i][FAV_TEST_LONG_SLUG_LEN - 1] = (char)('0' + i);
+        plant_skill(ids[i], slugs[i]);
+    }
+    for (size_t i = 0; i < (size_t)HUSH_SKILL_EQUIP_MAX; i++)
+        take_str(all[i], sizeof all[i], ids[i], "edge id fits");
+    for (size_t k = 0; k < (size_t)HUSH_FAVORITE_COUNT_MAX; k++) {
+        char name[HUSH_FAVORITE_NAME_MAX] = {0};
+        int n = snprintf(name, sizeof name, "%.*s%02zu",
+                         FAV_TEST_MAX_NAME - 2, all[0] + 5, k);
+
+        expect(n > 0 && (size_t)n < sizeof name, "edge name fits");
+        expect(strlen(name) == (size_t)FAV_TEST_MAX_NAME, "edge is max");
+        if (k == 0)
+            take_str(first, sizeof first, name, "edge first fits");
+        expect(hush_favorite_save(edgeslug, name, all, 8) == HUSH_OK,
+               "edge fill");
+    }
+    expect(hush_favorite_save(edgeslug, first, all, 8) == HUSH_OK,
+           "edge overwrite fits");
+    expect(hush_favorite_list_json(edgeslug, fx->list, sizeof fx->list,
+                                   &out_len) == HUSH_OK,
+           "edge lists");
+    expect(list_entry_count(fx->list) == (size_t)HUSH_FAVORITE_COUNT_MAX,
+           "edge lists all 32");
+}
+
+/* Escape-hostile ids trip the envelope gate: 4375 B entries fit six
  * to a robot, and the seventh save is refused. */
 static void check_hostile(fav_fixture_t *fx)
 {
     char slugs[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {{0}};
-    char ids[8][HUSH_SKILL_ID_MAX] = {{0}};
+    char ids[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {{0}};
     char all[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {{0}};
     size_t out_len = 0;
 
@@ -551,6 +597,25 @@ static void check_hostile(fav_fixture_t *fx)
            "hostile lists");
     expect(list_entry_count(fx->list) == (size_t)FAV_TEST_HOSTILE_FITS,
            "hostile lists six");
+    expect(out_len == 26300, "hostile list measures 26300");
+    memset(all, 0, sizeof all);
+    take_str(all[0], sizeof all[0], "system:forge-skill", "id fits");
+    expect(hush_favorite_save("hostile", "Seed", all, 1) == HUSH_OK,
+           "seed fits beside six");
+    for (size_t i = 0; i < (size_t)HUSH_SKILL_EQUIP_MAX; i++)
+        take_str(all[i], sizeof all[i], ids[i], "hostile id fits");
+    expect(hush_favorite_save("hostile", "Seed", all,
+                              (size_t)HUSH_SKILL_EQUIP_MAX)
+           == HUSH_ERR_FULL, "seed growth refused");
+    expect(hush_favorite_load("hostile", "Seed", &fx->fav) == HUSH_OK,
+           "seed reads back");
+    expect(fx->fav.nskills == 1, "seed still short");
+    expect(hush_favorite_list_json("hostile", fx->list, sizeof fx->list,
+                                   &out_len) == HUSH_OK,
+           "hostile lists after refusal");
+    expect(list_entry_count(fx->list)
+               == (size_t)FAV_TEST_HOSTILE_FITS + 1,
+           "hostile lists seven");
 }
 
 /* Unreadable trees report IO on list and save; access restored after. */
@@ -579,9 +644,8 @@ static void check_io(fav_fixture_t *fx)
 
 int main(void)
 {
-    fav_fixture_t fx;
+    fav_fixture_t fx = {0};
 
-    memset(&fx, 0, sizeof fx);
     setup_fixture(&fx);
     check_save_refusals(&fx);
     check_clash(&fx);
@@ -593,6 +657,7 @@ int main(void)
     check_wide(&fx);
     check_overfill(&fx);
     check_giant(&fx);
+    check_edge(&fx);
     check_hostile(&fx);
     check_io(&fx);
     if (g_fail)

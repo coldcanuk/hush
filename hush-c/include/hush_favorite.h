@@ -5,6 +5,7 @@
 
 #include <stddef.h>
 
+#include "hush_json.h"
 #include "hush_skill.h"
 #include "hush_status.h"
 
@@ -12,15 +13,34 @@ enum {
     HUSH_FAVORITE_NAME_MAX = 48,
     HUSH_FAVORITE_SLUG_MAX = 64,
     HUSH_FAVORITE_COUNT_MAX = 32,
-    /* Worst save-file body: 9 + 47 + 11 + 63 + 12 + 8 x (2 + 570) + 3
-     * = 4713, so 8192 leaves headroom for the NUL. */
-    HUSH_FAVORITE_FILE_MAX = 8192,
-    /* List envelope plus 32 worst-case entries plus NUL:
-     * 100 + 32 x (853 + 1) + 1 = 27429. Envelope: 19 + 63 + 15 + 3.
-     * Entry: 9 + 47 + 12 + 8 x (2 + 95) + 7 + 2 = 853; names need no
-     * escaping under the allowlist. The runtime fit gate measures exact
-     * escaped lengths, so escape-hostile ids stay refused there. */
-    HUSH_FAVORITE_JSON_MAX = 27429
+    HUSH_FAVORITE_NAME_LEN = HUSH_FAVORITE_NAME_MAX - 1,
+    HUSH_FAVORITE_ROBOT_LEN = HUSH_SKILL_ROBOT_MAX - 1,
+    HUSH_FAVORITE_ID_LEN = HUSH_SKILL_ID_MAX - 1,
+    HUSH_FAVORITE_ID_ESC_MAX = HUSH_FAVORITE_ID_LEN * HUSH_JSON_U_LEN,
+    /* JSON fragment lengths; tied to the writer strings by _Static_assert
+     * in hush_favorite.c. Names need no escaping under the allowlist. */
+    HUSH_FAVORITE_LIST_HEAD_LEN = 20,
+    HUSH_FAVORITE_LIST_MID_LEN = 15,
+    HUSH_FAVORITE_LIST_TAIL_LEN = 3,
+    HUSH_FAVORITE_ENTRY_HEAD_LEN = 9,
+    HUSH_FAVORITE_ENTRY_MID_LEN = 12,
+    HUSH_FAVORITE_ENTRY_TAIL_LEN = 2,
+    HUSH_FAVORITE_SAVE_MID_LEN = 11,
+    HUSH_FAVORITE_SAVE_TAIL_LEN = 3,
+    HUSH_FAVORITE_ENTRY_MAX = HUSH_FAVORITE_ENTRY_HEAD_LEN
+        + HUSH_FAVORITE_NAME_LEN + HUSH_FAVORITE_ENTRY_MID_LEN
+        + HUSH_SKILL_EQUIP_MAX * (2 + HUSH_FAVORITE_ID_LEN)
+        + (HUSH_SKILL_EQUIP_MAX - 1) + HUSH_FAVORITE_ENTRY_TAIL_LEN,
+    HUSH_FAVORITE_JSON_MAX = HUSH_FAVORITE_LIST_HEAD_LEN
+        + HUSH_FAVORITE_ROBOT_LEN + HUSH_FAVORITE_LIST_MID_LEN
+        + HUSH_FAVORITE_LIST_TAIL_LEN
+        + HUSH_FAVORITE_COUNT_MAX * HUSH_FAVORITE_ENTRY_MAX
+        + (HUSH_FAVORITE_COUNT_MAX - 1) + 1,
+    HUSH_FAVORITE_FILE_MAX = HUSH_FAVORITE_ENTRY_HEAD_LEN
+        + HUSH_FAVORITE_NAME_LEN + HUSH_FAVORITE_SAVE_MID_LEN
+        + HUSH_FAVORITE_ROBOT_LEN + HUSH_FAVORITE_ENTRY_MID_LEN
+        + HUSH_SKILL_EQUIP_MAX * (2 + HUSH_FAVORITE_ID_ESC_MAX)
+        + (HUSH_SKILL_EQUIP_MAX - 1) + HUSH_FAVORITE_SAVE_TAIL_LEN + 1
 };
 
 typedef struct {
@@ -66,9 +86,9 @@ hush_status_t hush_favorite_delete(const char *robot, const char *name);
  * directories; a missing tree lists empty. Skips unreadable files.
  * Fails with HUSH_ERR_ARG on bad pointers or a bad robot slug,
  * HUSH_ERR_FULL on overflow or past HUSH_FAVORITE_COUNT_MAX valid
- * favorites (save refuses the excess, so this stays unreachable),
- * HUSH_ERR_IO when the tree cannot be opened (except missing) or a
- * read fails mid-scan. */
+ * favorites (save refuses the excess; reachable only through files
+ * added out of band or racing saves), HUSH_ERR_IO when the tree
+ * cannot be opened (except missing) or a read fails mid-scan. */
 hush_status_t hush_favorite_list_json(const char *robot, char *out,
                                       size_t outsz, size_t *out_len);
 
