@@ -21,6 +21,19 @@ override LDFLAGS += -Wl,-z,noexecstack
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share
+# Isolated-eval honesty (mirrors the top-level Makefile): a command-line
+# PREFIX re-derives BINDIR/DATADIR unless they were also given on the
+# command line, so a stale ../config.mk cannot scatter files outside PREFIX.
+# Environment/command-line values (origin != file) are always honored. This
+# block must stay above APPDIR/ICONDIR/HUSHSHARE so they follow DATADIR.
+ifeq ($(origin PREFIX),command line)
+ifeq ($(origin BINDIR),file)
+BINDIR := $(PREFIX)/bin
+endif
+ifeq ($(origin DATADIR),file)
+DATADIR := $(PREFIX)/share
+endif
+endif
 APPDIR ?= $(DATADIR)/applications
 ICONDIR ?= $(DATADIR)/icons/hicolor
 ICON_SIZES := 48 128 256
@@ -52,19 +65,47 @@ ICON_PANEL_OBJS := $(foreach s,$(ICON_PANELS),src/hush_icon_panel_$(s).o)
 TESTS := $(wildcard tests/test_*.c)
 TEST_BINS := $(TESTS:.c=)
 
-.PHONY: all test clean demo install uninstall check-prefix
+.PHONY: all test clean demo install uninstall check-prefix check-stamp
 
 # An empty PREFIX would resolve BINDIR to /bin and let install/uninstall
-# scribble outside any prefix. The top-level Makefile guards too; this
-# covers direct `make -C hush-c install PREFIX=` invocations.
+# scribble outside any prefix; an empty BINDIR would resolve install targets
+# to /hush-relay (root). The top-level Makefile guards too; this
+# covers direct `make -C hush-c install PREFIX=` / `BINDIR=` invocations.
+# DATADIR is guarded for the same reason (empty DATADIR would drop desktop
+# entries and icons at /applications and /icons).
 check-prefix:
 	@if [ -z "$(PREFIX)" ]; then \
 		echo "error: empty PREFIX. Pass a real prefix, e.g. make install PREFIX=/tmp/hush-eval,"; \
 		echo "or unset PREFIX to use the configured default (\$$HOME/.local)."; \
 		exit 1; \
+	fi; \
+	if [ -z "$(BINDIR)" ]; then \
+		echo "error: empty BINDIR. Pass a real bindir, e.g. make install BINDIR=/tmp/hush-eval/bin,"; \
+		echo "or unset BINDIR to derive it from PREFIX."; \
+		exit 1; \
+	fi; \
+	if [ -z "$(DATADIR)" ]; then \
+		echo "error: empty DATADIR. Pass a real datadir, e.g. make install DATADIR=/tmp/hush-eval/share,"; \
+		echo "or unset DATADIR to derive it from PREFIX."; \
+		exit 1; \
 	fi
 
-all: libhush.a hush-relay
+# Stale-stamp tripwire (warn-only): ../config.mk bakes HUSH_BUILD_SHA at
+# configure time, so committing after configure leaves the binary stamped
+# with the old SHA. tests/check_build.sh still fails the suite on mismatch;
+# this just warns early during make/install (always exits 0).
+check-stamp:
+	@baked="$(HUSH_BUILD_SHA)"; \
+	head=""; \
+	if command -v git >/dev/null 2>&1; then \
+		head=$$(git rev-parse --short HEAD 2>/dev/null || true); \
+	fi; \
+	if [ -n "$$baked" ] && [ "$$baked" != "unknown" ] \
+		&& [ -n "$$head" ] && [ "$$baked" != "$$head" ]; then \
+		echo "warning: baked build SHA ($$baked) != HEAD short ($$head); re-run ./configure."; \
+	fi
+
+all: check-stamp libhush.a hush-relay
 
 libhush.a: $(OBJS) $(ICON_PANEL_OBJS)
 	ar rcs $@ $^
@@ -124,7 +165,7 @@ clean:
 demo:
 	@echo "See hush-c/demo/ for the chat UI (also served by hush-relay on /)"
 
-install: check-prefix all
+install: check-prefix check-stamp all
 	install -d $(DESTDIR)$(CODEX_SKILL_SHARE)/references
 	install -m 0644 $(CODEX_SKILL_SOURCE)/SKILL.md $(CODEX_SKILL_SOURCE)/LICENSE \
 		$(CODEX_SKILL_SOURCE)/UPSTREAM.md $(DESTDIR)$(CODEX_SKILL_SHARE)/

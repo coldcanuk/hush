@@ -214,7 +214,7 @@ Click the launcher (`hush-relay --open`) while the hive is already up to
 re-attach a window. `POST /api/close` acknowledges Close and does not stop
 the process. `POST /api/exit` sets the same shutdown flag as SIGTERM.
 
-Rebuild guard: `make` / `make install` refuse while a live relay owns port 10555 — run `hush-relay --quit` (Exit) first; Close is not enough since the hive keeps the port. `make clean` stops the relay and its CHILD turnserver, never the systemd `hush-turn.service` daemon.
+Rebuild guard: `make` / `make install` refuse while a live relay owns port 10555 — run `hush-relay --quit` (Exit) first; Close is not enough since the hive keeps the port. The guard is port-scoped: it checks `$HUSH_PORT` if set, else `10555`, so a relay on another port does not block the build unless `HUSH_PORT` matches. `make clean` stops the relay and its CHILD turnserver, never the systemd `hush-turn.service` daemon.
 
 ### Threads, streaming, and stop
 
@@ -362,6 +362,8 @@ For a system-wide install:
 make
 sudo make install PREFIX=/usr
 ```
+
+`make install PREFIX=…` re-derives `BINDIR`/`DATADIR` from `PREFIX` unless they are also given on the command line, so this recipe never leaks the `~/.local` paths baked by `./configure`.
 
 ## Docs
 
