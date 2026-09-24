@@ -51,15 +51,18 @@ if echo "$html" | grep -q 'rail-body'; then fail "rail body must be gone (UI-M9)
 if echo "$html" | grep -q 'id="rail-info"'; then fail "rail info must be gone (UI-M9)"; fi
 echo "$html" | grep -q 'id="kit-menu"' || fail "HTML missing KIT menu overlay (UI-M9)"
 echo "$html" | grep -q 'id="providers-btn"' || fail "HTML missing configure providers"
-# UI-M10: custom dispatch scrollbar on the log surface. Native fat bar
-# hidden; straight black line track + bold dot + up/down arrows.
-echo "$html" | grep -q 'id="fo-scrollbar"' || fail "HTML missing custom scrollbar (UI-M10)"
-echo "$html" | grep -q 'id="fo-scroll-track"' || fail "HTML missing scrollbar track (UI-M10)"
-echo "$html" | grep -q 'id="fo-scroll-dot"' || fail "HTML missing scrollbar dot (UI-M10)"
-echo "$html" | grep -q 'id="fo-scroll-up"' || fail "HTML missing scrollbar up arrow (UI-M10)"
-echo "$html" | grep -q 'id="fo-scroll-down"' || fail "HTML missing scrollbar down arrow (UI-M10)"
-echo "$html" | grep -q 'syncFoScrollbar' || fail "HTML missing scrollbar sync (UI-M10)"
-echo "$html" | grep -q 'UI-M10' || fail "HTML missing UI-M10 markers"
+# UI-M11: volume dial owns dispatch-log scroll (supersedes UI-M10).
+# Native fat bar hidden; message column owns NO in-column chrome.
+if echo "$html" | grep -q 'id="fo-scrollbar"'; then fail "M10 scrollbar must be gone (UI-M11)"; fi
+if echo "$html" | grep -q 'id="fo-scroll-track"'; then fail "M10 scroll track must be gone (UI-M11)"; fi
+if echo "$html" | grep -q 'id="fo-scroll-dot"'; then fail "M10 scroll dot must be gone (UI-M11)"; fi
+if echo "$html" | grep -q 'id="fo-scroll-up"'; then fail "M10 scroll up arrow must be gone (UI-M11)"; fi
+if echo "$html" | grep -q 'id="fo-scroll-down"'; then fail "M10 scroll down arrow must be gone (UI-M11)"; fi
+if echo "$html" | grep -q 'syncFoScrollbar'; then fail "M10 scrollbar sync must be gone (UI-M11)"; fi
+echo "$html" | grep -q 'id="fo-dial"' || fail "HTML missing volume dial (UI-M11)"
+echo "$html" | grep -q 'id="fo-dial-knob"' || fail "HTML missing dial knob (UI-M11)"
+echo "$html" | grep -q 'syncFoDial' || fail "HTML missing dial sync (UI-M11)"
+echo "$html" | grep -q 'UI-M11' || fail "HTML missing UI-M11 markers"
 echo "$html" | grep -q 'id="providers-hub"' || fail "HTML missing providers hub"
 echo "$html" | grep -q 'openProviderDrawer' || fail "HTML missing openProviderDrawer"
 echo "$html" | grep -q 'Raise a new robot' || fail "HTML missing robot copy"

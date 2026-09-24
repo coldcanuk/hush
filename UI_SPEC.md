@@ -916,6 +916,29 @@ and jumps on track click) plus up/down step arrows at the extremities
 (`#fo-scroll-up` / `#fo-scroll-down`, step the log 120px). Wheel and
 keyboard still scroll the log itself; no new layers, so the Escape
 single-dismiss stack and every M9 preserve stay untouched.
+Delta 2026-09-24 (UI-M11 volume-dial pass): supersedes and replaces the
+UI-M10 scrollbar-in-message-column — the dispatch log (`#stream`,
+inside `#fo-log-wrap`) keeps the native fat bar hidden
+(`scrollbar-width: none` + `::-webkit-scrollbar`) but owns NO
+in-column chrome: no track, dot, or end-arrow bar in the message
+list. Scroll lives on a stereo-style VOLUME dial (`#fo-dial`, markers
+`UI-M11`) in the empty chrome above Send Dispatch (`#fo-dial-row`,
+right-aligned over the send button). Pointer over the dial + mouse
+wheel up/down scrolls the log; click-drag rotates clockwise to scroll
+down, counter-clockwise to scroll up (old stereo volume feel), with
+arrow/PageUp/PageDown/Home/End keys on the focused dial and a pointer
+that follows every scroll, resize, and content paint. The knob reads
+as physical field-office/game chrome (stamped VOLUME/SCROLL plate,
+ink knob, offset shadows, sharp 3px corners, existing tokens; flat
+paper, no gradient/glow) — never a web range input, no fat chrome, no
+Discord DNA. Wheel/keyboard still scroll the log itself; no new
+layers, so the Escape single-dismiss stack and every M1–M9 preserve
+(folder tabs, zero tool rail, overlay drawer, materials, typing i/c
+1–4, M7/M8/M9 chrome) stay untouched.
+Gate: the launch script fails on any served `#fo-scrollbar` /
+`#fo-scroll-track` / `#fo-scroll-dot` / `#fo-scroll-up` /
+`#fo-scroll-down` / `syncFoScrollbar` marker and requires `#fo-dial` /
+`#fo-dial-knob` / `syncFoDial` / `UI-M11`.
 
 ### 16. Mention + manage pills
 
