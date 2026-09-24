@@ -59,11 +59,25 @@ enum {
     HUSH_UI_PROFILE_ARG_MAX = HUSH_HOME_PATH_MAX + HUSH_UI_PROFILE_EXTRA_MAX,
     HUSH_PIDFILE_PATH_MAX = 256,
     HUSH_PIDFILE_BODY_MAX = 32,
-    HUSH_PIDFILE_MODE = 0700,
-    /* Ancestors (e.g. $HOME/.local/state) keep the operator's own modes. */
-    HUSH_PIDFILE_PARENT_MODE = 0755,
+    HUSH_PIDFILE_DIR_MODE = 0700,
+    HUSH_PIDFILE_FILE_MODE = 0600,
+    /* Missing ancestors are created with this mode; existing entries are
+     * never chmodded. 0700 per the XDG Base Directory spec. */
+    HUSH_PIDFILE_PARENT_MODE = 0700,
     HUSH_QUIT_WAIT_TRIES = 20,
     HUSH_QUIT_WAIT_MS = 100,
+    /* --quit owner wait: 20 s. Covers the worst-case relay cleanup of
+     * HUSH_CHILD_MAX children times the per-child stop cap above, plus
+     * shutdown margin. Pays out only when the relay is truly stuck; a
+     * cooperative relay is gone in well under a second. */
+    HUSH_QUIT_OWNER_TRIES = 200,
+    HUSH_QUIT_OWNER_MS = 100,
+    /* Pids at or below this are never signalled (kernel-reserved). */
+    HUSH_PID_RESERVED_MAX = 1,
+    /* Decimal base for pidfile parsing. */
+    HUSH_PID_STR_BASE = 10,
+    /* Nanoseconds per millisecond for stop polling. */
+    HUSH_NS_PER_MS = 1000000,
     HUSH_CHILD_MAX = 8,
     HUSH_CHILD_CMDLINE_MAX = 512,
     HUSH_PROC_PATH_MAX = 64,
@@ -269,15 +283,44 @@ static void hush_shutdown_handler(int sig);
 static void hush_install_shutdown_handlers(void);
 static void hush_pidfile_dir(char *out, size_t sz);
 static void hush_pidfile_path(char *out, size_t sz, uint16_t port);
-static void hush_pidfile_ensure_parents(const char *dir);
-static void hush_write_pidfile(uint16_t port);
+/* True for a non-empty absolute path. Relative XDG/HOME values are ignored. */
+static int hush_path_is_absolute(const char *p);
+/* True when path is an existing directory. Never follows symlinks. */
+static int hush_path_is_dir(const char *path);
+/* Creates missing ancestors of dir. Fails IO when a component is unusable. */
+static hush_status_t hush_pidfile_ensure_parents(const char *dir);
+/* Writes this process's pid for port. Fails ARG when unconfigured, IO on any
+ * mkdir/open/write/close failure. The relay still starts; the caller warns. */
+static hush_status_t hush_write_pidfile(uint16_t port);
+/* Writes exactly len bytes, retrying EINTR. Returns 0 on short write/error. */
 static int hush_write_pid_bytes(int fd, const char *body, size_t len);
 static void hush_remove_pidfile(void);
-/* Removes the pidfile for a non-zero port. No-op when unconfigured. */
-static void hush_unlink_pidfile(uint16_t port);
+/* Removes the pidfile for port only when it still holds expect: a successor
+ * relay's pidfile is never touched. */
+static void hush_unlink_pidfile(uint16_t port, pid_t expect);
+/* Reads the owner pid for port. NOT_FOUND when no pidfile exists, PARSE when
+ * its content is not a decimal pid, IO on other filesystem errors. */
 static hush_status_t hush_read_pidfile(uint16_t port, pid_t *out_pid);
+/* True when pid names a live, non-zombie process. */
 static int hush_pid_is_alive(pid_t pid);
-static void hush_wait_pid_gone(pid_t pid);
+#ifdef __linux__
+/* True when pid is a zombie (exited, awaiting reap). */
+static int hush_pid_is_zombie(pid_t pid);
+/* True when pid's exe basename is hush-relay. Unreadable exe means false. */
+static int hush_pid_is_relay(pid_t pid);
+#else
+/* No /proc identity off Linux: never verified, so --quit always refuses. */
+static int hush_pid_is_relay(pid_t pid);
+#endif
+/* Checks pid may be signalled for a quit: positive, unreserved, not this
+ * process, live, and a verified hush-relay. OK, NOT_FOUND when already gone,
+ * DENIED otherwise. */
+static hush_status_t hush_quit_verify_owner(pid_t pid);
+/* SIGTERMs pid once, then polls liveness up to tries x wait_ms. Returns OK
+ * when pid is gone, IO when it survives. Never escalates to SIGKILL. */
+static hush_status_t hush_pid_stop_timed(pid_t pid, int tries, int wait_ms);
+/* Describes a non-OK quit outcome on stderr. Silent when st is OK. */
+static void hush_quit_report(uint16_t port, pid_t pid, hush_status_t st);
 static void hush_relay_prepare(uint16_t port, const char *bind_addr);
 static int hush_relay_auto_update_on(void);
 static hush_status_t hush_relay_bind(uint16_t port, int open_ui, int *out_ls);
@@ -350,34 +393,116 @@ void hush_relay_reap_children(void)
 hush_status_t hush_relay_quit(uint16_t port)
 {
     pid_t pid = 0;
-    hush_status_t st;
+    hush_status_t st = HUSH_OK;
 
     if (port == 0)
         port = (uint16_t)HUSH_DEFAULT_PORT;
     st = hush_read_pidfile(port, &pid);
-    if (st != HUSH_OK) {
-        fprintf(stderr, "hush-relay: no running relay on port %u (no pidfile)\n",
+    if (st == HUSH_OK)
+        st = hush_quit_verify_owner(pid);
+    if (st == HUSH_ERR_NOT_FOUND && pid > HUSH_PID_RESERVED_MAX)
+        hush_unlink_pidfile(port, pid);
+    if (st == HUSH_OK) {
+        st = hush_pid_stop_timed(pid, HUSH_QUIT_OWNER_TRIES, HUSH_QUIT_OWNER_MS);
+        if (st == HUSH_OK)
+            hush_unlink_pidfile(port, pid);
+    }
+    if (st != HUSH_OK)
+        hush_quit_report(port, pid, st);
+    return st;
+}
+
+static void hush_quit_report(uint16_t port, pid_t pid, hush_status_t st)
+{
+    assert(port != 0);
+    switch (st) {
+    case HUSH_OK:
+        break;
+    case HUSH_ERR_NOT_FOUND:
+        if (pid > HUSH_PID_RESERVED_MAX)
+            fprintf(stderr, "hush-relay: no running relay on port %u (stale pid %ld)\n",
+                    (unsigned)port, (long)pid);
+        else
+            fprintf(stderr, "hush-relay: no running relay on port %u (no pidfile)\n",
+                    (unsigned)port);
+        break;
+    case HUSH_ERR_PARSE:
+        fprintf(stderr, "hush-relay: unreadable pidfile for port %u\n",
                 (unsigned)port);
-        return HUSH_ERR_NOT_FOUND;
-    }
-    if (!hush_pid_is_alive(pid)) {
-        hush_unlink_pidfile(port);
-        fprintf(stderr, "hush-relay: no running relay on port %u (stale pid %ld)\n",
+        break;
+    case HUSH_ERR_DENIED:
+        fprintf(stderr, "hush-relay: pid %ld is not a verified hush-relay; refusing --quit on port %u\n",
+                (long)pid, (unsigned)port);
+        break;
+    default:
+        fprintf(stderr, "hush-relay: cannot stop relay on port %u (pid %ld)\n",
                 (unsigned)port, (long)pid);
+        break;
+    }
+}
+
+static hush_status_t hush_quit_verify_owner(pid_t pid)
+{
+    if (pid <= HUSH_PID_RESERVED_MAX || pid == getpid())
+        return HUSH_ERR_DENIED;
+    if (!hush_pid_is_alive(pid))
         return HUSH_ERR_NOT_FOUND;
-    }
-    if (kill(pid, SIGTERM) != 0 && errno != ESRCH) {
-        fprintf(stderr, "hush-relay: cannot stop pid %ld: %s\n",
-                (long)pid, strerror(errno));
+    if (!hush_pid_is_relay(pid))
+        return HUSH_ERR_DENIED;
+    return HUSH_OK;
+}
+
+#ifdef __linux__
+static int hush_pid_is_relay(pid_t pid)
+{
+    char path[HUSH_PROC_PATH_MAX];
+    char target[HUSH_PIDFILE_PATH_MAX];
+    ssize_t n = 0;
+    const char *base = NULL;
+
+    assert(pid > HUSH_PID_RESERVED_MAX);
+    if (snprintf(path, sizeof(path), "/proc/%ld/exe", (long)pid) >= (int)sizeof(path))
+        return 0;
+    n = readlink(path, target, sizeof(target) - 1);
+    if (n <= 0)
+        return 0;
+    target[n] = '\0';
+    base = strrchr(target, '/');
+    if (base == NULL)
+        base = target;
+    else
+        base++;
+    return strcmp(base, "hush-relay") == 0;
+}
+#else
+static int hush_pid_is_relay(pid_t pid)
+{
+    /* No /proc identity off Linux: never verified, so --quit always refuses
+     * rather than risk signalling a reused pid. Stop those relays with
+     * POST /api/exit or kill(1). */
+    (void)pid;
+    return 0;
+}
+#endif
+
+static hush_status_t hush_pid_stop_timed(pid_t pid, int tries, int wait_ms)
+{
+    int i = 0;
+
+    assert(pid > HUSH_PID_RESERVED_MAX);
+    if (kill(pid, SIGTERM) != 0 && errno != ESRCH)
         return HUSH_ERR_IO;
+    for (i = 0; i < tries; ++i) {
+        struct timespec pause;
+
+        if (!hush_pid_is_alive(pid))
+            return HUSH_OK;
+        pause.tv_sec = 0;
+        pause.tv_nsec = (long)wait_ms * (long)HUSH_NS_PER_MS;
+        nanosleep(&pause, NULL);
     }
-    hush_wait_pid_gone(pid);
-    if (hush_pid_is_alive(pid)) {
-        fprintf(stderr, "hush-relay: relay on port %u (pid %ld) still running\n",
-                (unsigned)port, (long)pid);
+    if (hush_pid_is_alive(pid))
         return HUSH_ERR_IO;
-    }
-    hush_unlink_pidfile(port);
     return HUSH_OK;
 }
 
@@ -402,7 +527,10 @@ hush_status_t hush_relay_run(uint16_t port, const char *bind_addr, int open_ui)
         return HUSH_ERR_IO;
     }
     hush_wake_ingest_store(g_store);
-    hush_write_pidfile(port);
+    if (hush_write_pidfile(port) != HUSH_OK)
+        fprintf(stderr,
+                "hush-relay: no pidfile for port %u; --quit will not find this relay\n",
+                (unsigned)port);
     hush_relay_announce(port, open_ui);
     hush_relay_pump(ls);
     hush_relay_cleanup(ls);
@@ -1528,17 +1656,22 @@ static void hush_pidfile_dir(char *out, size_t sz)
 
     assert(out != NULL);
     assert(sz > 0);
-    if (runtime != NULL && runtime[0] != '\0') {
+    out[0] = '\0';
+    if (hush_path_is_absolute(runtime)) {
         n = snprintf(out, sz, "%s/hush", runtime);
         if (n > 0 && (size_t)n < sz)
             return;
+        out[0] = '\0';
     }
-    if (home != NULL && home[0] != '\0') {
+    if (hush_path_is_absolute(home)) {
         n = snprintf(out, sz, "%s/.local/state/hush", home);
         if (n > 0 && (size_t)n < sz)
             return;
+        out[0] = '\0';
     }
-    snprintf(out, sz, "/tmp/hush");
+    /* No shared /tmp fallback: a world-writable pidfile dir invites symlink
+     * and pid-planting attacks, and a silent fallback repeats the original
+     * bug's failure mode. Missing configuration fails loudly instead. */
 }
 
 static void hush_pidfile_path(char *out, size_t sz, uint16_t port)
@@ -1548,16 +1681,34 @@ static void hush_pidfile_path(char *out, size_t sz, uint16_t port)
 
     assert(out != NULL);
     assert(sz > 0);
+    out[0] = '\0';
     hush_pidfile_dir(dir, sizeof(dir));
+    if (dir[0] == '\0')
+        return;
     n = snprintf(out, sz, "%s/" HUSH_PIDFILE_NAME_FMT, dir, (unsigned)port);
     if (n <= 0 || (size_t)n >= sz)
         out[0] = '\0';
 }
 
-/* Creates every missing ancestor of dir. Existing entries keep their modes;
- * only the pidfile dir itself is private. Covers the virgin-HOME chain
- * $HOME/.local/state/hush, where a single mkdir would fail with ENOENT. */
-static void hush_pidfile_ensure_parents(const char *dir)
+static int hush_path_is_absolute(const char *p)
+{
+    return p != NULL && p[0] == '/';
+}
+
+static int hush_path_is_dir(const char *path)
+{
+    struct stat st;
+
+    assert(path != NULL);
+    if (lstat(path, &st) != 0)
+        return 0;
+    return S_ISDIR(st.st_mode) != 0;
+}
+
+/* Creates every missing ancestor of dir. Existing directories are untouched;
+ * anything else in the way fails IO. Never follows symlinks. Covers the
+ * virgin-HOME chain $HOME/.local/state/hush, where a single mkdir fails. */
+static hush_status_t hush_pidfile_ensure_parents(const char *dir)
 {
     char prefix[HUSH_PIDFILE_PATH_MAX];
     size_t len = 0;
@@ -1566,52 +1717,77 @@ static void hush_pidfile_ensure_parents(const char *dir)
     assert(dir != NULL);
     len = strlen(dir);
     if (len == 0 || len + 1 > sizeof(prefix))
-        return;
+        return HUSH_ERR_ARG;
     memcpy(prefix, dir, len + 1);
     /* Skip the leading slash: never mkdir the root itself. */
     for (i = 1; i < len; ++i) {
         if (prefix[i] != '/')
             continue;
         prefix[i] = '\0';
-        (void)mkdir(prefix, HUSH_PIDFILE_PARENT_MODE);
+        if (mkdir(prefix, HUSH_PIDFILE_PARENT_MODE) != 0 && errno != EEXIST)
+            return HUSH_ERR_IO;
+        if (!hush_path_is_dir(prefix))
+            return HUSH_ERR_IO;
         prefix[i] = '/';
     }
+    return HUSH_OK;
 }
 
-static void hush_write_pidfile(uint16_t port)
+static hush_status_t hush_write_pidfile(uint16_t port)
 {
     char dir[HUSH_PIDFILE_PATH_MAX];
     char body[HUSH_PIDFILE_BODY_MAX];
-    int fd;
-    int n;
+    int fd = HUSH_FD_NONE;
+    int n = 0;
 
+    assert(port != 0);
     hush_pidfile_dir(dir, sizeof(dir));
-    hush_pidfile_ensure_parents(dir);
-    (void)mkdir(dir, HUSH_PIDFILE_MODE);
+    if (dir[0] == '\0')
+        return HUSH_ERR_ARG;
+    if (hush_pidfile_ensure_parents(dir) != HUSH_OK)
+        return HUSH_ERR_IO;
+    if (mkdir(dir, HUSH_PIDFILE_DIR_MODE) != 0 && errno != EEXIST)
+        return HUSH_ERR_IO;
+    if (!hush_path_is_dir(dir))
+        return HUSH_ERR_IO;
     hush_pidfile_path(g_pidfile_path, sizeof(g_pidfile_path), port);
     if (g_pidfile_path[0] == '\0')
-        return;
-    fd = open(g_pidfile_path, O_CREAT | O_TRUNC | O_WRONLY, 0600);
+        return HUSH_ERR_ARG;
+    fd = open(g_pidfile_path,
+              O_CREAT | O_TRUNC | O_WRONLY | O_NOFOLLOW | O_CLOEXEC,
+              HUSH_PIDFILE_FILE_MODE);
     if (fd < 0)
-        return;
+        return HUSH_ERR_IO;
     n = snprintf(body, sizeof(body), "%ld\n", (long)getpid());
     if (n <= 0 || (size_t)n >= sizeof(body) ||
         !hush_write_pid_bytes(fd, body, (size_t)n)) {
         close(fd);
         unlink(g_pidfile_path);
-        return;
+        return HUSH_ERR_IO;
     }
-    close(fd);
+    if (close(fd) != 0) {
+        unlink(g_pidfile_path);
+        return HUSH_ERR_IO;
+    }
     g_pidfile_ready = 1;
+    return HUSH_OK;
 }
 
 static int hush_write_pid_bytes(int fd, const char *body, size_t len)
 {
-    ssize_t wrote;
+    size_t off = 0;
 
     assert(body != NULL);
-    wrote = write(fd, body, len);
-    return wrote == (ssize_t)len;
+    while (off < len) {
+        ssize_t wrote = write(fd, body + off, len - off);
+
+        if (wrote < 0 && errno == EINTR)
+            continue;
+        if (wrote <= 0)
+            return 0;
+        off += (size_t)wrote;
+    }
+    return 1;
 }
 
 static void hush_remove_pidfile(void)
@@ -1623,11 +1799,17 @@ static void hush_remove_pidfile(void)
     g_pidfile_ready = 0;
 }
 
-static void hush_unlink_pidfile(uint16_t port)
+static void hush_unlink_pidfile(uint16_t port, pid_t expect)
 {
     char path[HUSH_PIDFILE_PATH_MAX];
+    pid_t current = 0;
 
     assert(port != 0);
+    assert(expect > HUSH_PID_RESERVED_MAX);
+    if (hush_read_pidfile(port, &current) != HUSH_OK)
+        return;
+    if (current != expect)
+        return;
     hush_pidfile_path(path, sizeof(path), port);
     if (path[0] != '\0')
         unlink(path);
@@ -1637,7 +1819,8 @@ static hush_status_t hush_read_pidfile(uint16_t port, pid_t *out_pid)
 {
     char path[HUSH_PIDFILE_PATH_MAX];
     char body[HUSH_PIDFILE_BODY_MAX];
-    FILE *fp;
+    FILE *fp = NULL;
+    char *end = NULL;
     long value = 0;
 
     assert(out_pid != NULL);
@@ -1646,13 +1829,16 @@ static hush_status_t hush_read_pidfile(uint16_t port, pid_t *out_pid)
         return HUSH_ERR_NOT_FOUND;
     fp = fopen(path, "r");
     if (fp == NULL)
-        return HUSH_ERR_NOT_FOUND;
+        return errno == ENOENT ? HUSH_ERR_NOT_FOUND : HUSH_ERR_IO;
     if (fgets(body, (int)sizeof(body), fp) == NULL) {
         fclose(fp);
         return HUSH_ERR_PARSE;
     }
     fclose(fp);
-    value = strtol(body, NULL, 10);
+    errno = 0;
+    value = strtol(body, &end, HUSH_PID_STR_BASE);
+    if (errno != 0 || end == body || (*end != '\n' && *end != '\0'))
+        return HUSH_ERR_PARSE;
     if (value <= 0 || value > (long)INT_MAX)
         return HUSH_ERR_PARSE;
     *out_pid = (pid_t)value;
@@ -1663,25 +1849,41 @@ static int hush_pid_is_alive(pid_t pid)
 {
     if (pid <= 0)
         return 0;
-    if (kill(pid, 0) == 0)
-        return 1;
-    return errno != ESRCH;
+    if (kill(pid, 0) != 0)
+        return errno != ESRCH;
+#ifdef __linux__
+    return !hush_pid_is_zombie(pid);
+#else
+    return 1;
+#endif
 }
 
-static void hush_wait_pid_gone(pid_t pid)
+#ifdef __linux__
+static int hush_pid_is_zombie(pid_t pid)
 {
-    int i;
+    char path[HUSH_PROC_PATH_MAX];
+    char body[HUSH_CHILD_CMDLINE_MAX];
+    int fd = HUSH_FD_NONE;
+    ssize_t n = 0;
+    const char *paren = NULL;
 
-    for (i = 0; i < HUSH_QUIT_WAIT_TRIES; ++i) {
-        struct timespec pause;
-
-        if (!hush_pid_is_alive(pid))
-            return;
-        pause.tv_sec = 0;
-        pause.tv_nsec = (long)HUSH_QUIT_WAIT_MS * 1000000L;
-        nanosleep(&pause, NULL);
-    }
+    assert(pid > 0);
+    if (snprintf(path, sizeof(path), "/proc/%ld/stat", (long)pid) >= (int)sizeof(path))
+        return 0;
+    fd = open(path, O_RDONLY);
+    if (fd < 0)
+        return 0;
+    n = read(fd, body, sizeof(body) - 1);
+    close(fd);
+    if (n <= 0)
+        return 0;
+    body[n] = '\0';
+    paren = strrchr(body, ')');
+    if (paren == NULL || paren[1] != ' ' || paren[2] == '\0')
+        return 0;
+    return paren[2] == 'Z';
 }
+#endif
 
 static int hush_child_is_app(pid_t pid)
 {
@@ -1931,9 +2133,7 @@ static void hush_child_stop_one(pid_t pid)
         return;
     if (!hush_pid_is_alive(pid))
         return;
-    (void)kill(pid, SIGTERM);
-    hush_wait_pid_gone(pid);
-    if (hush_pid_is_alive(pid))
+    if (hush_pid_stop_timed(pid, HUSH_QUIT_WAIT_TRIES, HUSH_QUIT_WAIT_MS) != HUSH_OK)
         (void)kill(pid, SIGKILL);
 }
 

@@ -6,6 +6,12 @@
 #include "hush_build.h"
 #include "hush_relay.h"
 
+enum {
+    HUSH_CLI_OK = 0,
+    HUSH_CLI_NOT_FOUND = 1,
+    HUSH_CLI_FAILED = 2
+};
+
 struct hush_cli {
     uint16_t port;
     const char *bind_addr;
@@ -38,18 +44,25 @@ int main(int argc, char **argv)
 
 static int hush_cli_run(const struct hush_cli *cli)
 {
-    hush_status_t st;
+    hush_status_t st = HUSH_OK;
 
     if (cli->want_help) {
         hush_print_help();
-        return 0;
+        return HUSH_CLI_OK;
     }
     if (cli->want_close) {
         hush_print_close_hint(cli->port);
-        return 0;
+        return HUSH_CLI_OK;
     }
-    if (cli->want_quit)
-        return (hush_relay_quit(cli->port) == HUSH_OK) ? 0 : 1;
+    if (cli->want_quit) {
+        hush_status_t qs = hush_relay_quit(cli->port);
+
+        if (qs == HUSH_OK)
+            return HUSH_CLI_OK;
+        if (qs == HUSH_ERR_NOT_FOUND)
+            return HUSH_CLI_NOT_FOUND;
+        return HUSH_CLI_FAILED;
+    }
     printf("hush-relay %s (%s)\n", HUSH_BUILD_VERSION, HUSH_BUILD_SHA);
     fflush(stdout);
     st = hush_relay_run(cli->port, cli->bind_addr, cli->open_ui);
@@ -115,16 +128,17 @@ static void hush_print_help(void)
     printf("hush-relay %s (%s) — local Nostr relay + chat UI\n", HUSH_BUILD_VERSION,
            HUSH_BUILD_SHA);
     printf("usage: hush-relay [port] [--listen ADDR] [--open|--no-open|--close|--quit]\n");
-    printf("  port       listen port (default 10555)\n");
+    printf("  port       listen port (default %u)\n", (unsigned)HUSH_DEFAULT_PORT);
     printf("  --listen   bind address (default 127.0.0.1; 0.0.0.0 for the LAN)\n");
     printf("  --open     open the chat as a standalone app window\n");
     printf("  --no-open  do not open a window (even on a graphical session)\n");
     printf("  --close    detach the GUI; the relay stays up (exit 0)\n");
-    printf("  --quit     stop the relay on [port] (default 10555;\n");
-    printf("             exit 0 only after the relay is confirmed stopped)\n");
+    printf("  --quit     stop the relay on [port] (default %u;\n", (unsigned)HUSH_DEFAULT_PORT);
+    printf("             exit 0 stopped, 1 nothing to stop, 2 stop failed or refused)\n");
     printf("Close vs Exit:\n");
     printf("  Close dismisses the window. The hive keeps listening.\n");
-    printf("  Exit / --quit stops every process. Clean quit is exit code 0.\n");
+    printf("  Exit / --quit stops the relay on that port and the children it forked.\n");
+    printf("  Clean quit is exit code 0.\n");
     printf("STUN/TURN: Settings → Enable STUN/TURN (needs coturn).\n");
     printf("Daemon:    sudo make install PREFIX=/usr, then Settings → Daemon mode\n");
     printf("           or: sudo systemctl enable --now hush-turn\n");
