@@ -32,6 +32,9 @@ static hush_status_t hush_home_mkdir(const char *path);
 static hush_status_t hush_home_mkdir_child(char *out, size_t outsz,
                                            const char *root, const char *name);
 
+/* True when slug is a bounded file-safe robot slug (a-z0-9-_). */
+static int hush_home_is_robot_slug(const char *slug);
+
 /* mkdir config, agents, skills/{system,user,robots} under root. */
 static hush_status_t hush_home_make_tree(const char *root);
 
@@ -144,6 +147,27 @@ hush_status_t hush_home_skills_dir(char *out, size_t outsz,
     return HUSH_OK;
 }
 
+hush_status_t hush_home_loadouts_dir(char *out, size_t outsz,
+                                     const char *robot)
+{
+    char root[HUSH_HOME_PATH_MAX];
+    char robots[HUSH_HOME_PATH_MAX];
+    char scoped[HUSH_HOME_PATH_MAX];
+
+    if (out == NULL || outsz == 0 || robot == NULL)
+        return HUSH_ERR_ARG;
+    out[0] = '\0';
+    if (!hush_home_is_robot_slug(robot))
+        return HUSH_ERR_ARG;
+    hush_home_root(root, sizeof(root));
+    hush_home_join(robots, sizeof(robots), root, HUSH_HOME_DIR_ROBOTS);
+    hush_home_join(scoped, sizeof(scoped), robots, robot);
+    hush_home_join(out, outsz, scoped, HUSH_HOME_DIR_LOADOUTS);
+    if (out[0] == '\0')
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
+}
+
 hush_status_t hush_home_ensure(void)
 {
     char root[HUSH_HOME_PATH_MAX];
@@ -191,6 +215,14 @@ static void hush_home_join(char *out, size_t outsz, const char *a, const char *b
     n = snprintf(out, outsz, "%s/%s", a, b);
     if (n <= 0 || (size_t)n >= outsz)
         out[0] = '\0';
+}
+
+static int hush_home_is_robot_slug(const char *slug)
+{
+    assert(slug != NULL);
+    if (slug[0] == '\0' || strlen(slug) >= (size_t)HUSH_HOME_PATH_MAX)
+        return 0;
+    return strspn(slug, "abcdefghijklmnopqrstuvwxyz0123456789-_") == strlen(slug);
 }
 
 static int hush_home_should_make_tree(void)

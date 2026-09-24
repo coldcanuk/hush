@@ -91,6 +91,9 @@ void hush_http_serve_skills_get(int fd);
 hush_status_t hush_http_serve_skill_post(int fd, const char *body);
 hush_status_t hush_http_serve_skillui(int fd, const char *body);
 
+/* api_favorite.c entry points (PE-4 favorites v1). */
+hush_status_t hush_http_serve_loadout(int fd, const char *body);
+
 /* api_channels.c entry points. */
 hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
                                    hush_store_t *store, hush_event_t *out);
