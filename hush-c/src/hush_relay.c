@@ -321,6 +321,13 @@ static hush_status_t hush_quit_verify_owner(pid_t pid);
 static hush_status_t hush_pid_stop_timed(pid_t pid, int tries, int wait_ms);
 /* Describes a non-OK quit outcome on stderr. Silent when st is OK. */
 static void hush_quit_report(uint16_t port, pid_t pid, hush_status_t st);
+#ifndef __linux__
+/* Resolves the session-token path ($HUSH_HOME, else $HOME/.hush). Empty when
+ * neither is configured. */
+static void hush_quit_token_path(char *out, size_t outsz);
+/* Tells the operator how to stop the relay when --quit cannot verify it. */
+static void hush_quit_report_unverified(uint16_t port);
+#endif
 static void hush_relay_prepare(uint16_t port, const char *bind_addr);
 static int hush_relay_auto_update_on(void);
 static hush_status_t hush_relay_bind(uint16_t port, int open_ui, int *out_ls);
@@ -431,8 +438,12 @@ static void hush_quit_report(uint16_t port, pid_t pid, hush_status_t st)
                 (unsigned)port);
         break;
     case HUSH_ERR_DENIED:
+#ifdef __linux__
         fprintf(stderr, "hush-relay: pid %ld is not a verified hush-relay; refusing --quit on port %u\n",
                 (long)pid, (unsigned)port);
+#else
+        hush_quit_report_unverified(port);
+#endif
         break;
     default:
         fprintf(stderr, "hush-relay: cannot stop relay on port %u (pid %ld)\n",
@@ -440,6 +451,34 @@ static void hush_quit_report(uint16_t port, pid_t pid, hush_status_t st)
         break;
     }
 }
+
+#ifndef __linux__
+static void hush_quit_token_path(char *out, size_t outsz)
+{
+    char root[HUSH_HOME_PATH_MAX];
+    int n;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    out[0] = '\0';
+    hush_home_root(root, sizeof(root));
+    if (root[0] == '\0')
+        return;
+    n = snprintf(out, outsz, "%s/%s", root, HUSH_AUTH_FILE);
+    if (n <= 0 || (size_t)n >= outsz)
+        out[0] = '\0';
+}
+
+static void hush_quit_report_unverified(uint16_t port)
+{
+    char token[HUSH_HOME_PATH_MAX];
+
+    assert(port != 0);
+    hush_quit_token_path(token, sizeof(token));
+    fprintf(stderr, "hush-relay: --quit cannot verify the relay's identity on this platform; stop it with Exit in the hive, Ctrl+C, or POST /api/exit (X-Hush-Token from %s) on port %u\n",
+            token[0] != '\0' ? token : "~/.hush/session.token", (unsigned)port);
+}
+#endif
 
 static hush_status_t hush_quit_verify_owner(pid_t pid)
 {

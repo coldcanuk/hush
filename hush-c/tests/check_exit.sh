@@ -114,6 +114,20 @@ wait_down() {
 
 "$bin" --help | grep -q -- '--quit' || fail "help missing --quit"
 "$bin" --help | grep -q -- '--close' || fail "help missing --close"
+"$bin" --help | grep -q -- 'off Linux, --quit cannot verify' \
+    || fail "help missing non-Linux refusal"
+# The non-Linux --quit refusal cannot execute on this Linux harness, so the
+# suite checks it structurally: the exact refusal text is present, and the
+# off-Linux branch still compiles (syntax-only with __linux__ undefined;
+# unused-function relaxed for the pre-existing Linux-only sweep helpers).
+grep -q "cannot verify the relay's identity on this platform" src/hush_relay.c \
+    || fail "non-Linux refusal text missing"
+if command -v gcc >/dev/null 2>&1; then
+    gcc -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Wno-unused-function \
+        -Iinclude -O2 -DHUSH_STUN_TURN=1 -DHUSH_HAVE_X11=1 -U__linux__ \
+        -fsyntax-only src/hush_relay.c \
+        || fail "non-Linux branch does not compile"
+fi
 grep -q 'hush_relay_watch_app' src/hush_relay.c || fail "relay missing last-window watch"
 grep -q 'g_leave_ack' src/hush_relay.c || fail "relay missing leave ack"
 grep -q 'hush_relay_note_leave' src/hush_http.c || fail "http missing leave ack"
