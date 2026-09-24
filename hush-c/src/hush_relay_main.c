@@ -120,7 +120,7 @@ static void hush_print_close_hint(uint16_t port)
 {
     printf("GUI closed. Relay still running on http://127.0.0.1:%u/.\n",
            (unsigned)port);
-    printf("Click the launcher to re-attach. Use --quit or Exit to stop.\n");
+    printf("Click the launcher to re-attach. Use Exit (or --quit on Linux) to stop.\n");
 }
 
 static void hush_print_help(void)

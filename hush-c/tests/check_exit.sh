@@ -29,11 +29,21 @@ stop_pid=""
 sym_pid=""
 sym2_pid=""
 noset_pid=""
+link_pid=""
+repl_pid=""
+mm_a_pid=""
+mode_pid=""
+acc_pid=""
 sym_xdg=""
 sym_home=""
 sym_base=""
+link_base=""
+mode_base=""
+mode_home=""
+acc_base=""
 quit_err=""
 quit_code=0
+stop_code=0
 
 pidfile_path() {
     pf_port="${1:-$port}"
@@ -80,8 +90,28 @@ cleanup() {
         kill "$noset_pid" 2>/dev/null || true
         wait "$noset_pid" 2>/dev/null || true
     fi
+    if [ -n "${link_pid:-}" ]; then
+        kill "$link_pid" 2>/dev/null || true
+        wait "$link_pid" 2>/dev/null || true
+    fi
+    if [ -n "${repl_pid:-}" ]; then
+        kill "$repl_pid" 2>/dev/null || true
+        wait "$repl_pid" 2>/dev/null || true
+    fi
+    if [ -n "${mm_a_pid:-}" ]; then
+        kill "$mm_a_pid" 2>/dev/null || true
+        wait "$mm_a_pid" 2>/dev/null || true
+    fi
+    if [ -n "${mode_pid:-}" ]; then
+        kill "$mode_pid" 2>/dev/null || true
+        wait "$mode_pid" 2>/dev/null || true
+    fi
+    if [ -n "${acc_pid:-}" ]; then
+        kill "$acc_pid" 2>/dev/null || true
+        wait "$acc_pid" 2>/dev/null || true
+    fi
     rm -f "$log" "${fake:-}" "${virgin_fake_bin:-}" "${quit_err:-}"
-    rm -rf "$cfg" ${virgin_home:+"$virgin_home"} ${sym_base:+"$sym_base"} ${sym_home:+"$sym_home"}
+    rm -rf "$cfg" ${virgin_home:+"$virgin_home"} ${sym_base:+"$sym_base"} ${sym_home:+"$sym_home"} ${link_base:+"$link_base"} ${mode_base:+"$mode_base"} ${mode_home:+"$mode_home"} ${acc_base:+"$acc_base"}
 }
 trap cleanup EXIT
 
@@ -148,7 +178,8 @@ pid=$!
 wait_up || fail "relay did not start"
 pidfile=$(pidfile_path)
 test -f "$pidfile" || fail "pidfile missing ($pidfile)"
-grep -qx "$(printf '%s' "$pid")" "$pidfile" || fail "pidfile pid mismatch"
+test "$(cut -d' ' -f1 <"$pidfile")" = "$pid" || fail "pidfile pid mismatch"
+test "$(awk '{print NF}' <"$pidfile")" -eq 3 || fail "pidfile must hold pid, start time, port"
 
 # Fake a leftover --app window so Exit must reap it (the real browser
 # is not spawned under --no-open). cmdline must contain both needles.
@@ -210,8 +241,10 @@ virgin_pid=$!
 wait_up "$virgin_port" || fail "virgin-home relay did not start"
 virgin_pidfile="$virgin_home/.local/state/hush/relay-$virgin_port.pid"
 test -f "$virgin_pidfile" || fail "virgin-home pidfile missing ($virgin_pidfile)"
-grep -qx "$(printf '%s' "$virgin_pid")" "$virgin_pidfile" \
+test "$(cut -d' ' -f1 <"$virgin_pidfile")" = "$virgin_pid" \
     || fail "virgin-home pidfile pid mismatch"
+test "$(awk '{print NF}' <"$virgin_pidfile")" -eq 3 \
+    || fail "virgin-home pidfile must hold pid, start time, port"
 virgin_fake_bin=$(mktemp)
 printf '#!/bin/sh\nsleep 30\n' >"$virgin_fake_bin"
 chmod +x "$virgin_fake_bin"
@@ -230,9 +263,9 @@ if kill -0 "$virgin_fake_pid" 2>/dev/null; then
 fi
 virgin_fake_pid=""
 virgin_pid=""
-if "$bin" --quit "$virgin_port" 2>/dev/null; then
-    fail "--quit with no relay must fail"
-fi
+quit_code=0
+"$bin" --quit "$virgin_port" 2>/dev/null || quit_code=$?
+test "$quit_code" -eq 1 || fail "idle quit must exit 1 (got $quit_code)"
 HOME="$saved_home"
 if [ "$saved_runtime_set" = "1" ]; then
     export XDG_RUNTIME_DIR="$saved_runtime"
@@ -262,7 +295,7 @@ quit_code=0
 test "$quit_code" -eq 2 || fail "foreign-pid quit must exit 2 (got $quit_code)"
 kill -0 "$foreign_pid" 2>/dev/null || fail "quit signalled a foreign process"
 test -f "$refuse_pidfile" || fail "quit removed an unproven pidfile"
-grep -q 'not a verified hush-relay' "$quit_err" || fail "foreign-pid message wrong"
+grep -q 'is not the relay on port' "$quit_err" || fail "foreign-pid message wrong"
 kill "$foreign_pid" 2>/dev/null || true
 wait "$foreign_pid" 2>/dev/null || true
 
@@ -277,18 +310,18 @@ test "$quit_code" -eq 1 || fail "stale-pid quit must exit 1 (got $quit_code)"
 test ! -f "$refuse_pidfile" || fail "stale pidfile not removed"
 grep -q 'stale pid' "$quit_err" || fail "stale-pid message wrong"
 
-# Reserved and corrupt contents: never signalled, always non-zero.
+# Reserved and corrupt contents: never signalled, always exit 2.
 for content in 1 0 -5 abc 123abc '' '99999999999999999999'; do
     printf '%s\n' "$content" >"$refuse_pidfile"
     quit_code=0
     "$bin" --quit "$refuse_port" 2>"$quit_err" || quit_code=$?
-    test "$quit_code" -ne 0 || fail "quit accepted pidfile content '$content'"
+    test "$quit_code" -eq 2 || fail "quit on '$content' must exit 2 (got $quit_code)"
 done
 printf '1\n' >"$refuse_pidfile"
 quit_code=0
 "$bin" --quit "$refuse_port" 2>"$quit_err" || quit_code=$?
 test "$quit_code" -eq 2 || fail "pid-1 quit must exit 2 (got $quit_code)"
-grep -q 'not a verified hush-relay' "$quit_err" || fail "pid-1 message wrong"
+grep -q 'is not the relay on port' "$quit_err" || fail "pid-1 message wrong"
 printf 'abc\n' >"$refuse_pidfile"
 quit_code=0
 "$bin" --quit "$refuse_port" 2>"$quit_err" || quit_code=$?
@@ -314,7 +347,9 @@ test -f "$stop_pidfile" || fail "quit removed a live owner's pidfile"
 grep -q 'cannot stop' "$quit_err" || fail "frozen quit message wrong"
 kill -CONT "$stop_pid" 2>/dev/null || true
 wait_down "$stop_pid" || fail "continued relay did not exit"
-wait "$stop_pid" 2>/dev/null || true
+stop_code=0
+wait "$stop_pid" || stop_code=$?
+test "$stop_code" -eq 0 || fail "continued relay must exit 0 (got $stop_code)"
 test ! -f "$stop_pidfile" || fail "pidfile left after continued exit"
 stop_pid=""
 
@@ -372,6 +407,101 @@ curl -sf -X POST "http://127.0.0.1:${noset_port}/api/exit" \
 wait_down "$noset_pid" || fail "no-env relay did not stop"
 wait "$noset_pid" 2>/dev/null || true
 noset_pid=""
+
+# A HOME reached through a symlinked ancestor still gets a pidfile (N1):
+# only the final pidfile dir is checked strictly.
+link_base="$(mktemp -d)"
+link_real="$link_base/real"
+mkdir -p "$link_real"
+link_home="$link_base/link"
+ln -s "$link_real" "$link_home"
+link_port=$((port + 13))
+HOME="$link_home" env -u XDG_RUNTIME_DIR "$bin" --no-open "$link_port" >"$log" 2>&1 &
+link_pid=$!
+wait_up "$link_port" || fail "symlink-ancestor relay did not start"
+link_pidfile="$link_home/.local/state/hush/relay-$link_port.pid"
+test -f "$link_pidfile" || fail "symlink-ancestor pidfile missing"
+test "$(cut -d' ' -f1 <"$link_pidfile")" = "$link_pid" \
+    || fail "symlink-ancestor pid mismatch"
+HOME="$link_home" env -u XDG_RUNTIME_DIR "$bin" --quit "$link_port" \
+    || fail "symlink-ancestor quit must exit 0"
+wait_down "$link_pid" || fail "symlink-ancestor relay did not stop"
+wait "$link_pid"
+test "$?" -eq 0 || fail "symlink-ancestor relay must exit 0"
+link_pid=""
+
+# Replacing the binary under a running relay must not break --quit (N2):
+# identity is start time plus port, never the exe path.
+repl_bin="$test_home/hush-relay-repl"
+cp "$bin" "$repl_bin"
+chmod +x "$repl_bin"
+repl_port=$((port + 15))
+"$repl_bin" --no-open "$repl_port" >"$log" 2>&1 &
+repl_pid=$!
+wait_up "$repl_port" || fail "replace-test relay did not start"
+cp --remove-destination "$bin" "$repl_bin"
+readlink "/proc/$repl_pid/exe" | grep -q '(deleted)' \
+    || fail "replace setup did not mark exe deleted"
+"$repl_bin" --quit "$repl_port" || fail "quit after replace must exit 0"
+wait_down "$repl_pid" || fail "replaced relay did not stop"
+wait "$repl_pid"
+test "$?" -eq 0 || fail "replaced relay must exit 0"
+repl_pid=""
+
+# A pidfile naming a live relay from another port is refused (F1): the
+# wrong-port quit exits 2 and both relays stay up.
+mm_a_port=$((port + 17))
+mm_b_port=$((port + 19))
+"$bin" --no-open "$mm_a_port" >"$log" 2>&1 &
+mm_a_pid=$!
+wait_up "$mm_a_port" || fail "mismatch relay A did not start"
+cp "$XDG_RUNTIME_DIR/hush/relay-$mm_a_port.pid" \
+    "$XDG_RUNTIME_DIR/hush/relay-$mm_b_port.pid"
+quit_code=0
+"$bin" --quit "$mm_b_port" 2>"$quit_err" || quit_code=$?
+test "$quit_code" -eq 2 || fail "wrong-port quit must exit 2 (got $quit_code)"
+kill -0 "$mm_a_pid" 2>/dev/null || fail "wrong-port quit killed relay A"
+grep -q 'is not the relay on port' "$quit_err" || fail "wrong-port message wrong"
+rm -f "$XDG_RUNTIME_DIR/hush/relay-$mm_b_port.pid"
+"$bin" --quit "$mm_a_port" || fail "relay A quit must still exit 0"
+wait_down "$mm_a_pid" || fail "relay A did not stop"
+wait "$mm_a_pid" 2>/dev/null || true
+mm_a_pid=""
+
+# A group/other-accessible pidfile dir is refused loudly (mode check).
+mode_base="$(mktemp -d)"
+mode_xdg="$mode_base/run"
+mode_home="$(mktemp -d)"
+mkdir -p "$mode_xdg/hush"
+chmod 777 "$mode_xdg/hush"
+mode_port=$((port + 21))
+HOME="$mode_home" XDG_RUNTIME_DIR="$mode_xdg" "$bin" --no-open "$mode_port" >"$log" 2>&1 &
+mode_pid=$!
+wait_up "$mode_port" || fail "mode-test relay must serve anyway"
+grep -q 'no pidfile for port' "$log" || fail "mode refusal was silent"
+test ! -f "$mode_xdg/hush/relay-$mode_port.pid" || fail "pidfile written to lax dir"
+curl -sf -X POST "http://127.0.0.1:${mode_port}/api/exit" \
+    -H 'Content-Type: application/json' -d '{}' >/dev/null \
+    || fail "mode-test exit failed"
+wait_down "$mode_pid" || fail "mode-test relay did not stop"
+wait "$mode_pid" 2>/dev/null || true
+mode_pid=""
+
+# An unwritable state parent fails loudly too (EACCES on mkdir).
+acc_base="$(mktemp -d)"
+mkdir -p "$acc_base/run"
+chmod 555 "$acc_base/run"
+acc_port=$((port + 23))
+HOME="$mode_home" XDG_RUNTIME_DIR="$acc_base/run" "$bin" --no-open "$acc_port" >"$log" 2>&1 &
+acc_pid=$!
+wait_up "$acc_port" || fail "acc-test relay must serve anyway"
+grep -q 'no pidfile for port' "$log" || fail "acc refusal was silent"
+curl -sf -X POST "http://127.0.0.1:${acc_port}/api/exit" \
+    -H 'Content-Type: application/json' -d '{}' >/dev/null \
+    || fail "acc-test exit failed"
+wait_down "$acc_pid" || fail "acc-test relay did not stop"
+wait "$acc_pid" 2>/dev/null || true
+acc_pid=""
 
 HOME="$saved_home"
 if [ "$saved_runtime_set" = "1" ]; then

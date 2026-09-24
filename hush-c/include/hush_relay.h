@@ -21,12 +21,13 @@ hush_status_t hush_relay_run(uint16_t port, const char *bind_addr, int open_ui);
 /* Ask a running poll loop to stop. Safe from HTTP handlers and signals. */
 void hush_relay_request_shutdown(void);
 
-/* Stops the relay that owns this port's pidfile: verifies the owner is a live
- * hush-relay (Linux exe check; always refused off Linux), SIGTERMs it, and
- * waits up to HUSH_QUIT_OWNER_TRIES x HUSH_QUIT_OWNER_MS. Port 0 means the
- * default port. Succeeds only when the owner is confirmed gone; NOT_FOUND
- * when no pidfile or live owner exists; PARSE on an unreadable pidfile;
- * DENIED when the pid is not a verified relay; IO when the owner survives. */
+/* Stops the relay that owns this port's pidfile: verifies the owner matches
+ * the recorded process identity and port, SIGTERMs it, and waits out a
+ * bounded owner budget. Port 0 means the default port. Succeeds only when
+ * the owner is confirmed gone; NOT_FOUND when no pidfile or live owner
+ * exists; PARSE on an unreadable pidfile; DENIED when the pid is not the
+ * recorded owner (off Linux every live pid is refused); IO when the owner
+ * survives. */
 hush_status_t hush_relay_quit(uint16_t port);
 
 /* Remember a forked UI or login child so Exit can stop it. pid <= 0 is ignored. */
