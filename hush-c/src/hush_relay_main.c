@@ -120,7 +120,8 @@ static void hush_print_help(void)
     printf("  --open     open the chat as a standalone app window\n");
     printf("  --no-open  do not open a window (even on a graphical session)\n");
     printf("  --close    detach the GUI; the relay stays up (exit 0)\n");
-    printf("  --quit     stop the running relay (exit 0)\n");
+    printf("  --quit     stop the relay on [port] (default 10555;\n");
+    printf("             exit 0 only after the relay is confirmed stopped)\n");
     printf("Close vs Exit:\n");
     printf("  Close dismisses the window. The hive keeps listening.\n");
     printf("  Exit / --quit stops every process. Clean quit is exit code 0.\n");

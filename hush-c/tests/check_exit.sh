@@ -20,6 +20,10 @@ cfg=$(mktemp -d)
 export HUSH_CONFIG_DIR="$cfg"
 pidfile=""
 pid=""
+virgin_pid=""
+virgin_fake_pid=""
+virgin_home=""
+virgin_fake_bin=""
 
 pidfile_path() {
     if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
@@ -40,23 +44,32 @@ cleanup() {
         kill "$pid" 2>/dev/null || true
         wait "$pid" 2>/dev/null || true
     fi
-    rm -f "$log" "${fake:-}"
-    rm -rf "$cfg"
+    if [ -n "${virgin_pid:-}" ]; then
+        kill "$virgin_pid" 2>/dev/null || true
+        wait "$virgin_pid" 2>/dev/null || true
+    fi
+    if [ -n "${virgin_fake_pid:-}" ]; then
+        kill "$virgin_fake_pid" 2>/dev/null || true
+        wait "$virgin_fake_pid" 2>/dev/null || true
+    fi
+    rm -f "$log" "${fake:-}" "${virgin_fake_bin:-}"
+    rm -rf "$cfg" ${virgin_home:+"$virgin_home"}
 }
 trap cleanup EXIT
 
 fail() { echo "exit check failed: $1" >&2; exit 1; }
 
 wait_up() {
-    i=0
-    while [ "$i" -lt 50 ]; do
-        if curl -sf "http://127.0.0.1:${port}/api/session" >/dev/null 2>&1; then
-            return 0
-        fi
-        i=$((i + 1))
-        sleep 0.05
-    done
-    return 1
+up_port="${1:-$port}"
+i=0
+while [ "$i" -lt 50 ]; do
+    if curl -sf "http://127.0.0.1:${up_port}/api/session" >/dev/null 2>&1; then
+        return 0
+    fi
+    i=$((i + 1))
+    sleep 0.05
+done
+return 1
 }
 
 wait_down() {
@@ -129,12 +142,55 @@ pid=""
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
 wait_up || fail "second start failed"
-"$bin" --quit "$port"
+"$bin" --quit "$port" || fail "--quit must exit 0 when it stops the relay"
 wait_down "$pid" || fail "--quit did not stop the process"
 wait "$pid"
 test "$?" -eq 0 || fail "--quit child must be code 0"
 test ! -f "$(pidfile_path)" || fail "pidfile left after --quit"
 pid=""
+
+# Regression: a virgin HOME without .local/state must still get a pidfile;
+# --quit exits 0 only after the relay is confirmed stopped and reaps the
+# leftover --app child; --quit with no relay running must fail loudly.
+virgin_home="$(mktemp -d)"
+virgin_port=18769
+saved_home="$HOME"
+saved_runtime="${XDG_RUNTIME_DIR:-}"
+HOME="$virgin_home"
+unset XDG_RUNTIME_DIR
+"$bin" --no-open "$virgin_port" >"$log" 2>&1 &
+virgin_pid=$!
+wait_up "$virgin_port" || fail "virgin-home relay did not start"
+virgin_pidfile="$virgin_home/.local/state/hush/relay-$virgin_port.pid"
+test -f "$virgin_pidfile" || fail "virgin-home pidfile missing ($virgin_pidfile)"
+grep -q "$(printf '%s' "$virgin_pid")" "$virgin_pidfile" \
+    || fail "virgin-home pidfile pid mismatch"
+virgin_fake_bin=$(mktemp)
+printf '#!/bin/sh\nsleep 30\n' >"$virgin_fake_bin"
+chmod +x "$virgin_fake_bin"
+"$virgin_fake_bin" --class=hush-relay --app="http://127.0.0.1:${virgin_port}/" \
+    >/dev/null 2>&1 &
+virgin_fake_pid=$!
+sleep 0.05
+kill -0 "$virgin_fake_pid" 2>/dev/null || fail "virgin fake app did not start"
+"$bin" --quit "$virgin_port" || fail "virgin --quit must exit 0"
+wait_down "$virgin_pid" || fail "virgin --quit did not stop the process"
+wait "$virgin_pid"
+test "$?" -eq 0 || fail "virgin relay must be code 0"
+test ! -f "$virgin_pidfile" || fail "virgin pidfile left after --quit"
+if kill -0 "$virgin_fake_pid" 2>/dev/null; then
+    fail "virgin --quit left a --app child running"
+fi
+virgin_fake_pid=""
+virgin_pid=""
+if "$bin" --quit "$virgin_port" 2>/dev/null; then
+    fail "--quit with no relay must fail"
+fi
+HOME="$saved_home"
+export XDG_RUNTIME_DIR="$saved_runtime"
+rm -rf "$virgin_home" "$virgin_fake_bin"
+virgin_home=""
+virgin_fake_bin=""
 
 # Launch must not treat the dying launcher fork as last-window-gone.
 stubs=$(mktemp -d)
@@ -153,7 +209,7 @@ done
 if [ -s "$zenlog" ]; then
     fail "launch invoked zenity"
 fi
-"$bin" --quit "$port"
+"$bin" --quit "$port" || fail "open --quit must exit 0"
 wait_down "$pid" || fail "open quit did not stop"
 wait "$pid" || true
 pid=""
