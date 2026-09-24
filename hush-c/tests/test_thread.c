@@ -417,6 +417,89 @@ static void test_fill_partial(void)
     hush_store_destroy(store);
 }
 
+/* Counts non-overlapping occurrences of needle in haystack. */
+static size_t count_hits(const char *haystack, const char *needle)
+{
+    size_t found = 0;
+    size_t span = strlen(needle);
+    const char *hit = haystack;
+
+    if (span == 0)
+        abort();
+    while ((hit = strstr(hit, needle)) != NULL) {
+        found++;
+        hit += span;
+    }
+    return found;
+}
+
+static void test_format_json(void)
+{
+    static char body[HUSH_THREAD_JSON_MAX];
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+    char fresh[HUSH_EVENT_ID_HEX_LEN + 1];
+    char tiny[16];
+    hush_event_t ev;
+    size_t n = 0;
+
+    id_for(fresh, 950);
+    expect(hush_thread_format_json(fresh, body, sizeof(body), &n) == HUSH_OK,
+           "unknown root formats");
+    expect(strstr(body, "\"ok\":true") != NULL, "unknown root ok");
+    expect(strstr(body, "\"count\":0") != NULL, "unknown root empty count");
+    expect(strstr(body, "\"brief\":\"\"") != NULL, "unknown root empty brief");
+    expect(strstr(body, "\"turns\":[]") != NULL, "unknown root empty turns");
+    expect(strstr(body, "\"truncated\":false") != NULL,
+           "unknown root not truncated");
+
+    id_for(root, 700);
+    make_note(&ev, root, "FORMAT-OPENING quote \" back \\ slash");
+    hush_thread_record(&ev);
+    record_series(root, 4);
+    hush_thread_brief_roll(root, "FORMAT-BRIEF shipping summary");
+    n = 0;
+    expect(hush_thread_format_json(root, body, sizeof(body), &n) == HUSH_OK,
+           "known root formats");
+    expect(n > 0 && n < sizeof(body), "known root length bounded");
+    expect(strstr(body, root) != NULL, "json carries the root");
+    expect(strstr(body, "FORMAT-BRIEF shipping summary") != NULL,
+           "json carries the brief");
+    expect(strstr(body, "FORMAT-OPENING quote \\\" back \\\\ slash") != NULL,
+           "json escapes content");
+    expect(strstr(body, "\"count\":5") != NULL, "json counts every turn");
+    expect(strstr(body, "\"truncated\":false") != NULL,
+           "short thread not truncated");
+    expect(count_hits(body, "\"id\":\"") == 5, "json carries every turn");
+
+    id_for(root, 701);
+    record_series(root, (unsigned)HUSH_THREAD_TURNS_MAX + 4);
+    n = 0;
+    expect(hush_thread_format_json(root, body, sizeof(body), &n) == HUSH_OK,
+           "long thread formats");
+    expect(strstr(body, "\"truncated\":true") != NULL,
+           "long thread truncated");
+    expect(count_hits(body, "\"id\":\"") == (size_t)HUSH_THREAD_TURNS_MAX,
+           "long thread keeps the window");
+
+    expect(hush_thread_format_json("../escape", body, sizeof(body), &n) ==
+               HUSH_ERR_ARG,
+           "bad root rejected");
+    expect(hush_thread_format_json(NULL, body, sizeof(body), &n) ==
+               HUSH_ERR_ARG,
+           "NULL root rejected");
+    expect(hush_thread_format_json(fresh, NULL, sizeof(body), &n) ==
+               HUSH_ERR_ARG,
+           "NULL out rejected");
+    expect(hush_thread_format_json(fresh, body, sizeof(body), NULL) ==
+               HUSH_ERR_ARG,
+           "NULL len rejected");
+    expect(hush_thread_format_json(fresh, body, 0, &n) == HUSH_ERR_ARG,
+           "empty out rejected");
+    expect(hush_thread_format_json(fresh, tiny, sizeof(tiny), &n) ==
+               HUSH_ERR_FULL,
+           "tiny buffer overflows");
+}
+
 int main(void)
 {
     char home[] = "/tmp/hush-thread-XXXXXX";
@@ -435,6 +518,7 @@ int main(void)
     test_roll();
     test_fill_restart();
     test_fill_partial();
+    test_format_json();
     test_bad_roots();
     test_ignored();
     test_privacy_and_symlink(home);
