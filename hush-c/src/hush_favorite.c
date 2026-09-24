@@ -16,7 +16,9 @@
 
 enum {
     HUSH_FAVORITE_KEY_MAX = 12,
-    HUSH_FAVORITE_SCAN_MAX = 256
+    HUSH_FAVORITE_SCAN_MAX = 256,
+    /* Worst escaped skill id: 95 raw bytes x \uXXXX plus NUL. */
+    HUSH_FAVORITE_ESC_ID_MAX = HUSH_SKILL_ID_MAX * HUSH_JSON_U_LEN + 1
 };
 
 #define HUSH_FAVORITE_SUFFIX ".json"
@@ -64,15 +66,14 @@ static hush_status_t hush_favorite_file_path(char *out, size_t outsz,
                                              const char *dir,
                                              const char *slug);
 
+/* Writes <slug>.json into out. */
+static hush_status_t hush_favorite_slug_entry(char *out, size_t outsz,
+                                              const char *slug);
+
 /* Reads dir/<entry> into out. Skips nothing. */
 static hush_status_t hush_favorite_read_entry(hush_favorite_t *out,
                                               const char *dir,
                                               const char *entry);
-
-/* Reads the stored display name for dir/<slug> into out. */
-static hush_status_t hush_favorite_stored_name(char *out, size_t outsz,
-                                               const char *dir,
-                                               const char *slug);
 
 /* Adds one entry to the audit totals; skips non-favorites. */
 static hush_status_t hush_favorite_audit_entry(size_t *count, size_t *bytes,
@@ -82,6 +83,11 @@ static hush_status_t hush_favorite_audit_entry(size_t *count, size_t *bytes,
 /* Counts valid favorites plus their list bytes under dir. */
 static hush_status_t hush_favorite_audit_dir(size_t *count, size_t *bytes,
                                              const char *dir);
+
+/* True when count entries of bytes content plus draft still fit. Pure. */
+static int hush_favorite_fits_list(const char *robot, size_t count,
+                                   size_t bytes,
+                                   const hush_favorite_t *draft);
 
 /* Packs validated save inputs into a draft favorite. */
 static void hush_favorite_make_draft(hush_favorite_t *out, const char *clean,
@@ -136,6 +142,10 @@ static hush_status_t hush_favorite_format_body(char *out, size_t outsz,
 static hush_status_t hush_favorite_parse_body(hush_favorite_t *out,
                                               const char *body);
 
+/* Reads /skills/idx into out->skills[out->nskills]. NOT_FOUND at end. */
+static hush_status_t hush_favorite_parse_skill(hush_favorite_t *out,
+                                               const char *body, size_t idx);
+
 /* Appends one entry object at out+*off. */
 static hush_status_t hush_favorite_put_one(char *out, size_t outsz,
                                            size_t *off,
@@ -151,6 +161,9 @@ static hush_status_t hush_favorite_scan_entry(hush_favorite_scan_t *scan,
 
 /* Opens dir for scanning. Missing trees report NOT_FOUND. */
 static hush_status_t hush_favorite_open_dir(DIR **out, const char *dir);
+
+/* Reads one dirent: NULL at end, IO on readdir failure. */
+static hush_status_t hush_favorite_next_dirent(DIR *dp, struct dirent **out);
 
 /* Scans scan->dir into the open list. */
 static hush_status_t hush_favorite_scan_dir(hush_favorite_scan_t *scan);
@@ -285,6 +298,8 @@ hush_status_t hush_favorite_list_json(const char *robot, char *out,
     st = hush_favorite_scan_dir(&scan);
     if (st != HUSH_OK)
         return st;
+    if (scan.dropped)
+        return HUSH_ERR_FULL;
     return hush_favorite_list_close(out, outsz, &off, out_len);
 }
 
@@ -307,7 +322,7 @@ hush_status_t hush_favorite_put_ids(char *out, size_t outsz, size_t *off,
     if (out == NULL || off == NULL || fav == NULL)
         return HUSH_ERR_ARG;
     for (size_t i = 0; i < fav->nskills; i++) {
-        char esc[HUSH_SKILL_ID_MAX * 2] = {0};
+        char esc[HUSH_FAVORITE_ESC_ID_MAX] = {0};
         int n = 0;
 
         if (hush_favorite_escape(esc, sizeof esc, fav->skills[i])
@@ -418,6 +433,20 @@ static hush_status_t hush_favorite_file_path(char *out, size_t outsz,
     return HUSH_OK;
 }
 
+static hush_status_t hush_favorite_slug_entry(char *out, size_t outsz,
+                                              const char *slug)
+{
+    assert(out != NULL);
+    assert(slug != NULL);
+    out[0] = '\0';
+    if (strlen(slug) + sizeof HUSH_FAVORITE_SUFFIX > outsz)
+        return HUSH_ERR_FULL;
+    memcpy(out, slug, strlen(slug));
+    memcpy(out + strlen(slug), HUSH_FAVORITE_SUFFIX,
+           sizeof HUSH_FAVORITE_SUFFIX);
+    return HUSH_OK;
+}
+
 static hush_status_t hush_favorite_read_entry(hush_favorite_t *out,
                                               const char *dir,
                                               const char *entry)
@@ -440,29 +469,22 @@ static hush_status_t hush_favorite_read_entry(hush_favorite_t *out,
     return hush_favorite_parse_body(out, body);
 }
 
-static hush_status_t hush_favorite_stored_name(char *out, size_t outsz,
-                                               const char *dir,
-                                               const char *slug)
+static int hush_favorite_fits_list(const char *robot, size_t count,
+                                   size_t bytes,
+                                   const hush_favorite_t *draft)
 {
-    char entry[HUSH_FAVORITE_SLUG_MAX + sizeof HUSH_FAVORITE_SUFFIX] = {0};
-    hush_favorite_t fav = {0};
-    hush_status_t st = HUSH_OK;
+    size_t total = 0;
 
-    assert(out != NULL);
-    assert(dir != NULL);
-    assert(slug != NULL);
-    if (strlen(slug) + sizeof HUSH_FAVORITE_SUFFIX > sizeof entry)
-        return HUSH_ERR_FULL;
-    memcpy(entry, slug, strlen(slug));
-    memcpy(entry + strlen(slug), HUSH_FAVORITE_SUFFIX,
-           sizeof HUSH_FAVORITE_SUFFIX);
-    st = hush_favorite_read_entry(&fav, dir, entry);
-    if (st != HUSH_OK)
-        return st;
-    if (strlen(fav.name) >= outsz)
-        return HUSH_ERR_FULL;
-    memcpy(out, fav.name, strlen(fav.name) + 1);
-    return HUSH_OK;
+    assert(robot != NULL);
+    assert(draft != NULL);
+    total = (sizeof HUSH_FAVORITE_LIST_HEAD - 1)
+        + hush_favorite_escaped_len(robot)
+        + (sizeof HUSH_FAVORITE_LIST_MID - 1) + bytes;
+    if (count > 0)
+        total += count;
+    total += hush_favorite_entry_len(draft)
+        + (sizeof HUSH_FAVORITE_LIST_TAIL - 1);
+    return total < (size_t)HUSH_FAVORITE_JSON_MAX;
 }
 
 static hush_status_t hush_favorite_audit_entry(size_t *count, size_t *bytes,
@@ -504,10 +526,13 @@ static hush_status_t hush_favorite_audit_dir(size_t *count, size_t *bytes,
     while (total < (size_t)HUSH_FAVORITE_SCAN_MAX) {
         struct dirent *ent = NULL;
 
-        errno = 0;
-        ent = readdir(dp);
-        if (ent == NULL)
+        st = hush_favorite_next_dirent(dp, &ent);
+        if (st == HUSH_ERR_NOT_FOUND)
             break;
+        if (st != HUSH_OK) {
+            closedir(dp);
+            return st;
+        }
         total++;
         st = hush_favorite_audit_entry(count, bytes, dir, ent->d_name);
         if (st != HUSH_OK) {
@@ -542,37 +567,36 @@ static hush_status_t hush_favorite_gate_save(const char *dir,
                                              const char *robot,
                                              const hush_favorite_t *draft)
 {
-    char stored[HUSH_FAVORITE_NAME_MAX] = {0};
+    char entry[HUSH_FAVORITE_SLUG_MAX + sizeof HUSH_FAVORITE_SUFFIX] = {0};
+    hush_favorite_t stored = {0};
     size_t count = 0;
     size_t bytes = 0;
-    size_t total = 0;
+    size_t replace = 0;
     hush_status_t st = HUSH_OK;
 
     assert(dir != NULL);
     assert(slug != NULL);
     assert(robot != NULL);
     assert(draft != NULL);
-    st = hush_favorite_stored_name(stored, sizeof stored, dir, slug);
-    if (st == HUSH_OK) {
-        if (strcmp(stored, draft->name) != 0)
-            return HUSH_ERR_DENIED;
-        return HUSH_OK;
-    }
-    if (st != HUSH_ERR_NOT_FOUND)
+    st = hush_favorite_slug_entry(entry, sizeof entry, slug);
+    if (st != HUSH_OK)
         return st;
+    st = hush_favorite_read_entry(&stored, dir, entry);
+    if (st == HUSH_OK) {
+        if (strcmp(stored.name, draft->name) != 0)
+            return HUSH_ERR_DENIED;
+        replace = hush_favorite_entry_len(&stored);
+    } else if (st != HUSH_ERR_NOT_FOUND) {
+        return st;
+    }
     st = hush_favorite_audit_dir(&count, &bytes, dir);
     if (st != HUSH_OK)
         return st;
-    if (count >= (size_t)HUSH_FAVORITE_COUNT_MAX)
+    if (replace == 0 && count >= (size_t)HUSH_FAVORITE_COUNT_MAX)
         return HUSH_ERR_FULL;
-    total = (sizeof HUSH_FAVORITE_LIST_HEAD - 1)
-        + hush_favorite_escaped_len(robot)
-        + (sizeof HUSH_FAVORITE_LIST_MID - 1) + bytes;
-    if (count > 0)
-        total += count;
-    total += hush_favorite_entry_len(draft)
-        + (sizeof HUSH_FAVORITE_LIST_TAIL - 1);
-    if (total >= (size_t)HUSH_FAVORITE_JSON_MAX)
+    if (bytes < replace)
+        return HUSH_ERR_IO;
+    if (!hush_favorite_fits_list(robot, count, bytes - replace, draft))
         return HUSH_ERR_FULL;
     return HUSH_OK;
 }
@@ -641,15 +665,9 @@ static hush_status_t hush_favorite_check_ids(const char *robot,
     if (cat == NULL)
         return HUSH_ERR_FULL;
     hush_skill_init_catalog(cat);
-    if (hush_skill_load_catalog(cat) != HUSH_OK) {
-        free(cat);
-        return HUSH_ERR_IO;
-    }
-    for (size_t i = 0; i < nids; i++) {
+    st = hush_skill_load_catalog(cat) == HUSH_OK ? HUSH_OK : HUSH_ERR_IO;
+    for (size_t i = 0; st == HUSH_OK && i < nids; i++)
         st = hush_favorite_check_one(cat, robot, ids, nids, i);
-        if (st != HUSH_OK)
-            break;
-    }
     free(cat);
     return st;
 }
@@ -791,7 +809,6 @@ static hush_status_t hush_favorite_parse_body(hush_favorite_t *out,
                                               const char *body)
 {
     hush_json_value_t value = {0};
-    size_t n = 0;
 
     assert(out != NULL);
     assert(body != NULL);
@@ -804,25 +821,41 @@ static hush_status_t hush_favorite_parse_body(hush_favorite_t *out,
     if (!hush_favorite_is_name(out->name))
         return HUSH_ERR_PARSE;
     for (size_t i = 0; i < (size_t)HUSH_SKILL_EQUIP_MAX; i++) {
-        char key[HUSH_FAVORITE_KEY_MAX] = {0};
-        char id[HUSH_SKILL_ID_MAX] = {0};
+        hush_status_t st = hush_favorite_parse_skill(out, body, i);
 
-        if (snprintf(key, sizeof key, "/skills/%zu", i) >= (int)sizeof key)
-            return HUSH_ERR_FULL;
-        if (hush_json_lookup(&value, body, key) != HUSH_OK)
+        if (st == HUSH_ERR_NOT_FOUND)
             break;
-        if (hush_json_decode(id, sizeof id, &value) != HUSH_OK)
-            return HUSH_ERR_PARSE;
-        if (id[0] == '\0')
-            return HUSH_ERR_PARSE;
-        if (strlen(id) + 1 > sizeof out->skills[n])
-            return HUSH_ERR_FULL;
-        memcpy(out->skills[n], id, strlen(id) + 1);
-        n++;
+        if (st != HUSH_OK)
+            return st;
     }
-    out->nskills = n;
-    if (n < (size_t)HUSH_SKILL_EQUIP_LOW || n > (size_t)HUSH_SKILL_EQUIP_MAX)
+    if (out->nskills < (size_t)HUSH_SKILL_EQUIP_LOW ||
+        out->nskills > (size_t)HUSH_SKILL_EQUIP_MAX)
         return HUSH_ERR_PARSE;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_favorite_parse_skill(hush_favorite_t *out,
+                                               const char *body, size_t idx)
+{
+    char key[HUSH_FAVORITE_KEY_MAX] = {0};
+    char id[HUSH_SKILL_ID_MAX] = {0};
+    hush_json_value_t value = {0};
+
+    assert(out != NULL);
+    assert(body != NULL);
+    assert(out->nskills < (size_t)HUSH_SKILL_EQUIP_MAX);
+    if (snprintf(key, sizeof key, "/skills/%zu", idx) >= (int)sizeof key)
+        return HUSH_ERR_FULL;
+    if (hush_json_lookup(&value, body, key) != HUSH_OK)
+        return HUSH_ERR_NOT_FOUND;
+    if (hush_json_decode(id, sizeof id, &value) != HUSH_OK)
+        return HUSH_ERR_PARSE;
+    if (id[0] == '\0')
+        return HUSH_ERR_PARSE;
+    if (strlen(id) + 1 > sizeof out->skills[out->nskills])
+        return HUSH_ERR_FULL;
+    memcpy(out->skills[out->nskills], id, strlen(id) + 1);
+    out->nskills++;
     return HUSH_OK;
 }
 
@@ -907,6 +940,17 @@ static hush_status_t hush_favorite_open_dir(DIR **out, const char *dir)
     return errno == ENOENT ? HUSH_ERR_NOT_FOUND : HUSH_ERR_IO;
 }
 
+static hush_status_t hush_favorite_next_dirent(DIR *dp, struct dirent **out)
+{
+    assert(dp != NULL);
+    assert(out != NULL);
+    errno = 0;
+    *out = readdir(dp);
+    if (*out != NULL)
+        return HUSH_OK;
+    return errno == 0 ? HUSH_ERR_NOT_FOUND : HUSH_ERR_IO;
+}
+
 static hush_status_t hush_favorite_scan_dir(hush_favorite_scan_t *scan)
 {
     DIR *dp = NULL;
@@ -926,10 +970,13 @@ static hush_status_t hush_favorite_scan_dir(hush_favorite_scan_t *scan)
     while (total < (size_t)HUSH_FAVORITE_SCAN_MAX) {
         struct dirent *ent = NULL;
 
-        errno = 0;
-        ent = readdir(dp);
-        if (ent == NULL)
+        st = hush_favorite_next_dirent(dp, &ent);
+        if (st == HUSH_ERR_NOT_FOUND)
             break;
+        if (st != HUSH_OK) {
+            closedir(dp);
+            return st;
+        }
         total++;
         st = hush_favorite_scan_entry(scan, ent->d_name);
         if (st != HUSH_OK) {
@@ -943,24 +990,20 @@ static hush_status_t hush_favorite_scan_dir(hush_favorite_scan_t *scan)
 static hush_status_t hush_favorite_end_scan(DIR *dp, size_t total)
 {
     struct dirent *ent = NULL;
+    hush_status_t st = HUSH_OK;
 
     assert(dp != NULL);
     if (total < (size_t)HUSH_FAVORITE_SCAN_MAX) {
-        if (errno != 0) {
-            closedir(dp);
-            return HUSH_ERR_IO;
-        }
         closedir(dp);
         return HUSH_OK;
     }
-    errno = 0;
-    ent = readdir(dp);
-    if (ent == NULL && errno == 0) {
-        closedir(dp);
-        return HUSH_OK;
-    }
+    st = hush_favorite_next_dirent(dp, &ent);
     closedir(dp);
-    return ent != NULL ? HUSH_ERR_FULL : HUSH_ERR_IO;
+    if (st == HUSH_ERR_NOT_FOUND)
+        return HUSH_OK;
+    if (st != HUSH_OK)
+        return st;
+    return HUSH_ERR_FULL;
 }
 
 static hush_status_t hush_favorite_list_close(char *out, size_t outsz,

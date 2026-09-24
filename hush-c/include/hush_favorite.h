@@ -12,8 +12,15 @@ enum {
     HUSH_FAVORITE_NAME_MAX = 48,
     HUSH_FAVORITE_SLUG_MAX = 64,
     HUSH_FAVORITE_COUNT_MAX = 32,
-    HUSH_FAVORITE_FILE_MAX = 4096,
-    HUSH_FAVORITE_JSON_MAX = 16384
+    /* Worst save-file body: 9 + 47 + 11 + 63 + 12 + 8 x (2 + 570) + 3
+     * = 4713, so 8192 leaves headroom for the NUL. */
+    HUSH_FAVORITE_FILE_MAX = 8192,
+    /* List envelope plus 32 worst-case entries plus NUL:
+     * 100 + 32 x (853 + 1) + 1 = 27429. Envelope: 19 + 63 + 15 + 3.
+     * Entry: 9 + 47 + 12 + 8 x (2 + 95) + 7 + 2 = 853; names need no
+     * escaping under the allowlist. The runtime fit gate measures exact
+     * escaped lengths, so escape-hostile ids stay refused there. */
+    HUSH_FAVORITE_JSON_MAX = 27429
 };
 
 typedef struct {
@@ -33,8 +40,9 @@ typedef struct {
  * HUSH_ERR_PARSE on an empty or non-allowlisted favorite name or a
  * corrupt stored file, HUSH_ERR_DENIED on an empty set or unknown,
  * cross-slug, repeated, or clashing skills, HUSH_ERR_FULL over 8
- * skills, over 32 favorites, past the list envelope, on allocation
- * failure, or on overflow, HUSH_ERR_IO on disk errors. */
+ * skills, over 32 favorites, past the list envelope on either path, on
+ * allocation failure, or on overflow, HUSH_ERR_IO on disk errors or a
+ * tree changed mid-save. */
 hush_status_t hush_favorite_save(const char *robot, const char *name,
                                  char ids[][HUSH_SKILL_ID_MAX], size_t nids);
 

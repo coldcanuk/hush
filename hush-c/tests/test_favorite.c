@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "hush_favorite.h"
@@ -16,7 +17,13 @@ enum {
     FAV_TEST_PATH_MAX = 192,
     FAV_TEST_SCAN_MAX = 64,
     FAV_TEST_LONG_SLUG = 64,
-    FAV_TEST_MAX_NAME = 47
+    FAV_TEST_MAX_NAME = 47,
+    FAV_TEST_LONG_SLUG_LEN = 90,
+    FAV_TEST_HOSTILE_BYTE = 0x01,
+    /* Hostile entries measure 4401 B, so 43 + k x 4402 < 27429
+     * holds through k = 6 and fails at k = 7. */
+    FAV_TEST_HOSTILE_FITS = 6,
+    FAV_TEST_HOSTILE_TRIES = 8
 };
 
 typedef struct {
@@ -333,6 +340,8 @@ static void check_names(fav_fixture_t *fx)
     expect(hush_favorite_save("sentry", ".", fx->ids, 1) == HUSH_ERR_PARSE,
            "dot refused");
     expect(hush_favorite_save("sentry", "!!!", fx->ids, 1)
+           == HUSH_ERR_PARSE, "punct refused");
+    expect(hush_favorite_save("sentry", "-", fx->ids, 1)
            == HUSH_ERR_PARSE, "slug-empty refused");
     expect(hush_favorite_save("sentry", "100%", fx->ids, 1)
            == HUSH_ERR_PARSE, "percent refused");
@@ -346,14 +355,12 @@ static void check_names(fav_fixture_t *fx)
            "separator cleanup");
 }
 
-/* The 33rd favorite is refused; a full cap of maximum-length names
- * still lists completely, proving save never accepts what list
- * cannot emit. */
+/* The 33rd favorite is refused. Filling the cap with short names
+ * exercises the count gate; the envelope fit is proven by check_giant
+ * and check_hostile below. */
 static void check_cap(fav_fixture_t *fx)
 {
     char capname[HUSH_FAVORITE_NAME_MAX] = {0};
-    char wide[HUSH_FAVORITE_NAME_MAX] = {0};
-    size_t out_len = 0;
 
     memset(fx->ids, 0, sizeof fx->ids);
     take_str(fx->ids[0], sizeof fx->ids[0], fx->user_id, "id fits");
@@ -370,6 +377,16 @@ static void check_cap(fav_fixture_t *fx)
            "cap delete");
     expect(hush_favorite_save("capper", "Cap extra", fx->ids, 1) == HUSH_OK,
            "cap freed");
+}
+
+/* A full cap of maximum-length names still lists completely. */
+static void check_wide(fav_fixture_t *fx)
+{
+    char wide[HUSH_FAVORITE_NAME_MAX] = {0};
+    size_t out_len = 0;
+
+    memset(fx->ids, 0, sizeof fx->ids);
+    take_str(fx->ids[0], sizeof fx->ids[0], fx->user_id, "id fits");
     memset(wide, 'w', sizeof wide - 1);
     for (size_t i = 0; i < (size_t)HUSH_FAVORITE_COUNT_MAX; i++) {
         char name[HUSH_FAVORITE_NAME_MAX] = {0};
@@ -388,6 +405,178 @@ static void check_cap(fav_fixture_t *fx)
            "wide lists all 32");
 }
 
+/* Plants a user skill with the exact dir slug; writes its id out. */
+static void plant_skill(char *out_id, const char *slug)
+{
+    char root[HUSH_HOME_PATH_MAX] = {0};
+    char dir[HUSH_HOME_PATH_MAX] = {0};
+    char file[HUSH_HOME_PATH_MAX] = {0};
+    FILE *fp = NULL;
+    int n = 0;
+
+    hush_home_root(root, sizeof root);
+    expect(root[0] != '\0', "home root set");
+    n = snprintf(dir, sizeof dir, "%s/skills/user/%s", root, slug);
+    expect(n > 0 && (size_t)n < sizeof dir, "skill dir fits");
+    expect(mkdir(dir, HUSH_HOME_DIR_MODE) == 0, "plant skill dir");
+    n = snprintf(file, sizeof file, "%s/SKILL.md", dir);
+    expect(n > 0 && (size_t)n < sizeof file, "skill file fits");
+    fp = fopen(file, "w");
+    expect(fp != NULL, "plant skill file");
+    if (fp != NULL) {
+        fputs("---\nname: plant\n---\n\n# Plant\n", fp);
+        fclose(fp);
+    }
+    n = snprintf(out_id, HUSH_SKILL_ID_MAX, "user:%s", slug);
+    expect(n > 0 && (size_t)n < (size_t)HUSH_SKILL_ID_MAX, "plant id fits");
+}
+
+/* A planted 33rd valid file makes list report FULL, never truncate. */
+static void check_overfill(fav_fixture_t *fx)
+{
+    char dir[HUSH_HOME_PATH_MAX] = {0};
+    char file[HUSH_HOME_PATH_MAX] = {0};
+    FILE *fp = NULL;
+    size_t out_len = 0;
+    int n = 0;
+
+    expect(hush_home_loadouts_dir(dir, sizeof dir, "capper") == HUSH_OK,
+           "capper dir");
+    n = snprintf(file, sizeof file, "%s/zzz-extra.json", dir);
+    expect(n > 0 && (size_t)n < sizeof file, "plant path fits");
+    fp = fopen(file, "w");
+    expect(fp != NULL, "plant 33rd file");
+    if (fp != NULL) {
+        fputs("{\"name\":\"Zzz Extra\",\"robot\":\"capper\","
+              "\"skills\":[\"system:forge-skill\"]}\n", fp);
+        fclose(fp);
+    }
+    expect(hush_favorite_list_json("capper", fx->list, sizeof fx->list,
+                                   &out_len) == HUSH_ERR_FULL,
+           "33rd file lists FULL");
+    expect(hush_favorite_delete("capper", "Zzz Extra") == HUSH_OK,
+           "planted cleanup");
+    expect(hush_favorite_list_json("capper", fx->list, sizeof fx->list,
+                                   &out_len) == HUSH_OK,
+           "capper lists again");
+    expect(list_entry_count(fx->list) == (size_t)HUSH_FAVORITE_COUNT_MAX,
+           "capper back to 32");
+}
+
+/* Long catalog ids on the new-name path plus overwrite growth: a full
+ * cap of 85-char ids still lists completely. */
+static void check_giant(fav_fixture_t *fx)
+{
+    char slugs[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {{0}};
+    char ids[8][HUSH_SKILL_ID_MAX] = {{0}};
+    char all[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {{0}};
+    size_t out_len = 0;
+
+    for (size_t i = 0; i < (size_t)HUSH_SKILL_EQUIP_MAX; i++) {
+        memset(slugs[i], 'g', (size_t)FAV_TEST_LONG_SLUG_LEN);
+        slugs[i][FAV_TEST_LONG_SLUG_LEN - 1] = (char)('0' + i);
+        plant_skill(ids[i], slugs[i]);
+    }
+    for (size_t k = 0; k < (size_t)HUSH_FAVORITE_COUNT_MAX; k++) {
+        char name[HUSH_FAVORITE_NAME_MAX] = {0};
+        int n = snprintf(name, sizeof name, "Giant %02zu", k);
+
+        expect(n > 0 && (size_t)n < sizeof name, "giant name fits");
+        for (size_t i = 0; i < (size_t)HUSH_SKILL_EQUIP_MAX; i++)
+            take_str(all[i], sizeof all[i], ids[i], "giant id fits");
+        expect(hush_favorite_save("giant", name, all,
+                                 (size_t)HUSH_SKILL_EQUIP_MAX) == HUSH_OK,
+               "giant fill");
+    }
+    expect(hush_favorite_list_json("giant", fx->list, sizeof fx->list,
+                                   &out_len) == HUSH_OK,
+           "giant lists");
+    expect(list_entry_count(fx->list) == (size_t)HUSH_FAVORITE_COUNT_MAX,
+           "giant lists all 32");
+    memset(all, 0, sizeof all);
+    take_str(all[0], sizeof all[0], fx->user_id, "id fits");
+    expect(hush_favorite_save("sprout", "Seed", all, 1) == HUSH_OK,
+           "sprout seed");
+    for (size_t k = 1; k < (size_t)HUSH_FAVORITE_COUNT_MAX; k++) {
+        char name[HUSH_FAVORITE_NAME_MAX] = {0};
+        int n = snprintf(name, sizeof name, "Sprout %02zu", k);
+
+        expect(n > 0 && (size_t)n < sizeof name, "sprout name fits");
+        expect(hush_favorite_save("sprout", name, all, 1) == HUSH_OK,
+               "sprout fill");
+    }
+    for (size_t i = 0; i < (size_t)HUSH_SKILL_EQUIP_MAX; i++)
+        take_str(all[i], sizeof all[i], ids[i], "giant id fits");
+    expect(hush_favorite_save("sprout", "Seed", all, 8) == HUSH_OK,
+           "sprout overwrite grows");
+    expect(hush_favorite_list_json("sprout", fx->list, sizeof fx->list,
+                                   &out_len) == HUSH_OK,
+           "sprout lists");
+    expect(list_entry_count(fx->list) == (size_t)HUSH_FAVORITE_COUNT_MAX,
+           "sprout lists all 32");
+}
+
+/* Escape-hostile ids trip the envelope gate: 4401 B entries fit six
+ * to a robot, and the seventh save is refused. */
+static void check_hostile(fav_fixture_t *fx)
+{
+    char slugs[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {{0}};
+    char ids[8][HUSH_SKILL_ID_MAX] = {{0}};
+    char all[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {{0}};
+    size_t out_len = 0;
+
+    for (size_t i = 0; i < (size_t)HUSH_SKILL_EQUIP_MAX; i++) {
+        memset(slugs[i], FAV_TEST_HOSTILE_BYTE,
+               (size_t)FAV_TEST_LONG_SLUG_LEN);
+        slugs[i][FAV_TEST_LONG_SLUG_LEN - 1] = (char)('0' + i);
+        plant_skill(ids[i], slugs[i]);
+    }
+    for (size_t i = 0; i < (size_t)HUSH_SKILL_EQUIP_MAX; i++)
+        take_str(all[i], sizeof all[i], ids[i], "hostile id fits");
+    for (size_t k = 0; k < (size_t)FAV_TEST_HOSTILE_TRIES; k++) {
+        char name[HUSH_FAVORITE_NAME_MAX] = {0};
+        int n = snprintf(name, sizeof name, "Hostile %zu", k);
+        hush_status_t st = HUSH_OK;
+
+        expect(n > 0 && (size_t)n < sizeof name, "hostile name fits");
+        st = hush_favorite_save("hostile", name, all,
+                                  (size_t)HUSH_SKILL_EQUIP_MAX);
+        if (k < (size_t)FAV_TEST_HOSTILE_FITS)
+            expect(st == HUSH_OK, "hostile fill fits");
+        else
+            expect(st == HUSH_ERR_FULL, "hostile overfill refused");
+    }
+    expect(hush_favorite_list_json("hostile", fx->list, sizeof fx->list,
+                                   &out_len) == HUSH_OK,
+           "hostile lists");
+    expect(list_entry_count(fx->list) == (size_t)FAV_TEST_HOSTILE_FITS,
+           "hostile lists six");
+}
+
+/* Unreadable trees report IO on list and save; access restored after. */
+static void check_io(fav_fixture_t *fx)
+{
+    char dir[HUSH_HOME_PATH_MAX] = {0};
+    size_t out_len = 0;
+
+    memset(fx->ids, 0, sizeof fx->ids);
+    take_str(fx->ids[0], sizeof fx->ids[0], fx->user_id, "id fits");
+    expect(hush_favorite_save("locked", "Key", fx->ids, 1) == HUSH_OK,
+           "lock seed");
+    expect(hush_home_loadouts_dir(dir, sizeof dir, "locked") == HUSH_OK,
+           "locked dir");
+    expect(chmod(dir, 0) == 0, "lock tree");
+    expect(hush_favorite_list_json("locked", fx->list, sizeof fx->list,
+                                   &out_len) == HUSH_ERR_IO,
+           "locked list is IO");
+    expect(hush_favorite_save("locked", "Key2", fx->ids, 1) == HUSH_ERR_IO,
+           "locked save is IO");
+    expect(chmod(dir, HUSH_HOME_DIR_MODE) == 0, "unlock tree");
+    expect(hush_favorite_list_json("locked", fx->list, sizeof fx->list,
+                                   &out_len) == HUSH_OK,
+           "unlocked lists");
+}
+
 int main(void)
 {
     fav_fixture_t fx;
@@ -401,6 +590,11 @@ int main(void)
     check_traversal(&fx);
     check_names(&fx);
     check_cap(&fx);
+    check_wide(&fx);
+    check_overfill(&fx);
+    check_giant(&fx);
+    check_hostile(&fx);
+    check_io(&fx);
     if (g_fail)
         return 1;
     printf("test_favorite ok\n");

@@ -22,6 +22,11 @@ static int hush_home_should_make_tree(void);
 static hush_status_t hush_home_mkdir_child(char *out, size_t outsz,
                                            const char *root, const char *name);
 
+/* Splits canonical robots/<slug>/loadouts dir into its two parents. */
+static hush_status_t hush_home_split_parents(char *scoped, size_t scopedsz,
+                                             char *robots, size_t robotsz,
+                                             const char *dir);
+
 /* mkdir config, agents, skills/{system,user,robots} under root. */
 static hush_status_t hush_home_make_tree(const char *root);
 
@@ -76,7 +81,7 @@ hush_status_t hush_home_mkdir(const char *path)
 
 void hush_home_config_dir(char *out, size_t outsz)
 {
-    const char *env;
+    const char *env = NULL;
     char root[HUSH_HOME_PATH_MAX] = {0};
 
     if (out == NULL || outsz == 0)
@@ -184,7 +189,6 @@ hush_status_t hush_home_ensure_loadouts(const char *robot)
     char dir[HUSH_HOME_PATH_MAX] = {0};
     char scoped[HUSH_HOME_PATH_MAX] = {0};
     char robots[HUSH_HOME_PATH_MAX] = {0};
-    char *cut = NULL;
     hush_status_t st = HUSH_OK;
 
     if (robot == NULL)
@@ -192,20 +196,10 @@ hush_status_t hush_home_ensure_loadouts(const char *robot)
     st = hush_home_loadouts_dir(dir, sizeof dir, robot);
     if (st != HUSH_OK)
         return st;
-    if (strlen(dir) + 1 > sizeof scoped)
-        return HUSH_ERR_FULL;
-    memcpy(scoped, dir, strlen(dir) + 1);
-    cut = strrchr(scoped, '/');
-    if (cut == NULL)
-        return HUSH_ERR_FULL;
-    *cut = '\0';
-    if (strlen(scoped) + 1 > sizeof robots)
-        return HUSH_ERR_FULL;
-    memcpy(robots, scoped, strlen(scoped) + 1);
-    cut = strrchr(robots, '/');
-    if (cut == NULL)
-        return HUSH_ERR_FULL;
-    *cut = '\0';
+    st = hush_home_split_parents(scoped, sizeof scoped, robots,
+                                 sizeof robots, dir);
+    if (st != HUSH_OK)
+        return st;
     st = hush_home_mkdir(robots);
     if (st != HUSH_OK)
         return st;
@@ -221,7 +215,7 @@ int hush_home_is_robot_slug(const char *slug)
         return 0;
     if (slug[0] == '\0' || strlen(slug) >= (size_t)HUSH_SKILL_ROBOT_MAX)
         return 0;
-    return strspn(slug, "abcdefghijklmnopqrstuvwxyz0123456789-_") == strlen(slug);
+    return hush_skill_is_path_slug(slug);
 }
 
 hush_status_t hush_home_ensure(void)
@@ -283,6 +277,32 @@ static hush_status_t hush_home_mkdir_child(char *out, size_t outsz,
     if (out[0] == '\0')
         return HUSH_ERR_FULL;
     return hush_home_mkdir(out);
+}
+
+static hush_status_t hush_home_split_parents(char *scoped, size_t scopedsz,
+                                             char *robots, size_t robotsz,
+                                             const char *dir)
+{
+    char *cut = NULL;
+
+    assert(scoped != NULL);
+    assert(robots != NULL);
+    assert(dir != NULL);
+    if (strlen(dir) + 1 > scopedsz)
+        return HUSH_ERR_FULL;
+    memcpy(scoped, dir, strlen(dir) + 1);
+    cut = strrchr(scoped, '/');
+    if (cut == NULL)
+        return HUSH_ERR_FULL;
+    *cut = '\0';
+    if (strlen(scoped) + 1 > robotsz)
+        return HUSH_ERR_FULL;
+    memcpy(robots, scoped, strlen(scoped) + 1);
+    cut = strrchr(robots, '/');
+    if (cut == NULL)
+        return HUSH_ERR_FULL;
+    *cut = '\0';
+    return HUSH_OK;
 }
 
 static hush_status_t hush_home_make_tree(const char *root)

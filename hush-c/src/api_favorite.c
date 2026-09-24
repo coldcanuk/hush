@@ -46,8 +46,8 @@ static hush_status_t hush_loadout_delete(int fd, const char *body);
 
 hush_status_t hush_http_serve_loadout(int fd, const char *body)
 {
-    char action[HUSH_LOADOUT_ACTION_MAX];
-    hush_status_t st;
+    char action[HUSH_LOADOUT_ACTION_MAX] = {0};
+    hush_status_t st = HUSH_OK;
 
     if (body == NULL)
         return hush_http_reply_session(fd, HUSH_ERR_ARG);
@@ -69,8 +69,8 @@ static hush_status_t hush_loadout_take_text(char *out, size_t outsz,
                                             const char *body,
                                             const char *path)
 {
-    hush_json_value_t value;
-    hush_status_t st;
+    hush_json_value_t value = {0};
+    hush_status_t st = HUSH_OK;
 
     assert(out != NULL);
     assert(body != NULL);
