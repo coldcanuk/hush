@@ -19,6 +19,11 @@ static hush_status_t hush_loadout_take_text(char *out, size_t outsz,
                                             const char *body,
                                             const char *path);
 
+/* Reads /skill_idx into ids; skips absent or empty ids. */
+static hush_status_t hush_loadout_take_skill(char ids[][HUSH_SKILL_ID_MAX],
+                                             size_t *nids, const char *body,
+                                             size_t idx);
+
 /* Reads skill_0..skill_7 into ids. Refuses a skill_8 overflow. */
 static hush_status_t hush_loadout_take_skills(char ids[][HUSH_SKILL_ID_MAX],
                                               size_t *nids, const char *body);
@@ -76,11 +81,41 @@ static hush_status_t hush_loadout_take_text(char *out, size_t outsz,
     return hush_json_decode(out, outsz, &value);
 }
 
+static hush_status_t hush_loadout_take_skill(char ids[][HUSH_SKILL_ID_MAX],
+                                             size_t *nids, const char *body,
+                                             size_t idx)
+{
+    char path[HUSH_LOADOUT_KEY_MAX] = {0};
+    char id[HUSH_SKILL_ID_MAX] = {0};
+    hush_json_value_t value = {0};
+    hush_status_t st = HUSH_OK;
+
+    assert(ids != NULL);
+    assert(nids != NULL);
+    assert(body != NULL);
+    assert(*nids < (size_t)HUSH_SKILL_EQUIP_MAX);
+    if (snprintf(path, sizeof path, "/skill_%zu", idx) >= (int)sizeof path)
+        return HUSH_ERR_FULL;
+    st = hush_json_lookup(&value, body, path);
+    if (st == HUSH_ERR_NOT_FOUND)
+        return HUSH_OK;
+    if (st != HUSH_OK)
+        return HUSH_ERR_PARSE;
+    st = hush_json_decode(id, sizeof id, &value);
+    if (st != HUSH_OK)
+        return st;
+    if (id[0] == '\0')
+        return HUSH_OK;
+    /* Decode already refused truncation, so the copy always fits. */
+    memcpy(ids[*nids], id, strlen(id) + 1);
+    (*nids)++;
+    return HUSH_OK;
+}
+
 static hush_status_t hush_loadout_take_skills(char ids[][HUSH_SKILL_ID_MAX],
                                               size_t *nids, const char *body)
 {
-    size_t n = 0;
-    size_t i;
+    hush_status_t st = HUSH_OK;
 
     assert(ids != NULL);
     assert(nids != NULL);
@@ -88,43 +123,23 @@ static hush_status_t hush_loadout_take_skills(char ids[][HUSH_SKILL_ID_MAX],
     *nids = 0;
     if (hush_http_json_has_key(body, "skill_8"))
         return HUSH_ERR_FULL;
-    for (i = 0; i < (size_t)HUSH_SKILL_EQUIP_MAX; i++) {
-        char path[HUSH_LOADOUT_KEY_MAX];
-        char id[HUSH_SKILL_ID_MAX];
-        hush_json_value_t value;
-        hush_status_t st;
-
-        if (snprintf(path, sizeof path, "/skill_%zu", i)
-            >= (int)sizeof path)
-            return HUSH_ERR_FULL;
-        st = hush_json_lookup(&value, body, path);
-        if (st == HUSH_ERR_NOT_FOUND)
-            continue;
-        if (st != HUSH_OK)
-            return HUSH_ERR_PARSE;
-        st = hush_json_decode(id, sizeof id, &value);
+    for (size_t i = 0; i < (size_t)HUSH_SKILL_EQUIP_MAX; i++) {
+        st = hush_loadout_take_skill(ids, nids, body, i);
         if (st != HUSH_OK)
             return st;
-        if (id[0] == '\0')
-            continue;
-        /* decode already refused truncation, so the copy always fits. */
-        memcpy(ids[n], id, strlen(id) + 1);
-        n++;
     }
-    *nids = n;
     return HUSH_OK;
 }
 
 static hush_status_t hush_loadout_save(int fd, const char *body)
 {
-    char robot[HUSH_SKILL_ROBOT_MAX];
-    char name[HUSH_FAVORITE_NAME_MAX];
-    char ids[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
-    char reply[HUSH_FAVORITE_FILE_MAX];
-    char esc[HUSH_FAVORITE_NAME_MAX * 2];
+    char robot[HUSH_SKILL_ROBOT_MAX] = {0};
+    char name[HUSH_FAVORITE_NAME_MAX] = {0};
+    char ids[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {0};
+    char reply[HUSH_FAVORITE_FILE_MAX] = {0};
     size_t nids = 0;
-    hush_status_t st;
-    int n;
+    hush_status_t st = HUSH_OK;
+    int n = 0;
 
     assert(body != NULL);
     st = hush_loadout_take_text(robot, sizeof robot, body, "/robot");
@@ -139,10 +154,8 @@ static hush_status_t hush_loadout_save(int fd, const char *body)
     st = hush_favorite_save(robot, name, ids, nids);
     if (st != HUSH_OK)
         return hush_http_reply_session(fd, st);
-    if (hush_favorite_escape(esc, sizeof esc, name) != HUSH_OK)
-        return hush_http_reply_session(fd, HUSH_ERR_FULL);
-    n = snprintf(reply, sizeof reply,
-                 "{\"ok\":true,\"name\":\"%s\",\"nskills\":%zu}\n", esc, nids);
+    n = snprintf(reply, sizeof reply, "{\"ok\":true,\"nskills\":%zu}\n",
+                 nids);
     if (n < 0 || (size_t)n >= sizeof reply)
         return hush_http_reply_session(fd, HUSH_ERR_FULL);
     hush_http_reply(fd, "200 OK", "application/json", reply, (size_t)n);
@@ -151,10 +164,10 @@ static hush_status_t hush_loadout_save(int fd, const char *body)
 
 static hush_status_t hush_loadout_list(int fd, const char *body)
 {
-    char robot[HUSH_SKILL_ROBOT_MAX];
-    char reply[HUSH_FAVORITE_JSON_MAX];
+    char robot[HUSH_SKILL_ROBOT_MAX] = {0};
+    char reply[HUSH_FAVORITE_JSON_MAX] = {0};
     size_t n = 0;
-    hush_status_t st;
+    hush_status_t st = HUSH_OK;
 
     assert(body != NULL);
     st = hush_loadout_take_text(robot, sizeof robot, body, "/robot");
@@ -169,10 +182,10 @@ static hush_status_t hush_loadout_list(int fd, const char *body)
 
 static hush_status_t hush_loadout_load(int fd, const char *body)
 {
-    char robot[HUSH_SKILL_ROBOT_MAX];
-    char name[HUSH_FAVORITE_NAME_MAX];
-    hush_favorite_t fav;
-    hush_status_t st;
+    char robot[HUSH_SKILL_ROBOT_MAX] = {0};
+    char name[HUSH_FAVORITE_NAME_MAX] = {0};
+    hush_favorite_t fav = {0};
+    hush_status_t st = HUSH_OK;
 
     assert(body != NULL);
     st = hush_loadout_take_text(robot, sizeof robot, body, "/robot");
@@ -190,10 +203,10 @@ static hush_status_t hush_loadout_load(int fd, const char *body)
 static hush_status_t hush_loadout_reply_favorite(int fd,
                                                  const hush_favorite_t *fav)
 {
-    char reply[HUSH_FAVORITE_JSON_MAX];
-    char esc[HUSH_FAVORITE_NAME_MAX * 2];
+    char reply[HUSH_FAVORITE_JSON_MAX] = {0};
+    char esc[HUSH_FAVORITE_NAME_MAX * 2] = {0};
     size_t off = 0;
-    int n;
+    int n = 0;
 
     assert(fav != NULL);
     if (hush_favorite_escape(esc, sizeof esc, fav->name) != HUSH_OK)
@@ -203,8 +216,7 @@ static hush_status_t hush_loadout_reply_favorite(int fd,
     if (n < 0 || (size_t)n >= sizeof reply)
         return hush_http_reply_session(fd, HUSH_ERR_FULL);
     off = (size_t)n;
-    if (hush_favorite_put_ids(reply, sizeof reply, &off, fav->skills,
-                              fav->nskills) != HUSH_OK)
+    if (hush_favorite_put_ids(reply, sizeof reply, &off, fav) != HUSH_OK)
         return hush_http_reply_session(fd, HUSH_ERR_FULL);
     n = snprintf(reply + off, sizeof reply - off, "]}\n");
     if (n < 0 || off + (size_t)n >= sizeof reply)
@@ -216,12 +228,11 @@ static hush_status_t hush_loadout_reply_favorite(int fd,
 
 static hush_status_t hush_loadout_delete(int fd, const char *body)
 {
-    char robot[HUSH_SKILL_ROBOT_MAX];
-    char name[HUSH_FAVORITE_NAME_MAX];
-    char reply[HUSH_FAVORITE_FILE_MAX];
-    char esc[HUSH_FAVORITE_NAME_MAX * 2];
-    hush_status_t st;
-    int n;
+    char robot[HUSH_SKILL_ROBOT_MAX] = {0};
+    char name[HUSH_FAVORITE_NAME_MAX] = {0};
+    char reply[HUSH_FAVORITE_FILE_MAX] = {0};
+    hush_status_t st = HUSH_OK;
+    int n = 0;
 
     assert(body != NULL);
     st = hush_loadout_take_text(robot, sizeof robot, body, "/robot");
@@ -233,9 +244,7 @@ static hush_status_t hush_loadout_delete(int fd, const char *body)
     st = hush_favorite_delete(robot, name);
     if (st != HUSH_OK)
         return hush_http_reply_session(fd, st);
-    if (hush_favorite_escape(esc, sizeof esc, name) != HUSH_OK)
-        return hush_http_reply_session(fd, HUSH_ERR_FULL);
-    n = snprintf(reply, sizeof reply, "{\"ok\":true,\"name\":\"%s\"}\n", esc);
+    n = snprintf(reply, sizeof reply, "{\"ok\":true}\n");
     if (n < 0 || (size_t)n >= sizeof reply)
         return hush_http_reply_session(fd, HUSH_ERR_FULL);
     hush_http_reply(fd, "200 OK", "application/json", reply, (size_t)n);

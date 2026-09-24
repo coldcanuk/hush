@@ -27,6 +27,12 @@ enum {
 /* Writes the hush home root into out. Empty on overflow. */
 void hush_home_root(char *out, size_t outsz);
 
+/* Joins a/b into out. Empty on overflow. */
+void hush_home_join(char *out, size_t outsz, const char *a, const char *b);
+
+/* mkdir with the home dir mode. EEXIST is success. */
+hush_status_t hush_home_mkdir(const char *path);
+
 /* Writes the config directory into out. Honors HUSH_CONFIG_DIR. */
 void hush_home_config_dir(char *out, size_t outsz);
 
@@ -45,6 +51,10 @@ hush_status_t hush_home_skills_dir(char *out, size_t outsz,
  * Fails with HUSH_ERR_ARG on a bad robot slug. */
 hush_status_t hush_home_loadouts_dir(char *out, size_t outsz,
                                      const char *robot);
+
+/* Creates robots/<robot>/loadouts plus parents. Fails with HUSH_ERR_ARG
+ * on a bad robot slug, HUSH_ERR_FULL on overflow, HUSH_ERR_IO on disk. */
+hush_status_t hush_home_ensure_loadouts(const char *robot);
 
 /* True when slug is a bounded file-safe robot slug (a-z0-9-_). */
 int hush_home_is_robot_slug(const char *slug);

@@ -63,6 +63,9 @@ typedef struct {
     char robot[HUSH_SKILL_ROBOT_MAX];
 } hush_skill_forge_in_t;
 
+/* Writes lowercase a-z0-9- slug of name into dst. NULL writes empty. */
+void hush_skill_slugify(char *dst, size_t dstsz, const char *name);
+
 /* Zeros the catalog. Safe on NULL. */
 void hush_skill_init_catalog(hush_skill_catalog_t *cat);
 

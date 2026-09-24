@@ -76,9 +76,6 @@ static int hush_skill_is_scope(const char *scope);
 /* Product bucket for a disk scope. User-dir files count as system. */
 static const char *hush_skill_product_scope(const char *disk_scope);
 
-/* Writes lowercase a-z0-9- slug of name into dst. */
-static void hush_skill_slugify(char *dst, size_t dstsz, const char *name);
-
 /* Builds scope:slug or robot:robot:slug into out. */
 static hush_status_t hush_skill_make_id(char *out, size_t outsz,
                                         const char *scope,
@@ -157,6 +154,35 @@ hush_status_t hush_skill_read_instructions(char *out, size_t outsz, const char *
     return hush_skill_read_instructions_file(out, outsz, path);
 }
 
+
+void hush_skill_slugify(char *dst, size_t dstsz, const char *name)
+{
+    size_t i = 0;
+    size_t o = 0;
+    unsigned char c;
+    int dash = 0;
+
+    assert(dst != NULL);
+    assert(dstsz > 0);
+    dst[0] = '\0';
+    if (name == NULL)
+        return;
+    while (name[i] != '\0' && o + 1 < dstsz) {
+        c = (unsigned char)name[i++];
+        if (isalnum(c)) {
+            dst[o++] = (char)tolower(c);
+            dash = 0;
+            continue;
+        }
+        if ((c == ' ' || c == '-' || c == '_') && o > 0 && !dash) {
+            dst[o++] = '-';
+            dash = 1;
+        }
+    }
+    if (o > 0 && dst[o - 1] == '-')
+        o--;
+    dst[o] = '\0';
+}
 
 void hush_skill_init_catalog(hush_skill_catalog_t *cat)
 {
@@ -509,34 +535,6 @@ static const char *hush_skill_product_scope(const char *disk_scope)
     return disk_scope;
 }
 
-static void hush_skill_slugify(char *dst, size_t dstsz, const char *name)
-{
-    size_t i = 0;
-    size_t o = 0;
-    unsigned char c;
-    int dash = 0;
-
-    assert(dst != NULL);
-    assert(dstsz > 0);
-    dst[0] = '\0';
-    if (name == NULL)
-        return;
-    while (name[i] != '\0' && o + 1 < dstsz) {
-        c = (unsigned char)name[i++];
-        if (isalnum(c)) {
-            dst[o++] = (char)tolower(c);
-            dash = 0;
-            continue;
-        }
-        if ((c == ' ' || c == '-' || c == '_') && o > 0 && !dash) {
-            dst[o++] = '-';
-            dash = 1;
-        }
-    }
-    if (o > 0 && dst[o - 1] == '-')
-        o--;
-    dst[o] = '\0';
-}
 
 static hush_status_t hush_skill_make_id(char *out, size_t outsz,
                                         const char *scope,

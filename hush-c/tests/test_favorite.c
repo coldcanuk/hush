@@ -12,6 +12,26 @@
 #include "hush_home.h"
 #include "hush_skill.h"
 
+enum {
+    FAV_TEST_PATH_MAX = 192,
+    FAV_TEST_SCAN_MAX = 64,
+    FAV_TEST_LONG_SLUG = 64,
+    FAV_TEST_MAX_NAME = 47
+};
+
+typedef struct {
+    char base[FAV_TEST_PATH_MAX];
+    char home[FAV_TEST_PATH_MAX];
+    char probe[HUSH_HOME_PATH_MAX];
+    char user_id[HUSH_SKILL_ID_MAX];
+    char local_id[HUSH_SKILL_ID_MAX];
+    char other_id[HUSH_SKILL_ID_MAX];
+    char ids[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
+    char nine[HUSH_SKILL_EQUIP_MAX + 1][HUSH_SKILL_ID_MAX];
+    char list[HUSH_FAVORITE_JSON_MAX];
+    hush_favorite_t fav;
+} fav_fixture_t;
+
 static int g_fail;
 
 static void expect(int cond, const char *msg)
@@ -35,9 +55,8 @@ static void take_str(char *dst, size_t dstsz, const char *src,
 static void forge_skill(char *out_id, const char *name, const char *scope,
                         const char *robot)
 {
-    hush_skill_forge_in_t in;
+    hush_skill_forge_in_t in = {0};
 
-    memset(&in, 0, sizeof in);
     take_str(in.name, sizeof in.name, name, "forge name fits");
     take_str(in.summary, sizeof in.summary, "probe skill", "forge sum fits");
     take_str(in.body, sizeof in.body, "probe body", "forge body fits");
@@ -58,12 +77,15 @@ static int path_missing(const char *path)
 static int base_holds_only(const char *base, const char *want)
 {
     DIR *dp = opendir(base);
-    struct dirent *ent;
     size_t found = 0;
 
     if (dp == NULL)
         return 0;
-    while ((ent = readdir(dp)) != NULL) {
+    for (size_t i = 0; i < (size_t)FAV_TEST_SCAN_MAX; i++) {
+        struct dirent *ent = readdir(dp);
+
+        if (ent == NULL)
+            break;
         if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
             continue;
         if (strcmp(ent->d_name, want) != 0) {
@@ -76,35 +98,39 @@ static int base_holds_only(const char *base, const char *want)
     return found == 1;
 }
 
-int main(void)
+/* Counts list entries by their name keys. */
+static size_t list_entry_count(const char *list)
 {
-    static char list[HUSH_FAVORITE_JSON_MAX];
-    static hush_favorite_t fav;
-    char base[192];
-    char home[192];
-    char dir[HUSH_HOME_PATH_MAX];
-    char probe[HUSH_HOME_PATH_MAX];
-    char user_id[HUSH_SKILL_ID_MAX];
-    char local_id[HUSH_SKILL_ID_MAX];
-    char other_id[HUSH_SKILL_ID_MAX];
-    char ids[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX];
-    char nine[HUSH_SKILL_EQUIP_MAX + 1][HUSH_SKILL_ID_MAX];
-    char capname[HUSH_FAVORITE_NAME_MAX];
-    size_t out_len = 0;
-    size_t i;
+    size_t n = 0;
+    const char *p = list;
 
-    take_str(base, sizeof base, "/tmp/hush-fav-base-XXXXXX", "base fits");
-    expect(mkdtemp(base) != NULL, "mktemp base");
-    take_str(home, sizeof home, base, "home fits");
-    expect(strlen(home) + strlen("/hush") + 1 < sizeof home, "home fits");
-    strcat(home, "/hush");
+    while ((p = strstr(p, "\"name\":\"")) != NULL) {
+        n++;
+        p++;
+    }
+    return n;
+}
+
+/* Isolates HUSH_HOME, forges probe skills, checks the dir contract. */
+static void setup_fixture(fav_fixture_t *fx)
+{
+    char dir[HUSH_HOME_PATH_MAX] = {0};
+
+    take_str(fx->base, sizeof fx->base, "/tmp/hush-fav-base-XXXXXX",
+             "base fits");
+    expect(mkdtemp(fx->base) != NULL, "mktemp base");
+    take_str(fx->home, sizeof fx->home, fx->base, "home fits");
+    expect(strlen(fx->home) + strlen("/hush") + 1 < sizeof fx->home,
+           "home fits");
+    strcat(fx->home, "/hush");
     unsetenv("HUSH_CONFIG_DIR");
-    if (setenv("HUSH_HOME", home, 1) != 0)
-        return 1;
-    forge_skill(user_id, "Fav Probe", HUSH_SKILL_SCOPE_USER, "");
-    expect(strcmp(user_id, "user:fav-probe") == 0, "user probe id");
-    forge_skill(local_id, "Fav Local", HUSH_SKILL_SCOPE_ROBOT, "sentry");
-    forge_skill(other_id, "Other Local", HUSH_SKILL_SCOPE_ROBOT, "other");
+    expect(setenv("HUSH_HOME", fx->home, 1) == 0, "set HUSH_HOME");
+    forge_skill(fx->user_id, "Fav Probe", HUSH_SKILL_SCOPE_USER, "");
+    expect(strcmp(fx->user_id, "user:fav-probe") == 0, "user probe id");
+    forge_skill(fx->local_id, "Fav Local", HUSH_SKILL_SCOPE_ROBOT,
+                "sentry");
+    forge_skill(fx->other_id, "Other Local", HUSH_SKILL_SCOPE_ROBOT,
+                "other");
     expect(hush_home_loadouts_dir(dir, sizeof dir, "sentry") == HUSH_OK,
            "loadouts dir");
     expect(strstr(dir, "robots/sentry/loadouts") != NULL, "loadouts path");
@@ -112,116 +138,234 @@ int main(void)
            == HUSH_ERR_ARG, "bad robot slug");
     expect(hush_home_loadouts_dir(dir, sizeof dir, "")
            == HUSH_ERR_ARG, "empty robot slug");
-    memset(ids, 0, sizeof ids);
-    take_str(ids[0], sizeof ids[0], "system:forge-skill", "id fits");
-    take_str(ids[1], sizeof ids[1], user_id, "id fits");
-    expect(hush_favorite_save("sentry", "Patrol", ids, 2) == HUSH_OK,
+}
+
+/* Refusals: empty names, empty sets, over-cap sets, bad skills, slugs. */
+static void check_save_refusals(fav_fixture_t *fx)
+{
+    char long_robot[FAV_TEST_LONG_SLUG + 1] = {0};
+    char long_name[HUSH_FAVORITE_NAME_MAX + 1] = {0};
+
+    memset(fx->ids, 0, sizeof fx->ids);
+    take_str(fx->ids[0], sizeof fx->ids[0], "system:forge-skill", "id fits");
+    take_str(fx->ids[1], sizeof fx->ids[1], fx->user_id, "id fits");
+    expect(hush_favorite_save("sentry", "Patrol", fx->ids, 2) == HUSH_OK,
            "save patrol");
-    expect(hush_favorite_save("sentry", "  ", ids, 2) == HUSH_ERR_PARSE,
+    expect(hush_favorite_save("sentry", "  ", fx->ids, 2) == HUSH_ERR_PARSE,
            "empty name refused");
-    expect(hush_favorite_save("sentry", "Empty", ids, 0) == HUSH_ERR_DENIED,
-           "zero skills refused");
-    memset(nine, 0, sizeof nine);
-    expect(hush_favorite_save("sentry", "Big", nine, 9) == HUSH_ERR_FULL,
+    expect(hush_favorite_save("sentry", "Empty", fx->ids, 0)
+           == HUSH_ERR_DENIED, "zero skills refused");
+    memset(fx->nine, 0, sizeof fx->nine);
+    expect(hush_favorite_save("sentry", "Big", fx->nine, 9) == HUSH_ERR_FULL,
            "nine skills refused");
-    memset(ids, 0, sizeof ids);
-    take_str(ids[0], sizeof ids[0], "system:no-such-skill", "id fits");
-    expect(hush_favorite_save("sentry", "Ghost", ids, 1) == HUSH_ERR_DENIED,
-           "unknown skill refused");
-    memset(ids, 0, sizeof ids);
-    take_str(ids[0], sizeof ids[0], other_id, "id fits");
-    expect(hush_favorite_save("sentry", "Cross", ids, 1) == HUSH_ERR_DENIED,
-           "cross slug refused");
-    memset(ids, 0, sizeof ids);
-    take_str(ids[0], sizeof ids[0], "system:forge-skill", "id fits");
-    take_str(ids[1], sizeof ids[1], "system:forge-skill", "id fits");
-    expect(hush_favorite_save("sentry", "Dupes", ids, 2) == HUSH_ERR_DENIED,
-           "repeated ids refused");
-    expect(hush_favorite_save("", "Patrol", ids, 1) == HUSH_ERR_ARG,
+    memset(fx->ids, 0, sizeof fx->ids);
+    take_str(fx->ids[0], sizeof fx->ids[0], "system:no-such-skill",
+             "id fits");
+    expect(hush_favorite_save("sentry", "Ghost", fx->ids, 1)
+           == HUSH_ERR_DENIED, "unknown skill refused");
+    memset(fx->ids, 0, sizeof fx->ids);
+    take_str(fx->ids[0], sizeof fx->ids[0], fx->other_id, "id fits");
+    expect(hush_favorite_save("sentry", "Cross", fx->ids, 1)
+           == HUSH_ERR_DENIED, "cross slug refused");
+    memset(fx->ids, 0, sizeof fx->ids);
+    take_str(fx->ids[0], sizeof fx->ids[0], "system:forge-skill", "id fits");
+    take_str(fx->ids[1], sizeof fx->ids[1], "system:forge-skill", "id fits");
+    expect(hush_favorite_save("sentry", "Dupes", fx->ids, 2)
+           == HUSH_ERR_DENIED, "repeated ids refused");
+    expect(hush_favorite_save("", "Patrol", fx->ids, 1) == HUSH_ERR_ARG,
            "empty robot refused");
-    memset(ids, 0, sizeof ids);
-    take_str(ids[0], sizeof ids[0], local_id, "id fits");
-    expect(hush_favorite_save("sentry", "Second", ids, 1) == HUSH_OK,
+    expect(hush_favorite_load("", "Patrol", &fx->fav) == HUSH_ERR_ARG,
+           "empty robot refused on load");
+    expect(hush_favorite_delete("", "Patrol") == HUSH_ERR_ARG,
+           "empty robot refused on delete");
+    memset(long_robot, 'r', sizeof long_robot - 1);
+    expect(hush_favorite_save(long_robot, "Patrol", fx->ids, 1)
+           == HUSH_ERR_ARG, "long robot refused");
+    memset(long_name, 'n', sizeof long_name - 1);
+    expect(hush_favorite_save("sentry", long_name, fx->ids, 1)
+           == HUSH_ERR_FULL, "long name refused");
+}
+
+/* Clashes refuse; exact overwrites land; aliases read stored state. */
+static void check_clash(fav_fixture_t *fx)
+{
+    size_t out_len = 0;
+
+    memset(fx->ids, 0, sizeof fx->ids);
+    take_str(fx->ids[0], sizeof fx->ids[0], fx->local_id, "id fits");
+    expect(hush_favorite_save("sentry", "Second", fx->ids, 1) == HUSH_OK,
            "save second");
-    expect(hush_favorite_save("sentry", "patrol", ids, 1)
+    expect(hush_favorite_save("sentry", "patrol", fx->ids, 1)
            == HUSH_ERR_DENIED, "slug clash refused");
-    expect(hush_favorite_save("sentry", "Patrol!", ids, 1)
+    expect(hush_favorite_save("sentry", "Patrol!", fx->ids, 1)
            == HUSH_ERR_DENIED, "punct clash refused");
-    expect(hush_favorite_save("sentry", "Patrol", ids, 1) == HUSH_OK,
+    expect(hush_favorite_save("sentry", "Patrol", fx->ids, 1) == HUSH_OK,
            "exact overwrite allowed");
-    expect(hush_favorite_load("sentry", "patrol", &fav) == HUSH_OK,
+    expect(hush_favorite_load("sentry", "patrol", &fx->fav) == HUSH_OK,
            "clash alias loads stored");
-    expect(strcmp(fav.name, "Patrol") == 0, "stored name survives clash");
-    expect(hush_favorite_list_json("sentry", list, sizeof list, &out_len)
-           == HUSH_OK, "list");
+    expect(strcmp(fx->fav.name, "Patrol") == 0,
+           "stored name survives clash");
+    expect(hush_favorite_list_json("sentry", fx->list, sizeof fx->list,
+                                   &out_len) == HUSH_OK, "list");
     expect(out_len > 0, "list length");
-    expect(strstr(list, "\"name\":\"Patrol\"") != NULL, "list patrol");
-    expect(strstr(list, "\"name\":\"Second\"") != NULL, "list second");
-    expect(strstr(list, "robot:sentry:fav-local") != NULL, "list skill id");
-    expect(hush_favorite_load("sentry", "Patrol", &fav) == HUSH_OK,
+    expect(strstr(fx->list, "\"name\":\"Patrol\"") != NULL, "list patrol");
+    expect(strstr(fx->list, "\"name\":\"Second\"") != NULL, "list second");
+    expect(strstr(fx->list, "robot:sentry:fav-local") != NULL,
+           "list skill id");
+}
+
+/* Load reads stored state; delete removes entries only. */
+static void check_list_delete(fav_fixture_t *fx)
+{
+    expect(hush_favorite_load("sentry", "Patrol", &fx->fav) == HUSH_OK,
            "load patrol");
-    expect(strcmp(fav.name, "Patrol") == 0, "patrol name");
+    expect(strcmp(fx->fav.name, "Patrol") == 0, "patrol name");
     expect(hush_favorite_delete("sentry", "Patrol") == HUSH_OK,
            "delete patrol");
-    expect(hush_favorite_load("sentry", "Patrol", &fav)
+    expect(hush_favorite_load("sentry", "Patrol", &fx->fav)
            == HUSH_ERR_NOT_FOUND, "deleted gone");
-    expect(hush_favorite_load("sentry", "Second", &fav) == HUSH_OK,
+    expect(hush_favorite_load("sentry", "Second", &fx->fav) == HUSH_OK,
            "second survives delete");
-    expect(fav.nskills == 1, "second count");
-    expect(hush_favorite_delete("sentry", "Missing")
-           == HUSH_ERR_NOT_FOUND, "delete missing");
-    expect(hush_favorite_load("ghost", "Patrol", &fav)
+    expect(fx->fav.nskills == 1, "second count");
+    expect(hush_favorite_delete("sentry", "Missing") == HUSH_ERR_NOT_FOUND,
+           "delete missing");
+}
+
+/* Load, delete, and list create no directories for fresh robots. */
+static void check_no_create(fav_fixture_t *fx)
+{
+    size_t out_len = 0;
+
+    expect(hush_favorite_load("ghost", "Patrol", &fx->fav)
            == HUSH_ERR_NOT_FOUND, "load creates no dirs");
-    take_str(probe, sizeof probe, home, "probe fits");
-    expect(strlen(probe) + strlen("/robots/ghost") + 1 < sizeof probe,
-           "probe fits");
-    strcat(probe, "/robots/ghost");
-    expect(path_missing(probe), "ghost tree absent after load");
+    take_str(fx->probe, sizeof fx->probe, fx->home, "probe fits");
+    expect(strlen(fx->probe) + strlen("/robots/ghost") + 1
+           < sizeof fx->probe, "probe fits");
+    strcat(fx->probe, "/robots/ghost");
+    expect(path_missing(fx->probe), "ghost tree absent after load");
     expect(hush_favorite_delete("ghost", "Patrol") == HUSH_ERR_NOT_FOUND,
            "delete creates no dirs");
-    expect(path_missing(probe), "ghost tree absent after delete");
-    expect(hush_favorite_list_json("ghost", list, sizeof list, &out_len)
-           == HUSH_OK, "missing tree lists empty");
-    expect(strstr(list, "\"favorites\":[]") != NULL, "empty list body");
-    expect(path_missing(probe), "ghost tree absent after list");
-    memset(ids, 0, sizeof ids);
-    take_str(ids[0], sizeof ids[0], "system:forge-skill", "id fits");
-    expect(hush_favorite_save("../../.ssh", "Evil", ids, 1)
-           == HUSH_ERR_ARG, "traversal robot refused on save");
-    expect(hush_favorite_load("../../.ssh", "Evil", &fav) == HUSH_ERR_ARG,
-           "traversal robot refused on load");
-    {
-        hush_status_t evil = hush_favorite_delete("../../.ssh", "Evil");
+    expect(path_missing(fx->probe), "ghost tree absent after delete");
+    expect(hush_favorite_list_json("ghost", fx->list, sizeof fx->list,
+                                   &out_len) == HUSH_OK,
+           "missing tree lists empty");
+    expect(strstr(fx->list, "\"favorites\":[]") != NULL, "empty list body");
+    expect(path_missing(fx->probe), "ghost tree absent after list");
+}
 
-        expect(evil == HUSH_ERR_ARG, "traversal robot refused on delete");
+/* A seeded victim file proves delete cannot unlink outside HUSH_HOME. */
+static void check_victim(fav_fixture_t *fx)
+{
+    char victim[FAV_TEST_PATH_MAX] = {0};
+    char kept[16] = {0};
+    FILE *fp = NULL;
+    hush_status_t evil = HUSH_OK;
+
+    take_str(victim, sizeof victim, fx->base, "victim fits");
+    expect(strlen(victim) + strlen("/victim.txt") + 1 < sizeof victim,
+           "victim fits");
+    strcat(victim, "/victim.txt");
+    fp = fopen(victim, "w");
+    expect(fp != NULL, "seed victim");
+    if (fp != NULL) {
+        fputs("precious\n", fp);
+        fclose(fp);
     }
-    expect(hush_favorite_save("sentry", "../../x", ids, 1)
+    evil = hush_favorite_delete("..", "victim.txt");
+    expect(evil == HUSH_ERR_ARG, "dotdot robot refused");
+    fp = fopen(victim, "r");
+    expect(fp != NULL, "victim survives");
+    if (fp != NULL) {
+        expect(fgets(kept, sizeof kept, fp) != NULL, "victim reads");
+        fclose(fp);
+    }
+    expect(strcmp(kept, "precious\n") == 0, "victim intact");
+    expect(unlink(victim) == 0, "victim cleaned");
+    expect(path_missing(victim), "victim gone");
+}
+
+/* Traversal robots and names fail on every entry. */
+static void check_traversal(fav_fixture_t *fx)
+{
+    hush_status_t evil = HUSH_OK;
+
+    memset(fx->ids, 0, sizeof fx->ids);
+    take_str(fx->ids[0], sizeof fx->ids[0], "system:forge-skill", "id fits");
+    expect(hush_favorite_save("../../.ssh", "Evil", fx->ids, 1)
+           == HUSH_ERR_ARG, "traversal robot refused on save");
+    expect(hush_favorite_load("../../.ssh", "Evil", &fx->fav)
+           == HUSH_ERR_ARG, "traversal robot refused on load");
+    evil = hush_favorite_delete("../../.ssh", "Evil");
+    expect(evil == HUSH_ERR_ARG, "traversal robot refused on delete");
+    expect(hush_favorite_save("sentry", "../../x", fx->ids, 1)
            == HUSH_ERR_PARSE, "traversal name refused on save");
-    expect(hush_favorite_load("sentry", "../../x", &fav) == HUSH_ERR_PARSE,
-           "traversal name refused on load");
+    expect(hush_favorite_load("sentry", "../../x", &fx->fav)
+           == HUSH_ERR_PARSE, "traversal name refused on load");
     expect(hush_favorite_delete("sentry", "../../x") == HUSH_ERR_PARSE,
            "traversal name refused on delete");
-    expect(base_holds_only(base, "hush"), "nothing escapes HUSH_HOME");
-    take_str(probe, sizeof probe, base, "probe fits");
-    expect(strlen(probe) + strlen("/.ssh") + 1 < sizeof probe,
+    check_victim(fx);
+    expect(base_holds_only(fx->base, "hush"), "nothing escapes HUSH_HOME");
+    take_str(fx->probe, sizeof fx->probe, fx->base, "probe fits");
+    expect(strlen(fx->probe) + strlen("/.ssh") + 1 < sizeof fx->probe,
            "probe fits");
-    strcat(probe, "/.ssh");
-    expect(path_missing(probe), "no ssh tree created");
-    memset(ids, 0, sizeof ids);
-    take_str(ids[0], sizeof ids[0], user_id, "id fits");
-    for (i = 0; i < (size_t)HUSH_FAVORITE_COUNT_MAX; i++) {
+    strcat(fx->probe, "/.ssh");
+    expect(path_missing(fx->probe), "no ssh tree created");
+}
+
+/* The 33rd favorite is refused; a full cap of maximum-length names
+ * still lists completely, proving save never accepts what list
+ * cannot emit. */
+static void check_cap(fav_fixture_t *fx)
+{
+    char capname[HUSH_FAVORITE_NAME_MAX] = {0};
+    char wide[HUSH_FAVORITE_NAME_MAX] = {0};
+    size_t out_len = 0;
+
+    memset(fx->ids, 0, sizeof fx->ids);
+    take_str(fx->ids[0], sizeof fx->ids[0], fx->user_id, "id fits");
+    for (size_t i = 0; i < (size_t)HUSH_FAVORITE_COUNT_MAX; i++) {
         int n = snprintf(capname, sizeof capname, "Cap %zu", i);
 
         expect(n > 0 && (size_t)n < sizeof capname, "cap name fits");
-        expect(hush_favorite_save("capper", capname, ids, 1) == HUSH_OK,
+        expect(hush_favorite_save("capper", capname, fx->ids, 1) == HUSH_OK,
                "cap fill");
     }
-    expect(hush_favorite_save("capper", "Cap extra", ids, 1)
+    expect(hush_favorite_save("capper", "Cap extra", fx->ids, 1)
            == HUSH_ERR_FULL, "33rd favorite refused");
     expect(hush_favorite_delete("capper", "Cap 0") == HUSH_OK,
            "cap delete");
-    expect(hush_favorite_save("capper", "Cap extra", ids, 1) == HUSH_OK,
+    expect(hush_favorite_save("capper", "Cap extra", fx->ids, 1) == HUSH_OK,
            "cap freed");
+    memset(wide, 'w', sizeof wide - 1);
+    for (size_t i = 0; i < (size_t)HUSH_FAVORITE_COUNT_MAX; i++) {
+        char name[HUSH_FAVORITE_NAME_MAX] = {0};
+        int n = snprintf(name, sizeof name, "%.*s%02zu",
+                         (int)(sizeof wide - 3), wide, i);
+
+        expect(n > 0 && (size_t)n < sizeof name, "wide name fits");
+        expect(strlen(name) == (size_t)FAV_TEST_MAX_NAME, "wide is max");
+        expect(hush_favorite_save("wide", name, fx->ids, 1) == HUSH_OK,
+               "wide fill");
+    }
+    expect(hush_favorite_list_json("wide", fx->list, sizeof fx->list,
+                                   &out_len) == HUSH_OK,
+           "wide lists");
+    expect(list_entry_count(fx->list) == (size_t)HUSH_FAVORITE_COUNT_MAX,
+           "wide lists all 32");
+}
+
+int main(void)
+{
+    fav_fixture_t fx;
+
+    memset(&fx, 0, sizeof fx);
+    setup_fixture(&fx);
+    check_save_refusals(&fx);
+    check_clash(&fx);
+    check_list_delete(&fx);
+    check_no_create(&fx);
+    check_traversal(&fx);
+    check_cap(&fx);
     if (g_fail)
         return 1;
     printf("test_favorite ok\n");
