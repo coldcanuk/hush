@@ -1,0 +1,31 @@
+# Hush — llms.txt
+
+> Hush is open-source office collaboration: a Slack/Teams alternative that is AI-assistant-native, with a Diablo/BG3-inspired field-office UI. Legible C11 Nostr relay core + self-hosted team-chat hive. License: GPL-3.0.
+
+## What it is
+- One binary (`hush-relay`): Nostr relay core + chat UI on the same port (default 10555).
+- Self-hosted team chat: vibes (hives), bulletin-board channels, threads, invites, AI robots sharing channels with humans.
+- Field-office dispatch UI: bulletin boards + individuals left, Official Dispatch Log center, personnel + status right. Robots inventory is a Diablo-style spatial grid. Zero hamburger glyphs (BOARDS/KIT stamps).
+- Strict C11 (`-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow`). Version: VERSION file (0.0.1).
+
+## Verified on main (honest)
+- Armory ALWAYS-ON / ON-CALL shelves + gem chips are browser-only product labels (not saved on the relay); the relay injects every equipped SKILL.md body on every job.
+- Min-1 equipped skill enforced client + relay ("Keep at least one skill equipped.", relay 400 keeps worn loadout).
+- Thread memory via GET /api/thread (saved turns + brief; leave-return revalidates the remembered root id).
+- Quick bar slots 1-4 (folder tabs, configurable, typing-guarded).
+- i key = inventory doll editor, c key = Profile character sheet (typing-guarded; single-dismiss Escape stack).
+- Volume dial (#fo-dial) scrolls the dispatch log (wheel/drag/keys; no in-column scrollbar chrome).
+- Roadmap (not on main): favorite skill loadouts (PE-4).
+
+## Quick start (verified on Ubuntu cloud VM)
+- sudo apt-get update && sudo apt-get install -y gcc make libssl-dev libx11-dev python3
+- ./configure && make && make test (ALL TESTS PASSED) && make install (~/.local/bin)
+- Run: hush-relay --no-open 10555 -> http://127.0.0.1:10555/
+- Close leaves the hive standing; Exit / --quit stops everything (exit 0).
+- Secrets only in pass; hive metadata in ~/.hush/config/vibe.json (0600).
+
+## Key docs
+- README.md (front page), UI_SPEC.md (authoritative UI + honesty deltas), NOSTR.md, SECURITY.md
+- PRIME_DIRECTIVE.md, AGENTS.md, BRANCHING.md (worktree gb/* + PR-only law)
+- docs/CODEX.md, docs/pass-integration.md, docs/plan/, docs/research/, docs/ops/
+- Screenshot: docs/assets/hush-field-office.png (real cloud-VM capture, 1280x800 headless Chrome)

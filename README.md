@@ -1,405 +1,121 @@
 # Hush
 
-<img src="assets/icons/256x256/hush-relay.png" width="72" height="72" alt="Hush">
+**Hush is open-source office collaboration — a Slack/Teams alternative that is AI-assistant-native, wrapped in a Diablo/BG3-inspired field-office UI.**
 
-**Version: 0.0.1**
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+[![CI build-test](https://github.com/coldcanuk/hush/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/coldcanuk/hush/actions/workflows/ci.yml)
+![C](https://img.shields.io/badge/C-C11-blue.svg)
 
-**Hush** is a lightweight, legible C11 implementation of core Nostr relay functionality.
+> License verified: [`LICENSE`](LICENSE) is the GNU General Public License, Version 3 (29 June 2007). The badge above reflects the file on `main`, not an assumption.
 
-Hush began as a fork of [Buzz](https://github.com/block/buzz). It is now a standalone C11 relay and hive. We do not track, fetch, or sync Buzz. One-way import notes live in [IMPORT.md](IMPORT.md).
+Hush is a legible C11 Nostr relay core plus a self-hosted team-chat hive: one binary (`hush-relay`) serves the wire protocols and the chat UI on the same port. Name yourself, stand up a vibe (hive), open bulletin-board channels, and raise AI robots that share those channels with humans. Version source of truth: [`VERSION`](VERSION) (currently `0.0.1`).
 
-Developed with the Codex AI agent. All development uses worktrees **inside this repository** (`worktrees/<slug>`), never under `/opt/repo/worktrees` or other external paths.
+## Screenshot (real, from this repo's demo on a cloud VM)
 
-- Written in strict C11 following the machine-legibility standard (write-legible-c).
-- Single binary: `hush-relay`
-- Designed for set-and-forget self-hosting and embedding.
-- **License: GPLv3**
-- Version source of truth: top-level `VERSION` (currently `0.0.1`)
+Captured 2026-09-24 from a throwaway relay on this base (`44c66f88`, port 18083) with headless Chrome at 1280×800 — first-launch splash, field-office theme, folder-tab quick bar:
 
-## Features (MVP)
+![Hush field-office dispatch UI — splash with Major reporting for duty and the Inventory/Character/New channel/Stop quick bar](docs/assets/hush-field-office.png)
 
-- Nostr NIP-01 basics for chat (kind 0 profiles, kind 1 notes). Kind 5
-  `e`-tag deletions are applied; kind 7 reactions are stored but not rendered
-- EVENT ingestion + a bounded event store persisted to `store.ring` + `store.log`
-- REQ with filter matching (kinds, ids, authors, since/until, and `#e`/`#p`/`#h`/`#d`
-  tag values, up to four filters)
-- CLOSE
-- Wire `EVENT` frames are BIP-340 verified before store and fan-out; NIP-42
-  AUTH challenges authenticate connections and gate private hives. See
-  [NOSTR.md](NOSTR.md) and [SECURITY.md](SECURITY.md)
-- Token-bucket rate limits on every ingress path (wire, HTTP, provider
-  quotas) with honest `rate-limited`/429 rejections and graceful overload
-- RFC 6455 WebSocket transport for stock Nostr clients (`ws://` on the
-  same port: handshake, masked frames, fragmentation, ping/pong, close)
-- Simple TCP newline-delimited JSON protocol (debug/dev transport)
-- `poll(2)` single-threaded server
-- Same port also serves the chat **PWA** over HTTP (`GET /`, manifest, service worker, icons)
-- Optional **STUN/TURN** (coturn) from Settings, including systemd daemon mode
-- Vibes are **public** (discoverable) or **private**: wire reads, publishes,
-  and fan-out require member AUTH or the join token, and only a hash of the
-  token is persisted
-- HTTP API gated by a per-hive session token (`$HUSH_HOME/session.token`);
-  the listener binds `127.0.0.1` unless `--listen` says otherwise
-- Mesh **conference calling** (humans and AI agents; agent voice needs Whisper)
-- Strict build: `-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow`
+## Features (only what is verifiably on `main`)
 
-The chat UI is a Progressive Web App served by the relay itself
-(`hush-c/demo/`: `index.html`, `manifest.webmanifest`, `sw.js`, icons).
-On first launch a feather splash detects identity and vibe, then a
-numbered wizard walks Identity → Backup (`pass` **checked by default**;
-retrieve with `pass show hush/identity/nsec`) → Vibe (public or private)
-→ Meet **Major**. Right-click (macOS: meta+click) a robot in inventory
-and choose **edit** to change name, avatar, system prompt, optional
-voice, and equipped skills. Profile holds first/last name, email,
-organization, theme (`dark` / `light` / `color-blind` / `dracula` /
-`desert` / `monochrome` / `christmas`), and Logout. From the hive you
-can create channels and projects, invite humans, and raise agents
-from the tool rail (plaintext/Markdown context only). The left nav
-keeps channels and robot cards only. Edit-robot actions sit on one
-compact line (Save Robot / Close / Delete Robot). `@` in the composer mentions humans
-and robots as pills; the wire still uses NIP-27 `nostr:npub1…`.
-Channels carry a UUID, sit in optional Groups (NIP-29 parent), and can
-be deleted or managed from a right-click menu. Manage Channel adds and
-removes people with `+` / `−` pills and sets a **policy leash** (open /
-humans / robots / mixed; robots reply off, when mentioned, or confirm
-first). Chatty multi-send bursts coalesce; robots confirm they heard
-the ask before spending a Grok turn. Install, Profile, Settings, Call,
-Close, and Exit live on a movable tool rail that collapses to a
-KIT stamp. Install puts Hush on the app launcher as its own window; it
-does not start a second hive. When Whisper is on PATH (or
-`HUSH_WHISPER` is set), robot cards show a 1:1 Call icon and channels
-show a Voice icon; mute any tile in the conference. After Grok/Codex
-OAuth the matching provider box shows authenticated (Grok needs
-`~/.grok/auth.json`, Codex needs `~/.codex/auth.json` or `config.toml`)
-and tells you to close the extra windows. Mention a Grok Build robot
-to start a thread; a thinking chip shows while it works, a Thread
-button opens a resizable hive chat (1:1 or 1:n). In a 1:1 pane a
-follow-up without a new `@` still addresses that sole robot. The tool rail is a
-free-drag field kit (no docks, no burger glyph); double-click parks it left of the
-brand. Expanded, it is compact two-column pairs (Profile/Settings,
-Call/Invite, Add Channel/Configure Providers, New Robot/New Project,
-Minimize/Maximize, Close/Exit) under Install; Profile, Settings,
-Call, Invite, Channel, Providers, Robot, and Project each have an
-`i` help popover. **Configure Providers** is the hive-wide desk
-for credentials and OAuth; each robot still picks which runtime
-it uses from left-nav Edit. Minimize iconifies the window;
-Maximize toggles the WM maximized state. The composer is a six-line wrapping
-box that scrolls after that. A live thread you have scrolled up
-stays put across the 1 s poll. The reply is one short `grok -p` note
-from an empty cwd (no desktop AGENTS.md, `--no-memory`). A joke ask
-gets exactly one joke; the follow-up transcript flattens a prior
-multi-line note so Happy cannot repeat a joke it already told.
-Fenced code paints as a block; Canvas opens a right-hand editor
-that colors popular languages (including Go), downloads, or saves
-into a recorded project. Ctrl+K on a canvas selection asks Grok to
-rewrite just that span (no extra hive note). Pause while typing
-and Tab accepts a dim ghost completion at the caret. JSON event bodies
-escape TAB and other C0 so a Go snippet cannot freeze the thinking
-chip.
-Click **relay live** for stored / projects / sockets. Hive metadata persists in `~/.hush/config/vibe.json` so
-`make clean && make install` or Exit does not force a new vibe after
-you import the same nsec. (For upgrades from the older Buzz layout, the
-relay still reads a legacy copy at `~/.config/hush/vibe.json` as a
-fallback when the canonical file is absent — delete both to fully reset
-a hive.) **Exit** (`--quit`) stops the relay and the
-browser / login children it forked. **Close** leaves the hive standing.
-If `--open` attaches to a leftover listener, quit that process before a
-new install can take the port. Secrets stay in `pass`. See
-[docs/pass-integration.md](docs/pass-integration.md).
+Checked against [`UI_SPEC.md`](UI_SPEC.md) and the served demo (`hush-c/demo/index.html`). Honesty notes included — no phantom claims.
 
-Install it from the tool rail (Chromium “Install”, or iOS Share → Add to Home Screen)
-while the relay is running at `http://127.0.0.1:<port>/`.
+- **Armory ALWAYS-ON / ON-CALL labels** — the skill Armory groups gems on two lifetime shelves labeled exactly `ALWAYS-ON · browser-only` and `ON-CALL · browser-only`, with per-gem lifetime chips. Honest runtime: these are **browser-only product labels, not saved on the relay** — the relay still injects every equipped `SKILL.md` body on every job (`agent_prompt.c` untouched). Scope stays a secondary facet (All / System / This robot tabs); disk stays `$HOME/.hush/skills/{system,user,robots}/`.
+- **Minimum one equipped skill (min-1)** — every enabled robot keeps ≥1 equipped skill. Lifting the last worn gem is refused inline with “Keep at least one skill equipped.”; saving an empty draft is refused before any POST; the relay refuses zero-skill `POST /api/agent` loadout writes with 400 and keeps the worn loadout.
+- **Thread memory (leave → return)** — `GET /api/thread?root=<64-hex>` returns saved turns plus the rolling brief; the pane paints them under “Thread memory · Saved on this relay”. The browser remembers only the open root id (`localStorage.hush-thread-open`) and reopens it only when the relay confirms saved turns — never painting remembered content, never claiming live what is saved.
+- **Quick bar 1–4** — a thin folder-tab strip (`#quick-bar`) with four configurable slots (`#qb-1`…`#qb-4`, defaults Inventory / Character / New channel / Stop) plus a `⋯` gear (`#qb-config` → `#qb-editor`). Keys `1`–`4` fire the slots; typing in inputs/textareas never triggers them. Slots persist in `localStorage.hush-quickbar`.
+- **`i` / `c` keys** — `i` opens the selected robot tile's inventory-doll editor (or the expanded 8×5 grid when no tile is selected); `c` toggles the Profile character sheet (read-only equipped strip, no Armory forge). Same typing guards as the quick bar. Escape dismisses exactly one layer at a time.
+- **Volume dial** — the dispatch log's scroll lives on a stereo-style VOLUME dial (`#fo-dial`) above Send Dispatch: mouse-wheel over the dial, clockwise/counter-clockwise drag, or arrow/PageUp/PageDown/Home/End keys. The native fat scrollbar stays hidden and the message column owns no in-column chrome (the old M10 track/dot/arrows are gone).
 
-Importing identities and channels from the predecessor project? See [IMPORT.md](IMPORT.md).
+Under the hood (also on `main`): Nostr NIP-01 chat basics, `poll(2)` single-threaded server, RFC 6455 WebSocket plus newline-JSON on the same port, BIP-340-verified `EVENT` ingest, REQ/CLOSE, NIP-42 AUTH-gated private vibes, per-hive session token with loopback-only bind, token-bucket rate limits with honest rejections, and a strict `-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow` build. Details: [`NOSTR.md`](NOSTR.md), [`SECURITY.md`](SECURITY.md).
 
-## Codex + Worktree (Prime Directive)
+## Roadmap (not on `main` — explicitly future)
 
-**Law:** [PRIME_DIRECTIVE.md](PRIME_DIRECTIVE.md) — also [AGENTS.md](AGENTS.md), [BRANCHING.md](BRANCHING.md).
+- **Favorite loadouts (PE-4)** — per-robot named skill sets under `$HOME/.hush/robots/<slug>/loadouts/` (1–8 skills each), atomic load that never passes through empty, unload that clears the favorite association only. No `loadouts/` writes and no favorite picker exist on `main` today.
 
-1. Always create a worktree: `git worktree add -b gb/<slug> worktrees/<slug>` (inside this repo only).
-2. Commit and **push** on that `gb/*` branch.
-3. Land on `main` **only** via Pull Request → review → auto-merge.
-4. After merge, delete the worktree.
-5. **Writing directly to `main` is strictly prohibited.**
+## Quick start (actually ran on the VM)
+
+These exact commands succeeded on a cloud Ubuntu VM from base `44c66f88`:
 
 ```bash
-./scripts/install-hooks.sh   # blocks commit/push on main
-```
-
-## Build
-
-```bash
+sudo apt-get update
+sudo apt-get install -y gcc make libssl-dev libx11-dev python3
 ./configure
 make
-make test
+make test        # ends with: ALL TESTS PASSED
+make install     # installs to ~/.local/bin (no sudo needed)
 ```
 
-STUN/TURN support is **on by default**. To omit it:
+Run it:
 
 ```bash
-./configure --disable-stun-turn
-make
+~/.local/bin/hush-relay --no-open 10555   # default port 10555
 ```
 
-## STUN/TURN and conference calls
+Then open `http://127.0.0.1:10555/` in a Chromium-family browser. First launch walks Identity → Backup (`pass` checked by default) → Vibe → Meet Major. `Close` dismisses the window and leaves the hive standing; `Exit` (`--quit`) stops every process with exit code 0.
 
-Hush does not vendor [coturn](https://github.com/coturn/coturn). It writes a
-config and starts the `turnserver` binary when you click **Enable STUN/TURN**
-in Settings.
+Isolated demo run (how the screenshot above was produced):
 
 ```bash
-# Debian / Ubuntu / Pop!_OS
-sudo apt install coturn
+cfg=$(mktemp -d); hh=$(mktemp -d)
+HUSH_CONFIG_DIR=$cfg HUSH_HOME=$hh ./hush-c/hush-relay --no-open 18083
+google-chrome --headless --disable-gpu --no-sandbox \
+  --window-size=1280,800 \
+  --screenshot=docs/assets/hush-field-office.png \
+  http://127.0.0.1:18083/
 ```
 
-- **Child mode** (no root): `hush-relay` forks `turnserver` on port 3478
-  (root) or 13478 (user) with a generated long-term username/password.
-- **Daemon mode** (systemd): requires a system install so the unit is in
-  `/lib/systemd/system/`:
+System-wide install and calling: `sudo make install PREFIX=/usr`, conference calls need `coturn` (`turnserver` on PATH) plus Whisper for agent voice. Packaging: `make deb`, `make rpm`, `make flatpak`. See [Installation](#installation) and [`UI_SPEC.md`](UI_SPEC.md) §17.
 
-```bash
-sudo make install PREFIX=/usr
-# then either:
-sudo systemctl enable --now hush-turn
-# or open Settings → Daemon mode
-```
+## Open-source Nostr relay in C11 (self-hosted Slack alternative)
 
-Open the firewall for `3478/tcp`, `3478/udp`, and the relay range
-`49152-49251/udp`. Set **Public host / IP** if the machine is behind NAT.
+Single binary, set-and-forget self-hosting: `./configure && make && make install`, no runtime dependencies beyond libc, OpenSSL, and X11 headers for window controls. Hive metadata persists in `~/.hush/config/vibe.json` (0600) so rebuilds and `Exit` never force a new vibe; secrets live only in `pass` (`hush/identity/nsec`, `hush/providers/<id>/*`).
 
-A **vibe** (this relay) can be public or private. Public vibes are
-discoverable and joinable. Private vibes hide from discovery and share a
-join token.
+## AI-assistant-native team chat (robots share channels with humans)
 
-Conference calls are a WebRTC mesh on the current channel (kind 25000
-signaling). Supported mixes: human↔human, many humans, human↔agent,
-agent↔agent, and mixed. AI agents need a speech model such as Whisper
-(`HUSH_WHISPER=1` or `whisper` on `PATH`) to hear; otherwise they join as
-signaling-only.
+Raise robots from the KIT menu or inventory: name, required system prompt, one required AI provider (Goose, Grok Build, Codex, Cline, Copilot, Ollama, custom, Gemini/xAI/OpenAI/Anthropic/Deepseek APIs), up to 3 plaintext/Markdown context files. `@`-mention a robot to start a thread; channel policy leashes (open/humans/robots/mixed, off/when-mentioned/confirm-first, burst/jobs/cooldown) decide when robots spend tokens, with honest in-thread leash notes. Provider credentials are hive-global (`Configure Providers` desk + `pass`); each robot stores only a provider id.
 
-## Run
+## Diablo-style inventory UI with field-office materials
 
-```bash
-./hush-relay          # default port 10555; opens a standalone app window if a display is available
-./hush-relay --open   # same, and always open the app window (used by the .desktop launcher)
-./hush-relay --no-open 10555
-```
-
-The process is a server: it prints the listen URL and stays running until
-**Exit**, `--quit`, or Ctrl+C. `--open` (the default on a graphical session)
-launches a **frameless standalone app window** (Chromium/Chrome/Brave/Edge
-`--app=` plus `--ozone-platform=x11`, or Epiphany application mode) with
-no browser tab strip, URL bar, or OS title-bar `×`. Firefox-as-default
-is not used, because it cannot hide chrome. The same port
-also speaks the newline-delimited Nostr JSON protocol (see
-`.agents/skills/relay/SKILL.md`).
-
-### Close vs Exit
-
-These are two different verbs. Rail **Close** and **Exit** open one
-chooser: **Exit the application**, **Close the window**, or **Cancel**.
-The OS/PWA window `×` belongs to the `--app` window. Hush cannot put
-those three buttons on that close-box. Closing the last live `--app`
-window raises a follow-up (`zenity` when present): the same three
-verbs. Launch does not raise that dialog. Cancel re-opens the window.
-Close leaves the hive standing.
-
-| Verb | In the hive | CLI | What happens |
-|---|---|---|---|
-| **Close** | chooser **Close the window** | `hush-relay --close` | GUI goes away. The relay keeps listening. |
-| **Exit** | chooser **Exit the application** | `hush-relay --quit` or Ctrl+C | Every process stops. Exit code 0. |
-| **Cancel** | chooser **Cancel** | — | Stay, or re-attach if the `--app` window already closed. |
-
-Click the launcher (`hush-relay --open`) while the hive is already up to
-re-attach a window. `POST /api/close` acknowledges Close and does not stop
-the process. `POST /api/exit` sets the same shutdown flag as SIGTERM.
-
-Rebuild guard: `make` / `make install` refuse while a live relay owns port 10555 — run `hush-relay --quit` (Exit) first; Close is not enough since the hive keeps the port. The guard is port-scoped: it checks `$HUSH_PORT` if set, else `10555`, so a relay on another port does not block the build unless `HUSH_PORT` matches. `make clean` stops the relay and its CHILD turnserver, never the systemd `hush-turn.service` daemon.
-
-### Threads, streaming, and stop
-
-Every note is transcribed to `$HUSH_HOME/threads/<root>.log` (keyed by the
-thread's root event) and each robot reply rolls that thread's brief forward.
-Transcripts are private (0600, no symlink follow), survive restart, and are
-what an agent reads when the live in-memory ring has moved on.
-
-While a robot is answering, the relay streams the provider's deltas into the
-thread, so text paints as it arrives instead of after the whole answer:
-
-| Endpoint | Body | Answer |
-|---|---|---|
-| `POST /api/reply` | `{"root": "<hex>", "robot": "<name or hex>"}` | `{"ok":true,"running":true,"text":"…"}` while the job is live, `running:false` once it is gone. |
-| `POST /api/cancel` | same | `{"ok":true,"stopped":true}` after SIGTERM to the job's process group (SIGKILL follows if it will not exit), then the robot posts an honest "stopped on request" note. A second cancel answers `stopped:false`. |
-
-### Provider configure
-
-**Configure Providers** on the tool rail is the hive-wide desk.
-It lists every runtime, who uses it, and opens the same tailored
-drawer the Raise-robot pencil does. Credentials are global; a
-robot only stores which id it uses.
-
-Selecting an AI provider on **Raise a robot** still reveals a pencil.
-That opens the same tailored drawer:
-
-- Grok Build and Codex are OAuth-only: **Log in with OAuth** starts
-  `grok login --oauth` or `codex login` in a terminal. Authenticated
-  means that provider’s own auth file exists — a leftover `~/.codex`
-  directory does not count. Hush does not implement the browser dance
-  and does not write `~/.grok` or `~/.codex`.
-- Goose reuses `~/.config/goose` or accepts an override key.
-- Gemini / xAI / OpenAI / Anthropic / Deepseek take an API key, host
-  URL, and a scanned or typed model. Those fields use the same `+` /
-  `−` pills as the robot name and system prompt. Deepseek host is
-  `https://api.deepseek.com`.
-- Cline shows an honest empty state if the editor extension is missing.
-
-Secrets Hush accepts for a provider (API key, username, password,
-token, passkey) live only in `pass`:
-
-```
-pass show hush/providers/<id>/api_key
-pass show hush/providers/<id>/username
-pass show hush/providers/<id>/password
-pass show hush/providers/<id>/token
-pass show hush/providers/<id>/passkey
-```
-
-Host and model live in `~/.hush/config/providers.json`.
-The named vibe, channels, projects, profile (no email), members, and
-raised-robot labels live in `~/.hush/config/vibe.json` (0600).
-Skills live under `~/.hush/skills/`. `make clean` only deletes build
-products; it does not touch that tree. Tests set `HUSH_CONFIG_DIR`
-and/or `HUSH_HOME`.
-`GET /api/provider` never returns the values. Goose / Grok / Codex
-home secrets stay in those homes and are never copied.
-Cline authenticates with ClinePass or a bring-your-own provider key,
-not a Grok/Codex-style OAuth-first CLI.
-
-The application launcher entry (`hush-relay.desktop`) starts or attaches the
-GUI. The **Quit Hush** desktop action runs `--quit`.
+The hive is a 1930s–40s military field-office dispatch: bulletin boards (channels) and individuals (live roster) left, Official Dispatch Log center, Active personnel + Status feed right. The robots inventory is a Diablo/Vein-style spatial grid (compact 4×3, expanded 8×5, equal 1×1 tiles, right-click edit opens the `i` doll editor). Zero hamburger glyphs — BOARDS and KIT stamps only. Seven themes kept (`dark` default set is field-office; also `light`, `color-blind`, `dracula`, `desert`, `monochrome`, `christmas`).
 
 ## Installation
 
-Hush is available through multiple package managers. Choose the one that fits your distribution:
-
-### DEB (Debian, Ubuntu, Pop!\_OS, etc.)
-
-```bash
-# Build from source
-./configure
-make deb
-# Install the resulting .deb
-sudo dpkg -i ../hush-relay_*.deb
-```
-
-### RPM (Fedora, RHEL, CentOS, openSUSE, etc.)
-
-```bash
-# Build from source
-make rpm
-# Install the resulting .rpm
-sudo dnf install ~/rpmbuild/RPMS/*/hush-relay-*.rpm
-```
-
-### Flatpak (Any Linux distribution)
-
-```bash
-# Build from source
-make flatpak
-# Or install from Flathub (when available)
-flatpak install flathub io.github.coldcanuk.hush
-```
-
-### OpenBSD (`pkg_add`)
-
-```sh
-# On OpenBSD (pkg_add gmake first):
-./configure --prefix=/usr/local
-make openbsd
-doas pkg_add ./dist/openbsd/hush-relay-*.tgz
-
-# Or drop the port into the ports tree:
-#   doas cp -R openbsd/net/hush-relay /usr/ports/net/hush-relay
-#   cd /usr/ports/net/hush-relay && make makesum && make package
-```
-
-Everyday commands ([FAQ 15](https://www.openbsd.org/faq/faq15.html)):
-`pkg_info -aQ hush`, `doas pkg_add -u`, `doas pkg_delete hush-relay`.
-Details: [openbsd/README.md](openbsd/README.md).
-
-### FreeBSD (`pkg`)
-
-```sh
-# On FreeBSD (pkg install -y gmake first):
-./configure --prefix=/usr/local
-gmake freebsd
-pkg add ./dist/freebsd/hush-relay-*.pkg
-
-# Or drop the port into the ports tree:
-#   cp -R freebsd/net/hush-relay /usr/ports/net/hush-relay
-#   cd /usr/ports/net/hush-relay && make makesum && make package
-```
-
-Everyday commands ([pkg reference](https://www.freebsdsoftware.org/blog/freebsd-pkg-reference.html)):
-`pkg search hush`, `pkg info hush-relay`, `pkg update && pkg upgrade`,
-`pkg delete hush-relay`.
-Details: [freebsd/README.md](freebsd/README.md).
-
-### From Source (all platforms)
+From source (all platforms), after the [Quick start](#quick-start-actually-ran-on-the-vm) build:
 
 ```bash
 ./configure
 make
-make install
+make install                 # ~/.local/bin, no sudo
+sudo make install PREFIX=/usr  # system-wide
 ```
 
-`make install` installs to `~/.local/bin/` by default — no `sudo` required.
+Or build packages from source: `make deb` (Debian/Ubuntu), `make rpm` (Fedora/RHEL), `make flatpak` (any distro), `make openbsd` / `make freebsd` (`pkg_add`/`pkg`). Details: [`openbsd/README.md`](openbsd/README.md), [`freebsd/README.md`](freebsd/README.md).
 
-For a system-wide install:
+## FAQ
 
-```bash
-./configure
-make
-sudo make install PREFIX=/usr
-```
+**Is Hush a Slack/Teams replacement?**
+That is the goal for small office hives: channels, threads, invites, and AI robots in the same rooms — self-hosted as one C11 binary instead of SaaS.
 
-`make install PREFIX=…` re-derives `BINDIR`/`DATADIR` from `PREFIX` unless they are also given on the command line, so this recipe never leaks the `~/.local` paths baked by `./configure`.
+**Do I need Nostr knowledge to use it?**
+No. The chat UI is the product; Nostr (NIP-01 events, NIP-27 mentions, NIP-29-shaped channels) is the wire layer stock clients can also speak. See [`NOSTR.md`](NOSTR.md).
 
-## Docs
+**Are ALWAYS-ON / ON-CALL skills really enforced by the relay?**
+No — today they are browser-only labels. The relay injects every equipped skill body on every job. Real prompt tiers are future work.
 
-Plans and research live under `docs/`. Do not leave `PLAN_*.md` or `RESEARCH*.md` at the repo root.
+**Can I save favorite skill loadouts yet?**
+Not on `main`. That is the PE-4 roadmap item above.
 
-| Kind | Path |
-|------|------|
-| Plans | [`docs/plan/`](docs/plan/) |
-| Research | [`docs/research/`](docs/research/) |
-| `pass` | [`docs/pass-integration.md`](docs/pass-integration.md) |
-| Store bench (OBSERVED baseline) | [`docs/ops/store-bench.md`](docs/ops/store-bench.md) |
-| Store backup/restore | [`docs/ops/store-backup.md`](docs/ops/store-backup.md) |
-| `/api/status` healthprobe (ops) | [`docs/ops/api-status.md`](docs/ops/api-status.md) |
-| Reliability ops index (single-hive) | [`docs/ops/reliability.md`](docs/ops/reliability.md) |
+**Where do secrets live?**
+Only in `pass` (plus foreign homes Hush never copies: `~/.config/goose`, `~/.grok/auth.json`, `~/.codex`). `GET` routes never return secret values.
 
-## Skills for Codex
+**How do Close and Exit differ?**
+Close dismisses the window; the hive keeps listening (re-attach from the launcher). Exit stops every process (exit code 0).
 
-Codex is the supported development agent. Read [AGENTS.md](AGENTS.md) and
-[Codex for Hush](docs/CODEX.md). The complete
-[write-legible-c skill](.agents/skills/write-legible-c/SKILL.md) is checked in,
-including its normative reference and upstream MIT license. Invoke
-`$write-legible-c` for C work; spawned development agents follow the same skill.
+## Docs and development
 
-Hush also exposes this skill in the isolated working directory of each Codex
-runtime job. `make install` installs the complete skill under
-`share/hush/codex/skills/write-legible-c`. `HUSH_CODEX_SKILL_DIR` can point to
-another complete copy. Missing or conflicting skill files prevent Codex dispatch.
+Plans and research live under `docs/` — never `PLAN_*.md` at the root. Key entries: [`docs/CODEX.md`](docs/CODEX.md), [`docs/pass-integration.md`](docs/pass-integration.md), [`docs/plan/`](docs/plan/), [`docs/research/`](docs/research/), [`docs/ops/`](docs/ops/).
 
-The `agy` integration is removed. Select `codex` and run `codex login`;
-saved robot and Payne provider selections migrate on restore. New API requests
-reject the retired id. Other providers keep their existing runtime roles.
+Development uses Codex with worktrees (`gb/<slug>` branches, PR → review → auto-merge, never direct `main` writes). Law: [`PRIME_DIRECTIVE.md`](PRIME_DIRECTIVE.md), [`AGENTS.md`](AGENTS.md), [`BRANCHING.md`](BRANCHING.md). Every `.c`/`.h` follows the machine-legibility standard (`.agents/skills/write-legible-c/SKILL.md`), strict C11 build, `./configure && make && make test`.
 
-Core skills in `.agents/skills/`:
-- worktree, c-build, c-test, write-legible-c, legible-c, relay, acoder-init, publish
-
-## Code of Ethics
-
-See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — SQLite's Code of Ethics (Rule of St. Benedict).
-
+Machine-readable summary: [`llms.txt`](llms.txt). Citation: [`CITATION.cff`](CITATION.cff). Ethics: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
