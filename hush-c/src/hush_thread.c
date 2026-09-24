@@ -25,7 +25,9 @@ enum {
     /* Escaped content scratch plus JSON framing. */
     HUSH_THREAD_LINE_MAX = HUSH_THREAD_CONTENT_MAX * HUSH_JSON_U_LEN + 512,
     HUSH_THREAD_FILE_MODE = 0600,
-    HUSH_THREAD_NUMBER_MAX = 32
+    HUSH_THREAD_NUMBER_MAX = 32,
+    /* Count/truncated/turns framing past the escaped brief. */
+    HUSH_THREAD_COUNTS_MAX = 64
 };
 
 /* True when root is a 64-character lowercase hex event id. */
@@ -69,6 +71,23 @@ static void hush_thread_join_evict(char *out, size_t outsz,
 /* Returns the kept tail past an evicted prefix: the first separator at or
  * after start (exclusive), else a hard trim at start. Pure. */
 static const char *hush_thread_kept_tail(const char *text, const char *start);
+
+/* Appends text at *off, keeping room for the terminator. FULL on overflow. */
+static hush_status_t hush_thread_json_append(char *out, size_t outsz,
+                                             size_t *off, const char *text);
+
+/* Appends the object head through the turns array opener, with the escaped
+ * brief and the count/truncated pair inline. FULL on overflow. */
+static hush_status_t hush_thread_json_append_head(char *out, size_t outsz,
+                                                  size_t *off, const char *root,
+                                                  const char *brief, size_t total,
+                                                  size_t returned);
+
+/* Appends one turn frame, comma-first past the first turn. FULL on overflow. */
+static hush_status_t hush_thread_json_append_turn(char *out, size_t outsz,
+                                                  size_t *off,
+                                                  const hush_thread_turn_t *turn,
+                                                  int first);
 
 void hush_thread_record(const hush_event_t *ev)
 {
@@ -230,6 +249,38 @@ void hush_thread_brief_roll(const char *root, const char *text)
     hush_thread_brief_get(root, old_text, sizeof(old_text));
     hush_thread_join_evict(next, sizeof(next), old_text, snip);
     hush_thread_brief_set(root, next);
+}
+
+hush_status_t hush_thread_format_json(const char *root, char *out,
+                                      size_t outsz, size_t *out_len)
+{
+    hush_thread_turn_t turns[HUSH_THREAD_TURNS_MAX];
+    char brief[HUSH_THREAD_BRIEF_MAX + 1];
+    size_t total;
+    size_t got;
+    size_t i;
+    size_t off = 0;
+
+    if (root == NULL || out == NULL || outsz == 0 || out_len == NULL)
+        return HUSH_ERR_ARG;
+    if (!hush_thread_root_is_valid(root))
+        return HUSH_ERR_ARG;
+    total = hush_thread_count(root);
+    got = hush_thread_read(root, turns, HUSH_THREAD_TURNS_MAX);
+    hush_thread_brief_get(root, brief, sizeof(brief));
+    if (hush_thread_json_append_head(out, outsz, &off, root, brief, total,
+                                     got) != HUSH_OK)
+        return HUSH_ERR_FULL;
+    for (i = 0; i < got; ++i) {
+        if (hush_thread_json_append_turn(out, outsz, &off, &turns[i],
+                                         i == 0) != HUSH_OK)
+            return HUSH_ERR_FULL;
+    }
+    if (hush_thread_json_append(out, outsz, &off, "]}\n") != HUSH_OK)
+        return HUSH_ERR_FULL;
+    out[off] = '\0';
+    *out_len = off;
+    return HUSH_OK;
 }
 
 static void hush_thread_root_of(const hush_event_t *ev,
@@ -486,4 +537,78 @@ static const char *hush_thread_kept_tail(const char *text, const char *start)
     if (cut != NULL)
         return cut + strlen(HUSH_THREAD_BRIEF_SEP);
     return start;
+}
+
+static hush_status_t hush_thread_json_append(char *out, size_t outsz,
+                                             size_t *off, const char *text)
+{
+    size_t len;
+
+    assert(out != NULL);
+    assert(off != NULL);
+    assert(text != NULL);
+    assert(*off < outsz);
+    len = strlen(text);
+    if (len >= outsz - *off)
+        return HUSH_ERR_FULL;
+    memcpy(out + *off, text, len);
+    *off += len;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_thread_json_append_head(char *out, size_t outsz,
+                                                  size_t *off, const char *root,
+                                                  const char *brief, size_t total,
+                                                  size_t returned)
+{
+    char escaped[HUSH_THREAD_BRIEF_MAX * HUSH_JSON_U_LEN + 1];
+    char counts[HUSH_THREAD_COUNTS_MAX];
+    int n;
+
+    assert(out != NULL);
+    assert(off != NULL);
+    assert(root != NULL);
+    assert(brief != NULL);
+    if (hush_thread_json_append(out, outsz, off,
+                                "{\"ok\":true,\"root\":\"") != HUSH_OK)
+        return HUSH_ERR_FULL;
+    if (hush_thread_json_append(out, outsz, off, root) != HUSH_OK)
+        return HUSH_ERR_FULL;
+    if (hush_thread_json_append(out, outsz, off, "\",\"brief\":\"") != HUSH_OK)
+        return HUSH_ERR_FULL;
+    if (hush_json_escape(brief, escaped, sizeof(escaped)) == 0 &&
+        brief[0] != '\0')
+        return HUSH_ERR_FULL;
+    if (hush_thread_json_append(out, outsz, off, escaped) != HUSH_OK)
+        return HUSH_ERR_FULL;
+    n = snprintf(counts, sizeof(counts), "\",\"count\":%zu,\"truncated\":%s,"
+                 "\"turns\":[", total, returned < total ? "true" : "false");
+    if (n <= 0 || (size_t)n >= sizeof(counts))
+        return HUSH_ERR_FULL;
+    return hush_thread_json_append(out, outsz, off, counts);
+}
+
+static hush_status_t hush_thread_json_append_turn(char *out, size_t outsz,
+                                                  size_t *off,
+                                                  const hush_thread_turn_t *turn,
+                                                  int first)
+{
+    char content[HUSH_THREAD_CONTENT_MAX * HUSH_JSON_U_LEN + 1];
+    char frame[HUSH_THREAD_TURN_JSON];
+    int n;
+
+    assert(out != NULL);
+    assert(off != NULL);
+    assert(turn != NULL);
+    if (hush_json_escape(turn->content, content, sizeof(content)) == 0 &&
+        turn->content[0] != '\0')
+        return HUSH_ERR_FULL;
+    n = snprintf(frame, sizeof(frame),
+                 "%s{\"id\":\"%s\",\"pubkey\":\"%s\",\"at\":%lld,"
+                 "\"content\":\"%s\"}",
+                 first ? "" : ",", turn->id, turn->pubkey,
+                 (long long)turn->created_at, content);
+    if (n <= 0 || (size_t)n >= sizeof(frame))
+        return HUSH_ERR_FULL;
+    return hush_thread_json_append(out, outsz, off, frame);
 }

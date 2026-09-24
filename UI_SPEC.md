@@ -419,6 +419,7 @@ demo). No Raylib dependency on the main hush-relay.
 | `POST /api/group` | `{name}` creates a parent group with its own UUID. |
 | `GET /api/status` | existing + `thinking` (JSON array of `{name,parent}` for in-flight robot jobs). |
 | `GET /api/events` | notes plus `reply_to` (first `e` tag; empty when the note is not a reply). |
+| `GET /api/thread?root=<64-hex>` | durable thread memory: `{ok,root,brief,count,truncated,turns[]}` (`id/pubkey/at/content`, newest 32 oldest-first). Unknown roots return empty; malformed roots are 400. |
 | `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id). Content may contain `nostr:npub1…`. Mentions enter `hush_intel` (burst / policy) before `hush_agent`. |
 | `POST /api/canvas` | `{project, path, content}` writes `content` to `path` under that launch project's directory. `project` is a slug. `path` is a relative file (no `..`, no absolute). Missing project, empty content, or a path that escapes the project → `{ok:false,error}`. |
 | `POST /api/fixup` | `{instruction, text}` runs a one-shot `grok -p` and returns `{ok:true,text}` or `{ok:false,error}`. Does **not** insert a hive note. Instruction max 500. Text max `HUSH_EVENT_MAX_CONTENT`. |
@@ -579,6 +580,27 @@ yanked, and it clears when the final note lands. A provider that
 cannot stream simply shows no partial — the chip and the final note
 still work. Send stays disabled while a job is live on the open
 thread; Stop stays enabled.
+
+Delta 2026-09-24 (WS5 M2 thread-memory pass): the thread pane restores
+durable context so leave→return continues with real memory. `GET
+/api/thread?root=<64-hex-lower>` returns `{ok,root,brief,count,truncated,
+turns[]}` (`turns` = newest 32 oldest-first with `id/pubkey/at/content`;
+`count` = every stored turn; `truncated` = `count` exceeds `turns`;
+unknown roots return an honest empty object; malformed roots are 400).
+Opening a thread fetches it once per root; saved turns not already live
+paint inline above the live replies under the line `Thread memory ·
+Saved on this relay · N saved turns`, each with a `· saved` meta suffix,
+plus a `Saved brief on this relay: …` excerpt when the M1 rolling brief
+is non-empty. A thread whose root left the live ring still opens from
+relay memory as `Thread · saved` with the subline `Saved thread · N
+saved turns on this relay · reopened from relay memory`. The browser
+remembers only the open root id (`localStorage.hush-thread-open`); on
+page load it revalidates that id against `/api/thread` and reopens only
+when the relay confirms saved turns, clearing stale ids silently — never
+painting remembered content, never claiming live what is saved. No new
+layers, so the Escape single-dismiss stack and every M1–M11 preserve
+(folder tabs, zero tool rail, overlay drawer, materials, volume dial,
+typing i/c 1–4, chrome) stay untouched.
 
 JSON strings on `GET /api/events` (and every other `hush_json_escape`
 site) must be RFC 8259: `"`, `\`, `\n`, `\r`, `\t`, and every other

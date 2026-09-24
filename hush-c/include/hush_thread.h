@@ -16,6 +16,7 @@
 #include <stddef.h>
 
 #include "hush_event.h"
+#include "hush_json.h"
 #include "hush_status.h"
 
 enum {
@@ -26,7 +27,12 @@ enum {
     /* One rolled answer contributes at most this many flattened bytes. */
     HUSH_THREAD_ROLL_SNIP_MAX = 200,
     /* Turns a single read returns at most. */
-    HUSH_THREAD_TURNS_MAX = 32
+    HUSH_THREAD_TURNS_MAX = 32,
+    /* One turns[] frame: escaped content plus id/pubkey/at framing. */
+    HUSH_THREAD_TURN_JSON = HUSH_THREAD_CONTENT_MAX * HUSH_JSON_U_LEN + 256,
+    /* Largest thread-memory body: every turn plus the brief plus framing. */
+    HUSH_THREAD_JSON_MAX = HUSH_THREAD_TURNS_MAX * HUSH_THREAD_TURN_JSON +
+        HUSH_THREAD_BRIEF_MAX * HUSH_JSON_U_LEN + 512
 };
 
 typedef struct {
@@ -57,5 +63,13 @@ void hush_thread_brief_roll(const char *root, const char *text);
 
 /* Number of transcript turns for root. */
 size_t hush_thread_count(const char *root);
+
+/* Formats the durable memory for root as one JSON object: ok, root, brief,
+ * count (every stored turn), truncated (count exceeds turns[]), and turns[]
+ * (newest HUSH_THREAD_TURNS_MAX, oldest first). Unknown roots format an
+ * honest empty object. Fails with ARG on a bad root or output, FULL when
+ * outsz cannot hold the body. */
+hush_status_t hush_thread_format_json(const char *root, char *out,
+                                      size_t outsz, size_t *out_len);
 
 #endif /* HUSH_THREAD_H */

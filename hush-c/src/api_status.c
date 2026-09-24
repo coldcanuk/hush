@@ -11,6 +11,7 @@
 #include "hush_http_internal.h"
 #include "hush_presence.h"
 #include "hush_store.h"
+#include "hush_thread.h"
 #include "hush_wake.h"
 
 enum {
@@ -33,6 +34,10 @@ static hush_status_t hush_http_format_mentions(char *out, size_t outsz,
 /* Writes one event frame; first controls the leading comma. */
 static hush_status_t hush_http_send_event(int fd, const hush_event_t *event,
                                           int first);
+
+/* Copies ?root= from the request line. 0 when absent or not a thread root. */
+static int hush_http_take_thread_root(const char *req, char *out,
+                                      size_t outsz);
 
 void hush_http_serve_status(int fd, const hush_store_t *store)
 {
@@ -88,6 +93,30 @@ void hush_http_serve_events(int fd, const hush_store_t *store)
         return;
 }
 
+void hush_http_serve_thread(int fd, const char *req)
+{
+    static char body[HUSH_THREAD_JSON_MAX];
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    size_t n = 0;
+
+    if (req == NULL ||
+        !hush_http_take_thread_root(req, root, sizeof(root))) {
+        const char *error = "{\"ok\":false,\"error\":\"root is required\"}\n";
+
+        hush_http_reply(fd, "400 Bad Request", "application/json", error,
+                        strlen(error));
+        return;
+    }
+    if (hush_thread_format_json(root, body, sizeof(body), &n) != HUSH_OK) {
+        const char *failed = "{\"ok\":false,\"error\":\"thread too large\"}\n";
+
+        hush_http_reply(fd, "507 Insufficient Storage", "application/json",
+                        failed, strlen(failed));
+        return;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", body, n);
+}
+
 static int hush_http_is_visible_event(const hush_event_t *event)
 {
     assert(event != NULL);
@@ -138,6 +167,36 @@ static hush_status_t hush_http_send_event(int fd, const hush_event_t *event, int
     if (written < 0 || (size_t)written >= sizeof(body))
         return HUSH_ERR_FULL;
     return hush_http_write_all(fd, body, (size_t)written);
+}
+
+static int hush_http_take_thread_root(const char *req, char *out,
+                                      size_t outsz)
+{
+    const char *hit;
+    size_t i;
+
+    assert(req != NULL);
+    assert(out != NULL);
+    out[0] = '\0';
+    if (outsz < (size_t)HUSH_EVENT_ID_HEX_LEN + 1)
+        return 0;
+    hit = strstr(req, "root=");
+    if (hit == NULL)
+        return 0;
+    hit += sizeof("root=") - 1;
+    for (i = 0; i < (size_t)HUSH_EVENT_ID_HEX_LEN; ++i) {
+        char ch = hit[i];
+
+        if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f')))
+            return 0;
+    }
+    if (hit[HUSH_EVENT_ID_HEX_LEN] != ' ' &&
+        hit[HUSH_EVENT_ID_HEX_LEN] != '&' &&
+        hit[HUSH_EVENT_ID_HEX_LEN] != '\0')
+        return 0;
+    memcpy(out, hit, HUSH_EVENT_ID_HEX_LEN);
+    out[HUSH_EVENT_ID_HEX_LEN] = '\0';
+    return 1;
 }
 
 /* The relay's existing HTTP callback signature includes both transport and event outputs. */

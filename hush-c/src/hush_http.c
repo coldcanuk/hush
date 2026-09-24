@@ -290,6 +290,10 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
         hush_http_serve_events(fd, store);
         return HUSH_OK;
     }
+    if (strcmp(path, "/api/thread") == 0 && memcmp(req, "GET", 3) == 0) {
+        hush_http_serve_thread(fd, req);
+        return HUSH_OK;
+    }
     if (strcmp(path, "/api/session") == 0 && memcmp(req, "GET", 3) == 0) {
         hush_http_serve_session(fd);
         return HUSH_OK;

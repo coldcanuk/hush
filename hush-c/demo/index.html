@@ -2389,6 +2389,10 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     let lastStatus = {};
     let lastPresence = [];
     let openThread = null;
+    /* WS5 M2 thread memory: durable turns cached per root id. The cache holds
+       relay responses only; the browser remembers just the open root id. */
+    const threadMem = {};
+    let resumeTried = false;
     let threadPills = [];
     let threadMentionOpen = false;
     let threadMentionHits = [];
@@ -6103,28 +6107,106 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     function threadKeyOf(root, kids, jobs) {
       const ids = [root.id].concat(kids.map((k) => k.id));
       const think = (jobs || []).map((t) => t.parent + ":" + t.name).join(",");
-      return ids.join(",") + "|" + think + "|" + ackStampFor(root, jobs);
+      return ids.join(",") + "|" + think + "|" + ackStampFor(root, jobs) +
+        "|" + memStamp(root.id);
     }
 
     function threadNearBottom(box) {
       return box.scrollHeight - box.scrollTop - box.clientHeight < THREAD_PIN_PX;
     }
 
+    /* WS5 M2 thread memory: durable turns for root, oldest first, excluding
+       ids already live. Relay data only; empty until /api/thread answers. */
+    function memExtraTurns(rootId, liveIds) {
+      const mem = threadMem[rootId];
+      if (!mem || !mem.turns) return [];
+      return mem.turns.filter((t) => t && t.id && liveIds.indexOf(t.id) < 0 &&
+        t.id !== rootId);
+    }
+
+    /* Cache stamp so a landed /api/thread response repaints the pane. */
+    function memStamp(rootId) {
+      const mem = threadMem[rootId];
+      if (!mem || !mem.turns) return "mem:-";
+      return "mem:" + mem.turns.length + ":" + (mem.brief || "").length;
+    }
+
+    /* True when rootId is a 64-char lowercase hex thread root. */
+    function isThreadRoot(id) {
+      return typeof id === "string" && /^[0-9a-f]{64}$/.test(id);
+    }
+
+    /* Fetches durable memory once per root; repaints the pane on arrival.
+       A failed fetch leaves an empty marker so the 1 s tick never storms. */
+    function fetchThreadMemory(rootId) {
+      if (!isThreadRoot(rootId) || threadMem[rootId]) return;
+      threadMem[rootId] = { turns: null, brief: "", count: 0 };
+      fetch(API + "/api/thread?root=" + rootId).then((r) => r.json()).then((mem) => {
+        if (!mem || mem.root !== rootId || !Array.isArray(mem.turns)) {
+          threadMem[rootId] = { turns: [], brief: "", count: 0 };
+          return;
+        }
+        threadMem[rootId] = {
+          turns: mem.turns,
+          brief: typeof mem.brief === "string" ? mem.brief : "",
+          count: typeof mem.count === "number" ? mem.count : mem.turns.length
+        };
+        if (openThread === rootId && $("thread-pane").classList.contains("show"))
+          paintThreadStream(rootId, false);
+      }).catch(() => { threadMem[rootId] = { turns: [], brief: "", count: 0 }; });
+    }
+
+    /* Reopens the remembered thread when the relay confirms saved turns.
+       The stored id is never painted; only relay answers render. */
+    function resumeThread() {
+      let rootId = null;
+      try { rootId = localStorage.getItem("hush-thread-open"); } catch (e) { rootId = null; }
+      if (!isThreadRoot(rootId)) return;
+      fetch(API + "/api/thread?root=" + rootId).then((r) => r.json()).then((mem) => {
+        if (!mem || mem.root !== rootId || !Array.isArray(mem.turns) || !mem.turns.length) {
+          try { localStorage.removeItem("hush-thread-open"); } catch (e) {}
+          return;
+        }
+        threadMem[rootId] = {
+          turns: mem.turns,
+          brief: typeof mem.brief === "string" ? mem.brief : "",
+          count: typeof mem.count === "number" ? mem.count : mem.turns.length
+        };
+        openThreadPane(rootId);
+      }).catch(() => {});
+    }
+
     function paintThreadStream(rootId, forcePin) {
-      const root = lastEvents.find((e) => e.id === rootId);
-      if (!root) return;
+      let root = lastEvents.find((e) => e.id === rootId);
+      const mem = threadMem[rootId];
+      const savedOnly = !root && !!(mem && mem.turns && mem.turns.length);
+      if (savedOnly) {
+        const open = mem.turns.filter((t) => t.id === rootId)[0] || mem.turns[0];
+        root = {
+          id: open.id, pubkey: open.pubkey, content: open.content,
+          created_at: open.at || 0, channel: channel, reply_to: ""
+        };
+      }
+      if (!root) {
+        fetchThreadMemory(rootId);
+        return;
+      }
+      if (!mem || !mem.turns) fetchThreadMemory(rootId);
       /* visibleNotes always drops Mention received. One intro stays in thread. */
       const filtered = visibleNotes(lastEvents);
-      const kids = repliesTo(filtered, rootId);
+      const kids = savedOnly ? [] : repliesTo(filtered, rootId);
       const bots = threadMembers(root, kids);
       const names = bots.map((b) => b.name).filter(Boolean);
-      $("thread-title").textContent = names.length ? ("Thread · " + names.join(", ")) : "Thread";
+      $("thread-title").textContent = savedOnly ? "Thread · saved" :
+        (names.length ? ("Thread · " + names.join(", ")) : "Thread");
       const owner = rosterHit(root.pubkey);
       const lead = mentionedRobots(root)[0];
       $("thread-help").title = "Agents receive your current message and excerpts from the opening message and six recent replies.";
-      $("thread-help").textContent = "#" + root.channel + " · Started by " +
+      $("thread-help").textContent = savedOnly ?
+        ("Saved thread · " + mem.count + " saved turns on this relay · reopened from relay memory") :
+        ("#" + root.channel + " · Started by " +
         ((owner && owner.name) || "a teammate") + (lead ? " · Lead: " + lead.name : "") +
-        (names.length === 1 ? " · Follow-ups go to " + names[0] : " · @ a robot to direct its next turn");
+        (names.length === 1 ? " · Follow-ups go to " + names[0] : " · @ a robot to direct its next turn"));
       const jobs = thinkingFor(root.id, lastStatus);
       const key = threadKeyOf(root, kids, jobs);
       const box = $("thread-stream");
@@ -6137,6 +6219,35 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       const keep = box.scrollTop;
       box.innerHTML = "";
       if (!isDevLogNote(root)) box.appendChild(paintNote(root));
+      if (mem && mem.turns) {
+        if (mem.brief) {
+          const brief = document.createElement("div");
+          brief.className = "help";
+          brief.textContent = "Saved brief on this relay: " + mem.brief.slice(0, 160);
+          box.appendChild(brief);
+        }
+        const liveIds = [root.id].concat(kids.map((k) => k.id));
+        const extra = memExtraTurns(rootId, liveIds);
+        if (extra.length) {
+          const head = document.createElement("div");
+          head.className = "help";
+          head.textContent = "Thread memory · Saved on this relay · " +
+            mem.count + " saved turns" +
+            (extra.length < mem.count ? " · showing " + extra.length + " not already live" : "");
+          box.appendChild(head);
+        }
+        extra.forEach((t) => {
+          const ev = {
+            id: t.id, pubkey: t.pubkey, content: t.content,
+            created_at: t.at || 0, channel: root.channel, reply_to: rootId
+          };
+          if (isDevLogNote(ev)) return;
+          box.appendChild(paintNote(ev, (node) => {
+            const meta = node.querySelector(".meta");
+            if (meta) meta.textContent += " · saved";
+          }));
+        });
+      }
       kids.forEach((k) => {
         if (!isDevLogNote(k)) box.appendChild(paintNote(k));
       });
@@ -6146,9 +6257,29 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       else box.scrollTop = keep;
     }
 
+    /* Thread size persistence (localStorage.hush-thread), clamped to the
+       viewport. Restored verbatim after UI-M9 dropped the definitions. */
+    function applyThreadSize() {
+      const pane = $("thread-pane");
+      let saved = {};
+      try { saved = JSON.parse(localStorage.getItem("hush-thread") || "{}"); } catch (e) { saved = {}; }
+      const maxW = Math.max(THREAD_MIN_W, window.innerWidth - 24);
+      const maxH = Math.max(THREAD_MIN_H, window.innerHeight - 72);
+      const w = typeof saved.w === "number" ? saved.w : Math.min(672, maxW);
+      const h = typeof saved.h === "number" ? saved.h : Math.min(640, Math.round(window.innerHeight * 0.7));
+      pane.style.width = Math.max(THREAD_MIN_W, Math.min(maxW, w)) + "px";
+      pane.style.height = Math.max(THREAD_MIN_H, Math.min(maxH, h)) + "px";
+    }
+    function saveThreadSize() {
+      const pane = $("thread-pane");
+      const rect = pane.getBoundingClientRect();
+      localStorage.setItem("hush-thread", JSON.stringify({ w: rect.width, h: rect.height }));
+    }
+
     function openThreadPane(rootId) {
       const wasOpen = $("thread-pane").classList.contains("show");
       openThread = rootId;
+      try { localStorage.setItem("hush-thread-open", rootId); } catch (e) {}
       paintThreadStream(rootId, !wasOpen);
       $("thread-pane").classList.add("show");
       applyThreadSize();
@@ -6158,6 +6289,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     function closeThreadPane() {
       $("thread-pane").classList.remove("show");
       openThread = null;
+      try { localStorage.removeItem("hush-thread-open"); } catch (e) {}
       threadSeen = "";
       threadPills = [];
       paintThreadPills();
@@ -7305,6 +7437,13 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         if (session.ready && ev) {
           render(ev.events || ev || [], st);
           await refreshPartials(st);
+          /* WS5 M2: one attempt per page load to reopen the remembered
+             thread. The id alone proves nothing; resumeThread revalidates
+             against /api/thread and clears stale ids. */
+          if (!resumeTried) {
+            resumeTried = true;
+            resumeThread();
+          }
         } else if (st && st.thinking && !st.thinking.length)
           localThink = [];
       } catch (err) {

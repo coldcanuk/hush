@@ -149,6 +149,7 @@ test: $(TEST_BINS) hush-relay
 	@sh tests/check_failover.sh
 	@python3 tests/check_collaboration.py
 	@sh tests/check_ws4.sh
+	@sh tests/check_ws5m2.sh
 	@python3 tests/check_authz.py
 	@python3 tests/check_ws.py
 	@python3 tests/check_limits.py
