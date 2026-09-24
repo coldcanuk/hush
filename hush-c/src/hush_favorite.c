@@ -52,7 +52,8 @@ static hush_status_t hush_favorite_clean_name(char *dst, size_t dstsz,
 /* Trims leading/trailing spaces of text in place. */
 static void hush_favorite_trim(char *text);
 
-/* True when name holds 1..47 bytes, no controls/quotes, valid UTF-8. */
+/* True when name holds 1..47 allowlisted bytes: letters, digits,
+ * space, '-', '_'. Rejects %, dots, and everything else. */
 static int hush_favorite_is_name(const char *name);
 
 /* True when path names dir/<file> with no escape. Pure. */
@@ -366,21 +367,21 @@ static void hush_favorite_trim(char *text)
 static int hush_favorite_is_name(const char *name)
 {
     const unsigned char *p = NULL;
-    size_t chars = 0;
 
     assert(name != NULL);
     if (name[0] == '\0' || strlen(name) >= (size_t)HUSH_FAVORITE_NAME_MAX)
         return 0;
+    /* Explicit ranges, never isalnum: locale-independent by design. */
     for (p = (const unsigned char *)name; *p != '\0'; p++) {
-        if (*p < (unsigned char)' ' || *p == 0x7f ||
-            *p == (unsigned char)'"' || *p == (unsigned char)'\\' ||
-            *p == (unsigned char)'/')
+        unsigned char c = *p;
+
+        if ((c < (unsigned char)'a' || c > (unsigned char)'z') &&
+            (c < (unsigned char)'A' || c > (unsigned char)'Z') &&
+            (c < (unsigned char)'0' || c > (unsigned char)'9') &&
+            c != (unsigned char)' ' && c != (unsigned char)'-' &&
+            c != (unsigned char)'_')
             return 0;
     }
-    if (hush_json_count_chars(&chars, name, (size_t)HUSH_FAVORITE_NAME_MAX)
-        != HUSH_OK)
-        return 0;
-    assert(chars > 0);
     return 1;
 }
 

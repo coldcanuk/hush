@@ -24,15 +24,17 @@ typedef struct {
 } hush_favorite_t;
 
 /* Saves name as the 1..8 skill ids under robots/<robot>/loadouts/.
+ * Names allow letters, digits, space, '-' and '_' only (1..47 chars);
+ * anything else (% and . included) is refused, never mangled.
  * Overwrites only the exact same display name; a slug clash with a
  * different stored name is refused. Creates the loadouts tree; the only
  * entry that may create directories. Refused saves create nothing.
  * Fails with HUSH_ERR_ARG on bad pointers or a bad robot slug,
- * HUSH_ERR_PARSE on an empty or unlawful favorite name or a corrupt
- * stored file, HUSH_ERR_DENIED on an empty set or unknown, cross-slug,
- * repeated, or clashing skills, HUSH_ERR_FULL over 8 skills, over 32
- * favorites, past the list envelope, on allocation failure, or on
- * overflow, HUSH_ERR_IO on disk errors. */
+ * HUSH_ERR_PARSE on an empty or non-allowlisted favorite name or a
+ * corrupt stored file, HUSH_ERR_DENIED on an empty set or unknown,
+ * cross-slug, repeated, or clashing skills, HUSH_ERR_FULL over 8
+ * skills, over 32 favorites, past the list envelope, on allocation
+ * failure, or on overflow, HUSH_ERR_IO on disk errors. */
 hush_status_t hush_favorite_save(const char *robot, const char *name,
                                  char ids[][HUSH_SKILL_ID_MAX], size_t nids);
 

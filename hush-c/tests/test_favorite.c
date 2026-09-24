@@ -197,8 +197,8 @@ static void check_clash(fav_fixture_t *fx)
            "save second");
     expect(hush_favorite_save("sentry", "patrol", fx->ids, 1)
            == HUSH_ERR_DENIED, "slug clash refused");
-    expect(hush_favorite_save("sentry", "Patrol!", fx->ids, 1)
-           == HUSH_ERR_DENIED, "punct clash refused");
+    expect(hush_favorite_save("sentry", "PATROL", fx->ids, 1)
+           == HUSH_ERR_DENIED, "case clash refused");
     expect(hush_favorite_save("sentry", "Patrol", fx->ids, 1) == HUSH_OK,
            "exact overwrite allowed");
     expect(hush_favorite_load("sentry", "patrol", &fx->fav) == HUSH_OK,
@@ -312,6 +312,40 @@ static void check_traversal(fav_fixture_t *fx)
     expect(path_missing(fx->probe), "no ssh tree created");
 }
 
+/* Allowlist names: letters, digits, space, '-', '_' only. Percent,
+ * dots, and punctuation never store; separator variants still clash. */
+static void check_names(fav_fixture_t *fx)
+{
+    memset(fx->ids, 0, sizeof fx->ids);
+    take_str(fx->ids[0], sizeof fx->ids[0], "system:forge-skill", "id fits");
+    expect(hush_favorite_save("sentry", "%2e%2e", fx->ids, 1)
+           == HUSH_ERR_PARSE, "percent name refused on save");
+    expect(hush_favorite_load("sentry", "%2e%2e", &fx->fav)
+           == HUSH_ERR_PARSE, "percent name refused on load");
+    expect(hush_favorite_delete("sentry", "%2e%2e") == HUSH_ERR_PARSE,
+           "percent name refused on delete");
+    expect(hush_favorite_save("sentry", "..", fx->ids, 1) == HUSH_ERR_PARSE,
+           "dotdot refused on save");
+    expect(hush_favorite_load("sentry", "..", &fx->fav) == HUSH_ERR_PARSE,
+           "dotdot refused on load");
+    expect(hush_favorite_delete("sentry", "..") == HUSH_ERR_PARSE,
+           "dotdot refused on delete");
+    expect(hush_favorite_save("sentry", ".", fx->ids, 1) == HUSH_ERR_PARSE,
+           "dot refused");
+    expect(hush_favorite_save("sentry", "!!!", fx->ids, 1)
+           == HUSH_ERR_PARSE, "slug-empty refused");
+    expect(hush_favorite_save("sentry", "100%", fx->ids, 1)
+           == HUSH_ERR_PARSE, "percent refused");
+    expect(hush_favorite_save("sentry", "a b", fx->ids, 1) == HUSH_OK,
+           "separator name saves");
+    expect(hush_favorite_save("sentry", "a-b", fx->ids, 1)
+           == HUSH_ERR_DENIED, "separator clash refused");
+    expect(hush_favorite_save("sentry", "A_B", fx->ids, 1)
+           == HUSH_ERR_DENIED, "case clash refused");
+    expect(hush_favorite_delete("sentry", "a b") == HUSH_OK,
+           "separator cleanup");
+}
+
 /* The 33rd favorite is refused; a full cap of maximum-length names
  * still lists completely, proving save never accepts what list
  * cannot emit. */
@@ -365,6 +399,7 @@ int main(void)
     check_list_delete(&fx);
     check_no_create(&fx);
     check_traversal(&fx);
+    check_names(&fx);
     check_cap(&fx);
     if (g_fail)
         return 1;
