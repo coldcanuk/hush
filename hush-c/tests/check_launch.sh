@@ -371,6 +371,7 @@ echo "$html" | grep -q 'if (!isDevLogNote(k))' \
 echo "$html" | grep -q 'function attachLoadout' || fail "HTML missing attachLoadout"
 echo "$html" | grep -q 'body.skill_0 = ""' || fail "empty loadout must post skill_0"
 echo "$html" | grep -q 'body.nskills = equippedSkills.length' || fail "save must post nskills"
+echo "$html" | grep -q 'Keep at least one skill equipped' || fail "HTML missing PE-3 min-1 block copy"
 echo "$html" | grep -q 'id="agent-clone"' || fail "HTML missing clone control"
 echo "$html" | grep -q 'skillWatermarks' || fail "HTML missing skillWatermarks"
 if echo "$html" | grep -q 'makeSkillChip'; then
@@ -523,14 +524,14 @@ echo "$cloned" | grep -q '"slug":"coach-copy"' || fail "clone coach"
 echo "$cloned" | grep -q '"name":"Coach copy"' || fail "clone display name"
 echo "$cloned" | grep -q '"name":"Coach copy"[^}]*"skills":\["system:canvas-coach"\]' \
     || fail "clone copy wears coach skill"
-prunedcopy=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+prunedcopy=$(curl -s -o /tmp/hush-min1-copy -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"action":"update","slug":"coach-copy","skill_0":"","nskills":0}')
-echo "$prunedcopy" | grep -q '"name":"Coach copy"[^}]*"skills":\[\]' \
-    || fail "clone unequip 1to0 must empty loadout"
-echo "$prunedcopy" | grep -q '"name":"Coach copy"[^}]*system:canvas-coach' \
-    && fail "clone unequip must drop skill"
-echo "$prunedcopy" | grep -q '"name":"Coach","slug":"coach"[^}]*"skills":\["system:canvas-coach"\]' \
+test "$prunedcopy" != "200" || fail "PE-3 min-1 must refuse unequip to empty"
+keptcopy=$(curl -sf "http://127.0.0.1:${port}/api/session")
+echo "$keptcopy" | grep -q '"name":"Coach copy"[^}]*"skills":\["system:canvas-coach"\]' \
+    || fail "refused unequip must keep the worn skill"
+echo "$keptcopy" | grep -q '"name":"Coach","slug":"coach"[^}]*"skills":\["system:canvas-coach"\]' \
     || fail "locked coach must keep skill after copy prune"
 noclone=$(curl -s -o /tmp/hush-no-major-clone -w '%{http_code}' \
     -X POST "http://127.0.0.1:${port}/api/agent" \
@@ -558,13 +559,13 @@ offag=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
 echo "$offag" | grep -q '"enabled":false' || fail "raised robot must disable"
 echo "$offag" | grep -q '"name":"Sentry"[^}]*system:forge-skill' \
     || fail "disable must not drop loadout"
-pruned=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
+pruned=$(curl -s -o /tmp/hush-min1-sentry -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"action":"update","slug":"sentry","skill_0":""}')
-echo "$pruned" | grep -q '"name":"Sentry"[^}]*"skills":\[\]' \
-    || fail "unequip last skill must persist empty loadout"
-echo "$pruned" | grep -q '"name":"Sentry"[^}]*system:forge-skill' \
-    && fail "unequip must drop sentry skill"
+test "$pruned" != "200" || fail "PE-3 min-1 must refuse last-skill unequip"
+keptsentry=$(curl -sf "http://127.0.0.1:${port}/api/session")
+echo "$keptsentry" | grep -q '"name":"Sentry"[^}]*system:forge-skill' \
+    || fail "refused unequip must keep sentry skill"
 forged=$(curl -sf -X POST "http://127.0.0.1:${port}/api/skill" \
     -H 'Content-Type: application/json' \
     -d '{"name":"joke-book","summary":"Jokes.","body":"Tell one joke.","scope":"user"}')

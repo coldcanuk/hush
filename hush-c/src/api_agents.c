@@ -25,6 +25,9 @@ static void hush_http_take_providers(hush_roster_agent_in_t *in,
                                      const char *body);
 static void hush_http_fill_agent_skills(hush_roster_agent_in_t *in,
                                         const char *body);
+/* Refuses any loadout write that leaves zero skills (PE-3 min-1 law).
+ * in and robot_role are borrowed; slug may be "". Fails HUSH_ERR_DENIED
+ * on an empty write, a role wall, or a cross-slug equip. */
 static hush_status_t hush_http_check_loadout(const hush_roster_agent_in_t *in,
                                              const char *robot_role,
                                              const char *slug);
@@ -262,6 +265,9 @@ static hush_status_t hush_http_check_loadout(const hush_roster_agent_in_t *in,
         return HUSH_ERR_ARG;
     if (!in->has_skills)
         return HUSH_OK;
+    /* PE-3 min-1 law: every loadout write keeps at least one skill. */
+    if (in->nskills < (size_t)HUSH_SKILL_EQUIP_LOW)
+        return HUSH_ERR_DENIED;
     hush_skill_init_catalog(&cat);
     if (hush_skill_load_catalog(&cat) != HUSH_OK)
         return HUSH_OK;
