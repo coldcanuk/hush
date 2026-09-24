@@ -263,6 +263,27 @@ block copy above, swap via atomic favorite load; (D) save named
 favorite from a legal (≥1) doll, load atomically, unload ≠ empty.
 Preserved: M9 folder tabs, zero tool rail, M8 overlay, M7 chrome.
 Gate: keep this PE-1 draft until UI-M10 #195 merges (or rebase after).
+Delta 2026-09-23 (PE-2 Armory lifetime UI, demo only — no prompt-tier
+change): the Armory paints two lifetime shelves labeled exactly
+ALWAYS-ON and ON-CALL; every gem in the catalog, doll, cycle belt, and
+skill sheet carries a lifetime chip (Always / On-call). Scope stays a
+secondary facet (All / System / This robot tabs above the shelves); no
+third disk tree — disk stays `$HOME/.hush/skills/{system,user,robots}/`.
+Lifetime is a client-side product label: System skills default to
+ALWAYS-ON, This-robot skills to ON-CALL, with per-skill overrides
+persisted in `localStorage.hush-skill-lifetime` (toggle on the gem chip
+or the skill-sheet card). Honest runtime: the relay still injects every
+equipped SKILL.md body on every job (`agent_prompt.c` untouched), and
+the Armory says so inline. Equip polish on `i` = `#agent-drawer` /
+`#skill-loadout`: pick gem → empty socket (click or drag); lift worn
+gem → returns to its lifetime shelf; a full 8/8 doll refuses with the
+existing capacity copy; `robot:<other>:` skills stay refused.
+Character (`c` / Profile) shows a read-only equipped strip (Always-on
+names + On-call count/short list); no Armory forge there. PE-3 (min-1
+block of last-gem lift) and PE-4 (favorites save/load) still pending.
+Preserved: M10 scrollbar, M9 folder tabs + zero tool rail, M8 overlay
+drawer, M7 chrome-hard / field-office (new shelf/chip/strip chrome
+follows the same tokens + sharp-corner rules).
 Delta 2026-09-22 (WS6 loadout-doll pass): `#skill-cycle` lives in
 `#agent-drawer` only (no hive-nav cycle); the doll is 8 sockets around
 the portrait center (9 cells = `HUSH_SKILL_EQUIP_MAX` 8 + portrait);

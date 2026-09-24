@@ -337,11 +337,14 @@ echo "$html" | grep -q 'id="agent-voice"' || fail "HTML missing voice picker"
 echo "$html" | grep -q 'agent-voice-wrap' || fail "HTML missing whisper-gated voice wrap"
 echo "$html" | grep -q 'whisperReady' || fail "HTML missing whisperReady gate"
 echo "$html" | grep -q 'id="skill-armory"' || fail "HTML missing skill armory"
-echo "$html" | grep -q 'skill-scope-lbl' || fail "HTML missing skill scope labels"
-echo "$html" | grep -q 's.scope === scope' \
-    || fail "armory must group gems by product scope"
-echo "$html" | grep -Fq '["system", "robot"]' \
-    || fail "armory must group gems by system/robot"
+# PE-2: the Armory groups gems by lifetime shelf (ALWAYS-ON | ON-CALL,
+# exact wording); System / This-robot scope stays as a secondary facet
+# (tabs/chips), not the shelf grouping. No third disk tree.
+echo "$html" | grep -q 'ALWAYS-ON' || fail "armory must show the ALWAYS-ON shelf"
+echo "$html" | grep -q 'ON-CALL' || fail "armory must show the ON-CALL shelf"
+echo "$html" | grep -q 'skill-shelf' || fail "HTML missing lifetime shelves"
+echo "$html" | grep -q 'skill-facet' || fail "HTML missing scope facet tabs"
+echo "$html" | grep -q 'skill-life' || fail "HTML missing gem lifetime chips"
 echo "$html" | grep -q 'System (application-wide)' \
     || fail "HTML missing system forge scope"
 echo "$html" | grep -q 'This robot' || fail "HTML missing robot forge scope"
