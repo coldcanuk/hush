@@ -4326,6 +4326,10 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     });
     $("agent-save").addEventListener("click", async () => {
       $("agent-err").textContent = "";
+      if (!equippedSkills.length) {
+        $("agent-err").textContent = "Keep at least one skill equipped.";
+        return;
+      }
       const typedName = ($("agent-name") && $("agent-name").value || "").trim();
       const typedPrompt = ($("agent-prompt") && $("agent-prompt").value || "").trim();
       draftName = typedName;
@@ -6933,7 +6937,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       if ($("skill-watermark")) {
         $("skill-watermark").textContent = "Assigned " + equippedSkills.length +
           "/" + (marks.slots_high || SKILL_SLOTS) + " slots, " + chars + "/" +
-          (marks.chars_high || 8000) + " chars.";
+          (marks.chars_high || 8000) + " chars. Keep at least one skill equipped.";
       }
       if (armory) paintSkillArmory(armory, robotSlug);
       if (loadout) paintSkillDoll(loadout);
@@ -7067,6 +7071,10 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     }
     function pruneSkillAt(slot) {
       if (slot < 0 || slot >= equippedSkills.length) return;
+      if (equippedSkills.length <= 1) {
+        skillNotice("Keep at least one skill equipped.");
+        return;
+      }
       equippedSkills.splice(slot, 1);
       skillNotice("Skill removed. Save the robot to apply the change.");
       paintSkillBoard(editSlug);
@@ -7093,6 +7101,10 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       skillPending = null;
       if (!skill || !skill.id || skillLocked) return;
       const slot = (typeof pending.fromSlot === "number") ? pending.fromSlot : null;
+      if (slot !== null && equippedSkills.length <= 1) {
+        skillNotice("Keep at least one skill equipped.");
+        return;
+      }
       skillHeld = { skill: skill, fromSlot: slot };
       if (slot !== null && slot >= 0 && slot < equippedSkills.length)
         equippedSkills.splice(slot, 1);

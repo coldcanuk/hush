@@ -233,8 +233,11 @@ else:
         providers = ["openai-api", "xai-api", "deepseek-api", "anthropic-api", "gemini-api", "custom"]
         skill = relay.request("/api/skill", {"name": "Precision", "summary": "Preserve details.",
                               "body": "EQUIPPED_SKILL_PROOF: preserve all test details.", "scope": "user"})
+        swap = relay.request("/api/skill", {"name": "Brevity", "summary": "Keep replies short.",
+                              "body": "SWAPPED_SKILL_PROOF: keep replies short.", "scope": "user"})
         catalog = relay.request("/api/skills")
         skill_id = next(item["id"] for item in catalog["skills"] if item["id"].endswith(":precision"))
+        swap_id = next(item["id"] for item in catalog["skills"] if item["id"].endswith(":brevity"))
         for provider in providers:
             model = provider.replace("-", "_")
             relay.request("/api/provider", {"provider": provider, "host": host,
@@ -266,7 +269,7 @@ else:
                 assert path == "/v1beta/models/gemini_api:generateContent"
             else:
                 assert path == "/v1/chat/completions" and body["model"] == model
-        check_memory(relay, bot, host, skill_id)
+        check_memory(relay, bot, host, skill_id, swap_id)
         Endpoint.mode = "full"
         boundary = post_thread(relay, bot, "MAXIMUM_RESPONSE_CHECK")
         wait_idle(relay)
@@ -390,7 +393,7 @@ def wait_idle(relay):
     raise AssertionError("Agent did not finish")
 
 
-def check_memory(relay, bot, host, skill_id):
+def check_memory(relay, bot, host, skill_id, swap_id):
     wait_idle(relay)
     root = post_thread(relay, bot, "Remember OLIVE_MEMORY_ROOT: " + "🌿" * 160)["id"]
     wait_idle(relay)
@@ -416,12 +419,16 @@ def check_memory(relay, bot, host, skill_id):
         wait_request_count(before + 1)
         wait_idle(relay)
     assert "OLIVE_MEMORY_ROOT" in json.dumps(Endpoint.requests[-1][1])
-    relay.request("/api/agent", {"action": "update", "slug": bot["slug"], "skill_0": "", "nskills": 0})
+    relay.request("/api/agent", {"action": "update", "slug": bot["slug"], "skill_0": "", "nskills": 0},
+                  expected=400)
+    relay.request("/api/agent", {"action": "update", "slug": bot["slug"], "skill_0": swap_id})
     before = len(Endpoint.requests)
     post_thread(relay, bot, "REMOVED_SKILL_REQUEST", root)
     wait_request_count(before + 1)
     wait_idle(relay)
-    assert "EQUIPPED_SKILL_PROOF" not in json.dumps(Endpoint.requests[-1][1])
+    swapped = json.dumps(Endpoint.requests[-1][1])
+    assert "EQUIPPED_SKILL_PROOF" not in swapped
+    assert "SWAPPED_SKILL_PROOF" in swapped
     relay.request("/api/agent", {"action": "update", "slug": bot["slug"], "skill_0": skill_id,
                   "providers": "custom,openai-api", "provider": "custom"})
     saved = relay.request("/api/events")["events"]
@@ -440,7 +447,7 @@ def check_memory(relay, bot, host, skill_id):
     wait_idle(relay)
     assert "OLIVE_MEMORY_ROOT" in json.dumps(Endpoint.requests[-1][1])
     assert Endpoint.requests[-1][1]["model"] == "custom"
-    print("memory: >64 events, full current ask, room isolation, plain follow-up, skill removal, restart and order OK")
+    print("memory: >64 events, full current ask, room isolation, plain follow-up, skill swap + min-1 refusal, restart and order OK")
 
 
 def check_failures(relay, bot):

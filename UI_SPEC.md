@@ -303,6 +303,20 @@ live only in `localStorage.hush-skill-lifetime` (a cleared profile or
 a second browser resets shelves to System→ALWAYS-ON / This-robot→
 ON-CALL defaults); only equipped ids survive via the relay. PE-3
 (min-1) and PE-4 (favorites) stay out of scope.
+Delta 2026-09-24 (PE-3 min-1 block — client + relay, no PE-4): every
+enabled robot keeps ≥1 equipped skill. Client (`i` = `#agent-drawer` /
+`#skill-loadout`): lifting or pruning the last worn gem is refused
+inline with “Keep at least one skill equipped.”; Save with an empty
+draft is refused with the same copy before any POST; the watermark
+line carries the law (`Assigned N/8 slots, C/8000 chars. Keep at least
+one skill equipped.`). Relay (`POST /api/agent` raise / update /
+Payne): any request that writes the loadout with zero skills is
+refused 400 and the worn loadout is kept; writes that do not touch
+skills pass through unchanged, so pre-existing skill-less robots keep
+relay state until their loadout is edited. Doll/sheet stay
+draft-until-Save; the Character strip still reports relay-saved counts.
+PE-4 favorites save/load stay out of scope — no `loadouts/` writes,
+no favorite picker.
 Delta 2026-09-22 (WS6 loadout-doll pass): `#skill-cycle` lives in
 `#agent-drawer` only (no hive-nav cycle); the doll is 8 sockets around
 the portrait center (9 cells = `HUSH_SKILL_EQUIP_MAX` 8 + portrait);
