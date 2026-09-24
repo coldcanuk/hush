@@ -837,8 +837,8 @@ body { padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
 .skill-ghost { position: fixed; z-index: 80; pointer-events: none; width: 52px; height: 52px; margin-left: -26px; margin-top: -26px; }
 .skill-ghost * { pointer-events: none; }
 body.skill-holding, body.skill-holding * { cursor: grabbing; }
-/* PE-2 Armory lifetime shelves (ALWAYS-ON | ON-CALL) + gem chips + scope facet.
-   Lifetime is a product label only; every equipped skill still injects every job. */
+/* Armory lifetime shelves (ALWAYS-ON | ON-CALL) + gem chips + scope facet.
+   Lifetime is a browser-only product label, never relay state; every equipped skill still injects every job. */
 .skill-facet-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; width: 100%; }
 .skill-facet {
   min-height: 32px; padding: 4px 10px; border: 1px solid var(--line);
@@ -1873,7 +1873,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       <label for="prof-avatar">Avatar</label>
       <input id="prof-avatar" type="file" accept="image/jpeg,image/png,image/webp">
       <p class="help" id="prof-avatar-status">Optional. JPEG or PNG, stored as a Nostr picture URL.</p>
-      <!-- PE-2: Character read-only equipped strip (Always-on names + On-call count). -->
+      <!-- Honesty: Character read-only strip (relay-saved count + browser-only Always/On-call split). -->
       <div id="profile-loadout" aria-label="Robot loadout summary">
         <div class="lbl">Equipped skills</div>
         <p class="help" id="profile-loadout-text">Select a robot tile, then press c.</p>
@@ -1976,13 +1976,13 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         <div class="skill-board">
           <div>
             <div class="lbl">Skill armory</div>
-            <!-- PE-2: ALWAYS-ON | ON-CALL lifetime shelves; scope stays a secondary facet. -->
-            <p class="help" id="skill-life-note">Shelves are product labels only — every equipped skill injects every job.</p>
+            <!-- Honesty: ALWAYS-ON | ON-CALL shelves are browser-only labels; scope stays a secondary facet. -->
+            <p class="help" id="skill-life-note">Shelves are browser-only product labels — not saved on the relay. Every equipped skill injects on every job.</p>
             <div id="skill-armory" class="skill-pool" aria-label="Skill armory"></div>
           </div>
           <div>
-            <div class="lbl">Skill loadout</div>
-            <div id="skill-loadout" class="skill-loadout skill-doll" aria-label="Skill loadout"></div>
+            <div class="lbl">Skill loadout · draft until Save</div>
+            <div id="skill-loadout" class="skill-loadout skill-doll" aria-label="Skill loadout draft"></div>
           </div>
         </div>
         <div class="pill-row" style="gap:6px">
@@ -2019,7 +2019,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         <h2>Skill sheet</h2>
         <button class="drawer-x" id="skill-sheet-close" type="button" aria-label="Close skill sheet">×</button>
       </div>
-      <p class="help">A spacious read of a loadout. Flip between this robot and the chaperon.</p>
+      <p class="help">A spacious read of the draft loadout. Save the robot to keep it on the relay. Flip between this robot and the chaperon.</p>
       <div class="pill-row" style="justify-content:center;margin:6px 0 10px">
         <button class="iconbtn on" id="skill-flip-robot" type="button">This robot</button>
         <button class="iconbtn" id="skill-flip-chaperon" type="button">Chaperon</button>
@@ -2433,11 +2433,12 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     let skillVoices = [];
     let skillWatermarks = {};
     let skillLocked = false;
-    /* PE-2 Armory lifetime: product labels only (client-side). "always" paints
-       the ALWAYS-ON shelf, "oncall" the ON-CALL shelf. Not prompt tiers:
-       agent_prompt.c still injects every equipped SKILL.md body on every job. */
+    /* Armory honesty: lifetime is a browser-only product label (this browser only,
+       never saved on the relay). "always" paints the ALWAYS-ON shelf, "oncall"
+       the ON-CALL shelf. Not prompt tiers: agent_prompt.c still injects every
+       equipped SKILL.md body on every job. */
     let skillScopeFacet = "all"; /* PE-2 secondary scope facet: all|system|robot */
-    let skillLifeOverride = {}; /* PE-2 persisted lifetime labels {skillId: "always"|"oncall"} */
+    let skillLifeOverride = {}; /* Browser-only lifetime labels {skillId: "always"|"oncall"}; never sent to the relay */
     try {
       const rawLife = localStorage.getItem("hush-skill-lifetime");
       if (rawLife) skillLifeOverride = JSON.parse(rawLife) || {};
@@ -4697,8 +4698,9 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     /* UI-M1: Character sheet (Profile drawer) shared by rail button, quick tab, and `c`.
        UI-M4: taking the character journey hides the inventory layers, so
        the sheet never stacks over (or under) them. */
-    /* PE-2: Character read-only equipped strip (Always-on names + On-call
-       count/short list). Equip stays on `i`; this surface never assigns. */
+    /* Honesty: Character read-only strip. Membership count is relay-saved
+       (bot.skills); the Always-on / On-call split is a browser-only label,
+       never relay state. Equip stays on `i`; this surface never assigns. */
     function paintCharacterStrip() {
       const el = $("profile-loadout-text");
       if (!el) return;
@@ -4712,7 +4714,8 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       const nm = (id) => skillById(id).name || id;
       const always = ids.filter((id) => skillLifetime(skillById(id)) === "always");
       const oncall = ids.filter((id) => skillLifetime(skillById(id)) !== "always");
-      let text = (bot.name || bot.slug) + " wears " + ids.length + "/8: ";
+      let text = (bot.name || bot.slug) + " · " + ids.length + "/8 saved on this relay. " +
+        "Browser-only labels — not saved on the relay: ";
       text += "Always-on " + (always.length ? always.map(nm).join(", ") : "—") + " · ";
       text += "On-call " + (oncall.length
         ? oncall.length + " (" + oncall.map(nm).slice(0, 4).join(", ") +
@@ -6807,9 +6810,10 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       const who = role || robotRole();
       return need === who;
     }
-    /* PE-2: lifetime label for a catalog skill. System scope defaults to
-       ALWAYS-ON, This-robot scope to ON-CALL; per-skill overrides persist
-       in localStorage.hush-skill-lifetime. Product labels only. */
+    /* Honesty: lifetime label for a catalog skill. System scope defaults to
+       ALWAYS-ON, This-robot scope to ON-CALL; per-skill overrides live in
+       this browser only (localStorage.hush-skill-lifetime), never saved
+       on the relay. Browser-only product labels. */
     function skillLifetime(s) {
       const id = s && s.id;
       if (id && (skillLifeOverride[id] === "always" || skillLifeOverride[id] === "oncall"))
@@ -6877,12 +6881,15 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       const ids = (skillSheetView === "robot")
         ? equippedSkills
         : ((session.payne && session.payne.skills) || []);
-      const label = (skillSheetView === "robot") ? "This robot" : "Chaperon (Major)";
-      if (title) title.textContent = label + " · " + ids.length + " skills";
+      const label = (skillSheetView === "robot") ? "This robot draft" : "Chaperon (Major) saved";
+      if (title) title.textContent = label + " · " + ids.length + " skills" +
+        ((skillSheetView === "robot") ? " · Save the robot to keep" : " · saved on this relay");
       if (!list) return;
       list.innerHTML = "";
       if (!ids.length) {
-        list.innerHTML = "<p class='help'>No skills equipped.</p>";
+        list.innerHTML = (skillSheetView === "robot")
+          ? "<p class='help'>No skills in this draft loadout.</p>"
+          : "<p class='help'>No skills saved on this relay for Major.</p>";
         return;
       }
       ids.forEach((id) => {
@@ -6896,15 +6903,15 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
           (s.summary ? "<div class='sum'>" + esc(s.summary) + "</div>" : "") +
           "<div class='meta'>" + (s.chars || 0) + " chars · " +
           (s.complexity || 0) + " complexity · " + esc(s.scope || "system") +
-          " · " + esc(skillLifetimeShelf(lt)) + "</div>";
-        /* PE-2: sheet gems show the lifetime chip with a label-only toggle. */
+          " · " + esc(skillLifetimeShelf(lt)) + " (browser-only)</div>";
+        /* Honesty: sheet lifetime chips are browser-only labels, not relay state. */
         const flip = document.createElement("button");
         flip.type = "button";
         flip.className = "skill-life";
         flip.dataset.lifetime = lt;
         flip.textContent = skillLifetimeName(lt);
-        flip.title = "Toggle Always / On-call (product label only).";
-        flip.setAttribute("aria-label", "Lifetime " + skillLifetimeName(lt) +
+        flip.title = "Browser-only label — not saved on the relay. Activate to toggle Always / On-call.";
+        flip.setAttribute("aria-label", "Browser-only lifetime label " + skillLifetimeName(lt) +
           " for " + (s.name || s.id) + ". Activate to toggle.");
         flip.addEventListener("click", () => {
           setSkillLifetime(s.id, flip.dataset.lifetime === "always" ? "oncall" : "always");
@@ -6932,9 +6939,10 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       if (loadout) paintSkillDoll(loadout);
       paintSkillCycle(robotSlug);
     }
-    /* PE-2: Armory paints two lifetime shelves (ALWAYS-ON | ON-CALL); the
-       System / This-robot scope stays as a secondary facet tab row. Lifting
-       a worn gem returns it to its lifetime shelf on the next repaint. */
+    /* Armory honesty: two lifetime shelves (ALWAYS-ON | ON-CALL) are
+       browser-only labels, never relay state. System / This-robot scope
+       stays as a secondary facet tab row. Lifting a worn gem returns it
+       to its lifetime shelf on the next repaint. */
     function paintSkillArmory(armory, robotSlug) {
       const list = armorySkills(robotSlug).filter(skillFitsFacet);
       armory.innerHTML = "";
@@ -6966,7 +6974,8 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       ["always", "oncall"].forEach((lt) => {
         const lbl = document.createElement("div");
         lbl.className = "skill-shelf-lbl";
-        lbl.textContent = skillLifetimeShelf(lt);
+        lbl.textContent = skillLifetimeShelf(lt) + " · browser-only";
+        lbl.title = "Browser-only label — not saved on the relay.";
         armory.appendChild(lbl);
         const shelf = document.createElement("div");
         shelf.className = "skill-shelf";
@@ -7171,9 +7180,9 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       });
     }
 
-    /* PE-2: every gem carries a lifetime chip (Always / On-call wording).
+    /* Honesty: every gem carries a browser-only lifetime chip (Always / On-call).
        Doll + ghost gems show it inline; armory + cycle gems pair it with a
-       toggle that moves the gem between lifetime shelves (label only). */
+       toggle that moves the gem between lifetime shelves (browser-only label). */
     function makeSkillGem(skill, opts) {
       const o = opts || {};
       const lt = skillLifetime(skill);
@@ -7185,7 +7194,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       b.dataset.lifetime = lt;
       b.dataset.id = skill.id;
       b.title = (skill.name || skill.id) + (skill.summary ? " — " + skill.summary : "") +
-        " (" + skillLifetimeShelf(lt) + ")";
+        " (" + skillLifetimeShelf(lt) + ", browser-only label)";
       b.innerHTML = "<span class=\"sig\">" + esc(skillSig(skill)) +
         "</span><span class=\"nm\">" + esc(skill.name || skill.id) + "</span>" +
         "<span class=\"life\">" + esc(skillLifetimeName(lt)) + "</span>";
@@ -7219,9 +7228,9 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       chip.className = "skill-life";
       chip.dataset.lifetime = lt;
       chip.textContent = skillLifetimeName(lt);
-      chip.title = "Lifetime: " + skillLifetimeName(lt) +
-        ". Activate to move to " + skillLifetimeShelf(next) + " (label only).";
-      chip.setAttribute("aria-label", "Lifetime " + skillLifetimeName(lt) +
+      chip.title = "Browser-only label — not saved on the relay. " +
+        "Activate to move to " + skillLifetimeShelf(next) + ".";
+      chip.setAttribute("aria-label", "Browser-only lifetime label " + skillLifetimeName(lt) +
         " for " + (skill.name || skill.id) +
         ". Activate to move to " + skillLifetimeShelf(next) + ".");
       chip.disabled = skillLocked;

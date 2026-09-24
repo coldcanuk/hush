@@ -284,6 +284,25 @@ block of last-gem lift) and PE-4 (favorites save/load) still pending.
 Preserved: M10 scrollbar, M9 folder tabs + zero tool rail, M8 overlay
 drawer, M7 chrome-hard / field-office (new shelf/chip/strip chrome
 follows the same tokens + sharp-corner rules).
+Delta 2026-09-24 (Armory honesty-label polish — no PE-3, no PE-4): the
+PE-2 lifetime chrome now tells the persistence truth. The relay has no
+lifetime store (`GET /api/skills` carries scope/role/category only;
+equipped ids persist per robot via `POST /api/agent`), so every
+ALWAYS-ON / ON-CALL shelf, gem chip, and Character split is labeled
+browser-only — never “saved”, never “on” as relay state. Shelf headers
+read `ALWAYS-ON · browser-only` / `ON-CALL · browser-only`, the Armory
+note reads “browser-only product labels — not saved on the relay”,
+and gem toggles carry “Browser-only label — not saved on the relay.”
+The doll and skill sheet are labeled draft until Save (`Skill loadout
+· draft until Save`; sheet titles `This robot draft … · Save the robot
+to keep`; empty draft reads “No skills in this draft loadout.”), while
+the Character strip (`c` / Profile) reports relay-saved membership
+(`N/8 saved on this relay`) with the Always-on / On-call breakdown
+flagged as browser-only labels. Leave→return proof: lifetime overrides
+live only in `localStorage.hush-skill-lifetime` (a cleared profile or
+a second browser resets shelves to System→ALWAYS-ON / This-robot→
+ON-CALL defaults); only equipped ids survive via the relay. PE-3
+(min-1) and PE-4 (favorites) stay out of scope.
 Delta 2026-09-22 (WS6 loadout-doll pass): `#skill-cycle` lives in
 `#agent-drawer` only (no hive-nav cycle); the doll is 8 sockets around
 the portrait center (9 cells = `HUSH_SKILL_EQUIP_MAX` 8 + portrait);
