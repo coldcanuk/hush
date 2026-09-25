@@ -229,7 +229,10 @@ pid=""
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
 wait_up || fail "second start failed"
-"$bin" --quit "$port" || fail "--quit must exit 0 when it stops the relay"
+"$bin" --quit "$port" >"$test_home/quit.out" 2>"$quit_err" \
+    || fail "--quit must exit 0 when it stops the relay"
+test "$(cat "$test_home/quit.out")" = "hush-relay: stopped relay on port $port (pid $pid)" \
+    || fail "quit printed '$(cat "$test_home/quit.out")' instead of the one stopped line"
 wait_down "$pid" || fail "--quit did not stop the process"
 wait "$pid"
 test "$?" -eq 0 || fail "--quit child must be code 0"
@@ -472,7 +475,10 @@ wait_up "$repl_port" || fail "replace-test relay did not start"
 cp --remove-destination "$bin" "$repl_bin"
 readlink "/proc/$repl_pid/exe" | grep -q '(deleted)' \
     || fail "replace setup did not mark exe deleted"
-"$repl_bin" --quit "$repl_port" || fail "quit after replace must exit 0"
+"$repl_bin" --quit "$repl_port" >"$test_home/repl-quit.out" 2>"$quit_err" \
+    || fail "quit after replace must exit 0"
+test "$(cat "$test_home/repl-quit.out")" = "hush-relay: stopped relay on port $repl_port (pid $repl_pid)" \
+    || fail "replace quit printed '$(cat "$test_home/repl-quit.out")' instead of the one stopped line"
 wait_down "$repl_pid" || fail "replaced relay did not stop"
 wait "$repl_pid"
 test "$?" -eq 0 || fail "replaced relay must exit 0"
@@ -530,6 +536,9 @@ mode_pid=""
 # An unwritable state parent fails loudly too (EACCES on mkdir). Requires
 # a non-root operator: root can create anywhere, so the refusal would not
 # trigger. No pidfile may be written on this path.
+if [ "$(id -u)" -eq 0 ]; then
+    echo "skip: EACCES test needs a non-root operator"
+else
 acc_base="$(mktemp -d)"
 mkdir -p "$acc_base/run"
 chmod 555 "$acc_base/run"
@@ -545,6 +554,7 @@ curl -sf -X POST "http://127.0.0.1:${acc_port}/api/exit" \
 wait_down "$acc_pid" || fail "acc-test relay did not stop"
 wait "$acc_pid" 2>/dev/null || true
 acc_pid=""
+fi
 
 HOME="$saved_home"
 if [ "$saved_runtime_set" = "1" ]; then

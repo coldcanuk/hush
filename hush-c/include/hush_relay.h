@@ -24,10 +24,10 @@ void hush_relay_request_shutdown(void);
 /* Stops the relay that owns this port's pidfile: verifies the owner matches
  * the recorded process identity and port, SIGTERMs it, and waits out a
  * bounded owner budget. Port 0 means the default port. Succeeds only when
- * the owner is confirmed gone; NOT_FOUND when no pidfile or live owner
- * exists; PARSE on an unreadable pidfile; DENIED when the pid is not the
- * recorded owner (off Linux every live pid is refused); IO when the owner
- * survives. */
+ * the owner is confirmed gone, printing one stopped line to stdout.
+ * NOT_FOUND when no pidfile or live owner exists; PARSE on an unreadable
+ * pidfile; DENIED when the pid is not the recorded owner (off Linux every
+ * live pid is refused); IO when the owner survives. */
 hush_status_t hush_relay_quit(uint16_t port);
 
 /* Remember a forked UI or login child so Exit can stop it. pid <= 0 is ignored. */

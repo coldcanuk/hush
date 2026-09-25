@@ -130,6 +130,8 @@ enum {
 };
 
 #define HUSH_PIDFILE_NAME_FMT "relay-%u.pid"
+/* /proc leaf holding the stat body all pid-identity reads parse. */
+#define HUSH_PROC_STAT_LEAF   "stat"
 #define HUSH_LEAVE_BIN        "zenity"
 #define HUSH_LEAVE_TITLE      "Leave the hive?"
 #define HUSH_LEAVE_TEXT       "The window closed. The hive is still standing."
@@ -330,8 +332,9 @@ static int hush_pidfile_dir_ok(const char *dir);
  * path, IO when a component is unusable. */
 static hush_status_t hush_pidfile_ensure_parents(const char *dir);
 /* Writes this process's pid for port. Fails ARG when unconfigured or the
- * path is too long; IO when the dir cannot be created or secured, or on
- * any open/write/close failure. The relay still starts; the caller warns. */
+ * path is too long; IO when the dir cannot be created or secured, if the
+ * body does not fit, or on any open/write/close failure. The relay
+ * still starts; the caller warns. */
 static hush_status_t hush_write_pidfile(uint16_t port);
 /* Ensures the pidfile dir for port exists and is usable, recording its path.
  * Fails ARG when unconfigured or the path is too long; IO when the dir
@@ -368,6 +371,9 @@ static int hush_pid_is_zombie(pid_t pid);
 /* Parses the starttime field out of a /proc stat body. Returns 0 unless
  * the field is present and decimal. */
 static int hush_stat_starttime(const char *body, unsigned long long *out_start);
+/* Reads pid's start time out of its /proc stat leaf. Returns 0 when the
+ * process is dead or unreadable. */
+static int hush_pid_starttime(unsigned long long *out_start, pid_t pid);
 /* True when pid's /proc starttime equals expect. False covers dead and
  * unreadable processes, so reuse never verifies. */
 static int hush_starttime_matches(pid_t pid, unsigned long long expect);
@@ -495,6 +501,9 @@ hush_status_t hush_relay_quit(uint16_t port)
     }
     if (st != HUSH_OK)
         hush_quit_report(port, pid, start, st);
+    else
+        printf("hush-relay: stopped relay on port %u (pid %ld)\n",
+               (unsigned)port, (long)pid);
     return st;
 }
 
@@ -582,8 +591,8 @@ static void hush_quit_report_unverified(uint16_t port)
 
     assert(port != 0);
     hush_quit_token_path(token, sizeof(token));
-    fprintf(stderr, "hush-relay: --quit cannot verify the relay's identity on this platform; stop it with Exit in the hive, Ctrl+C, or POST /api/exit (X-Hush-Token from %s) on port %u\n",
-            token[0] != '\0' ? token : "~/.hush/session.token", (unsigned)port);
+    fprintf(stderr, "hush-relay: --quit cannot verify the relay's identity on this platform; stop it with Exit in the hive, Ctrl+C, or POST /api/exit (%s from %s) on port %u\n",
+            HUSH_AUTH_HEADER, token[0] != '\0' ? token : "~/.hush/session.token", (unsigned)port);
 }
 #endif
 
@@ -669,28 +678,33 @@ static int hush_stat_starttime(const char *body, unsigned long long *out_start)
     return 1;
 }
 
-static int hush_starttime_matches(pid_t pid, unsigned long long expect)
+static int hush_pid_starttime(unsigned long long *out_start, pid_t pid)
 {
     char body[HUSH_PROC_STAT_MAX];
+
+    assert(out_start != NULL);
+    assert(pid > HUSH_PID_RESERVED_MAX);
+    if (hush_proc_read(body, sizeof(body), pid, HUSH_PROC_STAT_LEAF) <= 0)
+        return 0;
+    return hush_stat_starttime(body, out_start);
+}
+
+static int hush_starttime_matches(pid_t pid, unsigned long long expect)
+{
     unsigned long long actual = 0;
 
     assert(pid > HUSH_PID_RESERVED_MAX);
     assert(expect != 0);
-    if (hush_proc_read(body, sizeof(body), pid, "stat") <= 0)
-        return 0;
-    if (!hush_stat_starttime(body, &actual))
+    if (!hush_pid_starttime(&actual, pid))
         return 0;
     return actual == expect;
 }
 
 static unsigned long long hush_own_starttime(void)
 {
-    char body[HUSH_PROC_STAT_MAX];
     unsigned long long start = 0;
 
-    if (hush_proc_read(body, sizeof(body), getpid(), "stat") <= 0)
-        return 0;
-    if (!hush_stat_starttime(body, &start))
+    if (!hush_pid_starttime(&start, getpid()))
         return 0;
     return start;
 }
@@ -2207,7 +2221,7 @@ static int hush_pid_is_zombie(pid_t pid)
     const char *paren = NULL;
 
     assert(pid > 0);
-    if (hush_proc_read(body, sizeof(body), pid, "stat") <= 0)
+    if (hush_proc_read(body, sizeof(body), pid, HUSH_PROC_STAT_LEAF) <= 0)
         return 0;
     paren = strrchr(body, ')');
     if (paren == NULL || paren[HUSH_PROC_STAT_SEP_OFF] != ' ' ||
