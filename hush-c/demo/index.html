@@ -870,6 +870,38 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
 }
 .skill-life[data-lifetime="always"] { border-color: #d4a017; color: #ffd75e; }
 .skill-life[data-lifetime="oncall"] { border-color: #0ff; color: #8fd3ff; }
+/* PE-4 favorites: named loadout shortcuts, saved per robot on the relay. */
+#fav-strip { margin: 12px 0; min-width: 0; }
+#fav-strip .lbl { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.fav-row { align-items: center; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+#fav-name {
+  flex: 1 1 100%; min-width: 0; min-height: 36px; padding: 4px 8px;
+  border: 1px solid var(--line);
+  background: var(--surface); color: var(--fg); border-radius: 6px;
+  font: 500 0.85rem var(--sans);
+}
+.fav-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; min-width: 0; }
+.fav-item {
+  display: flex; align-items: center; gap: 8px; border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 8px; background: var(--surface);
+  min-width: 0; overflow: hidden;
+}
+.fav-item.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+.fav-item .nm {
+  flex: 1 1 auto; min-width: 0;
+  font: 600 0.8rem var(--sans);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fav-item .nm:focus-visible {
+  white-space: normal; overflow: visible;
+  outline: 2px solid var(--fg); outline-offset: 2px;
+}
+.fav-item .ct { font: 500 0.7rem var(--mono); color: var(--muted); flex-shrink: 0; }
+.fav-item .inv-btn { flex: 0 0 auto; width: auto; padding: 6px 10px; }
+.fav-item .tag {
+  font: 700 0.6rem var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
+  border: 1px solid var(--accent); border-radius: 8px; padding: 0 6px; color: var(--accent);
+}
 #profile-loadout {
   margin: 8px 0; border: 1px solid var(--line); border-radius: 8px;
   padding: 8px 10px; background: var(--surface-2);
@@ -1989,6 +2021,16 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
           <button class="inv-btn" id="skill-forge-open" type="button">Create a skill</button>
           <button class="inv-btn" id="skill-enlarge" type="button" title="Open a spacious skill sheet">Enlarge skills</button>
         </div>
+        <div id="fav-strip">
+          <div class="lbl">Favorite loadouts · saved on this relay</div>
+          <p class="help" id="fav-note">Name the current doll to reuse it later. Saved per robot under robots/&lt;slug&gt;/loadouts/. Load swaps the whole doll at once; unload only clears the highlight. Names use letters, digits, spaces, - or _ (max 47), up to 32 per robot.</p>
+          <div class="pill-row fav-row">
+            <input id="fav-name" type="text" maxlength="48" placeholder="Favorite name">
+            <button class="inv-btn" id="fav-save" type="button">Save favorite</button>
+            <button class="inv-btn" id="fav-unload" type="button">Unload</button>
+          </div>
+          <div id="fav-list" class="fav-list" aria-label="Favorite loadouts"></div>
+        </div>
       </div>
       <label class="passbox"><input id="agent-pass" type="checkbox" checked>
         Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
@@ -2449,6 +2491,12 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     let skillPending = null; /* {id, fromSlot, x, y} press that may become a drag */
     let skillSuppressClick = false;
     const SKILL_DRAG_PX = 6;
+    /* PE-4 favorites: relay-saved named doll snapshots per robot
+       (robots/<slug>/loadouts/); activeFavorite is the drawer highlight
+       only — unload clears it, never the doll. */
+    let favList = [];
+    let activeFavorite = "";
+    let favLoadError = false;
     let ackClock = {};
     let manageTopics = [];
     let draftPicture = "";
@@ -3555,6 +3603,9 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       draftFiles = [];
       draftFileSel = -1;
       editSlug = "";
+      favList = [];
+      activeFavorite = "";
+      paintFavorites();
       payneOrder = [];
       editingPayne = false;
       if ($("agent-name")) $("agent-name").value = "";
@@ -4107,10 +4158,14 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       equippedSkills = (bot && bot.skills) ? bot.skills.slice() : [];
       skillCycleIdx = 0;
       cancelSkillHold(false);
+      activeFavorite = "";
+      favList = [];
+      paintFavorites();
       if ($("agent-clone"))
         $("agent-clone").disabled = !(bot && bot.slug && bot.slug !== PAYNE_SLUG);
       paintVoiceRow(bot && bot.voice);
       loadSkillCatalog(bot && bot.slug);
+      refreshFavorites();
       {
         const parsed = parsePicId(draftPicture);
         if (parsed && parsed.sheet !== "atlas") picSheet = parsed.sheet;
@@ -7066,6 +7121,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       const reason = loadoutRefuseReason(equippedSkills, skill);
       if (reason) { skillNotice(reason); return; }
       equippedSkills.push(skill.id);
+      clearActiveFavorite();
       skillNotice("Skill assigned. Save the robot to apply the change.");
       paintSkillBoard(editSlug);
     }
@@ -7076,6 +7132,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         return;
       }
       equippedSkills.splice(slot, 1);
+      clearActiveFavorite();
       skillNotice("Skill removed. Save the robot to apply the change.");
       paintSkillBoard(editSlug);
     }
@@ -7138,6 +7195,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
           return;
         }
         equippedSkills.push(skill.id);
+        clearActiveFavorite();
         settleSkillHold("Worn. Save the robot to keep the loadout.");
       };
       if (picEl) { place(); return; }
@@ -7253,6 +7311,175 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       chip.addEventListener("pointerdown", (ev) => { ev.stopPropagation(); });
       wrap.appendChild(chip);
       return wrap;
+    }
+
+    /* PE-4 favorites (Journey D): Save refuses an empty name or a 0-skill
+       doll; Load replaces the doll atomically (never through empty);
+       Unload clears the active highlight only; Delete removes the list
+       entry only. The doll always keeps min-1 (PE-3). */
+    const FAV_NAME_MAX = 47; /* max favorite name chars; matches the relay HUSH_FAVORITE_NAME_MAX - 1 */
+    const FAV_COUNT_MAX = 32; /* max favorites per robot; matches the relay HUSH_FAVORITE_COUNT_MAX */
+    const FAV_NAME_RULE = "Use letters, digits, spaces, - or _ (max 47).";
+    function favKnown(id) {
+      return skillCatalog.some((s) => s.id === id);
+    }
+    /* Mirrors the relay slug rule (lowercase alnum, separators to one
+       dash) so the drawer can warn about name clashes before POSTing. */
+    function favSlug(name) {
+      let out = "";
+      let dash = false;
+      const s = String(name || "").toLowerCase();
+      for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if ((c >= "a" && c <= "z") || (c >= "0" && c <= "9")) {
+          out += c;
+          dash = false;
+        } else if ((c === " " || c === "-" || c === "_") && out && !dash) {
+          out += "-";
+          dash = true;
+        }
+      }
+      return out.replace(/-+$/, "");
+    }
+    /* Identical to the relay name rule (hush_favorite_is_name):
+       allowlist only, so a refused name never POSTs and never logs a
+       console 400. The relay stays the authority; this saves a trip. */
+    function favNameError(raw) {
+      const name = String(raw || "").trim();
+      if (!name) return "Name the favorite before saving. " + FAV_NAME_RULE;
+      if (name.length > FAV_NAME_MAX)
+        return "That name is " + name.length + " characters. " + FAV_NAME_RULE;
+      if (!/^[A-Za-z0-9 _-]+$/.test(name)) return FAV_NAME_RULE;
+      if (favSlug(name) === "")
+        return "That name has no letters or numbers to save under. " + FAV_NAME_RULE;
+      return "";
+    }
+    function clearActiveFavorite() {
+      if (!activeFavorite) return;
+      activeFavorite = "";
+      paintFavorites();
+    }
+    function paintFavorites() {
+      const box = $("fav-list");
+      if (!box) return;
+      box.innerHTML = "";
+      if (!editSlug) {
+        box.innerHTML = "<p class='help'>Raise the robot before saving favorites.</p>";
+        return;
+      }
+      if (favLoadError) {
+        box.innerHTML = "<p class='help'>Could not read favorites on this relay.</p>";
+        return;
+      }
+      if (!favList.length) {
+        box.innerHTML = "<p class='help'>No favorites yet. Name this doll above to save one.</p>";
+        return;
+      }
+      favList.forEach((fav) => {
+        const row = document.createElement("div");
+        row.className = "fav-item" + (activeFavorite === fav.name ? " active" : "");
+        const nm = document.createElement("span");
+        nm.className = "nm";
+        nm.textContent = fav.name;
+        nm.title = fav.name;
+        nm.tabIndex = 0;
+        row.appendChild(nm);
+        const ct = document.createElement("span");
+        ct.className = "ct";
+        ct.textContent = (fav.skills || []).length + " skills";
+        row.appendChild(ct);
+        if (activeFavorite === fav.name) {
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = "Active";
+          row.appendChild(tag);
+        }
+        const load = document.createElement("button");
+        load.type = "button";
+        load.className = "inv-btn";
+        load.textContent = "Load";
+        load.setAttribute("aria-label", "Load favorite " + fav.name);
+        load.addEventListener("click", () => applyFavoriteLoad(fav));
+        row.appendChild(load);
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "inv-btn";
+        del.textContent = "Delete";
+        del.setAttribute("aria-label", "Delete favorite " + fav.name);
+        del.addEventListener("click", () => deleteFavorite(fav.name));
+        row.appendChild(del);
+        box.appendChild(row);
+      });
+    }
+    async function refreshFavorites() {
+      favList = [];
+      favLoadError = false;
+      if (!editSlug) { paintFavorites(); return; }
+      try {
+        const data = await api("/api/loadout", { action: "list", robot: editSlug });
+        favList = (data && data.favorites) ? data.favorites : [];
+      } catch (e) {
+        favList = [];
+        favLoadError = true;
+      }
+      if (activeFavorite && !favList.some((f) => f.name === activeFavorite))
+        activeFavorite = "";
+      paintFavorites();
+    }
+    async function saveFavorite() {
+      if (!editSlug) { skillNotice("Raise the robot before saving favorites."); return; }
+      const raw = ($("fav-name") && $("fav-name").value || "");
+      const name = raw.trim();
+      const why = favNameError(raw);
+      if (why) { skillNotice(why); return; }
+      if (!equippedSkills.length) { skillNotice("Keep at least one skill equipped."); return; }
+      if (equippedSkills.length > SKILL_SLOTS) { skillNotice("Favorites hold 1–8 skills."); return; }
+      const clash = favList.some((f) => f.name !== name && favSlug(f.name) === favSlug(name));
+      if (clash) { skillNotice("That name clashes with a saved favorite. Rename it, or delete the old one first."); return; }
+      if (favList.length >= FAV_COUNT_MAX && !favList.some((f) => f.name === name)) {
+        skillNotice("This robot already has 32 favorites. Delete one to save another.");
+        return;
+      }
+      const body = { action: "save", robot: editSlug, name: name };
+      equippedSkills.forEach((id, i) => { body["skill_" + i] = id; });
+      try {
+        await api("/api/loadout", body);
+        activeFavorite = name;
+        if ($("fav-name")) $("fav-name").value = "";
+        skillNotice("Favorite saved on this relay. Save the robot to keep the loadout.");
+        await refreshFavorites();
+      } catch (e) {
+        skillNotice("Could not save that favorite.");
+      }
+    }
+    function applyFavoriteLoad(fav) {
+      const ids = (fav && fav.skills) ? fav.skills.slice() : [];
+      const valid = ids.filter((id) => favKnown(id));
+      if (!valid.length) { skillNotice("That favorite has no skills on this relay."); return; }
+      equippedSkills = valid.slice();
+      activeFavorite = fav.name;
+      paintSkillBoard(editSlug);
+      paintFavorites();
+      if (valid.length < ids.length)
+        skillNotice("Favorite loaded with missing skills skipped. Save the robot to keep the loadout.");
+      else
+        skillNotice("Favorite loaded. Save the robot to keep the loadout.");
+    }
+    function unloadFavorite() {
+      activeFavorite = "";
+      paintFavorites();
+      skillNotice("Favorite unloaded. The doll keeps its skills.");
+    }
+    async function deleteFavorite(name) {
+      if (!editSlug || !name) return;
+      try {
+        await api("/api/loadout", { action: "delete", robot: editSlug, name: name });
+        if (activeFavorite === name) activeFavorite = "";
+        skillNotice("Favorite deleted. The doll keeps its skills.");
+        await refreshFavorites();
+      } catch (e) {
+        skillNotice("Could not delete that favorite.");
+      }
     }
 
     function toggleRobotInventory() {
@@ -7660,6 +7887,8 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       $("forge-drawer").classList.add("show");
     });
     if ($("skill-enlarge")) $("skill-enlarge").addEventListener("click", openSkillSheet);
+    if ($("fav-save")) $("fav-save").addEventListener("click", saveFavorite);
+    if ($("fav-unload")) $("fav-unload").addEventListener("click", unloadFavorite);
     if ($("skill-cycle-prev")) $("skill-cycle-prev").addEventListener("click", () => {
       skillCycleIdx--;
       paintSkillCycle(editSlug);
@@ -7693,6 +7922,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         });
         if (data && data.id && equippedSkills.indexOf(data.id) < 0)
           equippedSkills.push(data.id);
+        clearActiveFavorite();
         closeForge();
         await loadSkillCatalog(editSlug);
       } catch (e) {

@@ -317,6 +317,53 @@ relay state until their loadout is edited. Doll/sheet stay
 draft-until-Save; the Character strip still reports relay-saved counts.
 PE-4 favorites save/load stay out of scope — no `loadouts/` writes,
 no favorite picker.
+Delta 2026-09-24 (PE-4 favorite loadouts — Journey D, relay-saved): the
+`#agent-drawer` gains a Favorites strip under the doll. Save snapshots
+the current doll (≥1 skill) under a typed name and refuses an empty
+name or a 0-skill doll; Load swaps the whole doll in one assignment
+(never through empty) and refuses a favorite with zero skills still on
+this relay, skipping missing ids with inline copy; Unload clears the
+active highlight only, never the doll; Delete removes the list entry
+only, never the doll. Persistence is relay-side: per-robot named JSON
+sets (`{"name":..,"skills":[..]}`, 1–8 ids each) under
+`$HOME/.hush/robots/<slug>/loadouts/`, served by `POST /api/loadout`
+(`save` / `list` / `load` / `delete`); unknown or `robot:<other>:` ids
+are refused at save. Favorites survive leave→return; the active
+highlight does not. PE-3 min-1 still holds everywhere (last-gem lift,
+empty-draft save, empty loadout write, empty favorite). Lifetime
+labels stay browser-only per the honesty polish; favorites are the
+only new relay-saved skill state, and the strip says so inline.
+Load and delete resolve any alias of the stored name; load reports
+the stored name while delete replies ok.
+Hardening (same PE-4 scope): robot slugs and favorite names are
+allowlist-validated at every entry — `../` and separators never leave
+`robots/<slug>/loadouts/`; load/delete/list create no directories;
+saves overwrite only the exact same display name (a slug clash with a
+different name is refused with inline copy); at most 32 favorites per
+robot (the 33rd save is refused, so the list never drops entries); a
+`skill_8` overflow, overlong name/robot/skill values, repeated skill
+ids, and non-allowlist names are refused instead of
+truncated or skipped.
+Hardening round 2 (same scope): unreadable loadouts trees report IO
+instead of an empty list (missing trees still list empty, creating
+nothing); saves are refused when the 32-cap aggregate could not fit
+the list envelope on either path, so no accepted favorite is ever
+unlistable (proven by full caps of maximum-length names and long ids
+listing completely); load and delete resolve any alias of the stored
+name, load reports the stored name, and delete replies ok; save/delete
+replies carry no echoed request text; refused saves
+create no directories.
+Ops visual hardening (same scope): the name input is full-width and
+legible; row names ellipsize with the full name on hover (title) and
+on keyboard focus (focus-visible expansion plus outline), and nothing
+overflows the drawer edge at desktop or phone widths. Refusals name
+the exact rule: names allow letters, digits, spaces, - or _ (max 47);
+skills 1–8; at most 32 favorites; no slug collisions. The drawer
+validates names against the identical allowlist before POSTing, so a
+refused save sends no request and logs no console error; the relay
+stays the authority and refuses anything else with 400.
+Preserved: M11 dial, M9 folder tabs + zero tool rail, M8 overlay, M7
+chrome-hard / field-office.
 Delta 2026-09-22 (WS6 loadout-doll pass): `#skill-cycle` lives in
 `#agent-drawer` only (no hive-nav cycle); the doll is 8 sockets around
 the portrait center (9 cells = `HUSH_SKILL_EQUIP_MAX` 8 + portrait);
@@ -1128,7 +1175,7 @@ when policy flips; new considers honor the new leash.
   System (application-wide: shipped `system/` + hive-forged `user/`) and
   This robot (`robots/<slug>/`). Catalog JSON `"scopes":["system","robot"]`.
 - Favorites v1: `$HOME/.hush/robots/<slug>/loadouts/` named JSON sets,
-  1–8 skills each (PE-1 2026-09-23; spec only).
+  1–8 skills each (PE-4 2026-09-24; relay-saved via `POST /api/loadout`).
 - Avatar on disk: sniffed JPEG/PNG only; client downscales ≤96px.
 - Kind 0 `picture` is a URL, never a data URI (`HUSH_EVENT_MAX_CONTENT = 4096`).
 
