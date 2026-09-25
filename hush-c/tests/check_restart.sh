@@ -54,6 +54,7 @@ echo "$html" | grep -q 'did not survive the restart' || fail "UI must explain th
 echo "$html" | grep -q 'pass is not installed' || fail "backup must name the pass-missing reason"
 echo "$html" | grep -q 'Setup continues without saving' || fail "backup must say setup continues"
 echo "$html" | grep -q 'local hive mind' || fail "header must know its neutral default"
+echo "$html" | grep -q 'session.logged_in && session.vibe' || fail "header must gate the hive name on login"
 
 # --- B. restart honesty with the same HOME ---
 created=$(curl -sf -X POST "http://127.0.0.1:${port}/api/identity" \
