@@ -54,8 +54,9 @@ GUARD_PORT ?= $(HUSH_PORT)
 
 # Fail-loud when a live relay owns the guard port: never build over a
 # running hive. Stop it first (`hush-relay --quit <port>`). `make install`
-# and `make clean` no longer refuse: they stop relays via stop-relays /
-# clean-relays (scripts/kill-relay.sh) instead.
+# no longer uses this guard: it stops relays (stop-relays) instead of
+# refusing, and `make clean` also stops them (clean-relays); both run
+# scripts/kill-relay.sh.
 # Port-scoped with curl: only the guard port is probed ($HUSH_PORT, else
 # 10555); a relay on another port does not block. Without curl the guard
 # cannot probe: any running hush-relay blocks the build (exit 2), except a
@@ -64,12 +65,14 @@ GUARD_PORT ?= $(HUSH_PORT)
 guard:
 	@sh scripts/check-relay-port.sh $(GUARD_PORT)
 
-# Stop every live hush-relay* process of this uid before install replaces
-# files: renamed copies (hush-relay-m11-<sha>), replaced binaries
-# ("(deleted)") and any port, matched by executable basename, never by
-# exact name or port. SIGTERM, then SIGKILL after a few seconds; fails
-# (nonzero) if a relay survives. DESTDIR staging installs (deb/rpm/flatpak
-# builds) replace nothing live, so they skip the stop. See #221.
+# Stop every live hush-relay* process of this uid (under sudo: also
+# SUDO_UID's) before install replaces files: renamed copies
+# (hush-relay-m11-<sha>), replaced binaries ("(deleted)") and any port,
+# matched by executable basename, never by exact name or port. SIGTERM,
+# then SIGKILL after a few seconds; fails (nonzero) if a relay survives or
+# if make itself runs under a hush-relay. DESTDIR staging installs
+# (deb/rpm/flatpak builds) replace nothing live, so they skip the stop.
+# See #221.
 stop-relays:
 	@if [ -n "$(DESTDIR)" ]; then \
 		echo "stop-relays: DESTDIR staging install; running relays left alone."; \
@@ -77,11 +80,17 @@ stop-relays:
 		sh scripts/kill-relay.sh stop; \
 	fi
 
-# make clean's pre-step: the same stop, then close Hush app windows, then
-# remove stale renamed hush-relay-* copies from BINDIR (regular files this
-# uid owns only; symlinks are never followed). ~/.hush is never touched.
+# make clean's pre-step: the same stop, then close Hush app windows
+# (--class=hush-relay* in the browser's own cmdline), then remove stale
+# renamed hush-relay-* copies from BINDIR (regular files this uid owns
+# only; symlinks are never followed). ~/.hush is never touched. Skipped
+# for DESTDIR staging trees, like stop-relays.
 clean-relays: check-prefix
-	@sh scripts/kill-relay.sh clean "$(DESTDIR)$(BINDIR)"
+	@if [ -n "$(DESTDIR)" ]; then \
+		echo "clean-relays: DESTDIR staging tree; running relays, windows and BINDIR copies left alone."; \
+	else \
+		sh scripts/kill-relay.sh clean "$(BINDIR)"; \
+	fi
 
 # An empty PREFIX would resolve BINDIR to /bin and let install/uninstall
 # scribble outside any prefix; an empty BINDIR would resolve install targets

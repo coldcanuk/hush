@@ -208,29 +208,36 @@ wait "$n1_pid" 2>/dev/null || true
 n1_pid=""
 
 # --- kill-relay.sh reaps the CHILD turnserver named by the state pidfile ---
-# comm must read "turnserver", so run a copy of sleep under that basename.
-cp "$(command -v sleep)" "$test_home/turnserver"
-"$test_home/turnserver" 60 >/dev/null 2>&1 < /dev/null &
-child_pid=$!
-kill -0 "$child_pid" 2>/dev/null || fail "child fixture did not start"
-printf '%s\n' "$child_pid" >"$HUSH_STATE_DIR/turnserver.pid"
+# kill-relay.sh also stops every hush-relay* of this uid (#221), so on a
+# developer desktop it would stop the real hive: opt-in outside CI.
+if [ "${CI:-}" = "true" ] || [ "${HUSH_TEST_STOP_RELAYS:-}" = "1" ]; then
+    # comm must read "turnserver", so run a copy of sleep under that basename.
+    cp "$(command -v sleep)" "$test_home/turnserver"
+    "$test_home/turnserver" 60 >/dev/null 2>&1 < /dev/null &
+    child_pid=$!
+    kill -0 "$child_pid" 2>/dev/null || fail "child fixture did not start"
+    printf '%s\n' "$child_pid" >"$HUSH_STATE_DIR/turnserver.pid"
 
-# A fake daemon turnserver outside the state dir must survive.
-sleep 60 >/dev/null 2>&1 < /dev/null &
-daemon_pid=$!
-daemon_dir="$test_home/daemon-run"
-mkdir -p "$daemon_dir"
-printf '%s\n' "$daemon_pid" >"$daemon_dir/turnserver.pid"
+    # A fake daemon turnserver outside the state dir must survive.
+    sleep 60 >/dev/null 2>&1 < /dev/null &
+    daemon_pid=$!
+    daemon_dir="$test_home/daemon-run"
+    mkdir -p "$daemon_dir"
+    printf '%s\n' "$daemon_pid" >"$daemon_dir/turnserver.pid"
 
-sh "$killsh" || fail "kill script exited non-zero"
-if kill -0 "$child_pid" 2>/dev/null; then
-    fail "kill script left the CHILD turnserver running"
+    sh "$killsh" || fail "kill script exited non-zero"
+    if kill -0 "$child_pid" 2>/dev/null; then
+        fail "kill script left the CHILD turnserver running"
+    fi
+    child_pid=""
+    kill -0 "$daemon_pid" 2>/dev/null \
+        || fail "kill script stopped a non-CHILD (daemon-stand-in) process"
+    test "$(cat "$daemon_dir/turnserver.pid")" = "$daemon_pid" \
+        || fail "kill script touched a non-CHILD pidfile"
+    daemon_note="CHILD reaped, daemon stand-in survived"
+else
+    echo "skip: kill-relay CHILD-reap check (it stops every hush-relay* of this uid; set HUSH_TEST_STOP_RELAYS=1 or CI=true to run)"
+    daemon_note="CHILD reap skipped"
 fi
-child_pid=""
-kill -0 "$daemon_pid" 2>/dev/null \
-    || fail "kill script stopped a non-CHILD (daemon-stand-in) process"
-test "$(cat "$daemon_dir/turnserver.pid")" = "$daemon_pid" \
-    || fail "kill script touched a non-CHILD pidfile"
-daemon_note="daemon stand-in survived"
 
-echo "make guard ok (guard trips + passes; CHILD reaped, $daemon_note)"
+echo "make guard ok (guard trips + passes; $daemon_note)"
