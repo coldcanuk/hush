@@ -5,8 +5,8 @@
 # and the quit command. Passes (exit 0) when no relay owns the port: with
 # curl, a free port passes even if a relay runs on another port; without
 # curl, any running hush-relay fails the guard (exit 2) instead of guessing.
-# Never kills anything; `make install` / `make clean` stop relays via
-# scripts/kill-relay.sh instead of refusing (#221).
+# Never kills anything. `make install` stops relays instead of refusing,
+# and `make clean` also stops them, both via scripts/kill-relay.sh (#221).
 #
 # Port: $1, else $HUSH_PORT, else 10555 (HUSH_DEFAULT_PORT in
 # hush-c/include/hush_relay.h). Usage: sh scripts/check-relay-port.sh [port]
