@@ -341,7 +341,8 @@ static hush_status_t hush_write_pidfile(uint16_t port);
  * cannot be created or secured. */
 static hush_status_t hush_pidfile_dir_ensure(uint16_t port);
 /* Writes pid, start time, and port into the recorded pidfile with
- * symlink-proof creation. Fails IO on any open/write/close failure. */
+ * symlink-proof creation. Fails IO if the body does not fit or on any
+ * open/write/close failure. */
 static hush_status_t hush_pidfile_write_body(uint16_t port);
 /* Writes exactly len bytes, retrying EINTR. Returns 0 on short write/error. */
 static int hush_write_pid_bytes(int fd, const char *body, size_t len);
@@ -617,7 +618,7 @@ static hush_status_t hush_quit_verify_owner(uint16_t port, pid_t pid,
 #else
     /* No /proc identity off Linux: never verified, so --quit always refuses
      * rather than risk signalling a reused pid. Stop those relays with
-     * POST /api/exit or kill(1). */
+     * POST /api/exit. */
     (void)start;
     (void)fileport;
     (void)port;

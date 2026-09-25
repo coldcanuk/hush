@@ -107,8 +107,14 @@ done
 no_curl_path="$stub_bin"
 
 # --- P1a: no relay + no curl still passes (exit 0) ---
+# Self-contained: skip when a hush-relay is already running anywhere, which
+# would trip the guard (exit 2) for reasons unrelated to this case.
+if ps -axo comm= 2>/dev/null | grep -qx 'hush-relay'; then
+    echo "skip: no-relay guard test needs no hush-relay running"
+else
 PATH="$no_curl_path" HUSH_PORT="$port" sh "$guard" \
     || fail "guard failed with no relay and no curl"
+fi
 
 # --- guard trips with a live --no-open relay: quit command + pid ---
 "$bin" --no-open "$port" >"$log" 2>&1 &
@@ -133,7 +139,7 @@ HUSH_PORT="$port" sh "$guard" || fail "guard still trips after --quit"
 
 # --- P2a: pidfile path needs no curl (live relay names its pid) ---
 # Without curl the ps+probe fallback is unreachable, so only the pidfile
-# read (guard line 74) can name the owner. Reverting that read to
+# read (guard line 72) can name the owner. Reverting that read to
 # `read -r owner` makes this fail: the 3-field line is not a bare pid,
 # the fallback exits 2 without curl, and the pid is never named.
 "$bin" --no-open "$port" >"$log" 2>&1 &
