@@ -164,8 +164,10 @@ wait_down() {
 # unused-function relaxed for the pre-existing Linux-only sweep helpers).
 grep -q "cannot verify the relay's identity on this platform" src/hush_relay.c \
     || fail "non-Linux refusal text missing"
-grep -q "POST /api/exit (X-Hush-Token from" src/hush_relay.c \
+grep -q "POST /api/exit (%s from %s)" src/hush_relay.c \
     || fail "non-Linux refusal must name POST /api/exit"
+grep -q "HUSH_AUTH_HEADER, token" src/hush_relay.c \
+    || fail "non-Linux refusal must use HUSH_AUTH_HEADER"
 if command -v gcc >/dev/null 2>&1; then
     gcc -std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Wno-unused-function \
         -Iinclude -O2 -DHUSH_STUN_TURN=1 -DHUSH_HAVE_X11=1 -U__linux__ \
@@ -229,7 +231,7 @@ pid=""
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
 wait_up || fail "second start failed"
-"$bin" --quit "$port" >"$test_home/quit.out" 2>"$quit_err" \
+"$bin" --quit "$port" >"$test_home/quit.out" 2>/dev/null \
     || fail "--quit must exit 0 when it stops the relay"
 test "$(cat "$test_home/quit.out")" = "hush-relay: stopped relay on port $port (pid $pid)" \
     || fail "quit printed '$(cat "$test_home/quit.out")' instead of the one stopped line"
