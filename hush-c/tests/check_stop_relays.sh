@@ -5,12 +5,20 @@
 # BINDIR, and never touch non-Hush processes, other users, or ~/.hush.
 #
 # Drives the real top-level Makefile targets (stop-relays, install with a
-# temp PREFIX, clean-relays with a temp PREFIX/BINDIR) against real relay
-# copies on random ports with an isolated HOME / XDG_RUNTIME_DIR /
-# HUSH_HOME, plus decoys (copied sleep, argv[0] spoof, a script named
-# hush-relay-*, another uid's process) and fake browsers (copied sh named
-# brave / bwrap). Linux only (/proc); skips elsewhere. Never runs a real
-# browser and never uses the operator's hive, state, or prefix.
+# temp PREFIX, clean-relays with a temp PREFIX/BINDIR) and kill-relay.sh
+# (under a relay stand-in; under sudo) against relay copies on random
+# ports, plus decoys (copied sleep, argv[0] spoof, a script named
+# hush-relay-*, uid nobody's processes) and fake browsers (copied sh
+# named brave / bwrap). Never runs a real browser.
+#
+# Isolation: every relay started here gets a tmp HOME, XDG_RUNTIME_DIR,
+# XDG_CONFIG_HOME, XDG_STATE_HOME, HUSH_HOME and HUSH_CONFIG_DIR, and
+# install/clean use a tmp PREFIX/BINDIR. NOT isolated: the stop is
+# uid-wide by design, so the signal/window phases would also stop the
+# developer's own relays and Hush windows. Those phases run only with
+# CI=true or HUSH_TEST_STOP_RELAYS=1; otherwise only the static checks
+# run and a skip: line says so. The sudo phase also needs passwordless
+# sudo and user nobody. Linux only (/proc); skips elsewhere.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -38,18 +46,34 @@ if echo "$code" | grep -Eq '(^|[^a-z_])(pkill|pgrep|killall)([^a-z_]|$)'; then
 fi
 # shellcheck disable=SC2016 # literal $1: the script's own readlink line.
 echo "$code" | grep -q 'readlink "/proc/\$1/exe"' || fail "kill script does not match by /proc exe"
+grep -q 'clean-relays: DESTDIR staging tree' "$topmk" || fail "top 'clean-relays' has no DESTDIR skip"
+grep -q 'stop-relays: DESTDIR staging install' "$topmk" || fail "top 'stop-relays' has no DESTDIR skip"
 
 if ! readlink /proc/self/exe >/dev/null 2>&1; then
     echo "skip: check_stop_relays needs Linux /proc"
     exit 0
 fi
+# The phases below send real signals to every hush-relay* of this uid and
+# close its Hush windows: opt-in outside CI.
+if [ "${CI:-}" = "true" ] || [ "${HUSH_TEST_STOP_RELAYS:-}" = "1" ]; then
+    echo "stop-relays: signal/window phases enabled (CI=${CI:-unset}, HUSH_TEST_STOP_RELAYS=${HUSH_TEST_STOP_RELAYS:-unset})"
+else
+    echo "skip: check_stop_relays signal/window phases (they stop every hush-relay* and Hush window of this uid; set HUSH_TEST_STOP_RELAYS=1 or CI=true to run)"
+    echo "stop-relays check ok (static checks only)"
+    exit 0
+fi
 command -v curl >/dev/null 2>&1 || fail "curl is required to wait for the relay"
 
-# --- hermetic harness ---
+# --- harness (tmp dirs; see Isolation above) ---
 tmp=$(mktemp -d)
 foreign_dir=""
 foreign_pid=""
+foreign_pids=""
 spawned=""
+have_sudo=0
+if [ "$(id -u)" != "0" ] && sudo -n true 2>/dev/null && id nobody >/dev/null 2>&1; then
+    have_sudo=1
+fi
 export HOME="$tmp/home"
 export XDG_RUNTIME_DIR="$tmp/run"
 export XDG_CONFIG_HOME="$tmp/xdg-config"
@@ -68,12 +92,12 @@ cleanup() {
     for p in $spawned; do
         kill -KILL "$p" 2>/dev/null || true
     done
-    if [ -n "$foreign_pid" ]; then
-        sudo -n kill -KILL "$foreign_pid" 2>/dev/null || true
-    fi
+    for p in $foreign_pids; do
+        sudo -n kill -KILL "$p" 2>/dev/null || true
+    done
     rm -rf "$tmp"
     if [ -n "$foreign_dir" ]; then
-        rm -rf "$foreign_dir"
+        sudo -n rm -rf "$foreign_dir" 2>/dev/null || rm -rf "$foreign_dir"
     fi
 }
 trap cleanup EXIT
@@ -235,8 +259,10 @@ pid_script=$!
 track "$pid_script"
 wait_comm "$pid_script" hush-relay-scri || fail "fixture: script decoy comm is not hush-relay-scri"
 
-# Another uid's hush-relay-named process: never ours to signal.
-if sudo -n true 2>/dev/null && id nobody >/dev/null 2>&1; then
+# Another uid's hush-relay-named process (copied sleep): never ours to
+# signal. As a non-root caller kill(2) could not signal it anyway, so this
+# only proves the note line; the sudo phase proves the uid filter.
+if [ "$have_sudo" = 1 ]; then
     foreign_dir=$(mktemp -d)
     chmod 755 "$foreign_dir"
     cp "$sleep_bin" "$foreign_dir/hush-relay-foreign"
@@ -251,8 +277,9 @@ if sudo -n true 2>/dev/null && id nobody >/dev/null 2>&1; then
         [ -n "$foreign_pid" ] || sleep 0.05
     done
     [ -n "$foreign_pid" ] || fail "fixture: foreign-uid process did not start"
+    foreign_pids="$foreign_pids $foreign_pid"
 else
-    echo "skip: foreign-uid decoy needs passwordless sudo and user nobody"
+    echo "skip: foreign-uid decoy needs a non-root caller with passwordless sudo and user nobody"
 fi
 
 out1="$tmp/stop.out"
@@ -301,6 +328,43 @@ if [ -n "$foreign_pid" ]; then
     ok "uid nobody's hush-relay-foreign (pid $foreign_pid) untouched, reported as left running"
 fi
 
+# ============ phase 1b: refuse when an ancestor is a hush-relay ============
+# Stand-in relay: a copied sh named hush-relay-parent runs a middle shell,
+# which runs the stop script. The stand-in is the script's grandparent,
+# not its $PPID, so only the ancestor walk can protect it.
+cp "$sh_bin" "$tmp/bin/hush-relay-parent"
+cat >"$tmp/bin/mid.sh" <<'MID'
+#!/bin/sh
+sh "$1" stop
+exit "$?"
+MID
+out_anc="$tmp/anc.out"
+rcf_anc="$tmp/anc.rc"
+# shellcheck disable=SC2016 # positional args expand in the stand-in shell.
+"$tmp/bin/hush-relay-parent" -c 'sh "$1" "$2" >"$3" 2>&1; echo "$?" >"$4.tmp"; mv "$4.tmp" "$4"; while :; do sleep 1; done' \
+    hush-relay-parent "$tmp/bin/mid.sh" "$killsh" "$out_anc" "$rcf_anc" </dev/null >/dev/null 2>&1 &
+pid_p=$!
+track "$pid_p"
+i=0
+while [ "$i" -lt 200 ] && [ ! -f "$rcf_anc" ]; do
+    i=$((i + 1))
+    sleep 0.05
+done
+[ -f "$rcf_anc" ] || fail "stop script under a relay stand-in never finished (stand-in pid $pid_p killed?)"
+rc_anc=$(cat "$rcf_anc")
+echo "kill-relay.sh stop under hush-relay-parent pid $pid_p (exit $rc_anc):"
+show "$out_anc"
+[ "$rc_anc" = "1" ] || fail "stop under a hush-relay ancestor exited $rc_anc, want 1"
+grep -qF "refusing: ancestor pid $pid_p exe $tmp/bin/hush-relay-parent is a hush-relay" "$out_anc" \
+    || fail "no refuse message naming ancestor pid $pid_p and its path"
+is_alive "$pid_p" || fail "ancestor stand-in pid $pid_p was killed"
+if grep -qE 'found hush-relay pid|stopped pid|closing Hush app window' "$out_anc"; then
+    fail "stop under a hush-relay ancestor signalled something"
+fi
+ok "ancestor hush-relay-parent (pid $pid_p) refused with exit 1, named, survived; nothing signalled"
+kill -KILL "$pid_p" 2>/dev/null || true
+wait_gone "$pid_p" || fail "could not remove the ancestor stand-in"
+
 # ============ phase 2: make install PREFIX=<tmp> stops, then installs ======
 if [ "$(id -u)" = "0" ]; then
     echo "skip: make install end-to-end is not run as root (would write /etc, /lib)"
@@ -325,18 +389,90 @@ else
     assert_untouched "$pid_script" "script decoy hush-relay-script" "$out2"
 fi
 
+# ============ phase 2b: sudo stops root's + SUDO_UID's relays only =======
+# Runs kill-relay.sh as root via sudo with a renamed relay of this user
+# (SUDO_UID) and a renamed relay of uid nobody. Root can signal anyone, so
+# only the uid filter keeps nobody's relay alive here.
+port_e=""
+if [ "$(id -u)" = "0" ]; then
+    echo "skip: sudo phase (caller is already root; the SUDO_UID path needs a non-root caller)"
+elif [ "$have_sudo" != 1 ]; then
+    echo "skip: sudo phase needs passwordless sudo (sudo -n true) and user nobody; root/SUDO_UID and other-uid assertions did not run"
+else
+    myuid=$(id -u)
+    nobody_uid=$(id -u nobody)
+    copy_e="$tmp/bin/hush-relay-sudo-$r"
+    cp "$bin" "$copy_e"
+    port_e=$(free_port "10555 $port_a $port_b ${port_d:-}") || fail "no free port"
+    start_relay "$copy_e" "$port_e" e
+    pid_e=$started_pid
+
+    nb_bin="$foreign_dir/hush-relay-nb-$r"
+    nb="$foreign_dir/nb"
+    cp "$bin" "$nb_bin"
+    cp tests/fake-pass.sh "$foreign_dir/fake-pass.sh"
+    chmod 755 "$nb_bin" "$foreign_dir/fake-pass.sh"
+    sudo -n install -d -o nobody -m 700 "$nb" || fail "fixture: cannot create nobody's dir"
+    sudo -n -u nobody mkdir -p "$nb/home" "$nb/hush" "$nb/cfg" "$nb/run" \
+        "$nb/state" "$nb/xdg-config" "$nb/xdg-state" "$nb/pass" \
+        || fail "fixture: cannot create nobody's state dirs"
+    sudo -n -u nobody chmod 700 "$nb/run" || fail "fixture: cannot chmod nobody's runtime dir"
+    port_n=$(free_port "10555 $port_a $port_b ${port_d:-} $port_e") || fail "no free port"
+    # shellcheck disable=SC2024 # the caller-owned log is meant to be opened by the caller.
+    sudo -n -u nobody env HOME="$nb/home" XDG_RUNTIME_DIR="$nb/run" \
+        XDG_CONFIG_HOME="$nb/xdg-config" XDG_STATE_HOME="$nb/xdg-state" \
+        HUSH_HOME="$nb/hush" HUSH_CONFIG_DIR="$nb/cfg" HUSH_STATE_DIR="$nb/state" \
+        HUSH_PASS_HELPER="$foreign_dir/fake-pass.sh" HUSH_FAKE_PASS_DIR="$nb/pass" \
+        "$nb_bin" --no-open "$port_n" </dev/null >"$foreign_dir/nb.log" 2>&1 &
+    track "$!"
+    if ! wait_up "$port_n"; then
+        cat "$foreign_dir/nb.log" >&2
+        fail "fixture: uid nobody's relay did not listen on $port_n"
+    fi
+    nb_pid=$(ps -u nobody -o pid=,comm= 2>/dev/null \
+        | awk '$2 ~ /^hush-relay-nb/ {print $1; exit}')
+    [ -n "$nb_pid" ] || fail "fixture: uid nobody's relay pid not found"
+    foreign_pids="$foreign_pids $nb_pid"
+
+    out5="$tmp/sudo.out"
+    rc5=0
+    # shellcheck disable=SC2024 # output goes to the caller-owned tmp file on purpose.
+    sudo -n env HUSH_KILL_GRACE_S=2 sh "$killsh" stop >"$out5" 2>&1 || rc5=$?
+    echo "sudo -n sh scripts/kill-relay.sh stop (exit $rc5):"
+    show "$out5"
+    [ "$rc5" -eq 0 ] || fail "sudo kill-relay.sh stop exited $rc5"
+    grep -qF "running as root via sudo: stopping hush-relay* of uid 0 and SUDO_UID $myuid only" "$out5" \
+        || fail "sudo run did not announce the root + SUDO_UID scope"
+    wait_gone "$pid_e" || fail "sudo stop left the invoking user's relay pid $pid_e ($copy_e) running"
+    grep -qF "stopped pid $pid_e $copy_e (SIG" "$out5" \
+        || fail "sudo stop output does not name pid $pid_e and path $copy_e"
+    ok "sudo: SUDO_UID $myuid's relay $copy_e (pid $pid_e, port $port_e) stopped"
+    assert_untouched "$nb_pid" "uid nobody's relay" "$out5"
+    curl -sf "http://127.0.0.1:${port_n}/api/status" >/dev/null 2>&1 \
+        || fail "uid nobody's relay (pid $nb_pid) stopped answering on $port_n"
+    grep -qE "note: process $nb_pid \(comm hush-relay-nb-[0-9a-f]\) belongs to uid $nobody_uid, not 0 $myuid; left running" "$out5" \
+        || fail "uid nobody's relay pid $nb_pid was not reported by a note line"
+    ok "sudo: uid $nobody_uid's relay $nb_bin (pid $nb_pid, port $port_n) survived, still answers, reported by note"
+    if [ -n "$foreign_pid" ]; then
+        assert_untouched "$foreign_pid" "uid nobody's hush-relay-foreign" "$out5"
+    fi
+    assert_untouched "$pid_hushy" "decoy hushy-sleep" "$out5"
+    assert_untouched "$pid_script" "script decoy hush-relay-script" "$out5"
+fi
+
 # ============ phase 3: make clean-relays (the clean pre-step) ==============
 cbin="$tmp/cprefix/bin"
 mkdir -p "$cbin" "$tmp/keep"
 copy_c="$cbin/hush-relay-m11-c$r"
 cp "$bin" "$copy_c"
-port_c=$(free_port "10555 $port_a $port_b ${port_d:-}") || fail "no free port"
+port_c=$(free_port "10555 $port_a $port_b ${port_d:-} $port_e") || fail "no free port"
 start_relay "$copy_c" "$port_c" c
 pid_c=$started_pid
-port_x=$(free_port "10555 $port_a $port_b ${port_d:-} $port_c") || fail "no free port"
+port_x=$(free_port "10555 $port_a $port_b ${port_d:-} $port_e $port_c") || fail "no free port"
 
 # Fake browsers: copied sh named brave / bwrap carrying flags in their own
-# cmdline. Only --class=hush-relay* or the --app of a stopped relay closes.
+# cmdline. Only --class=hush-relay* closes; the --app of a stopped relay
+# alone is reported and left running.
 cp "$sh_bin" "$tmp/fb/brave"
 cp "$sh_bin" "$tmp/fb/bwrap"
 "$tmp/fb/brave" -c "$loop" brave --class=hush-relay-test </dev/null >/dev/null 2>&1 &
@@ -354,10 +490,15 @@ track "$pid_w4"
 "$sh_bin" -c "$loop" notabrowser --class=hush-relay-x </dev/null >/dev/null 2>&1 &
 pid_w5=$!
 track "$pid_w5"
+"$tmp/fb/bwrap" -c "$loop" bwrap --class=hush-relay-ops "--app=http://127.0.0.1:${port_c}/" </dev/null >/dev/null 2>&1 &
+pid_w6=$!
+track "$pid_w6"
 for w in "$pid_w1" "$pid_w3" "$pid_w4"; do
     wait_comm "$w" brave || fail "fixture: fake brave $w did not start"
 done
-wait_comm "$pid_w2" bwrap || fail "fixture: fake bwrap did not start"
+for w in "$pid_w2" "$pid_w6"; do
+    wait_comm "$w" bwrap || fail "fixture: fake bwrap $w did not start"
+done
 
 # BINDIR contents: what clean-relays may and may not remove.
 cp "$bin" "$cbin/hush-relay-old"                         # stale ELF copy: removed
@@ -394,10 +535,14 @@ wait_gone "$pid_w1" || fail "fake brave --class=hush-relay-test (pid $pid_w1) no
 grep -qF "closing Hush app window pid $pid_w1 (brave) --class=hush-relay-test" "$out3" \
     || fail "clean output does not name window pid $pid_w1"
 ok "fake brave --class=hush-relay-test (pid $pid_w1) closed"
-wait_gone "$pid_w2" || fail "fake bwrap --app=:$port_c (pid $pid_w2) not closed"
-grep -qF "closing Hush app window pid $pid_w2 (bwrap) --app=http://127.0.0.1:${port_c}/" "$out3" \
-    || fail "clean output does not name window pid $pid_w2"
-ok "fake bwrap --app=http://127.0.0.1:${port_c}/ (pid $pid_w2) closed"
+assert_untouched "$pid_w2" "fake bwrap with only --app of a stopped relay" "$out3"
+grep -qF "left running pid $pid_w2 (bwrap): --app=http://127.0.0.1:${port_c}/ of a stopped relay but no --class=hush-relay in its own cmdline; not signalled" "$out3" \
+    || fail "fake bwrap --app-only (pid $pid_w2) not reported as left running"
+ok "fake bwrap with only --app=http://127.0.0.1:${port_c}/ (pid $pid_w2) survived, reported left running"
+wait_gone "$pid_w6" || fail "fake bwrap --class=hush-relay-ops --app (pid $pid_w6) not closed"
+grep -qF "closing Hush app window pid $pid_w6 (bwrap) --class=hush-relay-ops --app=http://127.0.0.1:${port_c}/" "$out3" \
+    || fail "clean output does not name window pid $pid_w6 with both flags"
+ok "fake bwrap --class=hush-relay-ops --app=http://127.0.0.1:${port_c}/ (pid $pid_w6) closed"
 
 assert_untouched "$pid_w3" "fake brave --class=other" "$out3"
 grep -qF "left alone pid $pid_w3 (brave)" "$out3" \
@@ -414,7 +559,6 @@ grep -qF "removed stale copy $copy_c" "$out3" || fail "removal of $copy_c not pr
 grep -qF "removed stale copy $cbin/hush-relay-old" "$out3" || fail "removal of hush-relay-old not printed"
 ok "stale copies $copy_c and $cbin/hush-relay-old removed and printed"
 [ -L "$cbin/hush-relay-link" ] || fail "symlink hush-relay-link was removed"
-[ -f "$tmp/keep/hush-relay-target" ] || fail "symlink target was removed (followed)"
 [ -f "$cbin/hush-relay-stop" ] || fail "helper name hush-relay-stop was removed"
 [ -f "$cbin/hush-relay-notes.txt" ] || fail "non-ELF hush-relay-notes.txt was removed"
 [ -f "$cbin/hush-relay" ] || fail "clean-relays removed the installed hush-relay (uninstall's job)"
@@ -422,7 +566,7 @@ ok "stale copies $copy_c and $cbin/hush-relay-old removed and printed"
 if [ -n "$foreign_file" ]; then
     [ -f "$foreign_file" ] || fail "file owned by nobody was removed"
 fi
-ok "kept: symlink (target intact), hush-relay-stop, non-ELF, installed hush-relay, other-tool${foreign_file:+, nobody-owned copy}"
+ok "kept: symlink, hush-relay-stop, non-ELF, installed hush-relay, other-tool${foreign_file:+, nobody-owned copy}"
 [ "$(cat "$HOME/.hush/config/sentinel")" = "keep" ] || fail "HOME/.hush data touched"
 [ "$(cat "$tmp/hush-c/sentinel")" = "keep" ] || fail "HUSH_HOME data touched"
 ok "HOME/.hush and HUSH_HOME sentinels untouched"
