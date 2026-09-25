@@ -4,6 +4,7 @@
 
 #include <arpa/inet.h>
 #include <assert.h>
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -59,10 +60,47 @@ enum {
     HUSH_UI_PROFILE_ARG_MAX = HUSH_HOME_PATH_MAX + HUSH_UI_PROFILE_EXTRA_MAX,
     HUSH_PIDFILE_PATH_MAX = 256,
     HUSH_PIDFILE_BODY_MAX = 32,
-    HUSH_QUIT_WAIT_TRIES = 20,
-    HUSH_QUIT_WAIT_MS = 100,
+    HUSH_PIDFILE_DIR_MODE = 0700,
+    HUSH_PIDFILE_FILE_MODE = 0600,
+    /* Missing ancestors are created with this mode; existing entries are
+     * never chmodded. 0700 per the XDG Base Directory spec. */
+    HUSH_PIDFILE_PARENT_MODE = 0700,
+    /* Group/other permission bits forbidden on the pidfile dir itself. */
+    HUSH_PIDFILE_DIR_PUBLIC_MASK = 077,
+    /* Per-child stop cap for tracked children (SIGTERM, then SIGKILL). */
+    HUSH_CHILD_STOP_TRIES = 20,
+    HUSH_CHILD_STOP_MS = 100,
     HUSH_CHILD_MAX = 8,
+    /* --quit owner wait, computed from the worst-case relay cleanup above:
+     * every tracked child may take its full stop cap, plus a margin for
+     * the remaining shutdown. Pays out only when the relay is truly stuck. */
+    HUSH_QUIT_OWNER_MARGIN_TRIES = 40,
+    HUSH_QUIT_OWNER_TRIES =
+        HUSH_CHILD_MAX * HUSH_CHILD_STOP_TRIES + HUSH_QUIT_OWNER_MARGIN_TRIES,
+    HUSH_QUIT_OWNER_MS = 100,
+    /* Pids at or below this are never signalled (kernel-reserved). */
+    HUSH_PID_RESERVED_MAX = 1,
+    /* Decimal base for pidfile parsing. */
+    HUSH_PID_STR_BASE = 10,
+    /* Nanoseconds per millisecond for stop polling. */
+    HUSH_NS_PER_MS = 1000000,
+    /* wait_ms ceiling for stop polling: tv_nsec must stay below one second. */
+    HUSH_WAIT_MS_MAX = 1000,
+    /* Largest valid TCP port. */
+    HUSH_PORT_MAX = 65535,
+    /* EINTR retries before a pidfile write gives up. */
+    HUSH_WRITE_INTR_MAX = 8,
     HUSH_CHILD_CMDLINE_MAX = 512,
+    /* /proc stat buffer: comm plus all numeric fields. */
+    HUSH_PROC_STAT_MAX = 512,
+    /* Offset of the separator and state field past ')' in /proc stat. */
+    HUSH_PROC_STAT_SEP_OFF = 1,
+    HUSH_PROC_STAT_STATE_OFF = 2,
+    /* First numeric field past ')' (state) and the starttime field. */
+    HUSH_PROC_STAT_FIRST_FIELD = 3,
+    HUSH_PROC_STAT_STARTTIME_FIELD = 22,
+    /* Zombie state in /proc stat. */
+    HUSH_PROC_STATE_ZOMBIE = 'Z',
     HUSH_PROC_PATH_MAX = 64,
     HUSH_LEAVE_OUT_MAX = 256,
     HUSH_LEAVE_MISSING = 127,
@@ -92,6 +130,8 @@ enum {
 };
 
 #define HUSH_PIDFILE_NAME_FMT "relay-%u.pid"
+/* /proc leaf holding the stat body all pid-identity reads parse. */
+#define HUSH_PROC_STAT_LEAF   "stat"
 #define HUSH_LEAVE_BIN        "zenity"
 #define HUSH_LEAVE_TITLE      "Leave the hive?"
 #define HUSH_LEAVE_TEXT       "The window closed. The hive is still standing."
@@ -264,14 +304,114 @@ static void hush_relay_ws_close(struct client *c, unsigned int code);
 static void hush_fanout(const hush_event_t *ev);
 static void hush_shutdown_handler(int sig);
 static void hush_install_shutdown_handlers(void);
+/* Resolves the pidfile dir (absolute XDG_RUNTIME_DIR, else absolute HOME).
+ * Empty when neither is configured (no /tmp fallback, by design). */
 static void hush_pidfile_dir(char *out, size_t sz);
+/* Formats the pidfile path for port. Empty when unconfigured or truncated. */
 static void hush_pidfile_path(char *out, size_t sz, uint16_t port);
-static void hush_write_pidfile(uint16_t port);
+/* True for a non-empty absolute path. Relative XDG/HOME values are ignored. */
+static int hush_path_is_absolute(const char *p);
+/* True when path is an existing directory. Follows symlinks, so a HOME
+ * reached through a symlinked ancestor stays usable. */
+static int hush_path_is_dir_follow(const char *path);
+/* Parses one unsigned decimal field: the first char must be a digit, and
+ * errno must stay clear. Advances end past the digits; the caller checks
+ * what follows. Fails PARSE otherwise. */
+static hush_status_t hush_parse_uint_field(char **out_end,
+                                           unsigned long long *out_value,
+                                           const char *text);
+/* Parses a pidfile body: pid-only (legacy) or exactly pid start port;
+ * anything else is PARSE. Legacy fields read as zero. */
+static hush_status_t hush_parse_pid_line(const char *body, pid_t *out_pid,
+                                         unsigned long long *out_start,
+                                         uint16_t *out_fileport);
+/* True when dir is a usable pidfile dir: a real directory (lstat, never a
+ * symlink) owned by this user and closed to group and other. */
+static int hush_pidfile_dir_ok(const char *dir);
+/* Creates missing ancestors of dir. Fails ARG on an empty or too-long
+ * path, IO when a component is unusable. */
+static hush_status_t hush_pidfile_ensure_parents(const char *dir);
+/* Writes this process's pid for port. Fails ARG when unconfigured or the
+ * path is too long; IO when the dir cannot be created or secured, if the
+ * body does not fit, or on any open/write/close failure. The relay
+ * still starts; the caller warns. */
+static hush_status_t hush_write_pidfile(uint16_t port);
+/* Ensures the pidfile dir for port exists and is usable, recording its path.
+ * Fails ARG when unconfigured or the path is too long; IO when the dir
+ * cannot be created or secured. */
+static hush_status_t hush_pidfile_dir_ensure(uint16_t port);
+/* Writes pid, start time, and port into the recorded pidfile with
+ * symlink-proof creation. Fails IO if the body does not fit or on any
+ * open/write/close failure. */
+static hush_status_t hush_pidfile_write_body(uint16_t port);
+/* Writes exactly len bytes, retrying EINTR. Returns 0 on short write/error. */
 static int hush_write_pid_bytes(int fd, const char *body, size_t len);
+/* Removes the relay's own pidfile when one was recorded at startup. */
 static void hush_remove_pidfile(void);
-static hush_status_t hush_read_pidfile(uint16_t port, pid_t *out_pid);
+/* True when the pidfile for port still holds expect pid and start time. */
+static int hush_pidfile_holds(uint16_t port, pid_t expect_pid,
+                              unsigned long long expect_start);
+/* Removes the pidfile for port only when it still holds expect pid and
+ * start time: a successor relay's pidfile is never touched. */
+static void hush_unlink_pidfile(uint16_t port, pid_t expect_pid,
+                                unsigned long long expect_start);
+/* Reads the owner pid, start time, and port for port. Fields absent in
+ * legacy files read as zero. NOT_FOUND when no pidfile exists, PARSE when
+ * its content is not decimal fields, IO on other filesystem errors. */
+static hush_status_t hush_read_pidfile(pid_t *out_pid,
+                                       unsigned long long *out_start,
+                                       uint16_t *out_fileport, uint16_t port);
+/* True when pid names a live, non-zombie process. */
 static int hush_pid_is_alive(pid_t pid);
-static void hush_wait_pid_gone(pid_t pid);
+#ifdef __linux__
+/* Reads /proc/<pid>/<leaf> into out (NUL-terminated). Returns bytes read,
+ * 0 on any failure. Shared by the stat and cmdline readers. */
+static ssize_t hush_proc_read(char *out, size_t outsz, pid_t pid, const char *leaf);
+/* True when pid is a zombie (exited, awaiting reap). */
+static int hush_pid_is_zombie(pid_t pid);
+/* Parses the starttime field out of a /proc stat body. Returns 0 unless
+ * the field is present and decimal. */
+static int hush_stat_starttime(const char *body, unsigned long long *out_start);
+/* Reads pid's start time out of its /proc stat leaf. Returns 0 when the
+ * process is dead or unreadable. */
+static int hush_pid_starttime(unsigned long long *out_start, pid_t pid);
+/* True when pid's /proc starttime equals expect. False covers dead and
+ * unreadable processes, so reuse never verifies. */
+static int hush_starttime_matches(pid_t pid, unsigned long long expect);
+/* Own /proc starttime, 0 when unreadable (non-Linux always reads 0 and the
+ * pidfile falls back to pid-only, which --quit then refuses). */
+static unsigned long long hush_own_starttime(void);
+#else
+/* No /proc identity off Linux: self start time is always unknown. */
+static unsigned long long hush_own_starttime(void);
+#endif
+/* Checks pid may be signalled for a quit on port: positive, unreserved, not
+ * this process, live, and matching the recorded start time and port (Linux;
+ * off Linux any live pid is refused). OK, NOT_FOUND when already gone,
+ * DENIED otherwise. */
+static hush_status_t hush_quit_verify_owner(uint16_t port, pid_t pid,
+                                            unsigned long long start,
+                                            uint16_t fileport);
+/* SIGTERMs pid once, then polls liveness up to tries x wait_ms. Returns OK
+ * when pid is gone, IO when it survives. Never escalates to SIGKILL. */
+static hush_status_t hush_pid_stop_timed(pid_t pid, int tries, int wait_ms);
+/* Describes a non-OK quit outcome on stderr. Silent when st is OK. */
+static void hush_quit_report(uint16_t port, pid_t pid,
+                             unsigned long long start, hush_status_t st);
+/* Reports an IO failure: an unreadable pidfile (pid unknown) or a
+ * surviving owner. */
+static void hush_quit_report_io(uint16_t port, pid_t pid);
+/* Reports a DENIED quit on Linux: legacy pidfiles get the old-format
+ * message, other pids get the refusal. */
+static void hush_quit_report_denied(uint16_t port, pid_t pid,
+                                    unsigned long long start);
+#ifndef __linux__
+/* Resolves the session-token path ($HUSH_HOME, else $HOME/.hush). Empty when
+ * neither is configured. */
+static void hush_quit_token_path(char *out, size_t outsz);
+/* Tells the operator how to stop the relay when --quit cannot verify it. */
+static void hush_quit_report_unverified(uint16_t port);
+#endif
 static void hush_relay_prepare(uint16_t port, const char *bind_addr);
 static int hush_relay_auto_update_on(void);
 static hush_status_t hush_relay_bind(uint16_t port, int open_ui, int *out_ls);
@@ -344,23 +484,258 @@ void hush_relay_reap_children(void)
 hush_status_t hush_relay_quit(uint16_t port)
 {
     pid_t pid = 0;
-    hush_status_t st;
+    unsigned long long start = 0;
+    uint16_t fileport = 0;
+    hush_status_t st = HUSH_OK;
 
     if (port == 0)
         port = (uint16_t)HUSH_DEFAULT_PORT;
-    st = hush_read_pidfile(port, &pid);
-    if (st != HUSH_OK)
-        return HUSH_OK;
-    if (!hush_pid_is_alive(pid)) {
-        hush_pidfile_path(g_pidfile_path, sizeof(g_pidfile_path), port);
-        unlink(g_pidfile_path);
-        return HUSH_OK;
+    st = hush_read_pidfile(&pid, &start, &fileport, port);
+    if (st == HUSH_OK)
+        st = hush_quit_verify_owner(port, pid, start, fileport);
+    if (st == HUSH_ERR_NOT_FOUND && pid > HUSH_PID_RESERVED_MAX)
+        hush_unlink_pidfile(port, pid, start);
+    if (st == HUSH_OK) {
+        st = hush_pid_stop_timed(pid, HUSH_QUIT_OWNER_TRIES, HUSH_QUIT_OWNER_MS);
+        if (st == HUSH_OK)
+            hush_unlink_pidfile(port, pid, start);
     }
+    if (st != HUSH_OK)
+        hush_quit_report(port, pid, start, st);
+    else
+        printf("hush-relay: stopped relay on port %u (pid %ld)\n",
+               (unsigned)port, (long)pid);
+    return st;
+}
+
+static void hush_quit_report(uint16_t port, pid_t pid,
+                             unsigned long long start, hush_status_t st)
+{
+    assert(port != 0);
+    /* Only the Linux DENIED branch needs the start time. */
+    (void)start;
+    switch (st) {
+    case HUSH_OK:
+        break;
+    case HUSH_ERR_NOT_FOUND:
+        if (pid > HUSH_PID_RESERVED_MAX)
+            fprintf(stderr, "hush-relay: no running relay on port %u (stale pid %ld)\n",
+                    (unsigned)port, (long)pid);
+        else
+            fprintf(stderr, "hush-relay: no running relay on port %u (no pidfile)\n",
+                    (unsigned)port);
+        break;
+    case HUSH_ERR_PARSE:
+        fprintf(stderr, "hush-relay: unreadable pidfile for port %u\n",
+                (unsigned)port);
+        break;
+    case HUSH_ERR_DENIED:
+#ifdef __linux__
+        hush_quit_report_denied(port, pid, start);
+#else
+        hush_quit_report_unverified(port);
+#endif
+        break;
+    case HUSH_ERR_IO:
+        hush_quit_report_io(port, pid);
+        break;
+    default:
+        fprintf(stderr, "hush-relay: --quit on port %u failed\n",
+                (unsigned)port);
+        break;
+    }
+}
+
+static void hush_quit_report_io(uint16_t port, pid_t pid)
+{
+    assert(port != 0);
+    if (pid > HUSH_PID_RESERVED_MAX)
+        fprintf(stderr, "hush-relay: cannot stop relay on port %u (pid %ld)\n",
+                (unsigned)port, (long)pid);
+    else
+        fprintf(stderr, "hush-relay: cannot read pidfile for port %u\n",
+                (unsigned)port);
+}
+
+static void hush_quit_report_denied(uint16_t port, pid_t pid,
+                                    unsigned long long start)
+{
+    assert(port != 0);
+    if (start == 0 && pid > HUSH_PID_RESERVED_MAX)
+        fprintf(stderr, "hush-relay: pidfile for port %u has an old/unrecognized format (pid %ld); cannot verify identity -- inspect it first (e.g. 'ps -p %ld' or 'ls -l /proc/%ld/exe'), or stop it with Exit in the hive, Ctrl+C, or POST /api/exit\n",
+                (unsigned)port, (long)pid, (long)pid, (long)pid);
+    else
+        fprintf(stderr, "hush-relay: pid %ld is not the relay on port %u; refusing --quit\n",
+                (long)pid, (unsigned)port);
+}
+
+#ifndef __linux__
+static void hush_quit_token_path(char *out, size_t outsz)
+{
+    char root[HUSH_HOME_PATH_MAX];
+    int n;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    out[0] = '\0';
+    hush_home_root(root, sizeof(root));
+    if (root[0] == '\0')
+        return;
+    n = snprintf(out, outsz, "%s/%s", root, HUSH_AUTH_FILE);
+    if (n <= 0 || (size_t)n >= outsz)
+        out[0] = '\0';
+}
+
+static void hush_quit_report_unverified(uint16_t port)
+{
+    char token[HUSH_HOME_PATH_MAX];
+
+    assert(port != 0);
+    hush_quit_token_path(token, sizeof(token));
+    fprintf(stderr, "hush-relay: --quit cannot verify the relay's identity on this platform; stop it with Exit in the hive, Ctrl+C, or POST /api/exit (%s from %s) on port %u\n",
+            HUSH_AUTH_HEADER, token[0] != '\0' ? token : "~/.hush/session.token", (unsigned)port);
+}
+#endif
+
+static hush_status_t hush_quit_verify_owner(uint16_t port, pid_t pid,
+                                            unsigned long long start,
+                                            uint16_t fileport)
+{
+    if (pid <= HUSH_PID_RESERVED_MAX || pid == getpid())
+        return HUSH_ERR_DENIED;
+    if (!hush_pid_is_alive(pid))
+        return HUSH_ERR_NOT_FOUND;
+#ifdef __linux__
+    /* Identity is the (pid, starttime) pair plus the recorded port: only the
+     * relay that wrote this pidfile can match all three, so pid reuse can
+     * never verify. No exe check: it breaks when the binary is replaced
+     * under a running relay (readlink reports " (deleted)"). */
+    if (start == 0 || fileport == 0 || fileport != port)
+        return HUSH_ERR_DENIED;
+    if (!hush_starttime_matches(pid, start))
+        return HUSH_ERR_DENIED;
+    return HUSH_OK;
+#else
+    /* No /proc identity off Linux: never verified, so --quit always refuses
+     * rather than risk signalling a reused pid. Stop those relays with
+     * POST /api/exit. */
+    (void)start;
+    (void)fileport;
+    (void)port;
+    return HUSH_ERR_DENIED;
+#endif
+}
+
+#ifdef __linux__
+static ssize_t hush_proc_read(char *out, size_t outsz, pid_t pid, const char *leaf)
+{
+    char path[HUSH_PROC_PATH_MAX];
+    int fd = HUSH_FD_NONE;
+    ssize_t n = 0;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    assert(pid > 0);
+    assert(leaf != NULL);
+    if (snprintf(path, sizeof(path), "/proc/%ld/%s", (long)pid, leaf) >= (int)sizeof(path))
+        return 0;
+    fd = open(path, O_RDONLY);
+    if (fd < 0)
+        return 0;
+    n = read(fd, out, outsz - 1);
+    close(fd);
+    if (n <= 0)
+        return 0;
+    out[n] = '\0';
+    return n;
+}
+
+static int hush_stat_starttime(const char *body, unsigned long long *out_start)
+{
+    const char *paren = NULL;
+    const char *field = NULL;
+    char *end = NULL;
+    int idx = 0;
+    unsigned long long value = 0;
+
+    assert(body != NULL);
+    assert(out_start != NULL);
+    paren = strrchr(body, ')');
+    if (paren == NULL || paren[HUSH_PROC_STAT_SEP_OFF] != ' ' ||
+        paren[HUSH_PROC_STAT_STATE_OFF] == '\0')
+        return 0;
+    field = paren + HUSH_PROC_STAT_STATE_OFF;
+    for (idx = HUSH_PROC_STAT_FIRST_FIELD; idx < HUSH_PROC_STAT_STARTTIME_FIELD; ++idx) {
+        field = strchr(field, ' ');
+        if (field == NULL)
+            return 0;
+        field++;
+    }
+    errno = 0;
+    value = strtoull(field, &end, HUSH_PID_STR_BASE);
+    if (errno != 0 || end == field || (*end != ' ' && *end != '\n' && *end != '\0'))
+        return 0;
+    *out_start = value;
+    return 1;
+}
+
+static int hush_pid_starttime(unsigned long long *out_start, pid_t pid)
+{
+    char body[HUSH_PROC_STAT_MAX];
+
+    assert(out_start != NULL);
+    assert(pid > HUSH_PID_RESERVED_MAX);
+    if (hush_proc_read(body, sizeof(body), pid, HUSH_PROC_STAT_LEAF) <= 0)
+        return 0;
+    return hush_stat_starttime(body, out_start);
+}
+
+static int hush_starttime_matches(pid_t pid, unsigned long long expect)
+{
+    unsigned long long actual = 0;
+
+    assert(pid > HUSH_PID_RESERVED_MAX);
+    assert(expect != 0);
+    if (!hush_pid_starttime(&actual, pid))
+        return 0;
+    return actual == expect;
+}
+
+static unsigned long long hush_own_starttime(void)
+{
+    unsigned long long start = 0;
+
+    if (!hush_pid_starttime(&start, getpid()))
+        return 0;
+    return start;
+}
+#else
+static unsigned long long hush_own_starttime(void)
+{
+    /* No /proc identity off Linux: self start time is always unknown, so the
+     * pidfile stays pid-only and --quit refuses it (see verify above). */
+    return 0;
+}
+#endif
+
+static hush_status_t hush_pid_stop_timed(pid_t pid, int tries, int wait_ms)
+{
+    struct timespec pause = { .tv_sec = 0, .tv_nsec = 0 };
+    int i = 0;
+
+    assert(pid > HUSH_PID_RESERVED_MAX);
+    assert(tries > 0);
+    assert(wait_ms > 0 && wait_ms < HUSH_WAIT_MS_MAX);
     if (kill(pid, SIGTERM) != 0 && errno != ESRCH)
         return HUSH_ERR_IO;
-    hush_wait_pid_gone(pid);
-    hush_pidfile_path(g_pidfile_path, sizeof(g_pidfile_path), port);
-    unlink(g_pidfile_path);
+    for (i = 0; i < tries; ++i) {
+        if (!hush_pid_is_alive(pid))
+            return HUSH_OK;
+        pause.tv_nsec = (long)wait_ms * (long)HUSH_NS_PER_MS;
+        nanosleep(&pause, NULL);
+    }
+    if (hush_pid_is_alive(pid))
+        return HUSH_ERR_IO;
     return HUSH_OK;
 }
 
@@ -385,7 +760,10 @@ hush_status_t hush_relay_run(uint16_t port, const char *bind_addr, int open_ui)
         return HUSH_ERR_IO;
     }
     hush_wake_ingest_store(g_store);
-    hush_write_pidfile(port);
+    if (hush_write_pidfile(port) != HUSH_OK)
+        fprintf(stderr,
+                "hush-relay: no pidfile for port %u; --quit will not find this relay\n",
+                (unsigned)port);
     hush_relay_announce(port, open_ui);
     hush_relay_pump(ls);
     hush_relay_cleanup(ls);
@@ -1511,17 +1889,22 @@ static void hush_pidfile_dir(char *out, size_t sz)
 
     assert(out != NULL);
     assert(sz > 0);
-    if (runtime != NULL && runtime[0] != '\0') {
+    out[0] = '\0';
+    if (hush_path_is_absolute(runtime)) {
         n = snprintf(out, sz, "%s/hush", runtime);
         if (n > 0 && (size_t)n < sz)
             return;
+        out[0] = '\0';
     }
-    if (home != NULL && home[0] != '\0') {
+    if (hush_path_is_absolute(home)) {
         n = snprintf(out, sz, "%s/.local/state/hush", home);
         if (n > 0 && (size_t)n < sz)
             return;
+        out[0] = '\0';
     }
-    snprintf(out, sz, "/tmp/hush");
+    /* No shared /tmp fallback: a world-writable pidfile dir invites symlink
+     * and pid-planting attacks, and a silent fallback repeats the original
+     * bug's failure mode. Missing configuration fails loudly instead. */
 }
 
 static void hush_pidfile_path(char *out, size_t sz, uint16_t port)
@@ -1531,45 +1914,173 @@ static void hush_pidfile_path(char *out, size_t sz, uint16_t port)
 
     assert(out != NULL);
     assert(sz > 0);
+    out[0] = '\0';
     hush_pidfile_dir(dir, sizeof(dir));
+    if (dir[0] == '\0')
+        return;
     n = snprintf(out, sz, "%s/" HUSH_PIDFILE_NAME_FMT, dir, (unsigned)port);
     if (n <= 0 || (size_t)n >= sz)
         out[0] = '\0';
 }
 
-static void hush_write_pidfile(uint16_t port)
+static int hush_path_is_absolute(const char *p)
+{
+    return p != NULL && p[0] == '/';
+}
+
+/* True when path is an existing directory. Follows symlinks, so a HOME
+ * reached through a symlinked ancestor (e.g. /home -> /var/home) stays
+ * usable. Same-user scope only; the final pidfile dir is checked strictly. */
+static int hush_path_is_dir_follow(const char *path)
+{
+    struct stat st = {0};
+
+    assert(path != NULL);
+    if (stat(path, &st) != 0)
+        return 0;
+    return S_ISDIR(st.st_mode) != 0;
+}
+
+/* True when dir is a usable pidfile dir: a real directory (never a symlink)
+ * owned by this user and closed to group and other. */
+static int hush_pidfile_dir_ok(const char *dir)
+{
+    struct stat st = {0};
+
+    assert(dir != NULL);
+    if (lstat(dir, &st) != 0)
+        return 0;
+    if (!S_ISDIR(st.st_mode))
+        return 0;
+    if (st.st_uid != geteuid())
+        return 0;
+    return (st.st_mode & HUSH_PIDFILE_DIR_PUBLIC_MASK) == 0;
+}
+
+/* Creates every missing ancestor of dir. Existing directories are untouched
+ * (symlinks followed: a HOME under a symlinked ancestor stays usable);
+ * anything else in the way fails IO. Covers the virgin-HOME chain
+ * $HOME/.local/state/hush, where a single mkdir fails.
+ *
+ * Policy differs from hush_dir_ensure_private on purpose: ancestors may be
+ * symlinks and may belong to root (e.g. /home) and must never be chmodded,
+ * while the final pidfile dir must fail LOUD on lax modes instead of
+ * repairing them, so --quit degradation is always reported. */
+static hush_status_t hush_pidfile_ensure_parents(const char *dir)
+{
+    char prefix[HUSH_PIDFILE_PATH_MAX];
+    size_t len = 0;
+    size_t i = 0;
+
+    assert(dir != NULL);
+    len = strlen(dir);
+    if (len == 0 || len + 1 > sizeof(prefix))
+        return HUSH_ERR_ARG;
+    memcpy(prefix, dir, len + 1);
+    /* Skip the leading slash: never mkdir the root itself. */
+    for (i = 1; i < len; ++i) {
+        if (prefix[i] != '/')
+            continue;
+        prefix[i] = '\0';
+        if (mkdir(prefix, HUSH_PIDFILE_PARENT_MODE) != 0 && errno != EEXIST)
+            return HUSH_ERR_IO;
+        if (!hush_path_is_dir_follow(prefix))
+            return HUSH_ERR_IO;
+        prefix[i] = '/';
+    }
+    return HUSH_OK;
+}
+
+static hush_status_t hush_write_pidfile(uint16_t port)
+{
+    hush_status_t st = HUSH_OK;
+
+    assert(port != 0);
+    st = hush_pidfile_dir_ensure(port);
+    if (st != HUSH_OK)
+        return st;
+    return hush_pidfile_write_body(port);
+}
+
+static hush_status_t hush_pidfile_dir_ensure(uint16_t port)
 {
     char dir[HUSH_PIDFILE_PATH_MAX];
-    char body[HUSH_PIDFILE_BODY_MAX];
-    int fd;
-    int n;
+    hush_status_t parents = HUSH_OK;
 
+    assert(port != 0);
     hush_pidfile_dir(dir, sizeof(dir));
-    (void)mkdir(dir, 0700);
+    if (dir[0] == '\0')
+        return HUSH_ERR_ARG;
+    parents = hush_pidfile_ensure_parents(dir);
+    if (parents != HUSH_OK)
+        return parents;
+    if (mkdir(dir, HUSH_PIDFILE_DIR_MODE) != 0 && errno != EEXIST)
+        return HUSH_ERR_IO;
+    if (!hush_pidfile_dir_ok(dir))
+        return HUSH_ERR_IO;
     hush_pidfile_path(g_pidfile_path, sizeof(g_pidfile_path), port);
     if (g_pidfile_path[0] == '\0')
-        return;
-    fd = open(g_pidfile_path, O_CREAT | O_TRUNC | O_WRONLY, 0600);
-    if (fd < 0)
-        return;
+        return HUSH_ERR_ARG;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_pidfile_write_body(uint16_t port)
+{
+    char body[HUSH_PIDFILE_BODY_MAX];
+    unsigned long long start = 0;
+    int fd = HUSH_FD_NONE;
+    int n = 0;
+
+    assert(port != 0);
+    assert(g_pidfile_path[0] != '\0');
+    start = hush_own_starttime();
+#ifdef __linux__
+    n = snprintf(body, sizeof(body), "%ld %llu %u\n",
+                 (long)getpid(), start, (unsigned)port);
+#else
+    (void)start;
     n = snprintf(body, sizeof(body), "%ld\n", (long)getpid());
-    if (n <= 0 || (size_t)n >= sizeof(body) ||
-        !hush_write_pid_bytes(fd, body, (size_t)n)) {
+#endif
+    if (n <= 0 || (size_t)n >= sizeof(body))
+        return HUSH_ERR_IO;
+    fd = open(g_pidfile_path,
+              O_CREAT | O_TRUNC | O_WRONLY | O_NOFOLLOW | O_CLOEXEC,
+              HUSH_PIDFILE_FILE_MODE);
+    if (fd < 0)
+        return HUSH_ERR_IO;
+    if (!hush_write_pid_bytes(fd, body, (size_t)n)) {
         close(fd);
         unlink(g_pidfile_path);
-        return;
+        return HUSH_ERR_IO;
     }
-    close(fd);
+    if (close(fd) != 0) {
+        unlink(g_pidfile_path);
+        return HUSH_ERR_IO;
+    }
     g_pidfile_ready = 1;
+    return HUSH_OK;
 }
 
 static int hush_write_pid_bytes(int fd, const char *body, size_t len)
 {
-    ssize_t wrote;
+    size_t off = 0;
+    int intr = 0;
 
     assert(body != NULL);
-    wrote = write(fd, body, len);
-    return wrote == (ssize_t)len;
+    while (off < len) {
+        ssize_t wrote = write(fd, body + off, len - off);
+
+        if (wrote < 0 && errno == EINTR) {
+            intr++;
+            if (intr > HUSH_WRITE_INTR_MAX)
+                return 0;
+            continue;
+        }
+        if (wrote <= 0)
+            return 0;
+        off += (size_t)wrote;
+    }
+    return 1;
 }
 
 static void hush_remove_pidfile(void)
@@ -1581,55 +2092,145 @@ static void hush_remove_pidfile(void)
     g_pidfile_ready = 0;
 }
 
-static hush_status_t hush_read_pidfile(uint16_t port, pid_t *out_pid)
+static int hush_pidfile_holds(uint16_t port, pid_t expect_pid,
+                              unsigned long long expect_start)
+{
+    pid_t current = 0;
+    unsigned long long current_start = 0;
+    uint16_t current_port = 0;
+
+    assert(port != 0);
+    assert(expect_pid > HUSH_PID_RESERVED_MAX);
+    if (hush_read_pidfile(&current, &current_start, &current_port, port) != HUSH_OK)
+        return 0;
+    return current == expect_pid && current_start == expect_start;
+}
+
+static void hush_unlink_pidfile(uint16_t port, pid_t expect_pid,
+                                unsigned long long expect_start)
+{
+    char path[HUSH_PIDFILE_PATH_MAX];
+
+    assert(port != 0);
+    assert(expect_pid > HUSH_PID_RESERVED_MAX);
+    if (!hush_pidfile_holds(port, expect_pid, expect_start))
+        return;
+    hush_pidfile_path(path, sizeof(path), port);
+    if (path[0] != '\0')
+        unlink(path);
+}
+
+static hush_status_t hush_parse_uint_field(char **out_end,
+                                           unsigned long long *out_value,
+                                           const char *text)
+{
+    assert(out_end != NULL);
+    assert(out_value != NULL);
+    assert(text != NULL);
+    if (!isdigit((unsigned char)text[0]))
+        return HUSH_ERR_PARSE;
+    errno = 0;
+    *out_value = strtoull(text, out_end, HUSH_PID_STR_BASE);
+    if (errno != 0)
+        return HUSH_ERR_PARSE;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_parse_pid_line(const char *body, pid_t *out_pid,
+                                         unsigned long long *out_start,
+                                         uint16_t *out_fileport)
+{
+    char *end = NULL;
+    unsigned long long value = 0;
+
+    assert(body != NULL);
+    assert(out_pid != NULL);
+    assert(out_start != NULL);
+    assert(out_fileport != NULL);
+    *out_pid = 0;
+    *out_start = 0;
+    *out_fileport = 0;
+    if (hush_parse_uint_field(&end, &value, body) != HUSH_OK)
+        return HUSH_ERR_PARSE;
+    if (value == 0 || value > (unsigned long long)INT_MAX)
+        return HUSH_ERR_PARSE;
+    *out_pid = (pid_t)value;
+    if (*end == '\n' || *end == '\0')
+        return HUSH_OK;
+    if (*end != ' ')
+        return HUSH_ERR_PARSE;
+    if (hush_parse_uint_field(&end, &value, end + 1) != HUSH_OK)
+        return HUSH_ERR_PARSE;
+    *out_start = value;
+    if (*end != ' ')
+        return HUSH_ERR_PARSE;
+    if (hush_parse_uint_field(&end, &value, end + 1) != HUSH_OK)
+        return HUSH_ERR_PARSE;
+    if (value > (unsigned long long)HUSH_PORT_MAX)
+        return HUSH_ERR_PARSE;
+    if (*end != '\n' && *end != '\0')
+        return HUSH_ERR_PARSE;
+    *out_fileport = (uint16_t)value;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_read_pidfile(pid_t *out_pid,
+                                       unsigned long long *out_start,
+                                       uint16_t *out_fileport, uint16_t port)
 {
     char path[HUSH_PIDFILE_PATH_MAX];
     char body[HUSH_PIDFILE_BODY_MAX];
-    FILE *fp;
-    long value = 0;
+    FILE *fp = NULL;
 
     assert(out_pid != NULL);
+    assert(out_start != NULL);
+    assert(out_fileport != NULL);
+    *out_pid = 0;
+    *out_start = 0;
+    *out_fileport = 0;
     hush_pidfile_path(path, sizeof(path), port);
     if (path[0] == '\0')
         return HUSH_ERR_NOT_FOUND;
     fp = fopen(path, "r");
     if (fp == NULL)
-        return HUSH_ERR_NOT_FOUND;
+        return errno == ENOENT ? HUSH_ERR_NOT_FOUND : HUSH_ERR_IO;
     if (fgets(body, (int)sizeof(body), fp) == NULL) {
         fclose(fp);
         return HUSH_ERR_PARSE;
     }
     fclose(fp);
-    value = strtol(body, NULL, 10);
-    if (value <= 0 || value > (long)INT_MAX)
-        return HUSH_ERR_PARSE;
-    *out_pid = (pid_t)value;
-    return HUSH_OK;
+    return hush_parse_pid_line(body, out_pid, out_start, out_fileport);
 }
 
 static int hush_pid_is_alive(pid_t pid)
 {
     if (pid <= 0)
         return 0;
-    if (kill(pid, 0) == 0)
-        return 1;
-    return errno != ESRCH;
+    if (kill(pid, 0) != 0)
+        return errno != ESRCH;
+#ifdef __linux__
+    return !hush_pid_is_zombie(pid);
+#else
+    return 1;
+#endif
 }
 
-static void hush_wait_pid_gone(pid_t pid)
+#ifdef __linux__
+static int hush_pid_is_zombie(pid_t pid)
 {
-    int i;
+    char body[HUSH_PROC_STAT_MAX];
+    const char *paren = NULL;
 
-    for (i = 0; i < HUSH_QUIT_WAIT_TRIES; ++i) {
-        struct timespec pause;
-
-        if (!hush_pid_is_alive(pid))
-            return;
-        pause.tv_sec = 0;
-        pause.tv_nsec = (long)HUSH_QUIT_WAIT_MS * 1000000L;
-        nanosleep(&pause, NULL);
-    }
+    assert(pid > 0);
+    if (hush_proc_read(body, sizeof(body), pid, HUSH_PROC_STAT_LEAF) <= 0)
+        return 0;
+    paren = strrchr(body, ')');
+    if (paren == NULL || paren[HUSH_PROC_STAT_SEP_OFF] != ' ' ||
+        paren[HUSH_PROC_STAT_STATE_OFF] == '\0')
+        return 0;
+    return paren[HUSH_PROC_STAT_STATE_OFF] == HUSH_PROC_STATE_ZOMBIE;
 }
+#endif
 
 static int hush_child_is_app(pid_t pid)
 {
@@ -1879,36 +2480,25 @@ static void hush_child_stop_one(pid_t pid)
         return;
     if (!hush_pid_is_alive(pid))
         return;
-    (void)kill(pid, SIGTERM);
-    hush_wait_pid_gone(pid);
-    if (hush_pid_is_alive(pid))
+    if (hush_pid_stop_timed(pid, HUSH_CHILD_STOP_TRIES, HUSH_CHILD_STOP_MS) != HUSH_OK)
         (void)kill(pid, SIGKILL);
 }
 
 #ifdef __linux__
 static int hush_child_read_cmdline(pid_t pid, char *out, size_t outsz)
 {
-    char path[HUSH_PROC_PATH_MAX];
-    int fd;
-    ssize_t n;
-    ssize_t i;
+    ssize_t n = 0;
+    ssize_t i = 0;
 
     assert(out != NULL);
     assert(outsz > 0);
-    if (snprintf(path, sizeof(path), "/proc/%ld/cmdline", (long)pid) >= (int)sizeof(path))
-        return 0;
-    fd = open(path, O_RDONLY);
-    if (fd < 0)
-        return 0;
-    n = read(fd, out, outsz - 1);
-    close(fd);
+    n = hush_proc_read(out, outsz, pid, "cmdline");
     if (n <= 0)
         return 0;
     for (i = 0; i < n; ++i) {
         if (out[i] == '\0')
             out[i] = ' ';
     }
-    out[n] = '\0';
     return 1;
 }
 

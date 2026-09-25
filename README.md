@@ -101,7 +101,7 @@ Click **relay live** for stored / projects / sockets. Hive metadata persists in 
 you import the same nsec. (For upgrades from the older Buzz layout, the
 relay still reads a legacy copy at `~/.config/hush/vibe.json` as a
 fallback when the canonical file is absent — delete both to fully reset
-a hive.) **Exit** (`--quit`) stops the relay and the
+a hive.) **Exit** (`--quit` on Linux) stops the relay and the
 browser / login children it forked. **Close** leaves the hive standing.
 If `--open` attaches to a leftover listener, quit that process before a
 new install can take the port. Secrets stay in `pass`. See
@@ -186,7 +186,7 @@ signaling-only.
 ```
 
 The process is a server: it prints the listen URL and stays running until
-**Exit**, `--quit`, or Ctrl+C. `--open` (the default on a graphical session)
+**Exit**, `--quit` (Linux), or Ctrl+C. `--open` (the default on a graphical session)
 launches a **frameless standalone app window** (Chromium/Chrome/Brave/Edge
 `--app=` plus `--ozone-platform=x11`, or Epiphany application mode) with
 no browser tab strip, URL bar, or OS title-bar `×`. Firefox-as-default
@@ -207,14 +207,17 @@ Close leaves the hive standing.
 | Verb | In the hive | CLI | What happens |
 |---|---|---|---|
 | **Close** | chooser **Close the window** | `hush-relay --close` | GUI goes away. The relay keeps listening. |
-| **Exit** | chooser **Exit the application** | `hush-relay --quit` or Ctrl+C | Every process stops. Exit code 0. |
+| **Exit** | chooser **Exit the application** | `hush-relay --quit` (Linux) or Ctrl+C | Every process stops. Exit code 0. |
 | **Cancel** | chooser **Cancel** | — | Stay, or re-attach if the `--app` window already closed. |
 
 Click the launcher (`hush-relay --open`) while the hive is already up to
-re-attach a window. `POST /api/close` acknowledges Close and does not stop
+re-attach a window. Off Linux (no `/proc` identity to check), `hush-relay
+--quit` refuses with exit code 2 instead of signalling; stop with Exit in
+the hive, Ctrl+C, or `POST /api/exit` with `X-Hush-Token` (the session
+token file). `POST /api/close` acknowledges Close and does not stop
 the process. `POST /api/exit` sets the same shutdown flag as SIGTERM.
 
-Rebuild guard: `make` / `make install` refuse while a live relay owns port 10555 — run `hush-relay --quit` (Exit) first; Close is not enough since the hive keeps the port. The guard is port-scoped: it checks `$HUSH_PORT` if set, else `10555`, so a relay on another port does not block the build unless `HUSH_PORT` matches. `make clean` stops the relay and its CHILD turnserver, never the systemd `hush-turn.service` daemon.
+Rebuild guard: `make` / `make install` refuse while a live relay owns port 10555 — run `hush-relay --quit` (Exit) first (Linux; elsewhere Exit in the hive or Ctrl+C); Close is not enough since the hive keeps the port. The guard is port-scoped: it checks `$HUSH_PORT` if set, else `10555`. With curl installed, only a relay answering on that port blocks the build (a relay on another port does not; a pidfile-named owner is refused with its pid and the `--quit` command). Without curl the guard cannot probe, so any running hush-relay blocks the build (exit 2) regardless of port, except a relay the pidfile names as owner of this port, which is refused with exit 1, its pid and the `--quit` command — install curl or quit the other relays first. `make clean` stops the relay and its CHILD turnserver, never the systemd `hush-turn.service` daemon.
 
 ### Threads, streaming, and stop
 
@@ -276,7 +279,8 @@ Cline authenticates with ClinePass or a bring-your-own provider key,
 not a Grok/Codex-style OAuth-first CLI.
 
 The application launcher entry (`hush-relay.desktop`) starts or attaches the
-GUI. The **Quit Hush** desktop action runs `--quit`.
+GUI. The **Quit Hush** desktop action runs `--quit` (Linux; elsewhere use
+Exit in the hive or Ctrl+C).
 
 ## Installation
 

@@ -1,19 +1,25 @@
 #!/bin/sh
 # check-relay-port.sh — fail-fast rebuild guard for `make` / `make install`.
 #
-# Fails (exit 1) when a live hush-relay owns the default port, printing the
-# pid and the quit command. Passes (exit 0) when the port is free.
+# Fails (exit 1) when a live hush-relay owns the port, printing the pid
+# and the quit command. Passes (exit 0) when no relay owns the port: with
+# curl, a free port passes even if a relay runs on another port; without
+# curl, any running hush-relay fails the guard (exit 2) instead of guessing.
 # Never kills anything; `make clean` (scripts/kill-relay.sh) is the killer.
 #
 # Port: $1, else $HUSH_PORT, else 10555 (HUSH_DEFAULT_PORT in
 # hush-c/include/hush_relay.h). Usage: sh scripts/check-relay-port.sh [port]
 #
 # Ownership is resolved exactly like the relay resolves its pidfile
-# (hush-c/src/hush_relay.c: XDG_RUNTIME_DIR/hush, then
-# HOME/.local/state/hush, then /tmp/hush, file relay-<port>.pid). A live
-# pid in that file owns the port. Without a live pidfile, a probe of
-# http://127.0.0.1:<port>/api/status plus a live hush-relay process also
-# counts (covers a relay started under a different XDG/HOME).
+# (hush_pidfile_dir in hush-c/src/hush_relay.c: absolute
+# XDG_RUNTIME_DIR/hush, else absolute HOME/.local/state/hush; no /tmp
+# fallback; file relay-<port>.pid holds "pid starttime port", older files
+# pid only). A live pid in that file owns the port. Without a live pidfile,
+# a probe of http://127.0.0.1:<port>/api/status plus a live hush-relay
+# process also counts (covers a relay started under a different XDG/HOME).
+# The probe needs curl, but only when a hush-relay process is actually
+# running: with no relay at all the guard passes even without curl; with
+# a live relay, no pidfile owner, and no curl it fails (exit 2) instead of guessing.
 
 set -eu
 
@@ -23,13 +29,15 @@ case "$port" in
 esac
 
 pidfile_dir() {
-    if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
-        printf '%s/hush' "$XDG_RUNTIME_DIR"
-    elif [ -n "${HOME:-}" ]; then
-        printf '%s/.local/state/hush' "$HOME"
-    else
-        printf '/tmp/hush'
-    fi
+    # Mirrors hush_pidfile_dir: absolute paths only, no /tmp fallback.
+    # Fails (non-zero) when neither variable gives an absolute dir.
+    case "${XDG_RUNTIME_DIR:-}" in
+        /*) printf '%s/hush' "$XDG_RUNTIME_DIR"; return 0 ;;
+    esac
+    case "${HOME:-}" in
+        /*) printf '%s/.local/state/hush' "$HOME"; return 0 ;;
+    esac
+    return 1
 }
 
 comm_of() {
@@ -47,20 +55,23 @@ relay_pids() {
 
 port_answers() {
     # Any 2xx from the unauthenticated status probe means a relay is home.
-    if command -v curl >/dev/null 2>&1; then
-        curl -sf --max-time 2 "http://127.0.0.1:${port}/api/status" \
-            >/dev/null 2>&1
-    else
-        return 1
-    fi
+    # The caller guarantees curl exists before taking the probe path.
+    curl -sf --max-time 2 "http://127.0.0.1:${port}/api/status" \
+        >/dev/null 2>&1
 }
 
 owner=""
-dir=$(pidfile_dir)
-pidfile="${dir}/relay-${port}.pid"
-if [ -f "$pidfile" ]; then
-    # shellcheck disable=SC2162: pidfile holds one pid by construction.
-    read -r owner <"$pidfile" 2>/dev/null || owner=""
+dir=""
+dir=$(pidfile_dir) || dir=""
+pidfile=""
+if [ -n "$dir" ]; then
+    pidfile="${dir}/relay-${port}.pid"
+fi
+if [ -n "$pidfile" ] && [ -f "$pidfile" ]; then
+    # Pidfile holds "pid starttime port" (older files: pid only); the
+    # owner is always the first field.
+    # shellcheck disable=SC2162,SC2034: fixed field layout; _rest unused.
+    read -r owner _rest <"$pidfile" 2>/dev/null || owner=""
     case "$owner" in
         ''|*[!0-9]*) owner="" ;;
         *) pid_alive "$owner" || owner="" ;;
@@ -73,14 +84,22 @@ fi
 
 if [ -z "$owner" ]; then
     pids=$(relay_pids)
-    if [ -n "$pids" ] && port_answers; then
-        # Attribute the port to the first live hush-relay for the message.
-        for p in $pids; do
-            if pid_alive "$p"; then
-                owner="$p"
-                break
-            fi
-        done
+    if [ -n "$pids" ]; then
+        # A relay process exists but no pidfile names it: only the port
+        # probe can attribute it, so curl is required here (and only here).
+        if ! command -v curl >/dev/null 2>&1; then
+            echo "check-relay-port: hush-relay is running but its port cannot be probed (curl missing)" >&2
+            exit 2
+        fi
+        if port_answers; then
+            # Attribute the port to the first live hush-relay for the message.
+            for p in $pids; do
+                if pid_alive "$p"; then
+                    owner="$p"
+                    break
+                fi
+            done
+        fi
     fi
 fi
 
