@@ -310,6 +310,7 @@ test "$quit_code" -eq 2 || fail "foreign-pid quit must exit 2 (got $quit_code)"
 kill -0 "$foreign_pid" 2>/dev/null || fail "quit signalled a foreign process"
 test -f "$refuse_pidfile" || fail "quit removed an unproven pidfile"
 grep -q 'old/unrecognized format' "$quit_err" || fail "foreign-pid message wrong"
+grep -q 'ps -p' "$quit_err" || fail "foreign-pid message must say how to verify"
 kill "$foreign_pid" 2>/dev/null || true
 wait "$foreign_pid" 2>/dev/null || true
 

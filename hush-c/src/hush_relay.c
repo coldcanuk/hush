@@ -552,8 +552,8 @@ static void hush_quit_report_denied(uint16_t port, pid_t pid,
 {
     assert(port != 0);
     if (start == 0 && pid > HUSH_PID_RESERVED_MAX)
-        fprintf(stderr, "hush-relay: pidfile for port %u has an old/unrecognized format (pid %ld); cannot verify identity -- stop it with Exit in the hive or kill %ld\n",
-                (unsigned)port, (long)pid, (long)pid);
+        fprintf(stderr, "hush-relay: pidfile for port %u has an old/unrecognized format (pid %ld); cannot verify identity -- inspect it first (e.g. 'ps -p %ld' or 'ls -l /proc/%ld/exe'), or stop it with Exit in the hive, Ctrl+C, or POST /api/exit\n",
+                (unsigned)port, (long)pid, (long)pid, (long)pid);
     else
         fprintf(stderr, "hush-relay: pid %ld is not the relay on port %u; refusing --quit\n",
                 (long)pid, (unsigned)port);
