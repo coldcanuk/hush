@@ -6,35 +6,51 @@
 #   sh scripts/kill-relay.sh [stop]        # make install (via stop-relays)
 #   sh scripts/kill-relay.sh clean BINDIR  # make clean (via clean-relays)
 #
+# Whose relays: processes whose real uid is the caller's. Under sudo (uid 0
+# with SUDO_UID set, e.g. `sudo make install PREFIX=/usr`) also SUDO_UID's,
+# so the invoking user's relay does not keep serving the replaced binary.
+# Any other uid's relay is never signalled; it only gets a "note:" line.
+#
 # stop (default)
-#   Finds every live process of the CURRENT uid whose executable basename
-#   starts with "hush-relay": readlink /proc/PID/exe with a " (deleted)"
-#   suffix stripped, so hush-relay, hush-relay-m11-e2596637 and a replaced
-#   binary all match. /proc/PID/comm is only a secondary check, used when
-#   the exe link is unreadable. Never matched by exact name, by port, or
-#   by cmdline text (a process whose argv merely mentions "hush" is left
-#   alone), and never this script's own shell or its parent make.
-#   Each match gets SIGTERM, then SIGKILL after HUSH_KILL_GRACE_S seconds
-#   (default 3); identity is re-checked before every signal so a reused
-#   pid is never hit. Every pid and path stopped is printed. Also reaps
-#   the relay's CHILD-mode turnserver (unchanged, see below).
-#   Exit 0 when nothing ran or everything stopped; exit 1 when any relay
-#   survived SIGKILL (make then stops before installing over it).
+#   On Linux a candidate is a live process of an allowed uid whose
+#   executable basename (readlink /proc/PID/exe) starts with "hush-relay":
+#   hush-relay, hush-relay-m11-e2596637 and a replaced binary (the kernel
+#   appends " (deleted)" after the basename, which a prefix test ignores)
+#   all match. Never matched by exact name, by port, or by cmdline text.
+#   A hush-relay* comm whose exe link is unreadable is NOT signalled: it is
+#   reported as left running and counted as a survivor (exit 1). An exe
+#   path containing a newline is skipped with a note, also a survivor.
+#   This script and every ancestor (the recipe shell, make, ... up to pid
+#   1) are never candidates. If any ancestor IS a hush-relay (e.g. an agent
+#   the relay spawned runs `make install`), the script refuses: it prints
+#   that pid and path, signals nothing and exits 1.
+#   Each candidate gets SIGTERM, then SIGKILL after HUSH_KILL_GRACE_S
+#   seconds (default 3). uid and exe path are re-checked immediately
+#   before each signal; this is not atomic (no pidfd). A pid that turns
+#   into a different hush-relay* between checks is reported "changed
+#   identity, not signalled" and counted as a survivor. Every pid and path
+#   stopped is printed. Also reaps the relay's CHILD-mode turnserver.
+#   Exit 0 when nothing ran or everything stopped; exit 1 when a relay
+#   survived or could not be verified, an ancestor is a relay, or /proc
+#   is unreadable on Linux.
 #
 # clean
 #   stop, then close Hush app windows, then remove stale renamed
 #   hush-relay-* copies from BINDIR. Never touches ~/.hush or HUSH_HOME.
-#   Windows: only user-owned Chromium-family / bwrap processes (the
-#   browsers hush-relay launches) whose OWN cmdline has an argument
-#   starting with --class=hush-relay, or exactly
-#   --app=http://127.0.0.1:<port of a relay just stopped>/. A Hush --app
-#   window that a browser handed off into an already-running shared
-#   browser process lives in a process without those flags; closing it
-#   would kill the user's whole browser, so such processes are only
-#   reported as "left alone", never signalled.
+#   Windows: only Chromium-family / bwrap processes (the browsers
+#   hush-relay launches) of an allowed uid whose OWN cmdline has an
+#   argument starting with --class=hush-relay (hush-relay always passes
+#   one: HUSH_UI_CLASS_OPTION in hush-c/src/hush_relay.c). An
+#   --app=http://127.0.0.1:<port of a relay just stopped>/ argument is
+#   only reported alongside; a browser with that --app but no
+#   --class=hush-relay is left running with a note. A Hush window that a
+#   browser handed off into an already-running shared browser process
+#   lives in a process without those flags; closing it would kill the
+#   user's whole browser, so such processes are only reported as "left
+#   alone", never signalled.
 #   Files: only regular files (never symlinks, never followed) named
-#   hush-relay-* directly in BINDIR, owned by this uid, starting with the
-#   ELF magic. hush-relay-stop (the packaging helper, shipped to
+#   hush-relay-* directly in BINDIR, owned by an allowed uid, starting
+#   with the ELF magic. hush-relay-stop (the packaging helper, shipped to
 #   share/hush, not BINDIR) is always kept.
 #
 # Why SIGTERM and not `<exe> --quit`: --quit is not PID-scoped. It reads
@@ -57,15 +73,24 @@
 # /etc/hush/turnserver.conf) is never touched — no systemctl, no broad
 # turnserver match.
 #
-# Without /proc (*BSD) the relay scan falls back to `ps` comm (prefix
-# hush-relay, current uid only) and window closing is skipped.
+# Not Linux (*BSD): there is no /proc exe identity, so relays are matched
+# by `ps` comm (prefix hush-relay, allowed uids only; the pre-#221 script
+# also matched by ps comm), ancestors come from `ps -o ppid=`, and windows
+# are not closed. Untested in CI. On Linux an unreadable /proc is an
+# error, never a fallback.
 
 set -u
 
 me="kill-relay"
+say() { printf '%s: %s\n' "$me" "$*"; }
+warn() { printf '%s: %s\n' "$me" "$*" >&2; }
+# Fractional sleep where supported; never a zero-length grace period.
+nap() { sleep 0.2 2>/dev/null || sleep 1; }
+
+nl='
+'
 uid=$(id -u)
 self=$$
-parent=${PPID:-0}
 grace="${HUSH_KILL_GRACE_S:-3}"
 case "$grace" in
     ''|*[!0-9]*) grace=3 ;;
@@ -74,9 +99,32 @@ if [ "$grace" -lt 1 ]; then
     grace=1
 fi
 
+allowed_uids="$uid"
+if [ "$uid" = 0 ]; then
+    case "${SUDO_UID:-}" in
+        ''|*[!0-9]*|0) ;;
+        *)
+            allowed_uids="0 $SUDO_UID"
+            say "running as root via sudo: stopping hush-relay* of uid 0 and SUDO_UID $SUDO_UID only"
+            ;;
+    esac
+fi
+
+uid_allowed() {
+    case " $allowed_uids " in
+        *" $1 "*) return 0 ;;
+    esac
+    return 1
+}
+
 have_proc=0
-if readlink "/proc/$self/exe" >/dev/null 2>&1; then
-    have_proc=1
+if [ "$(uname -s 2>/dev/null)" = "Linux" ]; then
+    if [ -r "/proc/$self/status" ] && readlink "/proc/$self/exe" >/dev/null 2>&1; then
+        have_proc=1
+    else
+        warn "error: /proc is not readable, so relay identities cannot be verified; nothing signalled"
+        exit 1
+    fi
 fi
 
 rc=0
@@ -100,6 +148,21 @@ proc_uid() {
     fi
 }
 
+# Sets pp_pid to the parent pid of $1, empty when unknown.
+ppid_of() {
+    pp_pid=""
+    if [ "$have_proc" = 1 ]; then
+        while read -r pp_key pp_val _; do
+            if [ "$pp_key" = "PPid:" ]; then
+                pp_pid=$pp_val
+                break
+            fi
+        done 2>/dev/null <"/proc/$1/status"
+    else
+        pp_pid=$(ps -o ppid= -p "$1" 2>/dev/null | tr -d ' ')
+    fi
+}
+
 # True while pid $1 exists and is not a zombie.
 alive() {
     kill -0 "$1" 2>/dev/null || return 1
@@ -117,7 +180,7 @@ alive() {
     return 0
 }
 
-# Kernel command name of pid $1 (secondary check only).
+# Kernel command name of pid $1.
 proc_comm() {
     pc_comm=""
     if [ "$have_proc" = 1 ]; then
@@ -129,40 +192,122 @@ proc_comm() {
     printf '%s' "$pc_comm"
 }
 
-# Sets m_path (as the kernel reports it) and m_how when pid $1 is a live
-# hush-relay* owned by this uid; returns 1 otherwise.
+# Every pid on the system, one per line.
+all_pids() {
+    if [ "$have_proc" = 1 ]; then
+        for ap_dir in /proc/[0-9]*; do
+            printf '%s\n' "${ap_dir#/proc/}"
+        done
+    else
+        ps -ax -o pid= 2>/dev/null | tr -d ' '
+    fi
+}
+
+# --- ancestors ----------------------------------------------------------
+
+# This script's ancestors, from the PPid chain up to (not including) pid 1:
+# the recipe shell, make, whatever ran make. Never candidates.
+ancestors=""
+an_pid=$self
+an_n=0
+while [ "$an_n" -lt 1024 ]; do
+    ppid_of "$an_pid"
+    case "$pp_pid" in
+        ''|*[!0-9]*) break ;;
+    esac
+    [ "$pp_pid" -gt 1 ] || break
+    ancestors="$ancestors $pp_pid"
+    an_pid=$pp_pid
+    an_n=$((an_n + 1))
+done
+
+is_ancestor() {
+    case " $ancestors " in
+        *" $1 "*) return 0 ;;
+    esac
+    return 1
+}
+
+# Refuses (exit 1, nothing signalled) when any ancestor is a hush-relay,
+# of any uid: stopping it would kill the process running this make.
+# Refusing is the safe direction, so an unreadable exe falls back to comm
+# here (and only here).
+refuse_if_ancestor_relay() {
+    for ra_pid in $ancestors; do
+        ra_path=""
+        ra_hit=0
+        if [ "$have_proc" = 1 ]; then
+            ra_path=$(readlink "/proc/$ra_pid/exe" 2>/dev/null) || ra_path=""
+        fi
+        if [ -n "$ra_path" ]; then
+            case "${ra_path##*/}" in
+                hush-relay*) ra_hit=1 ;;
+            esac
+        else
+            ra_comm=$(proc_comm "$ra_pid")
+            case "$ra_comm" in
+                hush-relay*)
+                    ra_hit=1
+                    ra_path="(exe unreadable; comm $ra_comm)"
+                    ;;
+            esac
+        fi
+        if [ "$ra_hit" = 1 ]; then
+            warn "refusing: ancestor pid $ra_pid exe $ra_path is a hush-relay (this command runs under it); nothing signalled. Stop that relay from outside its process tree, then retry."
+            exit 1
+        fi
+    done
+}
+
+# Classifies pid $1 and sets m_path / m_how:
+#   0  verified hush-relay* of an allowed uid (Linux: by /proc exe)
+#   1  not a candidate
+#   2  hush-relay* comm but exe link unreadable: never signalled
+#   3  hush-relay* exe whose path contains a newline: never signalled
 relay_match() {
     m_path=""
     m_how=""
     case "$1" in
         ''|*[!0-9]*) return 1 ;;
     esac
-    if [ "$1" = "$self" ] || [ "$1" = "$parent" ] || [ "$1" -le 1 ]; then
-        return 1
-    fi
+    [ "$1" -gt 1 ] || return 1
+    [ "$1" = "$self" ] && return 1
+    is_ancestor "$1" && return 1
     proc_uid "$1"
-    [ "$pu_uid" = "$uid" ] || return 1
+    [ -n "$pu_uid" ] || return 1
+    uid_allowed "$pu_uid" || return 1
     alive "$1" || return 1
     if [ "$have_proc" = 1 ]; then
         rm_raw=$(readlink "/proc/$1/exe" 2>/dev/null) || rm_raw=""
         if [ -n "$rm_raw" ]; then
-            rm_exe=${rm_raw%" (deleted)"}
-            case "${rm_exe##*/}" in
-                hush-relay*)
-                    m_path=$rm_raw
-                    m_how="exe"
-                    return 0
-                    ;;
+            # A " (deleted)" suffix follows the basename, so this prefix
+            # test matches replaced binaries without stripping anything.
+            case "${rm_raw##*/}" in
+                hush-relay*) ;;
+                *) return 1 ;;
             esac
-            # A readable exe that is not hush-relay* is final: a script or
-            # an argv[0] trick named hush-relay-* is not a relay.
-            return 1
+            m_path=$rm_raw
+            m_how="exe"
+            case "$rm_raw" in
+                *"$nl"*) return 3 ;;
+            esac
+            return 0
         fi
+        rm_comm=$(proc_comm "$1")
+        case "$rm_comm" in
+            hush-relay*)
+                m_path="(exe unreadable; comm $rm_comm)"
+                m_how="comm"
+                return 2
+                ;;
+        esac
+        return 1
     fi
+    # Not Linux: ps comm is the only identity available.
     rm_comm=$(proc_comm "$1")
     case "$rm_comm" in
         hush-relay*)
-            m_path="(exe unreadable; comm $rm_comm)"
+            m_path="(comm $rm_comm)"
             m_how="comm"
             return 0
             ;;
@@ -191,89 +336,93 @@ relay_port() {
         }'
 }
 
-scan_relays() {
-    if [ "$have_proc" = 1 ]; then
-        for sr_dir in /proc/[0-9]*; do
-            sr_pid=${sr_dir#/proc/}
-            if relay_match "$sr_pid"; then
-                printf '%s\n' "$sr_pid"
-            fi
-        done
-    else
-        ps -ax -o pid= -o uid= -o comm= 2>/dev/null | awk -v u="$uid" \
-            -v s="$self" -v pp="$parent" '
-            $2 == u && $1 != s && $1 != pp {
-                n = split($3, parts, "/")
-                if (index(parts[n], "hush-relay") == 1) print $1
-            }'
-    fi
-}
-
 # --- stop -------------------------------------------------------------
 
 stop_relays() {
-    sr_pids=$(scan_relays)
-    if [ -z "$sr_pids" ]; then
-        echo "$me: no running hush-relay* process for uid $uid"
-        return 0
-    fi
+    sr_status=0
     sr_table=""
-    for p in $sr_pids; do
-        relay_match "$p" || continue
-        port=$(relay_port "$p")
-        echo "$me: found hush-relay pid $p exe $m_path port ${port:-unknown} (match: $m_how)"
-        if [ -n "$port" ]; then
-            stopped_ports="$stopped_ports $port"
-        fi
-        sr_table="$sr_table$p $m_path
-"
-        kill -TERM "$p" 2>/dev/null || true
+    for p in $(all_pids); do
+        relay_match "$p"
+        case $? in
+            0)
+                port=$(relay_port "$p")
+                say "found hush-relay pid $p exe $m_path port ${port:-unknown} (match: $m_how)"
+                if [ -n "$port" ]; then
+                    stopped_ports="$stopped_ports $port"
+                fi
+                sr_table="$sr_table$p $m_path$nl"
+                kill -TERM "$p" 2>/dev/null || true
+                ;;
+            2)
+                say "left running pid $p $m_path: exe link unreadable, identity unverified; not signalled"
+                sr_status=1
+                ;;
+            3)
+                say "left running pid $p: hush-relay* exe path contains a newline; not signalled"
+                sr_status=1
+                ;;
+        esac
     done
+    if [ -z "$sr_table" ]; then
+        if [ "$sr_status" = 0 ]; then
+            say "no running hush-relay* process for uid $allowed_uids"
+        fi
+        return "$sr_status"
+    fi
 
     sr_tries=$((grace * 5))
     sr_i=0
     while [ "$sr_i" -lt "$sr_tries" ]; do
         sr_left=0
-        for p in $sr_pids; do
-            if relay_match "$p"; then
-                sr_left=1
-                break
-            fi
+        sr_rest=$sr_table
+        while [ -n "$sr_rest" ]; do
+            sr_line=${sr_rest%%"$nl"*}
+            sr_rest=${sr_rest#*"$nl"}
+            relay_match "${sr_line%% *}"
+            case $? in
+                0|2) sr_left=1 ;;
+            esac
         done
         [ "$sr_left" = 0 ] && break
-        sleep 0.2
+        nap
         sr_i=$((sr_i + 1))
     done
 
-    sr_status=0
     sr_rest=$sr_table
     while [ -n "$sr_rest" ]; do
-        sr_line=${sr_rest%%
-*}
-        sr_rest=${sr_rest#*
-}
+        sr_line=${sr_rest%%"$nl"*}
+        sr_rest=${sr_rest#*"$nl"}
         p=${sr_line%% *}
         path=${sr_line#* }
         [ -n "$p" ] || continue
-        if ! relay_match "$p" || [ "$m_path" != "$path" ]; then
-            echo "$me: stopped pid $p $path (SIGTERM)"
+        relay_match "$p"
+        sr_m=$?
+        if [ "$sr_m" = 1 ]; then
+            say "stopped pid $p $path (SIGTERM)"
+            continue
+        fi
+        if [ "$sr_m" != 0 ] || [ "$m_path" != "$path" ]; then
+            say "pid $p changed identity (was $path, now $m_path), not signalled"
+            sr_status=1
             continue
         fi
         kill -KILL "$p" 2>/dev/null || true
-        sleep 0.2
-        if relay_match "$p" && [ "$m_path" = "$path" ]; then
-            echo "$me: FAILED to stop pid $p $path (alive after SIGKILL)" >&2
-            sr_status=1
+        nap
+        relay_match "$p"
+        sr_m=$?
+        if [ "$sr_m" = 1 ]; then
+            say "stopped pid $p $path (SIGKILL after ${grace}s)"
         else
-            echo "$me: stopped pid $p $path (SIGKILL after ${grace}s)"
+            warn "FAILED to stop pid $p $path (still present after SIGKILL)"
+            sr_status=1
         fi
     done
     return "$sr_status"
 }
 
-# Other users' relays are never signalled; name them so an operator
-# running `sudo make install` knows a user relay still serves the old
-# binary. comm is world-readable; nothing here sends a signal.
+# Other users' relays are never signalled; name them so an operator knows
+# a relay still serves the old binary. comm is world-readable; nothing
+# here sends a signal.
 note_foreign_relays() {
     [ "$have_proc" = 1 ] || return 0
     for nf_dir in /proc/[0-9]*; do
@@ -283,15 +432,9 @@ note_foreign_relays() {
             hush-relay*) ;;
             *) continue ;;
         esac
-        nf_uid=""
-        while read -r nf_key nf_real _; do
-            if [ "$nf_key" = "Uid:" ]; then
-                nf_uid=$nf_real
-                break
-            fi
-        done 2>/dev/null <"$nf_dir/status"
-        if [ -n "$nf_uid" ] && [ "$nf_uid" != "$uid" ]; then
-            echo "$me: note: process ${nf_dir#/proc/} (comm $nf_comm) belongs to uid $nf_uid, not $uid; left running (stop it as that user)"
+        proc_uid "${nf_dir#/proc/}"
+        if [ -n "$pu_uid" ] && ! uid_allowed "$pu_uid"; then
+            say "note: process ${nf_dir#/proc/} (comm $nf_comm) belongs to uid $pu_uid, not $allowed_uids; left running (stop it as that user)"
         fi
     done
 }
@@ -323,7 +466,7 @@ reap_child_turnserver() {
     if kill -0 "$turn_pid" 2>/dev/null; then
         kill -KILL "$turn_pid" 2>/dev/null || true
     fi
-    echo "$me: stopped CHILD turnserver pid $turn_pid ($turn_pidfile)"
+    say "stopped CHILD turnserver pid $turn_pid ($turn_pidfile)"
 }
 
 # --- windows (clean only) ---------------------------------------------
@@ -331,6 +474,7 @@ reap_child_turnserver() {
 # Browser executables hush-relay launches (hush_exec_native_browser /
 # hush_exec_flatpak_browser in hush-c/src/hush_relay.c), by the names
 # their processes actually carry, plus the flatpak sandbox (bwrap).
+# Here the " (deleted)" strip matters: the names are compared exactly.
 browser_name() {
     bn_raw=$(readlink "/proc/$1/exe" 2>/dev/null) || bn_raw=""
     bn_exe=${bn_raw%" (deleted)"}
@@ -349,10 +493,16 @@ browser_name() {
     return 1
 }
 
-# Prints the first own-cmdline argument that marks pid $1 as a Hush app
-# window: prefix --class=hush-relay, or exactly the --app URL of a relay
-# port stopped by this run. Prints nothing otherwise.
-window_flag() {
+# First own-cmdline argument of pid $1 starting with --class=hush-relay.
+window_class() {
+    tr '\0' '\n' 2>/dev/null <"/proc/$1/cmdline" | awk '
+        NR == 1 { next }
+        index($0, "--class=hush-relay") == 1 { print; exit }'
+}
+
+# Own-cmdline argument of pid $1 that is exactly the --app URL of a relay
+# port stopped by this run (reporting only; never enough to close).
+window_app() {
     tr '\0' '\n' 2>/dev/null <"/proc/$1/cmdline" | awk -v ports="$stopped_ports" '
         BEGIN {
             n = split(ports, pa, " ")
@@ -360,7 +510,6 @@ window_flag() {
                 want["--app=http://127.0.0.1:" pa[i] "/"] = 1
         }
         NR == 1 { next }
-        index($0, "--class=hush-relay") == 1 { print; exit }
         ($0 in want) { print; exit }'
 }
 
@@ -369,34 +518,41 @@ browser_main() {
     ! tr '\0' '\n' 2>/dev/null <"/proc/$1/cmdline" | grep -q '^--type='
 }
 
+# Sets w_name / w_class / w_app for pid $1. True only for a live browser
+# of an allowed uid (never this script or an ancestor) whose own cmdline
+# carries --class=hush-relay*.
 window_match() {
     w_name=""
-    w_flag=""
+    w_class=""
+    w_app=""
     [ "$1" = "$self" ] && return 1
-    [ "$1" = "$parent" ] && return 1
+    is_ancestor "$1" && return 1
     proc_uid "$1"
-    [ "$pu_uid" = "$uid" ] || return 1
+    [ -n "$pu_uid" ] || return 1
+    uid_allowed "$pu_uid" || return 1
     alive "$1" || return 1
-    w_name=$(browser_name "$1") || return 1
-    w_flag=$(window_flag "$1")
-    [ -n "$w_flag" ]
+    w_name=$(browser_name "$1") || w_name=""
+    [ -n "$w_name" ] || return 1
+    w_class=$(window_class "$1")
+    w_app=$(window_app "$1")
+    [ -n "$w_class" ]
 }
 
 close_windows() {
     if [ "$have_proc" != 1 ]; then
-        echo "$me: no /proc; Hush app windows not scanned (close them by hand)"
+        say "no /proc; Hush app windows not scanned (close them by hand)"
         return 0
     fi
     cw_pids=""
-    for cw_dir in /proc/[0-9]*; do
-        p=${cw_dir#/proc/}
+    for p in $(all_pids); do
         if window_match "$p"; then
-            echo "$me: closing Hush app window pid $p ($w_name) $w_flag"
+            say "closing Hush app window pid $p ($w_name) $w_class${w_app:+ $w_app}"
             cw_pids="$cw_pids $p"
             kill -TERM "$p" 2>/dev/null || true
-        elif [ -n "$w_name" ] && [ "$w_name" != "bwrap" ] \
-            && alive "$p" && browser_main "$p"; then
-            echo "$me: left alone pid $p ($w_name): no --class=hush-relay* or --app of a stopped relay in its own cmdline; a Hush window handed off into this shared browser cannot be closed without closing the whole browser"
+        elif [ -n "$w_name" ] && [ -n "$w_app" ]; then
+            say "left running pid $p ($w_name): $w_app of a stopped relay but no --class=hush-relay in its own cmdline; not signalled"
+        elif [ -n "$w_name" ] && [ "$w_name" != "bwrap" ] && browser_main "$p"; then
+            say "left alone pid $p ($w_name): no --class=hush-relay* in its own cmdline; a Hush window handed off into this shared browser cannot be closed without closing the whole browser"
         fi
     done
     [ -n "$cw_pids" ] || return 0
@@ -410,26 +566,31 @@ close_windows() {
             fi
         done
         [ "$cw_left" = 0 ] && break
-        sleep 0.2
+        nap
         cw_i=$((cw_i + 1))
     done
     for p in $cw_pids; do
         if window_match "$p"; then
             kill -KILL "$p" 2>/dev/null || true
-            sleep 0.2
+            nap
         fi
         if window_match "$p"; then
-            echo "$me: warning: Hush app window pid $p ($w_name) survived SIGKILL" >&2
+            warn "warning: Hush app window pid $p ($w_name) survived SIGKILL"
         else
-            echo "$me: closed Hush app window pid $p"
+            say "closed Hush app window pid $p"
         fi
     done
 }
 
 # --- stale renamed copies (clean only) --------------------------------
 
-owned_by_me() {
-    [ -n "$(find "$1" -prune -user "$uid" -print 2>/dev/null)" ]
+owned_by_allowed() {
+    for ob_uid in $allowed_uids; do
+        if [ -n "$(find "$1" -prune -user "$ob_uid" -print 2>/dev/null)" ]; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 is_elf() {
@@ -439,31 +600,37 @@ is_elf() {
 remove_stale_copies() {
     rs_dir=$1
     if [ ! -d "$rs_dir" ]; then
-        echo "$me: $rs_dir absent; no stale hush-relay-* copies"
+        say "$rs_dir absent; no stale hush-relay-* copies"
         return 0
     fi
     for f in "$rs_dir"/hush-relay-*; do
         if [ ! -e "$f" ] && [ ! -L "$f" ]; then
             continue # unmatched glob
         fi
+        case "$f" in
+            *"$nl"*)
+                say "kept a hush-relay-* file whose name contains a newline"
+                continue
+                ;;
+        esac
         case "${f##*/}" in
             hush-relay-stop)
-                echo "$me: kept $f (packaging helper name)"
+                say "kept $f (packaging helper name)"
                 continue
                 ;;
         esac
         if [ -L "$f" ]; then
-            echo "$me: kept $f (symlink; not followed)"
+            say "kept $f (symlink; not followed)"
         elif [ ! -f "$f" ]; then
-            echo "$me: kept $f (not a regular file)"
-        elif ! owned_by_me "$f"; then
-            echo "$me: kept $f (not owned by uid $uid)"
+            say "kept $f (not a regular file)"
+        elif ! owned_by_allowed "$f"; then
+            say "kept $f (not owned by uid $allowed_uids)"
         elif ! is_elf "$f"; then
-            echo "$me: kept $f (not an ELF executable)"
+            say "kept $f (not an ELF executable)"
         elif rm -f -- "$f"; then
-            echo "$me: removed stale copy $f"
+            say "removed stale copy $f"
         else
-            echo "$me: FAILED to remove $f" >&2
+            warn "FAILED to remove $f"
             rc=1
         fi
     done
@@ -478,21 +645,22 @@ case "$mode" in
     clean)
         bindir="${2:-}"
         if [ -z "$bindir" ]; then
-            echo "$me: usage: kill-relay.sh clean BINDIR (empty BINDIR refused)" >&2
+            warn "usage: kill-relay.sh clean BINDIR (empty BINDIR refused)"
             exit 2
         fi
         ;;
     *)
-        echo "$me: usage: kill-relay.sh [stop] | clean BINDIR" >&2
+        warn "usage: kill-relay.sh [stop] | clean BINDIR"
         exit 2
         ;;
 esac
 
+refuse_if_ancestor_relay
 stop_relays || rc=1
 note_foreign_relays
 reap_child_turnserver
 if [ "$rc" -ne 0 ]; then
-    echo "$me: a hush-relay survived; stop it by hand (Exit in the hive, or kill -KILL the pid above) and retry" >&2
+    warn "a hush-relay survived or could not be verified; stop it by hand (Exit in the hive, or kill it by pid) and retry"
     exit 1
 fi
 if [ "$mode" = "clean" ]; then
