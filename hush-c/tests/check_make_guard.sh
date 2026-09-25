@@ -94,6 +94,22 @@ wait_down() {
 # --- guard passes when the port is free ---
 HUSH_PORT="$port" sh "$guard" || fail "guard tripped with nothing running"
 
+# --- curl-less stub PATH (P1): sh builtins plus only what the guard needs ---
+# PATH assignments apply before command lookup, so the stub must also
+# provide `sh` itself. Inside the guard only shell builtins run (command,
+# kill, read, printf, test) plus ps/awk/tr/cat. curl is deliberately
+# absent so the probe path is unreachable.
+stub_bin="$test_home/stub-bin"
+mkdir -p "$stub_bin"
+for tool in sh ps awk tr cat; do
+    ln -s "$(command -v "$tool")" "$stub_bin/$tool"
+done
+no_curl_path="$stub_bin"
+
+# --- P1a: no relay + no curl still passes (exit 0) ---
+PATH="$no_curl_path" HUSH_PORT="$port" sh "$guard" \
+    || fail "guard failed with no relay and no curl"
+
 # --- guard trips with a live --no-open relay: quit command + pid ---
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
@@ -114,6 +130,44 @@ wait_down "$pid" || fail "--quit left the relay running"
 wait "$pid" 2>/dev/null || true
 pid=""
 HUSH_PORT="$port" sh "$guard" || fail "guard still trips after --quit"
+
+# --- P2a: pidfile path needs no curl (live relay names its pid) ---
+# Without curl the ps+probe fallback is unreachable, so only the pidfile
+# read (guard line 74) can name the owner. Reverting that read to
+# `read -r owner` makes this fail: the 3-field line is not a bare pid,
+# the fallback exits 2 without curl, and the pid is never named.
+"$bin" --no-open "$port" >"$log" 2>&1 &
+pid=$!
+wait_up || fail "relay did not start on $port"
+out=""
+if PATH="$no_curl_path" HUSH_PORT="$port" sh "$guard" >"$test_home/guard-nocurl.out" 2>&1; then
+    fail "guard passed with a live relay and no curl"
+fi
+out=$(cat "$test_home/guard-nocurl.out")
+echo "$out" | grep -q -- '--quit' || fail "guard hides the quit command without curl"
+echo "$out" | grep -q "$pid" || fail "guard hid the owner pid ($pid) without curl"
+"$bin" --quit "$port" >/dev/null 2>&1 || fail "--quit failed"
+wait_down "$pid" || fail "--quit left the relay running"
+wait "$pid" 2>/dev/null || true
+pid=""
+
+# --- P1b: live relay, hidden pidfile, no curl refuses loudly (exit 2) ---
+# The guard sees a hush-relay process but cannot probe the port, so it
+# must fail instead of passing over a possibly live hive.
+"$bin" --no-open "$port" >"$log" 2>&1 &
+pid=$!
+wait_up || fail "relay did not start on $port"
+hidden_code=0
+XDG_RUNTIME_DIR="$test_home/empty-run" PATH="$no_curl_path" HUSH_PORT="$port" \
+    sh "$guard" >"$test_home/guard-hidden.out" 2>&1 || hidden_code=$?
+test "$hidden_code" -eq 2 \
+    || fail "guard must exit 2 with a live relay, hidden pidfile, no curl (got $hidden_code)"
+grep -q 'curl missing' "$test_home/guard-hidden.out" \
+    || fail "guard hid the curl message"
+"$bin" --quit "$port" >/dev/null 2>&1 || fail "--quit failed"
+wait_down "$pid" || fail "--quit left the relay running"
+wait "$pid" 2>/dev/null || true
+pid=""
 
 # --- kill-relay.sh reaps the CHILD turnserver named by the state pidfile ---
 # comm must read "turnserver", so run a copy of sleep under that basename.

@@ -15,8 +15,9 @@
 # pid only). A live pid in that file owns the port. Without a live pidfile,
 # a probe of http://127.0.0.1:<port>/api/status plus a live hush-relay
 # process also counts (covers a relay started under a different XDG/HOME).
-# curl is required for the probe: without a pidfile owner and without curl
-# the guard fails instead of silently passing over a possibly live relay.
+# The probe needs curl, but only when a hush-relay process is actually
+# running: with no relay at all the guard passes even without curl; with
+# a live relay and no curl it fails (exit 2) instead of guessing.
 
 set -eu
 
@@ -52,12 +53,9 @@ relay_pids() {
 
 port_answers() {
     # Any 2xx from the unauthenticated status probe means a relay is home.
-    if command -v curl >/dev/null 2>&1; then
-        curl -sf --max-time 2 "http://127.0.0.1:${port}/api/status" \
-            >/dev/null 2>&1
-    else
-        return 1
-    fi
+    # The caller guarantees curl exists before taking the probe path.
+    curl -sf --max-time 2 "http://127.0.0.1:${port}/api/status" \
+        >/dev/null 2>&1
 }
 
 owner=""
@@ -84,14 +82,22 @@ fi
 
 if [ -z "$owner" ]; then
     pids=$(relay_pids)
-    if [ -n "$pids" ] && port_answers; then
-        # Attribute the port to the first live hush-relay for the message.
-        for p in $pids; do
-            if pid_alive "$p"; then
-                owner="$p"
-                break
-            fi
-        done
+    if [ -n "$pids" ]; then
+        # A relay process exists but no pidfile names it: only the port
+        # probe can attribute it, so curl is required here (and only here).
+        if ! command -v curl >/dev/null 2>&1; then
+            echo "check-relay-port: hush-relay is running but its port cannot be probed (curl missing)" >&2
+            exit 2
+        fi
+        if port_answers; then
+            # Attribute the port to the first live hush-relay for the message.
+            for p in $pids; do
+                if pid_alive "$p"; then
+                    owner="$p"
+                    break
+                fi
+            done
+        fi
     fi
 fi
 
@@ -103,11 +109,6 @@ Stop it first, then rebuild:
 Close only dismisses the window — the hive keeps the port. See README "Close vs Exit".
 EOF
     exit 1
-fi
-
-if ! command -v curl >/dev/null 2>&1; then
-    echo "check-relay-port: cannot verify port ${port} is free (curl missing)" >&2
-    exit 2
 fi
 
 exit 0
