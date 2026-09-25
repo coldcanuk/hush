@@ -53,7 +53,9 @@ GUARD_PORT ?= $(HUSH_PORT)
 # clean` (kill-relay.sh) is the only path that kills.
 # Port-scoped with curl: only the guard port is probed ($HUSH_PORT, else
 # 10555); a relay on another port does not block. Without curl the guard
-# cannot probe, so any running hush-relay blocks the build (exit 2).
+# cannot probe: any running hush-relay blocks the build (exit 2), except a
+# relay the pidfile names as owner of this port, which is refused with
+# exit 1, its pid and the `--quit` command.
 guard:
 	@sh scripts/check-relay-port.sh $(GUARD_PORT)
 
