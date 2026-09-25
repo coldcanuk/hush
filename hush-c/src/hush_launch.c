@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <openssl/crypto.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -146,6 +147,9 @@ static size_t hush_launch_json_escape(const char *src, char *dst, size_t dstsz);
 static void hush_launch_try_save(hush_launch_t *launch, const char *path,
                                  const char *secret);
 
+/* Wipes a retrieved secret with a cleanse the compiler keeps. */
+static void hush_launch_cleanse_secret(char *buf, size_t bufsz);
+
 /* Rejects NULL, non-absolute, root, overlong, control-character, or ".." paths. */
 static hush_status_t hush_launch_validate_project_path(const char *path);
 
@@ -172,9 +176,14 @@ static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
 
 /* Writes logged_in through vibe, then opens the payne object.
  * Returns bytes written, or -1 on overflow. */
-static int hush_launch_write_session_open(const hush_launch_t *launch,
-                                          uint16_t port,
+static int hush_launch_write_session_open(const hush_launch_t *launch, uint16_t port,
                                           char *out, size_t outsz);
+
+/* Session nsec: the live secret before backup ack, else empty. Borrowed. */
+static const char *hush_launch_session_nsec(const hush_launch_t *launch);
+
+/* Fits a snprintf result: n, or -1 on error/overflow. Pure. */
+static int hush_launch_fit(int n, size_t outsz);
 
 /* Appends the channels array body. */
 static hush_status_t hush_launch_format_channels(const hush_launch_t *launch,
@@ -442,6 +451,7 @@ void hush_launch_init(hush_launch_t *launch)
         return;
     memset(launch, 0, sizeof(*launch));
     launch->vibe_public = 1;
+    launch->restart_lost_login = 0;
     launch->dev_log_enabled = 0; /* default: disabled (see M3.1) */
     hush_roster_init(&launch->roster);
     hush_launch_default_payne_providers(launch);
@@ -458,6 +468,7 @@ hush_status_t hush_launch_create_identity(hush_launch_t *launch)
     if (hush_identity_generate(&launch->human) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
     launch->logged_in = 1;
+    launch->restart_lost_login = 0;
     return HUSH_OK;
 }
 
@@ -477,6 +488,7 @@ hush_status_t hush_launch_import_identity(hush_launch_t *launch,
     if (st != HUSH_OK)
         return st;
     launch->logged_in = 1;
+    launch->restart_lost_login = 0;
     return HUSH_OK;
 }
 
@@ -496,9 +508,17 @@ hush_status_t hush_launch_ack_backup(hush_launch_t *launch, int save_pass)
     return HUSH_OK;
 }
 
+/* Wipes a retrieved secret with a cleanse the compiler keeps. */
+static void hush_launch_cleanse_secret(char *buf, size_t bufsz)
+{
+    assert(buf != NULL);
+    OPENSSL_cleanse(buf, bufsz);
+}
+
 hush_status_t hush_launch_restore_identity(hush_launch_t *launch)
 {
     char secret[HUSH_PASS_SECRET_MAX];
+    hush_status_t imported;
 
     if (launch == NULL)
         return HUSH_ERR_ARG;
@@ -506,9 +526,13 @@ hush_status_t hush_launch_restore_identity(hush_launch_t *launch)
         return HUSH_OK;
     if (!hush_pass_has(HUSH_PASS_IDENTITY_NSEC))
         return HUSH_OK;
-    if (hush_pass_get(secret, sizeof(secret), HUSH_PASS_IDENTITY_NSEC) != HUSH_OK)
+    if (hush_pass_get(secret, sizeof(secret), HUSH_PASS_IDENTITY_NSEC) != HUSH_OK) {
+        hush_launch_cleanse_secret(secret, sizeof(secret));
         return HUSH_OK;
-    if (hush_identity_import(&launch->human, secret) != HUSH_OK) {
+    }
+    imported = hush_identity_import(&launch->human, secret);
+    hush_launch_cleanse_secret(secret, sizeof(secret));
+    if (imported != HUSH_OK) {
         hush_identity_clear(&launch->human);
         return HUSH_OK;
     }
@@ -518,6 +542,13 @@ hush_status_t hush_launch_restore_identity(hush_launch_t *launch)
     launch->pass_saved = 1;
     launch->pass_error[0] = '\0';
     return HUSH_OK;
+}
+
+void hush_launch_mark_restart(hush_launch_t *launch)
+{
+    if (launch == NULL)
+        return;
+    launch->restart_lost_login = (launch->has_vibe && !launch->logged_in) ? 1 : 0;
 }
 
 hush_status_t hush_launch_save_vibe(const hush_launch_t *launch)
@@ -1647,22 +1678,38 @@ static hush_status_t hush_launch_format_payne_providers(
     return hush_launch_format_payne_tail(launch, out, outsz, off);
 }
 
-static int hush_launch_write_session_open(const hush_launch_t *launch,
-                                          uint16_t port,
+/* Session nsec: the live secret before backup ack, else empty. Borrowed. */
+static const char *hush_launch_session_nsec(const hush_launch_t *launch)
+{
+    assert(launch != NULL);
+    if (!launch->logged_in || launch->backup_acked)
+        return "";
+    return launch->human.nsec;
+}
+
+/* Fits a snprintf result: n, or -1 on error/overflow. Pure. */
+static int hush_launch_fit(int n, size_t outsz)
+{
+    if (n < 0 || (size_t)n >= outsz)
+        return -1;
+    return n;
+}
+
+static int hush_launch_write_session_open(const hush_launch_t *launch, uint16_t port,
                                           char *out, size_t outsz)
 {
-    char esc_vibe[HUSH_LAUNCH_NAME_MAX * 2];
-    char esc_about[HUSH_LAUNCH_ABOUT_MAX * 2];
-    int n;
+    char esc_vibe[HUSH_LAUNCH_NAME_MAX * 2] = {0};
+    char esc_about[HUSH_LAUNCH_ABOUT_MAX * 2] = {0};
 
     assert(launch != NULL);
     assert(out != NULL);
     hush_launch_json_escape(launch->vibe_name, esc_vibe, sizeof(esc_vibe));
     hush_launch_json_escape(launch->vibe_about, esc_about, sizeof(esc_about));
-    n = snprintf(out, outsz,
+    int n = snprintf(out, outsz,
                  "{\"ok\":true,\"logged_in\":%s,\"backup_acked\":%s,"
                  "\"has_vibe\":%s,\"ready\":%s,\"save_pass\":%s,"
-                 "\"pass_saved\":%s,\"pass_error\":\"%s\",\"port\":%u,"
+                 "\"pass_saved\":%s,\"pass_available\":%s,\"pass_error\":\"%s\","
+                 "\"restart_lost_login\":%s,\"port\":%u,"
                  "\"npub\":\"%s\",\"pubkey\":\"%s\",\"nsec\":\"%s\","
                  "\"vibe\":{\"name\":\"%s\",\"about\":\"%s\","
                  "\"visibility\":\"%s\",\"discoverable\":%s,"
@@ -1674,20 +1721,19 @@ static int hush_launch_write_session_open(const hush_launch_t *launch,
                  hush_launch_is_ready(launch) ? "true" : "false",
                  launch->save_pass ? "true" : "false",
                  launch->pass_saved ? "true" : "false",
+                 hush_pass_available() ? "true" : "false",
                  launch->pass_error,
+                 launch->restart_lost_login ? "true" : "false",
                  (unsigned)port,
                  launch->logged_in ? launch->human.npub : "",
                  launch->logged_in ? launch->human.pubkey_hex : "",
-                 (launch->logged_in && !launch->backup_acked)
-                     ? launch->human.nsec : "",
+                 hush_launch_session_nsec(launch),
                  esc_vibe, esc_about,
                  launch->vibe_public ? "public" : "private",
                  launch->vibe_public ? "true" : "false",
                  launch->has_vibe ? launch->vibe_token : "",
                  launch->dev_log_enabled ? "true" : "false");
-    if (n < 0 || (size_t)n >= outsz)
-        return -1;
-    return n;
+    return hush_launch_fit(n, outsz);
 }
 
 static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
@@ -2861,8 +2907,11 @@ static hush_status_t hush_launch_restore_agent_id(hush_roster_agent_t *agent)
         return hush_identity_generate(&agent->id);
     if (hush_pass_has(path)
         && hush_pass_get(secret, sizeof(secret), path) == HUSH_OK
-        && hush_identity_import(&agent->id, secret) == HUSH_OK)
+        && hush_identity_import(&agent->id, secret) == HUSH_OK) {
+        hush_launch_cleanse_secret(secret, sizeof(secret));
         return HUSH_OK;
+    }
+    hush_launch_cleanse_secret(secret, sizeof(secret));
     return hush_identity_generate(&agent->id);
 }
 
@@ -3005,8 +3054,11 @@ static hush_status_t hush_launch_restore_payne(hush_launch_t *launch)
     hush_identity_clear(&launch->payne);
     if (hush_pass_has(HUSH_PASS_PAYNE_NSEC)
         && hush_pass_get(secret, sizeof(secret), HUSH_PASS_PAYNE_NSEC) == HUSH_OK
-        && hush_identity_import(&launch->payne, secret) == HUSH_OK)
+        && hush_identity_import(&launch->payne, secret) == HUSH_OK) {
+        hush_launch_cleanse_secret(secret, sizeof(secret));
         return HUSH_OK;
+    }
+    hush_launch_cleanse_secret(secret, sizeof(secret));
     if (hush_identity_generate(&launch->payne) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
     if (launch->save_pass)

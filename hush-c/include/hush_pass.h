@@ -41,4 +41,10 @@ hush_status_t hush_pass_get(char *out, size_t outsz, const char *path);
 /* True when hush/<path> can be shown. */
 int hush_pass_has(const char *path);
 
+/* True when a save would find its helper. Checks only the configured
+ * helper override when one is set (test doubles need no `pass`); else
+ * requires the hush-pass helper and the `pass` program. Pure filesystem
+ * check; runs nothing and writes nothing. */
+int hush_pass_available(void);
+
 #endif /* HUSH_PASS_H */
