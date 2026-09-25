@@ -1,11 +1,13 @@
 #!/bin/sh
 # check_make_guard.sh — the rebuild guard fails loud on a live relay and
-# passes when the port is free; `make clean`'s pre-kill reaps CHILD-mode
+# passes when the port is free; the kill script reaps CHILD-mode
 # turnserver only and never touches the systemd daemon.
 #
-# Covers scripts/check-relay-port.sh (wired into top-level `make` / `make
-# install` via the `guard` target) and scripts/kill-relay.sh (wired into
-# top-level `make clean`). Packaging-only: no relay behavior is changed.
+# Covers scripts/check-relay-port.sh (wired into top-level `make` via the
+# `guard` target; `make install` no longer refuses, it stops relays — see
+# check_stop_relays.sh, #221) and scripts/kill-relay.sh (wired into
+# `make install` / `make clean`). Packaging-only: no relay behavior is
+# changed.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -21,10 +23,14 @@ fail() { echo "make guard check failed: $1" >&2; exit 1; }
 sh -n "$guard" || fail "guard has a syntax error"
 sh -n "$killsh" || fail "kill script has a syntax error"
 
-# --- static: make wires the guard into build + install, never clean ---
+# --- static: make wires the guard into build only, never install/clean ---
+# (#221: install replaced the fail-fast refuse with stop-then-install.)
 grep -q 'check-relay-port' "$topmk" || fail "top Makefile never calls the guard"
 grep -q '^all: guard' "$topmk" || fail "top 'all' skips the guard"
-grep -q '^install: guard' "$topmk" || fail "top 'install' skips the guard"
+if grep -q '^install:.*guard' "$topmk"; then
+    fail "top 'install' still refuses via the port guard (#221: stop, not refuse)"
+fi
+grep -q '^install:.*stop-relays' "$topmk" || fail "top 'install' does not stop relays first"
 grep -q 'kill-relay' "$topmk" || fail "top Makefile lost the clean pre-kill"
 
 # --- static: kill script reaps CHILD state only, never the daemon ---
@@ -202,29 +208,36 @@ wait "$n1_pid" 2>/dev/null || true
 n1_pid=""
 
 # --- kill-relay.sh reaps the CHILD turnserver named by the state pidfile ---
-# comm must read "turnserver", so run a copy of sleep under that basename.
-cp "$(command -v sleep)" "$test_home/turnserver"
-"$test_home/turnserver" 60 >/dev/null 2>&1 < /dev/null &
-child_pid=$!
-kill -0 "$child_pid" 2>/dev/null || fail "child fixture did not start"
-printf '%s\n' "$child_pid" >"$HUSH_STATE_DIR/turnserver.pid"
+# kill-relay.sh also stops every hush-relay* of this uid (#221), so on a
+# developer desktop it would stop the real hive: opt-in outside CI.
+if [ "${CI:-}" = "true" ] || [ "${HUSH_TEST_STOP_RELAYS:-}" = "1" ]; then
+    # comm must read "turnserver", so run a copy of sleep under that basename.
+    cp "$(command -v sleep)" "$test_home/turnserver"
+    "$test_home/turnserver" 60 >/dev/null 2>&1 < /dev/null &
+    child_pid=$!
+    kill -0 "$child_pid" 2>/dev/null || fail "child fixture did not start"
+    printf '%s\n' "$child_pid" >"$HUSH_STATE_DIR/turnserver.pid"
 
-# A fake daemon turnserver outside the state dir must survive.
-sleep 60 >/dev/null 2>&1 < /dev/null &
-daemon_pid=$!
-daemon_dir="$test_home/daemon-run"
-mkdir -p "$daemon_dir"
-printf '%s\n' "$daemon_pid" >"$daemon_dir/turnserver.pid"
+    # A fake daemon turnserver outside the state dir must survive.
+    sleep 60 >/dev/null 2>&1 < /dev/null &
+    daemon_pid=$!
+    daemon_dir="$test_home/daemon-run"
+    mkdir -p "$daemon_dir"
+    printf '%s\n' "$daemon_pid" >"$daemon_dir/turnserver.pid"
 
-sh "$killsh" || fail "kill script exited non-zero"
-if kill -0 "$child_pid" 2>/dev/null; then
-    fail "kill script left the CHILD turnserver running"
+    sh "$killsh" || fail "kill script exited non-zero"
+    if kill -0 "$child_pid" 2>/dev/null; then
+        fail "kill script left the CHILD turnserver running"
+    fi
+    child_pid=""
+    kill -0 "$daemon_pid" 2>/dev/null \
+        || fail "kill script stopped a non-CHILD (daemon-stand-in) process"
+    test "$(cat "$daemon_dir/turnserver.pid")" = "$daemon_pid" \
+        || fail "kill script touched a non-CHILD pidfile"
+    daemon_note="CHILD reaped, daemon stand-in survived"
+else
+    echo "skip: kill-relay CHILD-reap check (it stops every hush-relay* of this uid; set HUSH_TEST_STOP_RELAYS=1 or CI=true to run)"
+    daemon_note="CHILD reap skipped"
 fi
-child_pid=""
-kill -0 "$daemon_pid" 2>/dev/null \
-    || fail "kill script stopped a non-CHILD (daemon-stand-in) process"
-test "$(cat "$daemon_dir/turnserver.pid")" = "$daemon_pid" \
-    || fail "kill script touched a non-CHILD pidfile"
-daemon_note="daemon stand-in survived"
 
-echo "make guard ok (guard trips + passes; CHILD reaped, $daemon_note)"
+echo "make guard ok (guard trips + passes; $daemon_note)"

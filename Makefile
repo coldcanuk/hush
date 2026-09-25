@@ -3,11 +3,15 @@
 #   ./configure [PREFIX=...]
 #   make
 #   make test
-#   make install [PREFIX=...]     # installs hush-relay + .desktop + icons
+#   make install [PREFIX=...]     # stops every running hush-relay* of this
+#                                 # user (renamed copies too), then installs
+#                                 # hush-relay + .desktop + icons
 #   make uninstall                # removes PREFIX artifacts install owns (keeps build tree)
-#   make clean                    # uninstalls PREFIX artifacts, then scrubs the
-#                                 # build tree (objects, libs, in-tree binary,
-#                                 # tarballs), so the next
+#   make clean                    # stops relays, closes Hush app windows,
+#                                 # removes stale hush-relay-* copies from
+#                                 # BINDIR, uninstalls PREFIX artifacts, then
+#                                 # scrubs the build tree (objects, libs,
+#                                 # in-tree binary, tarballs), so the next
 #                                 # ./configure ; make ; make install starts
 #                                 # from a clean install. Never touches
 #                                 # ~/.hush/ runtime data.
@@ -44,13 +48,15 @@ endif
 # Override per-invocation, e.g. `HUSH_PORT=10556 make`.
 GUARD_PORT ?= $(HUSH_PORT)
 
-.PHONY: all test clean install uninstall guard check-prefix check-stamp package-deb package-rpm packages deb rpm flatpak openbsd freebsd bsd dist
+.PHONY: all test clean install uninstall guard stop-relays clean-relays check-prefix check-stamp package-deb package-rpm packages deb rpm flatpak openbsd freebsd bsd dist
 # guard: is defined below but must never become the default goal.
 .DEFAULT_GOAL := all
 
-# Fail-loud when a live relay owns the guard port: never build or install
-# over a running hive. Stop it first (`hush-relay --quit <port>`); `make
-# clean` (kill-relay.sh) is the only path that kills.
+# Fail-loud when a live relay owns the guard port: never build over a
+# running hive. Stop it first (`hush-relay --quit <port>`). `make install`
+# no longer uses this guard: it stops relays (stop-relays) instead of
+# refusing, and `make clean` also stops them (clean-relays); both run
+# scripts/kill-relay.sh.
 # Port-scoped with curl: only the guard port is probed ($HUSH_PORT, else
 # 10555); a relay on another port does not block. Without curl the guard
 # cannot probe: any running hush-relay blocks the build (exit 2), except a
@@ -58,6 +64,33 @@ GUARD_PORT ?= $(HUSH_PORT)
 # exit 1, its pid and the `--quit` command.
 guard:
 	@sh scripts/check-relay-port.sh $(GUARD_PORT)
+
+# Stop every live hush-relay* process of this uid (under sudo: also
+# SUDO_UID's) before install replaces files: renamed copies
+# (hush-relay-m11-<sha>), replaced binaries ("(deleted)") and any port,
+# matched by executable basename, never by exact name or port. SIGTERM,
+# then SIGKILL after a few seconds; fails (nonzero) if a relay survives or
+# if make itself runs under a hush-relay. DESTDIR staging installs
+# (deb/rpm/flatpak builds) replace nothing live, so they skip the stop.
+# See #221.
+stop-relays:
+	@if [ -n "$(DESTDIR)" ]; then \
+		echo "stop-relays: DESTDIR staging install; running relays left alone."; \
+	else \
+		sh scripts/kill-relay.sh stop; \
+	fi
+
+# make clean's pre-step: the same stop, then close Hush app windows
+# (--class=hush-relay* in the browser's own cmdline), then remove stale
+# renamed hush-relay-* copies from BINDIR (regular files this uid owns
+# only; symlinks are never followed). ~/.hush is never touched. Skipped
+# for DESTDIR staging trees, like stop-relays.
+clean-relays: check-prefix
+	@if [ -n "$(DESTDIR)" ]; then \
+		echo "clean-relays: DESTDIR staging tree; running relays, windows and BINDIR copies left alone."; \
+	else \
+		sh scripts/kill-relay.sh clean "$(BINDIR)"; \
+	fi
 
 # An empty PREFIX would resolve BINDIR to /bin and let install/uninstall
 # scribble outside any prefix; an empty BINDIR would resolve install targets
@@ -104,13 +137,12 @@ all: guard check-stamp
 test:
 	$(MAKE) -C hush-c test CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)"
 
-clean: check-prefix
-	@sh scripts/kill-relay.sh
+clean: check-prefix clean-relays
 	$(MAKE) -C hush-c clean
 	$(MAKE) uninstall
 	rm -f *.tar.gz
 
-install: guard check-prefix check-stamp
+install: check-prefix check-stamp stop-relays
 	$(MAKE) -C hush-c install \
 		DESTDIR="$(DESTDIR)" \
 		PREFIX="$(PREFIX)" \

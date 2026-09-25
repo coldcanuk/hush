@@ -141,6 +141,7 @@ test: $(TEST_BINS) hush-relay
 	@sh tests/check_exit.sh
 	@sh tests/check_pkg_upgrade.sh
 	@sh tests/check_make_guard.sh
+	@sh tests/check_stop_relays.sh
 	@sh tests/check_prefix.sh
 	@sh tests/check_provider.sh
 	@sh tests/check_agent.sh
