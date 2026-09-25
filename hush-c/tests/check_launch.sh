@@ -297,8 +297,8 @@ echo "$html" | grep -q '>Kit<' || fail "HTML rail-toggle must read Kit (UI-M6)"
 echo "$html" | grep -q 'fo-chrome-hard' || fail "HTML missing UI-M7 chrome-hard materials"
 echo "$html" | grep -q 'fo-caret' || fail "HTML missing UI-M7 paper caret"
 echo "$html" | grep -q 'id="fo-drawer"' || fail "HTML missing fo-drawer overlay nav (UI-M8)"
-echo "$html" | grep -q 'id="fo-expand"' || fail "HTML missing fo-expand thin control (UI-M8)"
-echo "$html" | grep -q 'syncFoExpand' || fail "HTML missing fo-expand aria sync (UI-M8)"
+if echo "$html" | grep -q 'fo-expand'; then fail "edge tab must be gone (UI-M12a)"; fi
+if echo "$html" | grep -q 'syncFoExpand'; then fail "edge tab aria sync must be gone (UI-M12a)"; fi
 echo "$html" | grep -q 'UI-M8' || fail "HTML missing UI-M8 markers"
 # UI-M11: volume dial owns dispatch-log scroll. The native fat bar stays
 # hidden, but the message column owns NO in-column chrome: no track, dot,

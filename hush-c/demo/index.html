@@ -1438,12 +1438,12 @@ html[data-theme="field-office"] dialog.secret::backdrop { background: rgba(42, 3
 /* ===== UI-M8 overlay drawer + typewriter paperfeel =====
    Left nav (#fo-drawer) is an animated overlay strip over the dispatch
    log, not a permanent width column: closed = full-width messaging +
-   thin expand control (#nav-toggle BOARDS stamp + #fo-expand edge tab);
+   thin expand control (#nav-toggle BOARDS stamp);
    open = overlay strip via #hive.nav-open. Escape closes it through the
    existing closeNavigation() tail of the UI-M4 single-dismiss stack.
    Paperfeel extends the M5 field-office tokens (denser grain, ribbon
    ink, ruled slips, cut-paper edges). Stacked on the M7 chrome-hard
-   pass above: drawer + edge tab are new here; ruled slips, ledger
+   pass above: drawer is new here; ruled slips, ledger
    lines, and ink type extend M7 without touching fo-chrome-hard
    or fo-caret surfaces. */
 .shell.hive { grid-template-columns: minmax(0, 1fr) 248px; position: relative; }
@@ -1461,20 +1461,6 @@ html[data-theme="field-office"] dialog.secret::backdrop { background: rgba(42, 3
   font-family: var(--mono); border: 2px solid var(--line); border-radius: 6px;
   padding: 0 10px; transform: rotate(-1deg); min-width: 44px; min-height: 44px;
 }
-/* UI-M8 thin edge tab: only present while the drawer is closed. Same
-   toggle as the BOARDS stamp; stamp text only, no burger glyph. */
-#fo-expand {
-  position: fixed; left: 0; top: 46%; z-index: 29;
-  display: none; width: 30px; min-height: 96px; padding: 10px 0;
-  writing-mode: vertical-rl; text-orientation: mixed;
-  font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase;
-  font-family: var(--mono); color: var(--fg);
-  background: var(--surface); border: 1px solid var(--line); border-left: 0;
-  border-radius: 0 6px 6px 0; box-shadow: 2px 2px 0 rgb(0 0 0 / 0.3);
-  cursor: pointer;
-}
-.hive:not(.nav-open) #fo-expand { display: block; }
-#fo-expand:hover { border-color: var(--accent); color: var(--accent); }
 @media (max-width: 1100px) {
   /* UI-M8: no permanent left width; roster becomes the full-width strip. */
   .shell.hive { grid-template-columns: minmax(0, 1fr); }
@@ -1517,8 +1503,7 @@ html[data-theme="field-office"] #msg {
   font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
   text-shadow: 0 0 0.5px currentColor; letter-spacing: 0.01em;
 }
-html[data-theme="field-office"] .hive > nav,
-html[data-theme="field-office"] #fo-expand {
+html[data-theme="field-office"] .hive > nav {
   box-shadow: 4px 4px 0 #5c4a3d; border-color: #5c4a3d;
 }
 /* ===== UI-M9 folder tabs + no tool rail =====
@@ -1643,9 +1628,6 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
   <div id="hive-banner" role="status">Window stays open here. Close this window. The hive is still standing.</div>
   <section class="gate" id="gate" aria-live="polite"></section>
   <div class="shell hive" id="hive">
-    <!-- UI-M8 thin edge tab: opens the overlay boards drawer while it is
-         closed (hidden once #hive.nav-open). Same toggle as BOARDS. -->
-    <button id="fo-expand" type="button" aria-expanded="false" aria-controls="fo-drawer" aria-label="Open bulletin boards drawer" title="Open bulletin boards">Boards</button>
     <nav id="fo-drawer" aria-label="Workspace navigation">
       <div id="quick-nav" aria-label="Primary">
         <div class="lbl">Journey</div>
@@ -3455,28 +3437,17 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     });
 
     /* UI-M8 overlay drawer: same #nav-toggle hook + .nav-open toggle as the
-       phone boards drawer, now on every width. #fo-expand is the thin edge
-       tab shown only while closed; both stay stamps, no burger return.
+       phone boards drawer, now on every width. The header BOARDS stamp is
+       the only drawer opener (UI-M12a removed the left-edge tab).
        Escape closes the drawer via the closeNavigation() tail below, after
        the UI-M4 single-dismiss stack (one press = one layer). */
-    function syncFoExpand(open) {
-      const edge = $("fo-expand");
-      if (edge) edge.setAttribute("aria-expanded", String(open));
-    }
     function closeNavigation() {
       $("hive").classList.remove("nav-open");
       $("nav-toggle").setAttribute("aria-expanded", "false");
-      syncFoExpand(false);
     }
     $("nav-toggle").addEventListener("click", () => {
       const open = $("hive").classList.toggle("nav-open");
       $("nav-toggle").setAttribute("aria-expanded", String(open));
-      syncFoExpand(open);
-    });
-    $("fo-expand").addEventListener("click", () => {
-      $("hive").classList.add("nav-open");
-      $("nav-toggle").setAttribute("aria-expanded", "true");
-      syncFoExpand(true);
     });
     /* UI-M11 volume-dial scroll control: supersedes the UI-M10
        scrollbar-in-message-column. The native bar on #stream stays hidden
