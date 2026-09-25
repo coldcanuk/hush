@@ -172,9 +172,11 @@ static hush_status_t hush_launch_format_head(const hush_launch_t *launch,
 
 /* Writes logged_in through vibe, then opens the payne object.
  * Returns bytes written, or -1 on overflow. */
-static int hush_launch_write_session_open(const hush_launch_t *launch,
-                                          uint16_t port,
+static int hush_launch_write_session_open(const hush_launch_t *launch, uint16_t port,
                                           char *out, size_t outsz);
+
+/* Session nsec: the live secret before backup ack, else empty. Borrowed. */
+static const char *hush_launch_session_nsec(const hush_launch_t *launch);
 
 /* Appends the channels array body. */
 static hush_status_t hush_launch_format_channels(const hush_launch_t *launch,
@@ -1647,22 +1649,29 @@ static hush_status_t hush_launch_format_payne_providers(
     return hush_launch_format_payne_tail(launch, out, outsz, off);
 }
 
-static int hush_launch_write_session_open(const hush_launch_t *launch,
-                                          uint16_t port,
+/* Session nsec: the live secret before backup ack, else empty. Borrowed. */
+static const char *hush_launch_session_nsec(const hush_launch_t *launch)
+{
+    assert(launch != NULL);
+    if (!launch->logged_in || launch->backup_acked)
+        return "";
+    return launch->human.nsec;
+}
+
+static int hush_launch_write_session_open(const hush_launch_t *launch, uint16_t port,
                                           char *out, size_t outsz)
 {
     char esc_vibe[HUSH_LAUNCH_NAME_MAX * 2];
     char esc_about[HUSH_LAUNCH_ABOUT_MAX * 2];
-    int n;
 
     assert(launch != NULL);
     assert(out != NULL);
     hush_launch_json_escape(launch->vibe_name, esc_vibe, sizeof(esc_vibe));
     hush_launch_json_escape(launch->vibe_about, esc_about, sizeof(esc_about));
-    n = snprintf(out, outsz,
+    int n = snprintf(out, outsz,
                  "{\"ok\":true,\"logged_in\":%s,\"backup_acked\":%s,"
                  "\"has_vibe\":%s,\"ready\":%s,\"save_pass\":%s,"
-                 "\"pass_saved\":%s,\"pass_error\":\"%s\",\"port\":%u,"
+                 "\"pass_saved\":%s,\"pass_available\":%s,\"pass_error\":\"%s\",\"port\":%u,"
                  "\"npub\":\"%s\",\"pubkey\":\"%s\",\"nsec\":\"%s\","
                  "\"vibe\":{\"name\":\"%s\",\"about\":\"%s\","
                  "\"visibility\":\"%s\",\"discoverable\":%s,"
@@ -1674,12 +1683,12 @@ static int hush_launch_write_session_open(const hush_launch_t *launch,
                  hush_launch_is_ready(launch) ? "true" : "false",
                  launch->save_pass ? "true" : "false",
                  launch->pass_saved ? "true" : "false",
+                 hush_pass_available() ? "true" : "false",
                  launch->pass_error,
                  (unsigned)port,
                  launch->logged_in ? launch->human.npub : "",
                  launch->logged_in ? launch->human.pubkey_hex : "",
-                 (launch->logged_in && !launch->backup_acked)
-                     ? launch->human.nsec : "",
+                 hush_launch_session_nsec(launch),
                  esc_vibe, esc_about,
                  launch->vibe_public ? "public" : "private",
                  launch->vibe_public ? "true" : "false",

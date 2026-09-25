@@ -2557,10 +2557,18 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       $("settings-btn").hidden = false;
       $("call-btn").hidden = !ready;
       if ($("call-info")) $("call-info").hidden = !ready;
-      if (session.vibe && session.vibe.name)
+      // The header names the hive only while identity is present. After a
+      // restart that loses login, the vibe survives on disk but npub is
+      // empty, so fall back to the neutral default instead of implying
+      // the hive is still yours.
+      if (session.logged_in && session.vibe && session.vibe.name)
         $("vibe-sub").textContent = session.vibe.name;
-      if (session.vibe && session.vibe.visibility)
+      else
+        $("vibe-sub").textContent = "local hive mind";
+      if (session.logged_in && session.vibe && session.vibe.visibility)
         $("vibe-vis").textContent = session.vibe.visibility;
+      else
+        $("vibe-vis").textContent = "";
       if (!ready) {
         const html = gateHtml();
         if (html === lastGateHtml)
@@ -2591,6 +2599,8 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
           "<img class=\"feather\" src=\"/icon-192.png\" alt=\"hush\">" +
           "<p><strong>Major reporting for duty.</strong></p>" +
           "<p>Detecting identity and vibe…</p>" +
+          "<p>Click Begin to continue.</p>" +
+          restartNote() +
           errLine() +
           actions([{ id: "begin", label: "Begin" }]) +
           "<div class=\"help\">Disciplined collaboration with humans and agents.</div>");
@@ -2618,14 +2628,19 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       }
       if (page === "backup") {
         const shown = keyRevealed ? esc(pendingNsec) : "•".repeat(Math.max(16, pendingNsec.length || 63));
+        const passOff = session.pass_available === false;
+        const passNote = passOff
+          ? "<p class=\"warn\">pass is not installed, so Hush cannot save the key here. Copy it now and keep it somewhere safe. Setup continues without saving.</p>"
+          : "";
         return "<dialog class=\"secret\" id=\"secret-modal\" open>" +
           card("Your unique identity key has been created",
           stepBar(2) +
           "<p>This key is your account. Copy it now. Hush cannot recover it if you lose it.</p>" +
           "<div class=\"keybox" + (keyRevealed ? " revealed" : "") + "\" id=\"nsec-box\">" + shown + "</div>" +
           "<label class=\"passbox\"><input id=\"save-pass\" type=\"checkbox\"" +
-          (savePass ? " checked" : "") +
+          ((!passOff && savePass) ? " checked" : "") +
           "> Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/identity/nsec</code></label>" +
+          passNote +
           "<p class=\"warn\">Never share your private key. Anyone with it can impersonate you. Uncheck the box only if you do not want <code>pass</code> to store it.</p>" +
           errLine() +
           actions([
@@ -2663,12 +2678,19 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       return card("Your people, your agents, your projects",
         stepBar(1) +
         "<p>Hush is a local hive mind. First we need a Nostr identity — a key that belongs to you, not to us.</p>" +
+        restartNote() +
         errLine() +
         actions([
           { id: "create-id", label: "Create a new identity key" },
           { id: "use-id", ghost: true, label: "Use an existing key" }
         ]) +
         "<div class=\"help\"><button type=\"button\" id=\"show-help\">What’s an identity key?</button></div>");
+    }
+
+    function restartNote() {
+      if (session.logged_in || !session.has_vibe) return "";
+      return "<p class=\"warn\">The hive is still on this machine, but the login did not survive the restart. " +
+        "Hush never keeps your private key on disk, so re-import the same <code>nsec1…</code> to continue.</p>";
     }
 
     function card(title, inner) {
