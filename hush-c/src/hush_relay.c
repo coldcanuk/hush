@@ -329,11 +329,13 @@ static int hush_pidfile_dir_ok(const char *dir);
 /* Creates missing ancestors of dir. Fails ARG on an empty or too-long
  * path, IO when a component is unusable. */
 static hush_status_t hush_pidfile_ensure_parents(const char *dir);
-/* Writes this process's pid for port. Fails ARG when unconfigured, IO on any
- * mkdir/open/write/close failure. The relay still starts; the caller warns. */
+/* Writes this process's pid for port. Fails ARG when unconfigured or the
+ * path is too long; IO when the dir cannot be created or secured. The
+ * relay still starts; the caller warns. */
 static hush_status_t hush_write_pidfile(uint16_t port);
 /* Ensures the pidfile dir for port exists and is usable, recording its path.
- * Fails ARG when unconfigured, IO when the dir cannot be secured. */
+ * Fails ARG when unconfigured or the path is too long; IO when the dir
+ * cannot be created or secured. */
 static hush_status_t hush_pidfile_dir_ensure(uint16_t port);
 /* Writes pid, start time, and port into the recorded pidfile with
  * symlink-proof creation. Fails IO on any open/write/close failure. */
