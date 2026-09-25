@@ -472,7 +472,11 @@ port_x=$(free_port "10555 $port_a $port_b ${port_d:-} $port_e $port_c") || fail 
 
 # Fake browsers: copied sh named brave / bwrap carrying flags in their own
 # cmdline. Only --class=hush-relay* closes; the --app of a stopped relay
-# alone is reported and left running.
+# alone is reported and left running. A relay stopped by SIGTERM closes
+# its own windows first (hush_relay_cleanup -> hush_relay_reap_children ->
+# hush_child_sweep_proc: --class=hush-relay plus its own --app port), so
+# w6 carries the --app of a port with no relay (only kill-relay.sh can
+# close it) and w7 carries both flags for the stopped relay's port.
 cp "$sh_bin" "$tmp/fb/brave"
 cp "$sh_bin" "$tmp/fb/bwrap"
 "$tmp/fb/brave" -c "$loop" brave --class=hush-relay-test </dev/null >/dev/null 2>&1 &
@@ -490,13 +494,16 @@ track "$pid_w4"
 "$sh_bin" -c "$loop" notabrowser --class=hush-relay-x </dev/null >/dev/null 2>&1 &
 pid_w5=$!
 track "$pid_w5"
-"$tmp/fb/bwrap" -c "$loop" bwrap --class=hush-relay-ops "--app=http://127.0.0.1:${port_c}/" </dev/null >/dev/null 2>&1 &
+"$tmp/fb/bwrap" -c "$loop" bwrap --class=hush-relay-ops "--app=http://127.0.0.1:${port_x}/" </dev/null >/dev/null 2>&1 &
 pid_w6=$!
 track "$pid_w6"
+"$tmp/fb/bwrap" -c "$loop" bwrap --class=hush-relay-both "--app=http://127.0.0.1:${port_c}/" </dev/null >/dev/null 2>&1 &
+pid_w7=$!
+track "$pid_w7"
 for w in "$pid_w1" "$pid_w3" "$pid_w4"; do
     wait_comm "$w" brave || fail "fixture: fake brave $w did not start"
 done
-for w in "$pid_w2" "$pid_w6"; do
+for w in "$pid_w2" "$pid_w6" "$pid_w7"; do
     wait_comm "$w" bwrap || fail "fixture: fake bwrap $w did not start"
 done
 
@@ -539,10 +546,20 @@ assert_untouched "$pid_w2" "fake bwrap with only --app of a stopped relay" "$out
 grep -qF "left running pid $pid_w2 (bwrap): --app=http://127.0.0.1:${port_c}/ of a stopped relay but no --class=hush-relay in its own cmdline; not signalled" "$out3" \
     || fail "fake bwrap --app-only (pid $pid_w2) not reported as left running"
 ok "fake bwrap with only --app=http://127.0.0.1:${port_c}/ (pid $pid_w2) survived, reported left running"
-wait_gone "$pid_w6" || fail "fake bwrap --class=hush-relay-ops --app (pid $pid_w6) not closed"
-grep -qF "closing Hush app window pid $pid_w6 (bwrap) --class=hush-relay-ops --app=http://127.0.0.1:${port_c}/" "$out3" \
-    || fail "clean output does not name window pid $pid_w6 with both flags"
-ok "fake bwrap --class=hush-relay-ops --app=http://127.0.0.1:${port_c}/ (pid $pid_w6) closed"
+wait_gone "$pid_w6" || fail "fake bwrap --class=hush-relay-ops (pid $pid_w6) not closed"
+grep -qxF "kill-relay: closing Hush app window pid $pid_w6 (bwrap) --class=hush-relay-ops" "$out3" \
+    || fail "clean output does not name window pid $pid_w6 by its --class"
+ok "fake bwrap --class=hush-relay-ops --app=http://127.0.0.1:${port_x}/ (pid $pid_w6, no relay on that port) closed by kill-relay.sh"
+wait_gone "$pid_w7" || fail "fake bwrap --class=hush-relay-both --app of stopped port (pid $pid_w7) not closed"
+if grep -qE "(left running|left alone) pid $pid_w7 " "$out3"; then
+    fail "fake bwrap with both flags (pid $pid_w7) was reported as left running"
+fi
+if grep -qF "closing Hush app window pid $pid_w7 (bwrap) --class=hush-relay-both --app=http://127.0.0.1:${port_c}/" "$out3"; then
+    w7_by="kill-relay.sh"
+else
+    w7_by="the relay's own shutdown sweep"
+fi
+ok "fake bwrap --class=hush-relay-both --app=http://127.0.0.1:${port_c}/ (pid $pid_w7) closed by $w7_by"
 
 assert_untouched "$pid_w3" "fake brave --class=other" "$out3"
 grep -qF "left alone pid $pid_w3 (brave)" "$out3" \
