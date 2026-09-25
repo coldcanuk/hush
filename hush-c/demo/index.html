@@ -1387,6 +1387,10 @@ html[data-theme="field-office"] #code-canvas-hi,
 html[data-theme="field-office"] #code-canvas-edit {
   border: 2px solid #5c4a3d; background: #ebdcb9;
 }
+/* Paper-flattened buttons keep dark ink text. The block above overrides
+ * background without touching color, which left cream text on tan. */
+html[data-theme="field-office"] .btn,
+html[data-theme="field-office"] .iconbtn.danger { color: #2a241e; }
 html[data-theme="field-office"] .btn,
 html[data-theme="field-office"] .thread-btn,
 html[data-theme="field-office"] #thread-send { text-transform: uppercase; letter-spacing: 0.1em; }
@@ -2598,7 +2602,6 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         return card("hush",
           "<img class=\"feather\" src=\"/icon-192.png\" alt=\"hush\">" +
           "<p><strong>Major reporting for duty.</strong></p>" +
-          "<p>Detecting identity and vibe…</p>" +
           "<p>Click Begin to continue.</p>" +
           restartNote() +
           errLine() +
@@ -2632,6 +2635,12 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         const passNote = passOff
           ? "<p class=\"warn\">pass is not installed, so Hush cannot save the key here. Copy it now and keep it somewhere safe. Setup continues without saving.</p>"
           : "";
+        const passLabel = passOff
+          ? "Saving to pass is unavailable because pass is not installed. Copy your identity key somewhere safe now."
+          : "Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/identity/nsec</code>";
+        const passAfter = passOff
+          ? ""
+          : "<p class=\"warn\">Never share your private key. Anyone with it can impersonate you. Uncheck the box only if you do not want <code>pass</code> to store it.</p>";
         return "<dialog class=\"secret\" id=\"secret-modal\" open>" +
           card("Your unique identity key has been created",
           stepBar(2) +
@@ -2639,9 +2648,9 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
           "<div class=\"keybox" + (keyRevealed ? " revealed" : "") + "\" id=\"nsec-box\">" + shown + "</div>" +
           "<label class=\"passbox\"><input id=\"save-pass\" type=\"checkbox\"" +
           ((!passOff && savePass) ? " checked" : "") +
-          "> Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/identity/nsec</code></label>" +
+          "> " + passLabel + "</label>" +
           passNote +
-          "<p class=\"warn\">Never share your private key. Anyone with it can impersonate you. Uncheck the box only if you do not want <code>pass</code> to store it.</p>" +
+          passAfter +
           errLine() +
           actions([
             { id: "reveal-key", ghost: true, label: keyRevealed ? "Hide" : "Reveal" },
@@ -2677,7 +2686,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       }
       return card("Your people, your agents, your projects",
         stepBar(1) +
-        "<p>Hush is a local hive mind. First we need a Nostr identity — a key that belongs to you, not to us.</p>" +
+        "<p>Hush is a local hive mind. First we need an identity key — it belongs to you, not to us.</p>" +
         restartNote() +
         errLine() +
         actions([
@@ -2688,9 +2697,9 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     }
 
     function restartNote() {
-      if (session.logged_in || !session.has_vibe) return "";
+      if (!session.restart_lost_login) return "";
       return "<p class=\"warn\">The hive is still on this machine, but the login did not survive the restart. " +
-        "Hush never keeps your private key on disk, so re-import the same <code>nsec1…</code> to continue.</p>";
+        "Re-import your identity key (starts with nsec1) to continue.</p>";
     }
 
     function card(title, inner) {

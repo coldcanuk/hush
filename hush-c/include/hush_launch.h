@@ -116,6 +116,9 @@ typedef struct {
 typedef struct {
     int logged_in;
     int backup_acked;
+    /* Set once per boot when startup restore leaves a vibe without a
+     * login. Cleared by create/import; never set by logout. */
+    int restart_lost_login;
     int has_vibe;
     int save_pass;
     int pass_saved;
@@ -168,6 +171,9 @@ hush_status_t hush_launch_ack_backup(hush_launch_t *launch, int save_pass);
 
 /* Loads hush/identity/nsec when present. Soft-fails if pass is absent. */
 hush_status_t hush_launch_restore_identity(hush_launch_t *launch);
+
+/* Notes a boot that left a vibe without a login. Safe on NULL. */
+void hush_launch_mark_restart(hush_launch_t *launch);
 
 /* Writes non-secret hive metadata to hush/vibe.json. No-op without a vibe. */
 hush_status_t hush_launch_save_vibe(const hush_launch_t *launch);

@@ -48,6 +48,7 @@ start_relay() {
 start_relay
 sess=$(curl -sf "http://127.0.0.1:${port}/api/session")
 echo "$sess" | grep -q '"pass_available":false' || fail "session should report pass_available false without pass"
+echo "$sess" | grep -q '"restart_lost_login":false' || fail "virgin session sets no restart-loss flag"
 html=$(curl -sf "http://127.0.0.1:${port}/")
 echo "$html" | grep -q 'Click Begin to continue' || fail "splash must cue clicking Begin"
 echo "$html" | grep -q 'did not survive the restart' || fail "UI must explain the post-restart re-import"
@@ -80,6 +81,7 @@ echo "$restored" | grep -q '"name":"HQ"' || fail "restart should keep vibe name"
 echo "$restored" | grep -q '"logged_in":false' || fail "restart without pass must not claim login"
 echo "$restored" | grep -q '"ready":false' || fail "restart without login must not claim ready"
 echo "$restored" | grep -q '"npub":""' || fail "restart without login must clear npub"
+echo "$restored" | grep -q '"restart_lost_login":true' || fail "restart without pass must set the restart-loss flag"
 token_after=$(cat "$HUSH_HOME/session.token")
 test "$token_before" = "$token_after" || fail "session.token must survive restart"
 
@@ -108,5 +110,6 @@ start_relay
 restored2=$(curl -sf "http://127.0.0.1:${port}/api/session")
 echo "$restored2" | grep -q '"logged_in":true' || fail "restart with pass should stay logged in"
 echo "$restored2" | grep -q "\"npub\":\"$npub2\"" || fail "restart with pass should keep npub"
+echo "$restored2" | grep -q '"restart_lost_login":false' || fail "restart with pass sets no restart-loss flag"
 rm -rf "$home2" "$cfg2" "$HUSH_FAKE_PASS_DIR"
 echo "restart honesty ok"

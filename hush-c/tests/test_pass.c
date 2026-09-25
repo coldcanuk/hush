@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "hush_pass.h"
@@ -19,10 +20,70 @@ static void expect(int cond, const char *msg)
     }
 }
 
+/* Rejects saves through a missing helper and reports error text. */
+static void test_pass_missing_helper(void)
+{
+    char err[HUSH_PASS_ERR_MAX];
+
+    hush_pass_set_helper("/no/such/hush-pass-helper");
+    expect(hush_pass_save(HUSH_PASS_IDENTITY_NSEC, "nsec1x") == HUSH_ERR_IO,
+           "missing helper");
+    hush_pass_last_error(err, sizeof(err));
+    expect(err[0] != '\0', "error text");
+    hush_pass_set_helper(NULL);
+}
+
+/* Writes an always-zero executable stub. */
+static void test_make_fake(const char *path)
+{
+    FILE *fp = fopen(path, "w");
+
+    if (fp == NULL)
+        return;
+    fputs("#!/bin/sh\nexit 0\n", fp);
+    fclose(fp);
+    chmod(path, 0700);
+}
+
+/* Detects the real helper path with no override and a controlled PATH.
+ * A stuck-true or stuck-false hush_pass_available fails here. */
+static void test_pass_available(void)
+{
+    char base[64];
+    char bindir[80];
+    char emptydir[80];
+    char fake[96];
+    char *kept = NULL;
+    const char *path = getenv("PATH");
+
+    hush_pass_set_helper(NULL);
+    unsetenv(HUSH_PASS_ENV_HELPER);
+    if (path != NULL)
+        kept = strdup(path);
+    snprintf(base, sizeof(base), "/tmp/hush-avail-%ld", (long)getpid());
+    snprintf(bindir, sizeof(bindir), "%s/bin", base);
+    snprintf(emptydir, sizeof(emptydir), "%s/empty", base);
+    mkdir(base, 0700);
+    mkdir(bindir, 0700);
+    snprintf(fake, sizeof(fake), "%s/pass", bindir);
+    test_make_fake(fake);
+    snprintf(fake, sizeof(fake), "%s/hush-pass", bindir);
+    test_make_fake(fake);
+    if (chdir(base) != 0)
+        expect(0, "chdir tmp");
+    setenv("PATH", bindir, 1);
+    expect(hush_pass_available(), "pass+helper present");
+    setenv("PATH", emptydir, 1);
+    expect(!hush_pass_available(), "pass absent");
+    if (kept != NULL) {
+        setenv("PATH", kept, 1);
+        free(kept);
+    }
+}
+
 int main(void)
 {
     char secret[HUSH_PASS_SECRET_MAX];
-    char err[HUSH_PASS_ERR_MAX];
     char dir[64];
     const char *helper = "tests/fake-pass.sh";
 
@@ -53,13 +114,8 @@ int main(void)
            "get payne");
     expect(strcmp(secret, "nsec1payne") == 0, "payne value");
 
-    hush_pass_set_helper("/no/such/hush-pass-helper");
-    expect(hush_pass_save(HUSH_PASS_IDENTITY_NSEC, "nsec1x") == HUSH_ERR_IO,
-           "missing helper");
-    hush_pass_last_error(err, sizeof(err));
-    expect(err[0] != '\0', "error text");
-
-    hush_pass_set_helper(NULL);
+    test_pass_missing_helper();
+    test_pass_available();
     if (g_fail)
         return 1;
     printf("test_pass ok\n");

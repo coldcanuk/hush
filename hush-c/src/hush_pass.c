@@ -172,6 +172,8 @@ static int hush_pass_prog_ok(const char *prog)
     if (path == NULL || path[0] == '\0')
         return access(prog, X_OK) == 0;
     cur = path;
+    /* Bounded walk: each step consumes one ':'-separated entry and the
+     * NUL terminator ends it, so it runs at most strlen(path)+1 steps. */
     while (1) {
         const char *end = strchr(cur, ':');
         size_t dirlen = (end != NULL) ? (size_t)(end - cur) : strlen(cur);
@@ -186,7 +188,7 @@ static int hush_pass_prog_ok(const char *prog)
 static int hush_pass_dir_has(const char *dir, size_t dirlen,
                              const char *prog)
 {
-    char full[HUSH_PASS_CMD_MAX];
+    char full[HUSH_PASS_CMD_MAX] = {0};
 
     assert(dir != NULL);
     assert(prog != NULL);
