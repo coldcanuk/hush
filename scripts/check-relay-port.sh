@@ -19,7 +19,7 @@
 # process also counts (covers a relay started under a different XDG/HOME).
 # The probe needs curl, but only when a hush-relay process is actually
 # running: with no relay at all the guard passes even without curl; with
-# a live relay and no curl it fails (exit 2) instead of guessing.
+# a live relay, no pidfile owner, and no curl it fails (exit 2) instead of guessing.
 
 set -eu
 

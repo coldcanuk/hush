@@ -264,9 +264,10 @@ test "$(cut -d' ' -f1 <"$virgin_pidfile")" = "$virgin_pid" \
     || fail "virgin-home pidfile pid mismatch"
 test "$(awk '{print NF}' <"$virgin_pidfile")" -eq 3 \
     || fail "virgin-home pidfile must hold pid, start time, port"
-test -d "$virgin_home/.local" || fail "virgin-home .local missing"
-test -d "$virgin_home/.local/state" || fail "virgin-home .local/state missing"
-test -d "$virgin_home/.local/state/hush" || fail "virgin-home state dir missing"
+test "$(stat -c %a "$virgin_home/.local")" = "700" \
+    || fail "virgin-home .local is not mode 700"
+test "$(stat -c %a "$virgin_home/.local/state")" = "700" \
+    || fail "virgin-home .local/state is not mode 700"
 test "$(stat -c %a "$virgin_home/.local/state/hush")" = "700" \
     || fail "virgin-home state dir is not mode 700"
 virgin_fake_bin=$(mktemp)
@@ -355,8 +356,9 @@ grep -q 'stale pid' "$quit_err" || fail "stale-pid message wrong"
 for content in 1 0 -5 abc 123abc '' '99999999999999999999'; do
     printf '%s\n' "$content" >"$refuse_pidfile"
     quit_code=0
-    "$bin" --quit "$refuse_port" 2>"$quit_err" || quit_code=$?
+    "$bin" --quit "$refuse_port" >"$test_home/corrupt-quit.out" 2>"$quit_err" || quit_code=$?
     test "$quit_code" -eq 2 || fail "quit on '$content' must exit 2 (got $quit_code)"
+    test ! -s "$test_home/corrupt-quit.out" || fail "failed --quit printed to stdout"
 done
 printf '1\n' >"$refuse_pidfile"
 quit_code=0
@@ -365,8 +367,9 @@ test "$quit_code" -eq 2 || fail "pid-1 quit must exit 2 (got $quit_code)"
 grep -q 'is not the relay on port' "$quit_err" || fail "pid-1 message wrong"
 printf 'abc\n' >"$refuse_pidfile"
 quit_code=0
-"$bin" --quit "$refuse_port" 2>"$quit_err" || quit_code=$?
+"$bin" --quit "$refuse_port" >"$test_home/garbage-quit.out" 2>"$quit_err" || quit_code=$?
 test "$quit_code" -eq 2 || fail "garbage quit must exit 2 (got $quit_code)"
+test ! -s "$test_home/garbage-quit.out" || fail "failed --quit printed to stdout"
 grep -q 'unreadable pidfile' "$quit_err" || fail "garbage message wrong"
 rm -f "$refuse_pidfile"
 
