@@ -51,6 +51,7 @@ log="$test_home/relay.log"
 pid=""
 child_pid=""
 daemon_pid=""
+n1_pid=""
 
 cleanup() {
     if [ -n "$child_pid" ]; then
@@ -58,6 +59,10 @@ cleanup() {
     fi
     if [ -n "$daemon_pid" ]; then
         kill -KILL "$daemon_pid" 2>/dev/null || true
+    fi
+    if [ -n "${n1_pid:-}" ]; then
+        kill "$n1_pid" 2>/dev/null || true
+        wait "$n1_pid" 2>/dev/null || true
     fi
     if [ -n "$pid" ]; then
         kill "$pid" 2>/dev/null || true
@@ -68,9 +73,10 @@ cleanup() {
 trap cleanup EXIT
 
 wait_up() {
+    up_port="${1:-$port}"
     i=0
     while [ "$i" -lt 100 ]; do
-        if curl -sf "http://127.0.0.1:${port}/api/status" >/dev/null 2>&1; then
+        if curl -sf "http://127.0.0.1:${up_port}/api/status" >/dev/null 2>&1; then
             return 0
         fi
         i=$((i + 1))
@@ -139,7 +145,7 @@ HUSH_PORT="$port" sh "$guard" || fail "guard still trips after --quit"
 
 # --- P2a: pidfile path needs no curl (live relay names its pid) ---
 # Without curl the ps+probe fallback is unreachable, so only the pidfile
-# read (guard line 72) can name the owner. Reverting that read to
+# read (guard line 74) can name the owner. Reverting that read to
 # `read -r owner` makes this fail: the 3-field line is not a bare pid,
 # the fallback exits 2 without curl, and the pid is never named.
 "$bin" --no-open "$port" >"$log" 2>&1 &
@@ -174,6 +180,26 @@ grep -q 'curl missing' "$test_home/guard-hidden.out" \
 wait_down "$pid" || fail "--quit left the relay running"
 wait "$pid" 2>/dev/null || true
 pid=""
+
+# --- N1: a relay on another port still blocks a curl-less build (exit 2) ---
+# Without the probe the guard cannot tell which port a live relay owns,
+# so any hush-relay process plus no curl refuses, even for a free port
+# with no pidfile. Uses its own port Q far from the other fixtures.
+n1_port=$((port + 31))
+"$bin" --no-open "$n1_port" >"$log" 2>&1 &
+n1_pid=$!
+wait_up "$n1_port" || fail "N1 relay did not start on $n1_port"
+n1_code=0
+PATH="$no_curl_path" HUSH_PORT="$port" \
+    sh "$guard" >"$test_home/guard-n1.out" 2>&1 || n1_code=$?
+test "$n1_code" -eq 2 \
+    || fail "guard must exit 2 for a free port with a relay elsewhere and no curl (got $n1_code)"
+grep -q 'curl missing' "$test_home/guard-n1.out" \
+    || fail "guard hid the curl message"
+"$bin" --quit "$n1_port" >/dev/null 2>&1 || fail "N1 --quit failed"
+wait_down "$n1_pid" || fail "N1 relay did not stop"
+wait "$n1_pid" 2>/dev/null || true
+n1_pid=""
 
 # --- kill-relay.sh reaps the CHILD turnserver named by the state pidfile ---
 # comm must read "turnserver", so run a copy of sleep under that basename.

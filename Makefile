@@ -51,8 +51,9 @@ GUARD_PORT ?= $(HUSH_PORT)
 # Fail-loud when a live relay owns the guard port: never build or install
 # over a running hive. Stop it first (`hush-relay --quit <port>`); `make
 # clean` (kill-relay.sh) is the only path that kills.
-# Port-scoped: only the guard port is checked ($HUSH_PORT, else 10555); a
-# relay on another port does not block the build unless HUSH_PORT matches.
+# Port-scoped with curl: only the guard port is probed ($HUSH_PORT, else
+# 10555); a relay on another port does not block. Without curl the guard
+# cannot probe, so any running hush-relay blocks the build (exit 2).
 guard:
 	@sh scripts/check-relay-port.sh $(GUARD_PORT)
 

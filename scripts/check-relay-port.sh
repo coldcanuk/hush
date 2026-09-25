@@ -1,8 +1,10 @@
 #!/bin/sh
 # check-relay-port.sh — fail-fast rebuild guard for `make` / `make install`.
 #
-# Fails (exit 1) when a live hush-relay owns the default port, printing the
-# pid and the quit command. Passes (exit 0) when the port is free.
+# Fails (exit 1) when a live hush-relay owns the port, printing the pid
+# and the quit command. Passes (exit 0) when no relay owns the port: with
+# curl, a free port passes even if a relay runs on another port; without
+# curl, any running hush-relay fails the guard (exit 2) instead of guessing.
 # Never kills anything; `make clean` (scripts/kill-relay.sh) is the killer.
 #
 # Port: $1, else $HUSH_PORT, else 10555 (HUSH_DEFAULT_PORT in

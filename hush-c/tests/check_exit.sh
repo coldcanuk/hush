@@ -264,6 +264,11 @@ test "$(cut -d' ' -f1 <"$virgin_pidfile")" = "$virgin_pid" \
     || fail "virgin-home pidfile pid mismatch"
 test "$(awk '{print NF}' <"$virgin_pidfile")" -eq 3 \
     || fail "virgin-home pidfile must hold pid, start time, port"
+test -d "$virgin_home/.local" || fail "virgin-home .local missing"
+test -d "$virgin_home/.local/state" || fail "virgin-home .local/state missing"
+test -d "$virgin_home/.local/state/hush" || fail "virgin-home state dir missing"
+test "$(stat -c %a "$virgin_home/.local/state/hush")" = "700" \
+    || fail "virgin-home state dir is not mode 700"
 virgin_fake_bin=$(mktemp)
 printf '#!/bin/sh\nsleep 30\n' >"$virgin_fake_bin"
 chmod +x "$virgin_fake_bin"
@@ -310,8 +315,9 @@ sleep 60 &
 foreign_pid=$!
 printf '%s\n' "$foreign_pid" >"$refuse_pidfile"
 quit_code=0
-"$bin" --quit "$refuse_port" 2>"$quit_err" || quit_code=$?
+"$bin" --quit "$refuse_port" >"$test_home/foreign-quit.out" 2>"$quit_err" || quit_code=$?
 test "$quit_code" -eq 2 || fail "foreign-pid quit must exit 2 (got $quit_code)"
+test ! -s "$test_home/foreign-quit.out" || fail "failed --quit printed to stdout"
 kill -0 "$foreign_pid" 2>/dev/null || fail "quit signalled a foreign process"
 test -f "$refuse_pidfile" || fail "quit removed an unproven pidfile"
 grep -q 'old/unrecognized format' "$quit_err" || fail "foreign-pid message wrong"
@@ -375,8 +381,9 @@ stop_pidfile="$XDG_RUNTIME_DIR/hush/relay-$stop_port.pid"
 test -f "$stop_pidfile" || fail "stop-test pidfile missing"
 kill -STOP "$stop_pid" 2>/dev/null || fail "SIGSTOP failed"
 quit_code=0
-"$bin" --quit "$stop_port" 2>"$quit_err" || quit_code=$?
+"$bin" --quit "$stop_port" >"$test_home/frozen-quit.out" 2>"$quit_err" || quit_code=$?
 test "$quit_code" -eq 2 || fail "frozen relay quit must exit 2 (got $quit_code)"
+test ! -s "$test_home/frozen-quit.out" || fail "failed --quit printed to stdout"
 kill -0 "$stop_pid" 2>/dev/null || fail "frozen relay died unexpectedly"
 test -f "$stop_pidfile" || fail "quit removed a live owner's pidfile"
 grep -q 'cannot stop' "$quit_err" || fail "frozen quit message wrong"
