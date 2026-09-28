@@ -2,6 +2,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +10,11 @@
 #include <unistd.h>
 
 #include "hush_pass.h"
+
+enum {
+    TEST_PATH_MAX = 128,
+    TEST_DIR_MODE = 0700
+};
 
 static int g_fail;
 
@@ -45,6 +51,35 @@ static void test_make_fake(const char *path)
     chmod(path, 0700);
 }
 
+/* Expects hush_pass_available() false when PATH holds a stub hush-pass but
+ * no pass: the virgin-VM case (helper shipped, pass not installed). base is
+ * an existing scratch directory; PATH is left pointing at the new dir. */
+static void test_pass_helper_only(const char *base)
+{
+    char dir[TEST_PATH_MAX] = {0};
+    char fake[TEST_PATH_MAX] = {0};
+
+    assert(base != NULL);
+    const int dir_len = snprintf(dir, sizeof(dir), "%s/helper-only", base);
+    const int fake_len = snprintf(fake, sizeof(fake), "%s/hush-pass", dir);
+    if (dir_len < 0 || (size_t)dir_len >= sizeof(dir) || fake_len < 0
+        || (size_t)fake_len >= sizeof(fake)) {
+        expect(0, "helper-only path fits");
+        return;
+    }
+    if (mkdir(dir, TEST_DIR_MODE) != 0) {
+        expect(0, "helper-only mkdir");
+        return;
+    }
+    test_make_fake(fake);
+    expect(access(fake, X_OK) == 0, "helper-only stub");
+    if (setenv("PATH", dir, 1) != 0) {
+        expect(0, "helper-only PATH");
+        return;
+    }
+    expect(!hush_pass_available(), "helper present, pass absent");
+}
+
 /* Detects the real helper path with no override and a controlled PATH.
  * A stuck-true or stuck-false hush_pass_available fails here. */
 static void test_pass_available(void)
@@ -74,7 +109,8 @@ static void test_pass_available(void)
     setenv("PATH", bindir, 1);
     expect(hush_pass_available(), "pass+helper present");
     setenv("PATH", emptydir, 1);
-    expect(!hush_pass_available(), "pass absent");
+    expect(!hush_pass_available(), "helper and pass absent");
+    test_pass_helper_only(base);
     if (kept != NULL) {
         setenv("PATH", kept, 1);
         free(kept);

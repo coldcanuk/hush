@@ -23,6 +23,9 @@ const VIEW_H = VIEW_W < 800 ? 800 : 900;
 const ART = process.env.ID1_ART || path.join(os.tmpdir(), 'id1-shots');
 fs.mkdirSync(ART, { recursive: true });
 
+// Shown on the backup step on both paths (with and without pass).
+const NEVER_SHARE = 'Never share your private key. Anyone with it can impersonate you.';
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const liveProcs = [];
@@ -286,15 +289,28 @@ async function main() {
     t = await gateText();
     check(!t.includes('did not survive the restart'), 'virgin landing shows no restart note');
 
+    // O5: the help card uses plain office wording, no Nostr jargon and no
+    // bare nsec1… token.
+    await cdp.click('#show-help');
+    await cdp.waitFor(`!!document.querySelector('#back-help')`, 'help card');
+    t = await gateText();
+    check(t.includes('signs you in with an identity key instead of a password'), 'help card uses plain wording');
+    check(!t.includes('Nostr') && !t.includes('nsec1…'), 'help card has no Nostr jargon or bare nsec1…');
+    await cdp.click('#back-help');
+    await cdp.waitFor(`!!document.querySelector('#create-id')`, 'landing after help');
+
     await cdp.click('#create-id');
     await cdp.waitFor(`!!document.querySelector('#save-pass')`, 'backup');
     const checked = await cdp.eval(`document.querySelector('#save-pass').checked`);
     check(checked === false, 'backup checkbox renders unchecked without pass');
+    const disabled = await cdp.eval(`document.querySelector('#save-pass').disabled`);
+    check(disabled === true, 'backup checkbox is disabled without pass');
     Object.assign(contrasts, { backup: await sample(['#ack-key', '#reveal-key', '#copy-key']) });
     t = await gateText();
     check(!t.includes('Checked to save'), 'backup label drops the Checked-to-save line without pass');
     check(!t.includes('Uncheck the box'), 'backup drops the Uncheck line without pass');
     check(t.includes('Saving to pass is unavailable'), 'backup shows the no-pass reason');
+    check(t.includes(NEVER_SHARE), 'backup keeps the never-share warning without pass');
     await cdp.shot('backup-nopass');
 
     await cdp.click('#ack-key');
@@ -384,6 +400,10 @@ async function main() {
     check(checked2 === true, 'backup checkbox renders checked with pass');
     t = await gateText();
     check(t.includes('Checked to save'), 'backup keeps the Checked-to-save line with pass');
+    check(t.includes(NEVER_SHARE), 'backup keeps the never-share warning with pass');
+    check(t.includes('Uncheck the box'), 'backup keeps the Uncheck line with pass');
+    const disabled2 = await cdp.eval(`document.querySelector('#save-pass').disabled`);
+    check(disabled2 === false, 'backup checkbox stays enabled with pass');
     await cdp.shot('backup-withpass');
     await stopRelay(proc);
 

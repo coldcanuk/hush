@@ -2668,9 +2668,9 @@ html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2p
       if (page === "help") {
         return card("What’s an identity key?",
           stepBar(1) +
-          "<p>Hush uses a Nostr identity key instead of a password. It is created on this machine and represents you.</p>" +
+          "<p>Hush signs you in with an identity key instead of a password. The key is created on this computer and stands for you.</p>" +
           "<p>Your public key (<code>npub</code>) is safe to share. Your private key (<code>nsec</code>) is the account. Anyone with it can act as you. There is no forgot-password.</p>" +
-          "<p>Create a new key if you are new. Import an existing <code>nsec1…</code> if you already have a Nostr identity.</p>" +
+          "<p>Create a new key if this is your first time. If you already have a private key (it starts with nsec1), choose Use an existing key.</p>" +
           actions([{ id: "back-help", ghost: true, label: "Back" }]));
       }
       if (page === "import") {
@@ -2695,9 +2695,10 @@ html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2p
         const passLabel = passOff
           ? "Saving to pass is unavailable because pass is not installed. Copy your identity key somewhere safe now."
           : "Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/identity/nsec</code>";
+        const neverShare = "Never share your private key. Anyone with it can impersonate you.";
         const passAfter = passOff
-          ? ""
-          : "<p class=\"warn\">Never share your private key. Anyone with it can impersonate you. Uncheck the box only if you do not want <code>pass</code> to store it.</p>";
+          ? "<p class=\"warn\">" + neverShare + "</p>"
+          : "<p class=\"warn\">" + neverShare + " Uncheck the box only if you do not want <code>pass</code> to store it.</p>";
         return "<dialog class=\"secret\" id=\"secret-modal\" open>" +
           card("Your unique identity key has been created",
           stepBar(2) +
@@ -2705,6 +2706,7 @@ html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2p
           "<div class=\"keybox" + (keyRevealed ? " revealed" : "") + "\" id=\"nsec-box\">" + shown + "</div>" +
           "<label class=\"passbox\"><input id=\"save-pass\" type=\"checkbox\"" +
           ((!passOff && savePass) ? " checked" : "") +
+          (passOff ? " disabled" : "") +
           "> " + passLabel + "</label>" +
           passNote +
           passAfter +

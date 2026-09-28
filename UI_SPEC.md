@@ -67,10 +67,12 @@ Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
 2. **Backup** — Masked nsec, Reveal, Copy. Checkbox **checked**:
    `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/identity/nsec`
    When `/api/session` reports `pass_available:false` (`pass` is not
-   installed, so no save could succeed), the checkbox defaults to
-   unchecked, its label reads "Saving to pass is unavailable because
+   installed, so no save could succeed), the checkbox renders unchecked
+   and disabled, its label reads "Saving to pass is unavailable because
    pass is not installed. Copy your identity key somewhere safe now."
-   (never "Checked to save…"), the "Uncheck the box…" line is dropped,
+   (never "Checked to save…"), the warning line keeps "Never share your
+   private key. Anyone with it can impersonate you." and drops only the
+   "Uncheck the box only if you do not want pass to store it." clause,
    and the step shows a plain inline reason: "pass is not installed, so
    Hush cannot save the key here. Copy it now and keep it somewhere
    safe. Setup continues without saving." A failed save at ack
@@ -85,6 +87,21 @@ Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
    welcome quote. CTA: **Carry on.** Then hive.
 
 `tick()` must not force `page = "hive"` while `page === "payne"`.
+
+Delta 2026-09-28 (ID-1 r3 plain help copy + backup warning): the help
+card "What’s an identity key?" reads "Hush signs you in with an identity
+key instead of a password. The key is created on this computer and
+stands for you." and "Create a new key if this is your first time. If
+you already have a private key (it starts with nsec1), choose Use an
+existing key." It never says "Nostr identity" and never shows a bare
+`nsec1…`. The backup step shows "Never share your private key. Anyone
+with it can impersonate you." on both paths; with `pass` the sentence is
+followed by the unchanged "Uncheck the box…" clause, so the
+pass-installed copy is byte identical. Without `pass` the save checkbox
+is `disabled` as well as unchecked, so it cannot be ticked, and
+"I saved it" sends `save_pass:false` (the enabled with-pass checkbox is
+unchanged). `check_restart_ui.cjs` asserts the help copy, the warning on
+both paths and the checkbox `disabled` state on both paths.
 
 ### 3. Resume
 `logged_in && backup_acked && has_vibe` → splash detects → hive.
