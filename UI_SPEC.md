@@ -206,8 +206,9 @@ and a pencil to edit it again.
   Wire ids: `goose`, `grok-build`, `codex`, `cline`, `copilot`, `ollama`, `custom`,
   `gemini-api`, `xai-api`, `openai-api`, `anthropic-api`,
   `deepseek-api`.
-  Selecting a radio reveals a 44px pencil (`#provider-cfg`) on that
-  row. Pencil opens `#provider-drawer` (see §11). Configure is
+  Selecting a radio reveals a pencil (`#provider-cfg`) on that
+  row, sized per the UI-M12d delta (§15: compact visual, ≥44px touch
+  hit at phone width). Pencil opens `#provider-drawer` (see §11). Configure is
   optional for Raise — the robot still stores only the provider id.
 - pass checkbox default-on:
   `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/agents/<slug>/nsec`
@@ -412,7 +413,8 @@ detail returns to the hub.
 
 **Per-robot pick.** Left-nav Edit / Raise still chooses which id a
 robot uses. Selecting a provider radio shows `#provider-cfg` (pencil
-✎, ≥44px, title “Configure this provider.”) next to that label.
+✎, sized per the UI-M12d delta in §15, title “Configure this
+provider.”) next to that label.
 Click opens the same `#provider-drawer`. Configure is optional for
 Raise — the robot still stores only the provider id.
 
@@ -777,8 +779,9 @@ on screen. `localStorage.hush-rail` stores `{x,y,collapsed}` only.
 "drag handle" pattern + title="Drag to move". All rail-i info buttons
 use consistent 22px, high-contrast. Popovers have 1-line summaries
 first. "New Robot" and inventory openers are clearly labeled. Collapse
-state + position restored per-vibe where possible. 44px minimum on
-primary actions. Progressive disclosure for advanced (STUN host,
+state + position restored per-vibe where possible. Primary actions
+follow the UI-M12d delta (compact visual, ≥44px touch hit at phone
+width). Progressive disclosure for advanced (STUN host,
 policy details). Small labels/hints added for first-time users without
 increasing cognitive load.
 
@@ -1145,12 +1148,21 @@ touch-only pitch of ≥44px (gaps/margins/row-gaps on the KIT menu,
 menus, mention list, channel rows, roster, pool rows, action rows,
 pills, chip rows, picture sheets, favourites and canvas tools) so
 neighbouring hit areas do not overlap, and the BOARDS drawer gets 64px
-bottom padding so its last row clears the fixed `#quick-bar`.
+bottom padding so its last row clears the fixed `#quick-bar`. The only
+touch-block paddings are on containers (`.mention-box`, `#fo-drawer`,
+`.fav-item`); no control's height or padding changes. Known short spots
+(static CSS arithmetic, not measured): wrapped `.pills` rows pitch at
+42px (26px pill + 16px row-gap), so pill-button hit areas in adjacent
+rows overlap by 2px; the `.tile-mute` hit is clipped by its tile's
+`overflow: hidden` to about 42px.
 `#quick-bar` itself is excluded (its clip-path would clip a
 pseudo-element).
 Pinned 44px exceptions kept visibly ≥44px: `#hive-leave .leave-actions
 .btn` (§ leave dialog), `#stats` (§19), `#rail-toggle` and
-`#nav-toggle` (header stamps). Also untouched: `#send`, `#fo-dial`,
+`#nav-toggle` (header stamps); they still match the touch
+`position: relative` and transparent `::before` rules, but at ≥44px
+the pseudo-element equals their own box, so nothing changes. Also
+untouched: `#send`, `#fo-dial`,
 `#thread-send` (UI-M12c), spatial tiles (`.skill-gem`, `.inv-item`,
 `.agent-pic-cell`, `.avatar-cell`), form-row labels (`.radio-col
 label`, `#manage-talk`) and the hidden legacy `#robot-list`.
@@ -1162,9 +1174,13 @@ supersedes the older "44px pencil" / "≥44px" `#provider-cfg` wording
 (§ providers, per-robot pick) and "44px minimum on primary actions"
 (§15) for controls inside menus and drawers.
 Gate: the launch script requires the tokens, the `UI-M12d` marker, the
-touch media query with the transparent `::before` hit area sized from
-`--btn-hit-touch`, `.pill button` min 24px, and the `.switch::after`
-hit area.
+`.btn` md rule, the `.menu button` sm rule, `.pill button` min 24px,
+the touch media query with the transparent `::before` hit area sized
+from `--btn-hit-touch` and the `.switch::after` hit area, a
+`position: relative` list equal to the hit list (minus `.tile-mute`),
+the square-widening rule, three representative spacing rules, no
+height/padding/block-size in the touch block except the three container
+lines, and no 44px size anywhere in the UI-M12d block.
 
 ### 16. Mention + manage pills
 

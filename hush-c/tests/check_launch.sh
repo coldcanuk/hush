@@ -423,9 +423,43 @@ if [ -z "$touch_at" ] || [ -z "$touch_end" ] || [ -z "$hit_at" ] \
   || ! echo "$html" | sed -n "$((hit_at + 5))p" | grep -q '^    background: transparent; pointer-events: auto;$'; then
   fail "phone touch hit must come from a transparent pseudo-element (UI-M12d)"
 fi
-if [ -n "$touch_at" ] && [ -n "$touch_end" ] \
-  && echo "$html" | sed -n "${touch_at},${touch_end}p" | grep -q 'height\|padding:'; then
+# The touch block adds container spacing, never control size: no height,
+# padding* or block-size anywhere in it except these three container lines.
+if echo "$html" | sed -n "${touch_at},${touch_end}p" \
+  | grep -v -x -F \
+    -e '  .mention-box { padding-block: 8px; }' \
+    -e '  #fo-drawer { padding-bottom: 64px; } /* last row clears the fixed #quick-bar */' \
+    -e '  .fav-item { padding-block: 8px; }' \
+  | grep -q 'height\|padding\|block-size'; then
   fail "touch block must not raise a visual height (UI-M12d)"
+fi
+# Each hit control must be the positioning box of its own ::before, so the
+# position: relative list is the hit list minus .tile-mute (already absolute).
+rel_at=$(line_of '^    #install, \.iconbtn, \.skill-facet, \.think-stop, button\.fo-person) { position: relative; }$')
+if [ -z "$rel_at" ] || [ "$rel_at" -le "$touch_at" ] || [ "$rel_at" -ge "$hit_at" ] \
+  || [ "$(echo "$html" | sed -n "$((rel_at - 4)),$((rel_at))p" | sed 's/) { position: relative; }$//')" \
+    != "$(echo "$html" | sed -n "$((hit_at - 4)),$((hit_at))p" | sed 's/, \.tile-mute)::before,$//')" ]; then
+  fail "touch hit controls must be position: relative (UI-M12d)"
+fi
+wide_at=$(line_of '^  :where(\.drawer-x, \.icon-plus, \.icon-minus, \.chan-options, \.chan-voice, \.prov-row \.cfg)::before {$')
+if [ -z "$wide_at" ] || [ "$wide_at" -le "$hit_at" ] || [ "$wide_at" -ge "$touch_end" ] \
+  || ! echo "$html" | sed -n "$((wide_at + 1))p" | grep -q '^    left: min(0px, calc(50% - var(--btn-hit-touch) / 2));$' \
+  || ! echo "$html" | sed -n "$((wide_at + 2))p" | grep -q '^    right: min(0px, calc(50% - var(--btn-hit-touch) / 2));$'; then
+  fail "isolated square hit must widen to 44px (UI-M12d)"
+fi
+for rule in '  .menu button + button, .mention-box button + button { margin-top: 16px; }' \
+  '  #fo-individuals, #fo-roster-list, #fo-individual-list { gap: 16px; }' \
+  '  #fo-drawer { padding-bottom: 64px; } /* last row clears the fixed #quick-bar */'; do
+  echo "$html" | sed -n "${touch_at},${touch_end}p" | grep -q -x -F -e "$rule" \
+    || fail "touch spacing must keep neighbouring hit areas apart (UI-M12d)"
+done
+menu_at=$(line_of '^\.menu button, \.mention-box button {$')
+if [ -z "$menu_at" ] || [ "$menu_at" -le "$m12d_at" ] || [ "$menu_at" -ge "$touch_at" ] \
+  || ! echo "$html" | sed -n "$((menu_at + 1))p" | grep -q '^  min-height: var(--btn-h-sm); padding: 0 var(--btn-px-sm);$'; then
+  fail ".menu button must use the compact sm tier, not 44px (UI-M12d)"
+fi
+if echo "$html" | sed -n "${m12d_at},${touch_end}p" | grep -q '\(height\|width\|block-size\): *44px'; then
+  fail "UI-M12d block must not size a control at 44px"
 fi
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + pills"
