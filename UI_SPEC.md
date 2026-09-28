@@ -40,9 +40,29 @@ raise humans + robots that share channels."
 - Feather logo: `<img src="/icon-192.png" alt="hush" class="feather">`.
   Not a new illustration. Not the 193 KiB source PNG inline.
 - Line: "Major reporting for duty."
-- Sub: "Detecting identity and vibe…"
+- Cue: "Click Begin to continue." Begin is always an enabled primary
+  button, never a disabled-looking one. There is no "Detecting identity
+  and vibe…" line: it asked users to wait for an auto-detection that
+  never comes.
+- Restart honesty: when the session reports `restart_lost_login` — set
+  at boot only when startup restore leaves a vibe without a login,
+  cleared by create/import, never set by logout — the splash and the
+  landing card show: "The hive is still on this machine, but the login
+  did not survive the restart. Re-import your identity key (starts with
+  nsec1) to continue." Begin then routes to the Create/Use-key
+  landing, which carries the same note. After a plain logout the
+  landing shows the normal login copy with no note.
+- Primary `.btn` (and `.iconbtn.danger`) under the field-office theme
+  use dark ink text (`#2a241e`) on the paper background, so BEGIN and
+  CREATE read at 11.3:1. Fresh loads boot the field-office theme; a
+  POST response applies the saved profile theme after that. Unifying
+  the two is deferred to the UI-M12b colour/material pass.
 - Poll `/api/session`. If `ready` → hive. Else **Begin** → wizard step 1.
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
+  The header shows the vibe name only while `logged_in` is true;
+  otherwise it falls back to the neutral "local hive mind" (and an
+  empty visibility badge), so a surviving vibe name never implies a
+  live login after a restart.
 
 ### 2. Onboarding wizard (no user or no vibe)
 Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
@@ -50,6 +70,20 @@ Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
 1. **Identity** — Create new (primary) or Import nsec. Help: “What’s an identity key?”
 2. **Backup** — Masked nsec, Reveal, Copy. Checkbox **checked**:
    `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/identity/nsec`
+   When `/api/session` reports `pass_available:false` (`pass` is not
+   installed, so no save could succeed), the checkbox renders unchecked
+   and disabled with the short neutral label "Save to password manager"
+   (never "Checked to save…"), the step shows exactly one reason, once:
+   "Hush can't save this key on this computer. Copy it now and keep it
+   somewhere safe. Setup continues without saving." and the warning line
+   keeps "Never share your private key. Anyone with it can impersonate
+   you." and drops only the "Uncheck the box only if you do not want
+   pass to store it." clause. No visible text on the no-pass backup step
+   uses the bare word "pass". A failed save at ack
+   time still records `pass_error` and still lets setup continue
+   (`backup_acked` stays true); the next gate screen repeats the
+   `pass_error` warning. No backup path blocks setup, and no backup path
+   stays silent about an unsaved key.
 3. **Vibe** — Name (default `local hive`), about, public / private radios.
    CTA: **Stand up the hive**.
 4. **Meet Payne** — After vibe exists (session `ready` but page stays
@@ -57,6 +91,33 @@ Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
    welcome quote. CTA: **Carry on.** Then hive.
 
 `tick()` must not force `page = "hive"` while `page === "payne"`.
+
+Delta 2026-09-28 (ID-1 r3 plain help copy + backup warning): the help
+card "What’s an identity key?" reads "Hush signs you in with an identity
+key instead of a password. The key is created on this computer and
+stands for you." and "Create a new key if this is your first time. If
+you already have a private key (it starts with nsec1), choose Use an
+existing key." It never says "Nostr identity" and never shows a bare
+`nsec1…`. The backup step shows "Never share your private key. Anyone
+with it can impersonate you." on both paths; with `pass` the sentence is
+followed by the unchanged "Uncheck the box…" clause, so the
+pass-installed copy is byte identical. Without `pass` the save checkbox
+is `disabled` as well as unchecked, so it cannot be ticked, and
+"I saved it" sends `save_pass:false` (the enabled with-pass checkbox is
+unchanged). `check_restart_ui.cjs` asserts the help copy, the warning on
+both paths and the checkbox `disabled` state on both paths.
+
+Delta 2026-09-28 (ID-1 r4 one no-pass reason): the no-pass backup step
+no longer gives its reason twice. The checkbox label "Saving to pass is
+unavailable because pass is not installed. Copy your identity key
+somewhere safe now." becomes "Save to password manager" (still unchecked
+and disabled), and the reason line "pass is not installed, so Hush
+cannot save the key here. …" becomes the single sentence group "Hush
+can't save this key on this computer. Copy it now and keep it somewhere
+safe. Setup continues without saving." The never-share line stays on
+both paths, and the with-pass copy is unchanged. `check_restart_ui.cjs`
+asserts the reason appears exactly once, nothing else on the screen
+restates it, and the visible no-pass text has no bare word "pass".
 
 ### 3. Resume
 `logged_in && backup_acked && has_vibe` → splash detects → hive.
@@ -492,7 +553,7 @@ demo). No Raylib dependency on the main hush-relay.
 
 | Route | Role |
 |---|---|
-| `GET /api/session` | existing + `profile`, `theme`, `agents[]`, `members[]` |
+| `GET /api/session` | existing + `profile`, `theme`, `agents[]`, `members[]`, `pass_available` (false when `pass` is missing), `restart_lost_login` (true only when boot restore left a vibe without a login) |
 | `POST /api/identity` | `create` \| `import` \| `ack_backup` \| **`logout`** |
 | `POST /api/profile` | first/last/email/org/theme; optional avatar b64 |
 | `POST /api/agent` | create agent + context |
