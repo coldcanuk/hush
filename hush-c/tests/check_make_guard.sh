@@ -210,7 +210,7 @@ n1_pid=""
 # --- kill-relay.sh reaps the CHILD turnserver named by the state pidfile ---
 # kill-relay.sh also stops every hush-relay* of this uid (#221), so on a
 # developer desktop it would stop the real hive: opt-in outside CI.
-if [ "${CI:-}" = "true" ] || [ "${HUSH_TEST_STOP_RELAYS:-}" = "1" ]; then
+if { [ "${CI:-}" = "true" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]; } || [ "${HUSH_TEST_STOP_RELAYS:-}" = "1" ]; then
     # comm must read "turnserver", so run a copy of sleep under that basename.
     cp "$(command -v sleep)" "$test_home/turnserver"
     "$test_home/turnserver" 60 >/dev/null 2>&1 < /dev/null &
@@ -236,7 +236,7 @@ if [ "${CI:-}" = "true" ] || [ "${HUSH_TEST_STOP_RELAYS:-}" = "1" ]; then
         || fail "kill script touched a non-CHILD pidfile"
     daemon_note="CHILD reaped, daemon stand-in survived"
 else
-    echo "skip: kill-relay CHILD-reap check (it stops every hush-relay* of this uid; set HUSH_TEST_STOP_RELAYS=1 or CI=true to run)"
+    echo "skip: kill-relay CHILD-reap check (it stops every hush-relay* of this uid; set HUSH_TEST_STOP_RELAYS=1 to run; CI=true alone is not enough outside GitHub Actions)"
     daemon_note="CHILD reap skipped"
 fi
 

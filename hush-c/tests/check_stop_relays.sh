@@ -15,10 +15,12 @@
 # XDG_CONFIG_HOME, XDG_STATE_HOME, HUSH_HOME and HUSH_CONFIG_DIR, and
 # install/clean use a tmp PREFIX/BINDIR. NOT isolated: the stop is
 # uid-wide by design, so the signal/window phases would also stop the
-# developer's own relays and Hush windows. Those phases run only with
-# CI=true or HUSH_TEST_STOP_RELAYS=1; otherwise only the static checks
-# run and a skip: line says so. The sudo phase also needs passwordless
-# sudo and user nobody. Linux only (/proc); skips elsewhere.
+# developer's own relays and Hush windows. Those phases run only under
+# GitHub Actions (CI=true and GITHUB_ACTIONS=true) or with
+# HUSH_TEST_STOP_RELAYS=1; otherwise only the static checks run and a
+# skip: line says so. The sudo phase also needs passwordless sudo and
+# user nobody (under GitHub Actions their absence fails the test). Linux
+# only (/proc); skips elsewhere.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -55,10 +57,10 @@ if ! readlink /proc/self/exe >/dev/null 2>&1; then
 fi
 # The phases below send real signals to every hush-relay* of this uid and
 # close its Hush windows: opt-in outside CI.
-if [ "${CI:-}" = "true" ] || [ "${HUSH_TEST_STOP_RELAYS:-}" = "1" ]; then
-    echo "stop-relays: signal/window phases enabled (CI=${CI:-unset}, HUSH_TEST_STOP_RELAYS=${HUSH_TEST_STOP_RELAYS:-unset})"
+if { [ "${CI:-}" = "true" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]; } || [ "${HUSH_TEST_STOP_RELAYS:-}" = "1" ]; then
+    echo "stop-relays: signal/window phases enabled (CI=${CI:-unset}, GITHUB_ACTIONS=${GITHUB_ACTIONS:-unset}, HUSH_TEST_STOP_RELAYS=${HUSH_TEST_STOP_RELAYS:-unset})"
 else
-    echo "skip: check_stop_relays signal/window phases (they stop every hush-relay* and Hush window of this uid; set HUSH_TEST_STOP_RELAYS=1 or CI=true to run)"
+    echo "skip: check_stop_relays signal/window phases (they stop every hush-relay* and Hush window of this uid; set HUSH_TEST_STOP_RELAYS=1 to run; CI=true alone is not enough outside GitHub Actions)"
     echo "stop-relays check ok (static checks only)"
     exit 0
 fi
@@ -397,6 +399,9 @@ port_e=""
 if [ "$(id -u)" = "0" ]; then
     echo "skip: sudo phase (caller is already root; the SUDO_UID path needs a non-root caller)"
 elif [ "$have_sudo" != 1 ]; then
+    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+        fail "sudo phase cannot run under GitHub Actions (needs passwordless sudo -n and user nobody); refusing to drop the uid-filter coverage"
+    fi
     echo "skip: sudo phase needs passwordless sudo (sudo -n true) and user nobody; root/SUDO_UID and other-uid assertions did not run"
 else
     myuid=$(id -u)

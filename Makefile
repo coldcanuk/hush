@@ -82,9 +82,9 @@ stop-relays:
 
 # make clean's pre-step: the same stop, then close Hush app windows
 # (--class=hush-relay* in the browser's own cmdline), then remove stale
-# renamed hush-relay-* copies from BINDIR (regular files this uid owns
-# only; symlinks are never followed). ~/.hush is never touched. Skipped
-# for DESTDIR staging trees, like stop-relays.
+# renamed hush-relay-* copies from BINDIR (regular files owned by an
+# allowed uid (under sudo: root and SUDO_UID) only; symlinks are never
+# followed). ~/.hush is never touched. Skipped for DESTDIR staging trees.
 clean-relays: check-prefix
 	@if [ -n "$(DESTDIR)" ]; then \
 		echo "clean-relays: DESTDIR staging tree; running relays, windows and BINDIR copies left alone."; \
