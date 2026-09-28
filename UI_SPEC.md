@@ -16,8 +16,12 @@ Quinn + Parker + Payne. Robot pictures may use the shipped cats sheet
 ## Core Principles (Quinn)
 - Cognitive Load Index ≤ 3/10. Gestalt Clarity ≥ 85/100.
 - Hick: ≤5 primary visible choices. Themes live in Settings, not header.
-- Fitts: min 44px tap on `#install` and `#rail-toggle`. Compact rail
-  pair buttons may be 32px tall. 10px padding.
+- Fitts (UI-M12d): compact visual size everywhere (xs 24 / sm 28 /
+  md 32px, the same at every width); ≥44px touch hit at phone width
+  (≤640px or a coarse pointer) via an invisible hit area; ≥24px hit on
+  desktop. `#install` is compact (xs) with that invisible touch hit.
+  `#rail-toggle`, `#nav-toggle`, `#stats` and the `#hive-leave` actions
+  stay visibly ≥44px. Compact rail pair buttons may be 32px tall.
 - Recognition > recall. One primary CTA per onboard step.
 - Error prevention: confirm logout; nsec never in the DOM after ack;
   context files re-checked on the server.
@@ -120,7 +124,9 @@ The hive ships two labeled buttons on `#tool-rail`, always reachable
 - `#leave-close`: if `window.close()` leaves the document up (a tab the
   script did not open), show `#hive-banner`:
   "Window stays open here. Close this window. The hive is still standing."
-- Rail Close is ghost `iconbtn`. Rail Exit is danger `iconbtn`. Both ≥44px.
+- Rail Close is ghost `iconbtn`. Rail Exit is danger `iconbtn`. Both are
+  compact (md, 32px visual at every width) with a ≥44px invisible touch
+  hit at phone width and a ≥24px hit on desktop (UI-M12d).
   Titles: Close = "Close the window. Hive stays standing."
   Exit = "Quit the hive. Every process stops."
 - Drawer "Close" / `[x]` buttons on Settings / Profile / Raise / Thread /
@@ -815,7 +821,9 @@ Expanded rail, in order:
 There is no `#blank-btn`. There is no left-nav `.create` block.
 
 Pair buttons are normal size (32px tall, 8px radius), not 44px
-pills. `#install` and `#rail-toggle` stay ≥44px.
+pills. `#install` is compact (xs, 24px visual) with a ≥44px invisible
+touch hit at phone width and a ≥24px hit on desktop; `#rail-toggle`
+stays visibly ≥44px (UI-M12d).
 
 `#install-help` copy (popover only):
 “Install puts Hush on your app launcher as its own window. It does
@@ -1102,6 +1110,61 @@ its own line inside a `try {`; the reduced-motion early return `if
 `.fo-flick` class is added; the `@media (prefers-reduced-motion:
 reduce)` rule that pins `.fo-switch-lever` (`transition: none`); and the
 full-width dial rule.
+
+Delta 2026-09-28 (UI-M12d compact menu buttons): one shared compact
+button scale for every control inside menus, drawers, overlays, panels,
+dialogs and popovers. Tokens live on `:root` only (themes never set
+them): xs `--btn-h-xs` 24px / `--btn-px-xs` 6px / `--btn-fs-xs`
+0.68rem; sm `--btn-h-sm` 28px / 8px / 0.74rem; md `--btn-h-md` 32px /
+12px / 0.8rem; `--btn-lh` 1.1, `--btn-hit-min` 24px, `--btn-hit-touch`
+44px. Visual size is the tier at every width, phones included.
+Tier map: md = `.btn` (+ ghost/danger; `#agent-drawer .actions .btn`
+uses md height with sm padding/font), `.iconbtn` (KIT menu, rail
+Close/Exit), `.skill-facet`, `.think-stop`, `.provider-config`
+(unchanged 32). sm = `#canvas-k .row button`, `.icon-plus`/`.icon-minus`
+(28 square, incl. `#skill-cycle-row`), `.inv-btn` (not the `#quick-bar`
+folder tabs), `.quick-tab` (30 → 28), `.fav-item .inv-btn`, `.drawer-x`
+(28 square), `.menu button`, `.mention-box button`, `.chan-options` (28
+square), `.chan`, `.vis label` (theme chips; the chip row now wraps),
+`.mini`, `.prov-row .cfg` (28 square), `button.fo-person`,
+`#payne-provider-pills .pill button` (28). xs = `.pill button` (raised
+from ~12px to 24×24), `.agent-pic-sheet`, `.skill-life` (20 → 24),
+`.inv-expand-link`, `.help button`, `summary`, `.tile-mute`, `#install`,
+`.chan-voice`, `.switch` (24). Card rows: `.prov-row` padding goes to
+4px/8px (row ~52px); `#agent-providers label` drops its 44px
+min-height and lays out as checkbox | name over status | Configure
+(two text lines, ~46px).
+Hit floors: every tier is ≥24px, so desktop meets `--btn-hit-min` with
+the visual box. At `@media (max-width: 640px), (pointer: coarse)` each
+in-scope control gets `position: relative` and a transparent
+`::before` (`::after` on `.switch`, whose `.slider:before` is the
+knob) centred on it with `top`/`bottom: min(0px, 50% - 22px)`, so the
+hit area is ≥44px tall while the painted box keeps its tier height
+(isolated squares also get ≥44px width). Stacked lists get a
+touch-only pitch of ≥44px (gaps/margins/row-gaps on the KIT menu,
+menus, mention list, channel rows, roster, pool rows, action rows,
+pills, chip rows, picture sheets, favourites and canvas tools) so
+neighbouring hit areas do not overlap, and the BOARDS drawer gets 64px
+bottom padding so its last row clears the fixed `#quick-bar`.
+`#quick-bar` itself is excluded (its clip-path would clip a
+pseudo-element).
+Pinned 44px exceptions kept visibly ≥44px: `#hive-leave .leave-actions
+.btn` (§ leave dialog), `#stats` (§19), `#rail-toggle` and
+`#nav-toggle` (header stamps). Also untouched: `#send`, `#fo-dial`,
+`#thread-send` (UI-M12c), spatial tiles (`.skill-gem`, `.inv-item`,
+`.agent-pic-cell`, `.avatar-cell`), form-row labels (`.radio-col
+label`, `#manage-talk`) and the hidden legacy `#robot-list`.
+Conflicts resolved: `#install` (was "≥44px" in Core Principles and §15
+but ~24px in code) and rail Close/Exit `iconbtn` (was "Both ≥44px" but
+32px in code) now follow the rule above: compact visual, invisible
+≥44px touch hit at phone width, ≥24px on desktop. The same rule
+supersedes the older "44px pencil" / "≥44px" `#provider-cfg` wording
+(§ providers, per-robot pick) and "44px minimum on primary actions"
+(§15) for controls inside menus and drawers.
+Gate: the launch script requires the tokens, the `UI-M12d` marker, the
+touch media query with the transparent `::before` hit area sized from
+`--btn-hit-touch`, `.pill button` min 24px, and the `.switch::after`
+hit area.
 
 ### 16. Mention + manage pills
 

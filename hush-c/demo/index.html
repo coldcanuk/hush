@@ -23,6 +23,16 @@
       --mono: ui-monospace, "Cascadia Mono", monospace;
       --display: var(--sans);
     }
+    /* UI-M12d: one compact button scale (xs 24 / sm 28 / md 32) shared by every
+       menu, drawer, overlay, panel, dialog and popover control. Lives on :root
+       only; theme blocks set palette, never these. Visual size is compact at
+       every width; phones get the 44px touch hit from an invisible hit area. */
+    :root {
+      --btn-h-xs: 24px; --btn-px-xs: 6px; --btn-fs-xs: 0.68rem;
+      --btn-h-sm: 28px; --btn-px-sm: 8px; --btn-fs-sm: 0.74rem;
+      --btn-h-md: 32px; --btn-px-md: 12px; --btn-fs-md: 0.8rem;
+      --btn-lh: 1.1; --btn-hit-min: 24px; --btn-hit-touch: 44px;
+    }
     html[data-theme="light"] {
       --bg: oklch(98.8% 0.003 106.5); --surface: #ffffff; --surface-2: oklch(96.6% 0.005 106.5); --line: oklch(93% 0.007 106.5);
       --fg: oklch(22.8% 0.013 107.4); --muted: oklch(39.4% 0.023 107.4); --faint: oklch(46.6% 0.025 107.3); --accent: oklch(46.6% 0.025 107.3);
@@ -1648,6 +1658,130 @@ html[data-theme="field-office"] .fo-switch-lever { background: #d8d0bc; box-shad
 html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2px -2px 0 #9c927c; }
 @media (prefers-reduced-motion: reduce) {
   .fo-switch-lever, #send.fo-switch.fo-flick .fo-switch-lever { transition: none; transform: rotate(-32deg); }
+}
+/* ===== UI-M12d compact buttons =====
+   Shared classes first, then the providers hub and robot provider tiles,
+   then the rest. Visual height is the tier at EVERY width (xs 24 / sm 28 /
+   md 32). Desktop hit floor is --btn-hit-min (every tier is already >= 24).
+   Phone/coarse pointers get a >= --btn-hit-touch hit from a transparent
+   ::before (::after on .switch, whose .slider:before is the knob) centred on
+   the control; it never draws. Left alone on purpose: #send, #fo-dial,
+   #thread-send (UI-M12c), .leave-actions .btn, #stats, #rail-toggle and
+   #nav-toggle (spec-pinned 44px), spatial tiles (.skill-gem, .inv-item,
+   .agent-pic-cell, .avatar-cell), form-row labels, #quick-bar (clip-path),
+   hidden legacy #robot-list. No colour, border or background changes. */
+/* 1. Shared classes. :where() keeps the pinned 44px controls out. */
+.btn:where(:not(#nav-toggle, .leave-actions .btn)) {
+  min-height: var(--btn-h-md); padding: 0 var(--btn-px-md);
+  font-size: var(--btn-fs-md); line-height: var(--btn-lh);
+}
+#agent-drawer .actions .btn {
+  min-height: var(--btn-h-md); padding: 0 var(--btn-px-sm); font-size: var(--btn-fs-sm);
+}
+#canvas-k .row button {
+  min-height: var(--btn-h-sm); padding: 0 var(--btn-px-sm);
+  font-size: var(--btn-fs-sm); line-height: var(--btn-lh);
+}
+.icon-plus, .icon-minus,
+#skill-cycle-row .icon-minus, #skill-cycle-row .icon-plus {
+  width: var(--btn-h-sm); height: var(--btn-h-sm); padding: 0; line-height: 1;
+}
+.inv-btn:where(:not(.qb-slot, .qb-gear)) {
+  min-height: var(--btn-h-sm); padding-block: 0; font-size: var(--btn-fs-sm);
+}
+.quick-tab { min-height: var(--btn-h-sm); font-size: var(--btn-fs-xs); }
+.fav-item .inv-btn { padding: 0 var(--btn-px-sm); }
+.drawer-x {
+  min-width: var(--btn-h-sm); min-height: var(--btn-h-sm);
+  width: var(--btn-h-sm); height: var(--btn-h-sm); padding: 0;
+}
+.menu button, .mention-box button {
+  min-height: var(--btn-h-sm); padding: 0 var(--btn-px-sm);
+  font-size: var(--btn-fs-sm); line-height: var(--btn-lh);
+}
+.chan-options { width: var(--btn-h-sm); height: var(--btn-h-sm); }
+.chan-voice, .robot-call { width: var(--btn-h-xs); height: var(--btn-h-xs); }
+.chan { min-height: var(--btn-h-sm); padding-block: 2px; }
+.vis { flex-wrap: wrap; }
+.vis label {
+  display: flex; align-items: center; margin: 0; white-space: nowrap;
+  min-height: var(--btn-h-sm); padding: 0 var(--btn-px-sm);
+  font-size: var(--btn-fs-sm); line-height: var(--btn-lh);
+}
+.mini {
+  min-height: var(--btn-h-sm); padding: 0 var(--btn-px-sm);
+  font-size: var(--btn-fs-sm); line-height: var(--btn-lh);
+}
+/* 2. Providers hub rows + robot-editor provider tiles. */
+.prov-row { padding: 4px var(--btn-px-sm); }
+.prov-row .cfg {
+  min-width: var(--btn-h-sm); min-height: var(--btn-h-sm);
+  width: var(--btn-h-sm); height: var(--btn-h-sm); padding: 0;
+}
+#agent-providers label {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 6px; align-items: center; min-height: 0; padding: 4px var(--btn-px-sm);
+}
+#agent-providers label > input { grid-row: 1 / span 2; margin: 0; }
+#agent-providers .prov-name, #agent-providers .prov-status { grid-column: 2; margin: 0; }
+#agent-providers .provider-config { grid-column: 3; grid-row: 1 / span 2; }
+.provider-config { min-height: var(--btn-h-md); }
+/* 3. The rest. xs controls are raised to the 24px floor. */
+.pill { padding: 1px 10px; }
+.pill:has(> button) { padding-right: 2px; }
+.pill button {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: var(--btn-h-xs); min-height: var(--btn-h-xs); padding: 0; cursor: pointer;
+}
+#payne-provider-pills .pill button { min-width: var(--btn-h-sm); min-height: var(--btn-h-sm); }
+.agent-pic-sheet { min-height: var(--btn-h-xs); padding: 0 var(--btn-px-xs); font-size: var(--btn-fs-xs); }
+.skill-life { min-height: var(--btn-h-xs); padding: 0 var(--btn-px-xs); }
+.inv-expand-link, .help button { min-height: var(--btn-h-xs); }
+summary { min-height: var(--btn-h-xs); line-height: var(--btn-h-xs); cursor: pointer; }
+.tile-mute { min-height: var(--btn-h-xs); padding: 0 var(--btn-px-sm); }
+#install { min-height: var(--btn-h-xs); padding: 0 var(--btn-px-sm); }
+.iconbtn, .skill-facet, .think-stop { min-height: var(--btn-h-md); }
+button.fo-person { min-height: var(--btn-h-sm); }
+.switch { height: var(--btn-h-xs); }
+/* Touch: invisible >= 44px hit, visual box unchanged. Stacked lists get a
+   touch-only pitch of >= 44px so neighbouring hit areas do not overlap. */
+@media (max-width: 640px), (pointer: coarse) {
+  :where(.btn, #canvas-k .row button, .icon-plus, .icon-minus, .inv-btn:not(.qb-slot, .qb-gear),
+    .drawer-x, .menu button, .mention-box button, .chan-options, .chan-voice, .robot-call, .chan,
+    .vis label, .mini, .prov-row .cfg, .provider-config,
+    .pill button, .agent-pic-sheet, .skill-life, .inv-expand-link, .help button, summary,
+    #install, .iconbtn, .skill-facet, .think-stop, button.fo-person) { position: relative; }
+  :where(.btn, #canvas-k .row button, .icon-plus, .icon-minus, .inv-btn:not(.qb-slot, .qb-gear),
+    .drawer-x, .menu button, .mention-box button, .chan-options, .chan-voice, .robot-call, .chan,
+    .vis label, .mini, .prov-row .cfg, .provider-config,
+    .pill button, .agent-pic-sheet, .skill-life, .inv-expand-link, .help button, summary,
+    #install, .iconbtn, .skill-facet, .think-stop, button.fo-person, .tile-mute)::before,
+  .switch::after {
+    content: ""; position: absolute; left: 0; right: 0;
+    top: min(0px, calc(50% - var(--btn-hit-touch) / 2));
+    bottom: min(0px, calc(50% - var(--btn-hit-touch) / 2));
+    background: transparent; pointer-events: auto;
+  }
+  .switch::after { cursor: pointer; }
+  :where(.drawer-x, .icon-plus, .icon-minus, .chan-options, .chan-voice, .prov-row .cfg)::before {
+    left: min(0px, calc(50% - var(--btn-hit-touch) / 2));
+    right: min(0px, calc(50% - var(--btn-hit-touch) / 2));
+  }
+  #kit-menu { gap: 12px; }
+  .menu button + button, .mention-box button + button { margin-top: 16px; }
+  .mention-box { padding-block: 8px; }
+  .chan-row + .chan-row { margin-top: 16px; }
+  #fo-individuals, #fo-roster-list, #fo-individual-list { gap: 16px; }
+  .pool-row + .pool-row { margin-top: 16px; }
+  .actions, .fav-row, .pills, .vis, .quick-tabs { row-gap: 16px; }
+  .skill-facet-row { row-gap: 12px; }
+  .agent-pic-sheets { row-gap: 20px; margin: 24px 0 12px; }
+  .avatar-sheets { row-gap: 20px; }
+  #canvas-tools { row-gap: 12px; }
+  #nav-new-channel { margin-bottom: 8px; }
+  #fo-drawer { padding-bottom: 64px; } /* last row clears the fixed #quick-bar */
+  .inv-header { gap: 20px; }
+  .fav-item { padding-block: 8px; }
 }
 </style>
 </head>

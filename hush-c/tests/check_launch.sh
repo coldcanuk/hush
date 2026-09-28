@@ -384,6 +384,49 @@ echo "$html" | grep -A1 '^@media (prefers-reduced-motion: reduce) {$' \
   || fail "reduced-motion CSS must pin the Send switch lever (UI-M12c)"
 echo "$html" | grep -q '#fo-dial-row #fo-dial { width: 100%;' \
   || fail "dial must span the Send column width (UI-M12c)"
+# UI-M12d: one compact button scale (xs 24 / sm 28 / md 32) on :root.
+# Visual size stays the tier at every width; phones get the 44px touch hit
+# only from a transparent ::before (::after on .switch) inside the touch
+# media block, which must never raise a visual height.
+echo "$html" | grep -q 'UI-M12d' || fail "HTML missing UI-M12d markers"
+echo "$html" | grep -q '^      --btn-h-xs: 24px; --btn-px-xs: 6px; --btn-fs-xs: 0.68rem;$' \
+  && echo "$html" | grep -q '^      --btn-h-sm: 28px; --btn-px-sm: 8px; --btn-fs-sm: 0.74rem;$' \
+  && echo "$html" | grep -q '^      --btn-h-md: 32px; --btn-px-md: 12px; --btn-fs-md: 0.8rem;$' \
+  && echo "$html" | grep -q '^      --btn-lh: 1.1; --btn-hit-min: 24px; --btn-hit-touch: 44px;$' \
+  || fail "HTML missing compact button tokens (UI-M12d)"
+m12d_at=$(line_of '^/\* ===== UI-M12d compact buttons =====$')
+btn_at=$(line_of '^\.btn:where(:not(#nav-toggle, \.leave-actions \.btn)) {$')
+if [ -z "$m12d_at" ] || [ -z "$btn_at" ] || [ "$btn_at" -le "$m12d_at" ] \
+  || ! echo "$html" | sed -n "$((btn_at + 1))p" | grep -q '^  min-height: var(--btn-h-md); padding: 0 var(--btn-px-md);$'; then
+  fail ".btn must use the compact md tier (UI-M12d)"
+fi
+pill_at=$(line_of '^\.pill button {$')
+if [ -z "$m12d_at" ] || [ -z "$pill_at" ] || [ "$pill_at" -le "$m12d_at" ] \
+  || ! echo "$html" | sed -n "$((pill_at + 1)),$((pill_at + 3))p" \
+    | grep -q 'min-width: var(--btn-h-xs); min-height: var(--btn-h-xs);'; then
+  fail ".pill button must be at least 24px (UI-M12d)"
+fi
+touch_at=$(line_of '^@media (max-width: 640px), (pointer: coarse) {$')
+touch_end=
+if [ -n "$touch_at" ]; then
+  touch_end=$(echo "$html" | awk -v s="$touch_at" 'NR > s && /^}$/ { print NR; exit }')
+fi
+hit_at=$(line_of '^    #install, \.iconbtn, \.skill-facet, \.think-stop, button\.fo-person, \.tile-mute)::before,$')
+if [ -z "$touch_at" ] || [ -z "$touch_end" ] || [ -z "$hit_at" ] \
+  || [ "$hit_at" -le "$touch_at" ] || [ "$hit_at" -ge "$touch_end" ] \
+  || ! echo "$html" | sed -n "$((hit_at - 4)),$((hit_at))p" | grep -q '^  :where(\.btn, ' \
+  || ! echo "$html" | sed -n "$((hit_at - 4)),$((hit_at))p" | grep -q '^    \.pill button, ' \
+  || ! echo "$html" | sed -n "$((hit_at + 1))p" | grep -q '^  \.switch::after {$' \
+  || ! echo "$html" | sed -n "$((hit_at + 2))p" | grep -q '^    content: ""; position: absolute; left: 0; right: 0;$' \
+  || ! echo "$html" | sed -n "$((hit_at + 3))p" | grep -q '^    top: min(0px, calc(50% - var(--btn-hit-touch) / 2));$' \
+  || ! echo "$html" | sed -n "$((hit_at + 4))p" | grep -q '^    bottom: min(0px, calc(50% - var(--btn-hit-touch) / 2));$' \
+  || ! echo "$html" | sed -n "$((hit_at + 5))p" | grep -q '^    background: transparent; pointer-events: auto;$'; then
+  fail "phone touch hit must come from a transparent pseudo-element (UI-M12d)"
+fi
+if [ -n "$touch_at" ] && [ -n "$touch_end" ] \
+  && echo "$html" | sed -n "${touch_at},${touch_end}p" | grep -q 'height\|padding:'; then
+  fail "touch block must not raise a visual height (UI-M12d)"
+fi
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + pills"
 echo "$html" | grep -q 'id="provider-username"' || fail "HTML missing provider username"
