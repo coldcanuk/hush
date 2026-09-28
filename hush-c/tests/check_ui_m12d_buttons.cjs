@@ -16,7 +16,10 @@ const {chromium} = require(process.env.HUSH_PLAYWRIGHT_MODULE || 'playwright');
 const artifacts = process.env.HUSH_TEST_UI_ARTIFACTS || fs.mkdtempSync(path.join(os.tmpdir(), 'hush-m12d-'));
 fs.mkdirSync(artifacts, {recursive: true});
 
-// First matching rule wins: [selector, visual cap px, tier label].
+// First matching rule wins: [selector, visual cap px, tier label,
+// optional accepted exclusive touch hit px]. The 4th value is for stacked
+// rows whose 44px hits deliberately share up to 8px with a neighbour (the
+// BOARDS individuals list, 36px pitch; the later row wins the shared band).
 const RULES = [
   ['.leave-actions .btn', 999, 'pinned-44'],
   ['#nav-toggle', 999, 'pinned-44'],
@@ -48,7 +51,7 @@ const RULES = [
   ['.iconbtn', 32, 'md'],
   ['.skill-facet', 32, 'md'],
   ['.think-stop', 32, 'md'],
-  ['button.fo-person', 28, 'sm'],
+  ['button.fo-person', 28, 'sm', 36],
   ['.switch', 24, 'xs'],
 ];
 
@@ -95,14 +98,24 @@ async function measureOnce(page, root, floor) {
         if (!ok && !hitBy) hitBy = (y < cy ? 'above:' : 'below:') + (hit ? (hit.id ? '#' + hit.id : hit.tagName.toLowerCase() + (typeof hit.className === 'string' && hit.className ? '.' + hit.className.trim().split(/\s+/).join('.') : '')) : 'none');
         return ok;
       };
-      const hitOk = probe(cy - d) && probe(cy + d) && probe(cy);
+      let hitOk = probe(cy - d) && probe(cy + d) && probe(cy);
+      // Accepted overlap: scan the exclusive hit band (1px steps) instead.
+      let excl = 0;
+      if (!hitOk && floor > 24 && rule[3]) {
+        const own = (y) => { const h = document.elementFromPoint(cx, y); return !!h && (h === el || el.contains(h)); };
+        let up = 0, down = 0;
+        while (up < 40 && own(cy - up - 1)) up++;
+        while (down < 40 && own(cy + down + 1)) down++;
+        excl = up + down + 1;
+        if (own(cy) && excl >= rule[3] - 1) { hitOk = true; hitBy = ''; }
+      }
       // A rotated control's bounding box is inflated by the rotation; its
       // visual (layout) height is offsetHeight.
       const rotated = cs.transform !== 'none';
       const vh = rotated ? el.offsetHeight : r.height;
       const name = el.id ? '#' + el.id : (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : el.tagName.toLowerCase());
       const label = (el.getAttribute('aria-label') || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 18);
-      res.push({sel: rule[0], tier: rule[2], cap: rule[1], name, label, h: Math.round(vh * 10) / 10, w: Math.round(r.width * 10) / 10, hitOk, hitBy, rotated});
+      res.push({sel: rule[0], tier: rule[2], cap: rule[1], name, label, h: Math.round(vh * 10) / 10, w: Math.round(r.width * 10) / 10, hitOk, hitBy, rotated, excl, accept: rule[3] || 0});
     }
     return res;
   }, {root, rules: RULES, floor});
@@ -116,7 +129,7 @@ function report(rows, surface, floor, out) {
     const capOk = row.h <= row.cap + 0.5;
     const verdict = capOk && row.hitOk ? 'ok' : (!capOk ? 'FAIL-visual>' + row.cap : '') + (!row.hitOk ? ' FAIL-hit<' + floor : '');
     if (verdict !== 'ok') bad++;
-    out.push(`${surface} {${row.sel}} ${row.name}${row.label ? ' "' + row.label + '"' : ''} [${row.tier}] h=${row.h}${row.rotated ? '(rotated)' : ''} w=${row.w} hit${row.hitOk ? '>=' : '<'}${floor} ${verdict}${row.hitBy ? ' (' + row.hitBy + ')' : ''}`);
+    out.push(`${surface} {${row.sel}} ${row.name}${row.label ? ' "' + row.label + '"' : ''} [${row.tier}] h=${row.h}${row.rotated ? '(rotated)' : ''} w=${row.w} ${row.excl ? 'hit-exclusive=' + row.excl + (row.hitOk ? '>=' : '<') + row.accept + ' (accepted overlap)' : 'hit' + (row.hitOk ? '>=' : '<') + floor} ${verdict}${row.hitBy ? ' (' + row.hitBy + ')' : ''}`);
   }
   return {count: rows.length, bad};
 }
@@ -164,11 +177,7 @@ function report(rows, surface, floor, out) {
         await page.waitForTimeout(100);
       };
       await run('kit-menu', '#kit-menu', () => click('#rail-toggle'), () => click('#rail-toggle'));
-      if (w <= 640) {
-        await run('boards-drawer', '#fo-drawer', () => click('#nav-toggle'), () => click('#nav-toggle'));
-      } else {
-        await run('boards-drawer', '#fo-drawer', async () => {}, null);
-      }
+      await run('boards-drawer', '#fo-drawer', () => click('#nav-toggle'), () => click('#nav-toggle'));
       await run('chan-menu', '#chan-menu', () => click('.chan-options'), () => page.evaluate(() => document.querySelector('#chan-menu').classList.remove('show')));
       await run('inv-menu', '#inv-menu', () => page.evaluate(() => {
         // The inventory can sit in the closed BOARDS drawer (off-screen), so
@@ -182,7 +191,8 @@ function report(rows, surface, floor, out) {
       await run('thread-pane', '#thread-pane', () => show('#thread-pane'), () => hide('#thread-pane'));
       await run('code-canvas', '#code-canvas', () => page.evaluate(() => { document.querySelector('#code-canvas').classList.add('show'); const k = document.querySelector('#canvas-k'); k.hidden = false; k.classList.add('show'); }), () => page.evaluate(() => { document.querySelector('#code-canvas').classList.remove('show'); const k = document.querySelector('#canvas-k'); k.classList.remove('show'); }));
       await run('new-chan', '#new-chan-drawer', () => click('#add-chan'), () => hide('#new-chan-drawer'));
-      if (w > 640) await run('relay-drawer', '#relay-drawer', () => click('#stats'), () => hide('#relay-drawer'));
+      // #stats sits inside the BOARDS drawer (hidden at 375), so phones open the relay drawer directly.
+      await run('relay-drawer', '#relay-drawer', () => (w > 640 ? click('#stats') : show('#relay-drawer')), () => hide('#relay-drawer'));
       await run('leave-dialog', '#hive-leave', () => click('#hive-close'), () => hide('#hive-leave'));
       await run('profile', '#profile', () => click('#profile-btn'), () => hide('#profile'));
       await run('robot-editor', '#agent-drawer', async () => {

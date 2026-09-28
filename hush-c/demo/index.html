@@ -1743,8 +1743,11 @@ summary { min-height: var(--btn-h-xs); line-height: var(--btn-h-xs); cursor: poi
 .iconbtn, .skill-facet, .think-stop { min-height: var(--btn-h-md); }
 button.fo-person { min-height: var(--btn-h-sm); }
 .switch { height: var(--btn-h-xs); }
+#fo-drawer > * { flex-shrink: 0; } /* drawer scrolls; its sections never squash */
 /* Touch: invisible >= 44px hit, visual box unchanged. Stacked lists get a
-   touch-only pitch of >= 44px so neighbouring hit areas do not overlap. */
+   touch-only pitch of >= 44px so neighbouring hit areas do not overlap,
+   except the BOARDS individuals list (36px pitch, 8px shared hit). The
+   main-view roster rows are static (not controls) and keep their pitch. */
 @media (max-width: 640px), (pointer: coarse) {
   :where(.btn, #canvas-k .row button, .icon-plus, .icon-minus, .inv-btn:not(.qb-slot, .qb-gear),
     .drawer-x, .menu button, .mention-box button, .chan-options, .chan-voice, .robot-call, .chan,
@@ -1771,7 +1774,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
   .menu button + button, .mention-box button + button { margin-top: 16px; }
   .mention-box { padding-block: 8px; }
   .chan-row + .chan-row { margin-top: 16px; }
-  #fo-individuals, #fo-roster-list, #fo-individual-list { gap: 16px; }
+  #fo-individuals, #fo-individual-list { gap: 8px; }
   .pool-row + .pool-row { margin-top: 16px; }
   .actions, .fav-row, .pills, .vis, .quick-tabs { row-gap: 16px; }
   .skill-facet-row { row-gap: 12px; }

@@ -1143,17 +1143,26 @@ in-scope control gets `position: relative` and a transparent
 `::before` (`::after` on `.switch`, whose `.slider:before` is the
 knob) centred on it with `top`/`bottom: min(0px, 50% - 22px)`, so the
 hit area is ≥44px tall while the painted box keeps its tier height
-(isolated squares also get ≥44px width). Stacked lists get a
-touch-only pitch of ≥44px (gaps/margins/row-gaps on the KIT menu,
-menus, mention list, channel rows, roster, pool rows, action rows,
-pills, chip rows, picture sheets, favourites and canvas tools) so
-neighbouring hit areas do not overlap, and the BOARDS drawer gets 64px
-bottom padding so its last row clears the fixed `#quick-bar`. The only
-touch-block paddings are on containers (`.mention-box`, `#fo-drawer`,
-`.fav-item`); no control's height or padding changes. Known short spots
-(static CSS arithmetic, not measured): wrapped `.pills` rows pitch at
-42px (26px pill + 16px row-gap), so pill-button hit areas in adjacent
-rows overlap by 2px; the `.tile-mute` hit is clipped by its tile's
+(isolated squares also get ≥44px width). Stacked lists get touch-only
+spacing (gaps/margins/row-gaps on the KIT menu, menus, mention list,
+channel rows, pool rows, action rows, pills, chip rows, picture sheets,
+favourites and canvas tools) that gives most of them a ≥44px pitch, so
+their hit areas do not overlap. Exceptions, by design: the BOARDS
+drawer individuals list (`#fo-individual-list`) uses an 8px gap, a 36px
+pitch, so neighbouring 44px hits share an 8px band (the lower row wins
+it; each row keeps a 36px exclusive tap zone; accepted as non-blocking,
+r3); wrapped `.pills` rows pitch at 42px (26px pill + 16px row-gap), so
+adjacent pill hits share 2px (static CSS arithmetic). The main-view
+roster (`#fo-roster-list`) rows are static text, not controls, so the
+touch block leaves their base 4px gap (32px pitch) alone and the "you"
+row and panel top stay visible at 375×812. BOARDS drawer sections keep
+their size at every width (`flex-shrink: 0`; the drawer scrolls
+instead of squashing, so the inventory grid stays inside its frame),
+and at touch widths the drawer gets 64px bottom padding so its last row
+clears the fixed `#quick-bar`. The only touch-block paddings are on containers
+(`.mention-box`, `#fo-drawer`, `.fav-item`); no control's height or
+padding changes. Other known short spot (static CSS arithmetic, not
+measured): the `.tile-mute` hit is clipped by its tile's
 `overflow: hidden` to about 42px.
 `#quick-bar` itself is excluded (its clip-path would clip a
 pseudo-element).
@@ -1178,9 +1187,13 @@ Gate: the launch script requires the tokens, the `UI-M12d` marker, the
 the touch media query with the transparent `::before` hit area sized
 from `--btn-hit-touch` and the `.switch::after` hit area, a
 `position: relative` list equal to the hit list (minus `.tile-mute`),
-the square-widening rule, three representative spacing rules, no
-height/padding/block-size in the touch block except the three container
-lines, and no 44px size anywhere in the UI-M12d block.
+the square-widening rule, three representative spacing rules
+(including the 8px individuals gap), the drawer `flex-shrink: 0` rule,
+no touch rule on the main-view roster, no height/padding/block-size in
+the touch block except the three container lines (each a whole one-line
+rule: no selector may be prefixed onto it), no `--btn-` token
+redefinition in the touch block, and no `height`/`width`/`block-size:
+44px` from the UI-M12d marker to `</style>`.
 
 ### 16. Mention + manage pills
 

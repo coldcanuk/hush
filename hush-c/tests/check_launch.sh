@@ -433,6 +433,18 @@ if echo "$html" | sed -n "${touch_at},${touch_end}p" \
   | grep -q 'height\|padding\|block-size'; then
   fail "touch block must not raise a visual height (UI-M12d)"
 fi
+# The allowlist covers whole one-line rules: the line before each one must
+# close a rule or a comment, so no selector can be prefixed onto it.
+if echo "$html" | sed -n "${touch_at},${touch_end}p" | awk '
+  $0 == "  .mention-box { padding-block: 8px; }" ||
+  $0 == "  #fo-drawer { padding-bottom: 64px; } /* last row clears the fixed #quick-bar */" ||
+  $0 == "  .fav-item { padding-block: 8px; }" { if (prev !~ /(\{|\}|\*\/)$/) bad = 1 }
+  { prev = $0 } END { exit bad ? 0 : 1 }'; then
+  fail "touch allowlist lines must stay whole rules (UI-M12d)"
+fi
+if echo "$html" | sed -n "${touch_at},${touch_end}p" | grep -q -e '--btn-[a-z0-9-]*[[:space:]]*:'; then
+  fail "touch block must not redefine --btn- tokens (UI-M12d)"
+fi
 # Each hit control must be the positioning box of its own ::before, so the
 # position: relative list is the hit list minus .tile-mute (already absolute).
 rel_at=$(line_of '^    #install, \.iconbtn, \.skill-facet, \.think-stop, button\.fo-person) { position: relative; }$')
@@ -448,17 +460,30 @@ if [ -z "$wide_at" ] || [ "$wide_at" -le "$hit_at" ] || [ "$wide_at" -ge "$touch
   fail "isolated square hit must widen to 44px (UI-M12d)"
 fi
 for rule in '  .menu button + button, .mention-box button + button { margin-top: 16px; }' \
-  '  #fo-individuals, #fo-roster-list, #fo-individual-list { gap: 16px; }' \
+  '  #fo-individuals, #fo-individual-list { gap: 8px; }' \
   '  #fo-drawer { padding-bottom: 64px; } /* last row clears the fixed #quick-bar */'; do
   echo "$html" | sed -n "${touch_at},${touch_end}p" | grep -q -x -F -e "$rule" \
     || fail "touch spacing must keep neighbouring hit areas apart (UI-M12d)"
 done
+# r3 (Ops F2/F6): BOARDS drawer sections scroll instead of squashing, at
+# every width (the inventory grid stays inside its frame); the main-view
+# roster rows are static, so the touch block leaves their pitch alone (the
+# you row and the panel top stay visible at 375x812).
+shrink_at=$(echo "$html" | grep -n -x -F -e '#fo-drawer > * { flex-shrink: 0; } /* drawer scrolls; its sections never squash */' | head -n 1 | cut -d: -f1)
+if [ -z "$shrink_at" ] || [ "$shrink_at" -le "$m12d_at" ] || [ "$shrink_at" -ge "$touch_at" ]; then
+  fail "BOARDS drawer sections must not shrink (UI-M12d)"
+fi
+if echo "$html" | sed -n "${touch_at},${touch_end}p" | grep -q 'fo-roster-list\|roster-pane'; then
+  fail "touch block must not change the main-view roster (UI-M12d)"
+fi
 menu_at=$(line_of '^\.menu button, \.mention-box button {$')
 if [ -z "$menu_at" ] || [ "$menu_at" -le "$m12d_at" ] || [ "$menu_at" -ge "$touch_at" ] \
   || ! echo "$html" | sed -n "$((menu_at + 1))p" | grep -q '^  min-height: var(--btn-h-sm); padding: 0 var(--btn-px-sm);$'; then
   fail ".menu button must use the compact sm tier, not 44px (UI-M12d)"
 fi
-if echo "$html" | sed -n "${m12d_at},${touch_end}p" | grep -q '\(height\|width\|block-size\): *44px'; then
+style_end=$(line_of '^</style>$')
+if [ -z "$style_end" ] || [ "$style_end" -le "$touch_end" ] \
+  || echo "$html" | sed -n "${m12d_at},${style_end}p" | grep -q '\(height\|width\|block-size\): *44px'; then
   fail "UI-M12d block must not size a control at 44px"
 fi
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
