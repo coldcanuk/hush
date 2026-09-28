@@ -354,6 +354,91 @@ async function main() {
     await cdp.waitFor(`!!document.querySelector('#hive.show')`, 'hive after theme pin');
     await cdp.waitFor(`document.documentElement.getAttribute('data-theme')==='field-office'`, 'field-office theme');
     Object.assign(contrasts, { hive: await sample(['#send', '#profile-btn', '#nav-toggle', '#rail-toggle', '#vibe-sub']) });
+
+    // Pre-walk r3 (Gauge P2-1): the drawer fade cue must not latch. The
+    // cue (::after) and its flex row gap are left out of the overflow test,
+    // so a drawer that fits by even 1px drops the class, and dropping it
+    // leaves nothing to scroll. Drive the drawer height across the edge
+    // around a fixed probe child: short by 3px (cue on), then 1px spare
+    // (cue off), short again, then 6px spare (cue off).
+    const fade = await cdp.eval(`(async () => {
+      const d = document.querySelector('#fo-drawer');
+      const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
+      if (!d.clientHeight && document.querySelector('#nav-toggle')) { document.querySelector('#nav-toggle').click(); await frames(); }
+      const probe = document.createElement('div');
+      probe.style.cssText = 'height:400px;flex:none';
+      d.appendChild(probe);
+      const oldH = d.style.height, oldMax = d.style.maxHeight, oldMin = d.style.minHeight, oldFlex = d.style.flex;
+      d.style.maxHeight = 'none'; d.style.minHeight = '0'; d.style.flex = 'none';
+      d.style.height = '200px'; await frames();
+      d.classList.remove('is-overflowing');
+      const content = d.scrollHeight;
+      const extra = d.offsetHeight - d.clientHeight; // borders (+ padding when border-box)
+      const out = [];
+      for (const free of [-3, 1, -3, 6]) {
+        d.style.height = (content + free + (getComputedStyle(d).boxSizing === 'border-box' ? extra : 0)) + 'px';
+        await frames();
+        out.push({ free, got: d.clientHeight - content, on: d.classList.contains('is-overflowing'),
+          scroll: d.scrollHeight - d.clientHeight });
+      }
+      probe.remove();
+      d.style.height = oldH; d.style.maxHeight = oldMax; d.style.minHeight = oldMin; d.style.flex = oldFlex;
+      await frames();
+      return { content, out };
+    })()`, true);
+    console.log('drawer fade edge: ' + JSON.stringify(fade));
+    for (const r of fade.out) {
+      check(r.got === r.free, `drawer fade probe sized to ${r.free}px free, got ${r.got}`);
+      if (r.free < 0)
+        check(r.on, `drawer fade cue shows when content overflows by ${-r.free}px`);
+      else {
+        check(!r.on, `drawer fade cue clears when the drawer fits with ${r.free}px spare (no latch)`);
+        check(r.scroll <= 1, `drawer that fits leaves nothing to scroll, got ${r.scroll}px`);
+      }
+    }
+
+    // Pre-walk r3 (Ops F2): every drawer stat, including the real build
+    // stamp and a longer realistic fixture, shows whole inside the clip
+    // wrapper (no glyph cut at its right edge).
+    const statsFit = await cdp.eval(`(() => {
+      const clip = document.querySelector('#stats .stats-clip');
+      if (!clip) return { err: 'no stats clip' };
+      const c = clip.getBoundingClientRect();
+      const measure = () => [...clip.querySelectorAll('.stat')].map((s) => {
+        const r = document.createRange(); r.selectNodeContents(s.firstChild || s);
+        const bad = [...r.getClientRects()].filter((q) => q.width > 0 &&
+          (q.left < c.left - 0.5 || q.right > c.right + 0.5 || q.top < c.top - 0.5 || q.bottom > c.bottom + 0.5));
+        return { t: s.textContent, bad: bad.map((q) => [Math.round(q.left), Math.round(q.right), Math.round(c.left), Math.round(c.right)]) };
+      });
+      const live = measure();
+      const last = clip.querySelector('.stat:last-child');
+      const keep = last.textContent;
+      last.textContent = 'v0.0.1-9999-g0123456789ab 0123456789ab';
+      const fixture = measure();
+      last.textContent = keep;
+      return { live, fixture };
+    })()`);
+    check(!statsFit.err, statsFit.err);
+    const stamp = statsFit.live.length ? statsFit.live[statsFit.live.length - 1].t : '';
+    console.log('drawer stamp: ' + JSON.stringify(stamp));
+    check(/^v\d+\.\d+\.\d+\S* \S+$/.test(stamp), `drawer shows the real build stamp, got ${JSON.stringify(stamp)}`);
+    for (const s of statsFit.live.concat(statsFit.fixture))
+      check(!s.bad.length, `drawer stat ${JSON.stringify(s.t)} is cut by the clip edge ${JSON.stringify(s.bad)}`);
+
+    // Pre-walk r3 (Ops F1): the header badge carries its state in both
+    // title and aria-label; at <= 480px it is a dot, elsewhere unclipped.
+    const bdg = await cdp.eval(`(() => { const b = document.querySelector('header #badge'); const cs = getComputedStyle(b);
+      return { text: b.textContent, title: b.title, aria: b.getAttribute('aria-label'), role: b.getAttribute('role'),
+        sw: b.scrollWidth, cw: b.clientWidth, w: b.getBoundingClientRect().width, fs: parseFloat(cs.fontSize) }; })()`);
+    console.log('header badge: ' + JSON.stringify(bdg));
+    check(bdg.role === 'img' && !!bdg.aria && bdg.aria === bdg.title && bdg.aria.includes(bdg.text) && bdg.text.length > 0,
+      `badge state is in title and aria-label: ${JSON.stringify(bdg)}`);
+    check(/listening/.test(bdg.aria), `logged-in badge label names the relay state: ${bdg.aria}`);
+    if (VIEW_W <= 480)
+      check(bdg.fs === 0 && bdg.w <= 16, `badge is a dot at ${VIEW_W}px: ${JSON.stringify(bdg)}`);
+    else if (VIEW_W > 640) // 481-640 keeps the 95px cap with an ellipsis
+      check(bdg.sw <= bdg.cw, `badge text is not clipped at ${VIEW_W}px: ${JSON.stringify(bdg)}`);
+    await cdp.shot('hive-fo');
     await cdp.click('#hive-close');
     await cdp.waitFor(`!!document.querySelector('#hive-leave.show')`, 'leave chooser');
     Object.assign(contrasts, { leave: await sample(['#leave-exit', '#leave-close', '#leave-cancel']) });

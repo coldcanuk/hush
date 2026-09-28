@@ -61,7 +61,12 @@ raise humans + robots that share channels."
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
   Before login the badge reads "listening"; the port is only in its
   tooltip ("Relay listening on port N"), not in the visible text
-  (pre-walk). The header shows the vibe name only while `logged_in` is true;
+  (pre-walk). r3 (Ops F1): the badge (`role="img"`) always carries its
+  full state in both `title` and `aria-label` (visible text plus the
+  tooltip detail, e.g. "listening — Relay listening on port N"), and
+  every state change rewrites both. At ≤480px it is a 12px dot (filled
+  when ok, a ring when not); at 481-640px it keeps the 95px cap and ends
+  in an ellipsis. The header shows the vibe name only while `logged_in` is true;
   otherwise it falls back to the neutral "local hive mind" (and an
   empty visibility badge), so a surviving vibe name never implies a
   live login after a restart.
@@ -144,7 +149,8 @@ Anyone with it can impersonate you." The restart note ("starts with
 nsec1") and the `pass_error` line are unchanged. `check_restart_ui.cjs`
 asserts the new reason, the dimmed label, the details line and the
 plain labels. Elsewhere: the profile avatar help reads "Optional. JPEG
-or PNG, stored as your picture URL." (was "Nostr picture URL"), the
+or PNG, stored as your picture URL." (was "Nostr picture URL") and
+the field label reads "Picture" (r3; was "Avatar"), the
 profile copy button is "Copy public key (npub)", and the member/invite
 labels are "Public key (npub)" / "Invite by public key (npub)".
 
@@ -303,8 +309,11 @@ and a pencil to edit it again.
   row, sized per the UI-M12d delta (§15: compact visual, ≥44px touch
   hit at phone width). Pencil opens `#provider-drawer` (see §11). Configure is
   optional for Raise — the robot still stores only the provider id.
-- pass checkbox default-on:
-  `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/agents/<slug>/nsec`
+- pass checkbox default-on, same plain words as the backup step (pre-walk
+  r3): `Checked to save its key in your password manager (pass).` The
+  retrieve command sits behind a closed details line (`#agent-pass-howto`,
+  "How to find it later"): `pass show hush/agents/<slug>/nsec`. Both are
+  hidden when editing Major.
 - Footer `#agent-drawer .actions` is one compact line (no wrap):
   **Raise Robot** (edit: **Save Robot**), **Close**, **Delete Robot**.
   Delete is disabled on a fresh raise. Enabled when editing an
@@ -1292,7 +1301,15 @@ a sticky 12px bottom fade (to the drawer surface colour) that also gives
 12px of end room, so a cut last line reads as "scroll for more"
 (pre-walk: was 24px pulled up 12px, which washed out the first stats
 line at 1440). A
-drawer that fits gets no class and no fade.
+drawer that fits gets no class and no fade: while the class is on, the
+overflow test leaves out the cue height plus the drawer's flex row gap
+(the cue is a flex item), so the class drops as soon as the content
+fits, even by 1px (r3, Gauge P2-1; `check_restart_ui.cjs` drives the
+drawer height across that edge). r3 (Ops F2): the last stat (the build
+stamp, e.g. "v0.0.1-697-g4c1f2594 4c1f2594") is an inline-block no wider
+than the row that wraps inside itself, continuation lines indented past
+the clipped "·" gutter, so no glyph is cut at the clip edge; the UI check
+also measures a longer realistic stamp fixture.
 Gate: the launch script requires the tokens, the `UI-M12d` marker, the
 `.btn` md rule, the `.menu button` sm rule, `.pill button` min 24px,
 the touch media query with the transparent `::before` hit area sized

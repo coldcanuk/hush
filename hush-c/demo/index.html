@@ -1014,7 +1014,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
      and the boards drawer is channels/overflow only. */
   main > #quick-nav { padding: 8px 12px 0; margin: 0; }
   header { gap: 10px; }
-  header #badge { max-width: 95px; overflow: hidden; margin-right: 48px; }
+  header #badge { max-width: 95px; overflow: hidden; margin-right: 48px; white-space: nowrap; text-overflow: ellipsis; }
   .hive > nav { display: none; position: fixed; top: 66px; bottom: 0; left: 0;
     width: min(300px, 90vw); overflow-y: auto; flex-direction: column; flex-wrap: nowrap;
     background: var(--surface); z-index: 30; box-shadow: 8px 0 24px #0003; }
@@ -1814,16 +1814,37 @@ button.fo-person { min-height: var(--btn-h-sm); }
 #stats .stats-clip { display: block; overflow: hidden; }
 #stats .stats-row { display: block; margin-left: -1.2em; }
 #stats .stat::before { content: "·"; content: "·" / ""; display: inline-block; width: 1.2em; text-align: center; }
+/* Pre-walk r3 (Ops F2): the version item (a real stamp such as
+   "v0.0.1-697-g4c1f2594 4c1f2594") is one box no wider than the row: it
+   moves to its own line whole, and when it is still too wide it wraps
+   inside itself (continuation lines indented past the clipped "·" gutter)
+   instead of being cut by the clip wrapper's right edge. */
+#stats .stat:last-child { display: inline-block; max-width: 100%; box-sizing: border-box; vertical-align: top;
+  white-space: normal; overflow-wrap: anywhere; padding-left: 1.2em; text-indent: -1.2em; }
+#stats .stat:last-child::before { text-indent: 0; }
 @media (max-width: 480px) {
   .act-noun { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
+/* Pre-walk r3 (Ops F1): at <= 480px the header badge is a status dot
+   (filled when ok, a ring when bad, since field-office accent and warn
+   share one red); the state text stays in its title and aria-label. */
+@media (max-width: 480px) {
+  html[data-theme] header #badge {
+    width: 12px; min-width: 12px; max-width: 12px; height: 12px; padding: 0;
+    font-size: 0; line-height: 0; overflow: hidden; border-radius: 50%;
+    border: 2px solid var(--muted); background: transparent; transform: none; box-shadow: none;
+  }
+  html[data-theme] header #badge.ok { border-color: var(--accent); background: var(--accent); }
+  html[data-theme] header #badge.bad { border-color: var(--warn); background: transparent; }
+}
 /* r5 (Ops F2 fallback): only while the drawer content overflows (more
    channels than the demo fixture), a sticky bottom fade makes the cut edge
-   read as "scroll for more". syncDrawerOverflow() toggles the class; a
-   drawer that fits shows no cue. bottom: -10px reaches past the 10px nav
-   padding to the inner border. Pre-walk: the fade is 12px tall (was 24px
-   pulled up 12px), so it stays in the bottom padding band and the first
-   stats line above it stays crisp; the end room is still 12px. */
+   read as "scroll for more". syncDrawerOverflow() toggles the class and
+   leaves the cue height plus its flex row gap out of its test, so a
+   drawer that fits (even by 1px) shows no cue. bottom: -10px reaches past
+   the 10px nav padding to the inner border. Pre-walk: the fade is 12px
+   tall (was 24px pulled up 12px), so it stays in the bottom padding band
+   and the first stats line above it stays crisp. */
 #fo-drawer.is-overflowing::after { content: ""; flex: 0 0 12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }
 </style>
 </head>
@@ -1845,7 +1866,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
         <div class="sub" id="vibe-sub">local hive mind</div>
       </div>
     </div>
-    <div class="fo-hq"><span>HQ — Global Operations</span><div id="badge">connecting…</div></div>
+    <div class="fo-hq"><span>HQ — Global Operations</span><div id="badge" role="img" aria-label="connecting…" title="connecting…">connecting…</div></div>
   </header>
   <!-- UI-M9: persistent tool rail deleted. Header KIT stamp toggles this
        overlay menu only (no draggable strip, no grip, no rail body/grid).
@@ -2135,7 +2156,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       <input id="prof-email" type="email" maxlength="80" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius: 12px;padding:10px 12px;font:inherit;margin:4px 0">
       <label for="prof-org">Organization</label>
       <input id="prof-org" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius: 12px;padding:10px 12px;font:inherit;margin:4px 0">
-      <label for="prof-avatar">Avatar</label>
+      <label for="prof-avatar">Picture</label>
       <input id="prof-avatar" type="file" accept="image/jpeg,image/png,image/webp">
       <p class="help" id="prof-avatar-status">Optional. JPEG or PNG, stored as your picture URL.</p>
       <!-- Honesty: Character read-only strip (relay-saved count + browser-only Always/On-call split). -->
@@ -2144,9 +2165,12 @@ button.fo-person { min-height: var(--btn-h-sm); }
         <p class="help" id="profile-loadout-text">Select a robot tile, then press c.</p>
       </div>
       <div class="actions">
+        <!-- Pre-walk r3: Save + Logout, then Copy + Close, so the four
+             actions pair into two balanced rows (at 375 the old order left
+             Close alone on a third row). -->
         <button class="btn" id="profile-save" type="button">Save profile</button>
-        <button class="btn ghost" id="profile-copy" type="button">Copy public key (npub)</button>
         <button class="btn ghost" id="profile-logout" type="button">Logout</button>
+        <button class="btn ghost" id="profile-copy" type="button">Copy public key (npub)</button>
         <button class="btn ghost" id="profile-close" type="button">Close</button>
       </div>
       <p class="help">Major: "Guard your orders. Report when ready."</p>
@@ -2266,7 +2290,9 @@ button.fo-person { min-height: var(--btn-h-sm); }
         </div>
       </div>
       <label class="passbox"><input id="agent-pass" type="checkbox" checked>
-        Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
+        Checked to save its key in your password manager (pass).</label>
+      <details class="howto" id="agent-pass-howto"><summary>How to find it later</summary>
+        <p>In a terminal, run <code>pass show hush/agents/&lt;slug&gt;/nsec</code>.</p></details>
       <p class="warn" id="agent-err"></p>
       <div class="actions">
         <button class="btn" id="agent-save" type="button" aria-label="Create robot">Create<span class="act-noun"> robot</span></button>
@@ -3742,11 +3768,16 @@ button.fo-person { min-height: var(--btn-h-sm); }
       $("nav-toggle").setAttribute("aria-expanded", String(open));
     });
     /* r5 (Ops F2 fallback): mark the drawer while its content overflows so
-       the CSS bottom fade shows only then. The cue's own height is left out
-       of the test so the class does not hold itself on. */
+       the CSS bottom fade shows only then. While the class is on, the cue
+       adds its own height plus one flex row gap to scrollHeight; both are
+       left out of the test so the class does not hold itself on (pre-walk
+       r3: the gap was missing, so a drawer with up to 12px free kept it). */
     function syncDrawerOverflow() {
       const d = $("fo-drawer");
-      const cue = d.classList.contains("is-overflowing") ? parseFloat(getComputedStyle(d, "::after").height) || 0 : 0;
+      const cs = getComputedStyle(d);
+      const cue = d.classList.contains("is-overflowing")
+        ? (parseFloat(getComputedStyle(d, "::after").height) || 0) + (parseFloat(cs.rowGap) || 0)
+        : 0;
       d.classList.toggle("is-overflowing", d.scrollHeight - cue > d.clientHeight + 1);
     }
     if (window.ResizeObserver) {
@@ -3903,6 +3934,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       if ($("agent-err")) $("agent-err").textContent = "";
       if ($("agent-identity")) $("agent-identity").hidden = false;
       if ($("agent-pass")) $("agent-pass").closest("label").hidden = false;
+      if ($("agent-pass-howto")) $("agent-pass-howto").hidden = false;
       if ($("payne-provider-pills")) $("payne-provider-pills").hidden = true;
       if ($("agent-provider-help")) $("agent-provider-help").textContent = "Harness / API priority (required)";
       paintFilePills();
@@ -4350,6 +4382,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
         $("agent-delete").disabled = true;
         $("agent-identity").hidden = false;
         $("agent-pass").closest("label").hidden = true;
+        $("agent-pass-howto").hidden = true;
         $("payne-provider-pills").hidden = false;
         $("agent-provider-help").textContent = "Choose the runtime. First on deck speaks first.";
         draftName = "Major";
@@ -5663,8 +5696,12 @@ button.fo-person { min-height: var(--btn-h-sm); }
       const el = $("badge");
       el.textContent = text;
       /* Pre-walk: the listening port moved out of the visible badge text
-         into this tooltip; other badge states clear it. */
-      if (title) el.title = title; else el.removeAttribute("title");
+         into the tooltip. r3 (Ops F1): at <= 480px the badge is a dot, so
+         the state text always rides in both title and aria-label too, and
+         every state change rewrites both. */
+      const full = title ? text + " — " + title : text;
+      el.title = full;
+      el.setAttribute("aria-label", full);
       el.className = ok ? "ok" : "bad";
     }
 

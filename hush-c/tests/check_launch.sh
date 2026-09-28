@@ -619,7 +619,14 @@ echo "$html" | grep -q 'openLeave' || fail "HTML missing openLeave"
 echo "$html" | grep -q '/api/close' || fail "HTML missing close route"
 echo "$html" | grep -q '/api/exit' || fail "HTML missing exit route"
 echo "$html" | grep -q 'isContextFile' || fail "HTML missing MIME check"
-echo "$html" | grep -q 'Checked to save password to Unix Password Manager' || fail "pass checkbox copy"
+# Pre-walk r3 (Ops 2): the robot-editor pass label uses the same plain
+# words as the backup step; the retrieve command sits behind a details line.
+echo "$html" | grep -q -F 'Checked to save its key in your password manager (pass).' || fail "pass checkbox copy"
+echo "$html" | grep -q -F '<details class="howto" id="agent-pass-howto"><summary>How to find it later</summary>' || fail "robot pass how-to details"
+echo "$html" | grep -q -F 'run <code>pass show hush/agents/&lt;slug&gt;/nsec</code>' || fail "robot pass retrieve command"
+echo "$html" | grep -q 'Unix Password Manager' && fail "no Unix Password Manager jargon in the UI"
+# Pre-walk r3 (Ops 3): the profile picture field reads "Picture".
+echo "$html" | grep -q -F '<label for="prof-avatar">Picture</label>' || fail "profile picture label"
 echo "$html" | grep -q 'pass show hush/identity/nsec' || fail "retrieve CLI"
 echo "$html" | grep -q 'id=\\\"save-pass\\\"' || fail "pass checkbox id"
 echo "$html" | grep -q 'savePass = true' || fail "checkbox defaults on"
