@@ -219,6 +219,9 @@ The hive ships two labeled buttons on `#tool-rail`, always reachable
   hit at phone width and a ≥24px hit on desktop (UI-M12d).
   Titles: Close = "Close the window. Hive stays standing."
   Exit = "Quit the hive. Every process stops."
+  Under the field-office theme, Exit in `#kit-menu` is a red danger
+  plate (`#a3352c`, cream text) so it no longer matches Close; the
+  behaviour (both open `#hive-leave`) is unchanged (pre-walk F7).
 - Drawer "Close" / `[x]` buttons on Settings / Profile / Raise / Thread /
   Relay-live stay local. They never open `#hive-leave` and never quit.
 - Last `--app` child gone: the relay notices with `kill(pid, 0)` in the

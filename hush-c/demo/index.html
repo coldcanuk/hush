@@ -517,6 +517,9 @@
       flex: 1 1 0; padding: 6px 8px; font-size: 0.78rem; min-height: 36px;
     }
     #agent-drawer .actions .btn.danger { width: auto; margin-top: 0; }
+    /* Pre-walk: disabled Clone/Delete stay readable (was 0.5/0.4 opacity)
+       and still read as disabled through the dashed edge. */
+    #agent-drawer .actions .btn:disabled { opacity: 0.7; border-style: dashed; }
     .panel input[type="text"], .panel textarea, .panel input[type="email"] {
       width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
       border-radius: 12px; padding: 10px 12px; font: inherit; outline: none;
@@ -1413,6 +1416,9 @@ html[data-theme="field-office"] .thread-btn,
 html[data-theme="field-office"] #thread-send { text-transform: uppercase; letter-spacing: 0.1em; }
 html[data-theme="field-office"] .btn.ghost { background: #ebdcb9; }
 html[data-theme="field-office"] .btn.danger { border: 2px solid #a3352c; transform: rotate(-1deg); }
+/* Pre-walk (F7): KIT Exit stops the whole hive, so it gets a red danger
+   plate instead of the same tan plate as Close. Behaviour is unchanged. */
+html[data-theme="field-office"] #kit-menu .iconbtn.danger { background: #a3352c; color: #f4ead2; border-color: #7a2720; }
 html[data-theme="field-office"] .prov-row.ready { background: #ebdcb9; border-color: #a3352c; }
 html[data-theme="field-office"] .iconbtn.on { border-color: #a3352c; color: #a3352c; }
 /* Boards/channels/rails: carved plates, red spine stays. */
