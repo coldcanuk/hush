@@ -1002,9 +1002,10 @@ Delta 2026-09-23 (UI-M8 overlay-drawer + paperfeel pass): the left nav
 every width, not a permanent column — `.shell.hive` is center +
 `#roster-pane` only, and the drawer slides in/out via `#hive.nav-open`
 (`transform` + `visibility`, `prefers-reduced-motion` respected).
-Closed = full-width messaging + thin expand controls only (header
-**BOARDS** `#nav-toggle` stamp, now visible on desktop, plus the `#fo-expand`
-edge tab, hidden while open); open = overlay strip with the unchanged
+Closed = full-width messaging + thin expand control only (header
+**BOARDS** `#nav-toggle` stamp, now visible on desktop — the UI-M8
+`#fo-expand` edge tab, hidden while open, was removed in UI-M12a);
+open = overlay strip with the unchanged
 menu/boards/kit items, messaging keeps its full real-estate underneath.
 Selecting a board/individual closes it (`closeNavigation`); Escape closes
 it as the tail of the UI-M4 single-dismiss stack (journey layers first,
@@ -1015,7 +1016,8 @@ and `#badge` all untouched. Paperfeel extends the M5 field-office theme
 only: denser two-layer grain, ribbon-ink type (`Special Elite` + ink
 `text-shadow` on notes/room/channels/composer), ruled dispatch slips and
 stream ledger lines, cut-paper inner edge + deeper offset shadows.
-Stacked on the M7 chrome-hard pass: drawer + edge tab are new here;
+Stacked on the M7 chrome-hard pass: drawer (+ edge tab, removed in
+UI-M12a) is new here;
 ruled slips/ledger lines and ink type extend M7 without touching its
 `fo-chrome-hard` / `fo-caret` surfaces.
 Delta 2026-09-23 (UI-M9 folder-tabs + no-tool-rail pass): the bottom bar
@@ -1036,8 +1038,9 @@ which keeps the same action hooks (`#install`, `#profile-btn`,
 `#providers-btn`, `#raise-agent`, `#add-proj` + `#new-proj`,
 `#rail-min`, `#rail-max`, `#hive-close`, `#hive-exit`). Escape closes
 `#kit-menu` as one single-dismiss layer before the boards drawer.
-Preserved: M8 overlay drawer (`#fo-drawer` / `#fo-expand` /
-`#hive.nav-open` / `closeNavigation`), M7 `fo-chrome-hard` /
+Preserved: M8 overlay drawer (`#fo-drawer` /
+`#hive.nav-open` / `closeNavigation`; the `#fo-expand` edge tab was
+removed in UI-M12a), M7 `fo-chrome-hard` /
 `fo-caret`, BOARDS (`#nav-toggle`) + KIT (`#rail-toggle`) stamps,
 `i`/`c` + `navTyping`, live roster/status, `#badge`, no Discord DNA.
 Delta 2026-09-23 (UI-M10 dispatch-scrollbar pass): the dispatch log
@@ -1073,6 +1076,64 @@ Gate: the launch script fails on any served `#fo-scrollbar` /
 `#fo-scroll-track` / `#fo-scroll-dot` / `#fo-scroll-up` /
 `#fo-scroll-down` / `syncFoScrollbar` marker and requires `#fo-dial` /
 `#fo-dial-knob` / `syncFoDial` / `UI-M11`.
+Delta 2026-09-25 (UI-M12a remove-edge-tab pass): the left-edge `#fo-expand`
+Boards tab is deleted — markup, CSS, JS handler, and aria sync are gone,
+so nothing overlaps the chat list at desktop or phone widths. The header
+**BOARDS** `#nav-toggle` stamp is the only drawer opener; its toggle,
+`aria-expanded`, focus handling, and the Escape single-dismiss tail
+(`closeNavigation`) are unchanged. Gate: the launch script fails on any
+served `id="fo-expand"` / `syncFoExpand` marker and requires
+`id="nav-toggle"`.
+Delta 2026-09-28 (UI-M12c spring-return Send switch + dial move):
+the composer's Send control is a small metal toggle switch, not the
+`SEND DISPATCH` slab. `#send` stays the form's real `<button
+type="submit">` (class `fo-switch`) with the accessible name "Send"
+(visible stamped caption `SEND`, `.fo-switch-cap`) and a dark
+escutcheon plate (`.fo-switch-plate`: two brass screws, pivot boss,
+nickel bat lever `.fo-switch-lever`; field-office flat tones, offset
+shadow, sharp 3px corners; other themes use their tokens). A send that
+passes the existing submit guards (mention list closed, non-empty
+draft, no send in flight) calls `foSwitchFlick`: the lever flicks
+RIGHT (100ms) with a sharp click, the message sends, and a spring
+returns it LEFT (150ms, slight overshoot) with a softer click. Both
+clicks are synthesized with Web Audio (band-passed noise bursts; no
+audio files). Hush has no app sound or mute setting, so the clicks
+play wherever Web Audio exists. Enter in `#msg` goes through the same
+submit handler, so it gets the same flick and clicks; a refused or
+duplicate submit neither sends nor flicks. `prefers-reduced-motion:
+reduce` skips the swing (sending and clicks unchanged). An empty draft
+(`#msg` placeholder shown) shows a dashed-border, faded switch; an
+in-flight send (`:disabled`) shows a faded switch with a not-allowed
+cursor.
+The UI-M11 VOLUME dial (`#fo-dial-row`) moved out of the chrome
+between `#send-error` and the composer (where it sat right-aligned on
+the log side of the composer border, 135px above Send and wider than
+it) into the composer: `#fo-send-col` is one right-hand column with
+the dial directly above the switch. `#fo-dial-row` and `#send` stretch
+to the column width, and the visible dial `#fo-dial` is set to the row's
+full width (`#fo-dial-row #fo-dial { width: 100%; }`, contents centred),
+so the dial and the switch share left and right edges at desktop and
+phone widths whichever child is wider (the draft box may shrink below
+its textarea's intrinsic width so the column fits 375px). The dial's
+look and behaviour are unchanged and it still scrolls `#stream`. Tab
+order changed with the move: the dial is now inside the form between
+the draft and the switch, so Tab goes `#msg` (draft) → `#fo-dial` →
+`#send` (before: dial → draft → Send). The thread reply `#thread-send`
+is unchanged. The flick call is wrapped in its own try/catch after
+`$("send").disabled = true;`, so a throw in the switch can neither lock
+nor block the send.
+Gate: the launch script requires the `fo-switch` submit button, the
+`Send` caption, the lever, `foSwitchFlick`, Web Audio clicks, and the
+order `id="form"` < `id="fo-send-col"` < `id="fo-dial-row"` < `<button
+id="send"`; it fails on any served `Send Dispatch</button>`. It also
+requires (r2) the `foSwitchFlick();` call statement inside the `#form`
+submit handler, after `if (mentionOpen) return;`, `if (sendingMessage)
+return;`, `sendingMessage = true;` and `$("send").disabled = true;`, on
+its own line inside a `try {`; the reduced-motion early return `if
+(foSwitchCalm.matches) return;` inside `foSwitchFlick` before the
+`.fo-flick` class is added; the `@media (prefers-reduced-motion:
+reduce)` rule that pins `.fo-switch-lever` (`transition: none`); and the
+full-width dial rule.
 
 ### 16. Mention + manage pills
 
