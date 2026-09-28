@@ -409,6 +409,9 @@
        with it instead of reading at full contrast. */
     .passbox.is-off { opacity: 0.55; cursor: not-allowed; }
     .passbox.is-off input { cursor: not-allowed; }
+    /* Pre-walk r4: the display rule above beat the hidden attribute, so a
+       hidden pass box still showed; keep hidden meaning hidden. */
+    .passbox[hidden] { display: none; }
     details.howto { margin-top: 8px; font-size: 0.82rem; color: var(--muted); }
     details.howto summary { color: var(--fg); }
     details.howto code { color: var(--fg); font-size: 0.78rem; }
@@ -2157,8 +2160,11 @@ button.fo-person { min-height: var(--btn-h-sm); }
       <label for="prof-org">Organization</label>
       <input id="prof-org" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius: 12px;padding:10px 12px;font:inherit;margin:4px 0">
       <label for="prof-avatar">Picture</label>
-      <input id="prof-avatar" type="file" accept="image/jpeg,image/png,image/webp">
-      <p class="help" id="prof-avatar-status">Optional. JPEG or PNG, stored as your picture URL.</p>
+      <!-- Pre-walk r4 (claim trace): nothing reads this input and Save
+           profile sends no picture, so the field is disabled and its help
+           says so instead of promising a stored picture URL. -->
+      <input id="prof-avatar" type="file" accept="image/jpeg,image/png,image/webp" disabled>
+      <p class="help" id="prof-avatar-status">Not available yet: Hush does not save a profile picture.</p>
       <!-- Honesty: Character read-only strip (relay-saved count + browser-only Always/On-call split). -->
       <div id="profile-loadout" aria-label="Robot loadout summary">
         <div class="lbl">Equipped skills</div>
@@ -2881,7 +2887,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       if (page === "import") {
         return card("Use an existing key",
           stepBar(1) +
-          "<p>Paste your secret key (nsec). We show the matching public key (npub) before anything is saved.</p>" +
+          "<p>Paste your secret key (nsec). Nothing is saved before the next step.</p>" +
           "<label for=\"nsec-in\">Secret key (nsec)</label>" +
           "<input id=\"nsec-in\" type=\"password\" autocomplete=\"off\" spellcheck=\"false\" data-lpignore=\"true\" data-form-type=\"other\" placeholder=\"nsec1…\">" +
           "<div class=\"help\" id=\"npub-preview\"></div>" +
@@ -3037,7 +3043,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       if (inp) inp.addEventListener("input", () => {
         const v = inp.value.trim();
         $("npub-preview").textContent = v.startsWith("nsec1")
-          ? "Looks like a secret key (nsec). Import to see its public key (npub)."
+          ? "Looks like a secret key (nsec)."
           : "";
       });
     }
@@ -3904,6 +3910,20 @@ button.fo-person { min-height: var(--btn-h-sm); }
       return /\.(txt|md|markdown)$/i.test(name);
     }
 
+    /* Pre-walk r4 (Gauge B1): the robot-editor pass box and its how-to
+       show only where they are true: raising a new robot (the create path
+       saves its key through pass) on a relay that has not reported pass as
+       unavailable. No Edit path (Major, locked, plain) saves a key, and
+       with no pass installed nothing is saved, so both stay hidden there
+       and the request sends save_pass false. */
+    function agentPassShown() {
+      return !editSlug && session.pass_available !== false;
+    }
+    function syncAgentPassBox() {
+      const shown = agentPassShown();
+      if ($("agent-pass")) $("agent-pass").closest("label").hidden = !shown;
+      if ($("agent-pass-howto")) $("agent-pass-howto").hidden = !shown;
+    }
     function resetAgentDraft() {
       draftName = "";
       draftPrompt = "";
@@ -3933,8 +3953,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       hideSkillGhost();
       if ($("agent-err")) $("agent-err").textContent = "";
       if ($("agent-identity")) $("agent-identity").hidden = false;
-      if ($("agent-pass")) $("agent-pass").closest("label").hidden = false;
-      if ($("agent-pass-howto")) $("agent-pass-howto").hidden = false;
+      syncAgentPassBox();
       if ($("payne-provider-pills")) $("payne-provider-pills").hidden = true;
       if ($("agent-provider-help")) $("agent-provider-help").textContent = "Harness / API priority (required)";
       paintFilePills();
@@ -4381,8 +4400,6 @@ button.fo-person { min-height: var(--btn-h-sm); }
         setActionLabel($("agent-save"), "Save", "Robot");
         $("agent-delete").disabled = true;
         $("agent-identity").hidden = false;
-        $("agent-pass").closest("label").hidden = true;
-        $("agent-pass-howto").hidden = true;
         $("payne-provider-pills").hidden = false;
         $("agent-provider-help").textContent = "Choose the runtime. First on deck speaks first.";
         draftName = "Major";
@@ -4437,6 +4454,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
           el.checked = el.value === bot.provider;
         });
       }
+      syncAgentPassBox();
       draftPicture = (bot && bot.picture) ? bot.picture : "";
       draftProviders = (bot && bot.providers && bot.providers.length)
         ? bot.providers.slice()
@@ -4742,7 +4760,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
         role: radioValue("agent-role", "worker"),
         intro_enabled: introEnabled,
         intro: intro,
-        save_pass: !box || box.checked
+        save_pass: !!box && agentPassShown() && box.checked
       };
       if (editSlug) {
         body.action = "update";

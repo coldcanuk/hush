@@ -141,16 +141,21 @@ not want your password manager to keep it." Key names are plain words
 with the code in brackets: help "Your public key (npub) is safe to
 share. Your secret key (nsec) is the account." and "If you already have
 a secret key (nsec), choose Use an existing key."; import "Paste your
-secret key (nsec). We show the matching public key (npub) before
-anything is saved.", label "Secret key (nsec)" (the `nsec1…` placeholder
-stays as an example), preview "Looks like a secret key (nsec). Import to
-see its public key (npub)."; never-share "Never share your secret key.
+secret key (nsec). Nothing is saved before the next step." (r4 claim
+trace: was "We show the matching public key (npub) before anything is
+saved.", but only the header badge prefix shows, and not at all at
+≤480px), label "Secret key (nsec)" (the `nsec1…` placeholder
+stays as an example), preview "Looks like a secret key (nsec)." (r4: dropped "Import to see
+its public key (npub)."); never-share "Never share your secret key.
 Anyone with it can impersonate you." The restart note ("starts with
 nsec1") and the `pass_error` line are unchanged. `check_restart_ui.cjs`
 asserts the new reason, the dimmed label, the details line and the
-plain labels. Elsewhere: the profile avatar help reads "Optional. JPEG
-or PNG, stored as your picture URL." (was "Nostr picture URL") and
-the field label reads "Picture" (r3; was "Avatar"), the
+plain labels. Elsewhere: the profile picture field is labelled
+"Picture" (r3; was "Avatar"). Nothing reads its file input and Save
+profile sends no picture, so r4 disables the input and its help reads
+"Not available yet: Hush does not save a profile picture." (r1 had
+"Optional. JPEG or PNG, stored as your picture URL.", which was not
+true); the
 profile copy button is "Copy public key (npub)", and the member/invite
 labels are "Public key (npub)" / "Invite by public key (npub)".
 
@@ -312,8 +317,12 @@ and a pencil to edit it again.
 - pass checkbox default-on, same plain words as the backup step (pre-walk
   r3): `Checked to save its key in your password manager (pass).` The
   retrieve command sits behind a closed details line (`#agent-pass-howto`,
-  "How to find it later"): `pass show hush/agents/<slug>/nsec`. Both are
-  hidden when editing Major.
+  "How to find it later"): `pass show hush/agents/<slug>/nsec`. r4 (Gauge
+  B1): both show only on Raise (the create path saves the key) while
+  `pass_available` is not false; every Edit path (Major, locked, plain)
+  saves no key, so they are hidden there, and hidden or with pass
+  missing the request sends `save_pass: false`. `.passbox[hidden]` is
+  `display: none` (the `.passbox` flex rule used to beat the attribute).
 - Footer `#agent-drawer .actions` is one compact line (no wrap):
   **Raise Robot** (edit: **Save Robot**), **Close**, **Delete Robot**.
   Delete is disabled on a fresh raise. Enabled when editing an
@@ -1288,9 +1297,12 @@ r4 (Ops F2/F7): the BOARDS drawer stats (`#stats`) render as inline
 items separated by `·` that wrap (pre-walk: each item carries a leading
 `·` that is clipped when the item starts a line, so no line ends or
 starts on a dangling `·`; a status with no `version` drops the version
-item instead of showing `v? ?`) (three lines at 1440 with the demo
-fixture, instead of a five-line stack), so with that fixture the drawer
-needs no scroll at 1440×900; with more channels it still scrolls. At
+item instead of showing `v? ?`) instead of a five-line stack. r4 claim
+trace (measured, field-office, 1440×900, Gauge/Ops `session.json`
+fixture): two lines with a status that has no version, four with a real
+build stamp (it wraps inside itself), and with that fixture's channels
+the drawer still overflows and scrolls, marked by the fade cue below
+(the earlier "three lines … needs no scroll" no longer held). At
 ≤480px the robot-editor actions show the verb only (CREATE or SAVE,
 CLONE, DELETE), one line each like CLOSE; the noun stays as visually
 hidden `.act-noun` text and the full name is in `aria-label`. Wider

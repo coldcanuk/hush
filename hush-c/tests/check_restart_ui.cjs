@@ -243,6 +243,25 @@ async function main() {
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/` });
     await cdp.waitFor(`!!document.querySelector('#gate.show')`, 'gate');
   };
+  // Pre-walk r4 (Gauge B1): open the robot editor through the real UI and
+  // report whether the pass box and its how-to are actually rendered.
+  const ROBOT_PASS_LABEL = 'Checked to save its key in your password manager (pass).';
+  const robotPassBox = async (label, openExpr) => {
+    await cdp.eval(`(() => { const c = document.querySelector('#agent-close');
+      if (document.querySelector('#agent-drawer.show') && c) c.click(); })()`);
+    await cdp.eval(openExpr);
+    await cdp.waitFor(`document.querySelector('#agent-drawer.show') && document.querySelector('#agent-title').textContent === ${JSON.stringify(label)}`, 'robot editor: ' + label);
+    return await cdp.eval(`(() => {
+      const l = document.querySelector('#agent-pass').closest('label');
+      const h = document.querySelector('#agent-pass-howto');
+      const shown = (e) => e.getClientRects().length > 0;
+      return { title: document.querySelector('#agent-title').textContent, label: shown(l), howto: shown(h),
+        open: h.open, text: l.textContent.trim(), cmd: h.textContent.includes('pass show hush/agents/<slug>/nsec') };
+    })()`);
+  };
+  const editRobot = (slug) => `document.querySelector('#robot-list .robot-card[data-slug="${slug}"] .robot-actions button').click()`;
+  const checkRobotPassHidden = (st, why) =>
+    check(!st.label && !st.howto, `robot pass box and how-to hidden on ${st.title} (${why}): ${JSON.stringify(st)}`);
   const sample = async (sels) => {
     const out = {};
     for (const sel of sels) {
@@ -309,7 +328,15 @@ async function main() {
     await cdp.waitFor(`!!document.querySelector('#nsec-in')`, 'import card');
     t = await gateText();
     check(await cdp.eval(`document.querySelector('label[for="nsec-in"]').textContent`) === 'Secret key (nsec)', 'import label is plain');
-    check(t.includes('secret key (nsec)') && t.includes('public key (npub)'), 'import card names the keys in plain words');
+    check(t.includes('secret key (nsec)'), 'import card names the key in plain words');
+    // Pre-walk r4 (claim trace): the import card promises only what the
+    // flow does. Import loads the key in memory (nothing is saved before
+    // the backup step) and no public key is shown before that step.
+    check(t.includes('Paste your secret key (nsec). Nothing is saved before the next step.') &&
+      !/public key|npub/i.test(t), 'import card makes no public-key promise');
+    const preview = await cdp.eval(`(() => { const i = document.querySelector('#nsec-in'); i.value = 'nsec1example';
+      i.dispatchEvent(new Event('input')); return document.querySelector('#npub-preview').textContent; })()`);
+    check(preview === 'Looks like a secret key (nsec).', `import preview makes no public-key promise: ${preview}`);
     await cdp.click('#back-import');
     await cdp.waitFor(`!!document.querySelector('#create-id')`, 'landing after import');
 
@@ -416,7 +443,8 @@ async function main() {
       const last = clip.querySelector('.stat:last-child');
       const keep = last.textContent;
       const fixture = [];
-      for (const t of ['v0.0.1-697-g4c1f2594 4c1f2594', 'v0.0.1-9999-g0123456789ab 0123456789ab']) {
+      for (const t of ['v0.0.1-697-g4c1f2594 4c1f2594', 'v0.0.1-9999-g0123456789ab 0123456789ab',
+        'v0.0.1-9999-g0123456789abcdef0123456789abcdef01234567']) {
         last.textContent = t;
         const m = measure();
         fixture.push(m[m.length - 1]);
@@ -428,7 +456,7 @@ async function main() {
     const stamp = statsFit.live.length ? statsFit.live[statsFit.live.length - 1].t : '';
     console.log('drawer stamp: ' + JSON.stringify(stamp));
     check(/^v\S+ \S+$/.test(stamp), `drawer shows the build stamp as its last stat, got ${JSON.stringify(stamp)}`);
-    check(statsFit.fixture.length === 2 && statsFit.fixture[0].t === 'v0.0.1-697-g4c1f2594 4c1f2594',
+    check(statsFit.fixture.length === 3 && statsFit.fixture[0].t === 'v0.0.1-697-g4c1f2594 4c1f2594',
       `real-length stamp fixture measured: ${JSON.stringify(statsFit.fixture)}`);
     for (const s of statsFit.live.concat(statsFit.fixture))
       check(!s.bad.length, `drawer stat ${JSON.stringify(s.t)} is cut by the clip edge ${JSON.stringify(s.bad)}`);
@@ -446,7 +474,43 @@ async function main() {
       check(bdg.fs === 0 && bdg.w <= 16, `badge is a dot at ${VIEW_W}px: ${JSON.stringify(bdg)}`);
     else if (VIEW_W > 640) // 481-640 keeps the 95px cap with an ellipsis
       check(bdg.sw <= bdg.cw, `badge text is not clipped at ${VIEW_W}px: ${JSON.stringify(bdg)}`);
+    // Pre-walk r3/r4 (P3-D): CI runs at 1440, so narrow the viewport to
+    // 375 here to check the badge dot (R07) and that the bad-state dot is a
+    // ring, not the filled ok dot (R08), then restore the width.
+    if (VIEW_W > 480) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 800, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+    }
+    const dot = await cdp.eval(`(() => { const b = document.querySelector('header #badge');
+      const keep = [b.textContent, b.title, b.getAttribute('aria-label'), b.className];
+      const m = () => { const cs = getComputedStyle(b); const r = b.getBoundingClientRect();
+        return { w: r.width, h: r.height, fs: parseFloat(cs.fontSize), bg: cs.backgroundColor, border: cs.borderTopColor, bw: parseFloat(cs.borderTopWidth) }; };
+      badge(true, 'listening', 'Relay listening on port 1');
+      const ok = m();
+      badge(false, 'relay unreachable');
+      const bad = Object.assign(m(), { aria: b.getAttribute('aria-label'), title: b.title });
+      b.textContent = keep[0]; b.title = keep[1]; b.setAttribute('aria-label', keep[2]); b.className = keep[3];
+      return { ok, bad }; })()`);
+    console.log('badge dot at 375: ' + JSON.stringify(dot));
+    const clear = (c) => /rgba\(0, 0, 0, 0\)|transparent/.test(c);
+    check(dot.ok.fs === 0 && dot.ok.w <= 16 && dot.ok.h <= 16 && !clear(dot.ok.bg), `ok badge is a filled dot at 375: ${JSON.stringify(dot.ok)}`);
+    check(dot.bad.fs === 0 && dot.bad.w <= 16 && clear(dot.bad.bg) && dot.bad.bw >= 2 && !clear(dot.bad.border),
+      `bad badge is a ring, not the filled ok dot, at 375: ${JSON.stringify(dot.bad)}`);
+    check(dot.bad.aria === 'relay unreachable' && dot.bad.title === 'relay unreachable', `bad badge keeps its state text: ${JSON.stringify(dot.bad)}`);
+    if (VIEW_W > 480) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+    }
     await cdp.shot('hive-fo');
+
+    // Pre-walk r4 (Gauge B1), no pass installed: the robot editor never
+    // claims to save the key, on Raise or any Edit path.
+    await cdp.waitFor(`!!document.querySelector('#robot-list .robot-card[data-slug="coach"]')`, 'robot cards');
+    check((await sess(port, R.headers)).pass_available === false, 'phase A relay reports no pass');
+    checkRobotPassHidden(await robotPassBox('Raise a robot', `document.querySelector('#raise-agent').click()`), 'no pass');
+    checkRobotPassHidden(await robotPassBox('Edit locked robot', editRobot('coach')), 'no pass');
+    checkRobotPassHidden(await robotPassBox('Edit Major', editRobot('sgt-major-payne')), 'no pass');
+    await cdp.eval(`document.querySelector('#agent-close').click()`);
     await cdp.click('#hive-close');
     await cdp.waitFor(`!!document.querySelector('#hive-leave.show')`, 'leave chooser');
     Object.assign(contrasts, { leave: await sample(['#leave-exit', '#leave-close', '#leave-cancel']) });
@@ -454,6 +518,22 @@ async function main() {
 
     await cdp.click('#profile-btn');
     await cdp.waitFor(`document.querySelector('#profile.show')`, 'profile drawer');
+    // Pre-walk r3/r4 (P3-D, R15): the four profile actions pair into two
+    // rows in DOM order Save, Logout / Copy, Close (no lone Close row).
+    const profRows = await cdp.eval(`(() => [...document.querySelectorAll('#profile .actions .btn')].map((e) =>
+      [e.id, Math.round(e.getBoundingClientRect().top)]))()`);
+    const rowTops = [...new Set(profRows.map((r) => r[1]))];
+    check(profRows.map((r) => r[0]).join(',') === 'profile-save,profile-logout,profile-copy,profile-close' &&
+      rowTops.length === 2 && profRows[0][1] === profRows[1][1] && profRows[2][1] === profRows[3][1],
+      `profile actions pair into two rows: ${JSON.stringify(profRows)}`);
+    // Pre-walk r3 (Ops 3): the profile picture field is labelled "Picture".
+    check(await cdp.eval(`document.querySelector('label[for="prof-avatar"]').textContent`) === 'Picture', 'profile picture label reads Picture');
+    // Pre-walk r4 (claim trace): no code reads the picture input and Save
+    // profile sends no picture, so the field is disabled and says so.
+    const pic = await cdp.eval(`({ disabled: document.querySelector('#prof-avatar').disabled,
+      help: document.querySelector('#prof-avatar-status').textContent })`);
+    check(pic.disabled && pic.help === 'Not available yet: Hush does not save a profile picture.',
+      `profile picture field does not promise a saved picture: ${JSON.stringify(pic)}`);
     await cdp.click('#profile-logout');
     await cdp.waitFor(`document.querySelector('#gate.show') && document.querySelector('#gate').textContent.includes('Use an existing key')`, 'post-logout landing');
     t = await gateText();
@@ -528,6 +608,31 @@ async function main() {
     const disabled2 = await cdp.eval(`document.querySelector('#save-pass').disabled`);
     check(disabled2 === false, 'backup checkbox stays enabled with pass');
     await cdp.shot('backup-withpass');
+
+    // Pre-walk r4 (Gauge B1), pass available: the label and its closed
+    // how-to show on Raise (the create path saves the key) and on no Edit
+    // path (update never saves a key).
+    await cdp.click('#ack-key');
+    await cdp.waitFor(`!!document.querySelector('#vibe-name')`, 'vibe step 2');
+    await cdp.eval(`document.querySelector('#vibe-name').value = 'PASSHIVE'`);
+    await cdp.click('#do-vibe');
+    await cdp.waitFor(`!!document.querySelector('#meet-payne')`, 'payne step 2');
+    await cdp.click('#meet-payne');
+    await cdp.waitFor(`!!document.querySelector('#hive.show')`, 'hive 2');
+    await cdp.waitFor(`!!document.querySelector('#robot-list .robot-card[data-slug="coach"]')`, 'robot cards 2');
+    const raise2 = await robotPassBox('Raise a robot', `document.querySelector('#raise-agent').click()`);
+    console.log('robot pass box (raise, pass): ' + JSON.stringify(raise2));
+    check(raise2.label && raise2.howto && !raise2.open && raise2.text === ROBOT_PASS_LABEL && raise2.cmd,
+      `robot pass box and closed how-to show on Raise with pass: ${JSON.stringify(raise2)}`);
+    const locked2 = await robotPassBox('Edit locked robot', editRobot('coach'));
+    checkRobotPassHidden(locked2, 'update saves no key');
+    await cdp.click('#agent-clone');
+    await cdp.waitFor(`!!document.querySelector('#robot-list .robot-card[data-slug="coach-copy"]')`, 'cloned robot');
+    checkRobotPassHidden(await robotPassBox('Edit robot', editRobot('coach-copy')), 'update saves no key');
+    checkRobotPassHidden(await robotPassBox('Edit Major', editRobot('sgt-major-payne')), 'update saves no key');
+    const raise3 = await robotPassBox('Raise a robot', `document.querySelector('#raise-agent').click()`);
+    check(raise3.label && raise3.howto, `robot pass box shows again on Raise after an Edit: ${JSON.stringify(raise3)}`);
+    await cdp.eval(`document.querySelector('#agent-close').click()`);
     await stopRelay(proc);
 
     fs.writeFileSync(path.join(ART, `${TAG}-contrast-${VIEW_W}.json`),
