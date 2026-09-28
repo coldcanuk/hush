@@ -68,14 +68,14 @@ Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
    `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/identity/nsec`
    When `/api/session` reports `pass_available:false` (`pass` is not
    installed, so no save could succeed), the checkbox renders unchecked
-   and disabled, its label reads "Saving to pass is unavailable because
-   pass is not installed. Copy your identity key somewhere safe now."
-   (never "Checked to save…"), the warning line keeps "Never share your
-   private key. Anyone with it can impersonate you." and drops only the
-   "Uncheck the box only if you do not want pass to store it." clause,
-   and the step shows a plain inline reason: "pass is not installed, so
-   Hush cannot save the key here. Copy it now and keep it somewhere
-   safe. Setup continues without saving." A failed save at ack
+   and disabled with the short neutral label "Save to password manager"
+   (never "Checked to save…"), the step shows exactly one reason, once:
+   "Hush can't save this key on this computer. Copy it now and keep it
+   somewhere safe. Setup continues without saving." and the warning line
+   keeps "Never share your private key. Anyone with it can impersonate
+   you." and drops only the "Uncheck the box only if you do not want
+   pass to store it." clause. No visible text on the no-pass backup step
+   uses the bare word "pass". A failed save at ack
    time still records `pass_error` and still lets setup continue
    (`backup_acked` stays true); the next gate screen repeats the
    `pass_error` warning. No backup path blocks setup, and no backup path
@@ -102,6 +102,18 @@ is `disabled` as well as unchecked, so it cannot be ticked, and
 "I saved it" sends `save_pass:false` (the enabled with-pass checkbox is
 unchanged). `check_restart_ui.cjs` asserts the help copy, the warning on
 both paths and the checkbox `disabled` state on both paths.
+
+Delta 2026-09-28 (ID-1 r4 one no-pass reason): the no-pass backup step
+no longer gives its reason twice. The checkbox label "Saving to pass is
+unavailable because pass is not installed. Copy your identity key
+somewhere safe now." becomes "Save to password manager" (still unchecked
+and disabled), and the reason line "pass is not installed, so Hush
+cannot save the key here. …" becomes the single sentence group "Hush
+can't save this key on this computer. Copy it now and keep it somewhere
+safe. Setup continues without saving." The never-share line stays on
+both paths, and the with-pass copy is unchanged. `check_restart_ui.cjs`
+asserts the reason appears exactly once, nothing else on the screen
+restates it, and the visible no-pass text has no bare word "pass".
 
 ### 3. Resume
 `logged_in && backup_acked && has_vibe` → splash detects → hive.

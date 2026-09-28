@@ -25,6 +25,10 @@ fs.mkdirSync(ART, { recursive: true });
 
 // Shown on the backup step on both paths (with and without pass).
 const NEVER_SHARE = 'Never share your private key. Anyone with it can impersonate you.';
+// The one no-pass reason on the backup step (CoS copy, ID-1 r4). It must
+// appear exactly once, and nothing else on that screen may restate it.
+const NOPASS_REASON = "Hush can't save this key on this computer. Copy it now and keep it somewhere safe. Setup continues without saving.";
+const REASON_ECHO = /can.t save|cannot save|not installed|unavailable|somewhere safe/i;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -263,6 +267,7 @@ async function main() {
     }
   }
   const gateText = () => cdp.eval(`document.querySelector('#gate').textContent`);
+  const gateVisible = () => cdp.eval(`document.querySelector('#gate').innerText`);
 
   try {
     // Phase A: pass missing the whole way.
@@ -309,7 +314,9 @@ async function main() {
     t = await gateText();
     check(!t.includes('Checked to save'), 'backup label drops the Checked-to-save line without pass');
     check(!t.includes('Uncheck the box'), 'backup drops the Uncheck line without pass');
-    check(t.includes('Saving to pass is unavailable'), 'backup shows the no-pass reason');
+    check(t.split(NOPASS_REASON).length === 2, 'backup shows the no-pass reason exactly once');
+    check(!REASON_ECHO.test(t.split(NOPASS_REASON).join(' ')), 'backup states the no-pass reason only once');
+    check(!/\bpass\b/i.test(await gateVisible()), 'backup shows no bare pass without pass');
     check(t.includes(NEVER_SHARE), 'backup keeps the never-share warning without pass');
     await cdp.shot('backup-nopass');
 
@@ -402,6 +409,7 @@ async function main() {
     check(t.includes('Checked to save'), 'backup keeps the Checked-to-save line with pass');
     check(t.includes(NEVER_SHARE), 'backup keeps the never-share warning with pass');
     check(t.includes('Uncheck the box'), 'backup keeps the Uncheck line with pass');
+    check(!t.includes(NOPASS_REASON), 'backup shows no no-pass reason with pass');
     const disabled2 = await cdp.eval(`document.querySelector('#save-pass').disabled`);
     check(disabled2 === false, 'backup checkbox stays enabled with pass');
     await cdp.shot('backup-withpass');

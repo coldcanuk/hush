@@ -80,6 +80,31 @@ static void test_pass_helper_only(const char *base)
     expect(!hush_pass_available(), "helper present, pass absent");
 }
 
+/* Removes the scratch tree that test_pass_available builds under base
+ * (/tmp/hush-avail-<pid>), so repeated runs leave nothing behind. */
+static void test_pass_cleanup(const char *base)
+{
+    static const char *const files[] = {
+        "bin/pass", "bin/hush-pass", "helper-only/hush-pass"
+    };
+    static const char *const dirs[] = { "bin", "helper-only" };
+    char p[TEST_PATH_MAX];
+
+    assert(base != NULL);
+    if (chdir("/") != 0)
+        expect(0, "cleanup chdir");
+    for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+        snprintf(p, sizeof(p), "%s/%s", base, files[i]);
+        unlink(p);
+    }
+    for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
+        snprintf(p, sizeof(p), "%s/%s", base, dirs[i]);
+        rmdir(p);
+    }
+    rmdir(base);
+    expect(access(base, F_OK) != 0, "scratch dir removed");
+}
+
 /* Detects the real helper path with no override and a controlled PATH.
  * A stuck-true or stuck-false hush_pass_available fails here. */
 static void test_pass_available(void)
@@ -115,6 +140,7 @@ static void test_pass_available(void)
         setenv("PATH", kept, 1);
         free(kept);
     }
+    test_pass_cleanup(base);
 }
 
 int main(void)

@@ -52,7 +52,7 @@ echo "$sess" | grep -q '"restart_lost_login":false' || fail "virgin session sets
 html=$(curl -sf "http://127.0.0.1:${port}/")
 echo "$html" | grep -q 'Click Begin to continue' || fail "splash must cue clicking Begin"
 echo "$html" | grep -q 'did not survive the restart' || fail "UI must explain the post-restart re-import"
-echo "$html" | grep -q 'pass is not installed' || fail "backup must name the pass-missing reason"
+echo "$html" | grep -q -F "Hush can't save this key on this computer" || fail "backup must say Hush can't save the key"
 echo "$html" | grep -q 'Setup continues without saving' || fail "backup must say setup continues"
 echo "$html" | grep -q 'local hive mind' || fail "header must know its neutral default"
 echo "$html" | grep -q 'session.logged_in && session.vibe' || fail "header must gate the hive name on login"

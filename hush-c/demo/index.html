@@ -2690,10 +2690,10 @@ html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2p
         const shown = keyRevealed ? esc(pendingNsec) : "•".repeat(Math.max(16, pendingNsec.length || 63));
         const passOff = session.pass_available === false;
         const passNote = passOff
-          ? "<p class=\"warn\">pass is not installed, so Hush cannot save the key here. Copy it now and keep it somewhere safe. Setup continues without saving.</p>"
+          ? "<p class=\"warn\">Hush can't save this key on this computer. Copy it now and keep it somewhere safe. Setup continues without saving.</p>"
           : "";
         const passLabel = passOff
-          ? "Saving to pass is unavailable because pass is not installed. Copy your identity key somewhere safe now."
+          ? "Save to password manager"
           : "Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/identity/nsec</code>";
         const neverShare = "Never share your private key. Anyone with it can impersonate you.";
         const passAfter = passOff
