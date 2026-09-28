@@ -64,4 +64,4 @@ UI-M11 stereo-style dial (`#fo-dial`) in the empty chrome above Send Dispatch. W
 
 ## What is not shown
 
-Every screen requested for this page was reachable on `main` with no AI provider installed, so nothing had to be omitted. Favorite skill loadouts (PE-4 roadmap) have no UI on `main` and therefore no screenshot here.
+Every screen requested for this page was reachable on `main` with no AI provider installed, so nothing had to be omitted. Favorite skill loadouts (PE-4) merged later (#206), after these captures, so they have no screenshot here yet. Later UI changes (#212, #214, #226, #227) are not reflected either.

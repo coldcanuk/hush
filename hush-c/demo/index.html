@@ -23,6 +23,16 @@
       --mono: ui-monospace, "Cascadia Mono", monospace;
       --display: var(--sans);
     }
+    /* UI-M12d: one compact button scale (xs 24 / sm 28 / md 32) shared by every
+       menu, drawer, overlay, panel, dialog and popover control. Lives on :root
+       only; theme blocks set palette, never these. Visual size is compact at
+       every width; phones get the 44px touch hit from an invisible hit area. */
+    :root {
+      --btn-h-xs: 24px; --btn-px-xs: 6px; --btn-fs-xs: 0.68rem;
+      --btn-h-sm: 28px; --btn-px-sm: 8px; --btn-fs-sm: 0.74rem;
+      --btn-h-md: 32px; --btn-px-md: 12px; --btn-fs-md: 0.8rem;
+      --btn-lh: 1.1; --btn-hit-min: 24px; --btn-hit-touch: 44px;
+    }
     html[data-theme="light"] {
       --bg: oklch(98.8% 0.003 106.5); --surface: #ffffff; --surface-2: oklch(96.6% 0.005 106.5); --line: oklch(93% 0.007 106.5);
       --fg: oklch(22.8% 0.013 107.4); --muted: oklch(39.4% 0.023 107.4); --faint: oklch(46.6% 0.025 107.3); --accent: oklch(46.6% 0.025 107.3);
@@ -870,6 +880,38 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
 }
 .skill-life[data-lifetime="always"] { border-color: #d4a017; color: #ffd75e; }
 .skill-life[data-lifetime="oncall"] { border-color: #0ff; color: #8fd3ff; }
+/* PE-4 favorites: named loadout shortcuts, saved per robot on the relay. */
+#fav-strip { margin: 12px 0; min-width: 0; }
+#fav-strip .lbl { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.fav-row { align-items: center; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+#fav-name {
+  flex: 1 1 100%; min-width: 0; min-height: 36px; padding: 4px 8px;
+  border: 1px solid var(--line);
+  background: var(--surface); color: var(--fg); border-radius: 6px;
+  font: 500 0.85rem var(--sans);
+}
+.fav-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; min-width: 0; }
+.fav-item {
+  display: flex; align-items: center; gap: 8px; border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 8px; background: var(--surface);
+  min-width: 0; overflow: hidden;
+}
+.fav-item.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+.fav-item .nm {
+  flex: 1 1 auto; min-width: 0;
+  font: 600 0.8rem var(--sans);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fav-item .nm:focus-visible {
+  white-space: normal; overflow: visible;
+  outline: 2px solid var(--fg); outline-offset: 2px;
+}
+.fav-item .ct { font: 500 0.7rem var(--mono); color: var(--muted); flex-shrink: 0; }
+.fav-item .inv-btn { flex: 0 0 auto; width: auto; padding: 6px 10px; }
+.fav-item .tag {
+  font: 700 0.6rem var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
+  border: 1px solid var(--accent); border-radius: 8px; padding: 0 6px; color: var(--accent);
+}
 #profile-loadout {
   margin: 8px 0; border: 1px solid var(--line); border-radius: 8px;
   padding: 8px 10px; background: var(--surface-2);
@@ -1092,9 +1134,9 @@ html[data-theme="field-office"] .composer-box {
   background: #ebdcb9; border: 2px solid #5c4a3d; border-radius: 3px; box-shadow: none;
 }
 html[data-theme="field-office"] .composer-box:focus-within { box-shadow: 2px 2px 0 #5c4a3d; }
-html[data-theme="field-office"] #send {
-  background: #2a241e; color: #e2d5b8; border: 2px solid #2a241e; border-radius: 3px;
-  text-transform: uppercase; letter-spacing: 0.12em; box-shadow: 2px 2px 0 #5c4a3d;
+html[data-theme="field-office"] #send.fo-switch {
+  background: #e2d5b8; color: #2a241e; border: 2px solid #5c4a3d; border-radius: 3px;
+  box-shadow: 2px 2px 0 #5c4a3d;
 }
 html[data-theme="field-office"] .chan { border-radius: 3px; }
 html[data-theme="field-office"] .chan.on {
@@ -1355,6 +1397,10 @@ html[data-theme="field-office"] #code-canvas-hi,
 html[data-theme="field-office"] #code-canvas-edit {
   border: 2px solid #5c4a3d; background: #ebdcb9;
 }
+/* Paper-flattened buttons keep dark ink text. The block above overrides
+ * background without touching color, which left cream text on tan. */
+html[data-theme="field-office"] .btn,
+html[data-theme="field-office"] .iconbtn.danger { color: #2a241e; }
 html[data-theme="field-office"] .btn,
 html[data-theme="field-office"] .thread-btn,
 html[data-theme="field-office"] #thread-send { text-transform: uppercase; letter-spacing: 0.1em; }
@@ -1406,12 +1452,12 @@ html[data-theme="field-office"] dialog.secret::backdrop { background: rgba(42, 3
 /* ===== UI-M8 overlay drawer + typewriter paperfeel =====
    Left nav (#fo-drawer) is an animated overlay strip over the dispatch
    log, not a permanent width column: closed = full-width messaging +
-   thin expand control (#nav-toggle BOARDS stamp + #fo-expand edge tab);
+   thin expand control (#nav-toggle BOARDS stamp);
    open = overlay strip via #hive.nav-open. Escape closes it through the
    existing closeNavigation() tail of the UI-M4 single-dismiss stack.
    Paperfeel extends the M5 field-office tokens (denser grain, ribbon
    ink, ruled slips, cut-paper edges). Stacked on the M7 chrome-hard
-   pass above: drawer + edge tab are new here; ruled slips, ledger
+   pass above: drawer is new here; ruled slips, ledger
    lines, and ink type extend M7 without touching fo-chrome-hard
    or fo-caret surfaces. */
 .shell.hive { grid-template-columns: minmax(0, 1fr) 248px; position: relative; }
@@ -1429,20 +1475,6 @@ html[data-theme="field-office"] dialog.secret::backdrop { background: rgba(42, 3
   font-family: var(--mono); border: 2px solid var(--line); border-radius: 6px;
   padding: 0 10px; transform: rotate(-1deg); min-width: 44px; min-height: 44px;
 }
-/* UI-M8 thin edge tab: only present while the drawer is closed. Same
-   toggle as the BOARDS stamp; stamp text only, no burger glyph. */
-#fo-expand {
-  position: fixed; left: 0; top: 46%; z-index: 29;
-  display: none; width: 30px; min-height: 96px; padding: 10px 0;
-  writing-mode: vertical-rl; text-orientation: mixed;
-  font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase;
-  font-family: var(--mono); color: var(--fg);
-  background: var(--surface); border: 1px solid var(--line); border-left: 0;
-  border-radius: 0 6px 6px 0; box-shadow: 2px 2px 0 rgb(0 0 0 / 0.3);
-  cursor: pointer;
-}
-.hive:not(.nav-open) #fo-expand { display: block; }
-#fo-expand:hover { border-color: var(--accent); color: var(--accent); }
 @media (max-width: 1100px) {
   /* UI-M8: no permanent left width; roster becomes the full-width strip. */
   .shell.hive { grid-template-columns: minmax(0, 1fr); }
@@ -1485,8 +1517,7 @@ html[data-theme="field-office"] #msg {
   font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
   text-shadow: 0 0 0.5px currentColor; letter-spacing: 0.01em;
 }
-html[data-theme="field-office"] .hive > nav,
-html[data-theme="field-office"] #fo-expand {
+html[data-theme="field-office"] .hive > nav {
   box-shadow: 4px 4px 0 #5c4a3d; border-color: #5c4a3d;
 }
 /* ===== UI-M9 folder tabs + no tool rail =====
@@ -1519,7 +1550,8 @@ html[data-theme="field-office"] #kit-menu {
    Supersedes the UI-M10 scrollbar-in-message-column: the dispatch log
    (#stream) keeps the native fat bar hidden but owns NO in-column
    chrome (no track, dot, or end arrows). Scroll lives on a stereo-style
-   VOLUME dial in the empty chrome above Send Dispatch (#fo-dial-row).
+   VOLUME dial directly above the Send switch (#fo-dial-row; UI-M12c
+   moved it into the composer's #fo-send-col, see below).
    Wheel over the dial scrolls the log; click-drag rotates clockwise to
    scroll down, counter-clockwise to scroll up. The wrap stays row-flex
    so #stream keeps a bounded height and scrolls internally — block would
@@ -1529,7 +1561,7 @@ html[data-theme="field-office"] #kit-menu {
 #fo-log-wrap { display: flex; flex: 1; min-height: 0; }
 #fo-log-wrap #stream { flex: 1; min-width: 0; min-height: 0; scrollbar-width: none; -ms-overflow-style: none; }
 #fo-log-wrap #stream::-webkit-scrollbar { display: none; width: 0; height: 0; }
-#fo-dial-row { display: flex; flex: 0 0 auto; justify-content: flex-end; padding: 4px 18px 0; }
+#fo-dial-row { display: flex; flex: 0 0 auto; justify-content: center; }
 #fo-dial {
   display: inline-flex; align-items: center; gap: 8px;
   background: var(--surface); color: var(--fg); border: 1px solid var(--line);
@@ -1564,6 +1596,215 @@ html[data-theme="field-office"] #fo-dial-knob {
   background: #2a241e; border: 2px solid #5c4a3d; box-shadow: none;
 }
 html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; }
+/* ===== UI-M12c spring-return Send switch =====
+   #send stays the composer's real submit <button> (accessible name
+   "Send") but reads as a small metal toggle on a stamped plate
+   (fo-switch markers). A send flicks the lever right (.fo-flick, 100ms)
+   and a spring returns it left (150ms, slight overshoot); the clicks are
+   Web Audio (foSwitchFlick). #fo-send-col stacks the UI-M11 dial
+   directly above the switch at the composer's right edge; both stretch
+   to one column width so their edges line up at every width (the draft
+   box may shrink below its textarea's intrinsic width so the column
+   still fits a 375px phone). Empty draft (#msg placeholder shown) =
+   dashed, faded switch; sending (:disabled) = faded switch. Reduced
+   motion: no swing. */
+#fo-send-col { display: flex; flex-direction: column; align-items: stretch; gap: 6px; flex: 0 0 auto; }
+#fo-dial-row #fo-dial { width: 100%; justify-content: center; }
+#form .composer-box { min-width: 0; }
+#send.fo-switch {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-width: 0; min-height: 48px; padding: 4px 8px 4px 12px;
+  background: var(--surface); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 8px; box-shadow: none; cursor: pointer;
+  transition: opacity 120ms linear;
+}
+.fo-switch-cap {
+  font: 700 0.72rem/1 "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
+  text-transform: uppercase; letter-spacing: 0.16em;
+}
+.fo-switch-plate {
+  position: relative; flex: 0 0 auto; width: 60px; height: 40px;
+  background: var(--surface-2); border: 2px solid var(--line); border-radius: 3px;
+}
+.fo-switch-plate::before, .fo-switch-plate::after {
+  content: ""; position: absolute; top: 50%; width: 5px; height: 5px;
+  margin-top: -3px; border-radius: 50%; background: var(--faint);
+}
+.fo-switch-plate::before { left: 4px; }
+.fo-switch-plate::after { right: 4px; }
+.fo-switch-boss {
+  position: absolute; left: 50%; bottom: 4px; width: 14px; height: 14px;
+  margin-left: -7px; border-radius: 50%; background: var(--line);
+}
+.fo-switch-lever {
+  position: absolute; left: 50%; bottom: 11px; width: 6px; height: 18px;
+  margin-left: -3px; border-radius: 3px 3px 0 0; background: var(--muted);
+  transform-origin: 50% 100%; transform: rotate(-32deg);
+  transition: transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.fo-switch-lever::before {
+  content: ""; position: absolute; left: 50%; top: -5px; width: 10px; height: 10px;
+  margin-left: -5px; border-radius: 50%; background: inherit;
+}
+#send.fo-switch.fo-flick .fo-switch-lever {
+  transform: rotate(32deg);
+  transition: transform 100ms cubic-bezier(0.5, 0, 0.75, 0);
+}
+.composer:has(#msg:placeholder-shown) #send.fo-switch:not(.fo-flick) {
+  opacity: 0.5; border-style: dashed; cursor: default;
+}
+#send.fo-switch:disabled:not(.fo-flick) { opacity: 0.5; cursor: not-allowed; }
+html[data-theme="field-office"] .fo-switch-plate { background: #2a241e; border-color: #5c4a3d; }
+html[data-theme="field-office"] .fo-switch-plate::before,
+html[data-theme="field-office"] .fo-switch-plate::after { background: #b8a67a; }
+html[data-theme="field-office"] .fo-switch-boss { background: #8a8374; box-shadow: inset -2px -2px 0 #5c574c; }
+html[data-theme="field-office"] .fo-switch-lever { background: #d8d0bc; box-shadow: inset -2px 0 0 #9c927c; }
+html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2px -2px 0 #9c927c; }
+@media (prefers-reduced-motion: reduce) {
+  .fo-switch-lever, #send.fo-switch.fo-flick .fo-switch-lever { transition: none; transform: rotate(-32deg); }
+}
+/* ===== UI-M12d compact buttons =====
+   Shared classes first, then the providers hub and robot provider tiles,
+   then the rest. Visual height is the tier at EVERY width (xs 24 / sm 28 /
+   md 32). Desktop hit floor is --btn-hit-min (every tier is already >= 24).
+   Phone/coarse pointers get a >= --btn-hit-touch hit from a transparent
+   ::before (::after on .switch, whose .slider:before is the knob) centred on
+   the control; it never draws. Left alone on purpose: #send, #fo-dial,
+   #thread-send (UI-M12c), .leave-actions .btn, #stats, #rail-toggle and
+   #nav-toggle (spec-pinned 44px), spatial tiles (.skill-gem, .inv-item,
+   .agent-pic-cell, .avatar-cell), form-row labels, #quick-bar (clip-path),
+   hidden legacy #robot-list. No colour, border or background changes. */
+/* 1. Shared classes. :where() keeps the pinned 44px controls out. */
+.btn:where(:not(#nav-toggle, .leave-actions .btn)) {
+  min-height: var(--btn-h-md); padding: 0 var(--btn-px-md);
+  font-size: var(--btn-fs-md); line-height: var(--btn-lh);
+}
+#agent-drawer .actions .btn {
+  min-height: var(--btn-h-md); padding: 0 var(--btn-px-sm); font-size: var(--btn-fs-sm);
+}
+#canvas-k .row button {
+  min-height: var(--btn-h-sm); padding: 0 var(--btn-px-sm);
+  font-size: var(--btn-fs-sm); line-height: var(--btn-lh);
+}
+.icon-plus, .icon-minus,
+#skill-cycle-row .icon-minus, #skill-cycle-row .icon-plus {
+  width: var(--btn-h-sm); height: var(--btn-h-sm); padding: 0; line-height: 1;
+}
+.inv-btn:where(:not(.qb-slot, .qb-gear)) {
+  min-height: var(--btn-h-sm); padding-block: 0; font-size: var(--btn-fs-sm);
+}
+.quick-tab { min-height: var(--btn-h-sm); font-size: var(--btn-fs-xs); }
+.fav-item .inv-btn { padding: 0 var(--btn-px-sm); }
+.drawer-x {
+  min-width: var(--btn-h-sm); min-height: var(--btn-h-sm);
+  width: var(--btn-h-sm); height: var(--btn-h-sm); padding: 0;
+}
+.menu button, .mention-box button {
+  min-height: var(--btn-h-sm); padding: 0 var(--btn-px-sm);
+  font-size: var(--btn-fs-sm); line-height: var(--btn-lh);
+}
+.chan-options { width: var(--btn-h-sm); height: var(--btn-h-sm); }
+.chan-voice, .robot-call { width: var(--btn-h-xs); height: var(--btn-h-xs); }
+.chan { min-height: var(--btn-h-sm); padding-block: 2px; }
+.vis { flex-wrap: wrap; }
+.vis label {
+  display: flex; align-items: center; margin: 0; white-space: nowrap;
+  min-height: var(--btn-h-sm); padding: 0 var(--btn-px-sm);
+  font-size: var(--btn-fs-sm); line-height: var(--btn-lh);
+}
+.mini {
+  min-height: var(--btn-h-sm); padding: 0 var(--btn-px-sm);
+  font-size: var(--btn-fs-sm); line-height: var(--btn-lh);
+}
+/* 2. Providers hub rows + robot-editor provider tiles. */
+.prov-row { padding: 4px var(--btn-px-sm); }
+.prov-row .cfg {
+  min-width: var(--btn-h-sm); min-height: var(--btn-h-sm);
+  width: var(--btn-h-sm); height: var(--btn-h-sm); padding: 0;
+}
+#agent-providers label {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 6px; align-items: center; min-height: 0; padding: 4px var(--btn-px-sm);
+}
+#agent-providers label > input { grid-row: 1 / span 2; margin: 0; }
+#agent-providers .prov-name, #agent-providers .prov-status { grid-column: 2; margin: 0; }
+#agent-providers .provider-config { grid-column: 3; grid-row: 1 / span 2; }
+.provider-config { min-height: var(--btn-h-md); }
+/* 3. The rest. xs controls are raised to the 24px floor. */
+.pill { padding: 1px 10px; }
+.pill:has(> button) { padding-right: 2px; }
+.pill button {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: var(--btn-h-xs); min-height: var(--btn-h-xs); padding: 0; cursor: pointer;
+}
+#payne-provider-pills .pill button { min-width: var(--btn-h-sm); min-height: var(--btn-h-sm); }
+.agent-pic-sheet { min-height: var(--btn-h-xs); padding: 0 var(--btn-px-xs); font-size: var(--btn-fs-xs); }
+.skill-life { min-height: var(--btn-h-xs); padding: 0 var(--btn-px-xs); }
+.inv-expand-link, .help button { min-height: var(--btn-h-xs); }
+summary { min-height: var(--btn-h-xs); line-height: var(--btn-h-xs); cursor: pointer; }
+.tile-mute { min-height: var(--btn-h-xs); padding: 0 var(--btn-px-sm); }
+#install { min-height: var(--btn-h-xs); padding: 0 var(--btn-px-sm); }
+.iconbtn, .skill-facet, .think-stop { min-height: var(--btn-h-md); }
+button.fo-person { min-height: var(--btn-h-sm); }
+.switch { height: var(--btn-h-xs); }
+#fo-drawer > * { flex-shrink: 0; } /* drawer scrolls; its sections never squash */
+/* Touch: invisible >= 44px hit, visual box unchanged. Stacked lists get a
+   touch-only pitch of >= 44px so neighbouring hit areas do not overlap,
+   except the BOARDS individuals list (36px pitch, 8px shared hit). The
+   main-view roster rows are static (not controls) and keep their pitch. */
+@media (max-width: 640px), (pointer: coarse) {
+  :where(.btn, #canvas-k .row button, .icon-plus, .icon-minus, .inv-btn:not(.qb-slot, .qb-gear),
+    .drawer-x, .menu button, .mention-box button, .chan-options, .chan-voice, .robot-call, .chan,
+    .vis label, .mini, .prov-row .cfg, .provider-config,
+    .pill button, .agent-pic-sheet, .skill-life, .inv-expand-link, .help button, summary,
+    #install, .iconbtn, .skill-facet, .think-stop, button.fo-person) { position: relative; }
+  :where(.btn, #canvas-k .row button, .icon-plus, .icon-minus, .inv-btn:not(.qb-slot, .qb-gear),
+    .drawer-x, .menu button, .mention-box button, .chan-options, .chan-voice, .robot-call, .chan,
+    .vis label, .mini, .prov-row .cfg, .provider-config,
+    .pill button, .agent-pic-sheet, .skill-life, .inv-expand-link, .help button, summary,
+    #install, .iconbtn, .skill-facet, .think-stop, button.fo-person, .tile-mute)::before,
+  .switch::after {
+    content: ""; position: absolute; left: 0; right: 0;
+    top: min(0px, calc(50% - var(--btn-hit-touch) / 2));
+    bottom: min(0px, calc(50% - var(--btn-hit-touch) / 2));
+    background: transparent; pointer-events: auto;
+  }
+  .switch::after { cursor: pointer; }
+  :where(.drawer-x, .icon-plus, .icon-minus, .chan-options, .chan-voice, .prov-row .cfg)::before {
+    left: min(0px, calc(50% - var(--btn-hit-touch) / 2));
+    right: min(0px, calc(50% - var(--btn-hit-touch) / 2));
+  }
+  #kit-menu { gap: 12px; }
+  .menu button + button, .mention-box button + button { margin-top: 16px; }
+  .mention-box { padding-block: 8px; }
+  .chan-row + .chan-row { margin-top: 16px; }
+  #fo-individuals, #fo-individual-list { gap: 8px; }
+  .pool-row + .pool-row { margin-top: 16px; }
+  .actions, .fav-row, .pills, .vis, .quick-tabs { row-gap: 16px; }
+  .skill-facet-row { row-gap: 12px; }
+  .agent-pic-sheets { row-gap: 20px; margin: 24px 0 12px; }
+  .avatar-sheets { row-gap: 20px; }
+  #canvas-tools { row-gap: 12px; }
+  #nav-new-channel { margin-bottom: 8px; }
+  #fo-drawer { padding-bottom: 64px; } /* last row clears the fixed #quick-bar */
+  .inv-header { gap: 20px; }
+  .fav-item { padding-block: 8px; }
+}
+/* r4 (Ops F2/F7): the drawer stats flow as wrapped inline items, so the
+   BOARDS drawer fits at 1440x900 with no scroll; at <= 480px the robot
+   editor actions show the verb only (the noun stays as visually hidden
+   text, and the full name is in aria-label). */
+#stats > span { white-space: nowrap; }
+#stats > span:not(:last-child)::after { content: " ·"; }
+@media (max-width: 480px) {
+  .act-noun { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+/* r5 (Ops F2 fallback): only while the drawer content overflows (more
+   channels than the demo fixture), a sticky bottom fade plus 24px of end
+   room make the cut edge read as "scroll for more". syncDrawerOverflow()
+   toggles the class; a drawer that fits shows no cue. bottom: -10px
+   reaches past the 10px nav padding to the inner border. */
+#fo-drawer.is-overflowing::after { content: ""; flex: 0 0 24px; margin-top: -12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }
 </style>
 </head>
 <body>
@@ -1611,9 +1852,6 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
   <div id="hive-banner" role="status">Window stays open here. Close this window. The hive is still standing.</div>
   <section class="gate" id="gate" aria-live="polite"></section>
   <div class="shell hive" id="hive">
-    <!-- UI-M8 thin edge tab: opens the overlay boards drawer while it is
-         closed (hidden once #hive.nav-open). Same toggle as BOARDS. -->
-    <button id="fo-expand" type="button" aria-expanded="false" aria-controls="fo-drawer" aria-label="Open bulletin boards drawer" title="Open bulletin boards">Boards</button>
     <nav id="fo-drawer" aria-label="Workspace navigation">
       <div id="quick-nav" aria-label="Primary">
         <div class="lbl">Journey</div>
@@ -1663,26 +1901,33 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       </div>
       <!-- UI-M11: the dispatch log owns NO in-column scrollbar chrome.
            The native fat bar stays hidden on #stream via CSS; scroll lives
-           on the stereo-style VOLUME dial below, in the empty chrome above
-           Send Dispatch. Markers: fo-dial / UI-M11. -->
+           on the stereo-style VOLUME dial in the composer, directly above
+           the Send switch (UI-M12c). Markers: fo-dial / UI-M11. -->
       <div id="fo-log-wrap">
         <div id="stream"></div>
       </div>
       <p id="send-error" class="warn send-error" role="status"></p>
-      <div id="fo-dial-row">
-        <div id="fo-dial" role="slider" tabindex="0" aria-label="Dispatch log scroll dial" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-orientation="vertical" title="Scroll dispatch log: wheel, or drag clockwise to go down">
-          <span id="fo-dial-caption" aria-hidden="true">Volume</span>
-          <div id="fo-dial-knob" aria-hidden="true"><span id="fo-dial-pointer"></span></div>
-          <span id="fo-dial-sub" aria-hidden="true">Scroll</span>
-        </div>
-      </div>
       <form class="composer" id="form">
         <div class="mention-box" id="mention-box" hidden></div>
         <div class="composer-box">
           <div id="composer-pills"></div>
           <textarea id="msg" rows="3" maxlength="2000" placeholder="TYPE NEW MESSAGE HERE — @ a human or robot"></textarea>
         </div>
-        <button id="send" type="submit">Send Dispatch</button>
+        <!-- UI-M12c: one right-hand column, the UI-M11 VOLUME dial directly
+             above the spring-return Send switch (a real submit button). -->
+        <div id="fo-send-col">
+          <div id="fo-dial-row">
+            <div id="fo-dial" role="slider" tabindex="0" aria-label="Dispatch log scroll dial" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-orientation="vertical" title="Scroll dispatch log: wheel, or drag clockwise to go down">
+              <span id="fo-dial-caption" aria-hidden="true">Volume</span>
+              <div id="fo-dial-knob" aria-hidden="true"><span id="fo-dial-pointer"></span></div>
+              <span id="fo-dial-sub" aria-hidden="true">Scroll</span>
+            </div>
+          </div>
+          <button id="send" class="fo-switch" type="submit" title="Send dispatch (Enter)">
+            <span class="fo-switch-cap">Send</span>
+            <span class="fo-switch-plate" aria-hidden="true"><span class="fo-switch-boss"></span><span class="fo-switch-lever"></span></span>
+          </button>
+        </div>
       </form>
     </main>
     <!-- UI-M5 right rail: active personnel + status feed, painted only from
@@ -1989,15 +2234,25 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
           <button class="inv-btn" id="skill-forge-open" type="button">Create a skill</button>
           <button class="inv-btn" id="skill-enlarge" type="button" title="Open a spacious skill sheet">Enlarge skills</button>
         </div>
+        <div id="fav-strip">
+          <div class="lbl">Favorite loadouts · saved on this relay</div>
+          <p class="help" id="fav-note">Name the current doll to reuse it later. Saved per robot under robots/&lt;slug&gt;/loadouts/. Load swaps the whole doll at once; unload only clears the highlight. Names use letters, digits, spaces, - or _ (max 47), up to 32 per robot.</p>
+          <div class="pill-row fav-row">
+            <input id="fav-name" type="text" maxlength="48" placeholder="Favorite name">
+            <button class="inv-btn" id="fav-save" type="button">Save favorite</button>
+            <button class="inv-btn" id="fav-unload" type="button">Unload</button>
+          </div>
+          <div id="fav-list" class="fav-list" aria-label="Favorite loadouts"></div>
+        </div>
       </div>
       <label class="passbox"><input id="agent-pass" type="checkbox" checked>
         Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
       <p class="warn" id="agent-err"></p>
       <div class="actions">
-        <button class="btn" id="agent-save" type="button">Create robot</button>
+        <button class="btn" id="agent-save" type="button" aria-label="Create robot">Create<span class="act-noun"> robot</span></button>
         <button class="btn ghost" id="agent-close" type="button">Close</button>
-        <button class="btn ghost" id="agent-clone" type="button" disabled>Clone Robot</button>
-        <button class="btn danger" id="agent-delete" type="button" disabled>Delete Robot</button>
+        <button class="btn ghost" id="agent-clone" type="button" aria-label="Clone Robot" disabled>Clone<span class="act-noun"> Robot</span></button>
+        <button class="btn danger" id="agent-delete" type="button" aria-label="Delete Robot" disabled>Delete<span class="act-noun"> Robot</span></button>
       </div>
     </div>
   </div>
@@ -2449,12 +2704,25 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     let skillPending = null; /* {id, fromSlot, x, y} press that may become a drag */
     let skillSuppressClick = false;
     const SKILL_DRAG_PX = 6;
+    /* PE-4 favorites: relay-saved named doll snapshots per robot
+       (robots/<slug>/loadouts/); activeFavorite is the drawer highlight
+       only — unload clears it, never the doll. */
+    let favList = [];
+    let activeFavorite = "";
+    let favLoadError = false;
     let ackClock = {};
     let manageTopics = [];
     let draftPicture = "";
     let draftProviders = [];
 
     function $(id) { return document.getElementById(id); }
+    // r4 (Ops F7): robot-editor actions keep the full name in aria-label and
+    // in the .act-noun text, which is visually hidden at <= 480px.
+    function setActionLabel(el, verb, noun) {
+      el.setAttribute("aria-label", verb + " " + noun);
+      const hid = document.createElement("span"); hid.className = "act-noun"; hid.textContent = " " + noun;
+      el.replaceChildren(verb, hid);
+    }
 
     async function api(path, body) {
       const opt = body ? {
@@ -2509,10 +2777,18 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       $("settings-btn").hidden = false;
       $("call-btn").hidden = !ready;
       if ($("call-info")) $("call-info").hidden = !ready;
-      if (session.vibe && session.vibe.name)
+      // The header names the hive only while identity is present. After a
+      // restart that loses login, the vibe survives on disk but npub is
+      // empty, so fall back to the neutral default instead of implying
+      // the hive is still yours.
+      if (session.logged_in && session.vibe && session.vibe.name)
         $("vibe-sub").textContent = session.vibe.name;
-      if (session.vibe && session.vibe.visibility)
+      else
+        $("vibe-sub").textContent = "local hive mind";
+      if (session.logged_in && session.vibe && session.vibe.visibility)
         $("vibe-vis").textContent = session.vibe.visibility;
+      else
+        $("vibe-vis").textContent = "";
       if (!ready) {
         const html = gateHtml();
         if (html === lastGateHtml)
@@ -2542,7 +2818,8 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         return card("hush",
           "<img class=\"feather\" src=\"/icon-192.png\" alt=\"hush\">" +
           "<p><strong>Major reporting for duty.</strong></p>" +
-          "<p>Detecting identity and vibe…</p>" +
+          "<p>Click Begin to continue.</p>" +
+          restartNote() +
           errLine() +
           actions([{ id: "begin", label: "Begin" }]) +
           "<div class=\"help\">Disciplined collaboration with humans and agents.</div>");
@@ -2550,9 +2827,9 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       if (page === "help") {
         return card("What’s an identity key?",
           stepBar(1) +
-          "<p>Hush uses a Nostr identity key instead of a password. It is created on this machine and represents you.</p>" +
+          "<p>Hush signs you in with an identity key instead of a password. The key is created on this computer and stands for you.</p>" +
           "<p>Your public key (<code>npub</code>) is safe to share. Your private key (<code>nsec</code>) is the account. Anyone with it can act as you. There is no forgot-password.</p>" +
-          "<p>Create a new key if you are new. Import an existing <code>nsec1…</code> if you already have a Nostr identity.</p>" +
+          "<p>Create a new key if this is your first time. If you already have a private key (it starts with nsec1), choose Use an existing key.</p>" +
           actions([{ id: "back-help", ghost: true, label: "Back" }]));
       }
       if (page === "import") {
@@ -2570,15 +2847,28 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       }
       if (page === "backup") {
         const shown = keyRevealed ? esc(pendingNsec) : "•".repeat(Math.max(16, pendingNsec.length || 63));
+        const passOff = session.pass_available === false;
+        const passNote = passOff
+          ? "<p class=\"warn\">Hush can't save this key on this computer. Copy it now and keep it somewhere safe. Setup continues without saving.</p>"
+          : "";
+        const passLabel = passOff
+          ? "Save to password manager"
+          : "Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/identity/nsec</code>";
+        const neverShare = "Never share your private key. Anyone with it can impersonate you.";
+        const passAfter = passOff
+          ? "<p class=\"warn\">" + neverShare + "</p>"
+          : "<p class=\"warn\">" + neverShare + " Uncheck the box only if you do not want <code>pass</code> to store it.</p>";
         return "<dialog class=\"secret\" id=\"secret-modal\" open>" +
           card("Your unique identity key has been created",
           stepBar(2) +
           "<p>This key is your account. Copy it now. Hush cannot recover it if you lose it.</p>" +
           "<div class=\"keybox" + (keyRevealed ? " revealed" : "") + "\" id=\"nsec-box\">" + shown + "</div>" +
           "<label class=\"passbox\"><input id=\"save-pass\" type=\"checkbox\"" +
-          (savePass ? " checked" : "") +
-          "> Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/identity/nsec</code></label>" +
-          "<p class=\"warn\">Never share your private key. Anyone with it can impersonate you. Uncheck the box only if you do not want <code>pass</code> to store it.</p>" +
+          ((!passOff && savePass) ? " checked" : "") +
+          (passOff ? " disabled" : "") +
+          "> " + passLabel + "</label>" +
+          passNote +
+          passAfter +
           errLine() +
           actions([
             { id: "reveal-key", ghost: true, label: keyRevealed ? "Hide" : "Reveal" },
@@ -2614,13 +2904,20 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       }
       return card("Your people, your agents, your projects",
         stepBar(1) +
-        "<p>Hush is a local hive mind. First we need a Nostr identity — a key that belongs to you, not to us.</p>" +
+        "<p>Hush is a local hive mind. First we need an identity key — it belongs to you, not to us.</p>" +
+        restartNote() +
         errLine() +
         actions([
           { id: "create-id", label: "Create a new identity key" },
           { id: "use-id", ghost: true, label: "Use an existing key" }
         ]) +
         "<div class=\"help\"><button type=\"button\" id=\"show-help\">What’s an identity key?</button></div>");
+    }
+
+    function restartNote() {
+      if (!session.restart_lost_login) return "";
+      return "<p class=\"warn\">The hive is still on this machine, but the login did not survive the restart. " +
+        "Re-import your identity key (starts with nsec1) to continue.</p>";
     }
 
     function card(title, inner) {
@@ -3407,33 +3704,35 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     });
 
     /* UI-M8 overlay drawer: same #nav-toggle hook + .nav-open toggle as the
-       phone boards drawer, now on every width. #fo-expand is the thin edge
-       tab shown only while closed; both stay stamps, no burger return.
+       phone boards drawer, now on every width. The header BOARDS stamp is
+       the only drawer opener (UI-M12a removed the left-edge tab).
        Escape closes the drawer via the closeNavigation() tail below, after
        the UI-M4 single-dismiss stack (one press = one layer). */
-    function syncFoExpand(open) {
-      const edge = $("fo-expand");
-      if (edge) edge.setAttribute("aria-expanded", String(open));
-    }
     function closeNavigation() {
       $("hive").classList.remove("nav-open");
       $("nav-toggle").setAttribute("aria-expanded", "false");
-      syncFoExpand(false);
     }
     $("nav-toggle").addEventListener("click", () => {
       const open = $("hive").classList.toggle("nav-open");
       $("nav-toggle").setAttribute("aria-expanded", String(open));
-      syncFoExpand(open);
     });
-    $("fo-expand").addEventListener("click", () => {
-      $("hive").classList.add("nav-open");
-      $("nav-toggle").setAttribute("aria-expanded", "true");
-      syncFoExpand(true);
-    });
+    /* r5 (Ops F2 fallback): mark the drawer while its content overflows so
+       the CSS bottom fade shows only then. The cue's own 24px is left out
+       of the test so the class does not hold itself on. */
+    function syncDrawerOverflow() {
+      const d = $("fo-drawer");
+      const cue = d.classList.contains("is-overflowing") ? parseFloat(getComputedStyle(d, "::after").height) || 0 : 0;
+      d.classList.toggle("is-overflowing", d.scrollHeight - cue > d.clientHeight + 1);
+    }
+    if (window.ResizeObserver) {
+      const drawerRO = new ResizeObserver(syncDrawerOverflow);
+      drawerRO.observe($("fo-drawer"));
+      [...$("fo-drawer").children].forEach((c) => drawerRO.observe(c));
+    }
     /* UI-M11 volume-dial scroll control: supersedes the UI-M10
        scrollbar-in-message-column. The native bar on #stream stays hidden
        (CSS) and the log owns no in-column chrome; this stereo-style VOLUME
-       dial in the empty chrome above Send Dispatch owns the position.
+       dial directly above the Send switch (UI-M12c) owns the position.
        Wheel over the dial scrolls the log, click-drag rotates clockwise to
        scroll down (counter-clockwise to scroll up), and the pointer follows
        every scroll, resize, and content paint. No new layers, so the
@@ -3555,6 +3854,9 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       draftFiles = [];
       draftFileSel = -1;
       editSlug = "";
+      favList = [];
+      activeFavorite = "";
+      paintFavorites();
       payneOrder = [];
       editingPayne = false;
       if ($("agent-name")) $("agent-name").value = "";
@@ -3565,7 +3867,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       paintAgentProviderChecks();
       if ($("agent-title")) $("agent-title").textContent = "Raise a robot";
       if ($("agent-help")) $("agent-help").textContent = "Give your robot a purpose, choose its provider order, and assign useful skills.";
-      if ($("agent-save")) $("agent-save").textContent = "Create robot";
+      if ($("agent-save")) setActionLabel($("agent-save"), "Create", "robot");
       if ($("agent-delete")) $("agent-delete").disabled = true;
       if ($("agent-clone")) $("agent-clone").disabled = true;
       skillLocked = false;
@@ -4019,7 +4321,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
           ? bot.providers.slice() : ["goose"];
         $("agent-title").textContent = "Edit Major";
         $("agent-help").textContent = "Major is the platform robot. Name and standing orders stay.";
-        $("agent-save").textContent = "Save Robot";
+        setActionLabel($("agent-save"), "Save", "Robot");
         $("agent-delete").disabled = true;
         $("agent-identity").hidden = false;
         $("agent-pass").closest("label").hidden = true;
@@ -4049,7 +4351,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         draftPrompt = bot.prompt || "";
         $("agent-title").textContent = "Edit locked robot";
         $("agent-help").textContent = "Locked template. Clone it to edit name, prompt, and skills.";
-        $("agent-save").textContent = "Save Robot";
+        setActionLabel($("agent-save"), "Save", "Robot");
         $("agent-delete").disabled = true;
         if ($("agent-name")) {
           $("agent-name").value = draftName;
@@ -4069,7 +4371,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         draftName = bot.name || "";
         draftPrompt = bot.prompt || "";
         $("agent-title").textContent = "Edit robot";
-        $("agent-save").textContent = "Save Robot";
+        setActionLabel($("agent-save"), "Save", "Robot");
         $("agent-delete").disabled = false;
         if ($("agent-name")) $("agent-name").value = draftName;
         if ($("agent-prompt")) $("agent-prompt").value = draftPrompt;
@@ -4107,10 +4409,14 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       equippedSkills = (bot && bot.skills) ? bot.skills.slice() : [];
       skillCycleIdx = 0;
       cancelSkillHold(false);
+      activeFavorite = "";
+      favList = [];
+      paintFavorites();
       if ($("agent-clone"))
         $("agent-clone").disabled = !(bot && bot.slug && bot.slug !== PAYNE_SLUG);
       paintVoiceRow(bot && bot.voice);
       loadSkillCatalog(bot && bot.slug);
+      refreshFavorites();
       {
         const parsed = parsePicId(draftPicture);
         if (parsed && parsed.sheet !== "atlas") picSheet = parsed.sheet;
@@ -4579,6 +4885,61 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       }
     });
 
+    /* UI-M12c spring-return Send switch: one send flicks the lever right
+       with a sharp click, then a spring returns it left with a softer
+       click, both synthesized with Web Audio (no audio files). Hush has no
+       app sound or mute setting, so the clicks play wherever Web Audio
+       exists; prefers-reduced-motion skips only the swing. Called from the
+       #form submit handler after its guards, so click and Enter share it
+       and a refused or duplicate submit never flicks. */
+    const FO_SWITCH_FLICK_MS = 100;
+    const foSwitchCalm = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let foSwitchAudio = null, foSwitchNoise = null, foSwitchTimer = 0;
+    function foSwitchClick(at, hz, level, decay) {
+      const ctx = foSwitchAudio;
+      const src = ctx.createBufferSource();
+      const band = ctx.createBiquadFilter();
+      const amp = ctx.createGain();
+      src.buffer = foSwitchNoise;
+      band.type = "bandpass";
+      band.frequency.value = hz;
+      band.Q.value = 1.2;
+      amp.gain.setValueAtTime(level, at);
+      amp.gain.exponentialRampToValueAtTime(0.0001, at + decay);
+      src.connect(band);
+      band.connect(amp);
+      amp.connect(ctx.destination);
+      src.start(at);
+      src.stop(at + decay + 0.01);
+    }
+    function foSwitchSound() {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      try {
+        if (!foSwitchAudio) {
+          foSwitchAudio = new Ctx();
+          const len = Math.ceil(foSwitchAudio.sampleRate * 0.05);
+          foSwitchNoise = foSwitchAudio.createBuffer(1, len, foSwitchAudio.sampleRate);
+          const data = foSwitchNoise.getChannelData(0);
+          for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+        }
+        if (foSwitchAudio.state === "suspended") foSwitchAudio.resume().catch(() => {});
+        const now = foSwitchAudio.currentTime;
+        foSwitchClick(now, 3400, 0.5, 0.03);
+        foSwitchClick(now + FO_SWITCH_FLICK_MS / 1000, 1700, 0.18, 0.045);
+      } catch (err) {
+        /* Sound is garnish: sending never depends on it. */
+      }
+    }
+    function foSwitchFlick() {
+      foSwitchSound();
+      if (foSwitchCalm.matches) return;
+      const send = $("send");
+      clearTimeout(foSwitchTimer);
+      send.classList.add("fo-flick");
+      foSwitchTimer = setTimeout(() => send.classList.remove("fo-flick"), FO_SWITCH_FLICK_MS);
+    }
+
     $("form").addEventListener("submit", async (e) => {
       e.preventDefault();
       if (mentionOpen) return;
@@ -4589,6 +4950,11 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       sendingMessage = true;
       const draft = $("msg").value;
       $("send").disabled = true;
+      try {
+        foSwitchFlick();
+      } catch (err) {
+        /* The switch is garnish: a throw never locks or blocks the send. */
+      }
       $("send-error").textContent = "";
       const body = { content: text, kind: 1, channel: channel };
       assembled.mentions.forEach((np, i) => {
@@ -6332,12 +6698,17 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       const roots = mine.filter((e) => !e.reply_to);
       $("count").textContent = roots.length + (roots.length === 1 ? " note" : " notes");
       const projN = (session.projects || []).length;
-      $("stats").innerHTML =
-        (status.ok ? "relay live" : "relay down") + "<br>" +
-        status.events + " stored<br>" +
-        projN + " project" + (projN === 1 ? "" : "s") + "<br>" +
-        status.clients + " sockets<br>" +
-        (((status.version || "?").charAt(0) === "v" ? "" : "v") + (status.version || "?")) + " " + (status.build || "?");
+      // r4 (Ops F2): one inline item per stat, wrapped, so the drawer fits.
+      const statItems = [
+        status.ok ? "relay live" : "relay down",
+        status.events + " stored",
+        projN + " project" + (projN === 1 ? "" : "s"),
+        status.clients + " sockets",
+        (((status.version || "?").charAt(0) === "v" ? "" : "v") + (status.version || "?")) + " " + (status.build || "?")];
+      $("stats").replaceChildren(...statItems.flatMap((t, i) => {
+        const item = document.createElement("span"); item.textContent = t;
+        return i ? [" ", item] : [item];
+      }));
       document.title = "Hush " + (status.version || "0.0.1") +
         " (" + (status.build || "unknown") + ")";
       paintRelayDrawer(status);
@@ -7066,6 +7437,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       const reason = loadoutRefuseReason(equippedSkills, skill);
       if (reason) { skillNotice(reason); return; }
       equippedSkills.push(skill.id);
+      clearActiveFavorite();
       skillNotice("Skill assigned. Save the robot to apply the change.");
       paintSkillBoard(editSlug);
     }
@@ -7076,6 +7448,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         return;
       }
       equippedSkills.splice(slot, 1);
+      clearActiveFavorite();
       skillNotice("Skill removed. Save the robot to apply the change.");
       paintSkillBoard(editSlug);
     }
@@ -7138,6 +7511,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
           return;
         }
         equippedSkills.push(skill.id);
+        clearActiveFavorite();
         settleSkillHold("Worn. Save the robot to keep the loadout.");
       };
       if (picEl) { place(); return; }
@@ -7253,6 +7627,175 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       chip.addEventListener("pointerdown", (ev) => { ev.stopPropagation(); });
       wrap.appendChild(chip);
       return wrap;
+    }
+
+    /* PE-4 favorites (Journey D): Save refuses an empty name or a 0-skill
+       doll; Load replaces the doll atomically (never through empty);
+       Unload clears the active highlight only; Delete removes the list
+       entry only. The doll always keeps min-1 (PE-3). */
+    const FAV_NAME_MAX = 47; /* max favorite name chars; matches the relay HUSH_FAVORITE_NAME_MAX - 1 */
+    const FAV_COUNT_MAX = 32; /* max favorites per robot; matches the relay HUSH_FAVORITE_COUNT_MAX */
+    const FAV_NAME_RULE = "Use letters, digits, spaces, - or _ (max 47).";
+    function favKnown(id) {
+      return skillCatalog.some((s) => s.id === id);
+    }
+    /* Mirrors the relay slug rule (lowercase alnum, separators to one
+       dash) so the drawer can warn about name clashes before POSTing. */
+    function favSlug(name) {
+      let out = "";
+      let dash = false;
+      const s = String(name || "").toLowerCase();
+      for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if ((c >= "a" && c <= "z") || (c >= "0" && c <= "9")) {
+          out += c;
+          dash = false;
+        } else if ((c === " " || c === "-" || c === "_") && out && !dash) {
+          out += "-";
+          dash = true;
+        }
+      }
+      return out.replace(/-+$/, "");
+    }
+    /* Identical to the relay name rule (hush_favorite_is_name):
+       allowlist only, so a refused name never POSTs and never logs a
+       console 400. The relay stays the authority; this saves a trip. */
+    function favNameError(raw) {
+      const name = String(raw || "").trim();
+      if (!name) return "Name the favorite before saving. " + FAV_NAME_RULE;
+      if (name.length > FAV_NAME_MAX)
+        return "That name is " + name.length + " characters. " + FAV_NAME_RULE;
+      if (!/^[A-Za-z0-9 _-]+$/.test(name)) return FAV_NAME_RULE;
+      if (favSlug(name) === "")
+        return "That name has no letters or numbers to save under. " + FAV_NAME_RULE;
+      return "";
+    }
+    function clearActiveFavorite() {
+      if (!activeFavorite) return;
+      activeFavorite = "";
+      paintFavorites();
+    }
+    function paintFavorites() {
+      const box = $("fav-list");
+      if (!box) return;
+      box.innerHTML = "";
+      if (!editSlug) {
+        box.innerHTML = "<p class='help'>Raise the robot before saving favorites.</p>";
+        return;
+      }
+      if (favLoadError) {
+        box.innerHTML = "<p class='help'>Could not read favorites on this relay.</p>";
+        return;
+      }
+      if (!favList.length) {
+        box.innerHTML = "<p class='help'>No favorites yet. Name this doll above to save one.</p>";
+        return;
+      }
+      favList.forEach((fav) => {
+        const row = document.createElement("div");
+        row.className = "fav-item" + (activeFavorite === fav.name ? " active" : "");
+        const nm = document.createElement("span");
+        nm.className = "nm";
+        nm.textContent = fav.name;
+        nm.title = fav.name;
+        nm.tabIndex = 0;
+        row.appendChild(nm);
+        const ct = document.createElement("span");
+        ct.className = "ct";
+        ct.textContent = (fav.skills || []).length + " skills";
+        row.appendChild(ct);
+        if (activeFavorite === fav.name) {
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = "Active";
+          row.appendChild(tag);
+        }
+        const load = document.createElement("button");
+        load.type = "button";
+        load.className = "inv-btn";
+        load.textContent = "Load";
+        load.setAttribute("aria-label", "Load favorite " + fav.name);
+        load.addEventListener("click", () => applyFavoriteLoad(fav));
+        row.appendChild(load);
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "inv-btn";
+        del.textContent = "Delete";
+        del.setAttribute("aria-label", "Delete favorite " + fav.name);
+        del.addEventListener("click", () => deleteFavorite(fav.name));
+        row.appendChild(del);
+        box.appendChild(row);
+      });
+    }
+    async function refreshFavorites() {
+      favList = [];
+      favLoadError = false;
+      if (!editSlug) { paintFavorites(); return; }
+      try {
+        const data = await api("/api/loadout", { action: "list", robot: editSlug });
+        favList = (data && data.favorites) ? data.favorites : [];
+      } catch (e) {
+        favList = [];
+        favLoadError = true;
+      }
+      if (activeFavorite && !favList.some((f) => f.name === activeFavorite))
+        activeFavorite = "";
+      paintFavorites();
+    }
+    async function saveFavorite() {
+      if (!editSlug) { skillNotice("Raise the robot before saving favorites."); return; }
+      const raw = ($("fav-name") && $("fav-name").value || "");
+      const name = raw.trim();
+      const why = favNameError(raw);
+      if (why) { skillNotice(why); return; }
+      if (!equippedSkills.length) { skillNotice("Keep at least one skill equipped."); return; }
+      if (equippedSkills.length > SKILL_SLOTS) { skillNotice("Favorites hold 1–8 skills."); return; }
+      const clash = favList.some((f) => f.name !== name && favSlug(f.name) === favSlug(name));
+      if (clash) { skillNotice("That name clashes with a saved favorite. Rename it, or delete the old one first."); return; }
+      if (favList.length >= FAV_COUNT_MAX && !favList.some((f) => f.name === name)) {
+        skillNotice("This robot already has 32 favorites. Delete one to save another.");
+        return;
+      }
+      const body = { action: "save", robot: editSlug, name: name };
+      equippedSkills.forEach((id, i) => { body["skill_" + i] = id; });
+      try {
+        await api("/api/loadout", body);
+        activeFavorite = name;
+        if ($("fav-name")) $("fav-name").value = "";
+        skillNotice("Favorite saved on this relay. Save the robot to keep the loadout.");
+        await refreshFavorites();
+      } catch (e) {
+        skillNotice("Could not save that favorite.");
+      }
+    }
+    function applyFavoriteLoad(fav) {
+      const ids = (fav && fav.skills) ? fav.skills.slice() : [];
+      const valid = ids.filter((id) => favKnown(id));
+      if (!valid.length) { skillNotice("That favorite has no skills on this relay."); return; }
+      equippedSkills = valid.slice();
+      activeFavorite = fav.name;
+      paintSkillBoard(editSlug);
+      paintFavorites();
+      if (valid.length < ids.length)
+        skillNotice("Favorite loaded with missing skills skipped. Save the robot to keep the loadout.");
+      else
+        skillNotice("Favorite loaded. Save the robot to keep the loadout.");
+    }
+    function unloadFavorite() {
+      activeFavorite = "";
+      paintFavorites();
+      skillNotice("Favorite unloaded. The doll keeps its skills.");
+    }
+    async function deleteFavorite(name) {
+      if (!editSlug || !name) return;
+      try {
+        await api("/api/loadout", { action: "delete", robot: editSlug, name: name });
+        if (activeFavorite === name) activeFavorite = "";
+        skillNotice("Favorite deleted. The doll keeps its skills.");
+        await refreshFavorites();
+      } catch (e) {
+        skillNotice("Could not delete that favorite.");
+      }
     }
 
     function toggleRobotInventory() {
@@ -7660,6 +8203,8 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       $("forge-drawer").classList.add("show");
     });
     if ($("skill-enlarge")) $("skill-enlarge").addEventListener("click", openSkillSheet);
+    if ($("fav-save")) $("fav-save").addEventListener("click", saveFavorite);
+    if ($("fav-unload")) $("fav-unload").addEventListener("click", unloadFavorite);
     if ($("skill-cycle-prev")) $("skill-cycle-prev").addEventListener("click", () => {
       skillCycleIdx--;
       paintSkillCycle(editSlug);
@@ -7693,6 +8238,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
         });
         if (data && data.id && equippedSkills.indexOf(data.id) < 0)
           equippedSkills.push(data.id);
+        clearActiveFavorite();
         closeForge();
         await loadSkillCatalog(editSlug);
       } catch (e) {

@@ -16,8 +16,12 @@ Quinn + Parker + Payne. Robot pictures may use the shipped cats sheet
 ## Core Principles (Quinn)
 - Cognitive Load Index ≤ 3/10. Gestalt Clarity ≥ 85/100.
 - Hick: ≤5 primary visible choices. Themes live in Settings, not header.
-- Fitts: min 44px tap on `#install` and `#rail-toggle`. Compact rail
-  pair buttons may be 32px tall. 10px padding.
+- Fitts (UI-M12d): compact visual size everywhere (xs 24 / sm 28 /
+  md 32px, the same at every width); ≥44px touch hit at phone width
+  (≤640px or a coarse pointer) via an invisible hit area; ≥24px hit on
+  desktop. `#install` is compact (xs) with that invisible touch hit.
+  `#rail-toggle`, `#nav-toggle`, `#stats` and the `#hive-leave` actions
+  stay visibly ≥44px. Compact rail pair buttons may be 32px tall.
 - Recognition > recall. One primary CTA per onboard step.
 - Error prevention: confirm logout; nsec never in the DOM after ack;
   context files re-checked on the server.
@@ -36,9 +40,29 @@ raise humans + robots that share channels."
 - Feather logo: `<img src="/icon-192.png" alt="hush" class="feather">`.
   Not a new illustration. Not the 193 KiB source PNG inline.
 - Line: "Major reporting for duty."
-- Sub: "Detecting identity and vibe…"
+- Cue: "Click Begin to continue." Begin is always an enabled primary
+  button, never a disabled-looking one. There is no "Detecting identity
+  and vibe…" line: it asked users to wait for an auto-detection that
+  never comes.
+- Restart honesty: when the session reports `restart_lost_login` — set
+  at boot only when startup restore leaves a vibe without a login,
+  cleared by create/import, never set by logout — the splash and the
+  landing card show: "The hive is still on this machine, but the login
+  did not survive the restart. Re-import your identity key (starts with
+  nsec1) to continue." Begin then routes to the Create/Use-key
+  landing, which carries the same note. After a plain logout the
+  landing shows the normal login copy with no note.
+- Primary `.btn` (and `.iconbtn.danger`) under the field-office theme
+  use dark ink text (`#2a241e`) on the paper background, so BEGIN and
+  CREATE read at 11.3:1. Fresh loads boot the field-office theme; a
+  POST response applies the saved profile theme after that. Unifying
+  the two is deferred to the UI-M12b colour/material pass.
 - Poll `/api/session`. If `ready` → hive. Else **Begin** → wizard step 1.
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
+  The header shows the vibe name only while `logged_in` is true;
+  otherwise it falls back to the neutral "local hive mind" (and an
+  empty visibility badge), so a surviving vibe name never implies a
+  live login after a restart.
 
 ### 2. Onboarding wizard (no user or no vibe)
 Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
@@ -46,6 +70,20 @@ Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
 1. **Identity** — Create new (primary) or Import nsec. Help: “What’s an identity key?”
 2. **Backup** — Masked nsec, Reveal, Copy. Checkbox **checked**:
    `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/identity/nsec`
+   When `/api/session` reports `pass_available:false` (`pass` is not
+   installed, so no save could succeed), the checkbox renders unchecked
+   and disabled with the short neutral label "Save to password manager"
+   (never "Checked to save…"), the step shows exactly one reason, once:
+   "Hush can't save this key on this computer. Copy it now and keep it
+   somewhere safe. Setup continues without saving." and the warning line
+   keeps "Never share your private key. Anyone with it can impersonate
+   you." and drops only the "Uncheck the box only if you do not want
+   pass to store it." clause. No visible text on the no-pass backup step
+   uses the bare word "pass". A failed save at ack
+   time still records `pass_error` and still lets setup continue
+   (`backup_acked` stays true); the next gate screen repeats the
+   `pass_error` warning. No backup path blocks setup, and no backup path
+   stays silent about an unsaved key.
 3. **Vibe** — Name (default `local hive`), about, public / private radios.
    CTA: **Stand up the hive**.
 4. **Meet Payne** — After vibe exists (session `ready` but page stays
@@ -53,6 +91,33 @@ Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
    welcome quote. CTA: **Carry on.** Then hive.
 
 `tick()` must not force `page = "hive"` while `page === "payne"`.
+
+Delta 2026-09-28 (ID-1 r3 plain help copy + backup warning): the help
+card "What’s an identity key?" reads "Hush signs you in with an identity
+key instead of a password. The key is created on this computer and
+stands for you." and "Create a new key if this is your first time. If
+you already have a private key (it starts with nsec1), choose Use an
+existing key." It never says "Nostr identity" and never shows a bare
+`nsec1…`. The backup step shows "Never share your private key. Anyone
+with it can impersonate you." on both paths; with `pass` the sentence is
+followed by the unchanged "Uncheck the box…" clause, so the
+pass-installed copy is byte identical. Without `pass` the save checkbox
+is `disabled` as well as unchecked, so it cannot be ticked, and
+"I saved it" sends `save_pass:false` (the enabled with-pass checkbox is
+unchanged). `check_restart_ui.cjs` asserts the help copy, the warning on
+both paths and the checkbox `disabled` state on both paths.
+
+Delta 2026-09-28 (ID-1 r4 one no-pass reason): the no-pass backup step
+no longer gives its reason twice. The checkbox label "Saving to pass is
+unavailable because pass is not installed. Copy your identity key
+somewhere safe now." becomes "Save to password manager" (still unchecked
+and disabled), and the reason line "pass is not installed, so Hush
+cannot save the key here. …" becomes the single sentence group "Hush
+can't save this key on this computer. Copy it now and keep it somewhere
+safe. Setup continues without saving." The never-share line stays on
+both paths, and the with-pass copy is unchanged. `check_restart_ui.cjs`
+asserts the reason appears exactly once, nothing else on the screen
+restates it, and the visible no-pass text has no bare word "pass".
 
 ### 3. Resume
 `logged_in && backup_acked && has_vibe` → splash detects → hive.
@@ -120,7 +185,9 @@ The hive ships two labeled buttons on `#tool-rail`, always reachable
 - `#leave-close`: if `window.close()` leaves the document up (a tab the
   script did not open), show `#hive-banner`:
   "Window stays open here. Close this window. The hive is still standing."
-- Rail Close is ghost `iconbtn`. Rail Exit is danger `iconbtn`. Both ≥44px.
+- Rail Close is ghost `iconbtn`. Rail Exit is danger `iconbtn`. Both are
+  compact (md, 32px visual at every width) with a ≥44px invisible touch
+  hit at phone width and a ≥24px hit on desktop (UI-M12d).
   Titles: Close = "Close the window. Hive stays standing."
   Exit = "Quit the hive. Every process stops."
 - Drawer "Close" / `[x]` buttons on Settings / Profile / Raise / Thread /
@@ -200,8 +267,9 @@ and a pencil to edit it again.
   Wire ids: `goose`, `grok-build`, `codex`, `cline`, `copilot`, `ollama`, `custom`,
   `gemini-api`, `xai-api`, `openai-api`, `anthropic-api`,
   `deepseek-api`.
-  Selecting a radio reveals a 44px pencil (`#provider-cfg`) on that
-  row. Pencil opens `#provider-drawer` (see §11). Configure is
+  Selecting a radio reveals a pencil (`#provider-cfg`) on that
+  row, sized per the UI-M12d delta (§15: compact visual, ≥44px touch
+  hit at phone width). Pencil opens `#provider-drawer` (see §11). Configure is
   optional for Raise — the robot still stores only the provider id.
 - pass checkbox default-on:
   `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/agents/<slug>/nsec`
@@ -317,6 +385,53 @@ relay state until their loadout is edited. Doll/sheet stay
 draft-until-Save; the Character strip still reports relay-saved counts.
 PE-4 favorites save/load stay out of scope — no `loadouts/` writes,
 no favorite picker.
+Delta 2026-09-24 (PE-4 favorite loadouts — Journey D, relay-saved): the
+`#agent-drawer` gains a Favorites strip under the doll. Save snapshots
+the current doll (≥1 skill) under a typed name and refuses an empty
+name or a 0-skill doll; Load swaps the whole doll in one assignment
+(never through empty) and refuses a favorite with zero skills still on
+this relay, skipping missing ids with inline copy; Unload clears the
+active highlight only, never the doll; Delete removes the list entry
+only, never the doll. Persistence is relay-side: per-robot named JSON
+sets (`{"name":..,"skills":[..]}`, 1–8 ids each) under
+`$HOME/.hush/robots/<slug>/loadouts/`, served by `POST /api/loadout`
+(`save` / `list` / `load` / `delete`); unknown or `robot:<other>:` ids
+are refused at save. Favorites survive leave→return; the active
+highlight does not. PE-3 min-1 still holds everywhere (last-gem lift,
+empty-draft save, empty loadout write, empty favorite). Lifetime
+labels stay browser-only per the honesty polish; favorites are the
+only new relay-saved skill state, and the strip says so inline.
+Load and delete resolve any alias of the stored name; load reports
+the stored name while delete replies ok.
+Hardening (same PE-4 scope): robot slugs and favorite names are
+allowlist-validated at every entry — `../` and separators never leave
+`robots/<slug>/loadouts/`; load/delete/list create no directories;
+saves overwrite only the exact same display name (a slug clash with a
+different name is refused with inline copy); at most 32 favorites per
+robot (the 33rd save is refused, so the list never drops entries); a
+`skill_8` overflow, overlong name/robot/skill values, repeated skill
+ids, and non-allowlist names are refused instead of
+truncated or skipped.
+Hardening round 2 (same scope): unreadable loadouts trees report IO
+instead of an empty list (missing trees still list empty, creating
+nothing); saves are refused when the 32-cap aggregate could not fit
+the list envelope on either path, so no accepted favorite is ever
+unlistable (proven by full caps of maximum-length names and long ids
+listing completely); load and delete resolve any alias of the stored
+name, load reports the stored name, and delete replies ok; save/delete
+replies carry no echoed request text; refused saves
+create no directories.
+Ops visual hardening (same scope): the name input is full-width and
+legible; row names ellipsize with the full name on hover (title) and
+on keyboard focus (focus-visible expansion plus outline), and nothing
+overflows the drawer edge at desktop or phone widths. Refusals name
+the exact rule: names allow letters, digits, spaces, - or _ (max 47);
+skills 1–8; at most 32 favorites; no slug collisions. The drawer
+validates names against the identical allowlist before POSTing, so a
+refused save sends no request and logs no console error; the relay
+stays the authority and refuses anything else with 400.
+Preserved: M11 dial, M9 folder tabs + zero tool rail, M8 overlay, M7
+chrome-hard / field-office.
 Delta 2026-09-22 (WS6 loadout-doll pass): `#skill-cycle` lives in
 `#agent-drawer` only (no hive-nav cycle); the doll is 8 sockets around
 the portrait center (9 cells = `HUSH_SKILL_EQUIP_MAX` 8 + portrait);
@@ -359,7 +474,8 @@ detail returns to the hub.
 
 **Per-robot pick.** Left-nav Edit / Raise still chooses which id a
 robot uses. Selecting a provider radio shows `#provider-cfg` (pencil
-✎, ≥44px, title “Configure this provider.”) next to that label.
+✎, sized per the UI-M12d delta in §15, title “Configure this
+provider.”) next to that label.
 Click opens the same `#provider-drawer`. Configure is optional for
 Raise — the robot still stores only the provider id.
 
@@ -437,7 +553,7 @@ demo). No Raylib dependency on the main hush-relay.
 
 | Route | Role |
 |---|---|
-| `GET /api/session` | existing + `profile`, `theme`, `agents[]`, `members[]` |
+| `GET /api/session` | existing + `profile`, `theme`, `agents[]`, `members[]`, `pass_available` (false when `pass` is missing), `restart_lost_login` (true only when boot restore left a vibe without a login) |
 | `POST /api/identity` | `create` \| `import` \| `ack_backup` \| **`logout`** |
 | `POST /api/profile` | first/last/email/org/theme; optional avatar b64 |
 | `POST /api/agent` | create agent + context |
@@ -724,8 +840,9 @@ on screen. `localStorage.hush-rail` stores `{x,y,collapsed}` only.
 "drag handle" pattern + title="Drag to move". All rail-i info buttons
 use consistent 22px, high-contrast. Popovers have 1-line summaries
 first. "New Robot" and inventory openers are clearly labeled. Collapse
-state + position restored per-vibe where possible. 44px minimum on
-primary actions. Progressive disclosure for advanced (STUN host,
+state + position restored per-vibe where possible. Primary actions
+follow the UI-M12d delta (compact visual, ≥44px touch hit at phone
+width). Progressive disclosure for advanced (STUN host,
 policy details). Small labels/hints added for first-time users without
 increasing cognitive load.
 
@@ -768,7 +885,9 @@ Expanded rail, in order:
 There is no `#blank-btn`. There is no left-nav `.create` block.
 
 Pair buttons are normal size (32px tall, 8px radius), not 44px
-pills. `#install` and `#rail-toggle` stay ≥44px.
+pills. `#install` is compact (xs, 24px visual) with a ≥44px invisible
+touch hit at phone width and a ≥24px hit on desktop; `#rail-toggle`
+stays visibly ≥44px (UI-M12d).
 
 `#install-help` copy (popover only):
 “Install puts Hush on your app launcher as its own window. It does
@@ -923,9 +1042,10 @@ Delta 2026-09-23 (UI-M8 overlay-drawer + paperfeel pass): the left nav
 every width, not a permanent column — `.shell.hive` is center +
 `#roster-pane` only, and the drawer slides in/out via `#hive.nav-open`
 (`transform` + `visibility`, `prefers-reduced-motion` respected).
-Closed = full-width messaging + thin expand controls only (header
-**BOARDS** `#nav-toggle` stamp, now visible on desktop, plus the `#fo-expand`
-edge tab, hidden while open); open = overlay strip with the unchanged
+Closed = full-width messaging + thin expand control only (header
+**BOARDS** `#nav-toggle` stamp, now visible on desktop — the UI-M8
+`#fo-expand` edge tab, hidden while open, was removed in UI-M12a);
+open = overlay strip with the unchanged
 menu/boards/kit items, messaging keeps its full real-estate underneath.
 Selecting a board/individual closes it (`closeNavigation`); Escape closes
 it as the tail of the UI-M4 single-dismiss stack (journey layers first,
@@ -936,7 +1056,8 @@ and `#badge` all untouched. Paperfeel extends the M5 field-office theme
 only: denser two-layer grain, ribbon-ink type (`Special Elite` + ink
 `text-shadow` on notes/room/channels/composer), ruled dispatch slips and
 stream ledger lines, cut-paper inner edge + deeper offset shadows.
-Stacked on the M7 chrome-hard pass: drawer + edge tab are new here;
+Stacked on the M7 chrome-hard pass: drawer (+ edge tab, removed in
+UI-M12a) is new here;
 ruled slips/ledger lines and ink type extend M7 without touching its
 `fo-chrome-hard` / `fo-caret` surfaces.
 Delta 2026-09-23 (UI-M9 folder-tabs + no-tool-rail pass): the bottom bar
@@ -957,8 +1078,9 @@ which keeps the same action hooks (`#install`, `#profile-btn`,
 `#providers-btn`, `#raise-agent`, `#add-proj` + `#new-proj`,
 `#rail-min`, `#rail-max`, `#hive-close`, `#hive-exit`). Escape closes
 `#kit-menu` as one single-dismiss layer before the boards drawer.
-Preserved: M8 overlay drawer (`#fo-drawer` / `#fo-expand` /
-`#hive.nav-open` / `closeNavigation`), M7 `fo-chrome-hard` /
+Preserved: M8 overlay drawer (`#fo-drawer` /
+`#hive.nav-open` / `closeNavigation`; the `#fo-expand` edge tab was
+removed in UI-M12a), M7 `fo-chrome-hard` /
 `fo-caret`, BOARDS (`#nav-toggle`) + KIT (`#rail-toggle`) stamps,
 `i`/`c` + `navTyping`, live roster/status, `#badge`, no Discord DNA.
 Delta 2026-09-23 (UI-M10 dispatch-scrollbar pass): the dispatch log
@@ -994,6 +1116,164 @@ Gate: the launch script fails on any served `#fo-scrollbar` /
 `#fo-scroll-track` / `#fo-scroll-dot` / `#fo-scroll-up` /
 `#fo-scroll-down` / `syncFoScrollbar` marker and requires `#fo-dial` /
 `#fo-dial-knob` / `syncFoDial` / `UI-M11`.
+Delta 2026-09-25 (UI-M12a remove-edge-tab pass): the left-edge `#fo-expand`
+Boards tab is deleted — markup, CSS, JS handler, and aria sync are gone,
+so nothing overlaps the chat list at desktop or phone widths. The header
+**BOARDS** `#nav-toggle` stamp is the only drawer opener; its toggle,
+`aria-expanded`, focus handling, and the Escape single-dismiss tail
+(`closeNavigation`) are unchanged. Gate: the launch script fails on any
+served `id="fo-expand"` / `syncFoExpand` marker and requires
+`id="nav-toggle"`.
+Delta 2026-09-28 (UI-M12c spring-return Send switch + dial move):
+the composer's Send control is a small metal toggle switch, not the
+`SEND DISPATCH` slab. `#send` stays the form's real `<button
+type="submit">` (class `fo-switch`) with the accessible name "Send"
+(visible stamped caption `SEND`, `.fo-switch-cap`) and a dark
+escutcheon plate (`.fo-switch-plate`: two brass screws, pivot boss,
+nickel bat lever `.fo-switch-lever`; field-office flat tones, offset
+shadow, sharp 3px corners; other themes use their tokens). A send that
+passes the existing submit guards (mention list closed, non-empty
+draft, no send in flight) calls `foSwitchFlick`: the lever flicks
+RIGHT (100ms) with a sharp click, the message sends, and a spring
+returns it LEFT (150ms, slight overshoot) with a softer click. Both
+clicks are synthesized with Web Audio (band-passed noise bursts; no
+audio files). Hush has no app sound or mute setting, so the clicks
+play wherever Web Audio exists. Enter in `#msg` goes through the same
+submit handler, so it gets the same flick and clicks; a refused or
+duplicate submit neither sends nor flicks. `prefers-reduced-motion:
+reduce` skips the swing (sending and clicks unchanged). An empty draft
+(`#msg` placeholder shown) shows a dashed-border, faded switch; an
+in-flight send (`:disabled`) shows a faded switch with a not-allowed
+cursor.
+The UI-M11 VOLUME dial (`#fo-dial-row`) moved out of the chrome
+between `#send-error` and the composer (where it sat right-aligned on
+the log side of the composer border, 135px above Send and wider than
+it) into the composer: `#fo-send-col` is one right-hand column with
+the dial directly above the switch. `#fo-dial-row` and `#send` stretch
+to the column width, and the visible dial `#fo-dial` is set to the row's
+full width (`#fo-dial-row #fo-dial { width: 100%; }`, contents centred),
+so the dial and the switch share left and right edges at desktop and
+phone widths whichever child is wider (the draft box may shrink below
+its textarea's intrinsic width so the column fits 375px). The dial's
+look and behaviour are unchanged and it still scrolls `#stream`. Tab
+order changed with the move: the dial is now inside the form between
+the draft and the switch, so Tab goes `#msg` (draft) → `#fo-dial` →
+`#send` (before: dial → draft → Send). The thread reply `#thread-send`
+is unchanged. The flick call is wrapped in its own try/catch after
+`$("send").disabled = true;`, so a throw in the switch can neither lock
+nor block the send.
+Gate: the launch script requires the `fo-switch` submit button, the
+`Send` caption, the lever, `foSwitchFlick`, Web Audio clicks, and the
+order `id="form"` < `id="fo-send-col"` < `id="fo-dial-row"` < `<button
+id="send"`; it fails on any served `Send Dispatch</button>`. It also
+requires (r2) the `foSwitchFlick();` call statement inside the `#form`
+submit handler, after `if (mentionOpen) return;`, `if (sendingMessage)
+return;`, `sendingMessage = true;` and `$("send").disabled = true;`, on
+its own line inside a `try {`; the reduced-motion early return `if
+(foSwitchCalm.matches) return;` inside `foSwitchFlick` before the
+`.fo-flick` class is added; the `@media (prefers-reduced-motion:
+reduce)` rule that pins `.fo-switch-lever` (`transition: none`); and the
+full-width dial rule.
+
+Delta 2026-09-28 (UI-M12d compact menu buttons): one shared compact
+button scale for every control inside menus, drawers, overlays, panels,
+dialogs and popovers. Tokens live on `:root` only (themes never set
+them): xs `--btn-h-xs` 24px / `--btn-px-xs` 6px / `--btn-fs-xs`
+0.68rem; sm `--btn-h-sm` 28px / 8px / 0.74rem; md `--btn-h-md` 32px /
+12px / 0.8rem; `--btn-lh` 1.1, `--btn-hit-min` 24px, `--btn-hit-touch`
+44px. Visual size is the tier at every width, phones included.
+Tier map: md = `.btn` (+ ghost/danger; `#agent-drawer .actions .btn`
+uses md height with sm padding/font), `.iconbtn` (KIT menu, rail
+Close/Exit), `.skill-facet`, `.think-stop`, `.provider-config`
+(unchanged 32). sm = `#canvas-k .row button`, `.icon-plus`/`.icon-minus`
+(28 square, incl. `#skill-cycle-row`), `.inv-btn` (not the `#quick-bar`
+folder tabs), `.quick-tab` (30 → 28), `.fav-item .inv-btn`, `.drawer-x`
+(28 square), `.menu button`, `.mention-box button`, `.chan-options` (28
+square), `.chan`, `.vis label` (theme chips; the chip row now wraps),
+`.mini`, `.prov-row .cfg` (28 square), `button.fo-person`,
+`#payne-provider-pills .pill button` (28). xs = `.pill button` (raised
+from ~12px to 24×24), `.agent-pic-sheet`, `.skill-life` (20 → 24),
+`.inv-expand-link`, `.help button`, `summary`, `.tile-mute`, `#install`,
+`.chan-voice`, `.switch` (24). Card rows: `.prov-row` padding goes to
+4px/8px (row ~52px); `#agent-providers label` drops its 44px
+min-height and lays out as checkbox | name over status | Configure
+(two text lines, ~46px).
+Hit floors: every tier is ≥24px, so desktop meets `--btn-hit-min` with
+the visual box. At `@media (max-width: 640px), (pointer: coarse)` each
+in-scope control gets `position: relative` and a transparent
+`::before` (`::after` on `.switch`, whose `.slider:before` is the
+knob) centred on it with `top`/`bottom: min(0px, 50% - 22px)`, so the
+hit area is ≥44px tall while the painted box keeps its tier height
+(isolated squares also get ≥44px width). Stacked lists get touch-only
+spacing (gaps/margins/row-gaps on the KIT menu, menus, mention list,
+channel rows, pool rows, action rows, pills, chip rows, picture sheets,
+favourites and canvas tools) that gives most of them a ≥44px pitch, so
+their hit areas do not overlap. Exceptions, by design: the BOARDS
+drawer individuals list (`#fo-individual-list`) uses an 8px gap, a 36px
+pitch, so neighbouring 44px hits share an 8px band (the lower row wins
+it; each row keeps a 36px exclusive tap zone; accepted as non-blocking,
+r3); wrapped `.pills` rows pitch at 42px (26px pill + 16px row-gap), so
+adjacent pill hits share 2px (static CSS arithmetic). The main-view
+roster (`#fo-roster-list`) rows are static text, not controls, so the
+touch block leaves their base 4px gap (32px pitch) alone and the "you"
+row and panel top stay visible at 375×812. BOARDS drawer sections keep
+their size at every width (`flex-shrink: 0`; the drawer scrolls
+instead of squashing, so the inventory grid stays inside its frame),
+and at touch widths the drawer gets 64px bottom padding so its last row
+clears the fixed `#quick-bar`. The only touch-block paddings are on containers
+(`.mention-box`, `#fo-drawer`, `.fav-item`); no control's height or
+padding changes. Other known short spot (static CSS arithmetic, not
+measured): the `.tile-mute` hit is clipped by its tile's
+`overflow: hidden` to about 42px.
+`#quick-bar` itself is excluded (its clip-path would clip a
+pseudo-element).
+Pinned 44px exceptions kept visibly ≥44px: `#hive-leave .leave-actions
+.btn` (§ leave dialog), `#stats` (§19), `#rail-toggle` and
+`#nav-toggle` (header stamps); they still match the touch
+`position: relative` and transparent `::before` rules, but at ≥44px
+the pseudo-element equals their own box, so nothing changes. Also
+untouched: `#send`, `#fo-dial`,
+`#thread-send` (UI-M12c), spatial tiles (`.skill-gem`, `.inv-item`,
+`.agent-pic-cell`, `.avatar-cell`), form-row labels (`.radio-col
+label`, `#manage-talk`) and the hidden legacy `#robot-list`.
+Conflicts resolved: `#install` (was "≥44px" in Core Principles and §15
+but ~24px in code) and rail Close/Exit `iconbtn` (was "Both ≥44px" but
+32px in code) now follow the rule above: compact visual, invisible
+≥44px touch hit at phone width, ≥24px on desktop. The same rule
+supersedes the older "44px pencil" / "≥44px" `#provider-cfg` wording
+(§ providers, per-robot pick) and "44px minimum on primary actions"
+(§15) for controls inside menus and drawers.
+r4 (Ops F2/F7): the BOARDS drawer stats (`#stats`) render as inline
+items separated by `·` that wrap (three lines at 1440 with the demo
+fixture, instead of a five-line stack), so with that fixture the drawer
+needs no scroll at 1440×900; with more channels it still scrolls. At
+≤480px the robot-editor actions show the verb only (CREATE or SAVE,
+CLONE, DELETE), one line each like CLOSE; the noun stays as visually
+hidden `.act-noun` text and the full name is in `aria-label`. Wider
+screens keep the full labels.
+r5 (Ops F2 fallback): when the drawer content overflows anyway, a
+small script marks `#fo-drawer` with `is-overflowing`, and CSS then adds
+a sticky 24px bottom fade (to the drawer surface colour) that also gives
+24px of end room, so a cut last line reads as "scroll for more". A
+drawer that fits gets no class and no fade.
+Gate: the launch script requires the tokens, the `UI-M12d` marker, the
+`.btn` md rule, the `.menu button` sm rule, `.pill button` min 24px,
+the touch media query with the transparent `::before` hit area sized
+from `--btn-hit-touch` and the `.switch::after` hit area, a
+`position: relative` list equal to the hit list (minus `.tile-mute`),
+the square-widening rule, three representative spacing rules
+(including the 8px individuals gap), the drawer `flex-shrink: 0` rule,
+no touch rule on the main-view roster, no height/padding/block-size in
+the touch block except the three container lines (each a whole one-line
+rule: after CSS comments are stripped, the previous non-blank line must
+end in `{` or `}`; the check does not parse CSS strings or escapes), no
+`--btn-` token redefinition in the touch block, the inline
+`#stats > span` rule (and no `sockets<br>` stack), the
+`@media (max-width: 480px)` `.act-noun` rule after the touch block, the
+create/clone/delete buttons with their full `aria-label` and split
+label, the `#fo-drawer.is-overflowing::after` fade rule after the touch
+block with its overflow toggle, and no `height`/`width`/`block-size:
+44px` from the UI-M12d marker to `</style>`.
 
 ### 16. Mention + manage pills
 
@@ -1128,7 +1408,7 @@ when policy flips; new considers honor the new leash.
   System (application-wide: shipped `system/` + hive-forged `user/`) and
   This robot (`robots/<slug>/`). Catalog JSON `"scopes":["system","robot"]`.
 - Favorites v1: `$HOME/.hush/robots/<slug>/loadouts/` named JSON sets,
-  1–8 skills each (PE-1 2026-09-23; spec only).
+  1–8 skills each (PE-4 2026-09-24; relay-saved via `POST /api/loadout`).
 - Avatar on disk: sniffed JPEG/PNG only; client downscales ≤96px.
 - Kind 0 `picture` is a URL, never a data URI (`HUSH_EVENT_MAX_CONTENT = 4096`).
 

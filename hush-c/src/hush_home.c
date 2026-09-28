@@ -10,27 +10,22 @@
 #include "hush_home.h"
 #include "hush_skill.h"
 
-enum {
-    HUSH_HOME_MODE = 0700
-};
-
 #define HUSH_HOME_LEGACY_TAIL ".config/hush"
 
 /* Copies src into dst. Empty on overflow or NULL src. */
 static void hush_home_copy(char *dst, size_t dstsz, const char *src);
 
-/* Joins a/b into out. Empty on overflow. */
-static void hush_home_join(char *out, size_t outsz, const char *a, const char *b);
-
 /* True when HUSH_HOME is set or HUSH_CONFIG_DIR is unset. */
 static int hush_home_should_make_tree(void);
-
-/* mkdir 0700 path. EEXIST is success. */
-static hush_status_t hush_home_mkdir(const char *path);
 
 /* Joins root/name and mkdir. */
 static hush_status_t hush_home_mkdir_child(char *out, size_t outsz,
                                            const char *root, const char *name);
+
+/* Splits canonical robots/<slug>/loadouts dir into its two parents. */
+static hush_status_t hush_home_split_parents(char *scoped, size_t scopedsz,
+                                             char *robots, size_t robotsz,
+                                             const char *dir);
 
 /* mkdir config, agents, skills/{system,user,robots} under root. */
 static hush_status_t hush_home_make_tree(const char *root);
@@ -40,9 +35,9 @@ static hush_status_t hush_home_seed_forge(const char *root);
 
 void hush_home_root(char *out, size_t outsz)
 {
-    const char *env;
-    const char *home;
-    int n;
+    const char *env = NULL;
+    const char *home = NULL;
+    int n = 0;
 
     if (out == NULL || outsz == 0)
         return;
@@ -60,10 +55,34 @@ void hush_home_root(char *out, size_t outsz)
         out[0] = '\0';
 }
 
+void hush_home_join(char *out, size_t outsz, const char *a, const char *b)
+{
+    int n = 0;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    out[0] = '\0';
+    if (a == NULL || b == NULL || a[0] == '\0')
+        return;
+    n = snprintf(out, outsz, "%s/%s", a, b);
+    if (n <= 0 || (size_t)n >= outsz)
+        out[0] = '\0';
+}
+
+hush_status_t hush_home_mkdir(const char *path)
+{
+    assert(path != NULL);
+    if (path[0] == '\0')
+        return HUSH_ERR_IO;
+    if (mkdir(path, HUSH_HOME_DIR_MODE) != 0 && errno != EEXIST)
+        return HUSH_ERR_IO;
+    return HUSH_OK;
+}
+
 void hush_home_config_dir(char *out, size_t outsz)
 {
-    const char *env;
-    char root[HUSH_HOME_PATH_MAX];
+    const char *env = NULL;
+    char root[HUSH_HOME_PATH_MAX] = {0};
 
     if (out == NULL || outsz == 0)
         return;
@@ -79,7 +98,7 @@ void hush_home_config_dir(char *out, size_t outsz)
 
 void hush_home_agents_dir(char *out, size_t outsz)
 {
-    char root[HUSH_HOME_PATH_MAX];
+    char root[HUSH_HOME_PATH_MAX] = {0};
 
     if (out == NULL || outsz == 0)
         return;
@@ -89,9 +108,9 @@ void hush_home_agents_dir(char *out, size_t outsz)
 
 void hush_home_legacy_config_dir(char *out, size_t outsz)
 {
-    const char *xdg;
-    const char *home;
-    int n;
+    const char *xdg = NULL;
+    const char *home = NULL;
+    int n = 0;
 
     if (out == NULL || outsz == 0)
         return;
@@ -114,9 +133,9 @@ void hush_home_legacy_config_dir(char *out, size_t outsz)
 hush_status_t hush_home_skills_dir(char *out, size_t outsz,
                                    const char *scope, const char *robot)
 {
-    char root[HUSH_HOME_PATH_MAX];
-    char skills[HUSH_HOME_PATH_MAX];
-    char scoped[HUSH_HOME_PATH_MAX];
+    char root[HUSH_HOME_PATH_MAX] = {0};
+    char skills[HUSH_HOME_PATH_MAX] = {0};
+    char scoped[HUSH_HOME_PATH_MAX] = {0};
 
     if (out == NULL || outsz == 0 || scope == NULL)
         return HUSH_ERR_ARG;
@@ -144,10 +163,65 @@ hush_status_t hush_home_skills_dir(char *out, size_t outsz,
     return HUSH_OK;
 }
 
+hush_status_t hush_home_loadouts_dir(char *out, size_t outsz,
+                                     const char *robot)
+{
+    char root[HUSH_HOME_PATH_MAX] = {0};
+    char robots[HUSH_HOME_PATH_MAX] = {0};
+    char scoped[HUSH_HOME_PATH_MAX] = {0};
+
+    if (out == NULL || outsz == 0 || robot == NULL)
+        return HUSH_ERR_ARG;
+    out[0] = '\0';
+    if (!hush_home_is_robot_slug(robot))
+        return HUSH_ERR_ARG;
+    hush_home_root(root, sizeof(root));
+    hush_home_join(robots, sizeof(robots), root, HUSH_HOME_DIR_ROBOTS);
+    hush_home_join(scoped, sizeof(scoped), robots, robot);
+    hush_home_join(out, outsz, scoped, HUSH_HOME_DIR_LOADOUTS);
+    if (out[0] == '\0')
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
+}
+
+hush_status_t hush_home_ensure_loadouts(const char *robot)
+{
+    char dir[HUSH_HOME_PATH_MAX] = {0};
+    char scoped[HUSH_HOME_PATH_MAX] = {0};
+    char robots[HUSH_HOME_PATH_MAX] = {0};
+    hush_status_t st = HUSH_OK;
+
+    if (robot == NULL)
+        return HUSH_ERR_ARG;
+    st = hush_home_loadouts_dir(dir, sizeof dir, robot);
+    if (st != HUSH_OK)
+        return st;
+    st = hush_home_split_parents(scoped, sizeof scoped, robots,
+                                 sizeof robots, dir);
+    if (st != HUSH_OK)
+        return st;
+    st = hush_home_mkdir(robots);
+    if (st != HUSH_OK)
+        return st;
+    st = hush_home_mkdir(scoped);
+    if (st != HUSH_OK)
+        return st;
+    return hush_home_mkdir(dir);
+}
+
+int hush_home_is_robot_slug(const char *slug)
+{
+    if (slug == NULL)
+        return 0;
+    if (slug[0] == '\0' || strlen(slug) >= (size_t)HUSH_SKILL_ROBOT_MAX)
+        return 0;
+    return hush_skill_is_path_slug(slug);
+}
+
 hush_status_t hush_home_ensure(void)
 {
-    char root[HUSH_HOME_PATH_MAX];
-    char cfg[HUSH_HOME_PATH_MAX];
+    char root[HUSH_HOME_PATH_MAX] = {0};
+    char cfg[HUSH_HOME_PATH_MAX] = {0};
 
     if (hush_home_should_make_tree()) {
         hush_home_root(root, sizeof(root));
@@ -166,7 +240,7 @@ hush_status_t hush_home_ensure(void)
 
 static void hush_home_copy(char *dst, size_t dstsz, const char *src)
 {
-    size_t n;
+    size_t n = 0;
 
     assert(dst != NULL);
     assert(dstsz > 0);
@@ -179,24 +253,10 @@ static void hush_home_copy(char *dst, size_t dstsz, const char *src)
     memcpy(dst, src, n + 1);
 }
 
-static void hush_home_join(char *out, size_t outsz, const char *a, const char *b)
-{
-    int n;
-
-    assert(out != NULL);
-    assert(outsz > 0);
-    out[0] = '\0';
-    if (a == NULL || b == NULL || a[0] == '\0')
-        return;
-    n = snprintf(out, outsz, "%s/%s", a, b);
-    if (n <= 0 || (size_t)n >= outsz)
-        out[0] = '\0';
-}
-
 static int hush_home_should_make_tree(void)
 {
-    const char *home_env;
-    const char *cfg_env;
+    const char *home_env = NULL;
+    const char *cfg_env = NULL;
 
     home_env = getenv(HUSH_HOME_ENV);
     if (home_env != NULL && home_env[0] != '\0')
@@ -205,16 +265,6 @@ static int hush_home_should_make_tree(void)
     if (cfg_env != NULL && cfg_env[0] != '\0')
         return 0;
     return 1;
-}
-
-static hush_status_t hush_home_mkdir(const char *path)
-{
-    assert(path != NULL);
-    if (path[0] == '\0')
-        return HUSH_ERR_IO;
-    if (mkdir(path, HUSH_HOME_MODE) != 0 && errno != EEXIST)
-        return HUSH_ERR_IO;
-    return HUSH_OK;
 }
 
 static hush_status_t hush_home_mkdir_child(char *out, size_t outsz,
@@ -229,10 +279,36 @@ static hush_status_t hush_home_mkdir_child(char *out, size_t outsz,
     return hush_home_mkdir(out);
 }
 
+static hush_status_t hush_home_split_parents(char *scoped, size_t scopedsz,
+                                             char *robots, size_t robotsz,
+                                             const char *dir)
+{
+    char *cut = NULL;
+
+    assert(scoped != NULL);
+    assert(robots != NULL);
+    assert(dir != NULL);
+    if (strlen(dir) + 1 > scopedsz)
+        return HUSH_ERR_FULL;
+    memcpy(scoped, dir, strlen(dir) + 1);
+    cut = strrchr(scoped, '/');
+    if (cut == NULL)
+        return HUSH_ERR_FULL;
+    *cut = '\0';
+    if (strlen(scoped) + 1 > robotsz)
+        return HUSH_ERR_FULL;
+    memcpy(robots, scoped, strlen(scoped) + 1);
+    cut = strrchr(robots, '/');
+    if (cut == NULL)
+        return HUSH_ERR_FULL;
+    *cut = '\0';
+    return HUSH_OK;
+}
+
 static hush_status_t hush_home_make_tree(const char *root)
 {
-    char path[HUSH_HOME_PATH_MAX];
-    char skills[HUSH_HOME_PATH_MAX];
+    char path[HUSH_HOME_PATH_MAX] = {0};
+    char skills[HUSH_HOME_PATH_MAX] = {0};
 
     assert(root != NULL);
     if (hush_home_mkdir(root) != HUSH_OK)
@@ -257,10 +333,10 @@ static hush_status_t hush_home_make_tree(const char *root)
 
 static hush_status_t hush_home_seed_forge(const char *root)
 {
-    char sysdir[HUSH_HOME_PATH_MAX];
-    char skilldir[HUSH_HOME_PATH_MAX];
-    char path[HUSH_HOME_PATH_MAX];
-    FILE *fp;
+    char sysdir[HUSH_HOME_PATH_MAX] = {0};
+    char skilldir[HUSH_HOME_PATH_MAX] = {0};
+    char path[HUSH_HOME_PATH_MAX] = {0};
+    FILE *fp = NULL;
 
     assert(root != NULL);
     if (hush_home_skills_dir(sysdir, sizeof(sysdir),

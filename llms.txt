@@ -15,17 +15,18 @@
 - Quick bar slots 1-4 (folder tabs, configurable, typing-guarded).
 - i key = inventory doll editor, c key = Profile character sheet (typing-guarded; single-dismiss Escape stack).
 - Volume dial (#fo-dial) scrolls the dispatch log (wheel/drag/keys; no in-column scrollbar chrome).
-- Roadmap (not on main): favorite skill loadouts (PE-4).
+- Favorite skill loadouts (PE-4, #206): per robot, saved on the relay under $HUSH_HOME/robots/<slug>/loadouts/ via POST /api/loadout (1-8 skills each, up to 32 per robot).
+- Roadmap (not on main): relay-enforced ALWAYS-ON / ON-CALL prompt tiers.
 
 ## Quick start (verified on Ubuntu cloud VM)
 - sudo apt-get update && sudo apt-get install -y gcc make libssl-dev libx11-dev python3
-- ./configure && make && make test (ALL TESTS PASSED) && make install (~/.local/bin)
+- ./configure && make && make test (ALL TESTS PASSED) && make install (~/.local/bin; stops running hush-relay* of this user first)
 - Run: hush-relay --no-open 10555 -> http://127.0.0.1:10555/
-- Close leaves the hive standing; Exit / --quit stops everything (exit 0).
+- Close leaves the hive standing; Exit stops the relay and the children it forked. hush-relay --quit [port] (Linux, default 10555): exit 0 stopped, 1 nothing to stop, 2 stop failed or refused; off Linux --quit refuses (exit 2), use POST /api/exit.
 - Secrets only in pass; hive metadata in ~/.hush/config/vibe.json (0600).
 
 ## Key docs
-- README.md (front page), UI_SPEC.md (authoritative UI + honesty deltas), NOSTR.md, SECURITY.md
+- README.md (front page), docs/OPERATIONS.md (run/stop/rebuild), docs/CONFIGURATION.md (install/env/layout), UI_SPEC.md (authoritative UI + honesty deltas), NOSTR.md, SECURITY.md
 - PRIME_DIRECTIVE.md, AGENTS.md, BRANCHING.md (worktree gb/* + PR-only law)
 - docs/CODEX.md, docs/pass-integration.md, docs/plan/, docs/research/, docs/ops/
 - Screenshot: docs/assets/hush-field-office.png (real cloud-VM capture, 1280x800 headless Chrome)

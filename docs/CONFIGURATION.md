@@ -37,8 +37,8 @@ sudo dnf install ~/rpmbuild/RPMS/*/hush-relay-*.rpm   # Fedora, RHEL, CentOS, op
 ```
 
 ```bash
-make flatpak                            # any distro (flatpak-builder)
-flatpak install flathub io.github.coldcanuk.hush
+make flatpak                            # any distro (flatpak-builder; builds into build-dir/)
+# make flatpak prints its own install hint; Hush is not verified to be on Flathub
 ```
 
 ```sh
@@ -63,10 +63,12 @@ pkg add ./dist/freebsd/hush-relay-*.pkg
 
 | Variable | Role (all verified in code) |
 |---|---|
-| `HUSH_HOME` | Hive home: session token, `config/`, `agents/`, `skills/`, `threads/`. Tests override per-run; unset means `~/.hush`. |
+| `HUSH_HOME` | Hive home: session token, `config/`, `agents/`, `skills/`, `robots/<slug>/loadouts/` (PE-4 favorites), `threads/`. Tests override per-run; unset means `~/.hush`. |
 | `HUSH_CONFIG_DIR` | Overrides the config directory (`vibe.json`, `providers.json`). Tests set it alongside `HUSH_HOME`. |
-| `HUSH_PORT` | Scopes the rebuild guard (`scripts/check-relay-port.sh`): argument, else `$HUSH_PORT`, else `10555`. |
-| `HUSH_WHISPER` | Set to `1` (or put `whisper` on `PATH`) so agents hear conference calls; gates the Call/Voice icons. |
+| `HUSH_PORT` | Scopes the `make` rebuild guard (`scripts/check-relay-port.sh`): argument, else `$HUSH_PORT`, else `10555`. See [`OPERATIONS.md`](OPERATIONS.md#rebuild-guard-make). |
+| `HUSH_KILL_GRACE_S` | Seconds `make install` / `make clean` wait between SIGTERM and SIGKILL when stopping relays (`scripts/kill-relay.sh`, default 3). |
+| `HUSH_TEST_STOP_RELAYS` | Set to `1` to run the relay-stopping phases of `make test` outside GitHub Actions. |
+| `HUSH_WHISPER` | Any value other than empty or `0` marks Whisper available (otherwise an executable `/usr/bin/whisper` or `/usr/local/bin/whisper` does; `PATH` is not searched) so agents hear conference calls; gates the Call/Voice icons. |
 | `HUSH_CODEX_SKILL_DIR` | Points at another complete copy of the write-legible-c skill. Missing or conflicting skill files prevent Codex dispatch. |
 
 ## On-disk layout and permissions
@@ -76,7 +78,9 @@ pkg add ./dist/freebsd/hush-relay-*.pkg
 | `$HUSH_HOME/session.token` | Per-hive API token (`X-Hush-Token`). |
 | `$HUSH_HOME/config/vibe.json` (`0600`) | Named vibe, channels, projects, profile (no email), members, raised-robot labels. Never holds an nsec or provider secret. Survives rebuild / Exit. |
 | `$HUSH_HOME/config/providers.json` (`0600`) | Provider overlay: host and model per id. Secret values are never in here. |
-| `$HUSH_HOME/threads/<root>.log` (`0600`, `O_NOFOLLOW`) | Durable per-thread transcripts; served via `GET /api/thread`. |
+| `$HUSH_HOME/threads/<root>.log` (`0600`, `O_NOFOLLOW`) | Durable per-thread transcripts (plus `<root>.brief`); served via `GET /api/thread`. |
+| `$HUSH_HOME/robots/<slug>/loadouts/` | PE-4 favorite loadouts (1–8 skill ids each, up to 32 per robot), written via `POST /api/loadout`. |
+| `$XDG_RUNTIME_DIR/hush/relay-<port>.pid`, else `~/.local/state/hush/relay-<port>.pid` | Relay pidfile (`pid starttime port`) used by `--quit` and the rebuild guard. |
 | `$HUSH_HOME/skills/{system,user,robots}/` | Forged skills. Product scopes are System (application-wide) and This robot; `make clean` never touches this tree. |
 
 ## Provider setup

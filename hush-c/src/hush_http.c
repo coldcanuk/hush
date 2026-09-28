@@ -847,6 +847,8 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_skill_post(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/skillui") == 0)
         return hush_http_serve_skillui(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/loadout") == 0)
+        return hush_http_serve_loadout(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/vibe") == 0)
         return hush_http_serve_vibe(fd, hush_http_body(req, len), store);
     if (strcmp(path, "/api/channel") == 0)

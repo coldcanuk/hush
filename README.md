@@ -12,7 +12,7 @@ Hush is a legible C11 Nostr relay core plus a self-hosted team-chat hive: one bi
 
 ## Screenshot (real, from this repo's demo on a cloud VM)
 
-Captured 2026-09-24 from a throwaway relay on this base (`44c66f88`, port 18083) with headless Chrome at 1280×800 — first-launch splash, field-office theme, folder-tab quick bar:
+Captured 2026-09-24 from a throwaway relay on base `44c66f88` (port 18083) with headless Chrome at 1280×800 — first-launch splash, field-office theme, folder-tab quick bar. These captures predate #206, #212, #214, #226 and #227, so parts of the current UI differ (for example the Send switch and the BOARDS drawer):
 
 ![Hush field-office dispatch UI — splash with Major reporting for duty and the Inventory/Character/New channel/Stop quick bar](docs/assets/hush-field-office.png)
 
@@ -27,17 +27,18 @@ Checked against [`UI_SPEC.md`](UI_SPEC.md) and the served demo (`hush-c/demo/ind
 - **Thread memory (leave → return)** — `GET /api/thread?root=<64-hex>` returns saved turns plus the rolling brief; the pane paints them under “Thread memory · Saved on this relay”. The browser remembers only the open root id (`localStorage.hush-thread-open`) and reopens it only when the relay confirms saved turns — never painting remembered content, never claiming live what is saved.
 - **Quick bar 1–4** — a thin folder-tab strip (`#quick-bar`) with four configurable slots (`#qb-1`…`#qb-4`, defaults Inventory / Character / New channel / Stop) plus a `⋯` gear (`#qb-config` → `#qb-editor`). Keys `1`–`4` fire the slots; typing in inputs/textareas never triggers them. Slots persist in `localStorage.hush-quickbar`.
 - **`i` / `c` keys** — `i` opens the selected robot tile's inventory-doll editor (or the expanded 8×5 grid when no tile is selected); `c` toggles the Profile character sheet (read-only equipped strip, no Armory forge). Same typing guards as the quick bar. Escape dismisses exactly one layer at a time.
-- **Volume dial** — the dispatch log's scroll lives on a stereo-style VOLUME dial (`#fo-dial`) above Send Dispatch: mouse-wheel over the dial, clockwise/counter-clockwise drag, or arrow/PageUp/PageDown/Home/End keys. The native fat scrollbar stays hidden and the message column owns no in-column chrome (the old M10 track/dot/arrows are gone).
+- **Favorite loadouts (PE-4, #206)** — in the robot editor, **Save favorite** names the current skill doll; the relay stores it under `$HUSH_HOME/robots/<slug>/loadouts/` (`HUSH_HOME` defaults to `~/.hush`) via `POST /api/loadout` (save / list / load / delete). Each favorite holds 1–8 skills; up to 32 per robot; names use letters, digits, spaces, `-` or `_` (max 47). Load swaps the whole doll at once, Unload only clears the highlight, and the doll keeps at least one skill.
+- **Volume dial** — the dispatch log's scroll lives on a stereo-style VOLUME dial (`#fo-dial`) directly above the spring-return Send switch: mouse-wheel over the dial, clockwise/counter-clockwise drag, or arrow/PageUp/PageDown/Home/End keys. The native fat scrollbar stays hidden and the message column owns no in-column chrome (the old M10 track/dot/arrows are gone).
 
 Under the hood (also on `main`): Nostr NIP-01 chat basics, `poll(2)` single-threaded server, RFC 6455 WebSocket plus newline-JSON on the same port, BIP-340-verified `EVENT` ingest, REQ/CLOSE, NIP-42 AUTH-gated private vibes, per-hive session token with loopback-only bind, token-bucket rate limits with honest rejections, and a strict `-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow` build. Details: [`NOSTR.md`](NOSTR.md), [`SECURITY.md`](SECURITY.md).
 
 ## Roadmap (not on `main` — explicitly future)
 
-- **Favorite loadouts (PE-4)** — per-robot named skill sets under `$HOME/.hush/robots/<slug>/loadouts/` (1–8 skills each), atomic load that never passes through empty, unload that clears the favorite association only. No `loadouts/` writes and no favorite picker exist on `main` today.
+- **Relay-enforced skill lifetimes** — ALWAYS-ON / ON-CALL are browser-only labels today; the relay still injects every equipped skill on every job. Real prompt tiers are future work.
 
 ## Quick start (actually ran on the VM)
 
-These exact commands succeeded on a cloud Ubuntu VM from base `44c66f88`:
+These exact commands succeeded on a cloud Ubuntu VM from base `44c66f88`. The build prerequisites are `gcc`, `make`, `libssl-dev` (OpenSSL headers), `libx11-dev` and `python3`:
 
 ```bash
 sudo apt-get update
@@ -45,7 +46,7 @@ sudo apt-get install -y gcc make libssl-dev libx11-dev python3
 ./configure
 make
 make test        # ends with: ALL TESTS PASSED
-make install     # installs to ~/.local/bin (no sudo needed)
+make install     # installs to ~/.local/bin (no sudo needed); first stops any running hush-relay* you own
 ```
 
 Run it:
@@ -54,7 +55,7 @@ Run it:
 ~/.local/bin/hush-relay --no-open 10555   # default port 10555
 ```
 
-Then open `http://127.0.0.1:10555/` in a Chromium-family browser. First launch walks Identity → Backup (`pass` checked by default) → Vibe → Meet Major. `Close` dismisses the window and leaves the hive standing; `Exit` stops the relay and the children it forked (`hush-relay --quit [port]` on Linux, default port 10555: exit 0 stopped, 1 nothing to stop, 2 stop failed or refused; off Linux, including OpenBSD/FreeBSD, `--quit` refuses with exit 2 — use `POST /api/exit`). Details: [Close vs Exit](docs/OPERATIONS.md#close-vs-exit).
+Then open `http://127.0.0.1:10555/` in a Chromium-family browser. First launch walks Identity → Backup (save to `pass` checked by default; unchecked and disabled, with an inline reason, when `pass` is missing) → Vibe → Meet Major. `Close` dismisses the window and leaves the hive standing; `Exit` stops the relay and the children it forked (`hush-relay --quit [port]` on Linux, default port 10555: exit 0 stopped, 1 nothing to stop, 2 stop failed or refused; off Linux, including OpenBSD/FreeBSD, `--quit` never signals and refuses a live relay with exit 2 — use `POST /api/exit`). Details: [Close vs Exit](docs/OPERATIONS.md#close-vs-exit).
 
 Isolated demo run (how the screenshot above was produced):
 
@@ -71,7 +72,7 @@ System-wide install and calling: `sudo make install PREFIX=/usr`, conference cal
 
 ## Open-source Nostr relay in C11 (self-hosted Slack alternative)
 
-Single binary, set-and-forget self-hosting: `./configure && make && make install`, no runtime dependencies beyond libc, OpenSSL, and X11 headers for window controls. Hive metadata persists in `~/.hush/config/vibe.json` (0600) so rebuilds and `Exit` never force a new vibe; secrets live only in `pass` (`hush/identity/nsec`, `hush/providers/<id>/*`).
+Single binary, set-and-forget self-hosting: `./configure && make && make install`, no runtime dependencies beyond libc, OpenSSL (`libcrypto`), and `libX11` for window controls when `./configure` finds it. Hive metadata persists in `~/.hush/config/vibe.json` (0600) so rebuilds and `Exit` never force a new vibe; secrets live only in `pass` (`hush/identity/nsec`, `hush/providers/<id>/*`).
 
 ## AI-assistant-native team chat (robots share channels with humans)
 
@@ -106,16 +107,16 @@ No. The chat UI is the product; Nostr (NIP-01 events, NIP-27 mentions, NIP-29-sh
 No — today they are browser-only labels. The relay injects every equipped skill body on every job. Real prompt tiers are future work.
 
 **Can I save favorite skill loadouts yet?**
-Not on `main`. That is the PE-4 roadmap item above.
+Yes, since PE-4 (#206): per robot, saved on the relay. See Features above.
 
 **Where do secrets live?**
 Only in `pass` (plus foreign homes Hush never copies: `~/.config/goose`, `~/.grok/auth.json`, `~/.codex`). `GET` routes never return secret values.
 
 **How do Close and Exit differ?**
-Close dismisses the window; the hive keeps listening (re-attach from the launcher). Exit stops the relay and the children it forked (`--quit [port]` on Linux, default port 10555; off Linux, including OpenBSD/FreeBSD, `--quit` refuses with exit 2 — use `POST /api/exit`). Full table in [`docs/OPERATIONS.md`](docs/OPERATIONS.md#close-vs-exit).
+Close dismisses the window; the hive keeps listening (re-attach from the launcher). Exit stops the relay and the children it forked (`--quit [port]` on Linux, default port 10555; off Linux, including OpenBSD/FreeBSD, `--quit` never signals and refuses a live relay with exit 2 — use `POST /api/exit`). Full table in [`docs/OPERATIONS.md`](docs/OPERATIONS.md#close-vs-exit).
 
 **Where is the operator manual?**
-[`docs/OPERATIONS.md`](docs/OPERATIONS.md) (run, stop, threads, STUN/TURN, calls) and [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) (install per distro, env vars, file layout, providers).
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md) (run, stop, rebuild guard, install/clean stops, threads, STUN/TURN, calls) and [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) (install per distro, env vars, file layout, providers).
 
 ## Docs and development
 

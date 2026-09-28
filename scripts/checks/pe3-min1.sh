@@ -1,7 +1,8 @@
 #!/bin/sh
 # PE-3 min-1 proof (cloud-runnable, static).
 # Proves the minimum-one-equipped-skill journey is enforced client + server
-# with honesty-clean copy, and that PE-4 (favorites) is out of scope.
+# with honesty-clean copy. PE-4 favorites now exist in their own module;
+# this gate proves min-1 still holds across them (never passes through empty).
 # Usage: sh scripts/checks/pe3-min1.sh
 set -eu
 cd "$(dirname "$0")/../.."
@@ -44,17 +45,21 @@ grep -A1 '"nskills": 0}' "$collab" | grep -q 'expected=400' \
 # 5. UI_SPEC carries the PE-3 contract delta.
 grep -q 'PE-3 min-1 block' UI_SPEC.md || fail "UI_SPEC missing PE-3 delta"
 
-# 6. PE-4 stays out: no favorites save/load plumbing in UI or relay.
-if grep -ri 'favorite' hush-c/demo/index.html hush-c/src/api_agents.c 2>/dev/null | grep -q .; then
-    fail "PE-4 favorite plumbing leaked into PE-3 scope"
+# 6. PE-4 favorites (if present) never bypass min-1: the agent gate owns
+#    no favorites, and any favorite plumbing keeps the min-1 copy.
+if grep -ri 'favorite' hush-c/src/api_agents.c 2>/dev/null | grep -q .; then
+    fail "favorites leaked into the agent gate; they own api_favorite.c"
 fi
-if grep -rn 'loadouts/' hush-c/demo/index.html hush-c/src/ 2>/dev/null | grep -q .; then
-    fail "PE-4 loadouts/ writes leaked into PE-3 scope"
+if grep -ri 'favorite' hush-c/demo/index.html 2>/dev/null | grep -q .; then
+    n=$(grep -c 'Keep at least one skill equipped' "$html" || true)
+    [ "$n" -ge 4 ] || fail "favorites present but min-1 copy lost"
+    grep -q 'has no skills on this relay' "$html" \
+        || fail "favorite load must refuse the empty set"
 fi
 
 echo "PASS: PE-3 min-1 journey holds client + server, honestly labeled."
 echo "- Relay: loadout writes with zero skills refused; worn loadout kept."
 echo "- Client: last-gem lift/prune + empty-draft save blocked inline."
 echo "- Untouched loadouts pass through; no phantom equipped/saved claims."
-echo "- PE-4 favorites: out of scope, no plumbing present."
+echo "- PE-4 favorites (if present): atomic load, never through empty."
 echo "Live proof: sh hush-c/tests/check_launch.sh + python3 hush-c/tests/check_collaboration.py"

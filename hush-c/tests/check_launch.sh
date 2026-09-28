@@ -297,12 +297,12 @@ echo "$html" | grep -q '>Kit<' || fail "HTML rail-toggle must read Kit (UI-M6)"
 echo "$html" | grep -q 'fo-chrome-hard' || fail "HTML missing UI-M7 chrome-hard materials"
 echo "$html" | grep -q 'fo-caret' || fail "HTML missing UI-M7 paper caret"
 echo "$html" | grep -q 'id="fo-drawer"' || fail "HTML missing fo-drawer overlay nav (UI-M8)"
-echo "$html" | grep -q 'id="fo-expand"' || fail "HTML missing fo-expand thin control (UI-M8)"
-echo "$html" | grep -q 'syncFoExpand' || fail "HTML missing fo-expand aria sync (UI-M8)"
+if echo "$html" | grep -q 'fo-expand'; then fail "edge tab must be gone (UI-M12a)"; fi
+if echo "$html" | grep -q 'syncFoExpand'; then fail "edge tab aria sync must be gone (UI-M12a)"; fi
 echo "$html" | grep -q 'UI-M8' || fail "HTML missing UI-M8 markers"
 # UI-M11: volume dial owns dispatch-log scroll. The native fat bar stays
 # hidden, but the message column owns NO in-column chrome: no track, dot,
-# or end-arrow bar. A stereo-style VOLUME dial above Send Dispatch scrolls
+# or end-arrow bar. A stereo-style VOLUME dial above the Send switch scrolls
 # the log (wheel over dial, clockwise/counter-clockwise drag, keys).
 echo "$html" | grep -q 'id="fo-log-wrap"' || fail "HTML missing log wrap (UI-M11)"
 if echo "$html" | grep -q 'id="fo-scrollbar"'; then fail "M10 scrollbar must be gone (UI-M11)"; fi
@@ -320,6 +320,209 @@ echo "$html" | grep -q 'syncFoDial' || fail "HTML missing dial sync (UI-M11)"
 echo "$html" | grep -q 'foDialScrollBy' || fail "HTML missing dial scroll driver (UI-M11)"
 echo "$html" | grep -q 'foDialAngle' || fail "HTML missing dial drag angle (UI-M11)"
 echo "$html" | grep -q 'UI-M11' || fail "HTML missing UI-M11 markers"
+# UI-M12c: Send is a spring-return metal toggle switch, still the form's
+# real submit <button> named "Send", and the UI-M11 dial sits directly above
+# it in one composer column. The old "Send Dispatch" slab is gone.
+echo "$html" | grep -q '<button id="send" class="fo-switch" type="submit"' \
+  || fail "HTML missing Send switch submit button (UI-M12c)"
+echo "$html" | grep -q '<span class="fo-switch-cap">Send</span>' \
+  || fail "Send switch must be named Send (UI-M12c)"
+echo "$html" | grep -q 'class="fo-switch-lever"' || fail "HTML missing Send switch lever (UI-M12c)"
+echo "$html" | grep -q 'foSwitchFlick' || fail "HTML missing Send switch flick (UI-M12c)"
+echo "$html" | grep -q 'createBiquadFilter' || fail "HTML missing Web Audio switch clicks (UI-M12c)"
+if echo "$html" | grep -q 'Send Dispatch</button>'; then
+  fail "old Send Dispatch button must be gone (UI-M12c)"
+fi
+line_of() { echo "$html" | grep -n "$1" | head -n 1 | cut -d: -f1; }
+form_at=$(line_of 'id="form"')
+col_at=$(line_of 'id="fo-send-col"')
+dial_at=$(line_of 'id="fo-dial-row"')
+send_at=$(line_of '<button id="send"')
+if [ -z "$form_at" ] || [ -z "$col_at" ] || [ -z "$dial_at" ] || [ -z "$send_at" ] \
+  || [ "$form_at" -ge "$col_at" ] || [ "$col_at" -ge "$dial_at" ] || [ "$dial_at" -ge "$send_at" ]; then
+  fail "dial row must sit directly above Send inside the composer column (UI-M12c)"
+fi
+# UI-M12c r2: the flick is wired as a real call statement inside the
+# #form submit handler (not the CSS comment or the definition), only after
+# every submit guard and after Send is disabled, wrapped so a throw cannot
+# lock the composer; reduced motion skips the swing in JS and CSS.
+submit_at=$(line_of '$("form").addEventListener("submit", async (e) => {')
+submit_end=
+if [ -n "$submit_at" ]; then
+  submit_end=$(echo "$html" | awk -v s="$submit_at" 'NR > s && /^    }\);$/ { print NR; exit }')
+fi
+flick_at=$(line_of '^ *foSwitchFlick();$')
+if [ -z "$submit_at" ] || [ -z "$submit_end" ] || [ -z "$flick_at" ] \
+  || [ "$flick_at" -le "$submit_at" ] || [ "$flick_at" -ge "$submit_end" ]; then
+  fail "Send switch flick must be called inside the submit handler (UI-M12c)"
+fi
+mention_at=$(line_of 'if (mentionOpen) return;')
+guard_at=$(line_of 'if (sendingMessage) return;')
+set_at=$(line_of 'sendingMessage = true;')
+off_at=$(line_of '$("send").disabled = true;')
+if [ -z "$mention_at" ] || [ -z "$guard_at" ] || [ -z "$set_at" ] || [ -z "$off_at" ] \
+  || [ -z "$flick_at" ] || [ -z "$submit_at" ] || [ "$submit_at" -ge "$mention_at" ] \
+  || [ "$mention_at" -ge "$guard_at" ] || [ "$guard_at" -ge "$set_at" ] \
+  || [ "$set_at" -ge "$off_at" ] || [ "$off_at" -ge "$flick_at" ]; then
+  fail "Send switch must flick only after the submit guards (UI-M12c)"
+fi
+if [ -z "$flick_at" ] || [ "$flick_at" -le 1 ] \
+  || ! echo "$html" | sed -n "$((flick_at - 1))p" | grep -q '^ *try {$'; then
+  fail "Send switch flick must be wrapped so a throw cannot lock send (UI-M12c)"
+fi
+def_at=$(line_of '^ *function foSwitchFlick() {$')
+calm_at=$(line_of '^ *if (foSwitchCalm.matches) return;$')
+add_at=$(line_of 'send.classList.add("fo-flick");')
+if [ -z "$def_at" ] || [ -z "$calm_at" ] || [ -z "$add_at" ] \
+  || [ "$def_at" -ge "$calm_at" ] || [ "$calm_at" -ge "$add_at" ]; then
+  fail "reduced motion must skip the Send switch flick in JS (UI-M12c)"
+fi
+echo "$html" | grep -q 'foSwitchCalm = window.matchMedia("(prefers-reduced-motion: reduce)")' \
+  || fail "reduced motion must skip the Send switch flick in JS (UI-M12c)"
+echo "$html" | grep -A1 '^@media (prefers-reduced-motion: reduce) {$' \
+  | grep -q '^  \.fo-switch-lever, #send\.fo-switch\.fo-flick \.fo-switch-lever { transition: none; transform: rotate(-32deg); }$' \
+  || fail "reduced-motion CSS must pin the Send switch lever (UI-M12c)"
+echo "$html" | grep -q '#fo-dial-row #fo-dial { width: 100%;' \
+  || fail "dial must span the Send column width (UI-M12c)"
+# UI-M12d: one compact button scale (xs 24 / sm 28 / md 32) on :root.
+# Visual size stays the tier at every width; phones get the 44px touch hit
+# only from a transparent ::before (::after on .switch) inside the touch
+# media block, which must never raise a visual height.
+echo "$html" | grep -q 'UI-M12d' || fail "HTML missing UI-M12d markers"
+echo "$html" | grep -q '^      --btn-h-xs: 24px; --btn-px-xs: 6px; --btn-fs-xs: 0.68rem;$' \
+  && echo "$html" | grep -q '^      --btn-h-sm: 28px; --btn-px-sm: 8px; --btn-fs-sm: 0.74rem;$' \
+  && echo "$html" | grep -q '^      --btn-h-md: 32px; --btn-px-md: 12px; --btn-fs-md: 0.8rem;$' \
+  && echo "$html" | grep -q '^      --btn-lh: 1.1; --btn-hit-min: 24px; --btn-hit-touch: 44px;$' \
+  || fail "HTML missing compact button tokens (UI-M12d)"
+m12d_at=$(line_of '^/\* ===== UI-M12d compact buttons =====$')
+btn_at=$(line_of '^\.btn:where(:not(#nav-toggle, \.leave-actions \.btn)) {$')
+if [ -z "$m12d_at" ] || [ -z "$btn_at" ] || [ "$btn_at" -le "$m12d_at" ] \
+  || ! echo "$html" | sed -n "$((btn_at + 1))p" | grep -q '^  min-height: var(--btn-h-md); padding: 0 var(--btn-px-md);$'; then
+  fail ".btn must use the compact md tier (UI-M12d)"
+fi
+pill_at=$(line_of '^\.pill button {$')
+if [ -z "$m12d_at" ] || [ -z "$pill_at" ] || [ "$pill_at" -le "$m12d_at" ] \
+  || ! echo "$html" | sed -n "$((pill_at + 1)),$((pill_at + 3))p" \
+    | grep -q 'min-width: var(--btn-h-xs); min-height: var(--btn-h-xs);'; then
+  fail ".pill button must be at least 24px (UI-M12d)"
+fi
+touch_at=$(line_of '^@media (max-width: 640px), (pointer: coarse) {$')
+touch_end=
+if [ -n "$touch_at" ]; then
+  touch_end=$(echo "$html" | awk -v s="$touch_at" 'NR > s && /^}$/ { print NR; exit }')
+fi
+hit_at=$(line_of '^    #install, \.iconbtn, \.skill-facet, \.think-stop, button\.fo-person, \.tile-mute)::before,$')
+if [ -z "$touch_at" ] || [ -z "$touch_end" ] || [ -z "$hit_at" ] \
+  || [ "$hit_at" -le "$touch_at" ] || [ "$hit_at" -ge "$touch_end" ] \
+  || ! echo "$html" | sed -n "$((hit_at - 4)),$((hit_at))p" | grep -q '^  :where(\.btn, ' \
+  || ! echo "$html" | sed -n "$((hit_at - 4)),$((hit_at))p" | grep -q '^    \.pill button, ' \
+  || ! echo "$html" | sed -n "$((hit_at + 1))p" | grep -q '^  \.switch::after {$' \
+  || ! echo "$html" | sed -n "$((hit_at + 2))p" | grep -q '^    content: ""; position: absolute; left: 0; right: 0;$' \
+  || ! echo "$html" | sed -n "$((hit_at + 3))p" | grep -q '^    top: min(0px, calc(50% - var(--btn-hit-touch) / 2));$' \
+  || ! echo "$html" | sed -n "$((hit_at + 4))p" | grep -q '^    bottom: min(0px, calc(50% - var(--btn-hit-touch) / 2));$' \
+  || ! echo "$html" | sed -n "$((hit_at + 5))p" | grep -q '^    background: transparent; pointer-events: auto;$'; then
+  fail "phone touch hit must come from a transparent pseudo-element (UI-M12d)"
+fi
+# The touch block adds container spacing, never control size: no height,
+# padding* or block-size anywhere in it except these three container lines.
+if echo "$html" | sed -n "${touch_at},${touch_end}p" \
+  | grep -v -x -F \
+    -e '  .mention-box { padding-block: 8px; }' \
+    -e '  #fo-drawer { padding-bottom: 64px; } /* last row clears the fixed #quick-bar */' \
+    -e '  .fav-item { padding-block: 8px; }' \
+  | grep -q 'height\|padding\|block-size'; then
+  fail "touch block must not raise a visual height (UI-M12d)"
+fi
+# The allowlist covers whole one-line rules. CSS comments (one-line or
+# multi-line) are stripped first; then the previous non-blank line before
+# each allowlisted line must end in { or }. The check does not parse CSS
+# strings or escapes (a /* inside a quoted string, or an escaped brace in a
+# selector, gets past it; tracked in #229).
+if echo "$html" | sed -n "${touch_at},${touch_end}p" | awk '
+  { t = $0; c = ""
+    while (t != "") {
+      if (inc) { e = index(t, "*/"); if (!e) break; t = substr(t, e + 2); inc = 0; continue }
+      s = index(t, "/*"); if (!s) { c = c t; break }
+      c = c substr(t, 1, s - 1); t = substr(t, s + 2); inc = 1
+    }
+    sub(/[ \t]+$/, "", c) }
+  $0 == "  .mention-box { padding-block: 8px; }" ||
+  $0 == "  #fo-drawer { padding-bottom: 64px; } /* last row clears the fixed #quick-bar */" ||
+  $0 == "  .fav-item { padding-block: 8px; }" { if (prev !~ /[{}]$/) bad = 1 }
+  c ~ /[^ \t]/ { prev = c } END { exit bad ? 0 : 1 }'; then
+  fail "touch allowlist lines must stay whole rules (UI-M12d)"
+fi
+if echo "$html" | sed -n "${touch_at},${touch_end}p" | grep -q -e '--btn-[a-z0-9-]*[[:space:]]*:'; then
+  fail "touch block must not redefine --btn- tokens (UI-M12d)"
+fi
+# Each hit control must be the positioning box of its own ::before, so the
+# position: relative list is the hit list minus .tile-mute (already absolute).
+rel_at=$(line_of '^    #install, \.iconbtn, \.skill-facet, \.think-stop, button\.fo-person) { position: relative; }$')
+if [ -z "$rel_at" ] || [ "$rel_at" -le "$touch_at" ] || [ "$rel_at" -ge "$hit_at" ] \
+  || [ "$(echo "$html" | sed -n "$((rel_at - 4)),$((rel_at))p" | sed 's/) { position: relative; }$//')" \
+    != "$(echo "$html" | sed -n "$((hit_at - 4)),$((hit_at))p" | sed 's/, \.tile-mute)::before,$//')" ]; then
+  fail "touch hit controls must be position: relative (UI-M12d)"
+fi
+wide_at=$(line_of '^  :where(\.drawer-x, \.icon-plus, \.icon-minus, \.chan-options, \.chan-voice, \.prov-row \.cfg)::before {$')
+if [ -z "$wide_at" ] || [ "$wide_at" -le "$hit_at" ] || [ "$wide_at" -ge "$touch_end" ] \
+  || ! echo "$html" | sed -n "$((wide_at + 1))p" | grep -q '^    left: min(0px, calc(50% - var(--btn-hit-touch) / 2));$' \
+  || ! echo "$html" | sed -n "$((wide_at + 2))p" | grep -q '^    right: min(0px, calc(50% - var(--btn-hit-touch) / 2));$'; then
+  fail "isolated square hit must widen to 44px (UI-M12d)"
+fi
+for rule in '  .menu button + button, .mention-box button + button { margin-top: 16px; }' \
+  '  #fo-individuals, #fo-individual-list { gap: 8px; }' \
+  '  #fo-drawer { padding-bottom: 64px; } /* last row clears the fixed #quick-bar */'; do
+  echo "$html" | sed -n "${touch_at},${touch_end}p" | grep -q -x -F -e "$rule" \
+    || fail "touch spacing must keep neighbouring hit areas apart (UI-M12d)"
+done
+# r3 (Ops F2/F6): BOARDS drawer sections scroll instead of squashing, at
+# every width (the inventory grid stays inside its frame); the main-view
+# roster rows are static, so the touch block leaves their pitch alone (the
+# you row and the panel top stay visible at 375x812).
+shrink_at=$(echo "$html" | grep -n -x -F -e '#fo-drawer > * { flex-shrink: 0; } /* drawer scrolls; its sections never squash */' | head -n 1 | cut -d: -f1)
+if [ -z "$shrink_at" ] || [ "$shrink_at" -le "$m12d_at" ] || [ "$shrink_at" -ge "$touch_at" ]; then
+  fail "BOARDS drawer sections must not shrink (UI-M12d)"
+fi
+if echo "$html" | sed -n "${touch_at},${touch_end}p" | grep -q 'fo-roster-list\|roster-pane'; then
+  fail "touch block must not change the main-view roster (UI-M12d)"
+fi
+menu_at=$(line_of '^\.menu button, \.mention-box button {$')
+if [ -z "$menu_at" ] || [ "$menu_at" -le "$m12d_at" ] || [ "$menu_at" -ge "$touch_at" ] \
+  || ! echo "$html" | sed -n "$((menu_at + 1))p" | grep -q '^  min-height: var(--btn-h-sm); padding: 0 var(--btn-px-sm);$'; then
+  fail ".menu button must use the compact sm tier, not 44px (UI-M12d)"
+fi
+# r4 (Ops F2/F7): the drawer stats are inline items (no <br> stack), so the
+# BOARDS drawer fits at 1440x900; at <= 480px the robot-editor actions show
+# the verb only, with the noun as visually hidden .act-noun text and the
+# full name in aria-label.
+if ! echo "$html" | grep -q -x -F -e '#stats > span { white-space: nowrap; }' \
+  || echo "$html" | grep -q 'sockets<br>'; then
+  fail "drawer stats must flow inline so the drawer fits (UI-M12d r4)"
+fi
+noun_at=$(line_of '^  \.act-noun { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }$')
+if [ -z "$noun_at" ] || [ "$noun_at" -le "$touch_end" ] \
+  || ! echo "$html" | sed -n "$((noun_at - 1))p" | grep -q '^@media (max-width: 480px) {$'; then
+  fail "robot-editor action nouns must be hidden only at <= 480px (UI-M12d r4)"
+fi
+for a in 'id="agent-save" type="button" aria-label="Create robot">Create<span class="act-noun"> robot</span>' \
+  'id="agent-clone" type="button" aria-label="Clone Robot" disabled>Clone<span class="act-noun"> Robot</span>' \
+  'id="agent-delete" type="button" aria-label="Delete Robot" disabled>Delete<span class="act-noun"> Robot</span>'; do
+  echo "$html" | grep -q -F -e "$a" || fail "robot-editor actions must keep their full accessible name (UI-M12d r4)"
+done
+# r5 (Ops F2 fallback): the drawer bottom fade sits after the touch block
+# and is switched only by the overflow test, so a drawer that fits shows
+# no cue.
+cue_at=$(line_of '^#fo-drawer\.is-overflowing::after { content: ""; flex: 0 0 24px; margin-top: -12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }$')
+if [ -z "$cue_at" ] || [ "$cue_at" -le "$touch_end" ] \
+  || ! echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", d.scrollHeight - cue > d.clientHeight + 1);' \
+  || ! echo "$html" | grep -q -F -e 'const drawerRO = new ResizeObserver(syncDrawerOverflow);'; then
+  fail "drawer bottom fade must show only when the drawer overflows (UI-M12d r5)"
+fi
+style_end=$(line_of '^</style>$')
+if [ -z "$style_end" ] || [ "$style_end" -le "$touch_end" ] \
+  || echo "$html" | sed -n "${m12d_at},${style_end}p" | grep -q '\(height\|width\|block-size\): *44px'; then
+  fail "UI-M12d block must not size a control at 44px"
+fi
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + pills"
 echo "$html" | grep -q 'id="provider-username"' || fail "HTML missing provider username"
@@ -331,7 +534,7 @@ echo "$html" | grep -q 'pass show hush/providers/' || fail "HTML missing provide
 echo "$html" | grep -q 'Cline CLI' || fail "HTML missing Cline CLI setup copy"
 echo "$html" | grep -q 'Delete Robot' || fail "HTML missing delete robot"
 echo "$html" | grep -q 'Create robot' || fail "HTML missing create robot"
-echo "$html" | grep -q 'Save Robot' || fail "HTML missing save robot"
+echo "$html" | grep -q -F 'setActionLabel($("agent-save"), "Save", "Robot")' || fail "HTML missing save robot"
 echo "$html" | grep -q 'value="deepseek-api"' || fail "HTML missing deepseek radio"
 echo "$html" | grep -q 'Edit Major' || fail "HTML missing Payne edit title"
 echo "$html" | grep -q 'id="inv-menu"' || fail "HTML missing inventory edit menu"
