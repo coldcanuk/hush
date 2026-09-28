@@ -249,6 +249,14 @@ int main(void)
            "prune copy 1to0");
     expect(roster.agents[1].nskills == 0, "copy empty loadout");
     expect(roster.agents[0].nskills == 1, "locked original keeps skill");
+    /* HTTP reads at most 8 skill_N keys; only C callers reach this refusal. */
+    memcpy(agent.name, "Zed", 4);
+    agent.nskills = (size_t)HUSH_SKILL_EQUIP_MAX + 1;
+    expect(hush_roster_update_agent(&roster, "coach-copy", &agent) ==
+               HUSH_ERR_FULL,
+           "nine skills refused");
+    expect(strcmp(roster.agents[1].name, "Coach copy") == 0,
+           "refused skills keep the name");
     hush_store_destroy(store);
     hush_pass_set_helper(NULL);
     if (g_fail)

@@ -293,6 +293,15 @@ def agent_on_disk(relay, slug):
     raise AssertionError(f"reasons: robot {slug} missing from vibe.json")
 
 
+def refused(relay, case, body):
+    """A 400 whose reason is still plain (unknown role on update: #233)."""
+    status, _, raw = relay.call("POST", "/api/agent", body)
+    if status == 400:
+        print(f"reasons: ok {case}: HTTP 400")
+    else:
+        FAILURES.append(f"{case}: want HTTP 400; got HTTP {status} {raw[:200]!r}")
+
+
 def same_fields(case, before, after):
     changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
     if changed:
@@ -314,6 +323,7 @@ def check_robot_rename(relay):
            dict(update, provider="nope"), "Unknown provider: nope.")
     expect(relay, "update refused voice", "/api/agent",
            dict(update, provider="ollama", voice="zzz"), "Unknown voice: zzz.")
+    refused(relay, "update refused role", dict(update, role="boss"))
     expect(relay, "rename blank", "/api/agent", dict(update, name="   "), NAME)
     expect(relay, "rename slug clash", "/api/agent", dict(update, name="Walkbot One"),
            TAKEN)
@@ -354,6 +364,12 @@ def check_robot_full(relay):
     for i in range(count, 16):
         relay.ok("/api/agent", robot(f"Filler {i}"))
     expect(relay, "roster full", "/api/agent", robot("Walkbot Extra"), FULL)
+    # Clone checks run in roster order: name too long first, then full.
+    long_slug = "long-" + "x" * 54
+    expect(relay, "clone too long while full", "/api/agent",
+           {"action": "clone", "slug": long_slug}, CLONE_LONG.format(long_slug))
+    expect(relay, "clone while full", "/api/agent",
+           {"action": "clone", "slug": "walkbot-one"}, FULL)
 
 
 def fav(action, **extra):
