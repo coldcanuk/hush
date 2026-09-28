@@ -109,7 +109,7 @@ if [ -n "$owner" ]; then
 hush-relay is running on port ${port} (pid ${owner}); refusing to build over a live hive.
 Stop it first, then rebuild:
   hush-relay --quit ${port}   # pid ${owner}; Exit in the hive works too
-Close only dismisses the window — the hive keeps the port. See README "Close vs Exit".
+Close only dismisses the window — the hive keeps the port. See docs/OPERATIONS.md "Close vs Exit".
 EOF
     exit 1
 fi
