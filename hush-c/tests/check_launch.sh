@@ -302,7 +302,7 @@ if echo "$html" | grep -q 'syncFoExpand'; then fail "edge tab aria sync must be 
 echo "$html" | grep -q 'UI-M8' || fail "HTML missing UI-M8 markers"
 # UI-M11: volume dial owns dispatch-log scroll. The native fat bar stays
 # hidden, but the message column owns NO in-column chrome: no track, dot,
-# or end-arrow bar. A stereo-style VOLUME dial above Send Dispatch scrolls
+# or end-arrow bar. A stereo-style VOLUME dial above the Send switch scrolls
 # the log (wheel over dial, clockwise/counter-clockwise drag, keys).
 echo "$html" | grep -q 'id="fo-log-wrap"' || fail "HTML missing log wrap (UI-M11)"
 if echo "$html" | grep -q 'id="fo-scrollbar"'; then fail "M10 scrollbar must be gone (UI-M11)"; fi
@@ -320,6 +320,28 @@ echo "$html" | grep -q 'syncFoDial' || fail "HTML missing dial sync (UI-M11)"
 echo "$html" | grep -q 'foDialScrollBy' || fail "HTML missing dial scroll driver (UI-M11)"
 echo "$html" | grep -q 'foDialAngle' || fail "HTML missing dial drag angle (UI-M11)"
 echo "$html" | grep -q 'UI-M11' || fail "HTML missing UI-M11 markers"
+# UI-M12c: Send is a spring-return metal toggle switch, still the form's
+# real submit <button> named "Send", and the UI-M11 dial sits directly above
+# it in one composer column. The old "Send Dispatch" slab is gone.
+echo "$html" | grep -q '<button id="send" class="fo-switch" type="submit"' \
+  || fail "HTML missing Send switch submit button (UI-M12c)"
+echo "$html" | grep -q '<span class="fo-switch-cap">Send</span>' \
+  || fail "Send switch must be named Send (UI-M12c)"
+echo "$html" | grep -q 'class="fo-switch-lever"' || fail "HTML missing Send switch lever (UI-M12c)"
+echo "$html" | grep -q 'foSwitchFlick' || fail "HTML missing Send switch flick (UI-M12c)"
+echo "$html" | grep -q 'createBiquadFilter' || fail "HTML missing Web Audio switch clicks (UI-M12c)"
+if echo "$html" | grep -q 'Send Dispatch</button>'; then
+  fail "old Send Dispatch button must be gone (UI-M12c)"
+fi
+line_of() { echo "$html" | grep -n "$1" | head -n 1 | cut -d: -f1; }
+form_at=$(line_of 'id="form"')
+col_at=$(line_of 'id="fo-send-col"')
+dial_at=$(line_of 'id="fo-dial-row"')
+send_at=$(line_of '<button id="send"')
+if [ -z "$form_at" ] || [ -z "$col_at" ] || [ -z "$dial_at" ] || [ -z "$send_at" ] \
+  || [ "$form_at" -ge "$col_at" ] || [ "$col_at" -ge "$dial_at" ] || [ "$dial_at" -ge "$send_at" ]; then
+  fail "dial row must sit directly above Send inside the composer column (UI-M12c)"
+fi
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + pills"
 echo "$html" | grep -q 'id="provider-username"' || fail "HTML missing provider username"

@@ -1124,9 +1124,9 @@ html[data-theme="field-office"] .composer-box {
   background: #ebdcb9; border: 2px solid #5c4a3d; border-radius: 3px; box-shadow: none;
 }
 html[data-theme="field-office"] .composer-box:focus-within { box-shadow: 2px 2px 0 #5c4a3d; }
-html[data-theme="field-office"] #send {
-  background: #2a241e; color: #e2d5b8; border: 2px solid #2a241e; border-radius: 3px;
-  text-transform: uppercase; letter-spacing: 0.12em; box-shadow: 2px 2px 0 #5c4a3d;
+html[data-theme="field-office"] #send.fo-switch {
+  background: #e2d5b8; color: #2a241e; border: 2px solid #5c4a3d; border-radius: 3px;
+  box-shadow: 2px 2px 0 #5c4a3d;
 }
 html[data-theme="field-office"] .chan { border-radius: 3px; }
 html[data-theme="field-office"] .chan.on {
@@ -1536,7 +1536,8 @@ html[data-theme="field-office"] #kit-menu {
    Supersedes the UI-M10 scrollbar-in-message-column: the dispatch log
    (#stream) keeps the native fat bar hidden but owns NO in-column
    chrome (no track, dot, or end arrows). Scroll lives on a stereo-style
-   VOLUME dial in the empty chrome above Send Dispatch (#fo-dial-row).
+   VOLUME dial directly above the Send switch (#fo-dial-row; UI-M12c
+   moved it into the composer's #fo-send-col, see below).
    Wheel over the dial scrolls the log; click-drag rotates clockwise to
    scroll down, counter-clockwise to scroll up. The wrap stays row-flex
    so #stream keeps a bounded height and scrolls internally — block would
@@ -1546,7 +1547,7 @@ html[data-theme="field-office"] #kit-menu {
 #fo-log-wrap { display: flex; flex: 1; min-height: 0; }
 #fo-log-wrap #stream { flex: 1; min-width: 0; min-height: 0; scrollbar-width: none; -ms-overflow-style: none; }
 #fo-log-wrap #stream::-webkit-scrollbar { display: none; width: 0; height: 0; }
-#fo-dial-row { display: flex; flex: 0 0 auto; justify-content: flex-end; padding: 4px 18px 0; }
+#fo-dial-row { display: flex; flex: 0 0 auto; justify-content: center; }
 #fo-dial {
   display: inline-flex; align-items: center; gap: 8px;
   background: var(--surface); color: var(--fg); border: 1px solid var(--line);
@@ -1581,6 +1582,72 @@ html[data-theme="field-office"] #fo-dial-knob {
   background: #2a241e; border: 2px solid #5c4a3d; box-shadow: none;
 }
 html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; }
+/* ===== UI-M12c spring-return Send switch =====
+   #send stays the composer's real submit <button> (accessible name
+   "Send") but reads as a small metal toggle on a stamped plate
+   (fo-switch markers). A send flicks the lever right (.fo-flick, 100ms)
+   and a spring returns it left (150ms, slight overshoot); the clicks are
+   Web Audio (foSwitchFlick). #fo-send-col stacks the UI-M11 dial
+   directly above the switch at the composer's right edge; both stretch
+   to one column width so their edges line up at every width (the draft
+   box may shrink below its textarea's intrinsic width so the column
+   still fits a 375px phone). Empty draft (#msg placeholder shown) =
+   dashed, faded switch; sending (:disabled) = faded switch. Reduced
+   motion: no swing. */
+#fo-send-col { display: flex; flex-direction: column; align-items: stretch; gap: 6px; flex: 0 0 auto; }
+#form .composer-box { min-width: 0; }
+#send.fo-switch {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-width: 0; min-height: 48px; padding: 4px 8px 4px 12px;
+  background: var(--surface); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 8px; box-shadow: none; cursor: pointer;
+  transition: opacity 120ms linear;
+}
+.fo-switch-cap {
+  font: 700 0.72rem/1 "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
+  text-transform: uppercase; letter-spacing: 0.16em;
+}
+.fo-switch-plate {
+  position: relative; flex: 0 0 auto; width: 60px; height: 40px;
+  background: var(--surface-2); border: 2px solid var(--line); border-radius: 3px;
+}
+.fo-switch-plate::before, .fo-switch-plate::after {
+  content: ""; position: absolute; top: 50%; width: 5px; height: 5px;
+  margin-top: -3px; border-radius: 50%; background: var(--faint);
+}
+.fo-switch-plate::before { left: 4px; }
+.fo-switch-plate::after { right: 4px; }
+.fo-switch-boss {
+  position: absolute; left: 50%; bottom: 4px; width: 14px; height: 14px;
+  margin-left: -7px; border-radius: 50%; background: var(--line);
+}
+.fo-switch-lever {
+  position: absolute; left: 50%; bottom: 11px; width: 6px; height: 18px;
+  margin-left: -3px; border-radius: 3px 3px 0 0; background: var(--muted);
+  transform-origin: 50% 100%; transform: rotate(-32deg);
+  transition: transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.fo-switch-lever::before {
+  content: ""; position: absolute; left: 50%; top: -5px; width: 10px; height: 10px;
+  margin-left: -5px; border-radius: 50%; background: inherit;
+}
+#send.fo-switch.fo-flick .fo-switch-lever {
+  transform: rotate(32deg);
+  transition: transform 100ms cubic-bezier(0.5, 0, 0.75, 0);
+}
+.composer:has(#msg:placeholder-shown) #send.fo-switch:not(.fo-flick) {
+  opacity: 0.5; border-style: dashed; cursor: default;
+}
+#send.fo-switch:disabled:not(.fo-flick) { opacity: 0.5; cursor: not-allowed; }
+html[data-theme="field-office"] .fo-switch-plate { background: #2a241e; border-color: #5c4a3d; }
+html[data-theme="field-office"] .fo-switch-plate::before,
+html[data-theme="field-office"] .fo-switch-plate::after { background: #b8a67a; }
+html[data-theme="field-office"] .fo-switch-boss { background: #8a8374; box-shadow: inset -2px -2px 0 #5c574c; }
+html[data-theme="field-office"] .fo-switch-lever { background: #d8d0bc; box-shadow: inset -2px 0 0 #9c927c; }
+html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2px -2px 0 #9c927c; }
+@media (prefers-reduced-motion: reduce) {
+  .fo-switch-lever, #send.fo-switch.fo-flick .fo-switch-lever { transition: none; transform: rotate(-32deg); }
+}
 </style>
 </head>
 <body>
@@ -1677,26 +1744,33 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       </div>
       <!-- UI-M11: the dispatch log owns NO in-column scrollbar chrome.
            The native fat bar stays hidden on #stream via CSS; scroll lives
-           on the stereo-style VOLUME dial below, in the empty chrome above
-           Send Dispatch. Markers: fo-dial / UI-M11. -->
+           on the stereo-style VOLUME dial in the composer, directly above
+           the Send switch (UI-M12c). Markers: fo-dial / UI-M11. -->
       <div id="fo-log-wrap">
         <div id="stream"></div>
       </div>
       <p id="send-error" class="warn send-error" role="status"></p>
-      <div id="fo-dial-row">
-        <div id="fo-dial" role="slider" tabindex="0" aria-label="Dispatch log scroll dial" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-orientation="vertical" title="Scroll dispatch log: wheel, or drag clockwise to go down">
-          <span id="fo-dial-caption" aria-hidden="true">Volume</span>
-          <div id="fo-dial-knob" aria-hidden="true"><span id="fo-dial-pointer"></span></div>
-          <span id="fo-dial-sub" aria-hidden="true">Scroll</span>
-        </div>
-      </div>
       <form class="composer" id="form">
         <div class="mention-box" id="mention-box" hidden></div>
         <div class="composer-box">
           <div id="composer-pills"></div>
           <textarea id="msg" rows="3" maxlength="2000" placeholder="TYPE NEW MESSAGE HERE — @ a human or robot"></textarea>
         </div>
-        <button id="send" type="submit">Send Dispatch</button>
+        <!-- UI-M12c: one right-hand column, the UI-M11 VOLUME dial directly
+             above the spring-return Send switch (a real submit button). -->
+        <div id="fo-send-col">
+          <div id="fo-dial-row">
+            <div id="fo-dial" role="slider" tabindex="0" aria-label="Dispatch log scroll dial" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-orientation="vertical" title="Scroll dispatch log: wheel, or drag clockwise to go down">
+              <span id="fo-dial-caption" aria-hidden="true">Volume</span>
+              <div id="fo-dial-knob" aria-hidden="true"><span id="fo-dial-pointer"></span></div>
+              <span id="fo-dial-sub" aria-hidden="true">Scroll</span>
+            </div>
+          </div>
+          <button id="send" class="fo-switch" type="submit" title="Send dispatch (Enter)">
+            <span class="fo-switch-cap">Send</span>
+            <span class="fo-switch-plate" aria-hidden="true"><span class="fo-switch-boss"></span><span class="fo-switch-lever"></span></span>
+          </button>
+        </div>
       </form>
     </main>
     <!-- UI-M5 right rail: active personnel + status feed, painted only from
@@ -3452,7 +3526,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
     /* UI-M11 volume-dial scroll control: supersedes the UI-M10
        scrollbar-in-message-column. The native bar on #stream stays hidden
        (CSS) and the log owns no in-column chrome; this stereo-style VOLUME
-       dial in the empty chrome above Send Dispatch owns the position.
+       dial directly above the Send switch (UI-M12c) owns the position.
        Wheel over the dial scrolls the log, click-drag rotates clockwise to
        scroll down (counter-clockwise to scroll up), and the pointer follows
        every scroll, resize, and content paint. No new layers, so the
@@ -4605,6 +4679,61 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       }
     });
 
+    /* UI-M12c spring-return Send switch: one send flicks the lever right
+       with a sharp click, then a spring returns it left with a softer
+       click, both synthesized with Web Audio (no audio files). Hush has no
+       app sound or mute setting, so the clicks play wherever Web Audio
+       exists; prefers-reduced-motion skips only the swing. Called from the
+       #form submit handler after its guards, so click and Enter share it
+       and a refused or duplicate submit never flicks. */
+    const FO_SWITCH_FLICK_MS = 100;
+    const foSwitchCalm = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let foSwitchAudio = null, foSwitchNoise = null, foSwitchTimer = 0;
+    function foSwitchClick(at, hz, level, decay) {
+      const ctx = foSwitchAudio;
+      const src = ctx.createBufferSource();
+      const band = ctx.createBiquadFilter();
+      const amp = ctx.createGain();
+      src.buffer = foSwitchNoise;
+      band.type = "bandpass";
+      band.frequency.value = hz;
+      band.Q.value = 1.2;
+      amp.gain.setValueAtTime(level, at);
+      amp.gain.exponentialRampToValueAtTime(0.0001, at + decay);
+      src.connect(band);
+      band.connect(amp);
+      amp.connect(ctx.destination);
+      src.start(at);
+      src.stop(at + decay + 0.01);
+    }
+    function foSwitchSound() {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      try {
+        if (!foSwitchAudio) {
+          foSwitchAudio = new Ctx();
+          const len = Math.ceil(foSwitchAudio.sampleRate * 0.05);
+          foSwitchNoise = foSwitchAudio.createBuffer(1, len, foSwitchAudio.sampleRate);
+          const data = foSwitchNoise.getChannelData(0);
+          for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+        }
+        if (foSwitchAudio.state === "suspended") foSwitchAudio.resume();
+        const now = foSwitchAudio.currentTime;
+        foSwitchClick(now, 3400, 0.5, 0.03);
+        foSwitchClick(now + FO_SWITCH_FLICK_MS / 1000, 1700, 0.18, 0.045);
+      } catch (err) {
+        /* Sound is garnish: sending never depends on it. */
+      }
+    }
+    function foSwitchFlick() {
+      foSwitchSound();
+      if (foSwitchCalm.matches) return;
+      const send = $("send");
+      clearTimeout(foSwitchTimer);
+      send.classList.add("fo-flick");
+      foSwitchTimer = setTimeout(() => send.classList.remove("fo-flick"), FO_SWITCH_FLICK_MS);
+    }
+
     $("form").addEventListener("submit", async (e) => {
       e.preventDefault();
       if (mentionOpen) return;
@@ -4613,6 +4742,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
       if (!text) return;
       if (sendingMessage) return;
       sendingMessage = true;
+      foSwitchFlick();
       const draft = $("msg").value;
       $("send").disabled = true;
       $("send-error").textContent = "";

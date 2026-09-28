@@ -1052,6 +1052,40 @@ so nothing overlaps the chat list at desktop or phone widths. The header
 (`closeNavigation`) are unchanged. Gate: the launch script fails on any
 served `id="fo-expand"` / `syncFoExpand` marker and requires
 `id="nav-toggle"`.
+Delta 2026-09-28 (UI-M12c spring-return Send switch + dial move):
+the composer's Send control is a small metal toggle switch, not the
+`SEND DISPATCH` slab. `#send` stays the form's real `<button
+type="submit">` (class `fo-switch`) with the accessible name "Send"
+(visible stamped caption `SEND`, `.fo-switch-cap`) and a dark
+escutcheon plate (`.fo-switch-plate`: two brass screws, pivot boss,
+nickel bat lever `.fo-switch-lever`; field-office flat tones, offset
+shadow, sharp 3px corners; other themes use their tokens). A send that
+passes the existing submit guards (mention list closed, non-empty
+draft, no send in flight) calls `foSwitchFlick`: the lever flicks
+RIGHT (100ms) with a sharp click, the message sends, and a spring
+returns it LEFT (150ms, slight overshoot) with a softer click. Both
+clicks are synthesized with Web Audio (band-passed noise bursts; no
+audio files). Hush has no app sound or mute setting, so the clicks
+play wherever Web Audio exists. Enter in `#msg` goes through the same
+submit handler, so it gets the same flick and clicks; a refused or
+duplicate submit neither sends nor flicks. `prefers-reduced-motion:
+reduce` skips the swing (sending and clicks unchanged). An empty draft
+(`#msg` placeholder shown) shows a dashed-border, faded switch; an
+in-flight send (`:disabled`) shows a faded switch with a not-allowed
+cursor.
+The UI-M11 VOLUME dial (`#fo-dial-row`) moved out of the chrome
+between `#send-error` and the composer (where it sat right-aligned on
+the log side of the composer border, 135px above Send and wider than
+it) into the composer: `#fo-send-col` is one right-hand column with
+the dial directly above the switch, both stretched to the column width
+so their left and right edges line up at desktop and phone widths
+(the draft box may shrink below its textarea's intrinsic width so the
+column fits 375px). The dial's look and behaviour are unchanged and it
+still scrolls `#stream`. The thread reply `#thread-send` is unchanged.
+Gate: the launch script requires the `fo-switch` submit button, the
+`Send` caption, the lever, `foSwitchFlick`, Web Audio clicks, and the
+order `id="form"` < `id="fo-send-col"` < `id="fo-dial-row"` < `<button
+id="send"`; it fails on any served `Send Dispatch</button>`.
 
 ### 16. Mention + manage pills
 
