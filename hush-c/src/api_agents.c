@@ -35,6 +35,9 @@
 #define HUSH_AGENT_WHY_SLUG "Robot slug is required."
 #define HUSH_AGENT_WHY_MISSING "No robot with slug %s."
 #define HUSH_AGENT_WHY_MAJOR "Major cannot be deleted or cloned."
+#define HUSH_AGENT_WHY_CLONE_LONG \
+    "Cannot clone %s: the name plus \" copy\" would be over %d bytes; " \
+    "shorten the name first."
 
 static char g_context_text[HUSH_ROSTER_CONTEXT_MAX][HUSH_ROSTER_CONTEXT_BYTES];
 
@@ -83,6 +86,10 @@ static void hush_http_update_why(char *why, size_t whysz, const char *slug,
 /* Writes why for a refused delete or clone of slug by status. */
 static void hush_http_slug_why(char *why, size_t whysz, hush_status_t st,
                                const char *slug);
+/* Writes why for a refused clone of slug, in hush_roster_clone_agent's
+ * order: "<name> copy" too long, then roster full, then slug taken. */
+static void hush_http_clone_why(char *why, size_t whysz, hush_status_t st,
+                                const char *slug);
 /* Writes why for a bad provider list or voice. 1 when a rule matched. */
 static int hush_http_setup_why(char *why, size_t whysz,
                                const hush_roster_agent_in_t *in);
@@ -172,7 +179,7 @@ static hush_status_t hush_http_clone_agent(int fd, const char *body,
     if (!hush_http_json_field(body, "slug", slug, sizeof(slug)))
         return hush_http_reply_refused(fd, HUSH_ERR_PARSE, HUSH_AGENT_WHY_SLUG);
     st = hush_launch_clone_agent(hush_http_launch(), store, slug);
-    hush_http_slug_why(why, sizeof(why), st, slug);
+    hush_http_clone_why(why, sizeof(why), st, slug);
     return hush_http_reply_refused(fd, st, why);
 }
 
@@ -641,6 +648,47 @@ static void hush_http_slug_why(char *why, size_t whysz, hush_status_t st,
              hush_http_launch()->roster.nagents >= (size_t)HUSH_ROSTER_AGENTS_MAX)
         (void)snprintf(why, whysz, HUSH_AGENT_WHY_FULL,
                        (int)HUSH_ROSTER_AGENTS_MAX);
+}
+
+static void hush_http_clone_why(char *why, size_t whysz, hush_status_t st,
+                                const char *slug)
+{
+    const hush_roster_t *roster = &hush_http_launch()->roster;
+    char copy[HUSH_ROSTER_NAME_MAX * 2];
+    char copy_slug[HUSH_ROSTER_NAME_MAX];
+    char safe[HUSH_HTTP_WHY_ID_MAX];
+    size_t i;
+    int n;
+
+    assert(why != NULL && whysz > 0 && slug != NULL);
+    if (st != HUSH_ERR_FULL && st != HUSH_ERR_PARSE) {
+        hush_http_slug_why(why, whysz, st, slug);
+        return;
+    }
+    why[0] = '\0';
+    for (i = 0; i < roster->nagents; i++) {
+        if (strcmp(roster->agents[i].slug, slug) == 0)
+            break;
+    }
+    if (i == roster->nagents)
+        return;
+    n = snprintf(copy, sizeof(copy), "%s copy", roster->agents[i].name);
+    if (n < 0)
+        return;
+    if ((size_t)n >= (size_t)HUSH_ROSTER_NAME_MAX) {
+        hush_http_safe_id(safe, sizeof(safe), slug);
+        (void)snprintf(why, whysz, HUSH_AGENT_WHY_CLONE_LONG, safe,
+                       (int)HUSH_ROSTER_NAME_MAX - 1);
+        return;
+    }
+    if (roster->nagents >= (size_t)HUSH_ROSTER_AGENTS_MAX) {
+        (void)snprintf(why, whysz, HUSH_AGENT_WHY_FULL,
+                       (int)HUSH_ROSTER_AGENTS_MAX);
+        return;
+    }
+    hush_roster_slug_of(copy_slug, sizeof(copy_slug), copy);
+    if (hush_http_slug_taken(copy_slug))
+        hush_http_why_id(why, whysz, HUSH_AGENT_WHY_TAKEN, copy_slug);
 }
 
 static int hush_http_setup_why(char *why, size_t whysz,

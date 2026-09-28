@@ -35,6 +35,8 @@ FILES = "Context files must be plain text or Markdown, at most 4096 bytes each."
 FULL = "Robot roster is full (16 robots)."
 SLUG = "Robot slug is required."
 MAJOR = "Major cannot be deleted or cloned."
+CLONE_LONG = ('Cannot clone {}: the name plus " copy" would be over 63 bytes; '
+              "shorten the name first.")
 FAV_ACTION = "Loadout action must be save, list, load or delete."
 FAV_ROBOT = "Robot must be a slug: a-z, 0-9, - or _ (1-63 characters)."
 FAV_NAME = ("Favorite names use letters, digits, spaces, - or _ "
@@ -238,6 +240,27 @@ def check_robot_slugs(relay):
            {"action": "delete", "slug": "sgt-major-payne"}, MAJOR)
     expect(relay, "clone Major", "/api/agent",
            {"action": "clone", "slug": "sgt-major-payne"}, MAJOR)
+    check_robot_clones(relay)
+
+
+def check_robot_clones(relay):
+    """Clones are named "<name> copy"; names hold at most 63 bytes."""
+    edge = "Edge " + "x" * 53  # 58 bytes: "<name> copy" is exactly 63
+    relay.ok("/api/agent", robot(edge))
+    made = relay.ok("/api/agent", {"action": "clone", "slug": "edge-" + "x" * 53})
+    slugs = [a.get("slug") for a in made.get("agents", [])]
+    if "edge-" + "x" * 53 + "-copy" not in slugs:
+        FAILURES.append(f"a 58-byte name must clone (63-byte copy name); got {slugs}")
+    else:
+        print("reasons: ok clone at the limit: 58-byte name -> 63-byte copy name")
+    long_slug = "long-" + "x" * 54
+    relay.ok("/api/agent", robot("Long " + "x" * 54))  # 59 bytes: copy is 64
+    expect(relay, "clone name too long", "/api/agent",
+           {"action": "clone", "slug": long_slug}, CLONE_LONG.format(long_slug))
+    relay.ok("/api/agent", robot("Twin"))
+    relay.ok("/api/agent", {"action": "clone", "slug": "twin"})
+    expect(relay, "clone twice", "/api/agent", {"action": "clone", "slug": "twin"},
+           "Robot name taken: slug twin-copy is already in use.")
 
 
 def check_robot_full(relay):
