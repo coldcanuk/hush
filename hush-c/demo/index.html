@@ -1387,6 +1387,10 @@ html[data-theme="field-office"] #code-canvas-hi,
 html[data-theme="field-office"] #code-canvas-edit {
   border: 2px solid #5c4a3d; background: #ebdcb9;
 }
+/* Paper-flattened buttons keep dark ink text. The block above overrides
+ * background without touching color, which left cream text on tan. */
+html[data-theme="field-office"] .btn,
+html[data-theme="field-office"] .iconbtn.danger { color: #2a241e; }
 html[data-theme="field-office"] .btn,
 html[data-theme="field-office"] .thread-btn,
 html[data-theme="field-office"] #thread-send { text-transform: uppercase; letter-spacing: 0.1em; }
@@ -2614,10 +2618,18 @@ html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2p
       $("settings-btn").hidden = false;
       $("call-btn").hidden = !ready;
       if ($("call-info")) $("call-info").hidden = !ready;
-      if (session.vibe && session.vibe.name)
+      // The header names the hive only while identity is present. After a
+      // restart that loses login, the vibe survives on disk but npub is
+      // empty, so fall back to the neutral default instead of implying
+      // the hive is still yours.
+      if (session.logged_in && session.vibe && session.vibe.name)
         $("vibe-sub").textContent = session.vibe.name;
-      if (session.vibe && session.vibe.visibility)
+      else
+        $("vibe-sub").textContent = "local hive mind";
+      if (session.logged_in && session.vibe && session.vibe.visibility)
         $("vibe-vis").textContent = session.vibe.visibility;
+      else
+        $("vibe-vis").textContent = "";
       if (!ready) {
         const html = gateHtml();
         if (html === lastGateHtml)
@@ -2647,7 +2659,8 @@ html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2p
         return card("hush",
           "<img class=\"feather\" src=\"/icon-192.png\" alt=\"hush\">" +
           "<p><strong>Major reporting for duty.</strong></p>" +
-          "<p>Detecting identity and vibe…</p>" +
+          "<p>Click Begin to continue.</p>" +
+          restartNote() +
           errLine() +
           actions([{ id: "begin", label: "Begin" }]) +
           "<div class=\"help\">Disciplined collaboration with humans and agents.</div>");
@@ -2655,9 +2668,9 @@ html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2p
       if (page === "help") {
         return card("What’s an identity key?",
           stepBar(1) +
-          "<p>Hush uses a Nostr identity key instead of a password. It is created on this machine and represents you.</p>" +
+          "<p>Hush signs you in with an identity key instead of a password. The key is created on this computer and stands for you.</p>" +
           "<p>Your public key (<code>npub</code>) is safe to share. Your private key (<code>nsec</code>) is the account. Anyone with it can act as you. There is no forgot-password.</p>" +
-          "<p>Create a new key if you are new. Import an existing <code>nsec1…</code> if you already have a Nostr identity.</p>" +
+          "<p>Create a new key if this is your first time. If you already have a private key (it starts with nsec1), choose Use an existing key.</p>" +
           actions([{ id: "back-help", ghost: true, label: "Back" }]));
       }
       if (page === "import") {
@@ -2675,15 +2688,28 @@ html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2p
       }
       if (page === "backup") {
         const shown = keyRevealed ? esc(pendingNsec) : "•".repeat(Math.max(16, pendingNsec.length || 63));
+        const passOff = session.pass_available === false;
+        const passNote = passOff
+          ? "<p class=\"warn\">Hush can't save this key on this computer. Copy it now and keep it somewhere safe. Setup continues without saving.</p>"
+          : "";
+        const passLabel = passOff
+          ? "Save to password manager"
+          : "Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/identity/nsec</code>";
+        const neverShare = "Never share your private key. Anyone with it can impersonate you.";
+        const passAfter = passOff
+          ? "<p class=\"warn\">" + neverShare + "</p>"
+          : "<p class=\"warn\">" + neverShare + " Uncheck the box only if you do not want <code>pass</code> to store it.</p>";
         return "<dialog class=\"secret\" id=\"secret-modal\" open>" +
           card("Your unique identity key has been created",
           stepBar(2) +
           "<p>This key is your account. Copy it now. Hush cannot recover it if you lose it.</p>" +
           "<div class=\"keybox" + (keyRevealed ? " revealed" : "") + "\" id=\"nsec-box\">" + shown + "</div>" +
           "<label class=\"passbox\"><input id=\"save-pass\" type=\"checkbox\"" +
-          (savePass ? " checked" : "") +
-          "> Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/identity/nsec</code></label>" +
-          "<p class=\"warn\">Never share your private key. Anyone with it can impersonate you. Uncheck the box only if you do not want <code>pass</code> to store it.</p>" +
+          ((!passOff && savePass) ? " checked" : "") +
+          (passOff ? " disabled" : "") +
+          "> " + passLabel + "</label>" +
+          passNote +
+          passAfter +
           errLine() +
           actions([
             { id: "reveal-key", ghost: true, label: keyRevealed ? "Hide" : "Reveal" },
@@ -2719,13 +2745,20 @@ html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2p
       }
       return card("Your people, your agents, your projects",
         stepBar(1) +
-        "<p>Hush is a local hive mind. First we need a Nostr identity — a key that belongs to you, not to us.</p>" +
+        "<p>Hush is a local hive mind. First we need an identity key — it belongs to you, not to us.</p>" +
+        restartNote() +
         errLine() +
         actions([
           { id: "create-id", label: "Create a new identity key" },
           { id: "use-id", ghost: true, label: "Use an existing key" }
         ]) +
         "<div class=\"help\"><button type=\"button\" id=\"show-help\">What’s an identity key?</button></div>");
+    }
+
+    function restartNote() {
+      if (!session.restart_lost_login) return "";
+      return "<p class=\"warn\">The hive is still on this machine, but the login did not survive the restart. " +
+        "Re-import your identity key (starts with nsec1) to continue.</p>";
     }
 
     function card(title, inner) {

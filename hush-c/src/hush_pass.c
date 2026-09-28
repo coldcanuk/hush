@@ -23,6 +23,13 @@ static char g_last_error[HUSH_PASS_ERR_MAX];
 /* True when path is a non-empty relative store key. */
 static int hush_pass_path_is_ok(const char *path);
 
+/* True when prog names a runnable program (slash path or PATH search). */
+static int hush_pass_prog_ok(const char *prog);
+
+/* True when dir/prog is executable. dirlen is the live prefix length. */
+static int hush_pass_dir_has(const char *dir, size_t dirlen,
+                             const char *prog);
+
 /* Resolves the helper binary into cmd. */
 static hush_status_t hush_pass_resolve_helper(char *cmd, size_t cmdsz);
 
@@ -133,6 +140,66 @@ int hush_pass_has(const char *path)
         return 0;
     hush_pass_fill_argv(argv, helper, "has", path);
     return hush_pass_run(NULL, 0, NULL, argv) == HUSH_OK;
+}
+
+int hush_pass_available(void)
+{
+    const char *over = NULL;
+
+    if (g_helper[0] != '\0')
+        return hush_pass_prog_ok(g_helper);
+    over = getenv(HUSH_PASS_ENV_HELPER);
+    if (over != NULL && over[0] != '\0')
+        return hush_pass_prog_ok(over);
+    if (access(HUSH_PASS_REPO_HELPER, X_OK) == 0)
+        return hush_pass_prog_ok("pass");
+    if (hush_pass_prog_ok(HUSH_PASS_DEFAULT_HELPER))
+        return hush_pass_prog_ok("pass");
+    return 0;
+}
+
+static int hush_pass_prog_ok(const char *prog)
+{
+    const char *path = NULL;
+    const char *cur = NULL;
+
+    assert(prog != NULL);
+    if (prog[0] == '\0')
+        return 0;
+    if (strchr(prog, '/') != NULL)
+        return access(prog, X_OK) == 0;
+    path = getenv("PATH");
+    if (path == NULL || path[0] == '\0')
+        return access(prog, X_OK) == 0;
+    cur = path;
+    /* Bounded walk: each step consumes one ':'-separated entry and the
+     * NUL terminator ends it, so it runs at most strlen(path)+1 steps. */
+    while (1) {
+        const char *end = strchr(cur, ':');
+        size_t dirlen = (end != NULL) ? (size_t)(end - cur) : strlen(cur);
+        if (hush_pass_dir_has(cur, dirlen, prog))
+            return 1;
+        if (end == NULL)
+            return 0;
+        cur = end + 1;
+    }
+}
+
+static int hush_pass_dir_has(const char *dir, size_t dirlen,
+                             const char *prog)
+{
+    char full[HUSH_PASS_CMD_MAX] = {0};
+
+    assert(dir != NULL);
+    assert(prog != NULL);
+    if (dirlen == 0)
+        return 0;
+    if (dirlen + strlen(prog) + 2 > sizeof(full))
+        return 0;
+    memcpy(full, dir, dirlen);
+    full[dirlen] = '/';
+    memcpy(full + dirlen + 1, prog, strlen(prog) + 1);
+    return access(full, X_OK) == 0;
 }
 
 static int hush_pass_path_is_ok(const char *path)

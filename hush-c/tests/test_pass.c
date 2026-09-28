@@ -2,12 +2,19 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "hush_pass.h"
+
+enum {
+    TEST_PATH_MAX = 128,
+    TEST_DIR_MODE = 0700
+};
 
 static int g_fail;
 
@@ -19,10 +26,126 @@ static void expect(int cond, const char *msg)
     }
 }
 
+/* Rejects saves through a missing helper and reports error text. */
+static void test_pass_missing_helper(void)
+{
+    char err[HUSH_PASS_ERR_MAX];
+
+    hush_pass_set_helper("/no/such/hush-pass-helper");
+    expect(hush_pass_save(HUSH_PASS_IDENTITY_NSEC, "nsec1x") == HUSH_ERR_IO,
+           "missing helper");
+    hush_pass_last_error(err, sizeof(err));
+    expect(err[0] != '\0', "error text");
+    hush_pass_set_helper(NULL);
+}
+
+/* Writes an always-zero executable stub. */
+static void test_make_fake(const char *path)
+{
+    FILE *fp = fopen(path, "w");
+
+    if (fp == NULL)
+        return;
+    fputs("#!/bin/sh\nexit 0\n", fp);
+    fclose(fp);
+    chmod(path, 0700);
+}
+
+/* Expects hush_pass_available() false when PATH holds a stub hush-pass but
+ * no pass: the virgin-VM case (helper shipped, pass not installed). base is
+ * an existing scratch directory; PATH is left pointing at the new dir. */
+static void test_pass_helper_only(const char *base)
+{
+    char dir[TEST_PATH_MAX] = {0};
+    char fake[TEST_PATH_MAX] = {0};
+
+    assert(base != NULL);
+    const int dir_len = snprintf(dir, sizeof(dir), "%s/helper-only", base);
+    const int fake_len = snprintf(fake, sizeof(fake), "%s/hush-pass", dir);
+    if (dir_len < 0 || (size_t)dir_len >= sizeof(dir) || fake_len < 0
+        || (size_t)fake_len >= sizeof(fake)) {
+        expect(0, "helper-only path fits");
+        return;
+    }
+    if (mkdir(dir, TEST_DIR_MODE) != 0) {
+        expect(0, "helper-only mkdir");
+        return;
+    }
+    test_make_fake(fake);
+    expect(access(fake, X_OK) == 0, "helper-only stub");
+    if (setenv("PATH", dir, 1) != 0) {
+        expect(0, "helper-only PATH");
+        return;
+    }
+    expect(!hush_pass_available(), "helper present, pass absent");
+}
+
+/* Removes the scratch tree that test_pass_available builds under base
+ * (/tmp/hush-avail-<pid>), so repeated runs leave nothing behind. */
+static void test_pass_cleanup(const char *base)
+{
+    static const char *const files[] = {
+        "bin/pass", "bin/hush-pass", "helper-only/hush-pass"
+    };
+    static const char *const dirs[] = { "bin", "helper-only" };
+    char p[TEST_PATH_MAX];
+
+    assert(base != NULL);
+    if (chdir("/") != 0)
+        expect(0, "cleanup chdir");
+    for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+        snprintf(p, sizeof(p), "%s/%s", base, files[i]);
+        unlink(p);
+    }
+    for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
+        snprintf(p, sizeof(p), "%s/%s", base, dirs[i]);
+        rmdir(p);
+    }
+    rmdir(base);
+    expect(access(base, F_OK) != 0, "scratch dir removed");
+}
+
+/* Detects the real helper path with no override and a controlled PATH.
+ * A stuck-true or stuck-false hush_pass_available fails here. */
+static void test_pass_available(void)
+{
+    char base[64];
+    char bindir[80];
+    char emptydir[80];
+    char fake[96];
+    char *kept = NULL;
+    const char *path = getenv("PATH");
+
+    hush_pass_set_helper(NULL);
+    unsetenv(HUSH_PASS_ENV_HELPER);
+    if (path != NULL)
+        kept = strdup(path);
+    snprintf(base, sizeof(base), "/tmp/hush-avail-%ld", (long)getpid());
+    snprintf(bindir, sizeof(bindir), "%s/bin", base);
+    snprintf(emptydir, sizeof(emptydir), "%s/empty", base);
+    mkdir(base, 0700);
+    mkdir(bindir, 0700);
+    snprintf(fake, sizeof(fake), "%s/pass", bindir);
+    test_make_fake(fake);
+    snprintf(fake, sizeof(fake), "%s/hush-pass", bindir);
+    test_make_fake(fake);
+    if (chdir(base) != 0)
+        expect(0, "chdir tmp");
+    setenv("PATH", bindir, 1);
+    expect(hush_pass_available(), "pass+helper present");
+    setenv("PATH", emptydir, 1);
+    expect(!hush_pass_available(), "helper and pass absent");
+    test_pass_helper_only(base);
+    if (kept != NULL) {
+        setenv("PATH", kept, 1);
+        free(kept);
+    }
+    test_pass_cleanup(base);
+}
+
 int main(void)
 {
     char secret[HUSH_PASS_SECRET_MAX];
-    char err[HUSH_PASS_ERR_MAX];
     char dir[64];
     const char *helper = "tests/fake-pass.sh";
 
@@ -53,13 +176,8 @@ int main(void)
            "get payne");
     expect(strcmp(secret, "nsec1payne") == 0, "payne value");
 
-    hush_pass_set_helper("/no/such/hush-pass-helper");
-    expect(hush_pass_save(HUSH_PASS_IDENTITY_NSEC, "nsec1x") == HUSH_ERR_IO,
-           "missing helper");
-    hush_pass_last_error(err, sizeof(err));
-    expect(err[0] != '\0', "error text");
-
-    hush_pass_set_helper(NULL);
+    test_pass_missing_helper();
+    test_pass_available();
     if (g_fail)
         return 1;
     printf("test_pass ok\n");
