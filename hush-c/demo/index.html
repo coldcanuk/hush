@@ -1801,17 +1801,24 @@ button.fo-person { min-height: var(--btn-h-sm); }
    BOARDS drawer fits at 1440x900 with no scroll; at <= 480px the robot
    editor actions show the verb only (the noun stays as visually hidden
    text, and the full name is in aria-label). */
-#stats > span { white-space: nowrap; }
-#stats > span:not(:last-child)::after { content: " ·"; }
+#stats .stat { white-space: nowrap; }
+/* Pre-walk: each stat carries its own leading "·"; the row is pulled 1.2em
+   left inside an overflow-clipped wrapper, so the "·" of whichever stat
+   starts a line is cut off and no line ends or starts on a dangling "·". */
+#stats .stats-clip { display: block; overflow: hidden; }
+#stats .stats-row { display: block; margin-left: -1.2em; }
+#stats .stat::before { content: "·"; content: "·" / ""; display: inline-block; width: 1.2em; text-align: center; }
 @media (max-width: 480px) {
   .act-noun { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 /* r5 (Ops F2 fallback): only while the drawer content overflows (more
-   channels than the demo fixture), a sticky bottom fade plus 24px of end
-   room make the cut edge read as "scroll for more". syncDrawerOverflow()
-   toggles the class; a drawer that fits shows no cue. bottom: -10px
-   reaches past the 10px nav padding to the inner border. */
-#fo-drawer.is-overflowing::after { content: ""; flex: 0 0 24px; margin-top: -12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }
+   channels than the demo fixture), a sticky bottom fade makes the cut edge
+   read as "scroll for more". syncDrawerOverflow() toggles the class; a
+   drawer that fits shows no cue. bottom: -10px reaches past the 10px nav
+   padding to the inner border. Pre-walk: the fade is 12px tall (was 24px
+   pulled up 12px), so it stays in the bottom padding band and the first
+   stats line above it stays crisp; the end room is still 12px. */
+#fo-drawer.is-overflowing::after { content: ""; flex: 0 0 12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }
 </style>
 </head>
 <body>
@@ -3729,7 +3736,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       $("nav-toggle").setAttribute("aria-expanded", String(open));
     });
     /* r5 (Ops F2 fallback): mark the drawer while its content overflows so
-       the CSS bottom fade shows only then. The cue's own 24px is left out
+       the CSS bottom fade shows only then. The cue's own height is left out
        of the test so the class does not hold itself on. */
     function syncDrawerOverflow() {
       const d = $("fo-drawer");
@@ -6714,16 +6721,23 @@ button.fo-person { min-height: var(--btn-h-sm); }
       $("count").textContent = roots.length + (roots.length === 1 ? " note" : " notes");
       const projN = (session.projects || []).length;
       // r4 (Ops F2): one inline item per stat, wrapped, so the drawer fits.
+      // Pre-walk: a status with no version drops the version item (no
+      // "v? ?"); a missing build drops only the build word.
+      const ver = status.version ? String(status.version) : "";
       const statItems = [
         status.ok ? "relay live" : "relay down",
         status.events + " stored",
         projN + " project" + (projN === 1 ? "" : "s"),
-        status.clients + " sockets",
-        (((status.version || "?").charAt(0) === "v" ? "" : "v") + (status.version || "?")) + " " + (status.build || "?")];
-      $("stats").replaceChildren(...statItems.flatMap((t, i) => {
-        const item = document.createElement("span"); item.textContent = t;
-        return i ? [" ", item] : [item];
+        status.clients + " sockets"];
+      if (ver) statItems.push((ver.charAt(0) === "v" ? "" : "v") + ver + (status.build ? " " + status.build : ""));
+      const statRow = document.createElement("span"); statRow.className = "stats-row";
+      statRow.replaceChildren(...statItems.flatMap((t, i) => {
+        const item = document.createElement("span"); item.className = "stat"; item.textContent = t;
+        return i ? [document.createElement("wbr"), item] : [item];
       }));
+      const statClip = document.createElement("span"); statClip.className = "stats-clip";
+      statClip.appendChild(statRow);
+      $("stats").replaceChildren(statClip);
       document.title = "Hush " + (status.version || "0.0.1") +
         " (" + (status.build || "unknown") + ")";
       paintRelayDrawer(status);

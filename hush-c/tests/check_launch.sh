@@ -495,7 +495,7 @@ fi
 # BOARDS drawer fits at 1440x900; at <= 480px the robot-editor actions show
 # the verb only, with the noun as visually hidden .act-noun text and the
 # full name in aria-label.
-if ! echo "$html" | grep -q -x -F -e '#stats > span { white-space: nowrap; }' \
+if ! echo "$html" | grep -q -x -F -e '#stats .stat { white-space: nowrap; }' \
   || echo "$html" | grep -q 'sockets<br>'; then
   fail "drawer stats must flow inline so the drawer fits (UI-M12d r4)"
 fi
@@ -509,10 +509,17 @@ for a in 'id="agent-save" type="button" aria-label="Create robot">Create<span cl
   'id="agent-delete" type="button" aria-label="Delete Robot" disabled>Delete<span class="act-noun"> Robot</span>'; do
   echo "$html" | grep -q -F -e "$a" || fail "robot-editor actions must keep their full accessible name (UI-M12d r4)"
 done
+# Pre-walk: the stats separators lead each item inside a clipped row, so a
+# wrapped line never ends (or starts) on a dangling "·".
+if ! echo "$html" | grep -q -x -F -e '#stats .stats-clip { display: block; overflow: hidden; }' \
+  || ! echo "$html" | grep -q -x -F -e '#stats .stats-row { display: block; margin-left: -1.2em; }' \
+  || echo "$html" | grep -q -F -e ':not(:last-child)::after { content: " ·"; }'; then
+  fail "drawer stats separators must not dangle at wrapped line ends (pre-walk)"
+fi
 # r5 (Ops F2 fallback): the drawer bottom fade sits after the touch block
 # and is switched only by the overflow test, so a drawer that fits shows
-# no cue.
-cue_at=$(line_of '^#fo-drawer\.is-overflowing::after { content: ""; flex: 0 0 24px; margin-top: -12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }$')
+# no cue. Pre-walk: 12px and not pulled up, so stats line 1 stays crisp.
+cue_at=$(line_of '^#fo-drawer\.is-overflowing::after { content: ""; flex: 0 0 12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }$')
 if [ -z "$cue_at" ] || [ "$cue_at" -le "$touch_end" ] \
   || ! echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", d.scrollHeight - cue > d.clientHeight + 1);' \
   || ! echo "$html" | grep -q -F -e 'const drawerRO = new ResizeObserver(syncDrawerOverflow);'; then

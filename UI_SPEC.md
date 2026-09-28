@@ -1273,7 +1273,10 @@ supersedes the older "44px pencil" / "≥44px" `#provider-cfg` wording
 (§ providers, per-robot pick) and "44px minimum on primary actions"
 (§15) for controls inside menus and drawers.
 r4 (Ops F2/F7): the BOARDS drawer stats (`#stats`) render as inline
-items separated by `·` that wrap (three lines at 1440 with the demo
+items separated by `·` that wrap (pre-walk: each item carries a leading
+`·` that is clipped when the item starts a line, so no line ends or
+starts on a dangling `·`; a status with no `version` drops the version
+item instead of showing `v? ?`) (three lines at 1440 with the demo
 fixture, instead of a five-line stack), so with that fixture the drawer
 needs no scroll at 1440×900; with more channels it still scrolls. At
 ≤480px the robot-editor actions show the verb only (CREATE or SAVE,
@@ -1282,8 +1285,10 @@ hidden `.act-noun` text and the full name is in `aria-label`. Wider
 screens keep the full labels.
 r5 (Ops F2 fallback): when the drawer content overflows anyway, a
 small script marks `#fo-drawer` with `is-overflowing`, and CSS then adds
-a sticky 24px bottom fade (to the drawer surface colour) that also gives
-24px of end room, so a cut last line reads as "scroll for more". A
+a sticky 12px bottom fade (to the drawer surface colour) that also gives
+12px of end room, so a cut last line reads as "scroll for more"
+(pre-walk: was 24px pulled up 12px, which washed out the first stats
+line at 1440). A
 drawer that fits gets no class and no fade.
 Gate: the launch script requires the tokens, the `UI-M12d` marker, the
 `.btn` md rule, the `.menu button` sm rule, `.pill button` min 24px,
@@ -1297,7 +1302,7 @@ the touch block except the three container lines (each a whole one-line
 rule: after CSS comments are stripped, the previous non-blank line must
 end in `{` or `}`; the check does not parse CSS strings or escapes), no
 `--btn-` token redefinition in the touch block, the inline
-`#stats > span` rule (and no `sockets<br>` stack), the
+`#stats .stat` nowrap rule (and no `sockets<br>` stack), the
 `@media (max-width: 480px)` `.act-noun` rule after the touch block, the
 create/clone/delete buttons with their full `aria-label` and split
 label, the `#fo-drawer.is-overflowing::after` fade rule after the touch
