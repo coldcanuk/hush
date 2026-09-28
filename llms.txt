@@ -18,7 +18,7 @@
 - Favorite skill loadouts (PE-4, #206): per robot, saved on the relay under $HUSH_HOME/robots/<slug>/loadouts/ via POST /api/loadout (1-8 skills each, up to 32 per robot).
 - Roadmap (not on main): relay-enforced ALWAYS-ON / ON-CALL prompt tiers.
 
-## Quick start (verified on an Ubuntu cloud VM at base 44c66f88; not re-run at this head, CI build-test runs the same steps)
+## Quick start (verified on an Ubuntu cloud VM at base 44c66f88; not re-run at this head. CI build-test in .github/workflows/ci.yml, on ubuntu-24.04, apt-installs only gcc make libssl-dev libx11-dev python3 (not curl; make test passes there, so the runner image must already have it), then runs ./configure, make and make test)
 - sudo apt-get update && sudo apt-get install -y gcc make libssl-dev python3 curl libx11-dev (curl is needed by make test; libx11-dev is optional)
 - ./configure && make && make test (ALL TESTS PASSED) && make install (~/.local/bin; since #222, after the VM run, it first stops running hush-relay* of this user)
 - Run: hush-relay --no-open 10555 -> http://127.0.0.1:10555/
