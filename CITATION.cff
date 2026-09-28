@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+title: Hush
+version: 0.0.1
+abstract: Open-source office collaboration — a Slack/Teams alternative that
+  is AI-assistant-native, with a Diablo/BG3-inspired field-office UI. Legible
+  C11 Nostr relay core plus a self-hosted team-chat hive in one binary.
+license: GPL-3.0-only
+repository-code: https://github.com/coldcanuk/hush
+keywords:
+  - nostr
+  - relay
+  - self-hosted
+  - team-chat
+  - slack-alternative
+  - ai-assistants
+  - collaboration
+  - c11
