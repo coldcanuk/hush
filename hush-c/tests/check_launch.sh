@@ -519,9 +519,11 @@ fi
 # r5 (Ops F2 fallback): the drawer bottom fade sits after the touch block
 # and is switched only by the overflow test, so a drawer that fits shows
 # no cue. Pre-walk: 12px and not pulled up, so stats line 1 stays crisp.
+# Pre-walk r4 (Ops FAIL-A): the test is the last row's bottom against the
+# client box, so padding-only overflow shows no cue.
 cue_at=$(line_of '^#fo-drawer\.is-overflowing::after { content: ""; flex: 0 0 12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }$')
 if [ -z "$cue_at" ] || [ "$cue_at" -le "$touch_end" ] \
-  || ! echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", d.scrollHeight - cue > d.clientHeight + 1);' \
+  || ! echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", last > d.clientHeight + 1);' \
   || ! echo "$html" | grep -q -F -e 'const drawerRO = new ResizeObserver(syncDrawerOverflow);'; then
   fail "drawer bottom fade must show only when the drawer overflows (UI-M12d r5)"
 fi
@@ -621,7 +623,7 @@ echo "$html" | grep -q '/api/exit' || fail "HTML missing exit route"
 echo "$html" | grep -q 'isContextFile' || fail "HTML missing MIME check"
 # Pre-walk r3 (Ops 2): the robot-editor pass label uses the same plain
 # words as the backup step; the retrieve command sits behind a details line.
-echo "$html" | grep -q -F 'Checked to save its key in your password manager (pass).' || fail "pass checkbox copy"
+echo "$html" | grep -q -F 'Checked to save its key in your password manager.' || fail "pass checkbox copy"
 echo "$html" | grep -q -F '<details class="howto" id="agent-pass-howto"><summary>How to find it later</summary>' || fail "robot pass how-to details"
 echo "$html" | grep -q -F 'run <code>pass show hush/agents/&lt;slug&gt;/nsec</code>' || fail "robot pass retrieve command"
 echo "$html" | grep -q 'Unix Password Manager' && fail "no Unix Password Manager jargon in the UI"

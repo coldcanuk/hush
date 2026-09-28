@@ -32,7 +32,7 @@ Whenever Hush generates or first-shows a secret:
 
 1. A modal shows the value (masked by default) with **Copy**.
 2. When `pass` is available, a checkbox is **checked** by default:
-   `Checked to save it in your password manager (pass).`
+   `Checked to save it in your password manager.`
    The retrieve command sits behind a closed "How to find it later"
    details line: `pass show hush/identity/nsec`. Without `pass` the box
    is off, dimmed and disabled, and the step says Hush can't save the
@@ -43,7 +43,7 @@ Whenever Hush generates or first-shows a secret:
 
 Robot editor (no modal; the robot's key is not shown): raising a new
 robot with `pass` available shows `Checked to save its key in your
-password manager (pass).` with `pass show hush/agents/<slug>/nsec`
+password manager.` with `pass show hush/agents/<slug>/nsec`
 behind the same "How to find it later" line; left checked, the create
 request saves the key (a failed save is not reported to the UI yet).
 Edit paths save no key and show no box, and neither does a relay

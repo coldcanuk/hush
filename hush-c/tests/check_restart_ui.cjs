@@ -245,7 +245,7 @@ async function main() {
   };
   // Pre-walk r4 (Gauge B1): open the robot editor through the real UI and
   // report whether the pass box and its how-to are actually rendered.
-  const ROBOT_PASS_LABEL = 'Checked to save its key in your password manager (pass).';
+  const ROBOT_PASS_LABEL = 'Checked to save its key in your password manager.';
   const robotPassBox = async (label, openExpr) => {
     await cdp.eval(`(() => { const c = document.querySelector('#agent-close');
       if (document.querySelector('#agent-drawer.show') && c) c.click(); })()`);
@@ -262,6 +262,33 @@ async function main() {
   const editRobot = (slug) => `document.querySelector('#robot-list .robot-card[data-slug="${slug}"] .robot-actions button').click()`;
   const checkRobotPassHidden = (st, why) =>
     check(!st.label && !st.howto, `robot pass box and how-to hidden on ${st.title} (${why}): ${JSON.stringify(st)}`);
+  // Pre-walk r4 (Ops FAIL-B): at every width 641-1440, in field-office
+  // and dark, the header badge shows whole (no ellipsis) inside the
+  // viewport and the header has no sideways overflow. CI runs at 1440, so
+  // the viewport is narrowed 1px at a time here, then restored.
+  const badgeFit = async (phase, want) => {
+    const bad = [];
+    let n = 0;
+    for (let w = 641; w <= 1440; w++) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+      const r = await cdp.eval(`(() => { const html = document.documentElement; const keep = html.getAttribute('data-theme');
+        const h = document.querySelector('header'); const b = document.querySelector('header #badge'); const out = [];
+        for (const th of ['field-office', 'dark']) {
+          html.setAttribute('data-theme', th);
+          const q = b.getBoundingClientRect(); const vw = html.clientWidth;
+          if (q.left < -0.5 || q.right > vw + 0.5 || b.scrollWidth > b.clientWidth || h.scrollWidth > h.clientWidth + 1 || !b.textContent.includes(${JSON.stringify(want)}))
+            out.push({ th, vw, l: Math.round(q.left), r: Math.round(q.right), sw: b.scrollWidth, cw: b.clientWidth, hsw: h.scrollWidth, hcw: h.clientWidth, t: b.textContent });
+        }
+        html.setAttribute('data-theme', keep); return out; })()`);
+      n++;
+      if (r.length && bad.length < 6) bad.push(Object.assign({ w }, r[0]));
+      else if (r.length) bad.push(w);
+    }
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    console.log(`header badge fit ${phase}: ${n} widths x 2 themes, ${bad.length} bad ${JSON.stringify(bad.slice(0, 8))}`);
+    check(n === 800 && !bad.length, `header badge shows whole inside the viewport at 641-1440 ${phase}: ${JSON.stringify(bad.slice(0, 8))}`);
+  };
   const sample = async (sels) => {
     const out = {};
     for (const sel of sels) {
@@ -304,6 +331,8 @@ async function main() {
     check(!t.includes('did not survive the restart'), 'virgin splash shows no restart note');
     check(!t.includes('Detecting identity'), 'splash hides the Detecting line');
     Object.assign(contrasts, { splash: await sample(['#begin', '#profile-btn', '#nav-toggle', '#rail-toggle']) });
+    await cdp.waitFor(`/listening/.test(document.querySelector('header #badge').textContent)`, 'badge listening before login');
+    if (VIEW_W === 1440) await badgeFit('before login', 'listening');
     const beginRatio = RATIO_OF(contrasts.splash['#begin']);
     check(beginRatio !== null && beginRatio >= 4.5, `BEGIN contrast ${JSON.stringify(contrasts.splash['#begin'])} < 4.5`);
     await cdp.shot('splash-begin');
@@ -385,9 +414,11 @@ async function main() {
     // Pre-walk r3 (Gauge P2-1): the drawer fade cue must not latch. The
     // cue (::after) and its flex row gap are left out of the overflow test,
     // so a drawer that fits by even 1px drops the class, and dropping it
-    // leaves nothing to scroll. Drive the drawer height across the edge
-    // around a fixed probe child: short by 3px (cue on), then 1px spare
-    // (cue off), short again, then 6px spare (cue off).
+    // leaves nothing but the bottom padding to scroll. Drive the drawer
+    // height across the edge around a fixed probe child: short by 3px (cue
+    // on), then 1px spare (cue off), short again, then 6px spare (cue off).
+    // r4 (Ops FAIL-A): "free" is measured from the last row's bottom, not
+    // scrollHeight, since padding-only overflow no longer sets the cue.
     const fade = await cdp.eval(`(async () => {
       const d = document.querySelector('#fo-drawer');
       const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
@@ -399,14 +430,17 @@ async function main() {
       d.style.maxHeight = 'none'; d.style.minHeight = '0'; d.style.flex = 'none';
       d.style.height = '200px'; await frames();
       d.classList.remove('is-overflowing');
-      const content = d.scrollHeight;
+      const lastRow = () => { const top = d.getBoundingClientRect().top + d.clientTop - d.scrollTop; let m = 0;
+        for (const c of d.children) if (c.getClientRects().length) m = Math.max(m, c.getBoundingClientRect().bottom - top); return m; };
+      const content = Math.round(lastRow());
+      const pb = parseFloat(getComputedStyle(d).paddingBottom) || 0;
       const extra = d.offsetHeight - d.clientHeight; // borders (+ padding when border-box)
       const out = [];
       for (const free of [-3, 1, -3, 6]) {
         d.style.height = (content + free + (getComputedStyle(d).boxSizing === 'border-box' ? extra : 0)) + 'px';
         await frames();
         out.push({ free, got: d.clientHeight - content, on: d.classList.contains('is-overflowing'),
-          scroll: d.scrollHeight - d.clientHeight });
+          scroll: d.scrollHeight - d.clientHeight, pb });
       }
       probe.remove();
       d.style.height = oldH; d.style.maxHeight = oldMax; d.style.minHeight = oldMin; d.style.flex = oldFlex;
@@ -420,13 +454,66 @@ async function main() {
         check(r.on, `drawer fade cue shows when content overflows by ${-r.free}px`);
       else {
         check(!r.on, `drawer fade cue clears when the drawer fits with ${r.free}px spare (no latch)`);
-        check(r.scroll <= 1, `drawer that fits leaves nothing to scroll, got ${r.scroll}px`);
+        check(r.scroll <= r.pb + 1, `drawer that fits leaves nothing but its ${r.pb}px bottom padding to scroll, got ${r.scroll}px`);
       }
+    }
+
+    // Pre-walk r4 (Ops FAIL-A): only bottom padding overflowing must not
+    // set the fade. A probe row is sized so the last row ends exactly at
+    // the client box bottom at 1440x900 (Ops's default-window case), and
+    // at 375x778, then the window grows 1px at a time through the padding
+    // band: 1440 at h 900-908 and 375 at h 778-792. There scrollHeight
+    // still exceeds clientHeight (padding cut) but every row shows, so the
+    // class must stay off; 2px shorter than the start, a row is cut and
+    // the class must be on. Viewport restored after.
+    const fadeBand = [];
+    for (const [bw, h0, h1] of [[1440, 900, 908], [375, 778, 792]]) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: bw, height: h0, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+      const prep = await cdp.eval(`(async () => {
+        const d = document.querySelector('#fo-drawer');
+        const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
+        if (!d.clientHeight && document.querySelector('#nav-toggle')) { document.querySelector('#nav-toggle').click(); await frames(); }
+        let probe = document.querySelector('#fade-band-probe');
+        if (!probe) { probe = document.createElement('div'); probe.id = 'fade-band-probe'; probe.style.cssText = 'height:0;flex:none'; d.appendChild(probe); }
+        probe.style.height = '0px'; await frames();
+        const last = () => { const top = d.getBoundingClientRect().top + d.clientTop - d.scrollTop; let m = 0;
+          for (const c of d.children) if (c.getClientRects().length) m = Math.max(m, c.getBoundingClientRect().bottom - top); return m; };
+        // Rows may sit on an auto margin, so grow the probe until the last
+        // row reaches the client bottom.
+        for (let i = 0; i < 200 && last() < d.clientHeight - 0.5; i++) {
+          probe.style.height = (parseFloat(probe.style.height) + Math.max(1, Math.round(d.clientHeight - last()))) + 'px'; await frames(); }
+        return { ch: d.clientHeight, last: last(), probe: probe.style.height, open: d.clientHeight > 0 };
+      })()`, true);
+      check(prep.open && Math.abs(prep.last - prep.ch) <= 1, `fade band probe puts the last row at the client bottom at ${bw}x${h0}: ${JSON.stringify(prep)}`);
+      for (let h = h0 - 2; h <= h1; h++) {
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width: bw, height: h, deviceScaleFactor: 1, mobile: false });
+        const r = await cdp.eval(`(async () => { const d = document.querySelector('#fo-drawer');
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
+          const top = d.getBoundingClientRect().top + d.clientTop - d.scrollTop; let m = 0;
+          for (const c of d.children) if (c.getClientRects().length) m = Math.max(m, c.getBoundingClientRect().bottom - top);
+          return { sh: d.scrollHeight, ch: d.clientHeight, last: Math.round(m * 10) / 10, on: d.classList.contains('is-overflowing') }; })()`, true);
+        fadeBand.push(Object.assign({ w: bw, h }, r));
+      }
+      await cdp.eval(`(() => { const p = document.querySelector('#fade-band-probe'); if (p) p.remove(); })()`);
+    }
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    if (VIEW_W > 640) await cdp.eval(`(() => { const d = document.querySelector('#fo-drawer'); d.scrollTop = 0; })()`);
+    console.log('drawer fade padding band: ' + JSON.stringify(fadeBand.map((r) => `${r.w}x${r.h} sh${r.sh} ch${r.ch} last${r.last} ${r.on ? 'on' : 'off'}`)));
+    for (const [bw, h0] of [[1440, 900], [375, 778]]) {
+      const rows = fadeBand.filter((r) => r.w === bw);
+      const cut = rows.find((r) => r.h === h0 - 2);
+      check(cut && cut.last > cut.ch + 1 && cut.on, `drawer fade shows when a row is cut by 2px at ${bw}x${h0 - 2}: ${JSON.stringify(cut)}`);
+      const band = rows.filter((r) => r.h >= h0);
+      check(band.filter((r) => r.sh > r.ch + 1).length >= 5, `padding band exercised at ${bw} (scrollHeight > clientHeight): ${JSON.stringify(band)}`);
+      for (const r of band)
+        check(!r.on && r.last <= r.ch + 1, `drawer fade stays off when only padding overflows at ${bw}x${r.h}: ${JSON.stringify(r)}`);
     }
 
     // Pre-walk r3 (Ops F2): every drawer stat, including the build stamp,
     // shows whole inside the clip wrapper (no glyph cut at its right edge).
-    // CI's shallow checkout stamps only the short SHA ("v28f9c24 28f9c24"),
+    // CI's shallow checkout stamps only the short SHA ("v28f9c24"; r4 prints it once),
     // so the check also swaps in a real tagged-build stamp of the length Ops
     // saw on a release build, plus a longer one, and measures each.
     const statsFit = await cdp.eval(`(() => {
@@ -443,7 +530,7 @@ async function main() {
       const last = clip.querySelector('.stat:last-child');
       const keep = last.textContent;
       const fixture = [];
-      for (const t of ['v0.0.1-697-g4c1f2594 4c1f2594', 'v0.0.1-9999-g0123456789ab 0123456789ab',
+      for (const t of ['v0.0.1-697-g4c1f2594', 'v0.0.1-9999-g0123456789ab',
         'v0.0.1-9999-g0123456789abcdef0123456789abcdef01234567']) {
         last.textContent = t;
         const m = measure();
@@ -455,8 +542,11 @@ async function main() {
     check(!statsFit.err, statsFit.err);
     const stamp = statsFit.live.length ? statsFit.live[statsFit.live.length - 1].t : '';
     console.log('drawer stamp: ' + JSON.stringify(stamp));
-    check(/^v\S+ \S+$/.test(stamp), `drawer shows the build stamp as its last stat, got ${JSON.stringify(stamp)}`);
-    check(statsFit.fixture.length === 3 && statsFit.fixture[0].t === 'v0.0.1-697-g4c1f2594 4c1f2594',
+    check(/^v\S+( \S+)?$/.test(stamp), `drawer shows the build stamp as its last stat, got ${JSON.stringify(stamp)}`);
+    // Pre-walk r4: the SHA is printed once (CI: "v7fc2acd", not "v7fc2acd 7fc2acd").
+    const stampWords = stamp.split(' ');
+    check(stampWords.length < 2 || !stampWords[0].includes(stampWords[1]), `drawer stamp prints the build SHA once, got ${JSON.stringify(stamp)}`);
+    check(statsFit.fixture.length === 3 && statsFit.fixture[0].t === 'v0.0.1-697-g4c1f2594',
       `real-length stamp fixture measured: ${JSON.stringify(statsFit.fixture)}`);
     for (const s of statsFit.live.concat(statsFit.fixture))
       check(!s.bad.length, `drawer stat ${JSON.stringify(s.t)} is cut by the clip edge ${JSON.stringify(s.bad)}`);
@@ -474,34 +564,57 @@ async function main() {
       check(bdg.fs === 0 && bdg.w <= 16, `badge is a dot at ${VIEW_W}px: ${JSON.stringify(bdg)}`);
     else if (VIEW_W > 640) // 481-640 keeps the 95px cap with an ellipsis
       check(bdg.sw <= bdg.cw, `badge text is not clipped at ${VIEW_W}px: ${JSON.stringify(bdg)}`);
-    // Pre-walk r3/r4 (P3-D): CI runs at 1440, so narrow the viewport to
-    // 375 here to check the badge dot (R07) and that the bad-state dot is a
-    // ring, not the filled ok dot (R08), then restore the width.
+    // Pre-walk r3/r4 (P3-D, Ops FAIL-B): CI runs at 1440, so narrow the
+    // viewport to 375 here to check the badge lamp (R07): green while
+    // listening, amber when not (R08), 12px with no text, seated at the
+    // header's right padding, in field-office and dark; then restore.
     if (VIEW_W > 480) {
       await cdp.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 800, deviceScaleFactor: 1, mobile: false });
       await sleep(300);
     }
-    const dot = await cdp.eval(`(() => { const b = document.querySelector('header #badge');
+    const dot = await cdp.eval(`(() => { const b = document.querySelector('header #badge'); const h = document.querySelector('header');
+      const html = document.documentElement; const theme = html.getAttribute('data-theme');
       const keep = [b.textContent, b.title, b.getAttribute('aria-label'), b.className];
-      const m = () => { const cs = getComputedStyle(b); const r = b.getBoundingClientRect();
-        return { w: r.width, h: r.height, fs: parseFloat(cs.fontSize), bg: cs.backgroundColor, border: cs.borderTopColor, bw: parseFloat(cs.borderTopWidth) }; };
-      badge(true, 'listening', 'Relay listening on port 1');
-      const ok = m();
-      badge(false, 'relay unreachable');
-      const bad = Object.assign(m(), { aria: b.getAttribute('aria-label'), title: b.title });
+      // Lamp colour: the gradient's body stop (the one before the dark
+      // edge), or the flat background colour when there is no gradient.
+      const colour = () => { const img = getComputedStyle(b).backgroundImage; const m = img.match(/rgb\\(\\d+, \\d+, \\d+\\)/g) || [];
+        return m.length >= 2 ? m[m.length - 2] : getComputedStyle(b).backgroundColor; };
+      const m = () => { const cs = getComputedStyle(b); const r = b.getBoundingClientRect(); const hr = h.getBoundingClientRect();
+        return { w: r.width, h: r.height, fs: parseFloat(cs.fontSize), fill: colour(), rim: cs.borderTopColor, rimW: parseFloat(cs.borderTopWidth),
+          glow: cs.boxShadow, seat: Math.round(hr.right - r.right), mid: Math.round((r.top + r.bottom) / 2 - (hr.top + hr.bottom) / 2) }; };
+      const out = {};
+      for (const th of ['field-office', 'dark']) {
+        html.setAttribute('data-theme', th);
+        badge(true, 'listening', 'Relay listening on port 1');
+        const ok = m();
+        badge(false, 'relay unreachable');
+        const bad = Object.assign(m(), { aria: b.getAttribute('aria-label'), title: b.title, role: b.getAttribute('role') });
+        out[th] = { ok, bad };
+      }
+      html.setAttribute('data-theme', theme);
       b.textContent = keep[0]; b.title = keep[1]; b.setAttribute('aria-label', keep[2]); b.className = keep[3];
-      return { ok, bad }; })()`);
-    console.log('badge dot at 375: ' + JSON.stringify(dot));
-    const clear = (c) => /rgba\(0, 0, 0, 0\)|transparent/.test(c);
-    check(dot.ok.fs === 0 && dot.ok.w <= 16 && dot.ok.h <= 16 && !clear(dot.ok.bg), `ok badge is a filled dot at 375: ${JSON.stringify(dot.ok)}`);
-    check(dot.bad.fs === 0 && dot.bad.w <= 16 && clear(dot.bad.bg) && dot.bad.bw >= 2 && !clear(dot.bad.border),
-      `bad badge is a ring, not the filled ok dot, at 375: ${JSON.stringify(dot.bad)}`);
-    check(dot.bad.aria === 'relay unreachable' && dot.bad.title === 'relay unreachable', `bad badge keeps its state text: ${JSON.stringify(dot.bad)}`);
+      return out; })()`);
+    console.log('badge lamp at 375: ' + JSON.stringify(dot));
+    const rgb = (c) => (String(c).match(/\d+(\.\d+)?/g) || []).slice(0, 3).map(Number);
+    const green = (c) => { const [r, g, b] = rgb(c); return g > r + 40 && g > b + 40; };
+    const amber = (c) => { const [r, g, b] = rgb(c); return r >= g && g > b + 40 && r > 150; };
+    for (const th of ['field-office', 'dark']) {
+      const { ok, bad } = dot[th];
+      for (const [st, v] of [['ok', ok], ['bad', bad]]) {
+        check(v.fs === 0 && v.w >= 10 && v.w <= 16 && v.h >= 10 && v.h <= 16, `${st} badge is a ~12px lamp with no text at 375 (${th}): ${JSON.stringify(v)}`);
+        check(v.rimW >= 1 && /rgb/.test(v.glow) && v.glow !== 'none', `${st} badge lamp has a rim and glow (${th}): ${JSON.stringify(v)}`);
+        check(v.seat >= 0 && v.seat <= 20 && Math.abs(v.mid) <= 4, `${st} badge lamp sits at the header's right edge (${th}): ${JSON.stringify(v)}`);
+      }
+      check(green(ok.fill), `listening badge lamp is green at 375 (${th}): ${JSON.stringify(ok)}`);
+      check(amber(bad.fill), `not-listening badge lamp is amber at 375 (${th}): ${JSON.stringify(bad)}`);
+      check(bad.role === 'img' && bad.aria === 'relay unreachable' && bad.title === 'relay unreachable', `bad badge keeps its state text (${th}): ${JSON.stringify(bad)}`);
+    }
     if (VIEW_W > 480) {
       await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
       await sleep(300);
     }
     await cdp.shot('hive-fo');
+    if (VIEW_W === 1440) await badgeFit('after login', 'npub1');
 
     // Pre-walk r4 (Gauge B1), no pass installed: the robot editor never
     // claims to save the key, on Raise or any Edit path.
@@ -594,7 +707,7 @@ async function main() {
     const checked2 = await cdp.eval(`document.querySelector('#save-pass').checked`);
     check(checked2 === true, 'backup checkbox renders checked with pass');
     t = await gateText();
-    check(t.includes('Checked to save it in your password manager (pass).'), 'backup keeps the Checked-to-save line with pass');
+    check(t.includes('Checked to save it in your password manager.'), 'backup keeps the Checked-to-save line with pass');
     // Pre-walk F10: the retrieve command sits only behind "How to find it later".
     const howto = await cdp.eval(`(() => { const d = document.querySelector('#gate details.howto');
       const l = document.querySelector('#save-pass').closest('label');

@@ -64,9 +64,14 @@ raise humans + robots that share channels."
   (pre-walk). r3 (Ops F1): the badge (`role="img"`) always carries its
   full state in both `title` and `aria-label` (visible text plus the
   tooltip detail, e.g. "listening — Relay listening on port N"), and
-  every state change rewrites both. At ≤480px it is a 12px dot (filled
-  when ok, a ring when not); at 481-640px it keeps the 95px cap and ends
-  in an ellipsis. The header shows the vibe name only while `logged_in` is true;
+  every state change rewrites both. At ≤480px it is a 12px indicator
+  lamp seated at the header's right padding (r4, Ops FAIL-B: green while
+  listening, amber otherwise, with a dark rim, highlight and soft glow;
+  no text); at 481-640px it keeps the 95px cap and ends in an ellipsis.
+  r4 (Ops FAIL-B): at 641-800px the "HQ — Global Operations" stamp is
+  hidden (as at ≤640px) so the badge shows whole; `check_restart_ui.cjs`
+  checks every width 641-1440, before and after login, in field-office
+  and dark. The header shows the vibe name only while `logged_in` is true;
   otherwise it falls back to the neutral "local hive mind" (and an
   empty visibility badge), so a surviving vibe name never implies a
   live login after a restart.
@@ -76,7 +81,7 @@ Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
 
 1. **Identity** — Create new (primary) or Import nsec. Help: “What’s an identity key?”
 2. **Backup** — Masked nsec, Reveal, Copy. Checkbox **checked**:
-   `Checked to save it in your password manager (pass).` followed by a
+   `Checked to save it in your password manager.` followed by a
    collapsed `<details class="howto">` "How to find it later" that holds
    "In a terminal, run `pass show hush/identity/nsec`."
    When `/api/session` reports `pass_available:false` (`pass` is not
@@ -134,7 +139,7 @@ the two deltas above). Backup: the no-pass reason is the one sentence
 "Hush can't save this key on this computer, so keep your copy somewhere
 safe." (the second "Copy it now" is gone; the top line keeps the first),
 and the disabled label is dimmed. With `pass` the label says "Checked to
-save it in your password manager (pass).", the `pass show
+save it in your password manager.", the `pass show
 hush/identity/nsec` command sits only inside the collapsed "How to find
 it later" details, and the clause reads "Uncheck the box only if you do
 not want your password manager to keep it." Key names are plain words
@@ -315,7 +320,7 @@ and a pencil to edit it again.
   hit at phone width). Pencil opens `#provider-drawer` (see §11). Configure is
   optional for Raise — the robot still stores only the provider id.
 - pass checkbox default-on, same plain words as the backup step (pre-walk
-  r3): `Checked to save its key in your password manager (pass).` The
+  r3): `Checked to save its key in your password manager.` The
   retrieve command sits behind a closed details line (`#agent-pass-howto`,
   "How to find it later"): `pass show hush/agents/<slug>/nsec`. r4 (Gauge
   B1): both show only on Raise (the create path saves the key) while
@@ -1299,8 +1304,9 @@ items separated by `·` that wrap (pre-walk: each item carries a leading
 starts on a dangling `·`; a status with no `version` drops the version
 item instead of showing `v? ?`) instead of a five-line stack. r4 claim
 trace (measured, field-office, 1440×900, Gauge/Ops `session.json`
-fixture): two lines with a status that has no version, four with a real
-build stamp (it wraps inside itself), and with that fixture's channels
+fixture): two lines with a status that has no version, three with a real
+build stamp (r4: the SHA is printed once, e.g. "v0.0.1-697-g4c1f2594",
+not "… 4c1f2594" again), and with that fixture's channels
 the drawer still overflows and scrolls, marked by the fade cue below
 (the earlier "three lines … needs no scroll" no longer held). At
 ≤480px the robot-editor actions show the verb only (CREATE or SAVE,
@@ -1313,12 +1319,15 @@ a sticky 12px bottom fade (to the drawer surface colour) that also gives
 12px of end room, so a cut last line reads as "scroll for more"
 (pre-walk: was 24px pulled up 12px, which washed out the first stats
 line at 1440). A
-drawer that fits gets no class and no fade: while the class is on, the
-overflow test leaves out the cue height plus the drawer's flex row gap
-(the cue is a flex item), so the class drops as soon as the content
-fits, even by 1px (r3, Gauge P2-1; `check_restart_ui.cjs` drives the
-drawer height across that edge). r3 (Ops F2): the last stat (the build
-stamp, e.g. "v0.0.1-697-g4c1f2594 4c1f2594") is an inline-block no wider
+drawer whose rows all show gets no class and no fade: the overflow test
+is the bottom of the last shown content row against the drawer's client
+box (r4, Ops FAIL-A), so the cue, its flex row gap and the bottom
+padding never count. The class drops as soon as every row fits, even by
+1px (r3, Gauge P2-1), and padding-only overflow (r3 set the class at
+1440 h 900-908 and 375 h 778-792 on Ops's fixture) shows none;
+`check_restart_ui.cjs` drives the drawer height across that edge and
+sweeps the window through that padding band. r3 (Ops F2): the last stat
+(the build stamp, e.g. "v0.0.1-697-g4c1f2594") is an inline-block no wider
 than the row that wraps inside itself, continuation lines indented past
 the clipped "·" gutter, so no glyph is cut at the clip edge; the UI check
 also measures a longer realistic stamp fixture.
