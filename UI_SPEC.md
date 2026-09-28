@@ -69,16 +69,19 @@ Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
 
 1. **Identity** — Create new (primary) or Import nsec. Help: “What’s an identity key?”
 2. **Backup** — Masked nsec, Reveal, Copy. Checkbox **checked**:
-   `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/identity/nsec`
+   `Checked to save it in your password manager (pass).` followed by a
+   collapsed `<details class="howto">` "How to find it later" that holds
+   "In a terminal, run `pass show hush/identity/nsec`."
    When `/api/session` reports `pass_available:false` (`pass` is not
    installed, so no save could succeed), the checkbox renders unchecked
    and disabled with the short neutral label "Save to password manager"
-   (never "Checked to save…"), the step shows exactly one reason, once:
-   "Hush can't save this key on this computer. Copy it now and keep it
-   somewhere safe. Setup continues without saving." and the warning line
-   keeps "Never share your private key. Anyone with it can impersonate
-   you." and drops only the "Uncheck the box only if you do not want
-   pass to store it." clause. No visible text on the no-pass backup step
+   (never "Checked to save…"), dimmed with it (`.passbox.is-off`,
+   opacity 0.55), no "How to find it later" line, and the step shows
+   exactly one reason, once: "Hush can't save this key on this
+   computer, so keep your copy somewhere safe." The warning line keeps
+   "Never share your secret key. Anyone with it can impersonate you."
+   and drops only the "Uncheck the box only if you do not want your
+   password manager to keep it." clause. No visible text on the no-pass backup step
    uses the bare word "pass". A failed save at ack
    time still records `pass_error` and still lets setup continue
    (`backup_acked` stays true); the next gate screen repeats the
@@ -118,6 +121,30 @@ safe. Setup continues without saving." The never-share line stays on
 both paths, and the with-pass copy is unchanged. `check_restart_ui.cjs`
 asserts the reason appears exactly once, nothing else on the screen
 restates it, and the visible no-pass text has no bare word "pass".
+
+Delta 2026-09-28 (pre-walkthrough polish; supersedes the quoted copy in
+the two deltas above). Backup: the no-pass reason is the one sentence
+"Hush can't save this key on this computer, so keep your copy somewhere
+safe." (the second "Copy it now" is gone; the top line keeps the first),
+and the disabled label is dimmed. With `pass` the label says "Checked to
+save it in your password manager (pass).", the `pass show
+hush/identity/nsec` command sits only inside the collapsed "How to find
+it later" details, and the clause reads "Uncheck the box only if you do
+not want your password manager to keep it." Key names are plain words
+with the code in brackets: help "Your public key (npub) is safe to
+share. Your secret key (nsec) is the account." and "If you already have
+a secret key (nsec), choose Use an existing key."; import "Paste your
+secret key (nsec). We show the matching public key (npub) before
+anything is saved.", label "Secret key (nsec)" (the `nsec1…` placeholder
+stays as an example), preview "Looks like a secret key (nsec). Import to
+see its public key (npub)."; never-share "Never share your secret key.
+Anyone with it can impersonate you." The restart note ("starts with
+nsec1") and the `pass_error` line are unchanged. `check_restart_ui.cjs`
+asserts the new reason, the dimmed label, the details line and the
+plain labels. Elsewhere: the profile avatar help reads "Optional. JPEG
+or PNG, stored as your picture URL." (was "Nostr picture URL"), the
+profile copy button is "Copy public key (npub)", and the member/invite
+labels are "Public key (npub)" / "Invite by public key (npub)".
 
 ### 3. Resume
 `logged_in && backup_acked && has_vibe` → splash detects → hive.
@@ -818,7 +845,7 @@ Right-click a channel (`#chan-menu`):
 - Add/Invite/Remove Humans and Robots with the same `+` / `−` pill
   language as Raise-robot name. No checkboxes.
 - Unused pool: name + `+`. Added names become `.pill` with `−`.
-- Invite npub `+` commits a human pill.
+- Invite by public key (npub) `+` commits a human pill.
 - Empty lists mean the whole hive when `kind` is `open` (current
   behavior). `humans` / `robots` / `mixed` require the matching pills.
 - **Policy** (`#manage-policy`) — see §20. Kind radios + reply radios
@@ -893,7 +920,7 @@ stays visibly ≥44px (UI-M12d).
 “Install puts Hush on your app launcher as its own window. It does
 not start a second hive.”
 
-`#profile-help`: “Your name, npub, and logout. This is you, not a robot.”
+`#profile-help`: “Your name, public key (npub), and logout. This is you, not a robot.”
 `#settings-help`: “Theme, vibe visibility, and the local STUN/TURN server for calls.”
 `#call-help-pop`: “Start a mesh conference on this channel. Agents need Whisper to hear.”
   (id is not `#call-help` — that string already labels the stage.)

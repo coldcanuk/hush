@@ -24,10 +24,10 @@ const ART = process.env.ID1_ART || path.join(os.tmpdir(), 'id1-shots');
 fs.mkdirSync(ART, { recursive: true });
 
 // Shown on the backup step on both paths (with and without pass).
-const NEVER_SHARE = 'Never share your private key. Anyone with it can impersonate you.';
-// The one no-pass reason on the backup step (CoS copy, ID-1 r4). It must
-// appear exactly once, and nothing else on that screen may restate it.
-const NOPASS_REASON = "Hush can't save this key on this computer. Copy it now and keep it somewhere safe. Setup continues without saving.";
+const NEVER_SHARE = 'Never share your secret key. Anyone with it can impersonate you.';
+// The one no-pass reason on the backup step (CoS copy, pre-walk polish).
+// It must appear exactly once, and nothing else on that screen may restate it.
+const NOPASS_REASON = "Hush can't save this key on this computer, so keep your copy somewhere safe.";
 const REASON_ECHO = /can.t save|cannot save|not installed|unavailable|somewhere safe/i;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -301,8 +301,17 @@ async function main() {
     t = await gateText();
     check(t.includes('signs you in with an identity key instead of a password'), 'help card uses plain wording');
     check(!t.includes('Nostr') && !t.includes('nsec1…'), 'help card has no Nostr jargon or bare nsec1…');
+    // Pre-walk F10: keys are named in plain words with the code in brackets.
+    check(t.includes('public key (npub)') && t.includes('secret key (nsec)'), 'help card names the keys in plain words');
     await cdp.click('#back-help');
-    await cdp.waitFor(`!!document.querySelector('#create-id')`, 'landing after help');
+    await cdp.waitFor(`!!document.querySelector('#use-id')`, 'landing after help');
+    await cdp.click('#use-id');
+    await cdp.waitFor(`!!document.querySelector('#nsec-in')`, 'import card');
+    t = await gateText();
+    check(await cdp.eval(`document.querySelector('label[for="nsec-in"]').textContent`) === 'Secret key (nsec)', 'import label is plain');
+    check(t.includes('secret key (nsec)') && t.includes('public key (npub)'), 'import card names the keys in plain words');
+    await cdp.click('#back-import');
+    await cdp.waitFor(`!!document.querySelector('#create-id')`, 'landing after import');
 
     await cdp.click('#create-id');
     await cdp.waitFor(`!!document.querySelector('#save-pass')`, 'backup');
@@ -318,6 +327,12 @@ async function main() {
     check(!REASON_ECHO.test(t.split(NOPASS_REASON).join(' ')), 'backup states the no-pass reason only once');
     check(!/\bpass\b/i.test(await gateVisible()), 'backup shows no bare pass without pass');
     check(t.includes(NEVER_SHARE), 'backup keeps the never-share warning without pass');
+    check((t.match(/Copy it now/g) || []).length === 1, 'backup says Copy it now once without pass');
+    // Pre-walk: the disabled label dims with its checkbox.
+    const offLabel = await cdp.eval(`(() => { const l = document.querySelector('#save-pass').closest('label');
+      return l.classList.contains('is-off') && parseFloat(getComputedStyle(l).opacity) < 0.8; })()`);
+    check(offLabel === true, 'backup dims the disabled save label without pass');
+    check(await cdp.eval(`!document.querySelector('#gate details')`), 'backup shows no how-to-find line without pass');
     await cdp.shot('backup-nopass');
 
     await cdp.click('#ack-key');
@@ -406,7 +421,14 @@ async function main() {
     const checked2 = await cdp.eval(`document.querySelector('#save-pass').checked`);
     check(checked2 === true, 'backup checkbox renders checked with pass');
     t = await gateText();
-    check(t.includes('Checked to save'), 'backup keeps the Checked-to-save line with pass');
+    check(t.includes('Checked to save it in your password manager (pass).'), 'backup keeps the Checked-to-save line with pass');
+    // Pre-walk F10: the retrieve command sits only behind "How to find it later".
+    const howto = await cdp.eval(`(() => { const d = document.querySelector('#gate details.howto');
+      const l = document.querySelector('#save-pass').closest('label');
+      return !!d && !d.open && d.querySelector('summary').textContent === 'How to find it later' &&
+        d.textContent.includes('pass show hush/identity/nsec') && !l.textContent.includes('pass show'); })()`);
+    check(howto === true, 'backup keeps the retrieve command behind a closed details line with pass');
+    check(await cdp.eval(`!document.querySelector('#save-pass').closest('label').classList.contains('is-off')`), 'backup label is not dimmed with pass');
     check(t.includes(NEVER_SHARE), 'backup keeps the never-share warning with pass');
     check(t.includes('Uncheck the box'), 'backup keeps the Uncheck line with pass');
     check(!t.includes(NOPASS_REASON), 'backup shows no no-pass reason with pass');

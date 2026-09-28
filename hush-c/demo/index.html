@@ -405,6 +405,13 @@
     .warn { color: var(--warn); font-size: 0.82rem; margin-top: 10px; }
     .passbox { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: 0.82rem; color: var(--muted); }
     .passbox code { color: var(--fg); font-size: 0.78rem; }
+    /* Pre-walk: without pass the checkbox is disabled, so its label dims
+       with it instead of reading at full contrast. */
+    .passbox.is-off { opacity: 0.55; cursor: not-allowed; }
+    .passbox.is-off input { cursor: not-allowed; }
+    details.howto { margin-top: 8px; font-size: 0.82rem; color: var(--muted); }
+    details.howto summary { color: var(--fg); }
+    details.howto code { color: var(--fg); font-size: 0.78rem; }
     dialog.secret {
       border: 1px solid var(--line); border-radius: 18px; padding: 0;
       background: var(--surface); color: var(--fg); width: min(34rem, 92vw);
@@ -1833,7 +1840,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
        channels/providers/robots/projects/min/max/close/exit. -->
   <div id="kit-menu" hidden aria-label="Field kit">
     <button id="install" type="button" title="Install puts Hush on your app launcher as its own window. It does not start a second hive.">Install</button>
-    <button class="iconbtn" id="profile-btn" type="button" title="Your name, npub, and logout. This is you, not a robot.">Profile</button>
+    <button class="iconbtn" id="profile-btn" type="button" title="Your name, public key (npub), and logout. This is you, not a robot.">Profile</button>
     <button class="iconbtn" id="settings-btn" type="button" title="Theme, vibe visibility, and the local STUN/TURN server for calls.">Settings</button>
     <button class="iconbtn" id="call-btn" type="button" hidden title="Start a mesh conference on this channel. Agents need Whisper to hear.">Call</button>
     <button class="iconbtn" id="invite-human" type="button" title="Click to invite a human to your vibe.">Invite</button>
@@ -2117,7 +2124,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       <input id="prof-org" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius: 12px;padding:10px 12px;font:inherit;margin:4px 0">
       <label for="prof-avatar">Avatar</label>
       <input id="prof-avatar" type="file" accept="image/jpeg,image/png,image/webp">
-      <p class="help" id="prof-avatar-status">Optional. JPEG or PNG, stored as a Nostr picture URL.</p>
+      <p class="help" id="prof-avatar-status">Optional. JPEG or PNG, stored as your picture URL.</p>
       <!-- Honesty: Character read-only strip (relay-saved count + browser-only Always/On-call split). -->
       <div id="profile-loadout" aria-label="Robot loadout summary">
         <div class="lbl">Equipped skills</div>
@@ -2125,7 +2132,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       </div>
       <div class="actions">
         <button class="btn" id="profile-save" type="button">Save profile</button>
-        <button class="btn ghost" id="profile-copy" type="button">Copy npub</button>
+        <button class="btn ghost" id="profile-copy" type="button">Copy public key (npub)</button>
         <button class="btn ghost" id="profile-logout" type="button">Logout</button>
         <button class="btn ghost" id="profile-close" type="button">Close</button>
       </div>
@@ -2373,7 +2380,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
     <div class="panel">
       <h2>Invite human</h2>
       <p class="help">Name the soldier. Private vibes also need the join token.</p>
-      <label for="member-npub">npub</label>
+      <label for="member-npub">Public key (npub)</label>
       <input id="member-npub" type="text" maxlength="80" placeholder="npub1…">
       <label for="member-name">Display name</label>
       <input id="member-name" type="text" maxlength="48" placeholder="human">
@@ -2392,7 +2399,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       <p class="help">Humans</p>
       <div class="pills" id="manage-human-pills"></div>
       <div id="manage-humans"></div>
-      <label for="manage-invite">Invite npub</label>
+      <label for="manage-invite">Invite by public key (npub)</label>
       <div class="pill-row">
         <input id="manage-invite" type="text" maxlength="80" placeholder="npub1…">
         <button class="icon-plus" id="manage-invite-add" type="button" aria-label="Add invited human">+</button>
@@ -2828,15 +2835,15 @@ button.fo-person { min-height: var(--btn-h-sm); }
         return card("What’s an identity key?",
           stepBar(1) +
           "<p>Hush signs you in with an identity key instead of a password. The key is created on this computer and stands for you.</p>" +
-          "<p>Your public key (<code>npub</code>) is safe to share. Your private key (<code>nsec</code>) is the account. Anyone with it can act as you. There is no forgot-password.</p>" +
-          "<p>Create a new key if this is your first time. If you already have a private key (it starts with nsec1), choose Use an existing key.</p>" +
+          "<p>Your public key (npub) is safe to share. Your secret key (nsec) is the account. Anyone with it can act as you. There is no forgot-password.</p>" +
+          "<p>Create a new key if this is your first time. If you already have a secret key (nsec), choose Use an existing key.</p>" +
           actions([{ id: "back-help", ghost: true, label: "Back" }]));
       }
       if (page === "import") {
         return card("Use an existing key",
           stepBar(1) +
-          "<p>Paste an <code>nsec1…</code> key. We show the matching <code>npub</code> before anything is saved.</p>" +
-          "<label for=\"nsec-in\">Private key</label>" +
+          "<p>Paste your secret key (nsec). We show the matching public key (npub) before anything is saved.</p>" +
+          "<label for=\"nsec-in\">Secret key (nsec)</label>" +
           "<input id=\"nsec-in\" type=\"password\" autocomplete=\"off\" spellcheck=\"false\" data-lpignore=\"true\" data-form-type=\"other\" placeholder=\"nsec1…\">" +
           "<div class=\"help\" id=\"npub-preview\"></div>" +
           errLine() +
@@ -2849,24 +2856,29 @@ button.fo-person { min-height: var(--btn-h-sm); }
         const shown = keyRevealed ? esc(pendingNsec) : "•".repeat(Math.max(16, pendingNsec.length || 63));
         const passOff = session.pass_available === false;
         const passNote = passOff
-          ? "<p class=\"warn\">Hush can't save this key on this computer. Copy it now and keep it somewhere safe. Setup continues without saving.</p>"
+          ? "<p class=\"warn\">Hush can't save this key on this computer, so keep your copy somewhere safe.</p>"
           : "";
         const passLabel = passOff
           ? "Save to password manager"
-          : "Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/identity/nsec</code>";
-        const neverShare = "Never share your private key. Anyone with it can impersonate you.";
+          : "Checked to save it in your password manager (pass).";
+        const passHowto = passOff
+          ? ""
+          : "<details class=\"howto\"><summary>How to find it later</summary>" +
+            "<p>In a terminal, run <code>pass show hush/identity/nsec</code>.</p></details>";
+        const neverShare = "Never share your secret key. Anyone with it can impersonate you.";
         const passAfter = passOff
           ? "<p class=\"warn\">" + neverShare + "</p>"
-          : "<p class=\"warn\">" + neverShare + " Uncheck the box only if you do not want <code>pass</code> to store it.</p>";
+          : "<p class=\"warn\">" + neverShare + " Uncheck the box only if you do not want your password manager to keep it.</p>";
         return "<dialog class=\"secret\" id=\"secret-modal\" open>" +
           card("Your unique identity key has been created",
           stepBar(2) +
           "<p>This key is your account. Copy it now. Hush cannot recover it if you lose it.</p>" +
           "<div class=\"keybox" + (keyRevealed ? " revealed" : "") + "\" id=\"nsec-box\">" + shown + "</div>" +
-          "<label class=\"passbox\"><input id=\"save-pass\" type=\"checkbox\"" +
+          "<label class=\"passbox" + (passOff ? " is-off" : "") + "\"><input id=\"save-pass\" type=\"checkbox\"" +
           ((!passOff && savePass) ? " checked" : "") +
           (passOff ? " disabled" : "") +
           "> " + passLabel + "</label>" +
+          passHowto +
           passNote +
           passAfter +
           errLine() +
@@ -2986,7 +2998,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       if (inp) inp.addEventListener("input", () => {
         const v = inp.value.trim();
         $("npub-preview").textContent = v.startsWith("nsec1")
-          ? "Looks like an nsec. Import to see the npub."
+          ? "Looks like a secret key (nsec). Import to see its public key (npub)."
           : "";
       });
     }
