@@ -5,8 +5,10 @@ run/stop/turn/thread questions live in [`OPERATIONS.md`](OPERATIONS.md).
 
 ## Installation
 
-Build from source (requires `gcc`, `make`, `libssl-dev`, `libx11-dev`,
-`python3` on Debian/Ubuntu):
+Build from source (requires `gcc`, `make`, `libssl-dev` and `python3` on
+Debian/Ubuntu; `make test` also needs `curl`). `libx11-dev` is optional:
+without it `./configure` prints `OPTIONAL: X11 headers not found` and
+Minimize/Maximize become no-ops:
 
 ```bash
 ./configure
@@ -41,10 +43,16 @@ make flatpak                            # any distro (flatpak-builder; builds in
 # make flatpak prints its own install hint; Hush is not verified to be on Flathub
 ```
 
+**UNVERIFIED:** the OpenBSD and FreeBSD recipes below mirror
+`openbsd/README.md`, `freebsd/README.md` and `scripts/package-{openbsd,freebsd}.sh`,
+but nobody has run them on OpenBSD or FreeBSD at this head. The top-level
+`Makefile` uses GNU make syntax, so use `gmake` on both (`openbsd/README.md`
+still says `make openbsd`).
+
 ```sh
 # OpenBSD (pkg_add gmake first):
 ./configure --prefix=/usr/local
-make openbsd
+gmake openbsd
 doas pkg_add ./dist/openbsd/hush-relay-*.tgz
 # Everyday: pkg_info -aQ hush, doas pkg_add -u, doas pkg_delete hush-relay
 # Details: ../openbsd/README.md
@@ -61,7 +69,9 @@ pkg add ./dist/freebsd/hush-relay-*.pkg
 
 ## Environment variables
 
-| Variable | Role (all verified in code) |
+Not exhaustive; each row below was checked in code.
+
+| Variable | Role |
 |---|---|
 | `HUSH_HOME` | Hive home: session token, `config/`, `agents/`, `skills/`, `robots/<slug>/loadouts/` (PE-4 favorites), `threads/`. Tests override per-run; unset means `~/.hush`. |
 | `HUSH_CONFIG_DIR` | Overrides the config directory (`vibe.json`, `providers.json`). Tests set it alongside `HUSH_HOME`. |
@@ -70,6 +80,13 @@ pkg add ./dist/freebsd/hush-relay-*.pkg
 | `HUSH_TEST_STOP_RELAYS` | Set to `1` to run the relay-stopping phases of `make test` outside GitHub Actions. |
 | `HUSH_WHISPER` | Any value other than empty or `0` marks Whisper available (otherwise an executable `/usr/bin/whisper` or `/usr/local/bin/whisper` does; `PATH` is not searched) so agents hear conference calls; gates the Call/Voice icons. |
 | `HUSH_CODEX_SKILL_DIR` | Points at another complete copy of the write-legible-c skill. Missing or conflicting skill files prevent Codex dispatch. |
+| `TURNSERVER` | Path to coturn's `turnserver` for the CHILD-mode TURN server. Used when it names an executable; otherwise the relay tries `/usr/bin`, `/usr/sbin`, `/usr/local/bin`, then `/opt/homebrew/bin` (`PATH` is not searched). |
+| `HUSH_STATE_DIR` | State directory for the CHILD-mode turnserver (`turnserver.conf`, `turnserver.pid`); else `$XDG_STATE_HOME/hush`, else `~/.local/state/hush`, else `/tmp/hush`. `make install`/`make clean` read the same path to stop that turnserver. |
+| `HUSH_AUTO_UPDATE` | `1`, `true` or `yes` turns on the launch-time provider update scanner. Off by default. |
+| `HUSH_SKILL_PACK` | Extra directory of system skills to seed from, tried before the in-tree and installed skill packs. |
+| `HUSH_PROVIDER_TERM` | Terminal program for provider logins (run as `<term> -e <login command>`); otherwise xterm when `DISPLAY` is set. |
+| `HUSH_PASS_HELPER` | Overrides the `pass` helper program (tests use it to keep off the real password store). |
+| `CLINE_DATA_DIR` | Cline's data directory: Hush reads `$CLINE_DATA_DIR/settings/providers.json`, else `~/.cline/data/settings/providers.json`. |
 
 ## On-disk layout and permissions
 
@@ -80,7 +97,7 @@ pkg add ./dist/freebsd/hush-relay-*.pkg
 | `$HUSH_HOME/config/providers.json` (`0600`) | Provider overlay: host and model per id. Secret values are never in here. |
 | `$HUSH_HOME/threads/<root>.log` (`0600`, `O_NOFOLLOW`) | Durable per-thread transcripts (plus `<root>.brief`); served via `GET /api/thread`. |
 | `$HUSH_HOME/robots/<slug>/loadouts/` | PE-4 favorite loadouts (1–8 skill ids each, up to 32 per robot), written via `POST /api/loadout`. |
-| `$XDG_RUNTIME_DIR/hush/relay-<port>.pid`, else `~/.local/state/hush/relay-<port>.pid` | Relay pidfile (`pid starttime port`) used by `--quit` and the rebuild guard. |
+| `$XDG_RUNTIME_DIR/hush/relay-<port>.pid`, else `~/.local/state/hush/relay-<port>.pid` | Relay pidfile used by `--quit` and the rebuild guard: `pid starttime port` on Linux, only `pid` elsewhere. |
 | `$HUSH_HOME/skills/{system,user,robots}/` | Forged skills. Product scopes are System (application-wide) and This robot; `make clean` never touches this tree. |
 
 ## Provider setup

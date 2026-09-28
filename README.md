@@ -38,15 +38,15 @@ Under the hood (also on `main`): Nostr NIP-01 chat basics, `poll(2)` single-thre
 
 ## Quick start (actually ran on the VM)
 
-These exact commands succeeded on a cloud Ubuntu VM from base `44c66f88`. The build prerequisites are `gcc`, `make`, `libssl-dev` (OpenSSL headers), `libx11-dev` and `python3`:
+These commands succeeded on a cloud Ubuntu VM from base `44c66f88` (that apt line had no `curl`). The VM run was **not re-run at this head**; CI `build-test` runs apt, `./configure`, `make` and `make test` on ubuntu-24.04. The build prerequisites are `gcc`, `make`, `libssl-dev` (OpenSSL headers) and `python3`; `make test` also needs `curl`. `libx11-dev` is optional: without it `./configure` says so and Minimize/Maximize become no-ops.
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y gcc make libssl-dev libx11-dev python3
+sudo apt-get install -y gcc make libssl-dev python3 curl libx11-dev   # libx11-dev optional
 ./configure
 make
 make test        # ends with: ALL TESTS PASSED
-make install     # installs to ~/.local/bin (no sudo needed); first stops any running hush-relay* you own
+make install     # installs to ~/.local/bin (no sudo needed); first stops any running hush-relay* you own (added after the VM run, #222)
 ```
 
 Run it:
@@ -68,7 +68,7 @@ google-chrome --headless --disable-gpu --no-sandbox \
   http://127.0.0.1:18083/
 ```
 
-System-wide install and calling: `sudo make install PREFIX=/usr`, conference calls need `coturn` (`turnserver` on PATH) plus Whisper for agent voice. Packaging: `make deb`, `make rpm`, `make flatpak`. See [Installation](#installation) and [`UI_SPEC.md`](UI_SPEC.md) §17.
+System-wide install and calling: `sudo make install PREFIX=/usr`, conference calls need coturn's `turnserver` (the relay uses `$TURNSERVER` when it names an executable, else the first of `/usr/bin/turnserver`, `/usr/sbin/turnserver`, `/usr/local/bin/turnserver` and `/opt/homebrew/bin/turnserver`; it does not search `PATH`) plus Whisper for agent voice. Packaging: `make deb`, `make rpm`, `make flatpak`. See [Installation](#installation) and [`UI_SPEC.md`](UI_SPEC.md) §17.
 
 ## Open-source Nostr relay in C11 (self-hosted Slack alternative)
 
@@ -93,7 +93,7 @@ make install                 # ~/.local/bin, no sudo
 sudo make install PREFIX=/usr  # system-wide
 ```
 
-Or build packages from source: `make deb` (Debian/Ubuntu), `make rpm` (Fedora/RHEL), `make flatpak` (any distro), `make openbsd` / `make freebsd` (`pkg_add`/`pkg`). Details: [`openbsd/README.md`](openbsd/README.md), [`freebsd/README.md`](freebsd/README.md).
+Or build packages from source: `make deb` (Debian/Ubuntu), `make rpm` (Fedora/RHEL), `make flatpak` (any distro), `gmake openbsd` / `gmake freebsd` (`pkg_add`/`pkg`; **UNVERIFIED**: never run on OpenBSD or FreeBSD at this head). Details: [`openbsd/README.md`](openbsd/README.md), [`freebsd/README.md`](freebsd/README.md).
 
 ## FAQ
 

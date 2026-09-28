@@ -2,11 +2,13 @@
 
 Every image below is a **real capture from a running relay on a cloud VM** — base `44c66f88`, throwaway `HUSH_HOME`/`HUSH_CONFIG_DIR`, `hush-c/hush-relay --no-open 18084`, headless Chrome via `puppeteer-core` (system Chrome, `--no-sandbox`). Desktop shots are 1280×800; phone shots are 390×844 (`isMobile`, touch). The hive was onboarded through the genuine wizard (Begin → create identity → ack backup → stand up hive → Carry on); the thread view comes from a real `@Major` mention whose provider is not installed, so the relay posts its honest "no selected provider" note. Nothing is mocked, edited, or cropped beyond element framing.
 
+**These captures are older than the current UI:** they predate #206, #212, #214, #226 and #227, so parts of the UI differ (for example the send control, now the `Send` switch).
+
 ## Field-office three-pane
 
-The dispatch log in the center, Active personnel + Status feed on the right, quick-bar folder tabs along the bottom, VOLUME/SCROLL dial above SEND DISPATCH. Desktop shows all three panes; phone collapses to a single column with thin Inventory/Character tabs and the roster as a strip.
+The dispatch log in the center, Active personnel + Status feed on the right, quick-bar folder tabs along the bottom, VOLUME/SCROLL dial above the send control. Desktop shows all three panes; phone collapses to a single column with thin Inventory/Character tabs and the roster as a strip.
 
-![Hush field-office three-pane on desktop: Official Dispatch Log with Major's intro note, Active personnel roster, Status feed showing relay live on port 18084, volume dial, Send Dispatch composer, and the Inventory/Character/New channel/Stop quick bar](docs/assets/screenshots/field-office-desktop.png)
+![Hush field-office three-pane on desktop: Official Dispatch Log with Major's intro note, Active personnel roster, Status feed showing relay live on port 18084, volume dial, composer, and the Inventory/Character/New channel/Stop quick bar](docs/assets/screenshots/field-office-desktop.png)
 *Caption: field-office three-pane on desktop — dispatch log, personnel roster, status feed, dial, composer, and quick bar.*
 
 ![Hush field-office layout on a 390-pixel phone viewport: single column with Inventory/Character thin tabs, dispatch log, composer, roster strip, status feed, and folder-tab quick bar](docs/assets/screenshots/field-office-phone.png)
@@ -44,10 +46,10 @@ Thin manila folder-tab strip (`#quick-bar`), never fat pills: `INVENTORY 1`, `CH
 
 ## Volume dial
 
-UI-M11 stereo-style dial (`#fo-dial`) in the empty chrome above Send Dispatch. Wheel over the dial, clockwise/counter-clockwise drag, or arrow/PageUp/PageDown/Home/End keys scroll the dispatch log; the native fat scrollbar stays hidden and the message column owns no in-column chrome.
+UI-M11 stereo-style dial (`#fo-dial`) in the empty chrome above the send control. Wheel over the dial, clockwise/counter-clockwise drag, or arrow/PageUp/PageDown/Home/End keys scroll the dispatch log; the native fat scrollbar stays hidden and the message column owns no in-column chrome.
 
-![Volume dial on desktop: stamped VOLUME/SCROLL plate with ink knob above Send Dispatch](docs/assets/screenshots/volume-dial-desktop.png)
-*Caption: volume dial on desktop — stamped VOLUME/SCROLL plate above Send Dispatch.*
+![Volume dial on desktop: stamped VOLUME/SCROLL plate with ink knob above the send control](docs/assets/screenshots/volume-dial-desktop.png)
+*Caption: volume dial on desktop — stamped VOLUME/SCROLL plate above the send control.*
 
 ![Volume dial on phone: same VOLUME/SCROLL dial plate above the composer](docs/assets/screenshots/volume-dial-phone.png)
 *Caption: volume dial on phone — same dial plate above the composer.*

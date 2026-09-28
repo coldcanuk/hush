@@ -3,7 +3,8 @@
 Operator notes for running and stopping the relay, rebuilding, and calls.
 Install and file-layout questions live in [`CONFIGURATION.md`](CONFIGURATION.md).
 Screenshots live in [`../screenshots.md`](../screenshots.md). `hush-relay --help`
-prints the same flags and exit codes as this page.
+prints the flags and a short exit-code summary; this page is more precise
+(the help's off-Linux `--quit` line is coarser than the text below).
 
 ## Running the relay
 
@@ -42,7 +43,7 @@ the last `--app` window closes, the relay can raise the same three choices in a
 | Verb | In the hive / HTTP | CLI | What happens |
 |---|---|---|---|
 | **Close** | chooser **Close the window**; `POST /api/close` answers `{"ok":true,"action":"close"}` | `hush-relay --close [port]` | The window goes away and the relay keeps listening on its port. The CLI `--close` only prints `GUI closed. Relay still running on http://127.0.0.1:<port>/.` and exits 0; it does not signal or change anything. |
-| **Exit** | chooser **Exit the application**; `POST /api/exit` answers `{"ok":true,"action":"exit"}` | `hush-relay --quit [port]` (Linux), Ctrl+C | The relay shuts down (`POST /api/exit` sets the same shutdown flag as SIGTERM/SIGINT). On the way out it stops the children it forked (tracked children, then a `/proc` sweep for its own children) and its CHILD-mode turnserver, then removes its pidfile. |
+| **Exit** | chooser **Exit the application**; `POST /api/exit` answers `{"ok":true,"action":"exit"}` | `hush-relay --quit [port]` (Linux), Ctrl+C | The relay shuts down (`POST /api/exit` sets the same shutdown flag as SIGTERM/SIGINT). On the way out it stops the children it forked (each tracked child gets SIGTERM, then SIGKILL if it outlives the wait), then, **on Linux only**, runs a `/proc` sweep that stops any process whose command line has `--class=hush-relay` and this port's `--app=http://127.0.0.1:<port>/` (matched by command line, not parentage), stops its CHILD-mode turnserver, and removes its pidfile. |
 | **Cancel** | chooser **Cancel** | — | Stay put. |
 
 Click the launcher (`hush-relay --open`) while the hive is up to re-attach a
@@ -61,7 +62,8 @@ path, else `$HOME/.local/state/hush/relay-<port>.pid`. There is no `/tmp`
 fallback. If the relay could not write that file it warns
 `no pidfile for port <port>; --quit will not find this relay` at start-up.
 
-On Linux the pidfile holds `pid starttime port`. `--quit` signals only a live
+On Linux the pidfile holds `pid starttime port` (off Linux it holds only the
+pid). `--quit` signals only a live
 pid whose `/proc` start time and recorded port both match. There is no
 executable-name check (a rebuilt binary under a running relay still matches).
 It sends one SIGTERM, then waits up to 20 s (200 checks, 100 ms apart) for the
@@ -74,10 +76,11 @@ relay to exit. It never escalates to SIGKILL.
 | `2` | Stop failed or refused: the pid does not match the recorded start time or port (`pid <pid> is not the relay on port <port>; refusing --quit`); an old pid-only pidfile (`old/unrecognized format ... cannot verify identity`, with `ps`/`/proc` hints); an unreadable or malformed pidfile; or the relay survived the wait. |
 
 Off Linux, including OpenBSD and FreeBSD, `--quit` never signals: there is no
-`/proc` start time to check. A live recorded pid is refused with exit code 2 and
-a message naming `POST /api/exit`, the `X-Hush-Token` header and the token file.
-With no pidfile or a dead pid it exits 1. Stop those relays with Exit in the
-hive, Ctrl+C, or:
+`/proc` start time to check. It exits **1** when there is no pidfile or the
+recorded pid is dead, and **2** in every other case: a live recorded pid (refused
+with a message naming `POST /api/exit`, the `X-Hush-Token` header and the token
+file), a recorded pid of 1 or less or its own pid, or an unreadable or malformed
+pidfile. Stop those relays with Exit in the hive, Ctrl+C, or:
 
 ```bash
 curl -X POST http://127.0.0.1:<port>/api/exit \
