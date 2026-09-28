@@ -342,6 +342,48 @@ if [ -z "$form_at" ] || [ -z "$col_at" ] || [ -z "$dial_at" ] || [ -z "$send_at"
   || [ "$form_at" -ge "$col_at" ] || [ "$col_at" -ge "$dial_at" ] || [ "$dial_at" -ge "$send_at" ]; then
   fail "dial row must sit directly above Send inside the composer column (UI-M12c)"
 fi
+# UI-M12c r2: the flick is wired as a real call statement inside the
+# #form submit handler (not the CSS comment or the definition), only after
+# every submit guard and after Send is disabled, wrapped so a throw cannot
+# lock the composer; reduced motion skips the swing in JS and CSS.
+submit_at=$(line_of '$("form").addEventListener("submit", async (e) => {')
+submit_end=
+if [ -n "$submit_at" ]; then
+  submit_end=$(echo "$html" | awk -v s="$submit_at" 'NR > s && /^    }\);$/ { print NR; exit }')
+fi
+flick_at=$(line_of '^ *foSwitchFlick();$')
+if [ -z "$submit_at" ] || [ -z "$submit_end" ] || [ -z "$flick_at" ] \
+  || [ "$flick_at" -le "$submit_at" ] || [ "$flick_at" -ge "$submit_end" ]; then
+  fail "Send switch flick must be called inside the submit handler (UI-M12c)"
+fi
+mention_at=$(line_of 'if (mentionOpen) return;')
+guard_at=$(line_of 'if (sendingMessage) return;')
+set_at=$(line_of 'sendingMessage = true;')
+off_at=$(line_of '$("send").disabled = true;')
+if [ -z "$mention_at" ] || [ -z "$guard_at" ] || [ -z "$set_at" ] || [ -z "$off_at" ] \
+  || [ -z "$flick_at" ] || [ -z "$submit_at" ] || [ "$submit_at" -ge "$mention_at" ] \
+  || [ "$mention_at" -ge "$guard_at" ] || [ "$guard_at" -ge "$set_at" ] \
+  || [ "$set_at" -ge "$off_at" ] || [ "$off_at" -ge "$flick_at" ]; then
+  fail "Send switch must flick only after the submit guards (UI-M12c)"
+fi
+if [ -z "$flick_at" ] || [ "$flick_at" -le 1 ] \
+  || ! echo "$html" | sed -n "$((flick_at - 1))p" | grep -q '^ *try {$'; then
+  fail "Send switch flick must be wrapped so a throw cannot lock send (UI-M12c)"
+fi
+def_at=$(line_of '^ *function foSwitchFlick() {$')
+calm_at=$(line_of '^ *if (foSwitchCalm.matches) return;$')
+add_at=$(line_of 'send.classList.add("fo-flick");')
+if [ -z "$def_at" ] || [ -z "$calm_at" ] || [ -z "$add_at" ] \
+  || [ "$def_at" -ge "$calm_at" ] || [ "$calm_at" -ge "$add_at" ]; then
+  fail "reduced motion must skip the Send switch flick in JS (UI-M12c)"
+fi
+echo "$html" | grep -q 'foSwitchCalm = window.matchMedia("(prefers-reduced-motion: reduce)")' \
+  || fail "reduced motion must skip the Send switch flick in JS (UI-M12c)"
+echo "$html" | grep -A1 '^@media (prefers-reduced-motion: reduce) {$' \
+  | grep -q '^  \.fo-switch-lever, #send\.fo-switch\.fo-flick \.fo-switch-lever { transition: none; transform: rotate(-32deg); }$' \
+  || fail "reduced-motion CSS must pin the Send switch lever (UI-M12c)"
+echo "$html" | grep -q '#fo-dial-row #fo-dial { width: 100%;' \
+  || fail "dial must span the Send column width (UI-M12c)"
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + pills"
 echo "$html" | grep -q 'id="provider-username"' || fail "HTML missing provider username"

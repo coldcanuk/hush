@@ -1595,6 +1595,7 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
    dashed, faded switch; sending (:disabled) = faded switch. Reduced
    motion: no swing. */
 #fo-send-col { display: flex; flex-direction: column; align-items: stretch; gap: 6px; flex: 0 0 auto; }
+#fo-dial-row #fo-dial { width: 100%; justify-content: center; }
 #form .composer-box { min-width: 0; }
 #send.fo-switch {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -4717,7 +4718,7 @@ html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2p
           const data = foSwitchNoise.getChannelData(0);
           for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
         }
-        if (foSwitchAudio.state === "suspended") foSwitchAudio.resume();
+        if (foSwitchAudio.state === "suspended") foSwitchAudio.resume().catch(() => {});
         const now = foSwitchAudio.currentTime;
         foSwitchClick(now, 3400, 0.5, 0.03);
         foSwitchClick(now + FO_SWITCH_FLICK_MS / 1000, 1700, 0.18, 0.045);
@@ -4742,9 +4743,13 @@ html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2p
       if (!text) return;
       if (sendingMessage) return;
       sendingMessage = true;
-      foSwitchFlick();
       const draft = $("msg").value;
       $("send").disabled = true;
+      try {
+        foSwitchFlick();
+      } catch (err) {
+        /* The switch is garnish: a throw never locks or blocks the send. */
+      }
       $("send-error").textContent = "";
       const body = { content: text, kind: 1, channel: channel };
       assembled.mentions.forEach((np, i) => {

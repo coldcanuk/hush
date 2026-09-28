@@ -1077,15 +1077,31 @@ The UI-M11 VOLUME dial (`#fo-dial-row`) moved out of the chrome
 between `#send-error` and the composer (where it sat right-aligned on
 the log side of the composer border, 135px above Send and wider than
 it) into the composer: `#fo-send-col` is one right-hand column with
-the dial directly above the switch, both stretched to the column width
-so their left and right edges line up at desktop and phone widths
-(the draft box may shrink below its textarea's intrinsic width so the
-column fits 375px). The dial's look and behaviour are unchanged and it
-still scrolls `#stream`. The thread reply `#thread-send` is unchanged.
+the dial directly above the switch. `#fo-dial-row` and `#send` stretch
+to the column width, and the visible dial `#fo-dial` is set to the row's
+full width (`#fo-dial-row #fo-dial { width: 100%; }`, contents centred),
+so the dial and the switch share left and right edges at desktop and
+phone widths whichever child is wider (the draft box may shrink below
+its textarea's intrinsic width so the column fits 375px). The dial's
+look and behaviour are unchanged and it still scrolls `#stream`. Tab
+order changed with the move: the dial is now inside the form between
+the draft and the switch, so Tab goes `#msg` (draft) → `#fo-dial` →
+`#send` (before: dial → draft → Send). The thread reply `#thread-send`
+is unchanged. The flick call is wrapped in its own try/catch after
+`$("send").disabled = true;`, so a throw in the switch can neither lock
+nor block the send.
 Gate: the launch script requires the `fo-switch` submit button, the
 `Send` caption, the lever, `foSwitchFlick`, Web Audio clicks, and the
 order `id="form"` < `id="fo-send-col"` < `id="fo-dial-row"` < `<button
-id="send"`; it fails on any served `Send Dispatch</button>`.
+id="send"`; it fails on any served `Send Dispatch</button>`. It also
+requires (r2) the `foSwitchFlick();` call statement inside the `#form`
+submit handler, after `if (mentionOpen) return;`, `if (sendingMessage)
+return;`, `sendingMessage = true;` and `$("send").disabled = true;`, on
+its own line inside a `try {`; the reduced-motion early return `if
+(foSwitchCalm.matches) return;` inside `foSwitchFlick` before the
+`.fo-flick` class is added; the `@media (prefers-reduced-motion:
+reduce)` rule that pins `.fo-switch-lever` (`transition: none`); and the
+full-width dial rule.
 
 ### 16. Mention + manage pills
 
