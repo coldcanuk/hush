@@ -5646,9 +5646,12 @@ button.fo-person { min-height: var(--btn-h-sm); }
       $("call-help").textContent = "Payne joined as an agent. Voice needs Whisper (HUSH_WHISPER or whisper on PATH).";
     });
 
-    function badge(ok, text) {
+    function badge(ok, text, title) {
       const el = $("badge");
       el.textContent = text;
+      /* Pre-walk: the listening port moved out of the visible badge text
+         into this tooltip; other badge states clear it. */
+      if (title) el.title = title; else el.removeAttribute("title");
       el.className = ok ? "ok" : "bad";
     }
 
@@ -8007,7 +8010,8 @@ button.fo-person { min-height: var(--btn-h-sm); }
         whisperReady = !!st.whisper;
         if (session.ready && page !== "payne") page = "hive";
         paint();
-        badge(true, session.npub ? session.npub.slice(0, 12) + "…" : ("listening :" + (st.port || "")));
+        badge(true, session.npub ? session.npub.slice(0, 12) + "…" : "listening",
+          st.port ? "Relay listening on port " + st.port : "");
         let ev = null;
         try { ev = await evRes.json(); } catch (parseErr) { ev = null; }
         if (session.ready && ev) {

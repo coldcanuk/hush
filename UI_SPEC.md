@@ -59,7 +59,9 @@ raise humans + robots that share channels."
   the two is deferred to the UI-M12b colour/material pass.
 - Poll `/api/session`. If `ready` → hive. Else **Begin** → wizard step 1.
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
-  The header shows the vibe name only while `logged_in` is true;
+  Before login the badge reads "listening"; the port is only in its
+  tooltip ("Relay listening on port N"), not in the visible text
+  (pre-walk). The header shows the vibe name only while `logged_in` is true;
   otherwise it falls back to the neutral "local hive mind" (and an
   empty visibility badge), so a surviving vibe name never implies a
   live login after a restart.
