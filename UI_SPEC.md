@@ -1182,6 +1182,14 @@ but ~24px in code) and rail Close/Exit `iconbtn` (was "Both ≥44px" but
 supersedes the older "44px pencil" / "≥44px" `#provider-cfg` wording
 (§ providers, per-robot pick) and "44px minimum on primary actions"
 (§15) for controls inside menus and drawers.
+r4 (Ops F2/F7): the BOARDS drawer stats (`#stats`) render as inline
+items separated by `·` that wrap (three lines at 1440 with the demo
+fixture, instead of a five-line stack), so with that fixture the drawer
+needs no scroll at 1440×900; with more channels it still scrolls. At
+≤480px the robot-editor actions show the verb only (CREATE or SAVE,
+CLONE, DELETE), one line each like CLOSE; the noun stays as visually
+hidden `.act-noun` text and the full name is in `aria-label`. Wider
+screens keep the full labels.
 Gate: the launch script requires the tokens, the `UI-M12d` marker, the
 `.btn` md rule, the `.menu button` sm rule, `.pill button` min 24px,
 the touch media query with the transparent `::before` hit area sized
@@ -1191,8 +1199,12 @@ the square-widening rule, three representative spacing rules
 (including the 8px individuals gap), the drawer `flex-shrink: 0` rule,
 no touch rule on the main-view roster, no height/padding/block-size in
 the touch block except the three container lines (each a whole one-line
-rule: no selector may be prefixed onto it), no `--btn-` token
-redefinition in the touch block, and no `height`/`width`/`block-size:
+rule: with CSS comments stripped, the previous non-blank line must end in
+`{` or `}`, so no selector list may end just above it), no `--btn-` token
+redefinition in the touch block, the inline `#stats > span` rule (and
+no `sockets<br>` stack), the `@media (max-width: 480px)` `.act-noun`
+rule after the touch block, the create/clone/delete buttons with their
+full `aria-label` and split label, and no `height`/`width`/`block-size:
 44px` from the UI-M12d marker to `</style>`.
 
 ### 16. Mention + manage pills

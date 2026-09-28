@@ -1786,6 +1786,15 @@ button.fo-person { min-height: var(--btn-h-sm); }
   .inv-header { gap: 20px; }
   .fav-item { padding-block: 8px; }
 }
+/* r4 (Ops F2/F7): the drawer stats flow as wrapped inline items, so the
+   BOARDS drawer fits at 1440x900 with no scroll; at <= 480px the robot
+   editor actions show the verb only (the noun stays as visually hidden
+   text, and the full name is in aria-label). */
+#stats > span { white-space: nowrap; }
+#stats > span:not(:last-child)::after { content: " ·"; }
+@media (max-width: 480px) {
+  .act-noun { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
 </style>
 </head>
 <body>
@@ -2230,10 +2239,10 @@ button.fo-person { min-height: var(--btn-h-sm); }
         Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
       <p class="warn" id="agent-err"></p>
       <div class="actions">
-        <button class="btn" id="agent-save" type="button">Create robot</button>
+        <button class="btn" id="agent-save" type="button" aria-label="Create robot">Create<span class="act-noun"> robot</span></button>
         <button class="btn ghost" id="agent-close" type="button">Close</button>
-        <button class="btn ghost" id="agent-clone" type="button" disabled>Clone Robot</button>
-        <button class="btn danger" id="agent-delete" type="button" disabled>Delete Robot</button>
+        <button class="btn ghost" id="agent-clone" type="button" aria-label="Clone Robot" disabled>Clone<span class="act-noun"> Robot</span></button>
+        <button class="btn danger" id="agent-delete" type="button" aria-label="Delete Robot" disabled>Delete<span class="act-noun"> Robot</span></button>
       </div>
     </div>
   </div>
@@ -2697,6 +2706,13 @@ button.fo-person { min-height: var(--btn-h-sm); }
     let draftProviders = [];
 
     function $(id) { return document.getElementById(id); }
+    // r4 (Ops F7): robot-editor actions keep the full name in aria-label and
+    // in the .act-noun text, which is visually hidden at <= 480px.
+    function setActionLabel(el, verb, noun) {
+      el.setAttribute("aria-label", verb + " " + noun);
+      const hid = document.createElement("span"); hid.className = "act-noun"; hid.textContent = " " + noun;
+      el.replaceChildren(verb, hid);
+    }
 
     async function api(path, body) {
       const opt = body ? {
@@ -3799,7 +3815,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       paintAgentProviderChecks();
       if ($("agent-title")) $("agent-title").textContent = "Raise a robot";
       if ($("agent-help")) $("agent-help").textContent = "Give your robot a purpose, choose its provider order, and assign useful skills.";
-      if ($("agent-save")) $("agent-save").textContent = "Create robot";
+      if ($("agent-save")) setActionLabel($("agent-save"), "Create", "robot");
       if ($("agent-delete")) $("agent-delete").disabled = true;
       if ($("agent-clone")) $("agent-clone").disabled = true;
       skillLocked = false;
@@ -4253,7 +4269,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
           ? bot.providers.slice() : ["goose"];
         $("agent-title").textContent = "Edit Major";
         $("agent-help").textContent = "Major is the platform robot. Name and standing orders stay.";
-        $("agent-save").textContent = "Save Robot";
+        setActionLabel($("agent-save"), "Save", "Robot");
         $("agent-delete").disabled = true;
         $("agent-identity").hidden = false;
         $("agent-pass").closest("label").hidden = true;
@@ -4283,7 +4299,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
         draftPrompt = bot.prompt || "";
         $("agent-title").textContent = "Edit locked robot";
         $("agent-help").textContent = "Locked template. Clone it to edit name, prompt, and skills.";
-        $("agent-save").textContent = "Save Robot";
+        setActionLabel($("agent-save"), "Save", "Robot");
         $("agent-delete").disabled = true;
         if ($("agent-name")) {
           $("agent-name").value = draftName;
@@ -4303,7 +4319,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
         draftName = bot.name || "";
         draftPrompt = bot.prompt || "";
         $("agent-title").textContent = "Edit robot";
-        $("agent-save").textContent = "Save Robot";
+        setActionLabel($("agent-save"), "Save", "Robot");
         $("agent-delete").disabled = false;
         if ($("agent-name")) $("agent-name").value = draftName;
         if ($("agent-prompt")) $("agent-prompt").value = draftPrompt;
@@ -6630,12 +6646,17 @@ button.fo-person { min-height: var(--btn-h-sm); }
       const roots = mine.filter((e) => !e.reply_to);
       $("count").textContent = roots.length + (roots.length === 1 ? " note" : " notes");
       const projN = (session.projects || []).length;
-      $("stats").innerHTML =
-        (status.ok ? "relay live" : "relay down") + "<br>" +
-        status.events + " stored<br>" +
-        projN + " project" + (projN === 1 ? "" : "s") + "<br>" +
-        status.clients + " sockets<br>" +
-        (((status.version || "?").charAt(0) === "v" ? "" : "v") + (status.version || "?")) + " " + (status.build || "?");
+      // r4 (Ops F2): one inline item per stat, wrapped, so the drawer fits.
+      const statItems = [
+        status.ok ? "relay live" : "relay down",
+        status.events + " stored",
+        projN + " project" + (projN === 1 ? "" : "s"),
+        status.clients + " sockets",
+        (((status.version || "?").charAt(0) === "v" ? "" : "v") + (status.version || "?")) + " " + (status.build || "?")];
+      $("stats").replaceChildren(...statItems.flatMap((t, i) => {
+        const item = document.createElement("span"); item.textContent = t;
+        return i ? [" ", item] : [item];
+      }));
       document.title = "Hush " + (status.version || "0.0.1") +
         " (" + (status.build || "unknown") + ")";
       paintRelayDrawer(status);

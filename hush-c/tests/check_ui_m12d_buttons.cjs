@@ -20,6 +20,8 @@ fs.mkdirSync(artifacts, {recursive: true});
 // optional accepted exclusive touch hit px]. The 4th value is for stacked
 // rows whose 44px hits deliberately share up to 8px with a neighbour (the
 // BOARDS individuals list, 36px pitch; the later row wins the shared band).
+// The row passes when its exclusive band is >= that value; 35 is the 36px
+// pitch minus 1px for the whole-pixel scan, and the output prints it as-is.
 const RULES = [
   ['.leave-actions .btn', 999, 'pinned-44'],
   ['#nav-toggle', 999, 'pinned-44'],
@@ -51,7 +53,7 @@ const RULES = [
   ['.iconbtn', 32, 'md'],
   ['.skill-facet', 32, 'md'],
   ['.think-stop', 32, 'md'],
-  ['button.fo-person', 28, 'sm', 36],
+  ['button.fo-person', 28, 'sm', 35],
   ['.switch', 24, 'xs'],
 ];
 
@@ -107,7 +109,7 @@ async function measureOnce(page, root, floor) {
         while (up < 40 && own(cy - up - 1)) up++;
         while (down < 40 && own(cy + down + 1)) down++;
         excl = up + down + 1;
-        if (own(cy) && excl >= rule[3] - 1) { hitOk = true; hitBy = ''; }
+        if (own(cy) && excl >= rule[3]) { hitOk = true; hitBy = ''; }
       }
       // A rotated control's bounding box is inflated by the rotation; its
       // visual (layout) height is offsetHeight.
