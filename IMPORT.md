@@ -52,7 +52,9 @@ hush-pass save "agents/brain/nsec" "nsec1q9x8..."
 
 During identity or agent creation the modal checkbox is **checked by default**:
 
-> **Checked to save password to Unix Password Manager. Retrieve with: `pass show hush/identity/nsec`**
+> **Checked to save it in your password manager (pass).**
+>
+> How to find it later (a closed details line under the box): `pass show hush/identity/nsec`
 
 - Leave it checked → Hush writes via the helper above.
 - Uncheck it → opt-out (secret not stored via `pass`).
@@ -110,7 +112,7 @@ Hush (MVP) is an in-memory relay. Events are lost on restart unless you add pers
 
 - When creating or importing an agent in a Hush-aware tool:
   - Provide the name.
-  - The UI offers the default-checked box: "Checked to save password to Unix Password Manager. Retrieve with: `pass show hush/agents/<name>/nsec`".
+  - The UI offers the default-checked box: "Checked to save its key in your password manager (pass)." with a "How to find it later" details line holding `pass show hush/agents/<name>/nsec`.
   - If previously saved with `pass`, the tool can retrieve it via `scripts/hush-pass get` or `pass show hush/agents/<name>/nsec`.
 - Point the agent at your Hush relay URL.
 - Start the agent. It should be able to sign events and participate in channels.
