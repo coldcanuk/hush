@@ -158,6 +158,7 @@ test: $(TEST_BINS) hush-relay
 	@python3 tests/check_ws.py
 	@python3 tests/check_limits.py
 	@python3 tests/check_trust.py
+	@python3 tests/check_reasons.py
 	@sh tests/check_fixup.sh
 	@sh tests/check_complete.sh
 	@sh tests/check_turn.sh

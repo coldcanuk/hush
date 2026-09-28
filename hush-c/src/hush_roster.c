@@ -147,6 +147,17 @@ static void hush_roster_compact_agents(hush_roster_t *roster, size_t idx);
 static hush_status_t hush_roster_fill_context(hush_roster_agent_t *agent,
                                               const hush_roster_agent_in_t *in);
 
+void hush_roster_slug_of(char *out, size_t outsz, const char *name)
+{
+    char trimmed[HUSH_ROSTER_NAME_MAX];
+
+    if (out == NULL || outsz == 0)
+        return;
+    /* Same two steps as hush_roster_fill_agent: trim, then slugify. */
+    hush_roster_copy_text(trimmed, sizeof(trimmed), name, "");
+    hush_roster_slugify(out, outsz, trimmed);
+}
+
 void hush_roster_init(hush_roster_t *roster)
 {
     if (roster == NULL)

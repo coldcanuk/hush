@@ -119,6 +119,11 @@ int hush_roster_is_provider(const char *provider);
 /* True when role is worker or chaperon. */
 int hush_roster_is_role(const char *role);
 
+/* Writes into out the slug hush_roster_add_agent derives from name:
+ * trimmed, lowercase letters and digits kept, every other run folded to
+ * one '-'. Lets callers name a slug clash before adding. */
+void hush_roster_slug_of(char *out, size_t outsz, const char *name);
+
 /* Copies profile fields. Rejects a bad theme. */
 hush_status_t hush_roster_set_profile(hush_roster_t *roster,
                                       const hush_roster_profile_t *in);

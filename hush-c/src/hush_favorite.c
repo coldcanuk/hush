@@ -221,6 +221,19 @@ hush_status_t hush_favorite_save(const char *robot, const char *name,
     return hush_favorite_commit(dir, slug, robot, &draft);
 }
 
+int hush_favorite_name_ok(const char *name)
+{
+    char clean[HUSH_FAVORITE_NAME_MAX] = {0};
+    char slug[HUSH_FAVORITE_SLUG_MAX] = {0};
+
+    if (name == NULL)
+        return 0;
+    if (hush_favorite_clean_name(clean, sizeof clean, name) != HUSH_OK)
+        return 0;
+    hush_skill_slugify(slug, sizeof slug, clean);
+    return slug[0] != '\0';
+}
+
 hush_status_t hush_favorite_load(const char *robot, const char *name,
                                  hush_favorite_t *out)
 {
