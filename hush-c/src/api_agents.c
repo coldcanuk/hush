@@ -39,7 +39,10 @@
     "Cannot clone %s: the name plus \" copy\" would be over %d bytes; " \
     "shorten the name first."
 
-static char g_context_text[HUSH_ROSTER_CONTEXT_MAX][HUSH_ROSTER_CONTEXT_BYTES];
+/* Room for one byte past the limit: a context text longer than
+ * HUSH_ROSTER_CONTEXT_BYTES reads as CONTEXT_BYTES + 1 bytes, so the
+ * roster's size check refuses it instead of the reader cutting it short. */
+static char g_context_text[HUSH_ROSTER_CONTEXT_MAX][HUSH_ROSTER_CONTEXT_BYTES + 2];
 
 static hush_status_t hush_http_create_agent(int fd, const char *body,
                                             hush_store_t *store);
@@ -90,6 +93,10 @@ static void hush_http_slug_why(char *why, size_t whysz, hush_status_t st,
  * order: "<name> copy" too long, then roster full, then slug taken. */
 static void hush_http_clone_why(char *why, size_t whysz, hush_status_t st,
                                 const char *slug);
+/* Writes why for a rename of slug to name that the roster refuses: blank
+ * after trimming, or a slug another robot holds. 1 when a rule matched. */
+static int hush_http_rename_why(char *why, size_t whysz, const char *slug,
+                                const char *name);
 /* Writes why for a bad provider list or voice. 1 when a rule matched. */
 static int hush_http_setup_why(char *why, size_t whysz,
                                const hush_roster_agent_in_t *in);
@@ -627,10 +634,33 @@ static void hush_http_update_why(char *why, size_t whysz, const char *slug,
         hush_http_slug_why(why, whysz, HUSH_ERR_NOT_FOUND, slug);
         return;
     }
+    if (hush_http_rename_why(why, whysz, slug, in->name))
+        return;
     /* apply_update checks providers only when the body names one. */
     if (!in->has_providers && in->provider[0] == '\0' && in->voice[0] == '\0')
         return;
     (void)hush_http_setup_why(why, whysz, in);
+}
+
+static int hush_http_rename_why(char *why, size_t whysz, const char *slug,
+                                const char *name)
+{
+    char next[HUSH_ROSTER_NAME_MAX] = {0};
+
+    assert(why != NULL && whysz > 0 && slug != NULL && name != NULL);
+    if (name[0] == '\0')
+        return 0;
+    if (hush_http_is_blank(name)) {
+        (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_NAME);
+        return 1;
+    }
+    /* Same slug the roster derives; the robot's own slug stays its own. */
+    hush_roster_slug_of(next, sizeof(next), name);
+    if (strcmp(next, slug) != 0 && hush_http_slug_taken(next)) {
+        hush_http_why_id(why, whysz, HUSH_AGENT_WHY_TAKEN, next);
+        return 1;
+    }
+    return 0;
 }
 
 static void hush_http_slug_why(char *why, size_t whysz, hush_status_t st,
@@ -654,11 +684,11 @@ static void hush_http_clone_why(char *why, size_t whysz, hush_status_t st,
                                 const char *slug)
 {
     const hush_roster_t *roster = &hush_http_launch()->roster;
-    char copy[HUSH_ROSTER_NAME_MAX * 2];
-    char copy_slug[HUSH_ROSTER_NAME_MAX];
-    char safe[HUSH_HTTP_WHY_ID_MAX];
-    size_t i;
-    int n;
+    char copy[HUSH_ROSTER_NAME_MAX * 2] = {0};
+    char copy_slug[HUSH_ROSTER_NAME_MAX] = {0};
+    char safe[HUSH_HTTP_WHY_ID_MAX] = {0};
+    size_t i = 0;
+    int n = 0;
 
     assert(why != NULL && whysz > 0 && slug != NULL);
     if (st != HUSH_ERR_FULL && st != HUSH_ERR_PARSE) {

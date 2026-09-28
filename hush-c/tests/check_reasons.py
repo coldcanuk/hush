@@ -10,6 +10,7 @@ checks that the robot drawer shows the server reason in #agent-err.
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -53,7 +54,9 @@ FAV_CORRUPT = "That saved favorite file is corrupt."
 # the existing #agent-err line under the form (fallback copy unchanged).
 UI_KEEPS_REASON = 'err.reason = r.status === 400 ? (await r.text().catch(() => "")).trim() : "";'
 UI_SHOWS_REASON = '$("agent-err").textContent = (e && e.reason) || "Could not save that robot.";'
-UI_NAME_RULE = 'id="agent-name-rule">Spaces are fine.'
+UI_NAME_RULE = ('<p class="help" id="agent-name-rule">Spaces are fine. A name clashes '
+                'when its slug is taken: Walkbot One and walkbot-one are both walkbot-one. '
+                "Renaming keeps the robot's slug.</p>")
 
 FAILURES = []
 
@@ -263,6 +266,88 @@ def check_robot_clones(relay):
            "Robot name taken: slug twin-copy is already in use.")
 
 
+def agent_in_memory(relay, slug):
+    """Every field the relay reports for slug, from GET /api/session."""
+    status, _, raw = relay.call("GET", "/api/session")
+    if status != 200:
+        raise AssertionError(f"reasons: GET /api/session -> {status}")
+    for agent in json.loads(raw).get("agents", []):
+        if agent.get("slug") == slug:
+            return agent
+    raise AssertionError(f"reasons: robot {slug} missing from the session")
+
+
+def agent_on_disk(relay, slug):
+    """The persisted fields for slug in vibe.json, with the index stripped."""
+    vibe = json.loads((relay.directory / "config" / "vibe.json").read_text())
+    for i in range(int(vibe.get("nagents", 0))):
+        if vibe.get(f"agent_slug_{i}") != slug:
+            continue
+        fields = {}
+        for key, value in vibe.items():
+            if re.fullmatch(rf"agent_[a-z_]+_{i}", key):
+                fields[key[:-len(f"_{i}")]] = value
+            elif key.startswith(f"agent_{i}_"):
+                fields["agent_" + key[len(f"agent_{i}_"):]] = value
+        return fields
+    raise AssertionError(f"reasons: robot {slug} missing from vibe.json")
+
+
+def same_fields(case, before, after):
+    changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+    if changed:
+        FAILURES.append(f"{case}: refused updates changed {changed}: "
+                        f"before {[before.get(k) for k in changed]!r}, "
+                        f"after {[after.get(k) for k in changed]!r}")
+    else:
+        print(f"reasons: ok {case}: all {len(before)} fields unchanged")
+
+
+def check_robot_rename(relay):
+    """Rename keeps the name rule, keeps the slug, and a 400 writes nothing."""
+    relay.ok("/api/agent", robot("Steady"))
+    memory = agent_in_memory(relay, "steady")
+    disk = agent_on_disk(relay, "steady")
+    update = {"action": "update", "slug": "steady",
+              "name": "Steady Two", "system_prompt": "Changed."}
+    expect(relay, "update refused provider", "/api/agent",
+           dict(update, provider="nope"), "Unknown provider: nope.")
+    expect(relay, "update refused voice", "/api/agent",
+           dict(update, provider="ollama", voice="zzz"), "Unknown voice: zzz.")
+    expect(relay, "rename blank", "/api/agent", dict(update, name="   "), NAME)
+    expect(relay, "rename slug clash", "/api/agent", dict(update, name="Walkbot One"),
+           TAKEN)
+    relay.ok("/api/agent", robot("!!!"))  # no ASCII letter or digit: slug "a"
+    expect(relay, "rename fallback slug clash", "/api/agent", dict(update, name="???"),
+           "Robot name taken: slug a is already in use.")
+    same_fields("refused updates in memory", memory, agent_in_memory(relay, "steady"))
+    relay.ok("/api/agent", robot("Probe"))  # any later save rewrites vibe.json
+    same_fields("refused updates on disk", disk, agent_on_disk(relay, "steady"))
+    relay.ok("/api/agent", {"action": "update", "slug": "steady", "name": "STEADY!"})
+    relay.ok("/api/agent", {"action": "update", "slug": "steady", "name": "Calm Hand"})
+    agent = agent_in_memory(relay, "steady")
+    if (agent.get("name"), agent.get("slug")) != ("Calm Hand", "steady"):
+        FAILURES.append(f"rename must keep the slug: got {agent.get('name')!r} "
+                        f"slug {agent.get('slug')!r}")
+    else:
+        print("reasons: ok rename to own slug and to a new name: slug stays steady")
+
+
+def check_context_size(relay):
+    """A context text is refused past 4096 bytes, not silently cut."""
+    files = {"context_name_0": "brief.md", "context_mime_0": "text/markdown"}
+    made = relay.ok("/api/agent", robot("Ctx Exact", context_text_0="x" * 4096, **files))
+    exact = [a for a in made.get("agents", []) if a.get("slug") == "ctx-exact"]
+    if not exact or exact[0].get("ncontext") != 1:
+        FAILURES.append(f"a 4096-byte context file must be accepted; got {exact}")
+    else:
+        print("reasons: ok context at the limit: 4096 bytes accepted")
+    expect(relay, "context 4097 bytes", "/api/agent",
+           robot("Pat", context_text_0="x" * 4097, **files), FILES)
+    expect(relay, "context 20000 bytes", "/api/agent",
+           robot("Pat", context_text_0="x" * 20000, **files), FILES)
+
+
 def check_robot_full(relay):
     session = relay.ok("/api/agent", robot("Walkbot Two"))
     count = len(session.get("agents", []))
@@ -332,7 +417,7 @@ def check_ui(relay):
     for label, text in (("demo/index.html", demo), ("served UI", served)):
         for need in (UI_KEEPS_REASON, UI_SHOWS_REASON, UI_NAME_RULE):
             if need in text:
-                print(f"reasons: ok {label} has {need[:48]}...")
+                print(f"reasons: ok {label} has {need[:48]}... ({len(need)} chars)")
             else:
                 FAILURES.append(f"{label} must contain {need!r} so the robot "
                                 "drawer shows the server reason in #agent-err")
@@ -349,6 +434,8 @@ def main():
             owned = forge(relay, "owned elsewhere", scope="robot", robot="other-bot")
             check_robot_loadout(relay, owned)
             check_robot_slugs(relay)
+            check_robot_rename(relay)
+            check_context_size(relay)
             check_favorite_inputs(relay, owned)
             check_favorite_store(relay)
             check_robot_full(relay)

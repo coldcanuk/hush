@@ -119,9 +119,27 @@ static hush_status_t hush_roster_format_intro(const hush_roster_agent_t *agent,
 static hush_roster_agent_t *hush_roster_find_agent(hush_roster_t *roster,
                                                    const char *slug);
 
-/* Applies update fields onto an existing agent. */
-static hush_status_t hush_roster_apply_update(hush_roster_agent_t *agent,
+/* Applies update fields onto an existing agent once
+ * hush_roster_check_update passes; a refused update writes nothing. */
+static hush_status_t hush_roster_apply_update(const hush_roster_t *roster,
+                                              hush_roster_agent_t *agent,
                                               const hush_roster_agent_in_t *in);
+
+/* Checks every field of an update before any is written: a new name must
+ * be non-blank and its slug must not be another robot's; providers, voice,
+ * role and skill count must be valid. HUSH_OK when apply_update may write. */
+static hush_status_t hush_roster_check_update(const hush_roster_t *roster,
+                                              const hush_roster_agent_t *agent,
+                                              const hush_roster_agent_in_t *in);
+
+/* True when a rename to name keeps the rules: non-blank after trimming,
+ * and its slug is not held by any robot but agent. The slug never moves. */
+static int hush_roster_rename_ok(const hush_roster_t *roster,
+                                 const hush_roster_agent_t *agent,
+                                 const char *name);
+
+/* True when hush_roster_copy_providers would accept in's provider list. */
+static int hush_roster_providers_ok(const hush_roster_agent_in_t *in);
 
 /* Appends one agent object. */
 static hush_status_t hush_roster_format_one_agent(const hush_roster_agent_t *agent,
@@ -381,7 +399,7 @@ hush_status_t hush_roster_update_agent(hush_roster_t *roster, const char *slug,
         hush_roster_apply_intro(agent, in);
         return HUSH_OK;
     }
-    return hush_roster_apply_update(agent, in);
+    return hush_roster_apply_update(roster, agent, in);
 }
 
 hush_status_t hush_roster_clone_agent(hush_roster_t *roster,
@@ -921,11 +939,78 @@ static hush_roster_agent_t *hush_roster_find_agent(hush_roster_t *roster,
     return NULL;
 }
 
-static hush_status_t hush_roster_apply_update(hush_roster_agent_t *agent,
+static hush_status_t hush_roster_check_update(const hush_roster_t *roster,
+                                              const hush_roster_agent_t *agent,
                                               const hush_roster_agent_in_t *in)
 {
+    assert(roster != NULL && agent != NULL && in != NULL);
+    if (in->name[0] != '\0' && !hush_roster_rename_ok(roster, agent, in->name))
+        return HUSH_ERR_PARSE;
+    if ((in->has_providers || in->provider[0] != '\0') &&
+        !hush_roster_providers_ok(in))
+        return HUSH_ERR_PARSE;
+    if (in->has_voice && in->voice[0] != '\0' && !hush_skill_is_voice(in->voice))
+        return HUSH_ERR_PARSE;
+    if (in->has_role && in->role[0] != '\0' && !hush_roster_is_role(in->role))
+        return HUSH_ERR_PARSE;
+    if (in->has_skills && in->nskills > (size_t)HUSH_SKILL_EQUIP_MAX)
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
+}
+
+static int hush_roster_rename_ok(const hush_roster_t *roster,
+                                 const hush_roster_agent_t *agent,
+                                 const char *name)
+{
+    char trimmed[HUSH_ROSTER_NAME_MAX] = {0};
+    char slug[HUSH_ROSTER_NAME_MAX] = {0};
+    size_t i = 0;
+
+    assert(roster != NULL && agent != NULL && name != NULL);
+    hush_roster_copy_text(trimmed, sizeof(trimmed), name, "");
+    if (trimmed[0] == '\0')
+        return 0;
+    hush_roster_slugify(slug, sizeof(slug), trimmed);
+    for (i = 0; i < roster->nagents; ++i) {
+        if (&roster->agents[i] != agent &&
+            strcmp(roster->agents[i].slug, slug) == 0)
+            return 0;
+    }
+    return 1;
+}
+
+static int hush_roster_providers_ok(const hush_roster_agent_in_t *in)
+{
+    char primary[HUSH_ROSTER_PROVIDER_MAX] = {0};
+    size_t i = 0;
+    size_t n = 0;
+
+    assert(in != NULL);
+    /* Same walk as hush_roster_copy_providers, without writing. */
+    if (in->has_providers && in->nproviders > 0) {
+        for (i = 0; i < in->nproviders &&
+                    n < (size_t)HUSH_ROSTER_PROVIDERS_MAX; i++) {
+            if (in->providers[i][0] == '\0')
+                continue;
+            if (!hush_roster_is_provider(in->providers[i]))
+                return 0;
+            n++;
+        }
+    }
+    if (n > 0)
+        return 1;
+    hush_roster_copy_text(primary, sizeof(primary), in->provider, "");
+    return hush_roster_is_provider(primary);
+}
+
+static hush_status_t hush_roster_apply_update(const hush_roster_t *roster,
+                                              hush_roster_agent_t *agent,
+                                              const hush_roster_agent_in_t *in)
+{
+    assert(roster != NULL);
     assert(agent != NULL);
     assert(in != NULL);
+    HUSH_TRY(hush_roster_check_update(roster, agent, in));
     if (in->name[0] != '\0')
         hush_roster_copy_text(agent->name, sizeof(agent->name), in->name, "");
     if (in->prompt[0] != '\0')
