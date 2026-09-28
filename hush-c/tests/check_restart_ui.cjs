@@ -397,9 +397,11 @@ async function main() {
       }
     }
 
-    // Pre-walk r3 (Ops F2): every drawer stat, including the real build
-    // stamp and a longer realistic fixture, shows whole inside the clip
-    // wrapper (no glyph cut at its right edge).
+    // Pre-walk r3 (Ops F2): every drawer stat, including the build stamp,
+    // shows whole inside the clip wrapper (no glyph cut at its right edge).
+    // CI's shallow checkout stamps only the short SHA ("v28f9c24 28f9c24"),
+    // so the check also swaps in a real tagged-build stamp of the length Ops
+    // saw on a release build, plus a longer one, and measures each.
     const statsFit = await cdp.eval(`(() => {
       const clip = document.querySelector('#stats .stats-clip');
       if (!clip) return { err: 'no stats clip' };
@@ -413,15 +415,21 @@ async function main() {
       const live = measure();
       const last = clip.querySelector('.stat:last-child');
       const keep = last.textContent;
-      last.textContent = 'v0.0.1-9999-g0123456789ab 0123456789ab';
-      const fixture = measure();
+      const fixture = [];
+      for (const t of ['v0.0.1-697-g4c1f2594 4c1f2594', 'v0.0.1-9999-g0123456789ab 0123456789ab']) {
+        last.textContent = t;
+        const m = measure();
+        fixture.push(m[m.length - 1]);
+      }
       last.textContent = keep;
       return { live, fixture };
     })()`);
     check(!statsFit.err, statsFit.err);
     const stamp = statsFit.live.length ? statsFit.live[statsFit.live.length - 1].t : '';
     console.log('drawer stamp: ' + JSON.stringify(stamp));
-    check(/^v\d+\.\d+\.\d+\S* \S+$/.test(stamp), `drawer shows the real build stamp, got ${JSON.stringify(stamp)}`);
+    check(/^v\S+ \S+$/.test(stamp), `drawer shows the build stamp as its last stat, got ${JSON.stringify(stamp)}`);
+    check(statsFit.fixture.length === 2 && statsFit.fixture[0].t === 'v0.0.1-697-g4c1f2594 4c1f2594',
+      `real-length stamp fixture measured: ${JSON.stringify(statsFit.fixture)}`);
     for (const s of statsFit.live.concat(statsFit.fixture))
       check(!s.bad.length, `drawer stat ${JSON.stringify(s.t)} is cut by the clip edge ${JSON.stringify(s.bad)}`);
 
