@@ -1799,6 +1799,12 @@ button.fo-person { min-height: var(--btn-h-sm); }
 @media (max-width: 480px) {
   .act-noun { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
+/* r5 (Ops F2 fallback): only while the drawer content overflows (more
+   channels than the demo fixture), a sticky bottom fade plus 24px of end
+   room make the cut edge read as "scroll for more". syncDrawerOverflow()
+   toggles the class; a drawer that fits shows no cue. bottom: -10px
+   reaches past the 10px nav padding to the inner border. */
+#fo-drawer.is-overflowing::after { content: ""; flex: 0 0 24px; margin-top: -12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }
 </style>
 </head>
 <body>
@@ -3710,6 +3716,19 @@ button.fo-person { min-height: var(--btn-h-sm); }
       const open = $("hive").classList.toggle("nav-open");
       $("nav-toggle").setAttribute("aria-expanded", String(open));
     });
+    /* r5 (Ops F2 fallback): mark the drawer while its content overflows so
+       the CSS bottom fade shows only then. The cue's own 24px is left out
+       of the test so the class does not hold itself on. */
+    function syncDrawerOverflow() {
+      const d = $("fo-drawer");
+      const cue = d.classList.contains("is-overflowing") ? parseFloat(getComputedStyle(d, "::after").height) || 0 : 0;
+      d.classList.toggle("is-overflowing", d.scrollHeight - cue > d.clientHeight + 1);
+    }
+    if (window.ResizeObserver) {
+      const drawerRO = new ResizeObserver(syncDrawerOverflow);
+      drawerRO.observe($("fo-drawer"));
+      [...$("fo-drawer").children].forEach((c) => drawerRO.observe(c));
+    }
     /* UI-M11 volume-dial scroll control: supersedes the UI-M10
        scrollbar-in-message-column. The native bar on #stream stays hidden
        (CSS) and the log owns no in-column chrome; this stereo-style VOLUME

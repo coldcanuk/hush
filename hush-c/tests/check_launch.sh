@@ -435,8 +435,9 @@ if echo "$html" | sed -n "${touch_at},${touch_end}p" \
 fi
 # The allowlist covers whole one-line rules. CSS comments (one-line or
 # multi-line) are stripped first; then the previous non-blank line before
-# each allowlisted line must end in { or }, so a selector list ending just
-# above it, with or without comments or blank lines in between, is rejected.
+# each allowlisted line must end in { or }. The check does not parse CSS
+# strings or escapes (a /* inside a quoted string, or an escaped brace in a
+# selector, gets past it; tracked in #229).
 if echo "$html" | sed -n "${touch_at},${touch_end}p" | awk '
   { t = $0; c = ""
     while (t != "") {
@@ -508,6 +509,15 @@ for a in 'id="agent-save" type="button" aria-label="Create robot">Create<span cl
   'id="agent-delete" type="button" aria-label="Delete Robot" disabled>Delete<span class="act-noun"> Robot</span>'; do
   echo "$html" | grep -q -F -e "$a" || fail "robot-editor actions must keep their full accessible name (UI-M12d r4)"
 done
+# r5 (Ops F2 fallback): the drawer bottom fade sits after the touch block
+# and is switched only by the overflow test, so a drawer that fits shows
+# no cue.
+cue_at=$(line_of '^#fo-drawer\.is-overflowing::after { content: ""; flex: 0 0 24px; margin-top: -12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }$')
+if [ -z "$cue_at" ] || [ "$cue_at" -le "$touch_end" ] \
+  || ! echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", d.scrollHeight - cue > d.clientHeight + 1);' \
+  || ! echo "$html" | grep -q -F -e 'const drawerRO = new ResizeObserver(syncDrawerOverflow);'; then
+  fail "drawer bottom fade must show only when the drawer overflows (UI-M12d r5)"
+fi
 style_end=$(line_of '^</style>$')
 if [ -z "$style_end" ] || [ "$style_end" -le "$touch_end" ] \
   || echo "$html" | sed -n "${m12d_at},${style_end}p" | grep -q '\(height\|width\|block-size\): *44px'; then

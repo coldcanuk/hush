@@ -1251,6 +1251,11 @@ needs no scroll at 1440×900; with more channels it still scrolls. At
 CLONE, DELETE), one line each like CLOSE; the noun stays as visually
 hidden `.act-noun` text and the full name is in `aria-label`. Wider
 screens keep the full labels.
+r5 (Ops F2 fallback): when the drawer content overflows anyway, a
+small script marks `#fo-drawer` with `is-overflowing`, and CSS then adds
+a sticky 24px bottom fade (to the drawer surface colour) that also gives
+24px of end room, so a cut last line reads as "scroll for more". A
+drawer that fits gets no class and no fade.
 Gate: the launch script requires the tokens, the `UI-M12d` marker, the
 `.btn` md rule, the `.menu button` sm rule, `.pill button` min 24px,
 the touch media query with the transparent `::before` hit area sized
@@ -1260,12 +1265,14 @@ the square-widening rule, three representative spacing rules
 (including the 8px individuals gap), the drawer `flex-shrink: 0` rule,
 no touch rule on the main-view roster, no height/padding/block-size in
 the touch block except the three container lines (each a whole one-line
-rule: with CSS comments stripped, the previous non-blank line must end in
-`{` or `}`, so no selector list may end just above it), no `--btn-` token
-redefinition in the touch block, the inline `#stats > span` rule (and
-no `sockets<br>` stack), the `@media (max-width: 480px)` `.act-noun`
-rule after the touch block, the create/clone/delete buttons with their
-full `aria-label` and split label, and no `height`/`width`/`block-size:
+rule: after CSS comments are stripped, the previous non-blank line must
+end in `{` or `}`; the check does not parse CSS strings or escapes), no
+`--btn-` token redefinition in the touch block, the inline
+`#stats > span` rule (and no `sockets<br>` stack), the
+`@media (max-width: 480px)` `.act-noun` rule after the touch block, the
+create/clone/delete buttons with their full `aria-label` and split
+label, the `#fo-drawer.is-overflowing::after` fade rule after the touch
+block with its overflow toggle, and no `height`/`width`/`block-size:
 44px` from the UI-M12d marker to `</style>`.
 
 ### 16. Mention + manage pills
