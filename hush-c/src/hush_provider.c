@@ -203,7 +203,7 @@ void hush_provider_family(char *out, size_t outsz, const char *id)
 
 void hush_provider_label(char *out, size_t outsz, const char *id)
 {
-    const hush_provider_meta_t *meta;
+    const hush_provider_meta_t *meta = NULL;
 
     if (out == NULL || outsz == 0)
         return;

@@ -119,11 +119,26 @@ int hush_roster_is_provider(const char *provider);
 /* True when role is worker or chaperon. */
 int hush_roster_is_role(const char *role);
 
-/* Writes into out the slug hush_roster_add_agent derives from name:
- * trimmed, lowercase letters and digits kept, every other run folded to
- * one '-'. Empty when name has no ASCII letter or digit, which add and
- * rename refuse. Lets callers name a clash before adding. */
+/* Writes into out the slug of name: trimmed, lowercase ASCII letters and
+ * digits kept, every other run folded to one '-'. Empty when name has no
+ * ASCII letter or digit, which add and rename refuse. Two names clash when
+ * their slugs are equal; hush_roster_add_agent starts a new robot's id
+ * from it and adds "-2", "-3", ... when that id is already held. */
 void hush_roster_slug_of(char *out, size_t outsz, const char *name);
+
+/* True when name and other have the same non-empty slug: they read the
+ * same in ASCII letters and digits, ignoring case and everything else. */
+int hush_roster_is_name_clash(const char *name, const char *other);
+
+/* True when name, trimmed the way add and update trim it, is current byte
+ * for byte. Saving a robot's current name unchanged is never refused. */
+int hush_roster_is_same_name(const char *name, const char *current);
+
+/* Returns the robot other than except (may be NULL) whose current name
+ * clashes with name (hush_roster_is_name_clash), or NULL when none does. */
+const hush_roster_agent_t *hush_roster_name_holder(const hush_roster_t *roster,
+                                                   const char *name,
+                                                   const hush_roster_agent_t *except);
 
 /* Copies profile fields. Rejects a bad theme. */
 hush_status_t hush_roster_set_profile(hush_roster_t *roster,

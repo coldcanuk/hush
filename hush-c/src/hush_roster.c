@@ -16,7 +16,11 @@ enum {
     HUSH_ROSTER_KIND_META = 0,
     HUSH_ROSTER_KIND_NOTE = 1,
     HUSH_ROSTER_THEME_COUNT = 7,
-    HUSH_ROSTER_ROLE_COUNT = 2
+    HUSH_ROSTER_ROLE_COUNT = 2,
+    /* A new robot whose id is held gets "-2", then "-3", and so on. */
+    HUSH_ROSTER_SUFFIX_FIRST = 2,
+    /* Room for "-" plus the digits of the last suffix tried, and the NUL. */
+    HUSH_ROSTER_SUFFIX_MAX = 8
 };
 
 #define HUSH_ROSTER_CHAN_AGENTS "agents"
@@ -43,9 +47,19 @@ static void hush_roster_copy_text(char *dst, size_t dstsz,
 /* Writes a lowercase slug of name into dst. */
 static void hush_roster_slugify(char *dst, size_t dstsz, const char *name);
 
-/* True when slug already exists. */
-static int hush_roster_has_agent_slug(const hush_roster_t *roster,
-                                      const char *slug);
+/* True when a robot's id is slug, or slug is Payne's reserved id. */
+static int hush_roster_is_id_taken(const hush_roster_t *roster,
+                                   const char *slug);
+
+/* Makes slug an id hush_roster_is_id_taken refuses no longer: a held id
+ * becomes the first free "<slug>-2", "<slug>-3", ... */
+static void hush_roster_free_slug(const hush_roster_t *roster,
+                                  char *slug, size_t slugsz);
+
+/* Writes base plus "-n" into slug, cutting base (and a dash it would end
+ * on) so the whole id fits slugsz. */
+static void hush_roster_suffix_slug(char *slug, size_t slugsz,
+                                    const char *base, size_t n);
 
 /* True when pubkey already listed. */
 static int hush_roster_has_member(const hush_roster_t *roster,
@@ -125,16 +139,16 @@ static hush_status_t hush_roster_apply_update(const hush_roster_t *roster,
                                               const hush_roster_agent_in_t *in);
 
 /* Checks every field of an update before any is written: a new name must
- * be non-blank and its slug must not be another robot's; providers, voice,
+ * be non-blank and must not clash with another robot's name; providers, voice,
  * role and skill count must be valid. HUSH_OK when apply_update may write. */
 static hush_status_t hush_roster_check_update(const hush_roster_t *roster,
                                               const hush_roster_agent_t *agent,
                                               const hush_roster_agent_in_t *in);
 
-/* True when a rename to name keeps the rules: non-blank after trimming,
- * at least one letter A-Z or digit (an older symbol-only name may be kept
- * unchanged), and its slug is not held by any robot but agent. The slug
- * never moves. */
+/* True when a rename to name keeps the rules: the current name unchanged
+ * (even an older one that breaks them), or non-blank after trimming, at
+ * least one letter A-Z or digit, and no clash with another robot's current
+ * name. The robot's id never moves. */
 static int hush_roster_rename_ok(const hush_roster_t *roster,
                                  const hush_roster_agent_t *agent,
                                  const char *name);
@@ -175,6 +189,44 @@ void hush_roster_slug_of(char *out, size_t outsz, const char *name)
     /* Same two steps as hush_roster_fill_agent: trim, then slugify. */
     hush_roster_copy_text(trimmed, sizeof(trimmed), name, "");
     hush_roster_slugify(out, outsz, trimmed);
+}
+
+int hush_roster_is_name_clash(const char *name, const char *other)
+{
+    char want[HUSH_ROSTER_NAME_MAX] = {0};
+    char have[HUSH_ROSTER_NAME_MAX] = {0};
+
+    if (name == NULL || other == NULL)
+        return 0;
+    hush_roster_slug_of(want, sizeof(want), name);
+    hush_roster_slug_of(have, sizeof(have), other);
+    return want[0] != '\0' && strcmp(have, want) == 0;
+}
+
+int hush_roster_is_same_name(const char *name, const char *current)
+{
+    char trimmed[HUSH_ROSTER_NAME_MAX] = {0};
+
+    if (name == NULL || current == NULL)
+        return 0;
+    hush_roster_copy_text(trimmed, sizeof(trimmed), name, "");
+    return strcmp(trimmed, current) == 0;
+}
+
+const hush_roster_agent_t *hush_roster_name_holder(const hush_roster_t *roster,
+                                                   const char *name,
+                                                   const hush_roster_agent_t *except)
+{
+    size_t i = 0;
+
+    if (roster == NULL || name == NULL)
+        return NULL;
+    for (i = 0; i < roster->nagents; i++) {
+        if (&roster->agents[i] != except &&
+            hush_roster_is_name_clash(name, roster->agents[i].name))
+            return &roster->agents[i];
+    }
+    return NULL;
 }
 
 void hush_roster_init(hush_roster_t *roster)
@@ -472,8 +524,10 @@ static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
     hush_roster_slugify(agent->slug, sizeof(agent->slug), agent->name);
     if (agent->slug[0] == '\0')
         return HUSH_ERR_PARSE;
-    if (hush_roster_has_agent_slug(roster, agent->slug))
+    if (hush_roster_name_holder(roster, agent->name, NULL) != NULL)
         return HUSH_ERR_PARSE;
+    /* The name is free; its slug may still be a renamed robot's id. */
+    hush_roster_free_slug(roster, agent->slug, sizeof(agent->slug));
     hush_roster_copy_text(agent->prompt, sizeof(agent->prompt), in->prompt, "");
     if (agent->prompt[0] == '\0')
         return HUSH_ERR_PARSE;
@@ -660,18 +714,57 @@ static void hush_roster_slugify(char *dst, size_t dstsz, const char *name)
     dst[o] = '\0';
 }
 
-static int hush_roster_has_agent_slug(const hush_roster_t *roster,
-                                      const char *slug)
+static int hush_roster_is_id_taken(const hush_roster_t *roster,
+                                   const char *slug)
 {
-    size_t i;
+    size_t i = 0;
 
     assert(roster != NULL);
     assert(slug != NULL);
+    if (hush_roster_is_payne_slug(slug))
+        return 1;
     for (i = 0; i < roster->nagents; ++i) {
         if (strcmp(roster->agents[i].slug, slug) == 0)
             return 1;
     }
     return 0;
+}
+
+static void hush_roster_free_slug(const hush_roster_t *roster,
+                                  char *slug, size_t slugsz)
+{
+    char base[HUSH_ROSTER_NAME_MAX] = {0};
+    size_t n = HUSH_ROSTER_SUFFIX_FIRST;
+
+    assert(roster != NULL && slug != NULL);
+    assert(slugsz == sizeof(base));
+    if (!hush_roster_is_id_taken(roster, slug))
+        return;
+    memcpy(base, slug, sizeof(base));
+    /* Other robots plus Payne hold at most AGENTS_MAX ids, so one of these
+     * AGENTS_MAX + 1 suffixes is free. */
+    for (; n <= (size_t)HUSH_ROSTER_AGENTS_MAX + HUSH_ROSTER_SUFFIX_FIRST; n++) {
+        hush_roster_suffix_slug(slug, slugsz, base, n);
+        if (!hush_roster_is_id_taken(roster, slug))
+            return;
+    }
+}
+
+static void hush_roster_suffix_slug(char *slug, size_t slugsz,
+                                    const char *base, size_t n)
+{
+    char tail[HUSH_ROSTER_SUFFIX_MAX] = {0};
+    int len = snprintf(tail, sizeof(tail), "-%zu", n);
+    size_t keep = strlen(base);
+
+    assert(slug != NULL && base != NULL);
+    assert(len > 0 && (size_t)len < sizeof(tail) && (size_t)len < slugsz);
+    if (keep + (size_t)len >= slugsz)
+        keep = slugsz - (size_t)len - 1;
+    while (keep > 0 && base[keep - 1] == '-')
+        keep--;
+    memcpy(slug, base, keep);
+    memcpy(slug + keep, tail, (size_t)len + 1);
 }
 
 static int hush_roster_has_member(const hush_roster_t *roster,
@@ -964,21 +1057,17 @@ static int hush_roster_rename_ok(const hush_roster_t *roster,
 {
     char trimmed[HUSH_ROSTER_NAME_MAX] = {0};
     char slug[HUSH_ROSTER_NAME_MAX] = {0};
-    size_t i = 0;
 
     assert(roster != NULL && agent != NULL && name != NULL);
     hush_roster_copy_text(trimmed, sizeof(trimmed), name, "");
     if (trimmed[0] == '\0')
         return 0;
+    if (hush_roster_is_same_name(trimmed, agent->name))
+        return 1;
     hush_roster_slugify(slug, sizeof(slug), trimmed);
     if (slug[0] == '\0')
-        return strcmp(trimmed, agent->name) == 0;
-    for (i = 0; i < roster->nagents; ++i) {
-        if (&roster->agents[i] != agent &&
-            strcmp(roster->agents[i].slug, slug) == 0)
-            return 0;
-    }
-    return 1;
+        return 0;
+    return hush_roster_name_holder(roster, trimmed, agent) == NULL;
 }
 
 static int hush_roster_providers_ok(const hush_roster_agent_in_t *in)

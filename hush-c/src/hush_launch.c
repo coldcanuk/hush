@@ -639,6 +639,35 @@ hush_status_t hush_launch_add_member(hush_launch_t *launch,
     return hush_launch_save_vibe(launch);
 }
 
+/* True when name clashes with Major's display name (Payne is not on the
+ * roster, so the roster cannot see it). */
+static int hush_launch_is_payne_name(const hush_launch_t *launch,
+                                     const char *name)
+{
+    assert(launch != NULL && name != NULL);
+    return hush_roster_is_name_clash(name, hush_launch_payne_name(launch));
+}
+
+/* True when in renames the unlocked robot slug to a new name that clashes
+ * with Major's. Locked robots ignore names; an unchanged name stays. */
+static int hush_launch_renames_to_payne(const hush_launch_t *launch,
+                                        const char *slug,
+                                        const hush_roster_agent_in_t *in)
+{
+    size_t i = 0;
+
+    assert(launch != NULL && slug != NULL && in != NULL);
+    if (in->name[0] == '\0' || !hush_launch_is_payne_name(launch, in->name))
+        return 0;
+    for (i = 0; i < launch->roster.nagents; i++) {
+        const hush_roster_agent_t *agent = &launch->roster.agents[i];
+
+        if (strcmp(agent->slug, slug) == 0)
+            return !agent->locked && !hush_roster_is_same_name(in->name, agent->name);
+    }
+    return 0;
+}
+
 hush_status_t hush_launch_add_agent(hush_launch_t *launch,
                                     hush_store_t *store,
                                     const hush_roster_agent_in_t *in,
@@ -648,6 +677,8 @@ hush_status_t hush_launch_add_agent(hush_launch_t *launch,
         return HUSH_ERR_ARG;
     if (!launch->has_vibe || !launch->logged_in)
         return HUSH_ERR_ARG;
+    if (hush_launch_is_payne_name(launch, in->name))
+        return HUSH_ERR_PARSE;
     HUSH_TRY(hush_roster_add_agent(&launch->roster, store, in, save_pass));
     return hush_launch_save_vibe(launch);
 }
@@ -758,6 +789,8 @@ hush_status_t hush_launch_update_agent(hush_launch_t *launch, const char *slug,
         return HUSH_ERR_ARG;
     if (!launch->has_vibe || !launch->logged_in)
         return HUSH_ERR_ARG;
+    if (hush_launch_renames_to_payne(launch, slug, in))
+        return HUSH_ERR_PARSE;
     HUSH_TRY(hush_roster_update_agent(&launch->roster, slug, in));
     return hush_launch_save_vibe(launch);
 }

@@ -288,6 +288,67 @@ int main(void)
            "older symbol-only name cannot become other symbols");
     expect(strcmp(roster.agents[1].slug, "coach-copy") == 0,
            "symbol names never move the slug");
+    /* Names clash on other robots' current names, never on ids. */
+    memset(&agent, 0, sizeof(agent));
+    memcpy(agent.name, "Walkbot Two", 12);
+    memcpy(agent.prompt, "Watch.", 7);
+    memcpy(agent.provider, "goose", 6);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "walkbot two");
+    memcpy(agent.name, "Calm Hand", 10);
+    expect(hush_roster_update_agent(&roster, "walkbot-two", &agent) == HUSH_OK,
+           "rename walkbot-two");
+    memcpy(agent.name, "Walkbot Two", 12);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "a renamed robot's old name is free");
+    expect(strcmp(roster.agents[3].slug, "walkbot-two-2") == 0,
+           "held id gets -2");
+    memcpy(agent.name, "walkbot two!", 13);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+           "same letters and digits refused");
+    memcpy(agent.name, "Calm Hand", 10);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+           "a current name refused");
+    memcpy(agent.name, "WALKBOT TWO", 12);
+    expect(hush_roster_update_agent(&roster, "walkbot-two", &agent) ==
+               HUSH_ERR_PARSE,
+           "rename onto another current name refused");
+    expect(strcmp(roster.agents[2].name, "Calm Hand") == 0,
+           "refused rename keeps the name");
+    expect(roster.nagents == 4, "no robot for refused names");
+    memset(agent.name, 0, sizeof(agent.name));
+    memcpy(agent.name, "Sgt Major Payne", 16);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "payne-like name");
+    expect(strcmp(roster.agents[4].slug, "sgt-major-payne-2") == 0,
+           "payne's id is never given out");
+    /* A 63-character id cut to fit its suffix. */
+    memset(agent.name, 'a', (size_t)HUSH_ROSTER_NAME_MAX - 1);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "63-byte name");
+    memset(agent.name, 0, sizeof(agent.name));
+    memcpy(agent.name, "Short", 6);
+    expect(hush_roster_update_agent(&roster, roster.agents[5].slug, &agent) ==
+               HUSH_OK,
+           "rename the 63-byte robot");
+    memset(agent.name, 'a', (size_t)HUSH_ROSTER_NAME_MAX - 1);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "63-byte name again");
+    expect(strlen(roster.agents[6].slug) == (size_t)HUSH_ROSTER_NAME_MAX - 1 &&
+               strcmp(roster.agents[6].slug + strlen(roster.agents[6].slug) - 2,
+                      "-2") == 0,
+           "suffixed id fits");
+    /* Names shared before the rule may be saved unchanged, not re-taken. */
+    memcpy(roster.agents[4].name, "Calm Hand", 10);
+    memset(agent.name, 0, sizeof(agent.name));
+    memcpy(agent.name, " Calm Hand ", 12);
+    expect(hush_roster_update_agent(&roster, "sgt-major-payne-2", &agent) ==
+               HUSH_OK,
+           "older shared name kept");
+    memcpy(agent.name, "Walkbot-Two", 12);
+    expect(hush_roster_update_agent(&roster, "sgt-major-payne-2", &agent) ==
+               HUSH_ERR_PARSE,
+           "older shared name cannot move onto another");
     hush_store_destroy(store);
     hush_pass_set_helper(NULL);
     if (g_fail)

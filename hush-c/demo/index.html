@@ -2215,8 +2215,8 @@ button.fo-person { min-height: var(--btn-h-sm); }
         <div class="pill-row">
           <input id="agent-name" type="text" maxlength="48" placeholder="Research assistant">
         </div>
-        <p class="help">State the robot’s name. Leave blank to auto-generate one.</p>
-        <p class="help" id="agent-name-rule">Names must differ in letters or digits.</p>
+        <p class="help" id="agent-name-help">State the robot’s name. Leave blank to auto-generate one.</p>
+        <p class="help" id="agent-name-rule">Names must differ in letters (A-Z) or 0-9.</p>
       </div>
       <div class="field">
         <label for="agent-prompt">System Prompt</label>
@@ -4004,6 +4004,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       if ($("agent-err")) $("agent-err").textContent = "";
       if ($("agent-identity")) $("agent-identity").hidden = false;
       if ($("agent-name-rule")) $("agent-name-rule").hidden = false;
+      if ($("agent-name-help")) $("agent-name-help").hidden = false;
       syncAgentPassBox();
       if ($("payne-provider-pills")) $("payne-provider-pills").hidden = true;
       if ($("agent-provider-help")) $("agent-provider-help").textContent = "Harness / API priority (required)";
@@ -4461,6 +4462,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
           $("agent-name").readOnly = true;
         }
         if ($("agent-name-rule")) $("agent-name-rule").hidden = true;
+        if ($("agent-name-help")) $("agent-name-help").hidden = true;
         if ($("agent-prompt")) {
           $("agent-prompt").value = draftPrompt;
           $("agent-prompt").disabled = true;
@@ -4486,6 +4488,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
           $("agent-name").readOnly = true;
         }
         if ($("agent-name-rule")) $("agent-name-rule").hidden = true;
+        if ($("agent-name-help")) $("agent-name-help").hidden = true;
         if ($("agent-prompt")) {
           $("agent-prompt").value = draftPrompt;
           $("agent-prompt").disabled = true;

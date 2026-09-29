@@ -28,6 +28,8 @@ GATE = "Log in and set up your vibe before changing robots."
 NAME = "Robot name is required."
 NAME_CHARS = "Robot names need a letter (A-Z) or digit."
 TAKEN = "A robot named Walkbot One already exists."
+# A name that is not the same but reads the same in A-Z letters and digits.
+LIKE = "Too close to {}: names must differ in letters (A-Z) or 0-9."
 PROMPT = "System prompt is required."
 NO_PROVIDER = "Provider is required."
 PROVIDER = "Unknown AI provider. Choose one from the list."
@@ -59,13 +61,20 @@ FAV_CORRUPT = "That saved favorite file is corrupt."
 # the existing #agent-err line under the form (fallback copy unchanged).
 UI_KEEPS_REASON = 'err.reason = r.status === 400 ? (await r.text().catch(() => "")).trim() : "";'
 UI_SHOWS_REASON = '$("agent-err").textContent = (e && e.reason) || "Could not save that robot.";'
-UI_NAME_RULE = '<p class="help" id="agent-name-rule">Names must differ in letters or digits.</p>'
+UI_NAME_RULE = ('<p class="help" id="agent-name-rule">'
+                'Names must differ in letters (A-Z) or 0-9.</p>')
+UI_NAME_HELP = ('<p class="help" id="agent-name-help">'
+                "State the robot\u2019s name. Leave blank to auto-generate one.</p>")
 # A long unbroken name wraps inside the drawer instead of clipping at 375.
 UI_ERR_WRAP = "#agent-err { overflow-wrap: anywhere; }"
 # The rule shows while the name is editable and hides when it is locked
 # (Edit Major, Edit locked robot): reset shows it, each lock hides it.
 UI_RULE_SHOWN = 'if ($("agent-name-rule")) $("agent-name-rule").hidden = false;'
 UI_RULE_HIDDEN = 'if ($("agent-name-rule")) $("agent-name-rule").hidden = true;'
+# "Leave blank to auto-generate one" follows the same rule: shown on create
+# and edit, hidden while the name is locked.
+UI_HELP_SHOWN = 'if ($("agent-name-help")) $("agent-name-help").hidden = false;'
+UI_HELP_HIDDEN = 'if ($("agent-name-help")) $("agent-name-help").hidden = true;'
 # Reason sources: no user-facing reason may say "slug".
 REASON_SOURCES = ("src/api_agents.c", "src/api_favorite.c",
                   "include/hush_http_internal.h")
@@ -127,7 +136,8 @@ class Relay:
         """Returns (status, content type, raw body); retries a 429 burst."""
         # Compact separators: the relay's field reader matches "key":"value".
         # Raw UTF-8 like the browser's JSON.stringify, not \u escapes.
-        payload = None if body is None else json.dumps(
+        # bytes go out as they are (raw control bytes a browser never sends).
+        payload = body if body is None or isinstance(body, bytes) else json.dumps(
             body, separators=(",", ":"), ensure_ascii=False).encode()
         token = (self.home / "session.token").read_text().strip()
         for _ in range(40):
@@ -189,9 +199,11 @@ def check_robot_names(relay):
         FAILURES.append(f"'Walkbot One' must be accepted as walkbot-one; got {slugs}")
     else:
         print("reasons: ok spaces allowed: 'Walkbot One' -> walkbot-one")
-    expect(relay, "name clash", "/api/agent", robot("walkbot-one"), TAKEN)
+    expect(relay, "name clash, same name", "/api/agent", robot("  Walkbot One "), TAKEN)
+    expect(relay, "name clash", "/api/agent", robot("walkbot-one"),
+           LIKE.format("Walkbot One"))
     expect(relay, "name clash by case and punctuation", "/api/agent",
-           robot("  WALKBOT one!! "), TAKEN)
+           robot("  WALKBOT one!! "), LIKE.format("Walkbot One"))
     expect(relay, "blank name", "/api/agent", robot("   "), NAME)
     for case, name in (("bangs", "!!!"), ("symbols", "@#$%"),
                        ("emoji", "\U0001F916\U0001F916"),
@@ -354,7 +366,9 @@ def check_robot_rename(relay):
     refused(relay, "update refused role", dict(update, role="boss"))
     expect(relay, "rename blank", "/api/agent", dict(update, name="   "), NAME)
     expect(relay, "rename name clash", "/api/agent", dict(update, name="walkbot ONE"),
-           TAKEN)
+           LIKE.format("Walkbot One"))
+    expect(relay, "rename to the same name", "/api/agent",
+           dict(update, name="Walkbot One"), TAKEN)
     expect(relay, "rename to symbols only", "/api/agent", dict(update, name="???"),
            NAME_CHARS)
     expect(relay, "rename to Cyrillic letters only", "/api/agent",
@@ -370,6 +384,148 @@ def check_robot_rename(relay):
                         f"slug {agent.get('slug')!r}")
     else:
         print("reasons: ok rename to own slug and to a new name: slug stays steady")
+
+
+def session_names(relay):
+    status, _, raw = relay.call("GET", "/api/session")
+    if status != 200:
+        raise AssertionError(f"reasons: GET /api/session -> {status}")
+    return {a.get("slug"): a.get("name") for a in json.loads(raw).get("agents", [])}
+
+
+def check_names(case, relay, want):
+    names = session_names(relay)
+    wrong = {slug: names.get(slug) for slug, name in want.items() if names.get(slug) != name}
+    if wrong:
+        FAILURES.append(f"{case}: want {want}; got {wrong}")
+    else:
+        print(f"reasons: ok {case}: {want}")
+
+
+def check_name_rule(relay):
+    """Names clash on the current names of other robots, never on ids: a
+    renamed robot keeps its id, and a new robot whose id is held gets -2."""
+    relay.ok("/api/agent", robot("Walkbot Two"))
+    rename = {"action": "update", "slug": "walkbot-two"}
+    calm = "A robot named Calm Hand already exists."
+    expect(relay, "rename to a name another robot has", "/api/agent",
+           dict(rename, name="Calm Hand"), calm)
+    expect(relay, "create a name another robot has", "/api/agent", robot("Calm Hand"), calm)
+    relay.ok("/api/agent", dict(rename, name="Quiet Hand"))
+    relay.ok("/api/agent", robot("Walkbot Two"))
+    check_names("a renamed robot's old name is free; its id gets -2", relay,
+                {"walkbot-two": "Quiet Hand", "walkbot-two-2": "Walkbot Two"})
+    expect(relay, "create the same name twice", "/api/agent", robot("Walkbot Two"),
+           "A robot named Walkbot Two already exists.")
+    expect(relay, "rename too close to another name", "/api/agent",
+           dict(rename, name="walkbot two!"), LIKE.format("Walkbot Two"))
+    for first, second, slug in (("\u0420\u043e\u0431\u043e\u0442 1", "\u0418\u0432\u0430\u043d 1", "1"),
+                                ("\u0418\u0432\u0430\u043d 2", "\u041f\u0451\u0442\u0440 2", "2"),
+                                ("Caf\u00e9", "Caf\u00e8", "caf"),
+                                ("Zo", "Zo\u00eb", "zo")):
+        relay.ok("/api/agent", robot(first))
+        expect(relay, f"only A-Z letters and digits count: {second} vs {first}",
+               "/api/agent", robot(second), LIKE.format(first))
+        relay.ok("/api/agent", {"action": "delete", "slug": slug})
+    expect(relay, "create Major's name", "/api/agent", robot("Major"),
+           "A robot named Major already exists.")
+    relay.ok("/api/agent", robot("Sgt Major Payne"))
+    check_names("Major's reserved id is never given out", relay,
+                {"sgt-major-payne-2": "Sgt Major Payne"})
+    relay.ok("/api/agent", {"action": "delete", "slug": "sgt-major-payne-2"})
+    # A raw-byte API name (a browser never sends one) is echoed with '?'.
+    # The session JSON then carries the raw bytes too (not #230's), so only
+    # the status is read here.
+    status, _, _ = relay.call("POST", "/api/agent",
+                              b'{"name":"Ctl\x01Line\nBot","system_prompt":"Walk the floor.",'
+                              b'"provider":"grok-build","save_pass":false}')
+    if status != 200:
+        raise AssertionError(f"reasons: setup raw-byte name -> {status}")
+    expect(relay, "control bytes echo as ?", "/api/agent", robot("Ctl Line Bot"),
+           LIKE.format("Ctl?Line?Bot"))
+    relay.ok("/api/agent", {"action": "delete", "slug": "ctl-line-bot"})
+    check_suffixed_favorites(relay)
+
+
+def favorite_names(relay, slug):
+    listed = relay.ok("/api/loadout", {"action": "list", "robot": slug})
+    return [f.get("name") for f in listed.get("favorites", [])]
+
+
+def check_suffixed_favorites(relay):
+    """Favorites live under the robot's id, so a -2 robot keeps its own."""
+    one = {"skill_0": "system:hive-patterns"}
+    relay.ok("/api/loadout", fav("save", robot="walkbot-two-2", name="Two Fav", **one))
+    loaded = relay.ok("/api/loadout", fav("load", robot="walkbot-two-2", name="Two Fav"))
+    saved = sorted(p.name for p in (relay.home / "robots" / "walkbot-two-2" / "loadouts").glob("*.json"))
+    owner = favorite_names(relay, "walkbot-two-2")
+    other = favorite_names(relay, "walkbot-two")
+    if owner != ["Two Fav"] or other or not saved or loaded.get("skills") != ["system:hive-patterns"]:
+        FAILURES.append(f"favorites on walkbot-two-2: listed {owner}, walkbot-two {other}, "
+                        f"files {saved}, load {loaded}")
+    else:
+        print(f"reasons: ok favorites on a -2 robot: saved, listed, loaded ({saved})")
+    relay.ok("/api/loadout", fav("delete", robot="walkbot-two-2", name="Two Fav"))
+    if favorite_names(relay, "walkbot-two-2"):
+        FAILURES.append("favorite delete on walkbot-two-2 left it listed")
+    else:
+        print("reasons: ok favorites on a -2 robot: deleted")
+
+
+def set_names(relay, names):
+    """Rewrites stored robot names in vibe.json while the relay is down,
+    as an older build could have saved them."""
+    path = relay.directory / "config" / "vibe.json"
+    vibe = json.loads(path.read_text())
+    for i in range(int(vibe.get("nagents", 0))):
+        slug = vibe.get(f"agent_slug_{i}")
+        if slug in names:
+            vibe[f"agent_name_{i}"] = names[slug]
+    path.write_text(json.dumps(vibe, separators=(",", ":"), ensure_ascii=False))
+
+
+def check_restart():
+    """Ids and favorites survive a restart; names saved by an older build
+    that break the rule can still be saved unchanged, never taken again."""
+    with tempfile.TemporaryDirectory(prefix="hush-reasons-restart-") as raw:
+        relay = Relay(Path(raw))
+        relay.start()
+        try:
+            relay.ok("/api/identity", {"action": "create"})
+            relay.ok("/api/identity", {"action": "ack_backup", "save_pass": True})
+            relay.ok("/api/vibe", {"name": "HQ", "about": "restart"})
+            relay.ok("/api/agent", robot("Walkbot Two"))
+            relay.ok("/api/agent", {"action": "update", "slug": "walkbot-two",
+                                    "name": "Quiet Hand"})
+            relay.ok("/api/agent", robot("Walkbot Two"))
+            relay.ok("/api/loadout", fav("save", robot="walkbot-two-2", name="Keep Fav",
+                                         skill_0="system:hive-patterns"))
+            relay.ok("/api/agent", robot("Old Bangs"))
+            relay.ok("/api/agent", robot("Old Twin"))
+            relay.stop()
+            set_names(relay, {"old-bangs": "!!!", "old-twin": "Quiet Hand"})
+            relay.start()
+            check_names("restart keeps ids and names", relay,
+                        {"walkbot-two": "Quiet Hand", "walkbot-two-2": "Walkbot Two"})
+            kept = favorite_names(relay, "walkbot-two-2")
+            if kept != ["Keep Fav"]:
+                FAILURES.append(f"restart must keep walkbot-two-2's favorite; got {kept}")
+            else:
+                print("reasons: ok restart keeps a -2 robot's favorites")
+            bangs = {"action": "update", "slug": "old-bangs"}
+            expect(relay, "older symbol-only name unchanged, next rule named", "/api/agent",
+                   dict(bangs, name="!!!", provider="nope"), PROVIDER)
+            relay.ok("/api/agent", dict(bangs, name=" !!! ", system_prompt="Changed."))
+            expect(relay, "older symbol-only name cannot become other symbols",
+                   "/api/agent", dict(bangs, name="@@@"), NAME_CHARS)
+            relay.ok("/api/agent", {"action": "update", "slug": "old-twin",
+                                    "name": "Quiet Hand", "system_prompt": "Changed."})
+            check_names("older names save unchanged", relay,
+                        {"old-bangs": "!!!", "old-twin": "Quiet Hand"})
+            expect(relay, "an older shared name is not taken again", "/api/agent",
+                   robot("Quiet Hand"), "A robot named Quiet Hand already exists.")
+        finally:
+            relay.stop()
 
 
 def check_context_size(relay):
@@ -388,7 +544,7 @@ def check_context_size(relay):
 
 
 def check_robot_full(relay):
-    session = relay.ok("/api/agent", robot("Walkbot Two"))
+    session = relay.ok("/api/agent", robot("Walkbot Three"))
     count = len(session.get("agents", []))
     for i in range(count, 16):
         relay.ok("/api/agent", robot(f"Filler {i}"))
@@ -517,7 +673,7 @@ def check_ui(relay):
     served = served.decode("utf-8", "replace")
     for label, text in (("demo/index.html", demo), ("served UI", served)):
         for need in (UI_KEEPS_REASON, UI_SHOWS_REASON, UI_NAME_RULE, UI_ERR_WRAP,
-                     UI_RULE_SHOWN):
+                     UI_RULE_SHOWN, UI_NAME_HELP, UI_HELP_SHOWN):
             if need in text:
                 print(f"reasons: ok {label} has {need[:48]}... ({len(need)} chars)")
             else:
@@ -528,6 +684,12 @@ def check_ui(relay):
             print(f"reasons: ok {label} hides #agent-name-rule for Major and locked robots")
         else:
             FAILURES.append(f"{label} must hide #agent-name-rule in both name locks "
+                            f"(Major, locked robot); found {hidden}")
+        hidden = text.count(UI_HELP_HIDDEN)
+        if hidden == 2:
+            print(f"reasons: ok {label} hides #agent-name-help for Major and locked robots")
+        else:
+            FAILURES.append(f"{label} must hide #agent-name-help in both name locks "
                             f"(Major, locked robot); found {hidden}")
         problem = name_rule_placement(text)
         if problem:
@@ -556,6 +718,7 @@ def main():
             check_robot_loadout(relay, owned)
             check_robot_slugs(relay)
             check_robot_rename(relay)
+            check_name_rule(relay)
             check_context_size(relay)
             check_favorite_inputs(relay, owned)
             check_favorite_store(relay)
@@ -563,6 +726,7 @@ def main():
             check_ui(relay)
         finally:
             relay.stop()
+    check_restart()
     if FAILURES:
         for line in FAILURES:
             print(f"reasons check failed: {line}", file=sys.stderr)
