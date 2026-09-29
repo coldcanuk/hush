@@ -11,8 +11,17 @@
 #include "hush_launch.h"
 
 enum {
-    HUSH_HTTP_PATH_MAX = 128
+    HUSH_HTTP_PATH_MAX = 128,
+    /* One refusal line: reason text plus one echoed id. */
+    HUSH_HTTP_WHY_MAX = 192,
+    /* Longest id echoed inside a refusal line. */
+    HUSH_HTTP_WHY_ID_MAX = 64
 };
+
+/* Refusal reasons shared by the robot and favorite routes. */
+#define HUSH_HTTP_WHY_SKILL "Unknown skill: %s."
+#define HUSH_HTTP_WHY_OWNED "Skill %s belongs to another robot."
+
 #include "hush_status.h"
 #include "hush_store.h"
 #include "hush_turn.h"
@@ -33,6 +42,16 @@ void hush_http_reply(int fd, const char *status, const char *ctype,
 
 /* Serializes the session JSON reply for st. */
 hush_status_t hush_http_reply_session(int fd, hush_status_t st);
+
+/* Replies like hush_http_reply_session, except a refused write (any st
+ * but HUSH_OK or HUSH_ERR_IO) answers 400 text/plain with why plus a
+ * newline. An empty why keeps the generic "bad request". */
+hush_status_t hush_http_reply_refused(int fd, hush_status_t st,
+                                      const char *why);
+
+/* Copies id into out for echoing in a refusal: keeps A-Z a-z 0-9 : . _ -,
+ * shows any other byte as '?', and cuts at outsz - 1 bytes. */
+void hush_http_safe_id(char *out, size_t outsz, const char *id);
 
 /* Writes required bytes with bounded backpressure; IO on a stalled reader. */
 hush_status_t hush_http_write_all(int fd, const char *buf, size_t len);

@@ -952,6 +952,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 #agent-identity { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
 #agent-identity .field { min-width: 0; }
 #agent-identity .field-wide { grid-column: 1 / -1; }
+#agent-err { overflow-wrap: anywhere; }
 
 /* Skills Forge: dedicated spacious screen with a large mono body editor. */
 #forge-drawer .panel { width: min(64rem, 100%); }
@@ -2214,7 +2215,8 @@ button.fo-person { min-height: var(--btn-h-sm); }
         <div class="pill-row">
           <input id="agent-name" type="text" maxlength="48" placeholder="Research assistant">
         </div>
-        <p class="help">State the robot’s name. Leave blank to auto-generate one.</p>
+        <p class="help" id="agent-name-help">State the robot’s name. Leave blank to auto-generate one.</p>
+        <p class="help" id="agent-name-rule">Names must differ in letters (A-Z) or 0-9.</p>
       </div>
       <div class="field">
         <label for="agent-prompt">System Prompt</label>
@@ -2249,7 +2251,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
         <label><input type="checkbox" class="agent-provider-cb" value="xai-api"> xAI API</label>
         <label><input type="checkbox" class="agent-provider-cb" value="openai-api"> OpenAI API</label>
         <label><input type="checkbox" class="agent-provider-cb" value="anthropic-api"> Anthropic API</label>
-        <label><input type="checkbox" class="agent-provider-cb" value="deepseek-api"> Deepseek API</label>
+        <label><input type="checkbox" class="agent-provider-cb" value="deepseek-api"> DeepSeek API</label>
         <label><input type="checkbox" class="agent-provider-cb" value="custom"> Custom endpoint</label>
       </div>
       <p class="help" id="agent-pic-help">Robot picture (optional). Pick a sheet, then a tile.
@@ -2659,7 +2661,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       "xai-api": "xAI API",
       "openai-api": "OpenAI API",
       "anthropic-api": "Anthropic API",
-      "deepseek-api": "Deepseek API",
+      "deepseek-api": "DeepSeek API",
       "copilot": "Copilot",
       "ollama": "Ollama",
       "custom": "Custom endpoint"
@@ -2805,7 +2807,12 @@ button.fo-person { min-height: var(--btn-h-sm); }
         body: JSON.stringify(body)
       } : {};
       const r = await fetch(API + path, opt);
-      if (!r.ok) throw new Error("request failed");
+      if (!r.ok) {
+        const err = new Error("request failed");
+        // A 400 body is one plain-text refusal reason; callers may show it.
+        err.reason = r.status === 400 ? (await r.text().catch(() => "")).trim() : "";
+        throw err;
+      }
       return r.json();
     }
 
@@ -3996,6 +4003,8 @@ button.fo-person { min-height: var(--btn-h-sm); }
       hideSkillGhost();
       if ($("agent-err")) $("agent-err").textContent = "";
       if ($("agent-identity")) $("agent-identity").hidden = false;
+      if ($("agent-name-rule")) $("agent-name-rule").hidden = false;
+      if ($("agent-name-help")) $("agent-name-help").hidden = false;
       syncAgentPassBox();
       if ($("payne-provider-pills")) $("payne-provider-pills").hidden = true;
       if ($("agent-provider-help")) $("agent-provider-help").textContent = "Harness / API priority (required)";
@@ -4452,6 +4461,8 @@ button.fo-person { min-height: var(--btn-h-sm); }
           $("agent-name").disabled = true;
           $("agent-name").readOnly = true;
         }
+        if ($("agent-name-rule")) $("agent-name-rule").hidden = true;
+        if ($("agent-name-help")) $("agent-name-help").hidden = true;
         if ($("agent-prompt")) {
           $("agent-prompt").value = draftPrompt;
           $("agent-prompt").disabled = true;
@@ -4476,6 +4487,8 @@ button.fo-person { min-height: var(--btn-h-sm); }
           $("agent-name").disabled = true;
           $("agent-name").readOnly = true;
         }
+        if ($("agent-name-rule")) $("agent-name-rule").hidden = true;
+        if ($("agent-name-help")) $("agent-name-help").hidden = true;
         if ($("agent-prompt")) {
           $("agent-prompt").value = draftPrompt;
           $("agent-prompt").disabled = true;
@@ -4822,7 +4835,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
         $("agent-drawer").classList.remove("show");
         resetAgentDraft();
         if (typeof syncInventoryFromRoster === "function") syncInventoryFromRoster();
-      } catch (e) { $("agent-err").textContent = "Could not save that robot."; }
+      } catch (e) { $("agent-err").textContent = (e && e.reason) || "Could not save that robot."; }
     });
     $("agent-delete").addEventListener("click", async () => {
       if (!editSlug) {

@@ -66,6 +66,11 @@ typedef struct {
 hush_status_t hush_favorite_save(const char *robot, const char *name,
                                  char ids[][HUSH_SKILL_ID_MAX], size_t nids);
 
+/* True when name passes the save/load/delete name law: after trimming
+ * spaces, 1..47 letters, digits, space, '-' or '_', with at least one
+ * letter or digit so the file slug is not empty. Pure. */
+int hush_favorite_name_ok(const char *name);
+
 /* Reads name into out, resolving through the file slug: any alias of the
  * stored name addresses it, and out carries the stored name. Creates no
  * directories. Fails with HUSH_ERR_ARG on bad pointers or a bad robot

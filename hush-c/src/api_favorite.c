@@ -2,12 +2,33 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "hush_favorite.h"
+#include "hush_home.h"
 #include "hush_http_internal.h"
 #include "hush_json.h"
 #include "hush_skill.h"
+
+/* Favorite refusal reasons: each is the whole 400 body (plus a newline).
+ * tests/check_reasons.py pins every string; reword both together. */
+#define HUSH_LOADOUT_WHY_ACTION "Loadout action must be save, list, load or delete."
+#define HUSH_LOADOUT_WHY_ROBOT \
+    "Robot id must use a-z, 0-9, - or _ (1-%d characters)."
+#define HUSH_LOADOUT_WHY_NAME \
+    "Favorite names use letters, digits, spaces, - or _ " \
+    "(1-%d characters, at least one letter or digit)."
+#define HUSH_LOADOUT_WHY_IDS "Skill ids must be strings of at most %d characters."
+#define HUSH_LOADOUT_WHY_EMPTY "A favorite needs at least one skill."
+#define HUSH_LOADOUT_WHY_MANY "A favorite holds at most %d skills."
+#define HUSH_LOADOUT_WHY_TWICE "Skill %s is listed twice."
+#define HUSH_LOADOUT_WHY_CLASH \
+    "That name clashes with a different saved favorite; pick another name."
+#define HUSH_LOADOUT_WHY_FULL \
+    "This robot already has %d favorites; delete one first."
+#define HUSH_LOADOUT_WHY_MISSING "No favorite with that name for this robot."
+#define HUSH_LOADOUT_WHY_CORRUPT "That saved favorite file is corrupt."
 
 enum {
     HUSH_LOADOUT_ACTION_MAX = 16,
@@ -44,6 +65,43 @@ static hush_status_t hush_loadout_reply_favorite(int fd,
 /* Deletes one favorite by name; the worn doll is untouched. */
 static hush_status_t hush_loadout_delete(int fd, const char *body);
 
+/* Reads /robot into robot and checks the robot slug law. Fails ARG. */
+static hush_status_t hush_loadout_take_robot(char *robot, size_t robotsz,
+                                             const char *body);
+
+/* Reads /name into name and checks the favorite name law. Fails PARSE. */
+static hush_status_t hush_loadout_take_name(char *name, size_t namesz,
+                                            const char *body);
+
+/* Replies the robot-slug refusal for st. */
+static hush_status_t hush_loadout_refuse_robot(int fd, hush_status_t st);
+
+/* Replies the favorite-name refusal for st. */
+static hush_status_t hush_loadout_refuse_name(int fd, hush_status_t st);
+
+/* Replies the refusal for a failed skill_N read. */
+static hush_status_t hush_loadout_refuse_ids(int fd, hush_status_t st,
+                                             const char *body);
+
+/* Writes why for a refused save of ids by status; generic when unknown. */
+static void hush_loadout_save_why(char *why, size_t whysz, hush_status_t st,
+                                  const char *robot,
+                                  char ids[][HUSH_SKILL_ID_MAX], size_t nids);
+
+/* Writes why for the first unknown, cross-slug, or repeated id. 1 on match. */
+static int hush_loadout_ids_why(char *why, size_t whysz, const char *robot,
+                                char ids[][HUSH_SKILL_ID_MAX], size_t nids);
+
+/* Writes why for a refused load or delete by status. */
+static void hush_loadout_find_why(char *why, size_t whysz, hush_status_t st);
+
+/* True when ids[idx] repeats an earlier id. */
+static int hush_loadout_seen(char ids[][HUSH_SKILL_ID_MAX], size_t idx);
+
+/* Writes fmt into why with id echoed through hush_http_safe_id. */
+static void hush_loadout_why_id(char *why, size_t whysz, const char *fmt,
+                                const char *id);
+
 hush_status_t hush_http_serve_loadout(int fd, const char *body)
 {
     char action[HUSH_LOADOUT_ACTION_MAX] = {0};
@@ -53,7 +111,7 @@ hush_status_t hush_http_serve_loadout(int fd, const char *body)
         return hush_http_reply_session(fd, HUSH_ERR_ARG);
     st = hush_loadout_take_text(action, sizeof action, body, "/action");
     if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
+        return hush_http_reply_refused(fd, st, HUSH_LOADOUT_WHY_ACTION);
     if (strcmp(action, "save") == 0)
         return hush_loadout_save(fd, body);
     if (strcmp(action, "list") == 0)
@@ -62,7 +120,7 @@ hush_status_t hush_http_serve_loadout(int fd, const char *body)
         return hush_loadout_load(fd, body);
     if (strcmp(action, "delete") == 0)
         return hush_loadout_delete(fd, body);
-    return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    return hush_http_reply_refused(fd, HUSH_ERR_PARSE, HUSH_LOADOUT_WHY_ACTION);
 }
 
 static hush_status_t hush_loadout_take_text(char *out, size_t outsz,
@@ -137,23 +195,26 @@ static hush_status_t hush_loadout_save(int fd, const char *body)
     char name[HUSH_FAVORITE_NAME_MAX] = {0};
     char ids[HUSH_SKILL_EQUIP_MAX][HUSH_SKILL_ID_MAX] = {0};
     char reply[HUSH_FAVORITE_FILE_MAX] = {0};
+    char why[HUSH_HTTP_WHY_MAX] = {0};
     size_t nids = 0;
     hush_status_t st = HUSH_OK;
     int n = 0;
 
     assert(body != NULL);
-    st = hush_loadout_take_text(robot, sizeof robot, body, "/robot");
+    st = hush_loadout_take_robot(robot, sizeof robot, body);
     if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
-    st = hush_loadout_take_text(name, sizeof name, body, "/name");
+        return hush_loadout_refuse_robot(fd, st);
+    st = hush_loadout_take_name(name, sizeof name, body);
     if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
+        return hush_loadout_refuse_name(fd, st);
     st = hush_loadout_take_skills(ids, &nids, body);
     if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
+        return hush_loadout_refuse_ids(fd, st, body);
     st = hush_favorite_save(robot, name, ids, nids);
-    if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
+    if (st != HUSH_OK) {
+        hush_loadout_save_why(why, sizeof why, st, robot, ids, nids);
+        return hush_http_reply_refused(fd, st, why);
+    }
     n = snprintf(reply, sizeof reply, "{\"ok\":true,\"nskills\":%zu}\n",
                  nids);
     if (n < 0 || (size_t)n >= sizeof reply)
@@ -170,9 +231,9 @@ static hush_status_t hush_loadout_list(int fd, const char *body)
     hush_status_t st = HUSH_OK;
 
     assert(body != NULL);
-    st = hush_loadout_take_text(robot, sizeof robot, body, "/robot");
+    st = hush_loadout_take_robot(robot, sizeof robot, body);
     if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
+        return hush_loadout_refuse_robot(fd, st);
     st = hush_favorite_list_json(robot, reply, sizeof reply, &n);
     if (st != HUSH_OK)
         return hush_http_reply_session(fd, st);
@@ -184,19 +245,22 @@ static hush_status_t hush_loadout_load(int fd, const char *body)
 {
     char robot[HUSH_SKILL_ROBOT_MAX] = {0};
     char name[HUSH_FAVORITE_NAME_MAX] = {0};
+    char why[HUSH_HTTP_WHY_MAX] = {0};
     hush_favorite_t fav = {0};
     hush_status_t st = HUSH_OK;
 
     assert(body != NULL);
-    st = hush_loadout_take_text(robot, sizeof robot, body, "/robot");
+    st = hush_loadout_take_robot(robot, sizeof robot, body);
     if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
-    st = hush_loadout_take_text(name, sizeof name, body, "/name");
+        return hush_loadout_refuse_robot(fd, st);
+    st = hush_loadout_take_name(name, sizeof name, body);
     if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
+        return hush_loadout_refuse_name(fd, st);
     st = hush_favorite_load(robot, name, &fav);
-    if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
+    if (st != HUSH_OK) {
+        hush_loadout_find_why(why, sizeof why, st);
+        return hush_http_reply_refused(fd, st, why);
+    }
     return hush_loadout_reply_favorite(fd, &fav);
 }
 
@@ -231,22 +295,163 @@ static hush_status_t hush_loadout_delete(int fd, const char *body)
     char robot[HUSH_SKILL_ROBOT_MAX] = {0};
     char name[HUSH_FAVORITE_NAME_MAX] = {0};
     char reply[HUSH_FAVORITE_FILE_MAX] = {0};
+    char why[HUSH_HTTP_WHY_MAX] = {0};
     hush_status_t st = HUSH_OK;
     int n = 0;
 
     assert(body != NULL);
-    st = hush_loadout_take_text(robot, sizeof robot, body, "/robot");
+    st = hush_loadout_take_robot(robot, sizeof robot, body);
     if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
-    st = hush_loadout_take_text(name, sizeof name, body, "/name");
+        return hush_loadout_refuse_robot(fd, st);
+    st = hush_loadout_take_name(name, sizeof name, body);
     if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
+        return hush_loadout_refuse_name(fd, st);
     st = hush_favorite_delete(robot, name);
-    if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
+    if (st != HUSH_OK) {
+        hush_loadout_find_why(why, sizeof why, st);
+        return hush_http_reply_refused(fd, st, why);
+    }
     n = snprintf(reply, sizeof reply, "{\"ok\":true}\n");
     if (n < 0 || (size_t)n >= sizeof reply)
         return hush_http_reply_session(fd, HUSH_ERR_FULL);
     hush_http_reply(fd, "200 OK", "application/json", reply, (size_t)n);
     return HUSH_OK;
+}
+
+static hush_status_t hush_loadout_take_robot(char *robot, size_t robotsz,
+                                             const char *body)
+{
+    hush_status_t st = HUSH_OK;
+
+    assert(robot != NULL && robotsz > 0 && body != NULL);
+    st = hush_loadout_take_text(robot, robotsz, body, "/robot");
+    if (st != HUSH_OK)
+        return st;
+    return hush_home_is_robot_slug(robot) ? HUSH_OK : HUSH_ERR_ARG;
+}
+
+static hush_status_t hush_loadout_take_name(char *name, size_t namesz,
+                                            const char *body)
+{
+    hush_status_t st = HUSH_OK;
+
+    assert(name != NULL && namesz > 0 && body != NULL);
+    st = hush_loadout_take_text(name, namesz, body, "/name");
+    if (st != HUSH_OK)
+        return st;
+    return hush_favorite_name_ok(name) ? HUSH_OK : HUSH_ERR_PARSE;
+}
+
+static hush_status_t hush_loadout_refuse_robot(int fd, hush_status_t st)
+{
+    char why[HUSH_HTTP_WHY_MAX] = {0};
+
+    (void)snprintf(why, sizeof why, HUSH_LOADOUT_WHY_ROBOT,
+                   (int)HUSH_FAVORITE_ROBOT_LEN);
+    return hush_http_reply_refused(fd, st, why);
+}
+
+static hush_status_t hush_loadout_refuse_name(int fd, hush_status_t st)
+{
+    char why[HUSH_HTTP_WHY_MAX] = {0};
+
+    (void)snprintf(why, sizeof why, HUSH_LOADOUT_WHY_NAME,
+                   (int)HUSH_FAVORITE_NAME_LEN);
+    return hush_http_reply_refused(fd, st, why);
+}
+
+static hush_status_t hush_loadout_refuse_ids(int fd, hush_status_t st,
+                                             const char *body)
+{
+    char why[HUSH_HTTP_WHY_MAX] = {0};
+
+    assert(body != NULL);
+    if (st == HUSH_ERR_FULL && hush_http_json_has_key(body, "skill_8"))
+        (void)snprintf(why, sizeof why, HUSH_LOADOUT_WHY_MANY,
+                       (int)HUSH_SKILL_EQUIP_MAX);
+    else
+        (void)snprintf(why, sizeof why, HUSH_LOADOUT_WHY_IDS,
+                       (int)HUSH_FAVORITE_ID_LEN);
+    return hush_http_reply_refused(fd, st, why);
+}
+
+static void hush_loadout_save_why(char *why, size_t whysz, hush_status_t st,
+                                  const char *robot,
+                                  char ids[][HUSH_SKILL_ID_MAX], size_t nids)
+{
+    assert(why != NULL && whysz > 0);
+    assert(robot != NULL && ids != NULL);
+    why[0] = '\0';
+    /* Robot, name, and skill_8 were refused before save; what is left
+     * maps one status to one save rule (see hush_favorite_save). */
+    if (st == HUSH_ERR_DENIED && nids == 0)
+        (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_EMPTY);
+    else if (st == HUSH_ERR_DENIED && !hush_loadout_ids_why(why, whysz, robot,
+                                                             ids, nids))
+        (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_CLASH);
+    else if (st == HUSH_ERR_FULL)
+        (void)snprintf(why, whysz, HUSH_LOADOUT_WHY_FULL,
+                       (int)HUSH_FAVORITE_COUNT_MAX);
+    else if (st == HUSH_ERR_PARSE)
+        (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_CORRUPT);
+}
+
+static int hush_loadout_ids_why(char *why, size_t whysz, const char *robot,
+                                char ids[][HUSH_SKILL_ID_MAX], size_t nids)
+{
+    /* Heap frame like hush_favorite_check_ids: the catalog is ~120 KB. */
+    hush_skill_catalog_t *cat = malloc(sizeof *cat);
+    const hush_skill_t *skill = NULL;
+    int hit = 0;
+
+    assert(why != NULL && robot != NULL && ids != NULL);
+    if (cat == NULL)
+        return 0;
+    hush_skill_init_catalog(cat);
+    if (hush_skill_load_catalog(cat) != HUSH_OK)
+        nids = 0;
+    for (size_t i = 0; !hit && i < nids; i++) {
+        skill = hush_skill_find(cat, ids[i]);
+        hit = 1;
+        if (skill == NULL)
+            hush_loadout_why_id(why, whysz, HUSH_HTTP_WHY_SKILL, ids[i]);
+        else if (!hush_skill_robot_ok(skill, robot))
+            hush_loadout_why_id(why, whysz, HUSH_HTTP_WHY_OWNED, ids[i]);
+        else if (i > 0 && hush_loadout_seen(ids, i))
+            hush_loadout_why_id(why, whysz, HUSH_LOADOUT_WHY_TWICE, ids[i]);
+        else
+            hit = 0;
+    }
+    free(cat);
+    return hit;
+}
+
+static int hush_loadout_seen(char ids[][HUSH_SKILL_ID_MAX], size_t idx)
+{
+    assert(ids != NULL);
+    for (size_t j = 0; j < idx; j++) {
+        if (strcmp(ids[idx], ids[j]) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static void hush_loadout_find_why(char *why, size_t whysz, hush_status_t st)
+{
+    assert(why != NULL && whysz > 0);
+    why[0] = '\0';
+    if (st == HUSH_ERR_NOT_FOUND)
+        (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_MISSING);
+    else if (st == HUSH_ERR_PARSE)
+        (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_CORRUPT);
+}
+
+static void hush_loadout_why_id(char *why, size_t whysz, const char *fmt,
+                                const char *id)
+{
+    char safe[HUSH_HTTP_WHY_ID_MAX];
+
+    assert(why != NULL && whysz > 0 && fmt != NULL);
+    hush_http_safe_id(safe, sizeof safe, id);
+    (void)snprintf(why, whysz, fmt, safe);
 }

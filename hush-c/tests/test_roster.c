@@ -27,6 +27,7 @@ int main(void)
     hush_roster_profile_t profile;
     hush_roster_agent_in_t agent;
     hush_store_t *store = NULL;
+    char key[HUSH_ROSTER_NAME_MAX];
     size_t n = 0;
 
     if (setenv("HUSH_FAKE_PASS_DIR", "/tmp/hush-roster-pass-store", 1) != 0)
@@ -249,6 +250,168 @@ int main(void)
            "prune copy 1to0");
     expect(roster.agents[1].nskills == 0, "copy empty loadout");
     expect(roster.agents[0].nskills == 1, "locked original keeps skill");
+    /* HTTP reads at most 8 skill_N keys; only C callers reach this refusal. */
+    memcpy(agent.name, "Zed", 4);
+    agent.nskills = (size_t)HUSH_SKILL_EQUIP_MAX + 1;
+    expect(hush_roster_update_agent(&roster, "coach-copy", &agent) ==
+               HUSH_ERR_FULL,
+           "nine skills refused");
+    expect(strcmp(roster.agents[1].name, "Coach copy") == 0,
+           "refused skills keep the name");
+    /* A name needs a letter or digit: nothing slugs to a stand-in. */
+    memset(&agent, 0, sizeof(agent));
+    memcpy(agent.name, "!!!", 4);
+    memcpy(agent.prompt, "Watch.", 7);
+    memcpy(agent.provider, "goose", 6);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+           "symbol-only name refused");
+    expect(roster.nagents == 2, "no robot for a symbol-only name");
+    /* Letters outside A-Z do not count yet ("Robot" in Cyrillic, UTF-8). */
+    memcpy(agent.name, "\xd0\xa0\xd0\xbe\xd0\xb1\xd0\xbe\xd1\x82", 11);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+           "Cyrillic-only name refused");
+    expect(roster.nagents == 2, "no robot for a Cyrillic-only name");
+    memset(&agent, 0, sizeof(agent));
+    memcpy(agent.name, "???", 4);
+    expect(hush_roster_update_agent(&roster, "coach-copy", &agent) ==
+               HUSH_ERR_PARSE,
+           "symbol-only rename refused");
+    expect(strcmp(roster.agents[1].name, "Coach copy") == 0,
+           "refused symbol rename keeps the name");
+    /* A symbol-only name saved before the rule may be saved unchanged. */
+    memcpy(roster.agents[1].name, "!!!", 4);
+    memcpy(agent.name, " !!! ", 6);
+    expect(hush_roster_update_agent(&roster, "coach-copy", &agent) == HUSH_OK,
+           "older symbol-only name kept");
+    memcpy(agent.name, "@@@", 4);
+    expect(hush_roster_update_agent(&roster, "coach-copy", &agent) ==
+               HUSH_ERR_PARSE,
+           "older symbol-only name cannot become other symbols");
+    expect(strcmp(roster.agents[1].slug, "coach-copy") == 0,
+           "symbol names never move the slug");
+    /* Names clash on other robots' current names, never on ids. */
+    memset(&agent, 0, sizeof(agent));
+    memcpy(agent.name, "Walkbot Two", 12);
+    memcpy(agent.prompt, "Watch.", 7);
+    memcpy(agent.provider, "goose", 6);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "walkbot two");
+    memcpy(agent.name, "Calm Hand", 10);
+    expect(hush_roster_update_agent(&roster, "walkbot-two", &agent) == HUSH_OK,
+           "rename walkbot-two");
+    memcpy(agent.name, "Walkbot Two", 12);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "a renamed robot's old name is free");
+    expect(strcmp(roster.agents[3].slug, "walkbot-two-2") == 0,
+           "held id gets -2");
+    memcpy(agent.name, "walkbot two!", 13);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+           "same letters and digits refused");
+    memcpy(agent.name, "Calm Hand", 10);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+           "a current name refused");
+    memcpy(agent.name, "WALKBOT TWO", 12);
+    expect(hush_roster_update_agent(&roster, "walkbot-two", &agent) ==
+               HUSH_ERR_PARSE,
+           "rename onto another current name refused");
+    expect(strcmp(roster.agents[2].name, "Calm Hand") == 0,
+           "refused rename keeps the name");
+    expect(roster.nagents == 4, "no robot for refused names");
+    memset(agent.name, 0, sizeof(agent.name));
+    memcpy(agent.name, "Sgt Major Payne", 16);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "payne-like name");
+    expect(strcmp(roster.agents[4].slug, "sgt-major-payne-2") == 0,
+           "payne's id is never given out");
+    /* A 63-character id cut to fit its suffix. */
+    memset(agent.name, 'a', (size_t)HUSH_ROSTER_NAME_MAX - 1);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "63-byte name");
+    memset(agent.name, 0, sizeof(agent.name));
+    memcpy(agent.name, "Short", 6);
+    expect(hush_roster_update_agent(&roster, roster.agents[5].slug, &agent) ==
+               HUSH_OK,
+           "rename the 63-byte robot");
+    memset(agent.name, 'a', (size_t)HUSH_ROSTER_NAME_MAX - 1);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "63-byte name again");
+    expect(strlen(roster.agents[6].slug) == (size_t)HUSH_ROSTER_NAME_MAX - 1 &&
+               strcmp(roster.agents[6].slug + strlen(roster.agents[6].slug) - 2,
+                      "-2") == 0,
+           "suffixed id fits");
+    /* Names shared before the rule may be saved unchanged, not re-taken. */
+    memcpy(roster.agents[4].name, "Calm Hand", 10);
+    memset(agent.name, 0, sizeof(agent.name));
+    memcpy(agent.name, " Calm Hand ", 12);
+    expect(hush_roster_update_agent(&roster, "sgt-major-payne-2", &agent) ==
+               HUSH_OK,
+           "older shared name kept");
+    memcpy(agent.name, "Walkbot-Two", 12);
+    expect(hush_roster_update_agent(&roster, "sgt-major-payne-2", &agent) ==
+               HUSH_ERR_PARSE,
+           "older shared name cannot move onto another");
+    /* The clash key keeps ASCII letters and digits only, no word breaks;
+     * ids still come from the slug. */
+    hush_roster_name_key(key, sizeof(key), " W.a-l k\xc3\xa9 1!");
+    expect(strcmp(key, "walk1") == 0, "key drops every other byte");
+    hush_roster_slug_of(key, sizeof(key), "Walk-bot One");
+    expect(strcmp(key, "walk-bot-one") == 0, "slug keeps its word breaks");
+    expect(hush_roster_is_name_clash("WalkbotOne", "Walkbot One"),
+           "no word break: WalkbotOne");
+    expect(hush_roster_is_name_clash("Walk-bot One", "Walkbot One"),
+           "no word break: Walk-bot One");
+    expect(hush_roster_is_name_clash("W.a.l.k.b.o.t One", "Walkbot One"),
+           "no word break: dotted");
+    expect(hush_roster_is_name_clash("Walkbot O'ne", "Walkbot One"),
+           "no word break: apostrophe");
+    expect(hush_roster_is_name_clash("Robot1", "Robot 1"), "Robot1");
+    expect(hush_roster_is_name_clash("Ma jor", "Major"), "Ma jor");
+    expect(hush_roster_is_name_clash("Walkbot\xc3\xa9One", "WalkbotOne"),
+           "non-ASCII letters dropped");
+    expect(!hush_roster_is_name_clash("Walkbot One", "Walkbot Two"),
+           "other letters differ");
+    expect(!hush_roster_is_name_clash("!!!", "@@@"), "empty keys never clash");
+    memset(agent.name, 0, sizeof(agent.name));
+    memcpy(agent.name, "WalkbotTwo", 11);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+           "no word break refused on add");
+    expect(roster.nagents == 7, "no robot for a key clash");
+    /* Rename never compares ids: the name Delta is free while its id is
+     * held by a robot now named Echo. */
+    memcpy(agent.name, "Delta", 6);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "delta");
+    memcpy(agent.name, "Echo", 5);
+    expect(hush_roster_update_agent(&roster, "delta", &agent) == HUSH_OK,
+           "rename delta to Echo");
+    memcpy(agent.name, "Foxtrot", 8);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "foxtrot");
+    memset(agent.name, 0, sizeof(agent.name));
+    memcpy(agent.name, "Delta", 6);
+    expect(hush_roster_update_agent(&roster, "foxtrot", &agent) == HUSH_OK,
+           "rename onto a held id's name");
+    expect(strcmp(roster.agents[8].name, "Delta") == 0 &&
+               strcmp(roster.agents[8].slug, "foxtrot") == 0,
+           "renamed foxtrot keeps its id");
+    /* A cut that ends on '-' drops it before the suffix: no "a--2". */
+    memset(agent.name, 'A', 60);
+    memcpy(agent.name + 60, " BC", 3);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "63-byte name ending in a word");
+    expect(strlen(roster.agents[9].slug) == 63, "63-byte slug");
+    memset(agent.name, 0, sizeof(agent.name));
+    memcpy(agent.name, "Holder", 7);
+    expect(hush_roster_update_agent(&roster, roster.agents[9].slug, &agent) ==
+               HUSH_OK,
+           "rename the 63-byte slug robot");
+    memset(agent.name, 'A', 60);
+    memcpy(agent.name + 60, " BC", 3);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+           "63-byte name ending in a word again");
+    memset(key, 'a', 60);
+    memcpy(key + 60, "-2", 3);
+    expect(strcmp(roster.agents[10].slug, key) == 0, "cut drops '-' before -2");
     hush_store_destroy(store);
     hush_pass_set_helper(NULL);
     if (g_fail)

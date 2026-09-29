@@ -77,7 +77,7 @@ static const hush_provider_meta_t hush_provider_meta[HUSH_PROVIDER_COUNT] = {
     { HUSH_ROSTER_PROVIDER_ANTHROPIC, "Anthropic API",
       HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_ANTHROPIC, "",
       HUSH_PROVIDER_CAP_IMAGE, HUSH_PROVIDER_FLAG_NONE },
-    { HUSH_ROSTER_PROVIDER_DEEPSEEK, "Deepseek API",
+    { HUSH_ROSTER_PROVIDER_DEEPSEEK, "DeepSeek API",
       HUSH_PROVIDER_FAMILY_API, HUSH_PROVIDER_HOST_DEEPSEEK, "", 0,
       HUSH_PROVIDER_FLAG_NONE },
     { HUSH_ROSTER_PROVIDER_COPILOT, "Copilot", HUSH_PROVIDER_FAMILY_HOME,
@@ -199,6 +199,16 @@ void hush_provider_family(char *out, size_t outsz, const char *id)
         return;
     meta = hush_provider_meta_of(id);
     hush_provider_copy(out, outsz, meta != NULL ? meta->family : "");
+}
+
+void hush_provider_label(char *out, size_t outsz, const char *id)
+{
+    const hush_provider_meta_t *meta = NULL;
+
+    if (out == NULL || outsz == 0)
+        return;
+    meta = hush_provider_meta_of(id);
+    hush_provider_copy(out, outsz, meta != NULL ? meta->label : "");
 }
 
 unsigned int hush_provider_capabilities(const char *id)

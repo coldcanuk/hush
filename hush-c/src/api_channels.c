@@ -178,6 +178,41 @@ hush_status_t hush_http_reply_session(int fd, hush_status_t st)
     return st;
 }
 
+hush_status_t hush_http_reply_refused(int fd, hush_status_t st,
+                                      const char *why)
+{
+    char line[HUSH_HTTP_WHY_MAX + 1] = {0};
+    int n = 0;
+
+    if (st == HUSH_OK || st == HUSH_ERR_IO || why == NULL || why[0] == '\0')
+        return hush_http_reply_session(fd, st);
+    n = snprintf(line, sizeof line, "%s\n", why);
+    if (n < 0 || (size_t)n >= sizeof line)
+        return hush_http_reply_session(fd, st);
+    hush_http_reply(fd, "400 Bad Request", "text/plain", line, (size_t)n);
+    return st;
+}
+
+void hush_http_safe_id(char *out, size_t outsz, const char *id)
+{
+    size_t i = 0;
+
+    assert(out != NULL);
+    assert(outsz > 0);
+    if (id == NULL)
+        id = "";
+    while (id[i] != '\0' && i + 1 < outsz) {
+        unsigned char c = (unsigned char)id[i];
+        int keep = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                   (c >= '0' && c <= '9') || c == ':' || c == '.' ||
+                   c == '_' || c == '-';
+
+        out[i] = keep ? (char)c : '?';
+        i++;
+    }
+    out[i] = '\0';
+}
+
 
 hush_status_t hush_http_serve_channel(int fd, const char *body)
 {
