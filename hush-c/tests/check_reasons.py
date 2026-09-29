@@ -361,6 +361,9 @@ def check_robot_rename(relay):
               "name": "Steady Two", "system_prompt": "Changed."}
     expect(relay, "update refused provider", "/api/agent",
            dict(update, provider="nope"), PROVIDER)
+    # A robot's own name never clashes with itself, so the next rule is named.
+    expect(relay, "rename close to its own name, next rule named", "/api/agent",
+           dict(update, name="STEADY!", provider="nope"), PROVIDER)
     expect(relay, "update refused voice", "/api/agent",
            dict(update, provider="ollama", voice="zzz"), "Unknown voice: zzz.")
     refused(relay, "update refused role", dict(update, role="boss"))
