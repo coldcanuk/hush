@@ -19,21 +19,22 @@
  * tests/check_reasons.py pins every string; reword both together. */
 #define HUSH_AGENT_WHY_GATE "Log in and set up your vibe before changing robots."
 #define HUSH_AGENT_WHY_NAME "Robot name is required."
-#define HUSH_AGENT_WHY_TAKEN "Robot name taken: slug %s is already in use."
+#define HUSH_AGENT_WHY_NAME_CHARS "Robot names need at least one letter or digit."
+#define HUSH_AGENT_WHY_TAKEN "A robot named %s already exists."
 #define HUSH_AGENT_WHY_PROMPT "System prompt is required."
 #define HUSH_AGENT_WHY_NO_PROVIDER "Provider is required."
-#define HUSH_AGENT_WHY_PROVIDER "Unknown provider: %s."
+#define HUSH_AGENT_WHY_PROVIDER "Unknown AI provider. Choose one from the list."
 #define HUSH_AGENT_WHY_VOICE "Unknown voice: %s."
 #define HUSH_AGENT_WHY_MIN1 "Keep at least one skill equipped."
 #define HUSH_AGENT_WHY_ROLE "Skill %s is for %s robots only."
 #define HUSH_AGENT_WHY_BUDGET \
     "Loadout over budget: at most %d skills, %d characters, complexity %d."
-#define HUSH_AGENT_WHY_NO_FILES "Provider %s cannot read context files."
+#define HUSH_AGENT_WHY_NO_FILES "%s cannot read context files."
 #define HUSH_AGENT_WHY_FILES \
     "Context files must be plain text or Markdown, at most %d bytes each."
 #define HUSH_AGENT_WHY_FULL "Robot roster is full (%d robots)."
-#define HUSH_AGENT_WHY_SLUG "Robot slug is required."
-#define HUSH_AGENT_WHY_MISSING "No robot with slug %s."
+#define HUSH_AGENT_WHY_SLUG "Robot id is required."
+#define HUSH_AGENT_WHY_MISSING "No robot with id %s."
 #define HUSH_AGENT_WHY_MAJOR "Major cannot be deleted or cloned."
 #define HUSH_AGENT_WHY_CLONE_LONG \
     "Cannot clone %s: the name plus \" copy\" would be over %d bytes; " \
@@ -94,7 +95,8 @@ static void hush_http_slug_why(char *why, size_t whysz, hush_status_t st,
 static void hush_http_clone_why(char *why, size_t whysz, hush_status_t st,
                                 const char *slug);
 /* Writes why for a rename of slug to name that the roster refuses: blank
- * after trimming, or a slug another robot holds. 1 when a rule matched. */
+ * after trimming, no letter or digit, or a name another robot holds.
+ * 1 when a rule matched. */
 static int hush_http_rename_why(char *why, size_t whysz, const char *slug,
                                 const char *name);
 /* Writes why for a bad provider list or voice. 1 when a rule matched. */
@@ -112,6 +114,16 @@ static void hush_http_why_id(char *why, size_t whysz, const char *fmt,
 static int hush_http_is_blank(const char *text);
 /* True when a roster robot already owns slug. */
 static int hush_http_slug_taken(const char *slug);
+/* Display name of the robot that owns slug; NULL when none does. */
+static const char *hush_http_slug_owner(const char *slug);
+/* Writes fmt into why with a robot's display name echoed through
+ * hush_http_safe_name. */
+static void hush_http_why_name(char *why, size_t whysz, const char *fmt,
+                               const char *name);
+/* Copies name for echoing in a refusal: control bytes show as '?'. */
+static void hush_http_safe_name(char *out, size_t outsz, const char *name);
+/* True when name, trimmed, is the current name of the robot owning slug. */
+static int hush_http_same_name(const char *slug, const char *name);
 
 hush_status_t hush_http_serve_agent(int fd, const char *body,
                                     hush_store_t *store)
@@ -611,8 +623,13 @@ static void hush_http_create_why(char *why, size_t whysz,
         return;
     }
     hush_roster_slug_of(slug, sizeof(slug), in->name);
+    if (slug[0] == '\0') {
+        (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_NAME_CHARS);
+        return;
+    }
     if (hush_http_slug_taken(slug)) {
-        hush_http_why_id(why, whysz, HUSH_AGENT_WHY_TAKEN, slug);
+        hush_http_why_name(why, whysz, HUSH_AGENT_WHY_TAKEN,
+                           hush_http_slug_owner(slug));
         return;
     }
     if (hush_http_is_blank(in->prompt)) {
@@ -656,8 +673,16 @@ static int hush_http_rename_why(char *why, size_t whysz, const char *slug,
     }
     /* Same slug the roster derives; the robot's own slug stays its own. */
     hush_roster_slug_of(next, sizeof(next), name);
+    if (next[0] == '\0') {
+        /* An older symbol-only name may be saved unchanged, never adopted. */
+        if (hush_http_same_name(slug, name))
+            return 0;
+        (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_NAME_CHARS);
+        return 1;
+    }
     if (strcmp(next, slug) != 0 && hush_http_slug_taken(next)) {
-        hush_http_why_id(why, whysz, HUSH_AGENT_WHY_TAKEN, next);
+        hush_http_why_name(why, whysz, HUSH_AGENT_WHY_TAKEN,
+                           hush_http_slug_owner(next));
         return 1;
     }
     return 0;
@@ -686,7 +711,7 @@ static void hush_http_clone_why(char *why, size_t whysz, hush_status_t st,
     const hush_roster_t *roster = &hush_http_launch()->roster;
     char copy[HUSH_ROSTER_NAME_MAX * 2] = {0};
     char copy_slug[HUSH_ROSTER_NAME_MAX] = {0};
-    char safe[HUSH_HTTP_WHY_ID_MAX] = {0};
+    char safe[HUSH_ROSTER_NAME_MAX] = {0};
     size_t i = 0;
     int n = 0;
 
@@ -706,7 +731,7 @@ static void hush_http_clone_why(char *why, size_t whysz, hush_status_t st,
     if (n < 0)
         return;
     if ((size_t)n >= (size_t)HUSH_ROSTER_NAME_MAX) {
-        hush_http_safe_id(safe, sizeof(safe), slug);
+        hush_http_safe_name(safe, sizeof(safe), roster->agents[i].name);
         (void)snprintf(why, whysz, HUSH_AGENT_WHY_CLONE_LONG, safe,
                        (int)HUSH_ROSTER_NAME_MAX - 1);
         return;
@@ -718,7 +743,8 @@ static void hush_http_clone_why(char *why, size_t whysz, hush_status_t st,
     }
     hush_roster_slug_of(copy_slug, sizeof(copy_slug), copy);
     if (hush_http_slug_taken(copy_slug))
-        hush_http_why_id(why, whysz, HUSH_AGENT_WHY_TAKEN, copy_slug);
+        hush_http_why_name(why, whysz, HUSH_AGENT_WHY_TAKEN,
+                           hush_http_slug_owner(copy_slug));
 }
 
 static int hush_http_setup_why(char *why, size_t whysz,
@@ -731,8 +757,7 @@ static int hush_http_setup_why(char *why, size_t whysz,
     for (i = 0; in->has_providers && i < in->nproviders; i++) {
         if (in->providers[i][0] != '\0' &&
             !hush_roster_is_provider(in->providers[i])) {
-            hush_http_why_id(why, whysz, HUSH_AGENT_WHY_PROVIDER,
-                             in->providers[i]);
+            (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_PROVIDER);
             return 1;
         }
     }
@@ -742,7 +767,7 @@ static int hush_http_setup_why(char *why, size_t whysz,
         return 1;
     }
     if (!hush_roster_is_provider(primary)) {
-        hush_http_why_id(why, whysz, HUSH_AGENT_WHY_PROVIDER, primary);
+        (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_PROVIDER);
         return 1;
     }
     if (in->voice[0] != '\0' && !hush_skill_is_voice(in->voice)) {
@@ -755,6 +780,7 @@ static int hush_http_setup_why(char *why, size_t whysz,
 static int hush_http_context_why(char *why, size_t whysz,
                                  const hush_roster_agent_in_t *in)
 {
+    char label[HUSH_PROVIDER_LABEL_MAX] = {0};
     const char *primary;
     size_t i;
 
@@ -763,7 +789,10 @@ static int hush_http_context_why(char *why, size_t whysz,
         return 0;
     primary = hush_http_primary_provider(in);
     if (!hush_provider_can(primary, HUSH_PROVIDER_CAP_FILE_ATTACH)) {
-        hush_http_why_id(why, whysz, HUSH_AGENT_WHY_NO_FILES, primary);
+        /* The display label ("Gemini API"), never the raw provider id. */
+        hush_provider_label(label, sizeof(label), primary);
+        (void)snprintf(why, whysz, HUSH_AGENT_WHY_NO_FILES,
+                       label[0] != '\0' ? label : "This provider");
         return 1;
     }
     for (i = 0; i < in->ncontext && i < (size_t)HUSH_ROSTER_CONTEXT_MAX; i++) {
@@ -824,4 +853,59 @@ static int hush_http_slug_taken(const char *slug)
             return 1;
     }
     return 0;
+}
+
+static const char *hush_http_slug_owner(const char *slug)
+{
+    const hush_roster_t *roster = &hush_http_launch()->roster;
+    size_t i;
+
+    assert(slug != NULL);
+    for (i = 0; i < roster->nagents; i++) {
+        if (strcmp(roster->agents[i].slug, slug) == 0)
+            return roster->agents[i].name;
+    }
+    return NULL;
+}
+
+static void hush_http_why_name(char *why, size_t whysz, const char *fmt,
+                               const char *name)
+{
+    char safe[HUSH_ROSTER_NAME_MAX];
+
+    assert(why != NULL && whysz > 0 && fmt != NULL);
+    hush_http_safe_name(safe, sizeof(safe), name);
+    (void)snprintf(why, whysz, fmt, safe);
+}
+
+static void hush_http_safe_name(char *out, size_t outsz, const char *name)
+{
+    size_t i = 0;
+
+    assert(out != NULL && outsz > 0);
+    if (name == NULL)
+        name = "";
+    while (name[i] != '\0' && i + 1 < outsz) {
+        unsigned char c = (unsigned char)name[i];
+
+        out[i] = (c < 0x20 || c == 0x7f) ? '?' : (char)c;
+        i++;
+    }
+    out[i] = '\0';
+}
+
+static int hush_http_same_name(const char *slug, const char *name)
+{
+    const char *have = hush_http_slug_owner(slug);
+    size_t len;
+
+    assert(name != NULL);
+    if (have == NULL)
+        return 0;
+    while (*name != '\0' && isspace((unsigned char)*name))
+        name++;
+    len = strlen(name);
+    while (len > 0 && isspace((unsigned char)name[len - 1]))
+        len--;
+    return strlen(have) == len && strncmp(have, name, len) == 0;
 }

@@ -201,6 +201,16 @@ void hush_provider_family(char *out, size_t outsz, const char *id)
     hush_provider_copy(out, outsz, meta != NULL ? meta->family : "");
 }
 
+void hush_provider_label(char *out, size_t outsz, const char *id)
+{
+    const hush_provider_meta_t *meta;
+
+    if (out == NULL || outsz == 0)
+        return;
+    meta = hush_provider_meta_of(id);
+    hush_provider_copy(out, outsz, meta != NULL ? meta->label : "");
+}
+
 unsigned int hush_provider_capabilities(const char *id)
 {
     const hush_provider_meta_t *meta;

@@ -952,6 +952,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 #agent-identity { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
 #agent-identity .field { min-width: 0; }
 #agent-identity .field-wide { grid-column: 1 / -1; }
+#agent-err { overflow-wrap: anywhere; }
 
 /* Skills Forge: dedicated spacious screen with a large mono body editor. */
 #forge-drawer .panel { width: min(64rem, 100%); }
@@ -2215,7 +2216,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
           <input id="agent-name" type="text" maxlength="48" placeholder="Research assistant">
         </div>
         <p class="help">State the robot’s name. Leave blank to auto-generate one.</p>
-        <p class="help" id="agent-name-rule">Spaces are fine. A name clashes when its slug is taken: Walkbot One and walkbot-one are both walkbot-one. Renaming keeps the robot's slug.</p>
+        <p class="help" id="agent-name-rule">Names must differ in letters or digits.</p>
       </div>
       <div class="field">
         <label for="agent-prompt">System Prompt</label>
@@ -4002,6 +4003,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       hideSkillGhost();
       if ($("agent-err")) $("agent-err").textContent = "";
       if ($("agent-identity")) $("agent-identity").hidden = false;
+      if ($("agent-name-rule")) $("agent-name-rule").hidden = false;
       syncAgentPassBox();
       if ($("payne-provider-pills")) $("payne-provider-pills").hidden = true;
       if ($("agent-provider-help")) $("agent-provider-help").textContent = "Harness / API priority (required)";
@@ -4458,6 +4460,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
           $("agent-name").disabled = true;
           $("agent-name").readOnly = true;
         }
+        if ($("agent-name-rule")) $("agent-name-rule").hidden = true;
         if ($("agent-prompt")) {
           $("agent-prompt").value = draftPrompt;
           $("agent-prompt").disabled = true;
@@ -4482,6 +4485,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
           $("agent-name").disabled = true;
           $("agent-name").readOnly = true;
         }
+        if ($("agent-name-rule")) $("agent-name-rule").hidden = true;
         if ($("agent-prompt")) {
           $("agent-prompt").value = draftPrompt;
           $("agent-prompt").disabled = true;

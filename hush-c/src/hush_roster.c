@@ -15,7 +15,6 @@
 enum {
     HUSH_ROSTER_KIND_META = 0,
     HUSH_ROSTER_KIND_NOTE = 1,
-    HUSH_ROSTER_SLUG_FALLBACK = 'a',
     HUSH_ROSTER_THEME_COUNT = 7,
     HUSH_ROSTER_ROLE_COUNT = 2
 };
@@ -133,7 +132,9 @@ static hush_status_t hush_roster_check_update(const hush_roster_t *roster,
                                               const hush_roster_agent_in_t *in);
 
 /* True when a rename to name keeps the rules: non-blank after trimming,
- * and its slug is not held by any robot but agent. The slug never moves. */
+ * at least one letter or digit (an older symbol-only name may be kept
+ * unchanged), and its slug is not held by any robot but agent. The slug
+ * never moves. */
 static int hush_roster_rename_ok(const hush_roster_t *roster,
                                  const hush_roster_agent_t *agent,
                                  const char *name);
@@ -469,6 +470,8 @@ static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
     if (agent->name[0] == '\0')
         return HUSH_ERR_PARSE;
     hush_roster_slugify(agent->slug, sizeof(agent->slug), agent->name);
+    if (agent->slug[0] == '\0')
+        return HUSH_ERR_PARSE;
     if (hush_roster_has_agent_slug(roster, agent->slug))
         return HUSH_ERR_PARSE;
     hush_roster_copy_text(agent->prompt, sizeof(agent->prompt), in->prompt, "");
@@ -653,11 +656,8 @@ static void hush_roster_slugify(char *dst, size_t dstsz, const char *name)
     }
     if (o > 0 && dst[o - 1] == '-')
         o--;
+    /* Empty when name has no ASCII letter or digit: callers refuse it. */
     dst[o] = '\0';
-    if (dst[0] == '\0' && dstsz > 1) {
-        dst[0] = (char)HUSH_ROSTER_SLUG_FALLBACK;
-        dst[1] = '\0';
-    }
 }
 
 static int hush_roster_has_agent_slug(const hush_roster_t *roster,
@@ -971,6 +971,8 @@ static int hush_roster_rename_ok(const hush_roster_t *roster,
     if (trimmed[0] == '\0')
         return 0;
     hush_roster_slugify(slug, sizeof(slug), trimmed);
+    if (slug[0] == '\0')
+        return strcmp(trimmed, agent->name) == 0;
     for (i = 0; i < roster->nagents; ++i) {
         if (&roster->agents[i] != agent &&
             strcmp(roster->agents[i].slug, slug) == 0)

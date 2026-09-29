@@ -121,7 +121,8 @@ int hush_roster_is_role(const char *role);
 
 /* Writes into out the slug hush_roster_add_agent derives from name:
  * trimmed, lowercase letters and digits kept, every other run folded to
- * one '-'. Lets callers name a slug clash before adding. */
+ * one '-'. Empty when name has no ASCII letter or digit, which add and
+ * rename refuse. Lets callers name a clash before adding. */
 void hush_roster_slug_of(char *out, size_t outsz, const char *name);
 
 /* Copies profile fields. Rejects a bad theme. */

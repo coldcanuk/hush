@@ -104,6 +104,9 @@ void hush_provider_default_host(char *out, size_t outsz, const char *id);
 /* Copies the family name for id. Empty when id is unknown. */
 void hush_provider_family(char *out, size_t outsz, const char *id);
 
+/* Copies the display label for id ("Gemini API"). Empty when id is unknown. */
+void hush_provider_label(char *out, size_t outsz, const char *id);
+
 /* Capability bitmask for id. 0 when id is unknown (block everything). */
 unsigned int hush_provider_capabilities(const char *id);
 

@@ -15,7 +15,7 @@
  * tests/check_reasons.py pins every string; reword both together. */
 #define HUSH_LOADOUT_WHY_ACTION "Loadout action must be save, list, load or delete."
 #define HUSH_LOADOUT_WHY_ROBOT \
-    "Robot must be a slug: a-z, 0-9, - or _ (1-%d characters)."
+    "Robot id must use a-z, 0-9, - or _ (1-%d characters)."
 #define HUSH_LOADOUT_WHY_NAME \
     "Favorite names use letters, digits, spaces, - or _ " \
     "(1-%d characters, at least one letter or digit)."

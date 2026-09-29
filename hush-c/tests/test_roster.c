@@ -257,6 +257,32 @@ int main(void)
            "nine skills refused");
     expect(strcmp(roster.agents[1].name, "Coach copy") == 0,
            "refused skills keep the name");
+    /* A name needs a letter or digit: nothing slugs to a stand-in. */
+    memset(&agent, 0, sizeof(agent));
+    memcpy(agent.name, "!!!", 4);
+    memcpy(agent.prompt, "Watch.", 7);
+    memcpy(agent.provider, "goose", 6);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+           "symbol-only name refused");
+    expect(roster.nagents == 2, "no robot for a symbol-only name");
+    memset(&agent, 0, sizeof(agent));
+    memcpy(agent.name, "???", 4);
+    expect(hush_roster_update_agent(&roster, "coach-copy", &agent) ==
+               HUSH_ERR_PARSE,
+           "symbol-only rename refused");
+    expect(strcmp(roster.agents[1].name, "Coach copy") == 0,
+           "refused symbol rename keeps the name");
+    /* A symbol-only name saved before the rule may be saved unchanged. */
+    memcpy(roster.agents[1].name, "!!!", 4);
+    memcpy(agent.name, " !!! ", 6);
+    expect(hush_roster_update_agent(&roster, "coach-copy", &agent) == HUSH_OK,
+           "older symbol-only name kept");
+    memcpy(agent.name, "@@@", 4);
+    expect(hush_roster_update_agent(&roster, "coach-copy", &agent) ==
+               HUSH_ERR_PARSE,
+           "older symbol-only name cannot become other symbols");
+    expect(strcmp(roster.agents[1].slug, "coach-copy") == 0,
+           "symbol names never move the slug");
     hush_store_destroy(store);
     hush_pass_set_helper(NULL);
     if (g_fail)

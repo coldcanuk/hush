@@ -11,6 +11,7 @@ checks that the robot drawer shows the server reason in #agent-err.
 import json
 import os
 import re
+from html.parser import HTMLParser
 import socket
 import subprocess
 import sys
@@ -25,21 +26,25 @@ ROOT = Path(__file__).resolve().parents[1]
 # Exact reason lines (without the trailing newline the relay appends).
 GATE = "Log in and set up your vibe before changing robots."
 NAME = "Robot name is required."
-TAKEN = "Robot name taken: slug walkbot-one is already in use."
+NAME_CHARS = "Robot names need at least one letter or digit."
+TAKEN = "A robot named Walkbot One already exists."
 PROMPT = "System prompt is required."
 NO_PROVIDER = "Provider is required."
+PROVIDER = "Unknown AI provider. Choose one from the list."
 MIN1 = "Keep at least one skill equipped."
 ROLE = "Skill system:human-cue is for chaperon robots only."
 BUDGET = "Loadout over budget: at most 8 skills, 8000 characters, complexity 64."
-NO_FILES = "Provider ollama cannot read context files."
+NO_FILES = "Ollama cannot read context files."
+NO_FILES_GEMINI = "Gemini API cannot read context files."
 FILES = "Context files must be plain text or Markdown, at most 4096 bytes each."
 FULL = "Robot roster is full (16 robots)."
-SLUG = "Robot slug is required."
+SLUG = "Robot id is required."
+MISSING = "No robot with id ghost."
 MAJOR = "Major cannot be deleted or cloned."
 CLONE_LONG = ('Cannot clone {}: the name plus " copy" would be over 63 bytes; '
               "shorten the name first.")
 FAV_ACTION = "Loadout action must be save, list, load or delete."
-FAV_ROBOT = "Robot must be a slug: a-z, 0-9, - or _ (1-63 characters)."
+FAV_ROBOT = "Robot id must use a-z, 0-9, - or _ (1-63 characters)."
 FAV_NAME = ("Favorite names use letters, digits, spaces, - or _ "
             "(1-47 characters, at least one letter or digit).")
 FAV_IDS = "Skill ids must be strings of at most 95 characters."
@@ -54,9 +59,16 @@ FAV_CORRUPT = "That saved favorite file is corrupt."
 # the existing #agent-err line under the form (fallback copy unchanged).
 UI_KEEPS_REASON = 'err.reason = r.status === 400 ? (await r.text().catch(() => "")).trim() : "";'
 UI_SHOWS_REASON = '$("agent-err").textContent = (e && e.reason) || "Could not save that robot.";'
-UI_NAME_RULE = ('<p class="help" id="agent-name-rule">Spaces are fine. A name clashes '
-                'when its slug is taken: Walkbot One and walkbot-one are both walkbot-one. '
-                "Renaming keeps the robot's slug.</p>")
+UI_NAME_RULE = '<p class="help" id="agent-name-rule">Names must differ in letters or digits.</p>'
+# A long unbroken name wraps inside the drawer instead of clipping at 375.
+UI_ERR_WRAP = "#agent-err { overflow-wrap: anywhere; }"
+# The rule shows while the name is editable and hides when it is locked
+# (Edit Major, Edit locked robot): reset shows it, each lock hides it.
+UI_RULE_SHOWN = 'if ($("agent-name-rule")) $("agent-name-rule").hidden = false;'
+UI_RULE_HIDDEN = 'if ($("agent-name-rule")) $("agent-name-rule").hidden = true;'
+# Reason sources: no user-facing reason may say "slug".
+REASON_SOURCES = ("src/api_agents.c", "src/api_favorite.c",
+                  "include/hush_http_internal.h")
 
 FAILURES = []
 
@@ -114,7 +126,9 @@ class Relay:
     def call(self, method, path, body=None):
         """Returns (status, content type, raw body); retries a 429 burst."""
         # Compact separators: the relay's field reader matches "key":"value".
-        payload = None if body is None else json.dumps(body, separators=(",", ":")).encode()
+        # Raw UTF-8 like the browser's JSON.stringify, not \u escapes.
+        payload = None if body is None else json.dumps(
+            body, separators=(",", ":"), ensure_ascii=False).encode()
         token = (self.home / "session.token").read_text().strip()
         for _ in range(40):
             request = urllib.request.Request(
@@ -175,8 +189,19 @@ def check_robot_names(relay):
         FAILURES.append(f"'Walkbot One' must be accepted as walkbot-one; got {slugs}")
     else:
         print("reasons: ok spaces allowed: 'Walkbot One' -> walkbot-one")
-    expect(relay, "slug clash", "/api/agent", robot("walkbot-one"), TAKEN)
+    expect(relay, "name clash", "/api/agent", robot("walkbot-one"), TAKEN)
+    expect(relay, "name clash by case and punctuation", "/api/agent",
+           robot("  WALKBOT one!! "), TAKEN)
     expect(relay, "blank name", "/api/agent", robot("   "), NAME)
+    for case, name in (("bangs", "!!!"), ("symbols", "@#$%"),
+                       ("emoji", "\U0001F916\U0001F916")):
+        expect(relay, f"name of only {case}", "/api/agent", robot(name), NAME_CHARS)
+    status, _, raw = relay.call("GET", "/api/session")
+    slugs = [a.get("slug") for a in json.loads(raw).get("agents", [])]
+    if status != 200 or "a" in slugs or "" in slugs:
+        FAILURES.append(f"symbol-only names must not make a robot; got {slugs}")
+    else:
+        print("reasons: ok symbol-only names made no robot (no slug a)")
     body = robot("x")
     del body["name"]
     expect(relay, "missing name", "/api/agent", body, NAME)
@@ -191,16 +216,19 @@ def check_robot_names(relay):
 
 def check_robot_setup(relay):
     expect(relay, "unknown provider", "/api/agent", robot("Pat", provider="local"),
-           "Unknown provider: local.")
+           PROVIDER)
     expect(relay, "unknown ranked provider", "/api/agent",
-           robot("Pat", providers="grok-build,nope"), "Unknown provider: nope.")
-    expect(relay, "provider echo is sanitized", "/api/agent",
-           robot("Pat", provider="<b>x</b>"), "Unknown provider: ?b?x??b?.")
+           robot("Pat", providers="grok-build,nope"), PROVIDER)
+    expect(relay, "unknown provider is not echoed", "/api/agent",
+           robot("Pat", provider="<b>x</b>"), PROVIDER)
     expect(relay, "unknown voice", "/api/agent", robot("Pat", voice="zzz"),
            "Unknown voice: zzz.")
     expect(relay, "provider cannot read files", "/api/agent",
            robot("Pat", provider="ollama", context_name_0="brief.md",
                  context_mime_0="text/markdown", context_text_0="hi"), NO_FILES)
+    expect(relay, "provider label, not id", "/api/agent",
+           robot("Pat", provider="gemini-api", context_name_0="notes.txt",
+                 context_mime_0="text/plain", context_text_0="hi"), NO_FILES_GEMINI)
     expect(relay, "context not text", "/api/agent",
            robot("Pat", context_name_0="a.png", context_mime_0="image/png",
                  context_text_0="x"), FILES)
@@ -230,15 +258,14 @@ def check_robot_loadout(relay, owned):
 def check_robot_slugs(relay):
     expect(relay, "update without slug", "/api/agent", {"action": "update"}, SLUG)
     expect(relay, "update missing robot", "/api/agent",
-           {"action": "update", "slug": "ghost", "name": "G"}, "No robot with slug ghost.")
+           {"action": "update", "slug": "ghost", "name": "G"}, MISSING)
     expect(relay, "update bad provider", "/api/agent",
-           {"action": "update", "slug": "walkbot-one", "provider": "nope"},
-           "Unknown provider: nope.")
+           {"action": "update", "slug": "walkbot-one", "provider": "nope"}, PROVIDER)
     expect(relay, "delete without slug", "/api/agent", {"action": "delete"}, SLUG)
     expect(relay, "delete missing robot", "/api/agent",
-           {"action": "delete", "slug": "ghost"}, "No robot with slug ghost.")
+           {"action": "delete", "slug": "ghost"}, MISSING)
     expect(relay, "clone missing robot", "/api/agent",
-           {"action": "clone", "slug": "ghost"}, "No robot with slug ghost.")
+           {"action": "clone", "slug": "ghost"}, MISSING)
     expect(relay, "delete Major", "/api/agent",
            {"action": "delete", "slug": "sgt-major-payne"}, MAJOR)
     expect(relay, "clone Major", "/api/agent",
@@ -259,11 +286,11 @@ def check_robot_clones(relay):
     long_slug = "long-" + "x" * 54
     relay.ok("/api/agent", robot("Long " + "x" * 54))  # 59 bytes: copy is 64
     expect(relay, "clone name too long", "/api/agent",
-           {"action": "clone", "slug": long_slug}, CLONE_LONG.format(long_slug))
+           {"action": "clone", "slug": long_slug}, CLONE_LONG.format("Long " + "x" * 54))
     relay.ok("/api/agent", robot("Twin"))
     relay.ok("/api/agent", {"action": "clone", "slug": "twin"})
     expect(relay, "clone twice", "/api/agent", {"action": "clone", "slug": "twin"},
-           "Robot name taken: slug twin-copy is already in use.")
+           "A robot named Twin copy already exists.")
 
 
 def agent_in_memory(relay, slug):
@@ -320,16 +347,15 @@ def check_robot_rename(relay):
     update = {"action": "update", "slug": "steady",
               "name": "Steady Two", "system_prompt": "Changed."}
     expect(relay, "update refused provider", "/api/agent",
-           dict(update, provider="nope"), "Unknown provider: nope.")
+           dict(update, provider="nope"), PROVIDER)
     expect(relay, "update refused voice", "/api/agent",
            dict(update, provider="ollama", voice="zzz"), "Unknown voice: zzz.")
     refused(relay, "update refused role", dict(update, role="boss"))
     expect(relay, "rename blank", "/api/agent", dict(update, name="   "), NAME)
-    expect(relay, "rename slug clash", "/api/agent", dict(update, name="Walkbot One"),
+    expect(relay, "rename name clash", "/api/agent", dict(update, name="walkbot ONE"),
            TAKEN)
-    relay.ok("/api/agent", robot("!!!"))  # no ASCII letter or digit: slug "a"
-    expect(relay, "rename fallback slug clash", "/api/agent", dict(update, name="???"),
-           "Robot name taken: slug a is already in use.")
+    expect(relay, "rename to symbols only", "/api/agent", dict(update, name="???"),
+           NAME_CHARS)
     same_fields("refused updates in memory", memory, agent_in_memory(relay, "steady"))
     relay.ok("/api/agent", robot("Probe"))  # any later save rewrites vibe.json
     same_fields("refused updates on disk", disk, agent_on_disk(relay, "steady"))
@@ -367,7 +393,7 @@ def check_robot_full(relay):
     # Clone checks run in roster order: name too long first, then full.
     long_slug = "long-" + "x" * 54
     expect(relay, "clone too long while full", "/api/agent",
-           {"action": "clone", "slug": long_slug}, CLONE_LONG.format(long_slug))
+           {"action": "clone", "slug": long_slug}, CLONE_LONG.format("Long " + "x" * 54))
     expect(relay, "clone while full", "/api/agent",
            {"action": "clone", "slug": "walkbot-one"}, FULL)
 
@@ -426,17 +452,93 @@ def check_favorite_store(relay):
            fav("save", name="one too many", **one), FAV_FULL)
 
 
+class Placement(HTMLParser):
+    """Records the open-element ids around #agent-name-rule and whether
+    #agent-name came first inside the same .field."""
+
+    VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+            "meta", "source", "track", "wbr"}
+
+    def __init__(self):
+        super().__init__()
+        self.stack = []
+        self.rule_parents = None
+        self.input_field = None
+        self.rule_field = None
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        node = (tag, attrs.get("id") or "", attrs.get("class") or "", self.getpos())
+        field = next((n for n in reversed(self.stack) if "field" in n[2].split()), None)
+        if node[1] == "agent-name" and tag == "input":
+            self.input_field = field
+        if node[1] == "agent-name-rule" and self.rule_parents is None:
+            self.rule_parents = [n[1] for n in self.stack if n[1]]
+            self.rule_field = field if self.input_field is not None else None
+        if tag not in self.VOID:
+            self.stack.append(node)
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i][0] == tag:
+                del self.stack[i:]
+                return
+
+
+def name_rule_placement(text):
+    """Empty when #agent-name-rule sits in #agent-identity after #agent-name."""
+    placement = Placement()
+    placement.feed(text)
+    if placement.rule_parents is None:
+        return "no #agent-name-rule"
+    if "agent-identity" not in placement.rule_parents:
+        return f"#agent-name-rule outside #agent-identity (inside {placement.rule_parents})"
+    if placement.rule_field is None or placement.rule_field != placement.input_field:
+        return "#agent-name-rule must follow the #agent-name input in its .field"
+    return ""
+
+
+def reason_strings():
+    """Every quoted string in the refusal-reason #defines."""
+    found = []
+    for rel in REASON_SOURCES:
+        text = (ROOT / rel).read_text()
+        for match in re.finditer(r"#define\s+HUSH_\w*WHY_\w+((?:[^\n]*\\\n)*[^\n]*)", text):
+            found.append("".join(re.findall(r'"((?:[^"\\]|\\.)*)"', match.group(1))))
+    return found
+
+
 def check_ui(relay):
     demo = (ROOT / "demo" / "index.html").read_text()
     _, _, served = relay.call("GET", "/")
     served = served.decode("utf-8", "replace")
     for label, text in (("demo/index.html", demo), ("served UI", served)):
-        for need in (UI_KEEPS_REASON, UI_SHOWS_REASON, UI_NAME_RULE):
+        for need in (UI_KEEPS_REASON, UI_SHOWS_REASON, UI_NAME_RULE, UI_ERR_WRAP,
+                     UI_RULE_SHOWN):
             if need in text:
                 print(f"reasons: ok {label} has {need[:48]}... ({len(need)} chars)")
             else:
                 FAILURES.append(f"{label} must contain {need!r} so the robot "
                                 "drawer shows the server reason in #agent-err")
+        hidden = text.count(UI_RULE_HIDDEN)
+        if hidden == 2:
+            print(f"reasons: ok {label} hides #agent-name-rule for Major and locked robots")
+        else:
+            FAILURES.append(f"{label} must hide #agent-name-rule in both name locks "
+                            f"(Major, locked robot); found {hidden}")
+        problem = name_rule_placement(text)
+        if problem:
+            FAILURES.append(f"{label}: {problem}")
+        else:
+            print(f"reasons: ok {label} has #agent-name-rule in #agent-identity "
+                  "after the name input")
+    words = [UI_NAME_RULE] + reason_strings()
+    slugged = [w for w in words if re.search(r"slug", w, re.IGNORECASE)]
+    if slugged or len(words) < 30:
+        FAILURES.append(f"no user-facing reason may say slug: {slugged} "
+                        f"({len(words)} strings read)")
+    else:
+        print(f"reasons: ok no reason or help line says slug ({len(words)} strings)")
 
 
 def main():
