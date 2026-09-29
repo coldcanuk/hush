@@ -1,0 +1,32 @@
+# Hush — llms.txt
+
+> Hush is open-source office collaboration: a Slack/Teams alternative that is AI-assistant-native, with a Diablo/BG3-inspired field-office UI. Legible C11 Nostr relay core + self-hosted team-chat hive. License: GPL-3.0.
+
+## What it is
+- One binary (`hush-relay`): Nostr relay core + chat UI on the same port (default 10555).
+- Self-hosted team chat: vibes (hives), bulletin-board channels, threads, invites, AI robots sharing channels with humans.
+- Field-office dispatch UI: bulletin boards + individuals left, Official Dispatch Log center, personnel + status right. Robots inventory is a Diablo-style spatial grid. Zero hamburger glyphs (BOARDS/KIT stamps).
+- Strict C11 (`-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow`). Version: VERSION file (0.0.1).
+
+## Verified on main (honest)
+- Armory ALWAYS-ON / ON-CALL shelves + gem chips are browser-only product labels (not saved on the relay); the relay injects every equipped SKILL.md body on every job.
+- Min-1 equipped skill enforced client + relay ("Keep at least one skill equipped.", relay 400 keeps worn loadout).
+- Thread memory via GET /api/thread (saved turns + brief; leave-return revalidates the remembered root id).
+- Quick bar slots 1-4 (folder tabs, configurable, typing-guarded).
+- i key = inventory doll editor, c key = Profile character sheet (typing-guarded; single-dismiss Escape stack).
+- Volume dial (#fo-dial) scrolls the dispatch log (wheel/drag/keys; no in-column scrollbar chrome).
+- Favorite skill loadouts (PE-4, #206): per robot, saved on the relay under $HUSH_HOME/robots/<slug>/loadouts/ via POST /api/loadout (1-8 skills each, up to 32 per robot).
+- Roadmap (not on main): relay-enforced ALWAYS-ON / ON-CALL prompt tiers.
+
+## Quick start (verified on an Ubuntu cloud VM at base 44c66f88; not re-run at this head. CI build-test in .github/workflows/ci.yml, on ubuntu-24.04, apt-installs only gcc make libssl-dev libx11-dev python3 (not curl; make test passes there, so the runner image must already have it), then runs ./configure, make and make test)
+- sudo apt-get update && sudo apt-get install -y gcc make libssl-dev python3 curl libx11-dev (curl is needed by make test; libx11-dev is optional)
+- ./configure && make && make test (ALL TESTS PASSED) && make install (~/.local/bin; since #222, after the VM run, it first stops running hush-relay* of this user)
+- Run: hush-relay --no-open 10555 -> http://127.0.0.1:10555/
+- Close leaves the hive standing; Exit stops the relay and the children it forked. hush-relay --quit [port] (Linux, default 10555): exit 0 stopped, 1 nothing to stop, 2 stop failed or refused; off Linux --quit never signals: exit 1 when there is no pidfile or the pid is dead, 2 otherwise (use POST /api/exit).
+- Secrets only in pass; hive metadata in ~/.hush/config/vibe.json (0600).
+
+## Key docs
+- README.md (front page), docs/OPERATIONS.md (run/stop/rebuild), docs/CONFIGURATION.md (install/env/layout), UI_SPEC.md (authoritative UI + honesty deltas), NOSTR.md, SECURITY.md
+- PRIME_DIRECTIVE.md, AGENTS.md, BRANCHING.md (worktree gb/* + PR-only law)
+- docs/CODEX.md, docs/pass-integration.md, docs/plan/, docs/research/, docs/ops/
+- Screenshot: docs/assets/hush-field-office.png (real cloud-VM capture at base 44c66f88, 1280x800 headless Chrome; older than #206/#212/#214/#226/#227, so parts of the current UI differ)

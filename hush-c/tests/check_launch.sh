@@ -495,7 +495,7 @@ fi
 # BOARDS drawer fits at 1440x900; at <= 480px the robot-editor actions show
 # the verb only, with the noun as visually hidden .act-noun text and the
 # full name in aria-label.
-if ! echo "$html" | grep -q -x -F -e '#stats > span { white-space: nowrap; }' \
+if ! echo "$html" | grep -q -x -F -e '#stats .stat { white-space: nowrap; }' \
   || echo "$html" | grep -q 'sockets<br>'; then
   fail "drawer stats must flow inline so the drawer fits (UI-M12d r4)"
 fi
@@ -509,12 +509,24 @@ for a in 'id="agent-save" type="button" aria-label="Create robot">Create<span cl
   'id="agent-delete" type="button" aria-label="Delete Robot" disabled>Delete<span class="act-noun"> Robot</span>'; do
   echo "$html" | grep -q -F -e "$a" || fail "robot-editor actions must keep their full accessible name (UI-M12d r4)"
 done
+# Pre-walk: the stats separators lead each item inside a clipped row, so a
+# wrapped line never ends (or starts) on a dangling "·".
+if ! echo "$html" | grep -q -x -F -e '#stats .stats-clip { display: block; overflow: hidden; }' \
+  || ! echo "$html" | grep -q -x -F -e '#stats .stats-row { display: block; margin-left: -1.2em; }' \
+  || echo "$html" | grep -q -F -e ':not(:last-child)::after { content: " ·"; }'; then
+  fail "drawer stats separators must not dangle at wrapped line ends (pre-walk)"
+fi
 # r5 (Ops F2 fallback): the drawer bottom fade sits after the touch block
 # and is switched only by the overflow test, so a drawer that fits shows
-# no cue.
-cue_at=$(line_of '^#fo-drawer\.is-overflowing::after { content: ""; flex: 0 0 24px; margin-top: -12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }$')
+# no cue. Pre-walk: 12px and not pulled up, so stats line 1 stays crisp.
+# Pre-walk r4 (Ops FAIL-A): the test is the last row's bottom against the
+# client box, so padding-only overflow shows no cue. r5 (Ops FAIL-1): the
+# visible bottom is the #quick-bar top where it overlays the drawer, and the
+# fade is lifted to end there.
+cue_at=$(line_of '^#fo-drawer\.is-overflowing::after { content: ""; flex: 0 0 12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }$')
 if [ -z "$cue_at" ] || [ "$cue_at" -le "$touch_end" ] \
-  || ! echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", d.scrollHeight - cue > d.clientHeight + 1);' \
+  || ! echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", last > seen + 0.5);' \
+  || ! echo "$html" | grep -q -x -F -e '#fo-drawer.is-overflowing::after { bottom: var(--fade-bottom, -10px); }' \
   || ! echo "$html" | grep -q -F -e 'const drawerRO = new ResizeObserver(syncDrawerOverflow);'; then
   fail "drawer bottom fade must show only when the drawer overflows (UI-M12d r5)"
 fi
@@ -612,7 +624,16 @@ echo "$html" | grep -q 'openLeave' || fail "HTML missing openLeave"
 echo "$html" | grep -q '/api/close' || fail "HTML missing close route"
 echo "$html" | grep -q '/api/exit' || fail "HTML missing exit route"
 echo "$html" | grep -q 'isContextFile' || fail "HTML missing MIME check"
-echo "$html" | grep -q 'Checked to save password to Unix Password Manager' || fail "pass checkbox copy"
+# Pre-walk r3 (Ops 2): the robot-editor pass label uses the same plain
+# words as the backup step; the retrieve command sits behind a details line.
+echo "$html" | grep -q -F 'Checked to save its key in your password manager.' || fail "pass checkbox copy"
+echo "$html" | grep -q -F '<details class="howto" id="agent-pass-howto"><summary>How to find it later</summary>' || fail "robot pass how-to details"
+echo "$html" | grep -q -F 'run <code>pass show hush/agents/&lt;slug&gt;/nsec</code>' || fail "robot pass retrieve command"
+echo "$html" | grep -q 'Unix Password Manager' && fail "no Unix Password Manager jargon in the UI"
+# Pre-walk r5 (Ops FAIL-2): the profile Picture row is hidden whole, with
+# no placeholder copy (nothing saves a profile picture yet).
+echo "$html" | grep -q -F '<div id="prof-avatar-row" hidden>' || fail "profile picture row hidden"
+echo "$html" | grep -q 'Not available yet' && fail "no placeholder copy in the profile"
 echo "$html" | grep -q 'pass show hush/identity/nsec' || fail "retrieve CLI"
 echo "$html" | grep -q 'id=\\\"save-pass\\\"' || fail "pass checkbox id"
 echo "$html" | grep -q 'savePass = true' || fail "checkbox defaults on"

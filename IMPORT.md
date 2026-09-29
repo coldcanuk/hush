@@ -50,13 +50,18 @@ echo "nsec1q9x8..." | ./scripts/hush-pass save "agents/brain/nsec"
 hush-pass save "agents/brain/nsec" "nsec1q9x8..."
 ```
 
-During identity or agent creation the modal checkbox is **checked by default**:
+On the identity backup step, when `pass` is available, the checkbox is **checked by default**:
 
-> **Checked to save password to Unix Password Manager. Retrieve with: `pass show hush/identity/nsec`**
+> **Checked to save it in your password manager.**
+>
+> How to find it later (a closed details line under the box): `pass show hush/identity/nsec`
 
-- Leave it checked → Hush writes via the helper above.
+- Leave it checked → Hush writes via the helper above when you press **I saved it**.
 - Uncheck it → opt-out (secret not stored via `pass`).
-- Always offered: **Copy value** so you can save the secret in 1Password, Bitwarden, a paper backup, or any other manager.
+- Without `pass`, the box is off, dimmed and disabled, and the step says "Hush can't save this key on this computer, so keep your copy somewhere safe."
+- Always offered on that step: **Copy value** so you can save the secret in 1Password, Bitwarden, a paper backup, or any other manager.
+
+When you raise a new robot with `pass` available, the robot editor shows "Checked to save its key in your password manager." with `pass show hush/agents/<slug>/nsec` behind the same "How to find it later" line. Editing a robot saves no key, so the box is hidden there; it is also hidden when `pass` is missing.
 
 Retrieve later:
 
@@ -110,7 +115,7 @@ Hush (MVP) is an in-memory relay. Events are lost on restart unless you add pers
 
 - When creating or importing an agent in a Hush-aware tool:
   - Provide the name.
-  - The UI offers the default-checked box: "Checked to save password to Unix Password Manager. Retrieve with: `pass show hush/agents/<name>/nsec`".
+  - In the Hush UI, raising a new robot with `pass` available offers the default-checked box "Checked to save its key in your password manager." with a "How to find it later" details line holding `pass show hush/agents/<slug>/nsec`. Editing a robot, or a relay without `pass`, shows no box (nothing is saved there).
   - If previously saved with `pass`, the tool can retrieve it via `scripts/hush-pass get` or `pass show hush/agents/<name>/nsec`.
 - Point the agent at your Hush relay URL.
 - Start the agent. It should be able to sign events and participate in channels.
