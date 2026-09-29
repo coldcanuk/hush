@@ -128,6 +128,10 @@ static hush_status_t hush_roster_format_intro(const hush_roster_agent_t *agent,
                                               char *out, size_t outsz,
                                               size_t *off);
 
+/* Index of the agent whose id is slug; nagents when none is. */
+static size_t hush_roster_agent_index(const hush_roster_t *roster,
+                                      const char *slug);
+
 /* Finds an agent by slug. NULL when missing. */
 static hush_roster_agent_t *hush_roster_find_agent(hush_roster_t *roster,
                                                    const char *slug);
@@ -191,6 +195,25 @@ void hush_roster_slug_of(char *out, size_t outsz, const char *name)
     hush_roster_slugify(out, outsz, trimmed);
 }
 
+void hush_roster_name_key(char *out, size_t outsz, const char *name)
+{
+    size_t i = 0;
+    size_t o = 0;
+
+    if (out == NULL || outsz == 0)
+        return;
+    if (name == NULL)
+        name = "";
+    /* The slug's letters and digits (C locale), without its '-' breaks. */
+    while (name[i] != '\0' && o + 1 < outsz) {
+        unsigned char c = (unsigned char)name[i++];
+
+        if (isalnum(c))
+            out[o++] = (char)tolower(c);
+    }
+    out[o] = '\0';
+}
+
 int hush_roster_is_name_clash(const char *name, const char *other)
 {
     char want[HUSH_ROSTER_NAME_MAX] = {0};
@@ -198,8 +221,8 @@ int hush_roster_is_name_clash(const char *name, const char *other)
 
     if (name == NULL || other == NULL)
         return 0;
-    hush_roster_slug_of(want, sizeof(want), name);
-    hush_roster_slug_of(have, sizeof(have), other);
+    hush_roster_name_key(want, sizeof(want), name);
+    hush_roster_name_key(have, sizeof(have), other);
     return want[0] != '\0' && strcmp(have, want) == 0;
 }
 
@@ -213,9 +236,9 @@ int hush_roster_is_same_name(const char *name, const char *current)
     return strcmp(trimmed, current) == 0;
 }
 
-const hush_roster_agent_t *hush_roster_name_holder(const hush_roster_t *roster,
-                                                   const char *name,
-                                                   const hush_roster_agent_t *except)
+const hush_roster_agent_t *
+hush_roster_name_holder(const hush_roster_t *roster, const char *name,
+                        const hush_roster_agent_t *except)
 {
     size_t i = 0;
 
@@ -227,6 +250,17 @@ const hush_roster_agent_t *hush_roster_name_holder(const hush_roster_t *roster,
             return &roster->agents[i];
     }
     return NULL;
+}
+
+const hush_roster_agent_t *hush_roster_agent_by_slug(const hush_roster_t *roster,
+                                                     const char *slug)
+{
+    size_t i = 0;
+
+    if (roster == NULL || slug == NULL)
+        return NULL;
+    i = hush_roster_agent_index(roster, slug);
+    return i < roster->nagents ? &roster->agents[i] : NULL;
 }
 
 void hush_roster_init(hush_roster_t *roster)
@@ -743,7 +777,8 @@ static void hush_roster_free_slug(const hush_roster_t *roster,
     memcpy(base, slug, sizeof(base));
     /* Other robots plus Payne hold at most AGENTS_MAX ids, so one of these
      * AGENTS_MAX + 1 suffixes is free. */
-    for (; n <= (size_t)HUSH_ROSTER_AGENTS_MAX + HUSH_ROSTER_SUFFIX_FIRST; n++) {
+    for (; n <= (size_t)HUSH_ROSTER_AGENTS_MAX + HUSH_ROSTER_SUFFIX_FIRST;
+         n++) {
         hush_roster_suffix_slug(slug, slugsz, base, n);
         if (!hush_roster_is_id_taken(roster, slug))
             return;
@@ -1018,18 +1053,26 @@ static hush_status_t hush_roster_copy_skills(hush_roster_agent_t *agent,
     return HUSH_OK;
 }
 
-static hush_roster_agent_t *hush_roster_find_agent(hush_roster_t *roster,
-                                                   const char *slug)
+static size_t hush_roster_agent_index(const hush_roster_t *roster,
+                                      const char *slug)
 {
-    size_t i;
+    size_t i = 0;
 
     assert(roster != NULL);
     assert(slug != NULL);
     for (i = 0; i < roster->nagents; ++i) {
         if (strcmp(roster->agents[i].slug, slug) == 0)
-            return &roster->agents[i];
+            break;
     }
-    return NULL;
+    return i;
+}
+
+static hush_roster_agent_t *hush_roster_find_agent(hush_roster_t *roster,
+                                                   const char *slug)
+{
+    size_t i = hush_roster_agent_index(roster, slug);
+
+    return i < roster->nagents ? &roster->agents[i] : NULL;
 }
 
 static hush_status_t hush_roster_check_update(const hush_roster_t *roster,

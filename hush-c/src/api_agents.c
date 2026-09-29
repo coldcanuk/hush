@@ -831,15 +831,8 @@ static int hush_http_is_blank(const char *text)
 
 static const hush_roster_agent_t *hush_http_find_robot(const char *slug)
 {
-    const hush_roster_t *roster = &hush_http_launch()->roster;
-    size_t i = 0;
-
     assert(slug != NULL);
-    for (i = 0; i < roster->nagents; i++) {
-        if (strcmp(roster->agents[i].slug, slug) == 0)
-            return &roster->agents[i];
-    }
-    return NULL;
+    return hush_roster_agent_by_slug(&hush_http_launch()->roster, slug);
 }
 
 static int hush_http_name_why(char *why, size_t whysz, const char *name,
@@ -848,7 +841,8 @@ static int hush_http_name_why(char *why, size_t whysz, const char *name,
     const hush_launch_t *launch = hush_http_launch();
     const hush_roster_agent_t *holder =
         hush_roster_name_holder(&launch->roster, name, except);
-    const char *have = holder != NULL ? holder->name : hush_launch_payne_name(launch);
+    const char *have =
+        holder != NULL ? holder->name : hush_launch_payne_name(launch);
 
     assert(why != NULL && whysz > 0 && name != NULL);
     if (holder == NULL && !hush_roster_is_name_clash(name, have))

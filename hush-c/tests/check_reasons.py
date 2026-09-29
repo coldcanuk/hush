@@ -38,6 +38,10 @@ ROLE = "Skill system:human-cue is for chaperon robots only."
 BUDGET = "Loadout over budget: at most 8 skills, 8000 characters, complexity 64."
 NO_FILES = "Ollama cannot read context files."
 NO_FILES_GEMINI = "Gemini API cannot read context files."
+NO_FILES_DEEPSEEK = "DeepSeek API cannot read context files."
+# The provider is spelled DeepSeek everywhere it is shown.
+UI_DEEPSEEK = ('value="deepseek-api"> DeepSeek API</label>',
+               '"deepseek-api": "DeepSeek API",')
 FILES = "Context files must be plain text or Markdown, at most 4096 bytes each."
 FULL = "Robot roster is full (16 robots)."
 SLUG = "Robot id is required."
@@ -242,6 +246,9 @@ def check_robot_setup(relay):
     expect(relay, "provider label, not id", "/api/agent",
            robot("Pat", provider="gemini-api", context_name_0="notes.txt",
                  context_mime_0="text/plain", context_text_0="hi"), NO_FILES_GEMINI)
+    expect(relay, "provider label spelled DeepSeek", "/api/agent",
+           robot("Pat", provider="deepseek-api", context_name_0="notes.txt",
+                 context_mime_0="text/plain", context_text_0="hi"), NO_FILES_DEEPSEEK)
     expect(relay, "context not text", "/api/agent",
            robot("Pat", context_name_0="a.png", context_mime_0="image/png",
                  context_text_0="x"), FILES)
@@ -432,6 +439,10 @@ def check_name_rule(relay):
         relay.ok("/api/agent", {"action": "delete", "slug": slug})
     expect(relay, "create Major's name", "/api/agent", robot("Major"),
            "A robot named Major already exists.")
+    expect(relay, "rename to Major's name", "/api/agent",
+           dict(rename, name="Major"), "A robot named Major already exists.")
+    expect(relay, "rename too close to Major's name", "/api/agent",
+           dict(rename, name="ma jor"), LIKE.format("Major"))
     relay.ok("/api/agent", robot("Sgt Major Payne"))
     check_names("Major's reserved id is never given out", relay,
                 {"sgt-major-payne-2": "Sgt Major Payne"})
@@ -447,7 +458,39 @@ def check_name_rule(relay):
     expect(relay, "control bytes echo as ?", "/api/agent", robot("Ctl Line Bot"),
            LIKE.format("Ctl?Line?Bot"))
     relay.ok("/api/agent", {"action": "delete", "slug": "ctl-line-bot"})
+    check_name_key(relay)
+    check_rename_ids(relay)
     check_suffixed_favorites(relay)
+
+
+def check_name_key(relay):
+    """The clash key is lowercase A-Z and 0-9 only: every other byte is
+    dropped and leaves no word break, so the help line is literal."""
+    for name in ("WalkbotOne", "Walk-bot One", "W.a.l.k.b.o.t One", "Walkbot O'ne",
+                 "Walkbot\u00e9One", "Walkbot\u0418One"):
+        expect(relay, f"no word breaks: {name} vs Walkbot One", "/api/agent",
+               robot(name), LIKE.format("Walkbot One"))
+    relay.ok("/api/agent", robot("Robot 1"))
+    for name in ("Robot1", "Ro bot 1"):
+        expect(relay, f"no word breaks: {name} vs Robot 1", "/api/agent",
+               robot(name), LIKE.format("Robot 1"))
+    relay.ok("/api/agent", {"action": "delete", "slug": "robot-1"})
+    for name in ("Ma jor", "Ma-jor"):
+        expect(relay, f"no word breaks: {name} vs Major", "/api/agent",
+               robot(name), LIKE.format("Major"))
+
+
+def check_rename_ids(relay):
+    """Rename never compares ids: Delta is free while a robot named Echo
+    holds the id delta."""
+    relay.ok("/api/agent", robot("Delta"))
+    relay.ok("/api/agent", {"action": "update", "slug": "delta", "name": "Echo"})
+    relay.ok("/api/agent", robot("Foxtrot"))
+    relay.ok("/api/agent", {"action": "update", "slug": "foxtrot", "name": "Delta"})
+    check_names("rename onto a name whose id is held", relay,
+                {"delta": "Echo", "foxtrot": "Delta"})
+    for slug in ("delta", "foxtrot"):
+        relay.ok("/api/agent", {"action": "delete", "slug": slug})
 
 
 def favorite_names(relay, slug):
@@ -505,8 +548,11 @@ def check_restart():
                                          skill_0="system:hive-patterns"))
             relay.ok("/api/agent", robot("Old Bangs"))
             relay.ok("/api/agent", robot("Old Twin"))
+            relay.ok("/api/agent", robot("Old Major"))
+            relay.ok("/api/agent", robot("Old Key"))
             relay.stop()
-            set_names(relay, {"old-bangs": "!!!", "old-twin": "Quiet Hand"})
+            set_names(relay, {"old-bangs": "!!!", "old-twin": "Quiet Hand",
+                              "old-major": "Major", "old-key": "QuietHand"})
             relay.start()
             check_names("restart keeps ids and names", relay,
                         {"walkbot-two": "Quiet Hand", "walkbot-two-2": "Walkbot Two"})
@@ -523,8 +569,16 @@ def check_restart():
                    "/api/agent", dict(bangs, name="@@@"), NAME_CHARS)
             relay.ok("/api/agent", {"action": "update", "slug": "old-twin",
                                     "name": "Quiet Hand", "system_prompt": "Changed."})
+            major = {"action": "update", "slug": "old-major"}
+            relay.ok("/api/agent", dict(major, name="Major", system_prompt="Changed."))
+            relay.ok("/api/agent", dict(major, name=" Major "))
+            expect(relay, "an older Major cannot move to a near name", "/api/agent",
+                   dict(major, name="Major!"), LIKE.format("Major"))
+            relay.ok("/api/agent", {"action": "update", "slug": "old-key",
+                                    "name": "QuietHand", "system_prompt": "Changed."})
             check_names("older names save unchanged", relay,
-                        {"old-bangs": "!!!", "old-twin": "Quiet Hand"})
+                        {"old-bangs": "!!!", "old-twin": "Quiet Hand",
+                         "old-major": "Major", "old-key": "QuietHand"})
             expect(relay, "an older shared name is not taken again", "/api/agent",
                    robot("Quiet Hand"), "A robot named Quiet Hand already exists.")
         finally:
@@ -694,6 +748,12 @@ def check_ui(relay):
         else:
             FAILURES.append(f"{label} must hide #agent-name-help in both name locks "
                             f"(Major, locked robot); found {hidden}")
+        missing = [need for need in UI_DEEPSEEK if need not in text]
+        if missing or "Deepseek" in text:
+            FAILURES.append(f"{label} must spell DeepSeek API: missing {missing}, "
+                            f"'Deepseek' x{text.count('Deepseek')}")
+        else:
+            print(f"reasons: ok {label} spells DeepSeek API ({len(UI_DEEPSEEK)} places)")
         problem = name_rule_placement(text)
         if problem:
             FAILURES.append(f"{label}: {problem}")

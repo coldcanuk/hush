@@ -121,13 +121,19 @@ int hush_roster_is_role(const char *role);
 
 /* Writes into out the slug of name: trimmed, lowercase ASCII letters and
  * digits kept, every other run folded to one '-'. Empty when name has no
- * ASCII letter or digit, which add and rename refuse. Two names clash when
- * their slugs are equal; hush_roster_add_agent starts a new robot's id
- * from it and adds "-2", "-3", ... when that id is already held. */
+ * ASCII letter or digit, which add and rename refuse. hush_roster_add_agent
+ * starts a new robot's id from it and adds "-2", "-3", ... when that id is
+ * already held. Names clash on hush_roster_name_key, not on the slug. */
 void hush_roster_slug_of(char *out, size_t outsz, const char *name);
 
-/* True when name and other have the same non-empty slug: they read the
- * same in ASCII letters and digits, ignoring case and everything else. */
+/* Writes into out the clash key of name: its ASCII letters and digits,
+ * lowercased, with every other byte dropped (spaces and punctuation leave
+ * no word break). Empty exactly when the slug is empty. */
+void hush_roster_name_key(char *out, size_t outsz, const char *name);
+
+/* True when name and other have the same non-empty key
+ * (hush_roster_name_key): the same ASCII letters and digits in the same
+ * order, ignoring case and every other byte. */
 int hush_roster_is_name_clash(const char *name, const char *other);
 
 /* True when name, trimmed the way add and update trim it, is current byte
@@ -136,9 +142,13 @@ int hush_roster_is_same_name(const char *name, const char *current);
 
 /* Returns the robot other than except (may be NULL) whose current name
  * clashes with name (hush_roster_is_name_clash), or NULL when none does. */
-const hush_roster_agent_t *hush_roster_name_holder(const hush_roster_t *roster,
-                                                   const char *name,
-                                                   const hush_roster_agent_t *except);
+const hush_roster_agent_t *
+hush_roster_name_holder(const hush_roster_t *roster, const char *name,
+                        const hush_roster_agent_t *except);
+
+/* Returns the robot whose id is slug, or NULL when none is. */
+const hush_roster_agent_t *hush_roster_agent_by_slug(const hush_roster_t *roster,
+                                                     const char *slug);
 
 /* Copies profile fields. Rejects a bad theme. */
 hush_status_t hush_roster_set_profile(hush_roster_t *roster,

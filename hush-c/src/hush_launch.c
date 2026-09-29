@@ -654,18 +654,14 @@ static int hush_launch_renames_to_payne(const hush_launch_t *launch,
                                         const char *slug,
                                         const hush_roster_agent_in_t *in)
 {
-    size_t i = 0;
+    const hush_roster_agent_t *agent = NULL;
 
     assert(launch != NULL && slug != NULL && in != NULL);
-    if (in->name[0] == '\0' || !hush_launch_is_payne_name(launch, in->name))
+    agent = hush_roster_agent_by_slug(&launch->roster, slug);
+    if (agent == NULL || agent->locked || in->name[0] == '\0')
         return 0;
-    for (i = 0; i < launch->roster.nagents; i++) {
-        const hush_roster_agent_t *agent = &launch->roster.agents[i];
-
-        if (strcmp(agent->slug, slug) == 0)
-            return !agent->locked && !hush_roster_is_same_name(in->name, agent->name);
-    }
-    return 0;
+    return hush_launch_is_payne_name(launch, in->name) &&
+           !hush_roster_is_same_name(in->name, agent->name);
 }
 
 hush_status_t hush_launch_add_agent(hush_launch_t *launch,
