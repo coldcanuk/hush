@@ -26,9 +26,9 @@ Opened with the `i` key on the Coach template's editor, scrolled to `#skill-armo
 
 ## Character (`c`)
 
-The `c` key toggles the Profile character sheet: identity, npub, name/org fields, a Picture field (not available yet), and a **read-only** equipped strip (`Coach · 1/8 saved on this relay`, Always-on / On-call breakdown flagged browser-only) — no Armory forge here, per spec.
+The `c` key toggles the Profile character sheet: identity, npub, name/org fields and a **read-only** equipped strip (`Coach · 1/8 saved on this relay`, Always-on / On-call breakdown flagged browser-only) — no Armory forge here, per spec.
 
-![Character sheet on desktop: Profile with npub, name fields, disabled Picture field, read-only equipped-skills strip, Save profile, Logout, Copy public key (npub), Close](docs/assets/screenshots/character-desktop.png)
+![Character sheet on desktop: Profile with npub, name fields, read-only equipped-skills strip, Save profile, Logout, Copy public key (npub), Close](docs/assets/screenshots/character-desktop.png)
 *Caption: Character sheet on desktop — Profile drawer with read-only equipped-skills strip.*
 
 ![Character sheet on phone: same Profile drawer with equipped-skills strip in the narrow viewport](docs/assets/screenshots/character-phone.png)

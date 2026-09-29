@@ -520,10 +520,13 @@ fi
 # and is switched only by the overflow test, so a drawer that fits shows
 # no cue. Pre-walk: 12px and not pulled up, so stats line 1 stays crisp.
 # Pre-walk r4 (Ops FAIL-A): the test is the last row's bottom against the
-# client box, so padding-only overflow shows no cue.
+# client box, so padding-only overflow shows no cue. r5 (Ops FAIL-1): the
+# visible bottom is the #quick-bar top where it overlays the drawer, and the
+# fade is lifted to end there.
 cue_at=$(line_of '^#fo-drawer\.is-overflowing::after { content: ""; flex: 0 0 12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }$')
 if [ -z "$cue_at" ] || [ "$cue_at" -le "$touch_end" ] \
-  || ! echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", last > d.clientHeight + 1);' \
+  || ! echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", last > seen + 0.5);' \
+  || ! echo "$html" | grep -q -x -F -e '#fo-drawer.is-overflowing::after { bottom: var(--fade-bottom, -10px); }' \
   || ! echo "$html" | grep -q -F -e 'const drawerRO = new ResizeObserver(syncDrawerOverflow);'; then
   fail "drawer bottom fade must show only when the drawer overflows (UI-M12d r5)"
 fi
@@ -627,8 +630,10 @@ echo "$html" | grep -q -F 'Checked to save its key in your password manager.' ||
 echo "$html" | grep -q -F '<details class="howto" id="agent-pass-howto"><summary>How to find it later</summary>' || fail "robot pass how-to details"
 echo "$html" | grep -q -F 'run <code>pass show hush/agents/&lt;slug&gt;/nsec</code>' || fail "robot pass retrieve command"
 echo "$html" | grep -q 'Unix Password Manager' && fail "no Unix Password Manager jargon in the UI"
-# Pre-walk r3 (Ops 3): the profile picture field reads "Picture".
-echo "$html" | grep -q -F '<label for="prof-avatar">Picture</label>' || fail "profile picture label"
+# Pre-walk r5 (Ops FAIL-2): the profile Picture row is hidden whole, with
+# no placeholder copy (nothing saves a profile picture yet).
+echo "$html" | grep -q -F '<div id="prof-avatar-row" hidden>' || fail "profile picture row hidden"
+echo "$html" | grep -q 'Not available yet' && fail "no placeholder copy in the profile"
 echo "$html" | grep -q 'pass show hush/identity/nsec' || fail "retrieve CLI"
 echo "$html" | grep -q 'id=\\\"save-pass\\\"' || fail "pass checkbox id"
 echo "$html" | grep -q 'savePass = true' || fail "checkbox defaults on"

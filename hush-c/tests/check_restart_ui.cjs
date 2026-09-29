@@ -262,6 +262,52 @@ async function main() {
   const editRobot = (slug) => `document.querySelector('#robot-list .robot-card[data-slug="${slug}"] .robot-actions button').click()`;
   const checkRobotPassHidden = (st, why) =>
     check(!st.label && !st.howto, `robot pass box and how-to hidden on ${st.title} (${why}): ${JSON.stringify(st)}`);
+  // Pre-walk r5 (Gauge P2-3): read the save_pass the UI actually sends.
+  // The page's fetch is wrapped for one save: the POST /api/agent body is
+  // kept as sent and the request is refused, so the fixture's roster does
+  // not change. The pass box is forced to `checked` first, so a hidden but
+  // checked box would leak true if the shown-and-checked rule broke.
+  const savePassSent = async (label, openExpr, checked) => {
+    await robotPassBox(label, openExpr);
+    if (label === 'Raise a robot') {
+      // Raise needs one worn skill. The armory repaints when the skill
+      // catalog loads, so wait for live gems, then assign the first one.
+      await cdp.waitFor(`document.querySelector('#skill-armory .skill-gem[aria-pressed="false"]:not(:disabled)') &&
+        document.querySelector('#skill-watermark').textContent.startsWith('Assigned 0/')`, 'raise skill armory', 8000);
+      await cdp.eval(`document.querySelector('#skill-armory .skill-gem[aria-pressed="false"]:not(:disabled)').click()`);
+      await cdp.waitFor(`document.querySelector('#skill-watermark').textContent.startsWith('Assigned 1/')`, 'raise skill assigned', 8000);
+    }
+    await cdp.eval(`(() => {
+      const p = document.querySelector('#agent-prompt');
+      if (!p.value.trim()) { p.value = 'Check the save_pass request.'; p.dispatchEvent(new Event('input', { bubbles: true })); }
+      if (!document.querySelector('.agent-provider-cb:checked')) document.querySelector('.agent-provider-cb[value="goose"]').click();
+      document.querySelector('#agent-pass').checked = ${checked ? 'true' : 'false'};
+      window.__hushSent = null;
+      window.__hushFetch = window.fetch;
+      window.fetch = (u, o) => {
+        if (String(u).endsWith('/api/agent') && o && o.method === 'POST') {
+          window.__hushSent = String(o.body);
+          window.fetch = window.__hushFetch;
+          return Promise.reject(new Error('test refused the save'));
+        }
+        return window.__hushFetch(u, o);
+      };
+      document.querySelector('#agent-save').click();
+    })()`);
+    const got = await cdp.waitFor(`window.__hushSent ? { raw: window.__hushSent } :
+      (document.querySelector('#agent-err').textContent && document.querySelector('#agent-err').textContent !== 'Could not save that robot.' ?
+        { err: document.querySelector('#agent-err').textContent  } : null)`, 'save_pass request on ' + label, 8000);
+    if (!got.raw) fail(`robot save sent no request on ${label}: ${got.err}`);
+    const raw = got.raw;
+    await cdp.eval(`(() => { if (window.__hushFetch) window.fetch = window.__hushFetch;
+      const c = document.querySelector('#agent-close'); if (c) c.click(); })()`);
+    const body = JSON.parse(raw);
+    return { title: label, save_pass: body.save_pass, action: body.action || 'create', box: checked };
+  };
+  const checkSavePass = (st, want, why) => {
+    console.log('save_pass request: ' + JSON.stringify(st));
+    check(st.save_pass === want, `robot save sends save_pass ${want} on ${st.title} with the box ${st.box ? 'checked' : 'unchecked'} (${why}): ${JSON.stringify(st)}`);
+  };
   // Pre-walk r4 (Ops FAIL-B): at every width 641-1440, in field-office
   // and dark, the header badge shows whole (no ellipsis) inside the
   // viewport and the header has no sideways overflow. CI runs at 1440, so
@@ -419,6 +465,10 @@ async function main() {
     // on), then 1px spare (cue off), short again, then 6px spare (cue off).
     // r4 (Ops FAIL-A): "free" is measured from the last row's bottom, not
     // scrollHeight, since padding-only overflow no longer sets the cue.
+    // r5: the probe drawer grows to ~1100px, so give it a window tall
+    // enough that the fixed #quick-bar (now part of the test) stays below.
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: 1400, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
     const fade = await cdp.eval(`(async () => {
       const d = document.querySelector('#fo-drawer');
       const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
@@ -447,6 +497,8 @@ async function main() {
       await frames();
       return { content, out };
     })()`, true);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
     console.log('drawer fade edge: ' + JSON.stringify(fade));
     for (const r of fade.out) {
       check(r.got === r.free, `drawer fade probe sized to ${r.free}px free, got ${r.got}`);
@@ -458,58 +510,136 @@ async function main() {
       }
     }
 
-    // Pre-walk r4 (Ops FAIL-A): only bottom padding overflowing must not
-    // set the fade. A probe row is sized so the last row ends exactly at
-    // the client box bottom at 1440x900 (Ops's default-window case), and
-    // at 375x778, then the window grows 1px at a time through the padding
-    // band: 1440 at h 900-908 and 375 at h 778-792. There scrollHeight
-    // still exceeds clientHeight (padding cut) but every row shows, so the
-    // class must stay off; 2px shorter than the start, a row is cut and
-    // the class must be on. Viewport restored after.
+    // Pre-walk r4/r5 (Ops FAIL-A, FAIL-1): the fade shows iff some content
+    // row reaches past the visible bottom of the drawer: its client box
+    // bottom, or the top of the fixed #quick-bar where that overlays the
+    // drawer (phones). The visible bottom is found by hit-testing
+    // (elementFromPoint), not from the code under test. Helpers:
+    //   fadeProbe(target): add a probe row and grow it until the last row
+    //     ends at visible bottom + target px;
+    //   fadeState(): class, last row bottom, visible bottom and the fade's
+    //     computed bottom, all at scrollTop 0.
+    const fadeProbe = (target) => cdp.eval(`(async () => {
+      const d = document.querySelector('#fo-drawer');
+      const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
+      // The drawer must be open and on screen for the hit test.
+      if (!document.querySelector('#hive').classList.contains('nav-open')) document.querySelector('#nav-toggle').click();
+      for (let i = 0; i < 40; i++) { await frames(); const q = d.getBoundingClientRect(); if (d.clientHeight && q.left >= -0.5 && q.right <= innerWidth + 0.5) break; }
+      d.scrollTop = 0;
+      let probe = document.querySelector('#fade-band-probe');
+      if (!probe) { probe = document.createElement('div'); probe.id = 'fade-band-probe'; probe.style.cssText = 'height:0;flex:none'; d.appendChild(probe); }
+      probe.style.height = '0px'; await frames();
+      const r = d.getBoundingClientRect(); const inner = r.top + d.clientTop; const x = Math.round(r.left + r.width / 2);
+      let vis = inner + d.clientHeight;
+      for (let y = Math.floor(vis) - 1; y > inner; y--) { const e = document.elementFromPoint(x, y); if (e && d.contains(e)) { vis = y + 1; break; } }
+      const last = () => { let m = 0; for (const c of d.children) if (c.getClientRects().length) m = Math.max(m, c.getBoundingClientRect().bottom); return m; };
+      // Rows may sit on an auto margin, so grow the probe step by step.
+      for (let i = 0; i < 300 && last() < vis + ${target} - 0.25; i++) {
+        probe.style.height = (parseFloat(probe.style.height) + Math.max(1, Math.round(vis + ${target} - last()))) + 'px'; await frames(); }
+      return { vis, last: last(), probe: probe.style.height, open: d.clientHeight > 0 && r.left >= -0.5 && r.right <= innerWidth + 0.5 };
+    })()`, true);
+    const fadeState = `(() => { const d = document.querySelector('#fo-drawer'); d.scrollTop = 0;
+      const r = d.getBoundingClientRect(); const inner = r.top + d.clientTop; const bottom = inner + d.clientHeight; const x = Math.round(r.left + r.width / 2);
+      let vis = bottom; for (let y = Math.floor(bottom) - 1; y > inner; y--) { const e = document.elementFromPoint(x, y); if (e && d.contains(e)) { vis = y + 1; break; } }
+      let last = 0; for (const c of d.children) if (c.getClientRects().length) last = Math.max(last, c.getBoundingClientRect().bottom);
+      return { sh: d.scrollHeight, ch: d.clientHeight, last: Math.round(last * 10) / 10, vis: Math.round(vis * 10) / 10, under: Math.round((bottom - vis) * 10) / 10,
+        on: d.classList.contains('is-overflowing'), fade: parseFloat(getComputedStyle(d, '::after').bottom), pb: parseFloat(getComputedStyle(d).paddingBottom),
+        onscreen: r.left >= -0.5 && r.right <= innerWidth + 0.5 }; })()`;
+    const frames2 = `new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 40))))`;
+    const fadeRemove = () => cdp.eval(`(() => { const p = document.querySelector('#fade-band-probe'); if (p) p.remove(); })()`);
+    const fadeCheck = (r, where) => {
+      check(r.onscreen, `drawer is on screen for the fade check at ${where}: ${JSON.stringify(r)}`);
+      const hidden = r.last > r.vis + 0.5;
+      check(r.on === hidden, `drawer fade is ${hidden ? 'on' : 'off'} when ${hidden ? 'a row reaches past' : 'every row is above'} the visible bottom at ${where}: ${JSON.stringify(r)}`);
+      // The fade ends at the visible bottom (sticky, measured from the
+      // content box): bottom = (px under the quick-bar) - padding-bottom.
+      if (r.on)
+        check(Math.abs(r.fade - (r.under - r.pb)) <= 1, `drawer fade ends at the visible bottom at ${where}: ${JSON.stringify(r)}`);
+    };
+
+    // r4 (Ops FAIL-A): only bottom padding overflowing must not set the
+    // fade. The probe puts the last row at the visible bottom at 1440x900
+    // (Ops's default window) and 375x778, then the window grows 1px at a
+    // time through the padding band (1440 h 900-908, 375 h 778-792): every
+    // row shows, so the class stays off. r5: 1px shorter, the row is 1px
+    // under and the class must be on (Ops's 1440x883 nit, same test).
     const fadeBand = [];
     for (const [bw, h0, h1] of [[1440, 900, 908], [375, 778, 792]]) {
       await cdp.send('Emulation.setDeviceMetricsOverride', { width: bw, height: h0, deviceScaleFactor: 1, mobile: false });
       await sleep(300);
-      const prep = await cdp.eval(`(async () => {
-        const d = document.querySelector('#fo-drawer');
-        const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
-        if (!d.clientHeight && document.querySelector('#nav-toggle')) { document.querySelector('#nav-toggle').click(); await frames(); }
-        let probe = document.querySelector('#fade-band-probe');
-        if (!probe) { probe = document.createElement('div'); probe.id = 'fade-band-probe'; probe.style.cssText = 'height:0;flex:none'; d.appendChild(probe); }
-        probe.style.height = '0px'; await frames();
-        const last = () => { const top = d.getBoundingClientRect().top + d.clientTop - d.scrollTop; let m = 0;
-          for (const c of d.children) if (c.getClientRects().length) m = Math.max(m, c.getBoundingClientRect().bottom - top); return m; };
-        // Rows may sit on an auto margin, so grow the probe until the last
-        // row reaches the client bottom.
-        for (let i = 0; i < 200 && last() < d.clientHeight - 0.5; i++) {
-          probe.style.height = (parseFloat(probe.style.height) + Math.max(1, Math.round(d.clientHeight - last()))) + 'px'; await frames(); }
-        return { ch: d.clientHeight, last: last(), probe: probe.style.height, open: d.clientHeight > 0 };
-      })()`, true);
-      check(prep.open && Math.abs(prep.last - prep.ch) <= 1, `fade band probe puts the last row at the client bottom at ${bw}x${h0}: ${JSON.stringify(prep)}`);
+      const prep = await fadeProbe(0);
+      check(prep.open && Math.abs(prep.last - prep.vis) <= 1, `fade band probe puts the last row at the visible bottom at ${bw}x${h0}: ${JSON.stringify(prep)}`);
       for (let h = h0 - 2; h <= h1; h++) {
         await cdp.send('Emulation.setDeviceMetricsOverride', { width: bw, height: h, deviceScaleFactor: 1, mobile: false });
-        const r = await cdp.eval(`(async () => { const d = document.querySelector('#fo-drawer');
-          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
-          const top = d.getBoundingClientRect().top + d.clientTop - d.scrollTop; let m = 0;
-          for (const c of d.children) if (c.getClientRects().length) m = Math.max(m, c.getBoundingClientRect().bottom - top);
-          return { sh: d.scrollHeight, ch: d.clientHeight, last: Math.round(m * 10) / 10, on: d.classList.contains('is-overflowing') }; })()`, true);
-        fadeBand.push(Object.assign({ w: bw, h }, r));
+        fadeBand.push(Object.assign({ w: bw, h }, await cdp.eval(`(async () => { await ${frames2}; return ${fadeState}; })()`, true)));
       }
-      await cdp.eval(`(() => { const p = document.querySelector('#fade-band-probe'); if (p) p.remove(); })()`);
+      await fadeRemove();
+    }
+    console.log('drawer fade padding band: ' + JSON.stringify(fadeBand.map((r) => `${r.w}x${r.h} sh${r.sh} ch${r.ch} vis${r.vis} last${r.last} ${r.on ? 'on' : 'off'}`)));
+    for (const [bw, h0] of [[1440, 900], [375, 778]]) {
+      const rows = fadeBand.filter((r) => r.w === bw);
+      for (const r of rows) fadeCheck(r, `${bw}x${r.h}`);
+      const one = rows.find((r) => r.h === h0 - 1);
+      check(one && one.on && one.last > one.vis + 0.5 && one.last <= one.vis + 1.5, `drawer fade shows when a row is 1px under at ${bw}x${h0 - 1}: ${JSON.stringify(one)}`);
+      const band = rows.filter((r) => r.h >= h0);
+      check(band.filter((r) => r.sh > r.ch + 1).length >= 5, `padding band exercised at ${bw} (scrollHeight > clientHeight): ${JSON.stringify(band)}`);
+      for (const r of band) check(!r.on, `drawer fade stays off when only padding overflows at ${bw}x${r.h}: ${JSON.stringify(r)}`);
+    }
+
+    // r5 (Ops 1440x883 nit): at 1440x883 a last row exactly at the edge
+    // gets no fade and a row 1px under gets it.
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 883, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    const at883 = [];
+    for (const target of [0, 1]) {
+      const pr = await fadeProbe(target);
+      // The probe row is new and unobserved; nudge the window so the
+      // drawer's ResizeObserver re-runs the overflow test.
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 884, deviceScaleFactor: 1, mobile: false });
+      await cdp.eval(`${frames2}`, true);
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 883, deviceScaleFactor: 1, mobile: false });
+      at883.push(Object.assign({ target, prep: Math.round((pr.last - pr.vis) * 10) / 10 }, await cdp.eval(`(async () => { await ${frames2}; return ${fadeState}; })()`, true)));
+      await fadeRemove();
+    }
+    console.log('drawer fade at 1440x883: ' + JSON.stringify(at883));
+    check(at883[0].prep === 0 && !at883[0].on, `1440x883: last row at the edge, no fade: ${JSON.stringify(at883[0])}`);
+    check(at883[1].prep === 1 && at883[1].on, `1440x883: last row 1px under the edge, fade on: ${JSON.stringify(at883[1])}`);
+    for (const r of at883) fadeCheck(r, '1440x883');
+
+    // r5 (Ops FAIL-1): at phone widths the fixed #quick-bar covers the
+    // drawer bottom. The probe puts the last row at the quick-bar top at
+    // h 780 (field-office), then every height 700-812 at 375, 414, 480,
+    // 560 and 640 (Gauge P2-1: every width that has the quick-bar),
+    // in field-office and dark, must have the fade on iff a row reaches
+    // past the quick-bar top, with the fade ending at that edge. The
+    // sweep must include heights where rows hide only under the quick-bar
+    // (inside the client box: r4 left the fade off there) and 375x812.
+    const phone = [];
+    for (const pw of [375, 414, 480, 560, 640]) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: pw, height: 780, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+      const pr = await fadeProbe(0);
+      check(pr.open && Math.abs(pr.last - pr.vis) <= 1, `phone fade probe puts the last row at the visible bottom at ${pw}x780: ${JSON.stringify(pr)}`);
+      for (let h = 700; h <= 812; h++) {
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width: pw, height: h, deviceScaleFactor: 1, mobile: false });
+        const both = await cdp.eval(`(async () => { const html = document.documentElement; const keep = html.getAttribute('data-theme'); const out = {};
+          for (const th of ['field-office', 'dark']) { html.setAttribute('data-theme', th); await ${frames2}; out[th] = ${fadeState}; }
+          html.setAttribute('data-theme', keep); await ${frames2}; return out; })()`, true);
+        for (const th of ['field-office', 'dark']) phone.push(Object.assign({ w: pw, h, th }, both[th]));
+      }
+      await fadeRemove();
     }
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
     await sleep(300);
     if (VIEW_W > 640) await cdp.eval(`(() => { const d = document.querySelector('#fo-drawer'); d.scrollTop = 0; })()`);
-    console.log('drawer fade padding band: ' + JSON.stringify(fadeBand.map((r) => `${r.w}x${r.h} sh${r.sh} ch${r.ch} last${r.last} ${r.on ? 'on' : 'off'}`)));
-    for (const [bw, h0] of [[1440, 900], [375, 778]]) {
-      const rows = fadeBand.filter((r) => r.w === bw);
-      const cut = rows.find((r) => r.h === h0 - 2);
-      check(cut && cut.last > cut.ch + 1 && cut.on, `drawer fade shows when a row is cut by 2px at ${bw}x${h0 - 2}: ${JSON.stringify(cut)}`);
-      const band = rows.filter((r) => r.h >= h0);
-      check(band.filter((r) => r.sh > r.ch + 1).length >= 5, `padding band exercised at ${bw} (scrollHeight > clientHeight): ${JSON.stringify(band)}`);
-      for (const r of band)
-        check(!r.on && r.last <= r.ch + 1, `drawer fade stays off when only padding overflows at ${bw}x${r.h}: ${JSON.stringify(r)}`);
-    }
+    const underOnly = phone.filter((r) => r.last > r.vis + 0.5 && r.last <= r.vis + r.under);
+    console.log(`drawer fade phone sweep: ${phone.length} states, ${phone.filter((r) => r.on).length} on, ${underOnly.length} with rows hidden only under the quick-bar; ` +
+      JSON.stringify(phone.filter((r) => r.w === 375 && [728, 750, 777, 812].includes(r.h)).map((r) => `${r.th} ${r.w}x${r.h} vis${r.vis} last${r.last} under${r.under} ${r.on ? 'on' : 'off'} fade${r.fade}`)));
+    check(phone.length === 5 * 113 * 2, `phone fade sweep covered 375/414/480/560/640 x h700-812 x 2 themes: ${phone.length}`);
+    for (const pw of [375, 414, 480, 560, 640]) for (const th of ['field-office', 'dark'])
+      check(underOnly.filter((r) => r.w === pw && r.th === th).length >= 10, `phone sweep has rows hidden only under the quick-bar at ${pw} ${th}`);
+    check(phone.some((r) => r.w === 375 && r.h === 812), 'phone sweep includes 375x812');
+    for (const r of phone) fadeCheck(r, `${r.w}x${r.h} ${r.th}`);
 
     // Pre-walk r3 (Ops F2): every drawer stat, including the build stamp,
     // shows whole inside the clip wrapper (no glyph cut at its right edge).
@@ -572,7 +702,14 @@ async function main() {
       await cdp.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 800, deviceScaleFactor: 1, mobile: false });
       await sleep(300);
     }
-    const dot = await cdp.eval(`(() => { const b = document.querySelector('header #badge'); const h = document.querySelector('header');
+    // Pre-walk r5 (Gauge P2-2): the connecting state is the badge as the
+    // page is served, before the first status poll: read it from the
+    // served HTML, so the lamp is checked amber while connecting too.
+    const initBadge = await cdp.eval(`fetch(location.href).then((r) => r.text()).then((t) => {
+      const e = new DOMParser().parseFromString(t, 'text/html').querySelector('#badge');
+      return e ? { cls: e.className, text: e.textContent, aria: e.getAttribute('aria-label'), title: e.title } : null; })`, true);
+    check(initBadge && initBadge.cls === '' && initBadge.aria === 'connecting…', `served badge starts connecting with no state class: ${JSON.stringify(initBadge)}`);
+    const dot = await cdp.eval(`((init) => { const b = document.querySelector('header #badge'); const h = document.querySelector('header');
       const html = document.documentElement; const theme = html.getAttribute('data-theme');
       const keep = [b.textContent, b.title, b.getAttribute('aria-label'), b.className];
       // Lamp colour: the gradient's body stop (the one before the dark
@@ -589,24 +726,27 @@ async function main() {
         const ok = m();
         badge(false, 'relay unreachable');
         const bad = Object.assign(m(), { aria: b.getAttribute('aria-label'), title: b.title, role: b.getAttribute('role') });
-        out[th] = { ok, bad };
+        b.className = init.cls; b.textContent = init.text; b.title = init.title; b.setAttribute('aria-label', init.aria);
+        const conn = Object.assign(m(), { aria: b.getAttribute('aria-label'), cls: b.className });
+        out[th] = { ok, bad, conn };
       }
       html.setAttribute('data-theme', theme);
       b.textContent = keep[0]; b.title = keep[1]; b.setAttribute('aria-label', keep[2]); b.className = keep[3];
-      return out; })()`);
+      return out; })(${JSON.stringify(initBadge || {})})`);
     console.log('badge lamp at 375: ' + JSON.stringify(dot));
     const rgb = (c) => (String(c).match(/\d+(\.\d+)?/g) || []).slice(0, 3).map(Number);
     const green = (c) => { const [r, g, b] = rgb(c); return g > r + 40 && g > b + 40; };
     const amber = (c) => { const [r, g, b] = rgb(c); return r >= g && g > b + 40 && r > 150; };
     for (const th of ['field-office', 'dark']) {
-      const { ok, bad } = dot[th];
-      for (const [st, v] of [['ok', ok], ['bad', bad]]) {
+      const { ok, bad, conn } = dot[th];
+      for (const [st, v] of [['ok', ok], ['bad', bad], ['connecting', conn]]) {
         check(v.fs === 0 && v.w >= 10 && v.w <= 16 && v.h >= 10 && v.h <= 16, `${st} badge is a ~12px lamp with no text at 375 (${th}): ${JSON.stringify(v)}`);
         check(v.rimW >= 1 && /rgb/.test(v.glow) && v.glow !== 'none', `${st} badge lamp has a rim and glow (${th}): ${JSON.stringify(v)}`);
         check(v.seat >= 0 && v.seat <= 20 && Math.abs(v.mid) <= 4, `${st} badge lamp sits at the header's right edge (${th}): ${JSON.stringify(v)}`);
       }
       check(green(ok.fill), `listening badge lamp is green at 375 (${th}): ${JSON.stringify(ok)}`);
       check(amber(bad.fill), `not-listening badge lamp is amber at 375 (${th}): ${JSON.stringify(bad)}`);
+      check(amber(conn.fill) && conn.aria === 'connecting…', `connecting badge lamp is amber at 375 (${th}): ${JSON.stringify(conn)}`);
       check(bad.role === 'img' && bad.aria === 'relay unreachable' && bad.title === 'relay unreachable', `bad badge keeps its state text (${th}): ${JSON.stringify(bad)}`);
     }
     if (VIEW_W > 480) {
@@ -623,6 +763,8 @@ async function main() {
     checkRobotPassHidden(await robotPassBox('Raise a robot', `document.querySelector('#raise-agent').click()`), 'no pass');
     checkRobotPassHidden(await robotPassBox('Edit locked robot', editRobot('coach')), 'no pass');
     checkRobotPassHidden(await robotPassBox('Edit Major', editRobot('sgt-major-payne')), 'no pass');
+    checkSavePass(await savePassSent('Raise a robot', `document.querySelector('#raise-agent').click()`, true), false, 'no pass, box hidden');
+    checkSavePass(await savePassSent('Edit locked robot', editRobot('coach'), true), false, 'no pass, update');
     await cdp.eval(`document.querySelector('#agent-close').click()`);
     await cdp.click('#hive-close');
     await cdp.waitFor(`!!document.querySelector('#hive-leave.show')`, 'leave chooser');
@@ -639,14 +781,21 @@ async function main() {
     check(profRows.map((r) => r[0]).join(',') === 'profile-save,profile-logout,profile-copy,profile-close' &&
       rowTops.length === 2 && profRows[0][1] === profRows[1][1] && profRows[2][1] === profRows[3][1],
       `profile actions pair into two rows: ${JSON.stringify(profRows)}`);
-    // Pre-walk r3 (Ops 3): the profile picture field is labelled "Picture".
-    check(await cdp.eval(`document.querySelector('label[for="prof-avatar"]').textContent`) === 'Picture', 'profile picture label reads Picture');
-    // Pre-walk r4 (claim trace): no code reads the picture input and Save
-    // profile sends no picture, so the field is disabled and says so.
-    const pic = await cdp.eval(`({ disabled: document.querySelector('#prof-avatar').disabled,
-      help: document.querySelector('#prof-avatar-status').textContent })`);
-    check(pic.disabled && pic.help === 'Not available yet: Hush does not save a profile picture.',
-      `profile picture field does not promise a saved picture: ${JSON.stringify(pic)}`);
+    // Pre-walk r5 (Ops FAIL-2): no code reads the picture input and Save
+    // profile sends no picture, so the whole Picture row is hidden: not
+    // rendered, not focusable, not in the accessibility tree, and no
+    // placeholder copy in the profile.
+    const pic = await cdp.eval(`(() => { const row = document.querySelector('#prof-avatar-row'); const inp = document.querySelector('#prof-avatar');
+      const lab = document.querySelector('label[for="prof-avatar"]'); inp && inp.focus();
+      return { row: !!row, hidden: !!row && row.hidden, display: row ? getComputedStyle(row).display : '', inRow: !!row && row.contains(inp) && row.contains(lab),
+        rects: (inp ? inp.getClientRects().length : 0) + (lab ? lab.getClientRects().length : 0), focused: document.activeElement === inp,
+        text: document.querySelector('#profile').innerText }; })()`);
+    const ax = await cdp.send('Accessibility.getFullAXTree', {}).catch(() => null);
+    const axNames = ax && ax.nodes ? ax.nodes.filter((n) => !n.ignored).map((n) => (n.name && n.name.value) || '') : null;
+    check(pic.row && pic.hidden && pic.display === 'none' && pic.inRow && pic.rects === 0 && !pic.focused,
+      `profile Picture row is hidden and not focusable: ${JSON.stringify(Object.assign({}, pic, { text: undefined }))}`);
+    check(!/Picture|Not available yet|Choose File/.test(pic.text), `profile shows no Picture row or placeholder copy: ${JSON.stringify(pic.text.slice(0, 400))}`);
+    check(axNames && axNames.length > 20 && !axNames.some((n) => /^Picture$|Not available yet/.test(n)), `profile Picture row is not in the accessibility tree`);
     await cdp.click('#profile-logout');
     await cdp.waitFor(`document.querySelector('#gate.show') && document.querySelector('#gate').textContent.includes('Use an existing key')`, 'post-logout landing');
     t = await gateText();
@@ -745,6 +894,10 @@ async function main() {
     checkRobotPassHidden(await robotPassBox('Edit Major', editRobot('sgt-major-payne')), 'update saves no key');
     const raise3 = await robotPassBox('Raise a robot', `document.querySelector('#raise-agent').click()`);
     check(raise3.label && raise3.howto, `robot pass box shows again on Raise after an Edit: ${JSON.stringify(raise3)}`);
+    checkSavePass(await savePassSent('Raise a robot', `document.querySelector('#raise-agent').click()`, true), true, 'box shown and checked');
+    checkSavePass(await savePassSent('Raise a robot', `document.querySelector('#raise-agent').click()`, false), false, 'box shown, unchecked');
+    checkSavePass(await savePassSent('Edit robot', editRobot('coach-copy'), true), false, 'update, box hidden');
+    checkSavePass(await savePassSent('Edit locked robot', editRobot('coach'), true), false, 'update, box hidden');
     await cdp.eval(`document.querySelector('#agent-close').click()`);
     await stopRelay(proc);
 

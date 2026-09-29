@@ -409,8 +409,9 @@
        with it instead of reading at full contrast. */
     .passbox.is-off { opacity: 0.55; cursor: not-allowed; }
     .passbox.is-off input { cursor: not-allowed; }
-    /* Pre-walk r4: the display rule above beat the hidden attribute, so a
-       hidden pass box still showed; keep hidden meaning hidden. */
+    /* Pre-walk r4: `.panel label { display: block }` (the drawer panel
+       rule further down) beat the hidden attribute, so a hidden pass box
+       still showed; keep hidden meaning hidden. */
     .passbox[hidden] { display: none; }
     details.howto { margin-top: 8px; font-size: 0.82rem; color: var(--muted); }
     details.howto summary { color: var(--fg); }
@@ -1863,6 +1864,11 @@ button.fo-person { min-height: var(--btn-h-sm); }
    tall (was 24px pulled up 12px), so it stays in the bottom padding band
    and the first stats line above it stays crisp. */
 #fo-drawer.is-overflowing::after { content: ""; flex: 0 0 12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }
+/* Pre-walk r5 (Ops FAIL-1): syncDrawerOverflow() sets --fade-bottom so the
+   fade ends at the visible bottom: -10px on desktop (unchanged), and at
+   the #quick-bar top where the quick-bar overlays the drawer, so no row
+   shows crisp and cut at the quick-bar edge. */
+#fo-drawer.is-overflowing::after { bottom: var(--fade-bottom, -10px); }
 </style>
 </head>
 <body>
@@ -2173,12 +2179,14 @@ button.fo-person { min-height: var(--btn-h-sm); }
       <input id="prof-email" type="email" maxlength="80" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius: 12px;padding:10px 12px;font:inherit;margin:4px 0">
       <label for="prof-org">Organization</label>
       <input id="prof-org" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius: 12px;padding:10px 12px;font:inherit;margin:4px 0">
-      <label for="prof-avatar">Picture</label>
-      <!-- Pre-walk r4 (claim trace): nothing reads this input and Save
-           profile sends no picture, so the field is disabled and its help
-           says so instead of promising a stored picture URL. -->
-      <input id="prof-avatar" type="file" accept="image/jpeg,image/png,image/webp" disabled>
-      <p class="help" id="prof-avatar-status">Not available yet: Hush does not save a profile picture.</p>
+      <!-- Pre-walk r5 (Ops FAIL-2): nothing reads this input and Save
+           profile sends no picture, so the whole Picture row is hidden
+           (out of the layout, the tab order and the accessibility tree)
+           until the profile really saves one. -->
+      <div id="prof-avatar-row" hidden>
+        <label for="prof-avatar">Picture</label>
+        <input id="prof-avatar" type="file" accept="image/jpeg,image/png,image/webp">
+      </div>
       <!-- Honesty: Character read-only strip (relay-saved count + browser-only Always/On-call split). -->
       <div id="profile-loadout" aria-label="Robot loadout summary">
         <div class="lbl">Equipped skills</div>
@@ -3789,20 +3797,37 @@ button.fo-person { min-height: var(--btn-h-sm); }
     });
     /* r5 (Ops F2 fallback): mark the drawer while its content overflows so
        the CSS bottom fade shows only then. Pre-walk r4 (Ops FAIL-A): the
-       test is the bottom of the last shown content row against the client
-       box, not scrollHeight, so bottom padding (and the cue with its flex
-       row gap, which are not element children) never counts: a drawer
-       whose rows all show gets no class even when only its padding
-       overflows (r3 set it there, e.g. at the default 1440x900). */
+       test is the bottom of the last shown content row, not scrollHeight,
+       so bottom padding (and the cue with its flex row gap, which are not
+       element children) never counts: a drawer whose rows all show gets
+       no class even when only its padding overflows. Pre-walk r5 (Ops
+       FAIL-1): the row is measured against the visible bottom, which is
+       the top of the fixed #quick-bar where it overlays the drawer (phone
+       widths; the drawer's 64px bottom padding lets the last row scroll
+       clear of it), else the client box bottom. Any part of a row past
+       that edge (even 1px) sets the class, and --fade-bottom lifts the
+       sticky fade so it ends at that edge, over the cut row. */
     function syncDrawerOverflow() {
       const d = $("fo-drawer");
-      const top = d.getBoundingClientRect().top + d.clientTop - d.scrollTop;
+      const box = d.getBoundingClientRect();
+      const inner = box.top + d.clientTop;
+      const top = inner - d.scrollTop;
       let last = 0;
       for (const c of d.children) {
         if (!c.getClientRects().length) continue;
         last = Math.max(last, c.getBoundingClientRect().bottom - top);
       }
-      d.classList.toggle("is-overflowing", last > d.clientHeight + 1);
+      let seen = d.clientHeight;
+      const qb = $("quick-bar");
+      if (qb && qb.getClientRects().length) {
+        const q = qb.getBoundingClientRect();
+        // Vertical overlap only: the bar spans the window, and the drawer
+        // slides in with a transform that fires no resize.
+        if (q.top < inner + seen && q.bottom > inner) seen = Math.max(0, q.top - inner);
+      }
+      const pad = parseFloat(getComputedStyle(d).paddingBottom) || 0;
+      d.style.setProperty("--fade-bottom", (d.clientHeight - seen - pad) + "px");
+      d.classList.toggle("is-overflowing", last > seen + 0.5);
     }
     if (window.ResizeObserver) {
       const drawerRO = new ResizeObserver(syncDrawerOverflow);

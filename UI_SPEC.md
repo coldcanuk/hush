@@ -67,7 +67,9 @@ raise humans + robots that share channels."
   every state change rewrites both. At ≤480px it is a 12px indicator
   lamp seated at the header's right padding (r4, Ops FAIL-B: green while
   listening, amber otherwise, with a dark rim, highlight and soft glow;
-  no text); at 481-640px it keeps the 95px cap and ends in an ellipsis.
+  no text; amber covers both connecting, the served state before the
+  first status poll, and unreachable, and r5 tests both); at 481-640px
+  it keeps the 95px cap and ends in an ellipsis.
   r4 (Ops FAIL-B): at 641-800px the "HQ — Global Operations" stamp is
   hidden (as at ≤640px) so the badge shows whole; `check_restart_ui.cjs`
   checks every width 641-1440, before and after login, in field-office
@@ -155,12 +157,12 @@ its public key (npub)."); never-share "Never share your secret key.
 Anyone with it can impersonate you." The restart note ("starts with
 nsec1") and the `pass_error` line are unchanged. `check_restart_ui.cjs`
 asserts the new reason, the dimmed label, the details line and the
-plain labels. Elsewhere: the profile picture field is labelled
-"Picture" (r3; was "Avatar"). Nothing reads its file input and Save
-profile sends no picture, so r4 disables the input and its help reads
-"Not available yet: Hush does not save a profile picture." (r1 had
-"Optional. JPEG or PNG, stored as your picture URL.", which was not
-true); the
+plain labels. Elsewhere: the profile has no Picture row. Nothing reads
+its file input and Save profile sends no picture, so r5 (Ops FAIL-2)
+hides the whole row (`#prof-avatar-row[hidden]`: out of the layout, the
+tab order and the accessibility tree), replacing r4's disabled field
+with "Not available yet" copy (r1 had "Optional. JPEG or PNG, stored as
+your picture URL.", which was not true); the
 profile copy button is "Copy public key (npub)", and the member/invite
 labels are "Public key (npub)" / "Invite by public key (npub)".
 
@@ -256,8 +258,10 @@ The hive ships two labeled buttons on `#tool-rail`, always reachable
 
 ### 5. Profile (always reachable)
 Drawer fields:
-- Avatar upload (JPEG/PNG/WebP client; server stores JPEG/PNG, kind 0
-  `picture` = `http://127.0.0.1:<port>/avatar/<pubkey>`).
+- No picture upload in the drawer yet (pre-walk r5: the row is hidden
+  because Save profile sends no picture). The server side exists:
+  `/api/identity` accepts a picture (stores JPEG/PNG, kind 0 `picture` =
+  `http://127.0.0.1:<port>/avatar/<pubkey>`).
 - First name, last name, email, organization.
 - npub (copy). Never nsec after ack.
 - **Logout** — confirm, then `POST /api/identity {action:"logout"}`.
@@ -326,8 +330,12 @@ and a pencil to edit it again.
   B1): both show only on Raise (the create path saves the key) while
   `pass_available` is not false; every Edit path (Major, locked, plain)
   saves no key, so they are hidden there, and hidden or with pass
-  missing the request sends `save_pass: false`. `.passbox[hidden]` is
-  `display: none` (the `.passbox` flex rule used to beat the attribute).
+  missing the request sends `save_pass: false`; it sends `true` only
+  when the box is shown and checked (r5, Gauge P2-3:
+  `check_restart_ui.cjs` reads the POST `/api/agent` body on Raise
+  checked/unchecked and on Edit, with pass and without).
+  `.passbox[hidden]` is `display: none` (the `.panel label
+  { display: block }` rule used to beat the attribute).
 - Footer `#agent-drawer .actions` is one compact line (no wrap):
   **Raise Robot** (edit: **Save Robot**), **Close**, **Delete Robot**.
   Delete is disabled on a fresh raise. Enabled when editing an
@@ -1320,13 +1328,23 @@ a sticky 12px bottom fade (to the drawer surface colour) that also gives
 (pre-walk: was 24px pulled up 12px, which washed out the first stats
 line at 1440). A
 drawer whose rows all show gets no class and no fade: the overflow test
-is the bottom of the last shown content row against the drawer's client
-box (r4, Ops FAIL-A), so the cue, its flex row gap and the bottom
-padding never count. The class drops as soon as every row fits, even by
-1px (r3, Gauge P2-1), and padding-only overflow (r3 set the class at
+is the bottom of the last shown content row (r4, Ops FAIL-A) against the
+drawer's visible bottom (r5, Ops FAIL-1): the top of the fixed
+`#quick-bar` where it overlays the drawer (phones; the drawer's 64px
+bottom padding lets the last row scroll clear of it), else the client
+box bottom. So the cue, its flex row gap and the bottom padding never
+count, any row reaching past that edge (even 1px) sets the class, and
+`--fade-bottom` lifts the sticky fade to end at the quick-bar top so no
+row shows crisp and cut there. The class drops as soon as every row
+fits (r3, Gauge P2-1), and padding-only overflow (r3 set the class at
 1440 h 900-908 and 375 h 778-792 on Ops's fixture) shows none;
-`check_restart_ui.cjs` drives the drawer height across that edge and
-sweeps the window through that padding band. r3 (Ops F2): the last stat
+`check_restart_ui.cjs` drives the drawer height across that edge, sweeps
+the window through that padding band, checks 1440x883 at the edge and
+1px under, and sweeps 375/414/480/560/640 (every width with the
+quick-bar) at h 700-812 in field-office and dark against a hit-tested
+visible bottom: at ≤640 the fade is on whenever a row sits under the
+quick-bar, even when it is inside the client box (r4 left it off there;
+Gauge P2-1 on r4). r3 (Ops F2): the last stat
 (the build stamp, e.g. "v0.0.1-697-g4c1f2594") is an inline-block no wider
 than the row that wraps inside itself, continuation lines indented past
 the clipped "·" gutter, so no glyph is cut at the clip edge; the UI check
