@@ -24,10 +24,10 @@ const ART = process.env.ID1_ART || path.join(os.tmpdir(), 'id1-shots');
 fs.mkdirSync(ART, { recursive: true });
 
 // Shown on the backup step on both paths (with and without pass).
-const NEVER_SHARE = 'Never share your private key. Anyone with it can impersonate you.';
-// The one no-pass reason on the backup step (CoS copy, ID-1 r4). It must
-// appear exactly once, and nothing else on that screen may restate it.
-const NOPASS_REASON = "Hush can't save this key on this computer. Copy it now and keep it somewhere safe. Setup continues without saving.";
+const NEVER_SHARE = 'Never share your secret key. Anyone with it can impersonate you.';
+// The one no-pass reason on the backup step (CoS copy, pre-walk polish).
+// It must appear exactly once, and nothing else on that screen may restate it.
+const NOPASS_REASON = "Hush can't save this key on this computer, so keep your copy somewhere safe.";
 const REASON_ECHO = /can.t save|cannot save|not installed|unavailable|somewhere safe/i;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -243,6 +243,98 @@ async function main() {
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/` });
     await cdp.waitFor(`!!document.querySelector('#gate.show')`, 'gate');
   };
+  // Pre-walk r4 (Gauge B1): open the robot editor through the real UI and
+  // report whether the pass box and its how-to are actually rendered.
+  const ROBOT_PASS_LABEL = 'Checked to save its key in your password manager.';
+  const robotPassBox = async (label, openExpr) => {
+    await cdp.eval(`(() => { const c = document.querySelector('#agent-close');
+      if (document.querySelector('#agent-drawer.show') && c) c.click(); })()`);
+    await cdp.eval(openExpr);
+    await cdp.waitFor(`document.querySelector('#agent-drawer.show') && document.querySelector('#agent-title').textContent === ${JSON.stringify(label)}`, 'robot editor: ' + label);
+    return await cdp.eval(`(() => {
+      const l = document.querySelector('#agent-pass').closest('label');
+      const h = document.querySelector('#agent-pass-howto');
+      const shown = (e) => e.getClientRects().length > 0;
+      return { title: document.querySelector('#agent-title').textContent, label: shown(l), howto: shown(h),
+        open: h.open, text: l.textContent.trim(), cmd: h.textContent.includes('pass show hush/agents/<slug>/nsec') };
+    })()`);
+  };
+  const editRobot = (slug) => `document.querySelector('#robot-list .robot-card[data-slug="${slug}"] .robot-actions button').click()`;
+  const checkRobotPassHidden = (st, why) =>
+    check(!st.label && !st.howto, `robot pass box and how-to hidden on ${st.title} (${why}): ${JSON.stringify(st)}`);
+  // Pre-walk r5 (Gauge P2-3): read the save_pass the UI actually sends.
+  // The page's fetch is wrapped for one save: the POST /api/agent body is
+  // kept as sent and the request is refused, so the fixture's roster does
+  // not change. The pass box is forced to `checked` first, so a hidden but
+  // checked box would leak true if the shown-and-checked rule broke.
+  const savePassSent = async (label, openExpr, checked) => {
+    await robotPassBox(label, openExpr);
+    if (label === 'Raise a robot') {
+      // Raise needs one worn skill. The armory repaints when the skill
+      // catalog loads, so wait for live gems, then assign the first one.
+      await cdp.waitFor(`document.querySelector('#skill-armory .skill-gem[aria-pressed="false"]:not(:disabled)') &&
+        document.querySelector('#skill-watermark').textContent.startsWith('Assigned 0/')`, 'raise skill armory', 8000);
+      await cdp.eval(`document.querySelector('#skill-armory .skill-gem[aria-pressed="false"]:not(:disabled)').click()`);
+      await cdp.waitFor(`document.querySelector('#skill-watermark').textContent.startsWith('Assigned 1/')`, 'raise skill assigned', 8000);
+    }
+    await cdp.eval(`(() => {
+      const p = document.querySelector('#agent-prompt');
+      if (!p.value.trim()) { p.value = 'Check the save_pass request.'; p.dispatchEvent(new Event('input', { bubbles: true })); }
+      if (!document.querySelector('.agent-provider-cb:checked')) document.querySelector('.agent-provider-cb[value="goose"]').click();
+      document.querySelector('#agent-pass').checked = ${checked ? 'true' : 'false'};
+      window.__hushSent = null;
+      window.__hushFetch = window.fetch;
+      window.fetch = (u, o) => {
+        if (String(u).endsWith('/api/agent') && o && o.method === 'POST') {
+          window.__hushSent = String(o.body);
+          window.fetch = window.__hushFetch;
+          return Promise.reject(new Error('test refused the save'));
+        }
+        return window.__hushFetch(u, o);
+      };
+      document.querySelector('#agent-save').click();
+    })()`);
+    const got = await cdp.waitFor(`window.__hushSent ? { raw: window.__hushSent } :
+      (document.querySelector('#agent-err').textContent && document.querySelector('#agent-err').textContent !== 'Could not save that robot.' ?
+        { err: document.querySelector('#agent-err').textContent  } : null)`, 'save_pass request on ' + label, 8000);
+    if (!got.raw) fail(`robot save sent no request on ${label}: ${got.err}`);
+    const raw = got.raw;
+    await cdp.eval(`(() => { if (window.__hushFetch) window.fetch = window.__hushFetch;
+      const c = document.querySelector('#agent-close'); if (c) c.click(); })()`);
+    const body = JSON.parse(raw);
+    return { title: label, save_pass: body.save_pass, action: body.action || 'create', box: checked };
+  };
+  const checkSavePass = (st, want, why) => {
+    console.log('save_pass request: ' + JSON.stringify(st));
+    check(st.save_pass === want, `robot save sends save_pass ${want} on ${st.title} with the box ${st.box ? 'checked' : 'unchecked'} (${why}): ${JSON.stringify(st)}`);
+  };
+  // Pre-walk r4 (Ops FAIL-B): at every width 641-1440, in field-office
+  // and dark, the header badge shows whole (no ellipsis) inside the
+  // viewport and the header has no sideways overflow. CI runs at 1440, so
+  // the viewport is narrowed 1px at a time here, then restored.
+  const badgeFit = async (phase, want) => {
+    const bad = [];
+    let n = 0;
+    for (let w = 641; w <= 1440; w++) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+      const r = await cdp.eval(`(() => { const html = document.documentElement; const keep = html.getAttribute('data-theme');
+        const h = document.querySelector('header'); const b = document.querySelector('header #badge'); const out = [];
+        for (const th of ['field-office', 'dark']) {
+          html.setAttribute('data-theme', th);
+          const q = b.getBoundingClientRect(); const vw = html.clientWidth;
+          if (q.left < -0.5 || q.right > vw + 0.5 || b.scrollWidth > b.clientWidth || h.scrollWidth > h.clientWidth + 1 || !b.textContent.includes(${JSON.stringify(want)}))
+            out.push({ th, vw, l: Math.round(q.left), r: Math.round(q.right), sw: b.scrollWidth, cw: b.clientWidth, hsw: h.scrollWidth, hcw: h.clientWidth, t: b.textContent });
+        }
+        html.setAttribute('data-theme', keep); return out; })()`);
+      n++;
+      if (r.length && bad.length < 6) bad.push(Object.assign({ w }, r[0]));
+      else if (r.length) bad.push(w);
+    }
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    console.log(`header badge fit ${phase}: ${n} widths x 2 themes, ${bad.length} bad ${JSON.stringify(bad.slice(0, 8))}`);
+    check(n === 800 && !bad.length, `header badge shows whole inside the viewport at 641-1440 ${phase}: ${JSON.stringify(bad.slice(0, 8))}`);
+  };
   const sample = async (sels) => {
     const out = {};
     for (const sel of sels) {
@@ -285,6 +377,8 @@ async function main() {
     check(!t.includes('did not survive the restart'), 'virgin splash shows no restart note');
     check(!t.includes('Detecting identity'), 'splash hides the Detecting line');
     Object.assign(contrasts, { splash: await sample(['#begin', '#profile-btn', '#nav-toggle', '#rail-toggle']) });
+    await cdp.waitFor(`/listening/.test(document.querySelector('header #badge').textContent)`, 'badge listening before login');
+    if (VIEW_W === 1440) await badgeFit('before login', 'listening');
     const beginRatio = RATIO_OF(contrasts.splash['#begin']);
     check(beginRatio !== null && beginRatio >= 4.5, `BEGIN contrast ${JSON.stringify(contrasts.splash['#begin'])} < 4.5`);
     await cdp.shot('splash-begin');
@@ -301,8 +395,25 @@ async function main() {
     t = await gateText();
     check(t.includes('signs you in with an identity key instead of a password'), 'help card uses plain wording');
     check(!t.includes('Nostr') && !t.includes('nsec1…'), 'help card has no Nostr jargon or bare nsec1…');
+    // Pre-walk F10: keys are named in plain words with the code in brackets.
+    check(t.includes('public key (npub)') && t.includes('secret key (nsec)'), 'help card names the keys in plain words');
     await cdp.click('#back-help');
-    await cdp.waitFor(`!!document.querySelector('#create-id')`, 'landing after help');
+    await cdp.waitFor(`!!document.querySelector('#use-id')`, 'landing after help');
+    await cdp.click('#use-id');
+    await cdp.waitFor(`!!document.querySelector('#nsec-in')`, 'import card');
+    t = await gateText();
+    check(await cdp.eval(`document.querySelector('label[for="nsec-in"]').textContent`) === 'Secret key (nsec)', 'import label is plain');
+    check(t.includes('secret key (nsec)'), 'import card names the key in plain words');
+    // Pre-walk r4 (claim trace): the import card promises only what the
+    // flow does. Import loads the key in memory (nothing is saved before
+    // the backup step) and no public key is shown before that step.
+    check(t.includes('Paste your secret key (nsec). Nothing is saved before the next step.') &&
+      !/public key|npub/i.test(t), 'import card makes no public-key promise');
+    const preview = await cdp.eval(`(() => { const i = document.querySelector('#nsec-in'); i.value = 'nsec1example';
+      i.dispatchEvent(new Event('input')); return document.querySelector('#npub-preview').textContent; })()`);
+    check(preview === 'Looks like a secret key (nsec).', `import preview makes no public-key promise: ${preview}`);
+    await cdp.click('#back-import');
+    await cdp.waitFor(`!!document.querySelector('#create-id')`, 'landing after import');
 
     await cdp.click('#create-id');
     await cdp.waitFor(`!!document.querySelector('#save-pass')`, 'backup');
@@ -318,6 +429,12 @@ async function main() {
     check(!REASON_ECHO.test(t.split(NOPASS_REASON).join(' ')), 'backup states the no-pass reason only once');
     check(!/\bpass\b/i.test(await gateVisible()), 'backup shows no bare pass without pass');
     check(t.includes(NEVER_SHARE), 'backup keeps the never-share warning without pass');
+    check((t.match(/Copy it now/g) || []).length === 1, 'backup says Copy it now once without pass');
+    // Pre-walk: the disabled label dims with its checkbox.
+    const offLabel = await cdp.eval(`(() => { const l = document.querySelector('#save-pass').closest('label');
+      return l.classList.contains('is-off') && parseFloat(getComputedStyle(l).opacity) < 0.8; })()`);
+    check(offLabel === true, 'backup dims the disabled save label without pass');
+    check(await cdp.eval(`!document.querySelector('#gate details')`), 'backup shows no how-to-find line without pass');
     await cdp.shot('backup-nopass');
 
     await cdp.click('#ack-key');
@@ -339,6 +456,316 @@ async function main() {
     await cdp.waitFor(`!!document.querySelector('#hive.show')`, 'hive after theme pin');
     await cdp.waitFor(`document.documentElement.getAttribute('data-theme')==='field-office'`, 'field-office theme');
     Object.assign(contrasts, { hive: await sample(['#send', '#profile-btn', '#nav-toggle', '#rail-toggle', '#vibe-sub']) });
+
+    // Pre-walk r3 (Gauge P2-1): the drawer fade cue must not latch. The
+    // cue (::after) and its flex row gap are left out of the overflow test,
+    // so a drawer that fits by even 1px drops the class, and dropping it
+    // leaves nothing but the bottom padding to scroll. Drive the drawer
+    // height across the edge around a fixed probe child: short by 3px (cue
+    // on), then 1px spare (cue off), short again, then 6px spare (cue off).
+    // r4 (Ops FAIL-A): "free" is measured from the last row's bottom, not
+    // scrollHeight, since padding-only overflow no longer sets the cue.
+    // r5: the probe drawer grows to ~1100px, so give it a window tall
+    // enough that the fixed #quick-bar (now part of the test) stays below.
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: 1400, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    const fade = await cdp.eval(`(async () => {
+      const d = document.querySelector('#fo-drawer');
+      const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
+      if (!d.clientHeight && document.querySelector('#nav-toggle')) { document.querySelector('#nav-toggle').click(); await frames(); }
+      const probe = document.createElement('div');
+      probe.style.cssText = 'height:400px;flex:none';
+      d.appendChild(probe);
+      const oldH = d.style.height, oldMax = d.style.maxHeight, oldMin = d.style.minHeight, oldFlex = d.style.flex;
+      d.style.maxHeight = 'none'; d.style.minHeight = '0'; d.style.flex = 'none';
+      d.style.height = '200px'; await frames();
+      d.classList.remove('is-overflowing');
+      const lastRow = () => { const top = d.getBoundingClientRect().top + d.clientTop - d.scrollTop; let m = 0;
+        for (const c of d.children) if (c.getClientRects().length) m = Math.max(m, c.getBoundingClientRect().bottom - top); return m; };
+      const content = Math.round(lastRow());
+      const pb = parseFloat(getComputedStyle(d).paddingBottom) || 0;
+      const extra = d.offsetHeight - d.clientHeight; // borders (+ padding when border-box)
+      const out = [];
+      for (const free of [-3, 1, -3, 6]) {
+        d.style.height = (content + free + (getComputedStyle(d).boxSizing === 'border-box' ? extra : 0)) + 'px';
+        await frames();
+        out.push({ free, got: d.clientHeight - content, on: d.classList.contains('is-overflowing'),
+          scroll: d.scrollHeight - d.clientHeight, pb });
+      }
+      probe.remove();
+      d.style.height = oldH; d.style.maxHeight = oldMax; d.style.minHeight = oldMin; d.style.flex = oldFlex;
+      await frames();
+      return { content, out };
+    })()`, true);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    console.log('drawer fade edge: ' + JSON.stringify(fade));
+    for (const r of fade.out) {
+      check(r.got === r.free, `drawer fade probe sized to ${r.free}px free, got ${r.got}`);
+      if (r.free < 0)
+        check(r.on, `drawer fade cue shows when content overflows by ${-r.free}px`);
+      else {
+        check(!r.on, `drawer fade cue clears when the drawer fits with ${r.free}px spare (no latch)`);
+        check(r.scroll <= r.pb + 1, `drawer that fits leaves nothing but its ${r.pb}px bottom padding to scroll, got ${r.scroll}px`);
+      }
+    }
+
+    // Pre-walk r4/r5 (Ops FAIL-A, FAIL-1): the fade shows iff some content
+    // row reaches past the visible bottom of the drawer: its client box
+    // bottom, or the top of the fixed #quick-bar where that overlays the
+    // drawer (phones). The visible bottom is found by hit-testing
+    // (elementFromPoint), not from the code under test. Helpers:
+    //   fadeProbe(target): add a probe row and grow it until the last row
+    //     ends at visible bottom + target px;
+    //   fadeState(): class, last row bottom, visible bottom and the fade's
+    //     computed bottom, all at scrollTop 0.
+    const fadeProbe = (target) => cdp.eval(`(async () => {
+      const d = document.querySelector('#fo-drawer');
+      const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
+      // The drawer must be open and on screen for the hit test.
+      if (!document.querySelector('#hive').classList.contains('nav-open')) document.querySelector('#nav-toggle').click();
+      for (let i = 0; i < 40; i++) { await frames(); const q = d.getBoundingClientRect(); if (d.clientHeight && q.left >= -0.5 && q.right <= innerWidth + 0.5) break; }
+      d.scrollTop = 0;
+      let probe = document.querySelector('#fade-band-probe');
+      if (!probe) { probe = document.createElement('div'); probe.id = 'fade-band-probe'; probe.style.cssText = 'height:0;flex:none'; d.appendChild(probe); }
+      probe.style.height = '0px'; await frames();
+      const r = d.getBoundingClientRect(); const inner = r.top + d.clientTop; const x = Math.round(r.left + r.width / 2);
+      let vis = inner + d.clientHeight;
+      for (let y = Math.floor(vis) - 1; y > inner; y--) { const e = document.elementFromPoint(x, y); if (e && d.contains(e)) { vis = y + 1; break; } }
+      const last = () => { let m = 0; for (const c of d.children) if (c.getClientRects().length) m = Math.max(m, c.getBoundingClientRect().bottom); return m; };
+      // Rows may sit on an auto margin, so grow the probe step by step.
+      for (let i = 0; i < 300 && last() < vis + ${target} - 0.25; i++) {
+        probe.style.height = (parseFloat(probe.style.height) + Math.max(1, Math.round(vis + ${target} - last()))) + 'px'; await frames(); }
+      return { vis, last: last(), probe: probe.style.height, open: d.clientHeight > 0 && r.left >= -0.5 && r.right <= innerWidth + 0.5 };
+    })()`, true);
+    const fadeState = `(() => { const d = document.querySelector('#fo-drawer'); d.scrollTop = 0;
+      const r = d.getBoundingClientRect(); const inner = r.top + d.clientTop; const bottom = inner + d.clientHeight; const x = Math.round(r.left + r.width / 2);
+      let vis = bottom; for (let y = Math.floor(bottom) - 1; y > inner; y--) { const e = document.elementFromPoint(x, y); if (e && d.contains(e)) { vis = y + 1; break; } }
+      let last = 0; for (const c of d.children) if (c.getClientRects().length) last = Math.max(last, c.getBoundingClientRect().bottom);
+      return { sh: d.scrollHeight, ch: d.clientHeight, last: Math.round(last * 10) / 10, vis: Math.round(vis * 10) / 10, under: Math.round((bottom - vis) * 10) / 10,
+        on: d.classList.contains('is-overflowing'), fade: parseFloat(getComputedStyle(d, '::after').bottom), pb: parseFloat(getComputedStyle(d).paddingBottom),
+        onscreen: r.left >= -0.5 && r.right <= innerWidth + 0.5 }; })()`;
+    const frames2 = `new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 40))))`;
+    const fadeRemove = () => cdp.eval(`(() => { const p = document.querySelector('#fade-band-probe'); if (p) p.remove(); })()`);
+    const fadeCheck = (r, where) => {
+      check(r.onscreen, `drawer is on screen for the fade check at ${where}: ${JSON.stringify(r)}`);
+      const hidden = r.last > r.vis + 0.5;
+      check(r.on === hidden, `drawer fade is ${hidden ? 'on' : 'off'} when ${hidden ? 'a row reaches past' : 'every row is above'} the visible bottom at ${where}: ${JSON.stringify(r)}`);
+      // The fade ends at the visible bottom (sticky, measured from the
+      // content box): bottom = (px under the quick-bar) - padding-bottom.
+      if (r.on)
+        check(Math.abs(r.fade - (r.under - r.pb)) <= 1, `drawer fade ends at the visible bottom at ${where}: ${JSON.stringify(r)}`);
+    };
+
+    // r4 (Ops FAIL-A): only bottom padding overflowing must not set the
+    // fade. The probe puts the last row at the visible bottom at 1440x900
+    // (Ops's default window) and 375x778, then the window grows 1px at a
+    // time through the padding band (1440 h 900-908, 375 h 778-792): every
+    // row shows, so the class stays off. r5: 1px shorter, the row is 1px
+    // under and the class must be on (Ops's 1440x883 nit, same test).
+    const fadeBand = [];
+    for (const [bw, h0, h1] of [[1440, 900, 908], [375, 778, 792]]) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: bw, height: h0, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+      const prep = await fadeProbe(0);
+      check(prep.open && Math.abs(prep.last - prep.vis) <= 1, `fade band probe puts the last row at the visible bottom at ${bw}x${h0}: ${JSON.stringify(prep)}`);
+      for (let h = h0 - 2; h <= h1; h++) {
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width: bw, height: h, deviceScaleFactor: 1, mobile: false });
+        fadeBand.push(Object.assign({ w: bw, h }, await cdp.eval(`(async () => { await ${frames2}; return ${fadeState}; })()`, true)));
+      }
+      await fadeRemove();
+    }
+    console.log('drawer fade padding band: ' + JSON.stringify(fadeBand.map((r) => `${r.w}x${r.h} sh${r.sh} ch${r.ch} vis${r.vis} last${r.last} ${r.on ? 'on' : 'off'}`)));
+    for (const [bw, h0] of [[1440, 900], [375, 778]]) {
+      const rows = fadeBand.filter((r) => r.w === bw);
+      for (const r of rows) fadeCheck(r, `${bw}x${r.h}`);
+      const one = rows.find((r) => r.h === h0 - 1);
+      check(one && one.on && one.last > one.vis + 0.5 && one.last <= one.vis + 1.5, `drawer fade shows when a row is 1px under at ${bw}x${h0 - 1}: ${JSON.stringify(one)}`);
+      const band = rows.filter((r) => r.h >= h0);
+      check(band.filter((r) => r.sh > r.ch + 1).length >= 5, `padding band exercised at ${bw} (scrollHeight > clientHeight): ${JSON.stringify(band)}`);
+      for (const r of band) check(!r.on, `drawer fade stays off when only padding overflows at ${bw}x${r.h}: ${JSON.stringify(r)}`);
+    }
+
+    // r5 (Ops 1440x883 nit): at 1440x883 a last row exactly at the edge
+    // gets no fade and a row 1px under gets it.
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 883, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    const at883 = [];
+    for (const target of [0, 1]) {
+      const pr = await fadeProbe(target);
+      // The probe row is new and unobserved; nudge the window so the
+      // drawer's ResizeObserver re-runs the overflow test.
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 884, deviceScaleFactor: 1, mobile: false });
+      await cdp.eval(`${frames2}`, true);
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 883, deviceScaleFactor: 1, mobile: false });
+      at883.push(Object.assign({ target, prep: Math.round((pr.last - pr.vis) * 10) / 10 }, await cdp.eval(`(async () => { await ${frames2}; return ${fadeState}; })()`, true)));
+      await fadeRemove();
+    }
+    console.log('drawer fade at 1440x883: ' + JSON.stringify(at883));
+    check(at883[0].prep === 0 && !at883[0].on, `1440x883: last row at the edge, no fade: ${JSON.stringify(at883[0])}`);
+    check(at883[1].prep === 1 && at883[1].on, `1440x883: last row 1px under the edge, fade on: ${JSON.stringify(at883[1])}`);
+    for (const r of at883) fadeCheck(r, '1440x883');
+
+    // r5 (Ops FAIL-1): at phone widths the fixed #quick-bar covers the
+    // drawer bottom. The probe puts the last row at the quick-bar top at
+    // h 780 (field-office), then every height 700-812 at 375, 414, 480,
+    // 560 and 640 (Gauge P2-1: every width that has the quick-bar),
+    // in field-office and dark, must have the fade on iff a row reaches
+    // past the quick-bar top, with the fade ending at that edge. The
+    // sweep must include heights where rows hide only under the quick-bar
+    // (inside the client box: r4 left the fade off there) and 375x812.
+    const phone = [];
+    for (const pw of [375, 414, 480, 560, 640]) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: pw, height: 780, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+      const pr = await fadeProbe(0);
+      check(pr.open && Math.abs(pr.last - pr.vis) <= 1, `phone fade probe puts the last row at the visible bottom at ${pw}x780: ${JSON.stringify(pr)}`);
+      for (let h = 700; h <= 812; h++) {
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width: pw, height: h, deviceScaleFactor: 1, mobile: false });
+        const both = await cdp.eval(`(async () => { const html = document.documentElement; const keep = html.getAttribute('data-theme'); const out = {};
+          for (const th of ['field-office', 'dark']) { html.setAttribute('data-theme', th); await ${frames2}; out[th] = ${fadeState}; }
+          html.setAttribute('data-theme', keep); await ${frames2}; return out; })()`, true);
+        for (const th of ['field-office', 'dark']) phone.push(Object.assign({ w: pw, h, th }, both[th]));
+      }
+      await fadeRemove();
+    }
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    if (VIEW_W > 640) await cdp.eval(`(() => { const d = document.querySelector('#fo-drawer'); d.scrollTop = 0; })()`);
+    const underOnly = phone.filter((r) => r.last > r.vis + 0.5 && r.last <= r.vis + r.under);
+    console.log(`drawer fade phone sweep: ${phone.length} states, ${phone.filter((r) => r.on).length} on, ${underOnly.length} with rows hidden only under the quick-bar; ` +
+      JSON.stringify(phone.filter((r) => r.w === 375 && [728, 750, 777, 812].includes(r.h)).map((r) => `${r.th} ${r.w}x${r.h} vis${r.vis} last${r.last} under${r.under} ${r.on ? 'on' : 'off'} fade${r.fade}`)));
+    check(phone.length === 5 * 113 * 2, `phone fade sweep covered 375/414/480/560/640 x h700-812 x 2 themes: ${phone.length}`);
+    for (const pw of [375, 414, 480, 560, 640]) for (const th of ['field-office', 'dark'])
+      check(underOnly.filter((r) => r.w === pw && r.th === th).length >= 10, `phone sweep has rows hidden only under the quick-bar at ${pw} ${th}`);
+    check(phone.some((r) => r.w === 375 && r.h === 812), 'phone sweep includes 375x812');
+    for (const r of phone) fadeCheck(r, `${r.w}x${r.h} ${r.th}`);
+
+    // Pre-walk r3 (Ops F2): every drawer stat, including the build stamp,
+    // shows whole inside the clip wrapper (no glyph cut at its right edge).
+    // CI's shallow checkout stamps only the short SHA ("v28f9c24"; r4 prints it once),
+    // so the check also swaps in a real tagged-build stamp of the length Ops
+    // saw on a release build, plus a longer one, and measures each.
+    const statsFit = await cdp.eval(`(() => {
+      const clip = document.querySelector('#stats .stats-clip');
+      if (!clip) return { err: 'no stats clip' };
+      const c = clip.getBoundingClientRect();
+      const measure = () => [...clip.querySelectorAll('.stat')].map((s) => {
+        const r = document.createRange(); r.selectNodeContents(s.firstChild || s);
+        const bad = [...r.getClientRects()].filter((q) => q.width > 0 &&
+          (q.left < c.left - 0.5 || q.right > c.right + 0.5 || q.top < c.top - 0.5 || q.bottom > c.bottom + 0.5));
+        return { t: s.textContent, bad: bad.map((q) => [Math.round(q.left), Math.round(q.right), Math.round(c.left), Math.round(c.right)]) };
+      });
+      const live = measure();
+      const last = clip.querySelector('.stat:last-child');
+      const keep = last.textContent;
+      const fixture = [];
+      for (const t of ['v0.0.1-697-g4c1f2594', 'v0.0.1-9999-g0123456789ab',
+        'v0.0.1-9999-g0123456789abcdef0123456789abcdef01234567']) {
+        last.textContent = t;
+        const m = measure();
+        fixture.push(m[m.length - 1]);
+      }
+      last.textContent = keep;
+      return { live, fixture };
+    })()`);
+    check(!statsFit.err, statsFit.err);
+    const stamp = statsFit.live.length ? statsFit.live[statsFit.live.length - 1].t : '';
+    console.log('drawer stamp: ' + JSON.stringify(stamp));
+    check(/^v\S+( \S+)?$/.test(stamp), `drawer shows the build stamp as its last stat, got ${JSON.stringify(stamp)}`);
+    // Pre-walk r4: the SHA is printed once (CI: "v7fc2acd", not "v7fc2acd 7fc2acd").
+    const stampWords = stamp.split(' ');
+    check(stampWords.length < 2 || !stampWords[0].includes(stampWords[1]), `drawer stamp prints the build SHA once, got ${JSON.stringify(stamp)}`);
+    check(statsFit.fixture.length === 3 && statsFit.fixture[0].t === 'v0.0.1-697-g4c1f2594',
+      `real-length stamp fixture measured: ${JSON.stringify(statsFit.fixture)}`);
+    for (const s of statsFit.live.concat(statsFit.fixture))
+      check(!s.bad.length, `drawer stat ${JSON.stringify(s.t)} is cut by the clip edge ${JSON.stringify(s.bad)}`);
+
+    // Pre-walk r3 (Ops F1): the header badge carries its state in both
+    // title and aria-label; at <= 480px it is a dot, elsewhere unclipped.
+    const bdg = await cdp.eval(`(() => { const b = document.querySelector('header #badge'); const cs = getComputedStyle(b);
+      return { text: b.textContent, title: b.title, aria: b.getAttribute('aria-label'), role: b.getAttribute('role'),
+        sw: b.scrollWidth, cw: b.clientWidth, w: b.getBoundingClientRect().width, fs: parseFloat(cs.fontSize) }; })()`);
+    console.log('header badge: ' + JSON.stringify(bdg));
+    check(bdg.role === 'img' && !!bdg.aria && bdg.aria === bdg.title && bdg.aria.includes(bdg.text) && bdg.text.length > 0,
+      `badge state is in title and aria-label: ${JSON.stringify(bdg)}`);
+    check(/listening/.test(bdg.aria), `logged-in badge label names the relay state: ${bdg.aria}`);
+    if (VIEW_W <= 480)
+      check(bdg.fs === 0 && bdg.w <= 16, `badge is a dot at ${VIEW_W}px: ${JSON.stringify(bdg)}`);
+    else if (VIEW_W > 640) // 481-640 keeps the 95px cap with an ellipsis
+      check(bdg.sw <= bdg.cw, `badge text is not clipped at ${VIEW_W}px: ${JSON.stringify(bdg)}`);
+    // Pre-walk r3/r4 (P3-D, Ops FAIL-B): CI runs at 1440, so narrow the
+    // viewport to 375 here to check the badge lamp (R07): green while
+    // listening, amber when not (R08), 12px with no text, seated at the
+    // header's right padding, in field-office and dark; then restore.
+    if (VIEW_W > 480) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 800, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+    }
+    // Pre-walk r5 (Gauge P2-2): the connecting state is the badge as the
+    // page is served, before the first status poll: read it from the
+    // served HTML, so the lamp is checked amber while connecting too.
+    const initBadge = await cdp.eval(`fetch(location.href).then((r) => r.text()).then((t) => {
+      const e = new DOMParser().parseFromString(t, 'text/html').querySelector('#badge');
+      return e ? { cls: e.className, text: e.textContent, aria: e.getAttribute('aria-label'), title: e.title } : null; })`, true);
+    check(initBadge && initBadge.cls === '' && initBadge.aria === 'connecting…', `served badge starts connecting with no state class: ${JSON.stringify(initBadge)}`);
+    const dot = await cdp.eval(`((init) => { const b = document.querySelector('header #badge'); const h = document.querySelector('header');
+      const html = document.documentElement; const theme = html.getAttribute('data-theme');
+      const keep = [b.textContent, b.title, b.getAttribute('aria-label'), b.className];
+      // Lamp colour: the gradient's body stop (the one before the dark
+      // edge), or the flat background colour when there is no gradient.
+      const colour = () => { const img = getComputedStyle(b).backgroundImage; const m = img.match(/rgb\\(\\d+, \\d+, \\d+\\)/g) || [];
+        return m.length >= 2 ? m[m.length - 2] : getComputedStyle(b).backgroundColor; };
+      const m = () => { const cs = getComputedStyle(b); const r = b.getBoundingClientRect(); const hr = h.getBoundingClientRect();
+        return { w: r.width, h: r.height, fs: parseFloat(cs.fontSize), fill: colour(), rim: cs.borderTopColor, rimW: parseFloat(cs.borderTopWidth),
+          glow: cs.boxShadow, seat: Math.round(hr.right - r.right), mid: Math.round((r.top + r.bottom) / 2 - (hr.top + hr.bottom) / 2) }; };
+      const out = {};
+      for (const th of ['field-office', 'dark']) {
+        html.setAttribute('data-theme', th);
+        badge(true, 'listening', 'Relay listening on port 1');
+        const ok = m();
+        badge(false, 'relay unreachable');
+        const bad = Object.assign(m(), { aria: b.getAttribute('aria-label'), title: b.title, role: b.getAttribute('role') });
+        b.className = init.cls; b.textContent = init.text; b.title = init.title; b.setAttribute('aria-label', init.aria);
+        const conn = Object.assign(m(), { aria: b.getAttribute('aria-label'), cls: b.className });
+        out[th] = { ok, bad, conn };
+      }
+      html.setAttribute('data-theme', theme);
+      b.textContent = keep[0]; b.title = keep[1]; b.setAttribute('aria-label', keep[2]); b.className = keep[3];
+      return out; })(${JSON.stringify(initBadge || {})})`);
+    console.log('badge lamp at 375: ' + JSON.stringify(dot));
+    const rgb = (c) => (String(c).match(/\d+(\.\d+)?/g) || []).slice(0, 3).map(Number);
+    const green = (c) => { const [r, g, b] = rgb(c); return g > r + 40 && g > b + 40; };
+    const amber = (c) => { const [r, g, b] = rgb(c); return r >= g && g > b + 40 && r > 150; };
+    for (const th of ['field-office', 'dark']) {
+      const { ok, bad, conn } = dot[th];
+      for (const [st, v] of [['ok', ok], ['bad', bad], ['connecting', conn]]) {
+        check(v.fs === 0 && v.w >= 10 && v.w <= 16 && v.h >= 10 && v.h <= 16, `${st} badge is a ~12px lamp with no text at 375 (${th}): ${JSON.stringify(v)}`);
+        check(v.rimW >= 1 && /rgb/.test(v.glow) && v.glow !== 'none', `${st} badge lamp has a rim and glow (${th}): ${JSON.stringify(v)}`);
+        check(v.seat >= 0 && v.seat <= 20 && Math.abs(v.mid) <= 4, `${st} badge lamp sits at the header's right edge (${th}): ${JSON.stringify(v)}`);
+      }
+      check(green(ok.fill), `listening badge lamp is green at 375 (${th}): ${JSON.stringify(ok)}`);
+      check(amber(bad.fill), `not-listening badge lamp is amber at 375 (${th}): ${JSON.stringify(bad)}`);
+      check(amber(conn.fill) && conn.aria === 'connecting…', `connecting badge lamp is amber at 375 (${th}): ${JSON.stringify(conn)}`);
+      check(bad.role === 'img' && bad.aria === 'relay unreachable' && bad.title === 'relay unreachable', `bad badge keeps its state text (${th}): ${JSON.stringify(bad)}`);
+    }
+    if (VIEW_W > 480) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+    }
+    await cdp.shot('hive-fo');
+    if (VIEW_W === 1440) await badgeFit('after login', 'npub1');
+
+    // Pre-walk r4 (Gauge B1), no pass installed: the robot editor never
+    // claims to save the key, on Raise or any Edit path.
+    await cdp.waitFor(`!!document.querySelector('#robot-list .robot-card[data-slug="coach"]')`, 'robot cards');
+    check((await sess(port, R.headers)).pass_available === false, 'phase A relay reports no pass');
+    checkRobotPassHidden(await robotPassBox('Raise a robot', `document.querySelector('#raise-agent').click()`), 'no pass');
+    checkRobotPassHidden(await robotPassBox('Edit locked robot', editRobot('coach')), 'no pass');
+    checkRobotPassHidden(await robotPassBox('Edit Major', editRobot('sgt-major-payne')), 'no pass');
+    checkSavePass(await savePassSent('Raise a robot', `document.querySelector('#raise-agent').click()`, true), false, 'no pass, box hidden');
+    checkSavePass(await savePassSent('Edit locked robot', editRobot('coach'), true), false, 'no pass, update');
+    await cdp.eval(`document.querySelector('#agent-close').click()`);
     await cdp.click('#hive-close');
     await cdp.waitFor(`!!document.querySelector('#hive-leave.show')`, 'leave chooser');
     Object.assign(contrasts, { leave: await sample(['#leave-exit', '#leave-close', '#leave-cancel']) });
@@ -346,6 +773,29 @@ async function main() {
 
     await cdp.click('#profile-btn');
     await cdp.waitFor(`document.querySelector('#profile.show')`, 'profile drawer');
+    // Pre-walk r3/r4 (P3-D, R15): the four profile actions pair into two
+    // rows in DOM order Save, Logout / Copy, Close (no lone Close row).
+    const profRows = await cdp.eval(`(() => [...document.querySelectorAll('#profile .actions .btn')].map((e) =>
+      [e.id, Math.round(e.getBoundingClientRect().top)]))()`);
+    const rowTops = [...new Set(profRows.map((r) => r[1]))];
+    check(profRows.map((r) => r[0]).join(',') === 'profile-save,profile-logout,profile-copy,profile-close' &&
+      rowTops.length === 2 && profRows[0][1] === profRows[1][1] && profRows[2][1] === profRows[3][1],
+      `profile actions pair into two rows: ${JSON.stringify(profRows)}`);
+    // Pre-walk r5 (Ops FAIL-2): no code reads the picture input and Save
+    // profile sends no picture, so the whole Picture row is hidden: not
+    // rendered, not focusable, not in the accessibility tree, and no
+    // placeholder copy in the profile.
+    const pic = await cdp.eval(`(() => { const row = document.querySelector('#prof-avatar-row'); const inp = document.querySelector('#prof-avatar');
+      const lab = document.querySelector('label[for="prof-avatar"]'); inp && inp.focus();
+      return { row: !!row, hidden: !!row && row.hidden, display: row ? getComputedStyle(row).display : '', inRow: !!row && row.contains(inp) && row.contains(lab),
+        rects: (inp ? inp.getClientRects().length : 0) + (lab ? lab.getClientRects().length : 0), focused: document.activeElement === inp,
+        text: document.querySelector('#profile').innerText }; })()`);
+    const ax = await cdp.send('Accessibility.getFullAXTree', {}).catch(() => null);
+    const axNames = ax && ax.nodes ? ax.nodes.filter((n) => !n.ignored).map((n) => (n.name && n.name.value) || '') : null;
+    check(pic.row && pic.hidden && pic.display === 'none' && pic.inRow && pic.rects === 0 && !pic.focused,
+      `profile Picture row is hidden and not focusable: ${JSON.stringify(Object.assign({}, pic, { text: undefined }))}`);
+    check(!/Picture|Not available yet|Choose File/.test(pic.text), `profile shows no Picture row or placeholder copy: ${JSON.stringify(pic.text.slice(0, 400))}`);
+    check(axNames && axNames.length > 20 && !axNames.some((n) => /^Picture$|Not available yet/.test(n)), `profile Picture row is not in the accessibility tree`);
     await cdp.click('#profile-logout');
     await cdp.waitFor(`document.querySelector('#gate.show') && document.querySelector('#gate').textContent.includes('Use an existing key')`, 'post-logout landing');
     t = await gateText();
@@ -406,13 +856,49 @@ async function main() {
     const checked2 = await cdp.eval(`document.querySelector('#save-pass').checked`);
     check(checked2 === true, 'backup checkbox renders checked with pass');
     t = await gateText();
-    check(t.includes('Checked to save'), 'backup keeps the Checked-to-save line with pass');
+    check(t.includes('Checked to save it in your password manager.'), 'backup keeps the Checked-to-save line with pass');
+    // Pre-walk F10: the retrieve command sits only behind "How to find it later".
+    const howto = await cdp.eval(`(() => { const d = document.querySelector('#gate details.howto');
+      const l = document.querySelector('#save-pass').closest('label');
+      return !!d && !d.open && d.querySelector('summary').textContent === 'How to find it later' &&
+        d.textContent.includes('pass show hush/identity/nsec') && !l.textContent.includes('pass show'); })()`);
+    check(howto === true, 'backup keeps the retrieve command behind a closed details line with pass');
+    check(await cdp.eval(`!document.querySelector('#save-pass').closest('label').classList.contains('is-off')`), 'backup label is not dimmed with pass');
     check(t.includes(NEVER_SHARE), 'backup keeps the never-share warning with pass');
     check(t.includes('Uncheck the box'), 'backup keeps the Uncheck line with pass');
     check(!t.includes(NOPASS_REASON), 'backup shows no no-pass reason with pass');
     const disabled2 = await cdp.eval(`document.querySelector('#save-pass').disabled`);
     check(disabled2 === false, 'backup checkbox stays enabled with pass');
     await cdp.shot('backup-withpass');
+
+    // Pre-walk r4 (Gauge B1), pass available: the label and its closed
+    // how-to show on Raise (the create path saves the key) and on no Edit
+    // path (update never saves a key).
+    await cdp.click('#ack-key');
+    await cdp.waitFor(`!!document.querySelector('#vibe-name')`, 'vibe step 2');
+    await cdp.eval(`document.querySelector('#vibe-name').value = 'PASSHIVE'`);
+    await cdp.click('#do-vibe');
+    await cdp.waitFor(`!!document.querySelector('#meet-payne')`, 'payne step 2');
+    await cdp.click('#meet-payne');
+    await cdp.waitFor(`!!document.querySelector('#hive.show')`, 'hive 2');
+    await cdp.waitFor(`!!document.querySelector('#robot-list .robot-card[data-slug="coach"]')`, 'robot cards 2');
+    const raise2 = await robotPassBox('Raise a robot', `document.querySelector('#raise-agent').click()`);
+    console.log('robot pass box (raise, pass): ' + JSON.stringify(raise2));
+    check(raise2.label && raise2.howto && !raise2.open && raise2.text === ROBOT_PASS_LABEL && raise2.cmd,
+      `robot pass box and closed how-to show on Raise with pass: ${JSON.stringify(raise2)}`);
+    const locked2 = await robotPassBox('Edit locked robot', editRobot('coach'));
+    checkRobotPassHidden(locked2, 'update saves no key');
+    await cdp.click('#agent-clone');
+    await cdp.waitFor(`!!document.querySelector('#robot-list .robot-card[data-slug="coach-copy"]')`, 'cloned robot');
+    checkRobotPassHidden(await robotPassBox('Edit robot', editRobot('coach-copy')), 'update saves no key');
+    checkRobotPassHidden(await robotPassBox('Edit Major', editRobot('sgt-major-payne')), 'update saves no key');
+    const raise3 = await robotPassBox('Raise a robot', `document.querySelector('#raise-agent').click()`);
+    check(raise3.label && raise3.howto, `robot pass box shows again on Raise after an Edit: ${JSON.stringify(raise3)}`);
+    checkSavePass(await savePassSent('Raise a robot', `document.querySelector('#raise-agent').click()`, true), true, 'box shown and checked');
+    checkSavePass(await savePassSent('Raise a robot', `document.querySelector('#raise-agent').click()`, false), false, 'box shown, unchecked');
+    checkSavePass(await savePassSent('Edit robot', editRobot('coach-copy'), true), false, 'update, box hidden');
+    checkSavePass(await savePassSent('Edit locked robot', editRobot('coach'), true), false, 'update, box hidden');
+    await cdp.eval(`document.querySelector('#agent-close').click()`);
     await stopRelay(proc);
 
     fs.writeFileSync(path.join(ART, `${TAG}-contrast-${VIEW_W}.json`),

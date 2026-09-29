@@ -405,6 +405,17 @@
     .warn { color: var(--warn); font-size: 0.82rem; margin-top: 10px; }
     .passbox { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: 0.82rem; color: var(--muted); }
     .passbox code { color: var(--fg); font-size: 0.78rem; }
+    /* Pre-walk: without pass the checkbox is disabled, so its label dims
+       with it instead of reading at full contrast. */
+    .passbox.is-off { opacity: 0.55; cursor: not-allowed; }
+    .passbox.is-off input { cursor: not-allowed; }
+    /* Pre-walk r4: `.panel label { display: block }` (the drawer panel
+       rule further down) beat the hidden attribute, so a hidden pass box
+       still showed; keep hidden meaning hidden. */
+    .passbox[hidden] { display: none; }
+    details.howto { margin-top: 8px; font-size: 0.82rem; color: var(--muted); }
+    details.howto summary { color: var(--fg); }
+    details.howto code { color: var(--fg); font-size: 0.78rem; }
     dialog.secret {
       border: 1px solid var(--line); border-radius: 18px; padding: 0;
       background: var(--surface); color: var(--fg); width: min(34rem, 92vw);
@@ -510,6 +521,9 @@
       flex: 1 1 0; padding: 6px 8px; font-size: 0.78rem; min-height: 36px;
     }
     #agent-drawer .actions .btn.danger { width: auto; margin-top: 0; }
+    /* Pre-walk: disabled Clone/Delete stay readable (was 0.5/0.4 opacity)
+       and still read as disabled through the dashed edge. */
+    #agent-drawer .actions .btn:disabled { opacity: 0.7; border-style: dashed; }
     .panel input[type="text"], .panel textarea, .panel input[type="email"] {
       width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
       border-radius: 12px; padding: 10px 12px; font: inherit; outline: none;
@@ -1004,7 +1018,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
      and the boards drawer is channels/overflow only. */
   main > #quick-nav { padding: 8px 12px 0; margin: 0; }
   header { gap: 10px; }
-  header #badge { max-width: 95px; overflow: hidden; margin-right: 48px; }
+  header #badge { max-width: 95px; overflow: hidden; margin-right: 48px; white-space: nowrap; text-overflow: ellipsis; }
   .hive > nav { display: none; position: fixed; top: 66px; bottom: 0; left: 0;
     width: min(300px, 90vw); overflow-y: auto; flex-direction: column; flex-wrap: nowrap;
     background: var(--surface); z-index: 30; box-shadow: 8px 0 24px #0003; }
@@ -1406,6 +1420,9 @@ html[data-theme="field-office"] .thread-btn,
 html[data-theme="field-office"] #thread-send { text-transform: uppercase; letter-spacing: 0.1em; }
 html[data-theme="field-office"] .btn.ghost { background: #ebdcb9; }
 html[data-theme="field-office"] .btn.danger { border: 2px solid #a3352c; transform: rotate(-1deg); }
+/* Pre-walk (F7): KIT Exit stops the whole hive, so it gets a red danger
+   plate instead of the same tan plate as Close. Behaviour is unchanged. */
+html[data-theme="field-office"] #kit-menu .iconbtn.danger { background: #a3352c; color: #f4ead2; border-color: #7a2720; }
 html[data-theme="field-office"] .prov-row.ready { background: #ebdcb9; border-color: #a3352c; }
 html[data-theme="field-office"] .iconbtn.on { border-color: #a3352c; color: #a3352c; }
 /* Boards/channels/rails: carved plates, red spine stays. */
@@ -1794,17 +1811,64 @@ button.fo-person { min-height: var(--btn-h-sm); }
    BOARDS drawer fits at 1440x900 with no scroll; at <= 480px the robot
    editor actions show the verb only (the noun stays as visually hidden
    text, and the full name is in aria-label). */
-#stats > span { white-space: nowrap; }
-#stats > span:not(:last-child)::after { content: " ·"; }
+#stats .stat { white-space: nowrap; }
+/* Pre-walk: each stat carries its own leading "·"; the row is pulled 1.2em
+   left inside an overflow-clipped wrapper, so the "·" of whichever stat
+   starts a line is cut off and no line ends or starts on a dangling "·". */
+#stats .stats-clip { display: block; overflow: hidden; }
+#stats .stats-row { display: block; margin-left: -1.2em; }
+#stats .stat::before { content: "·"; content: "·" / ""; display: inline-block; width: 1.2em; text-align: center; }
+/* Pre-walk r3 (Ops F2): the version item (a real stamp such as
+   "v0.0.1-697-g4c1f2594") is one box no wider than the row: it
+   moves to its own line whole, and when it is still too wide it wraps
+   inside itself (continuation lines indented past the clipped "·" gutter)
+   instead of being cut by the clip wrapper's right edge. */
+#stats .stat:last-child { display: inline-block; max-width: 100%; box-sizing: border-box; vertical-align: top;
+  white-space: normal; overflow-wrap: anywhere; padding-left: 1.2em; text-indent: -1.2em; }
+#stats .stat:last-child::before { text-indent: 0; }
 @media (max-width: 480px) {
   .act-noun { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
+/* Pre-walk r3 (Ops F1) / r4 (Ops FAIL-B): at <= 480px the header badge
+   is a field-office indicator lamp: green while the relay is listening,
+   amber otherwise (connecting or unreachable), with a dark rim, a small
+   highlight and a soft glow. It sits at the header's right padding (no
+   48px phone margin). The state text stays in its title and aria-label. */
+@media (max-width: 480px) {
+  html[data-theme] header #badge {
+    width: 12px; min-width: 12px; max-width: 12px; height: 12px; padding: 0; margin: 0 2px 0 0;
+    flex: none; align-self: center; font-size: 0; line-height: 0; overflow: hidden;
+    border-radius: 50%; border: 1px solid #2a241e; transform: none;
+    background: radial-gradient(circle at 35% 30%, #ffe2a3 0 18%, #e0a030 45%, #a86a10 100%);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.35), 0 0 5px 1px rgb(224 160 48 / 0.55);
+  }
+  html[data-theme] header #badge.ok {
+    background: radial-gradient(circle at 35% 30%, #c8f5b8 0 18%, #3fae3a 45%, #1f6e1c 100%);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.35), 0 0 5px 1px rgb(63 174 58 / 0.6);
+  }
+}
+/* Pre-walk r4 (Ops FAIL-B): up to 800px the header has no room for the
+   "HQ — Global Operations" stamp beside the brand and the whole badge
+   (at 641-776 the badge ran off the right edge), so the stamp goes, as it
+   already does at <= 640px; the badge keeps its full text. */
+@media (max-width: 800px) {
+  .fo-hq > span { display: none; }
+}
 /* r5 (Ops F2 fallback): only while the drawer content overflows (more
-   channels than the demo fixture), a sticky bottom fade plus 24px of end
-   room make the cut edge read as "scroll for more". syncDrawerOverflow()
-   toggles the class; a drawer that fits shows no cue. bottom: -10px
-   reaches past the 10px nav padding to the inner border. */
-#fo-drawer.is-overflowing::after { content: ""; flex: 0 0 24px; margin-top: -12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }
+   channels than the demo fixture), a sticky bottom fade makes the cut edge
+   read as "scroll for more". syncDrawerOverflow() toggles the class from
+   the last content row's bottom against the client box, so the cue, its
+   flex row gap and the bottom padding never count: a drawer whose rows
+   all show (even with 1px spare, or with only padding cut) shows no cue. bottom: -10px reaches past
+   the 10px nav padding to the inner border. Pre-walk: the fade is 12px
+   tall (was 24px pulled up 12px), so it stays in the bottom padding band
+   and the first stats line above it stays crisp. */
+#fo-drawer.is-overflowing::after { content: ""; flex: 0 0 12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }
+/* Pre-walk r5 (Ops FAIL-1): syncDrawerOverflow() sets --fade-bottom so the
+   fade ends at the visible bottom: -10px on desktop (unchanged), and at
+   the #quick-bar top where the quick-bar overlays the drawer, so no row
+   shows crisp and cut at the quick-bar edge. */
+#fo-drawer.is-overflowing::after { bottom: var(--fade-bottom, -10px); }
 </style>
 </head>
 <body>
@@ -1825,7 +1889,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
         <div class="sub" id="vibe-sub">local hive mind</div>
       </div>
     </div>
-    <div class="fo-hq"><span>HQ — Global Operations</span><div id="badge">connecting…</div></div>
+    <div class="fo-hq"><span>HQ — Global Operations</span><div id="badge" role="img" aria-label="connecting…" title="connecting…">connecting…</div></div>
   </header>
   <!-- UI-M9: persistent tool rail deleted. Header KIT stamp toggles this
        overlay menu only (no draggable strip, no grip, no rail body/grid).
@@ -1833,7 +1897,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
        channels/providers/robots/projects/min/max/close/exit. -->
   <div id="kit-menu" hidden aria-label="Field kit">
     <button id="install" type="button" title="Install puts Hush on your app launcher as its own window. It does not start a second hive.">Install</button>
-    <button class="iconbtn" id="profile-btn" type="button" title="Your name, npub, and logout. This is you, not a robot.">Profile</button>
+    <button class="iconbtn" id="profile-btn" type="button" title="Your name, public key (npub), and logout. This is you, not a robot.">Profile</button>
     <button class="iconbtn" id="settings-btn" type="button" title="Theme, vibe visibility, and the local STUN/TURN server for calls.">Settings</button>
     <button class="iconbtn" id="call-btn" type="button" hidden title="Start a mesh conference on this channel. Agents need Whisper to hear.">Call</button>
     <button class="iconbtn" id="invite-human" type="button" title="Click to invite a human to your vibe.">Invite</button>
@@ -2115,18 +2179,26 @@ button.fo-person { min-height: var(--btn-h-sm); }
       <input id="prof-email" type="email" maxlength="80" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius: 12px;padding:10px 12px;font:inherit;margin:4px 0">
       <label for="prof-org">Organization</label>
       <input id="prof-org" type="text" maxlength="48" style="width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius: 12px;padding:10px 12px;font:inherit;margin:4px 0">
-      <label for="prof-avatar">Avatar</label>
-      <input id="prof-avatar" type="file" accept="image/jpeg,image/png,image/webp">
-      <p class="help" id="prof-avatar-status">Optional. JPEG or PNG, stored as a Nostr picture URL.</p>
+      <!-- Pre-walk r5 (Ops FAIL-2): nothing reads this input and Save
+           profile sends no picture, so the whole Picture row is hidden
+           (out of the layout, the tab order and the accessibility tree)
+           until the profile really saves one. -->
+      <div id="prof-avatar-row" hidden>
+        <label for="prof-avatar">Picture</label>
+        <input id="prof-avatar" type="file" accept="image/jpeg,image/png,image/webp">
+      </div>
       <!-- Honesty: Character read-only strip (relay-saved count + browser-only Always/On-call split). -->
       <div id="profile-loadout" aria-label="Robot loadout summary">
         <div class="lbl">Equipped skills</div>
         <p class="help" id="profile-loadout-text">Select a robot tile, then press c.</p>
       </div>
       <div class="actions">
+        <!-- Pre-walk r3: Save + Logout, then Copy + Close, so the four
+             actions pair into two balanced rows (at 375 the old order left
+             Close alone on a third row). -->
         <button class="btn" id="profile-save" type="button">Save profile</button>
-        <button class="btn ghost" id="profile-copy" type="button">Copy npub</button>
         <button class="btn ghost" id="profile-logout" type="button">Logout</button>
+        <button class="btn ghost" id="profile-copy" type="button">Copy public key (npub)</button>
         <button class="btn ghost" id="profile-close" type="button">Close</button>
       </div>
       <p class="help">Major: "Guard your orders. Report when ready."</p>
@@ -2246,7 +2318,9 @@ button.fo-person { min-height: var(--btn-h-sm); }
         </div>
       </div>
       <label class="passbox"><input id="agent-pass" type="checkbox" checked>
-        Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/agents/&lt;slug&gt;/nsec</code></label>
+        Checked to save its key in your password manager.</label>
+      <details class="howto" id="agent-pass-howto"><summary>How to find it later</summary>
+        <p>In a terminal, run <code>pass show hush/agents/&lt;slug&gt;/nsec</code>.</p></details>
       <p class="warn" id="agent-err"></p>
       <div class="actions">
         <button class="btn" id="agent-save" type="button" aria-label="Create robot">Create<span class="act-noun"> robot</span></button>
@@ -2373,7 +2447,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
     <div class="panel">
       <h2>Invite human</h2>
       <p class="help">Name the soldier. Private vibes also need the join token.</p>
-      <label for="member-npub">npub</label>
+      <label for="member-npub">Public key (npub)</label>
       <input id="member-npub" type="text" maxlength="80" placeholder="npub1…">
       <label for="member-name">Display name</label>
       <input id="member-name" type="text" maxlength="48" placeholder="human">
@@ -2392,7 +2466,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       <p class="help">Humans</p>
       <div class="pills" id="manage-human-pills"></div>
       <div id="manage-humans"></div>
-      <label for="manage-invite">Invite npub</label>
+      <label for="manage-invite">Invite by public key (npub)</label>
       <div class="pill-row">
         <input id="manage-invite" type="text" maxlength="80" placeholder="npub1…">
         <button class="icon-plus" id="manage-invite-add" type="button" aria-label="Add invited human">+</button>
@@ -2828,15 +2902,15 @@ button.fo-person { min-height: var(--btn-h-sm); }
         return card("What’s an identity key?",
           stepBar(1) +
           "<p>Hush signs you in with an identity key instead of a password. The key is created on this computer and stands for you.</p>" +
-          "<p>Your public key (<code>npub</code>) is safe to share. Your private key (<code>nsec</code>) is the account. Anyone with it can act as you. There is no forgot-password.</p>" +
-          "<p>Create a new key if this is your first time. If you already have a private key (it starts with nsec1), choose Use an existing key.</p>" +
+          "<p>Your public key (npub) is safe to share. Your secret key (nsec) is the account. Anyone with it can act as you. There is no forgot-password.</p>" +
+          "<p>Create a new key if this is your first time. If you already have a secret key (nsec), choose Use an existing key.</p>" +
           actions([{ id: "back-help", ghost: true, label: "Back" }]));
       }
       if (page === "import") {
         return card("Use an existing key",
           stepBar(1) +
-          "<p>Paste an <code>nsec1…</code> key. We show the matching <code>npub</code> before anything is saved.</p>" +
-          "<label for=\"nsec-in\">Private key</label>" +
+          "<p>Paste your secret key (nsec). Nothing is saved before the next step.</p>" +
+          "<label for=\"nsec-in\">Secret key (nsec)</label>" +
           "<input id=\"nsec-in\" type=\"password\" autocomplete=\"off\" spellcheck=\"false\" data-lpignore=\"true\" data-form-type=\"other\" placeholder=\"nsec1…\">" +
           "<div class=\"help\" id=\"npub-preview\"></div>" +
           errLine() +
@@ -2849,24 +2923,29 @@ button.fo-person { min-height: var(--btn-h-sm); }
         const shown = keyRevealed ? esc(pendingNsec) : "•".repeat(Math.max(16, pendingNsec.length || 63));
         const passOff = session.pass_available === false;
         const passNote = passOff
-          ? "<p class=\"warn\">Hush can't save this key on this computer. Copy it now and keep it somewhere safe. Setup continues without saving.</p>"
+          ? "<p class=\"warn\">Hush can't save this key on this computer, so keep your copy somewhere safe.</p>"
           : "";
         const passLabel = passOff
           ? "Save to password manager"
-          : "Checked to save password to Unix Password Manager. Retrieve with: <code>pass show hush/identity/nsec</code>";
-        const neverShare = "Never share your private key. Anyone with it can impersonate you.";
+          : "Checked to save it in your password manager.";
+        const passHowto = passOff
+          ? ""
+          : "<details class=\"howto\"><summary>How to find it later</summary>" +
+            "<p>In a terminal, run <code>pass show hush/identity/nsec</code>.</p></details>";
+        const neverShare = "Never share your secret key. Anyone with it can impersonate you.";
         const passAfter = passOff
           ? "<p class=\"warn\">" + neverShare + "</p>"
-          : "<p class=\"warn\">" + neverShare + " Uncheck the box only if you do not want <code>pass</code> to store it.</p>";
+          : "<p class=\"warn\">" + neverShare + " Uncheck the box only if you do not want your password manager to keep it.</p>";
         return "<dialog class=\"secret\" id=\"secret-modal\" open>" +
           card("Your unique identity key has been created",
           stepBar(2) +
           "<p>This key is your account. Copy it now. Hush cannot recover it if you lose it.</p>" +
           "<div class=\"keybox" + (keyRevealed ? " revealed" : "") + "\" id=\"nsec-box\">" + shown + "</div>" +
-          "<label class=\"passbox\"><input id=\"save-pass\" type=\"checkbox\"" +
+          "<label class=\"passbox" + (passOff ? " is-off" : "") + "\"><input id=\"save-pass\" type=\"checkbox\"" +
           ((!passOff && savePass) ? " checked" : "") +
           (passOff ? " disabled" : "") +
           "> " + passLabel + "</label>" +
+          passHowto +
           passNote +
           passAfter +
           errLine() +
@@ -2986,7 +3065,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       if (inp) inp.addEventListener("input", () => {
         const v = inp.value.trim();
         $("npub-preview").textContent = v.startsWith("nsec1")
-          ? "Looks like an nsec. Import to see the npub."
+          ? "Looks like a secret key (nsec)."
           : "";
       });
     }
@@ -3717,12 +3796,38 @@ button.fo-person { min-height: var(--btn-h-sm); }
       $("nav-toggle").setAttribute("aria-expanded", String(open));
     });
     /* r5 (Ops F2 fallback): mark the drawer while its content overflows so
-       the CSS bottom fade shows only then. The cue's own 24px is left out
-       of the test so the class does not hold itself on. */
+       the CSS bottom fade shows only then. Pre-walk r4 (Ops FAIL-A): the
+       test is the bottom of the last shown content row, not scrollHeight,
+       so bottom padding (and the cue with its flex row gap, which are not
+       element children) never counts: a drawer whose rows all show gets
+       no class even when only its padding overflows. Pre-walk r5 (Ops
+       FAIL-1): the row is measured against the visible bottom, which is
+       the top of the fixed #quick-bar where it overlays the drawer (phone
+       widths; the drawer's 64px bottom padding lets the last row scroll
+       clear of it), else the client box bottom. Any part of a row past
+       that edge (even 1px) sets the class, and --fade-bottom lifts the
+       sticky fade so it ends at that edge, over the cut row. */
     function syncDrawerOverflow() {
       const d = $("fo-drawer");
-      const cue = d.classList.contains("is-overflowing") ? parseFloat(getComputedStyle(d, "::after").height) || 0 : 0;
-      d.classList.toggle("is-overflowing", d.scrollHeight - cue > d.clientHeight + 1);
+      const box = d.getBoundingClientRect();
+      const inner = box.top + d.clientTop;
+      const top = inner - d.scrollTop;
+      let last = 0;
+      for (const c of d.children) {
+        if (!c.getClientRects().length) continue;
+        last = Math.max(last, c.getBoundingClientRect().bottom - top);
+      }
+      let seen = d.clientHeight;
+      const qb = $("quick-bar");
+      if (qb && qb.getClientRects().length) {
+        const q = qb.getBoundingClientRect();
+        // Vertical overlap only: the bar spans the window, and the drawer
+        // slides in with a transform that fires no resize.
+        if (q.top < inner + seen && q.bottom > inner) seen = Math.max(0, q.top - inner);
+      }
+      const pad = parseFloat(getComputedStyle(d).paddingBottom) || 0;
+      d.style.setProperty("--fade-bottom", (d.clientHeight - seen - pad) + "px");
+      d.classList.toggle("is-overflowing", last > seen + 0.5);
     }
     if (window.ResizeObserver) {
       const drawerRO = new ResizeObserver(syncDrawerOverflow);
@@ -3848,6 +3953,20 @@ button.fo-person { min-height: var(--btn-h-sm); }
       return /\.(txt|md|markdown)$/i.test(name);
     }
 
+    /* Pre-walk r4 (Gauge B1): the robot-editor pass box and its how-to
+       show only where they are true: raising a new robot (the create path
+       saves its key through pass) on a relay that has not reported pass as
+       unavailable. No Edit path (Major, locked, plain) saves a key, and
+       with no pass installed nothing is saved, so both stay hidden there
+       and the request sends save_pass false. */
+    function agentPassShown() {
+      return !editSlug && session.pass_available !== false;
+    }
+    function syncAgentPassBox() {
+      const shown = agentPassShown();
+      if ($("agent-pass")) $("agent-pass").closest("label").hidden = !shown;
+      if ($("agent-pass-howto")) $("agent-pass-howto").hidden = !shown;
+    }
     function resetAgentDraft() {
       draftName = "";
       draftPrompt = "";
@@ -3877,7 +3996,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       hideSkillGhost();
       if ($("agent-err")) $("agent-err").textContent = "";
       if ($("agent-identity")) $("agent-identity").hidden = false;
-      if ($("agent-pass")) $("agent-pass").closest("label").hidden = false;
+      syncAgentPassBox();
       if ($("payne-provider-pills")) $("payne-provider-pills").hidden = true;
       if ($("agent-provider-help")) $("agent-provider-help").textContent = "Harness / API priority (required)";
       paintFilePills();
@@ -4324,7 +4443,6 @@ button.fo-person { min-height: var(--btn-h-sm); }
         setActionLabel($("agent-save"), "Save", "Robot");
         $("agent-delete").disabled = true;
         $("agent-identity").hidden = false;
-        $("agent-pass").closest("label").hidden = true;
         $("payne-provider-pills").hidden = false;
         $("agent-provider-help").textContent = "Choose the runtime. First on deck speaks first.";
         draftName = "Major";
@@ -4379,6 +4497,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
           el.checked = el.value === bot.provider;
         });
       }
+      syncAgentPassBox();
       draftPicture = (bot && bot.picture) ? bot.picture : "";
       draftProviders = (bot && bot.providers && bot.providers.length)
         ? bot.providers.slice()
@@ -4684,7 +4803,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
         role: radioValue("agent-role", "worker"),
         intro_enabled: introEnabled,
         intro: intro,
-        save_pass: !box || box.checked
+        save_pass: !!box && agentPassShown() && box.checked
       };
       if (editSlug) {
         body.action = "update";
@@ -5634,9 +5753,16 @@ button.fo-person { min-height: var(--btn-h-sm); }
       $("call-help").textContent = "Payne joined as an agent. Voice needs Whisper (HUSH_WHISPER or whisper on PATH).";
     });
 
-    function badge(ok, text) {
+    function badge(ok, text, title) {
       const el = $("badge");
       el.textContent = text;
+      /* Pre-walk: the listening port moved out of the visible badge text
+         into the tooltip. r3 (Ops F1): at <= 480px the badge is a dot, so
+         the state text always rides in both title and aria-label too, and
+         every state change rewrites both. */
+      const full = title ? text + " — " + title : text;
+      el.title = full;
+      el.setAttribute("aria-label", full);
       el.className = ok ? "ok" : "bad";
     }
 
@@ -6699,16 +6825,26 @@ button.fo-person { min-height: var(--btn-h-sm); }
       $("count").textContent = roots.length + (roots.length === 1 ? " note" : " notes");
       const projN = (session.projects || []).length;
       // r4 (Ops F2): one inline item per stat, wrapped, so the drawer fits.
+      // Pre-walk: a status with no version drops the version item (no
+      // "v? ?"); a missing build drops only the build word.
+      const ver = status.version ? String(status.version) : "";
       const statItems = [
         status.ok ? "relay live" : "relay down",
         status.events + " stored",
         projN + " project" + (projN === 1 ? "" : "s"),
-        status.clients + " sockets",
-        (((status.version || "?").charAt(0) === "v" ? "" : "v") + (status.version || "?")) + " " + (status.build || "?")];
-      $("stats").replaceChildren(...statItems.flatMap((t, i) => {
-        const item = document.createElement("span"); item.textContent = t;
-        return i ? [" ", item] : [item];
+        status.clients + " sockets"];
+      // Pre-walk r4: the build SHA is printed once; a version that already
+      // carries it ("v0.0.1-697-g4c1f2594", CI's "7fc2acd") drops the word.
+      if (ver) statItems.push((ver.charAt(0) === "v" ? "" : "v") + ver +
+        (status.build && !ver.includes(String(status.build)) ? " " + status.build : ""));
+      const statRow = document.createElement("span"); statRow.className = "stats-row";
+      statRow.replaceChildren(...statItems.flatMap((t, i) => {
+        const item = document.createElement("span"); item.className = "stat"; item.textContent = t;
+        return i ? [document.createElement("wbr"), item] : [item];
       }));
+      const statClip = document.createElement("span"); statClip.className = "stats-clip";
+      statClip.appendChild(statRow);
+      $("stats").replaceChildren(statClip);
       document.title = "Hush " + (status.version || "0.0.1") +
         " (" + (status.build || "unknown") + ")";
       paintRelayDrawer(status);
@@ -7995,7 +8131,8 @@ button.fo-person { min-height: var(--btn-h-sm); }
         whisperReady = !!st.whisper;
         if (session.ready && page !== "payne") page = "hive";
         paint();
-        badge(true, session.npub ? session.npub.slice(0, 12) + "…" : ("listening :" + (st.port || "")));
+        badge(true, session.npub ? session.npub.slice(0, 12) + "…" : "listening",
+          st.port ? "Relay listening on port " + st.port : "");
         let ev = null;
         try { ev = await evRes.json(); } catch (parseErr) { ev = null; }
         if (session.ready && ev) {

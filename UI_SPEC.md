@@ -59,7 +59,21 @@ raise humans + robots that share channels."
   the two is deferred to the UI-M12b colour/material pass.
 - Poll `/api/session`. If `ready` → hive. Else **Begin** → wizard step 1.
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
-  The header shows the vibe name only while `logged_in` is true;
+  Before login the badge reads "listening"; the port is only in its
+  tooltip ("Relay listening on port N"), not in the visible text
+  (pre-walk). r3 (Ops F1): the badge (`role="img"`) always carries its
+  full state in both `title` and `aria-label` (visible text plus the
+  tooltip detail, e.g. "listening — Relay listening on port N"), and
+  every state change rewrites both. At ≤480px it is a 12px indicator
+  lamp seated at the header's right padding (r4, Ops FAIL-B: green while
+  listening, amber otherwise, with a dark rim, highlight and soft glow;
+  no text; amber covers both connecting, the served state before the
+  first status poll, and unreachable, and r5 tests both); at 481-640px
+  it keeps the 95px cap and ends in an ellipsis.
+  r4 (Ops FAIL-B): at 641-800px the "HQ — Global Operations" stamp is
+  hidden (as at ≤640px) so the badge shows whole; `check_restart_ui.cjs`
+  checks every width 641-1440, before and after login, in field-office
+  and dark. The header shows the vibe name only while `logged_in` is true;
   otherwise it falls back to the neutral "local hive mind" (and an
   empty visibility badge), so a surviving vibe name never implies a
   live login after a restart.
@@ -69,16 +83,19 @@ Linear 4 steps with progress `1 / 4` … `4 / 4` and four dots.
 
 1. **Identity** — Create new (primary) or Import nsec. Help: “What’s an identity key?”
 2. **Backup** — Masked nsec, Reveal, Copy. Checkbox **checked**:
-   `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/identity/nsec`
+   `Checked to save it in your password manager.` followed by a
+   collapsed `<details class="howto">` "How to find it later" that holds
+   "In a terminal, run `pass show hush/identity/nsec`."
    When `/api/session` reports `pass_available:false` (`pass` is not
    installed, so no save could succeed), the checkbox renders unchecked
    and disabled with the short neutral label "Save to password manager"
-   (never "Checked to save…"), the step shows exactly one reason, once:
-   "Hush can't save this key on this computer. Copy it now and keep it
-   somewhere safe. Setup continues without saving." and the warning line
-   keeps "Never share your private key. Anyone with it can impersonate
-   you." and drops only the "Uncheck the box only if you do not want
-   pass to store it." clause. No visible text on the no-pass backup step
+   (never "Checked to save…"), dimmed with it (`.passbox.is-off`,
+   opacity 0.55), no "How to find it later" line, and the step shows
+   exactly one reason, once: "Hush can't save this key on this
+   computer, so keep your copy somewhere safe." The warning line keeps
+   "Never share your secret key. Anyone with it can impersonate you."
+   and drops only the "Uncheck the box only if you do not want your
+   password manager to keep it." clause. No visible text on the no-pass backup step
    uses the bare word "pass". A failed save at ack
    time still records `pass_error` and still lets setup continue
    (`backup_acked` stays true); the next gate screen repeats the
@@ -118,6 +135,36 @@ safe. Setup continues without saving." The never-share line stays on
 both paths, and the with-pass copy is unchanged. `check_restart_ui.cjs`
 asserts the reason appears exactly once, nothing else on the screen
 restates it, and the visible no-pass text has no bare word "pass".
+
+Delta 2026-09-28 (pre-walkthrough polish; supersedes the quoted copy in
+the two deltas above). Backup: the no-pass reason is the one sentence
+"Hush can't save this key on this computer, so keep your copy somewhere
+safe." (the second "Copy it now" is gone; the top line keeps the first),
+and the disabled label is dimmed. With `pass` the label says "Checked to
+save it in your password manager.", the `pass show
+hush/identity/nsec` command sits only inside the collapsed "How to find
+it later" details, and the clause reads "Uncheck the box only if you do
+not want your password manager to keep it." Key names are plain words
+with the code in brackets: help "Your public key (npub) is safe to
+share. Your secret key (nsec) is the account." and "If you already have
+a secret key (nsec), choose Use an existing key."; import "Paste your
+secret key (nsec). Nothing is saved before the next step." (r4 claim
+trace: was "We show the matching public key (npub) before anything is
+saved.", but only the header badge prefix shows, and not at all at
+≤480px), label "Secret key (nsec)" (the `nsec1…` placeholder
+stays as an example), preview "Looks like a secret key (nsec)." (r4: dropped "Import to see
+its public key (npub)."); never-share "Never share your secret key.
+Anyone with it can impersonate you." The restart note ("starts with
+nsec1") and the `pass_error` line are unchanged. `check_restart_ui.cjs`
+asserts the new reason, the dimmed label, the details line and the
+plain labels. Elsewhere: the profile has no Picture row. Nothing reads
+its file input and Save profile sends no picture, so r5 (Ops FAIL-2)
+hides the whole row (`#prof-avatar-row[hidden]`: out of the layout, the
+tab order and the accessibility tree), replacing r4's disabled field
+with "Not available yet" copy (r1 had "Optional. JPEG or PNG, stored as
+your picture URL.", which was not true); the
+profile copy button is "Copy public key (npub)", and the member/invite
+labels are "Public key (npub)" / "Invite by public key (npub)".
 
 ### 3. Resume
 `logged_in && backup_acked && has_vibe` → splash detects → hive.
@@ -190,6 +237,9 @@ The hive ships two labeled buttons on `#tool-rail`, always reachable
   hit at phone width and a ≥24px hit on desktop (UI-M12d).
   Titles: Close = "Close the window. Hive stays standing."
   Exit = "Quit the hive. Every process stops."
+  Under the field-office theme, Exit in `#kit-menu` is a red danger
+  plate (`#a3352c`, cream text) so it no longer matches Close; the
+  behaviour (both open `#hive-leave`) is unchanged (pre-walk F7).
 - Drawer "Close" / `[x]` buttons on Settings / Profile / Raise / Thread /
   Relay-live stay local. They never open `#hive-leave` and never quit.
 - Last `--app` child gone: the relay notices with `kill(pid, 0)` in the
@@ -208,8 +258,10 @@ The hive ships two labeled buttons on `#tool-rail`, always reachable
 
 ### 5. Profile (always reachable)
 Drawer fields:
-- Avatar upload (JPEG/PNG/WebP client; server stores JPEG/PNG, kind 0
-  `picture` = `http://127.0.0.1:<port>/avatar/<pubkey>`).
+- No picture upload in the drawer yet (pre-walk r5: the row is hidden
+  because Save profile sends no picture). The server side exists:
+  `/api/identity` accepts a picture (stores JPEG/PNG, kind 0 `picture` =
+  `http://127.0.0.1:<port>/avatar/<pubkey>`).
 - First name, last name, email, organization.
 - npub (copy). Never nsec after ack.
 - **Logout** — confirm, then `POST /api/identity {action:"logout"}`.
@@ -271,8 +323,19 @@ and a pencil to edit it again.
   row, sized per the UI-M12d delta (§15: compact visual, ≥44px touch
   hit at phone width). Pencil opens `#provider-drawer` (see §11). Configure is
   optional for Raise — the robot still stores only the provider id.
-- pass checkbox default-on:
-  `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/agents/<slug>/nsec`
+- pass checkbox default-on, same plain words as the backup step (pre-walk
+  r3): `Checked to save its key in your password manager.` The
+  retrieve command sits behind a closed details line (`#agent-pass-howto`,
+  "How to find it later"): `pass show hush/agents/<slug>/nsec`. r4 (Gauge
+  B1): both show only on Raise (the create path saves the key) while
+  `pass_available` is not false; every Edit path (Major, locked, plain)
+  saves no key, so they are hidden there, and hidden or with pass
+  missing the request sends `save_pass: false`; it sends `true` only
+  when the box is shown and checked (r5, Gauge P2-3:
+  `check_restart_ui.cjs` reads the POST `/api/agent` body on Raise
+  checked/unchecked and on Edit, with pass and without).
+  `.passbox[hidden]` is `display: none` (the `.panel label
+  { display: block }` rule used to beat the attribute).
 - Footer `#agent-drawer .actions` is one compact line (no wrap):
   **Raise Robot** (edit: **Save Robot**), **Close**, **Delete Robot**.
   Delete is disabled on a fresh raise. Enabled when editing an
@@ -818,7 +881,7 @@ Right-click a channel (`#chan-menu`):
 - Add/Invite/Remove Humans and Robots with the same `+` / `−` pill
   language as Raise-robot name. No checkboxes.
 - Unused pool: name + `+`. Added names become `.pill` with `−`.
-- Invite npub `+` commits a human pill.
+- Invite by public key (npub) `+` commits a human pill.
 - Empty lists mean the whole hive when `kind` is `open` (current
   behavior). `humans` / `robots` / `mixed` require the matching pills.
 - **Policy** (`#manage-policy`) — see §20. Kind radios + reply radios
@@ -893,7 +956,7 @@ stays visibly ≥44px (UI-M12d).
 “Install puts Hush on your app launcher as its own window. It does
 not start a second hive.”
 
-`#profile-help`: “Your name, npub, and logout. This is you, not a robot.”
+`#profile-help`: “Your name, public key (npub), and logout. This is you, not a robot.”
 `#settings-help`: “Theme, vibe visibility, and the local STUN/TURN server for calls.”
 `#call-help-pop`: “Start a mesh conference on this channel. Agents need Whisper to hear.”
   (id is not `#call-help` — that string already labels the stage.)
@@ -1244,18 +1307,48 @@ supersedes the older "44px pencil" / "≥44px" `#provider-cfg` wording
 (§ providers, per-robot pick) and "44px minimum on primary actions"
 (§15) for controls inside menus and drawers.
 r4 (Ops F2/F7): the BOARDS drawer stats (`#stats`) render as inline
-items separated by `·` that wrap (three lines at 1440 with the demo
-fixture, instead of a five-line stack), so with that fixture the drawer
-needs no scroll at 1440×900; with more channels it still scrolls. At
+items separated by `·` that wrap (pre-walk: each item carries a leading
+`·` that is clipped when the item starts a line, so no line ends or
+starts on a dangling `·`; a status with no `version` drops the version
+item instead of showing `v? ?`) instead of a five-line stack. r4 claim
+trace (measured, field-office, 1440×900, Gauge/Ops `session.json`
+fixture): two lines with a status that has no version, three with a real
+build stamp (r4: the SHA is printed once, e.g. "v0.0.1-697-g4c1f2594",
+not "… 4c1f2594" again), and with that fixture's channels
+the drawer still overflows and scrolls, marked by the fade cue below
+(the earlier "three lines … needs no scroll" no longer held). At
 ≤480px the robot-editor actions show the verb only (CREATE or SAVE,
 CLONE, DELETE), one line each like CLOSE; the noun stays as visually
 hidden `.act-noun` text and the full name is in `aria-label`. Wider
 screens keep the full labels.
 r5 (Ops F2 fallback): when the drawer content overflows anyway, a
 small script marks `#fo-drawer` with `is-overflowing`, and CSS then adds
-a sticky 24px bottom fade (to the drawer surface colour) that also gives
-24px of end room, so a cut last line reads as "scroll for more". A
-drawer that fits gets no class and no fade.
+a sticky 12px bottom fade (to the drawer surface colour) that also gives
+12px of end room, so a cut last line reads as "scroll for more"
+(pre-walk: was 24px pulled up 12px, which washed out the first stats
+line at 1440). A
+drawer whose rows all show gets no class and no fade: the overflow test
+is the bottom of the last shown content row (r4, Ops FAIL-A) against the
+drawer's visible bottom (r5, Ops FAIL-1): the top of the fixed
+`#quick-bar` where it overlays the drawer (phones; the drawer's 64px
+bottom padding lets the last row scroll clear of it), else the client
+box bottom. So the cue, its flex row gap and the bottom padding never
+count, any row reaching past that edge (even 1px) sets the class, and
+`--fade-bottom` lifts the sticky fade to end at the quick-bar top so no
+row shows crisp and cut there. The class drops as soon as every row
+fits (r3, Gauge P2-1), and padding-only overflow (r3 set the class at
+1440 h 900-908 and 375 h 778-792 on Ops's fixture) shows none;
+`check_restart_ui.cjs` drives the drawer height across that edge, sweeps
+the window through that padding band, checks 1440x883 at the edge and
+1px under, and sweeps 375/414/480/560/640 (every width with the
+quick-bar) at h 700-812 in field-office and dark against a hit-tested
+visible bottom: at ≤640 the fade is on whenever a row sits under the
+quick-bar, even when it is inside the client box (r4 left it off there;
+Gauge P2-1 on r4). r3 (Ops F2): the last stat
+(the build stamp, e.g. "v0.0.1-697-g4c1f2594") is an inline-block no wider
+than the row that wraps inside itself, continuation lines indented past
+the clipped "·" gutter, so no glyph is cut at the clip edge; the UI check
+also measures a longer realistic stamp fixture.
 Gate: the launch script requires the tokens, the `UI-M12d` marker, the
 `.btn` md rule, the `.menu button` sm rule, `.pill button` min 24px,
 the touch media query with the transparent `::before` hit area sized
@@ -1268,7 +1361,7 @@ the touch block except the three container lines (each a whole one-line
 rule: after CSS comments are stripped, the previous non-blank line must
 end in `{` or `}`; the check does not parse CSS strings or escapes), no
 `--btn-` token redefinition in the touch block, the inline
-`#stats > span` rule (and no `sockets<br>` stack), the
+`#stats .stat` nowrap rule (and no `sockets<br>` stack), the
 `@media (max-width: 480px)` `.act-noun` rule after the touch block, the
 create/clone/delete buttons with their full `aria-label` and split
 label, the `#fo-drawer.is-overflowing::after` fade rule after the touch

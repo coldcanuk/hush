@@ -111,8 +111,9 @@ refuses to build over a live hive. `make install`, `make test` and
   - without curl, it cannot probe, so it fails with exit 2
     (`hush-relay is running but its port cannot be probed (curl missing)`),
     whatever port that relay uses. Install curl or quit the other relays first.
-- The guard never kills anything. Its refusal text points at README "Close vs
-  Exit"; that section now lives on this page.
+- The guard never kills anything. Its refusal text points at
+  `docs/OPERATIONS.md` "Close vs Exit", the [Close vs Exit](#close-vs-exit)
+  section on this page.
 
 ## `make install` and `make clean` stop relays
 
