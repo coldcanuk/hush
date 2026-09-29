@@ -19,7 +19,7 @@
  * tests/check_reasons.py pins every string; reword both together. */
 #define HUSH_AGENT_WHY_GATE "Log in and set up your vibe before changing robots."
 #define HUSH_AGENT_WHY_NAME "Robot name is required."
-#define HUSH_AGENT_WHY_NAME_CHARS "Robot names need at least one letter or digit."
+#define HUSH_AGENT_WHY_NAME_CHARS "Robot names need a letter (A-Z) or digit."
 #define HUSH_AGENT_WHY_TAKEN "A robot named %s already exists."
 #define HUSH_AGENT_WHY_PROMPT "System prompt is required."
 #define HUSH_AGENT_WHY_NO_PROVIDER "Provider is required."

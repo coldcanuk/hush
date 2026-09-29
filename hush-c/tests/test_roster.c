@@ -265,6 +265,11 @@ int main(void)
     expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
            "symbol-only name refused");
     expect(roster.nagents == 2, "no robot for a symbol-only name");
+    /* Letters outside A-Z do not count yet ("Robot" in Cyrillic, UTF-8). */
+    memcpy(agent.name, "\xd0\xa0\xd0\xbe\xd0\xb1\xd0\xbe\xd1\x82", 11);
+    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+           "Cyrillic-only name refused");
+    expect(roster.nagents == 2, "no robot for a Cyrillic-only name");
     memset(&agent, 0, sizeof(agent));
     memcpy(agent.name, "???", 4);
     expect(hush_roster_update_agent(&roster, "coach-copy", &agent) ==

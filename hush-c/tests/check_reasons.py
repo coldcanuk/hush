@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Exact reason lines (without the trailing newline the relay appends).
 GATE = "Log in and set up your vibe before changing robots."
 NAME = "Robot name is required."
-NAME_CHARS = "Robot names need at least one letter or digit."
+NAME_CHARS = "Robot names need a letter (A-Z) or digit."
 TAKEN = "A robot named Walkbot One already exists."
 PROMPT = "System prompt is required."
 NO_PROVIDER = "Provider is required."
@@ -194,7 +194,8 @@ def check_robot_names(relay):
            robot("  WALKBOT one!! "), TAKEN)
     expect(relay, "blank name", "/api/agent", robot("   "), NAME)
     for case, name in (("bangs", "!!!"), ("symbols", "@#$%"),
-                       ("emoji", "\U0001F916\U0001F916")):
+                       ("emoji", "\U0001F916\U0001F916"),
+                       ("Cyrillic letters", "\u0420\u043e\u0431\u043e\u0442")):
         expect(relay, f"name of only {case}", "/api/agent", robot(name), NAME_CHARS)
     status, _, raw = relay.call("GET", "/api/session")
     slugs = [a.get("slug") for a in json.loads(raw).get("agents", [])]
@@ -356,6 +357,8 @@ def check_robot_rename(relay):
            TAKEN)
     expect(relay, "rename to symbols only", "/api/agent", dict(update, name="???"),
            NAME_CHARS)
+    expect(relay, "rename to Cyrillic letters only", "/api/agent",
+           dict(update, name="\u0420\u043e\u0431\u043e\u0442"), NAME_CHARS)
     same_fields("refused updates in memory", memory, agent_in_memory(relay, "steady"))
     relay.ok("/api/agent", robot("Probe"))  # any later save rewrites vibe.json
     same_fields("refused updates on disk", disk, agent_on_disk(relay, "steady"))

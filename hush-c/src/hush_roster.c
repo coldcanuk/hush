@@ -132,7 +132,7 @@ static hush_status_t hush_roster_check_update(const hush_roster_t *roster,
                                               const hush_roster_agent_in_t *in);
 
 /* True when a rename to name keeps the rules: non-blank after trimming,
- * at least one letter or digit (an older symbol-only name may be kept
+ * at least one letter A-Z or digit (an older symbol-only name may be kept
  * unchanged), and its slug is not held by any robot but agent. The slug
  * never moves. */
 static int hush_roster_rename_ok(const hush_roster_t *roster,
