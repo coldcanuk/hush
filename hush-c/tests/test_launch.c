@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "hush_launch.h"
@@ -19,6 +20,98 @@ static void expect(int cond, const char *msg)
         fprintf(stderr, "FAIL %s\n", msg);
         g_fail = 1;
     }
+}
+
+/* Pubkey hex for slug, or "" when the roster has no such robot. */
+static const char *agent_pub(const hush_launch_t *launch, const char *slug)
+{
+    size_t i;
+
+    if (launch == NULL || slug == NULL)
+        return "";
+    for (i = 0; i < launch->roster.nagents; i++) {
+        if (strcmp(launch->roster.agents[i].slug, slug) == 0)
+            return launch->roster.agents[i].id.pubkey_hex;
+    }
+    return "";
+}
+
+/* nopass restart must keep Payne, the templates, and Walkbot One. */
+static void test_nopass_robot_keys(void)
+{
+    static hush_launch_t keys;
+    static hush_launch_t again;
+    hush_store_t *store = NULL;
+    hush_roster_agent_in_t in;
+    char home[128];
+    char cfg[128];
+    char path[256];
+    char body[8192];
+    struct stat st;
+    FILE *fp;
+    size_t nread = 0;
+    const char *slugs[] = {"coach", "auditor", "marshal", "walkbot-one"};
+    size_t i;
+
+    snprintf(home, sizeof(home), "/tmp/hush-b1-home-%d", (int)getpid());
+    snprintf(cfg, sizeof(cfg), "/tmp/hush-b1-cfg-%d", (int)getpid());
+    if (mkdir(home, 0700) != 0 || mkdir(cfg, 0700) != 0) {
+        expect(0, "nopass temp dirs");
+        return;
+    }
+    expect(setenv("HUSH_HOME", home, 1) == 0, "nopass home");
+    expect(setenv("HUSH_CONFIG_DIR", cfg, 1) == 0, "nopass config");
+    hush_pass_set_helper("/nonexistent/pass");
+    hush_launch_init(&keys);
+    expect(hush_store_create(&store) == HUSH_OK, "nopass store");
+    expect(hush_launch_create_identity(&keys) == HUSH_OK, "nopass create");
+    expect(hush_launch_ack_backup(&keys, 0) == HUSH_OK, "nopass ack opt-out");
+    expect(!keys.save_pass, "nopass save_pass off");
+    expect(hush_launch_create_vibe(&keys, store, "HQ", "b1") == HUSH_OK,
+           "nopass vibe");
+    memset(&in, 0, sizeof(in));
+    memcpy(in.name, "Walkbot One", 12);
+    memcpy(in.prompt, "Walk the floor.", 16);
+    memcpy(in.provider, HUSH_ROSTER_PROVIDER_GROK_BUILD,
+           sizeof(HUSH_ROSTER_PROVIDER_GROK_BUILD));
+    expect(hush_launch_add_agent(&keys, store, &in, 0) == HUSH_OK,
+           "nopass walkbot");
+    expect(agent_pub(&keys, "walkbot-one")[0] != '\0', "nopass walkbot key");
+    expect(agent_pub(&keys, "coach")[0] != '\0', "nopass coach key");
+    expect(keys.payne.pubkey_hex[0] != '\0', "nopass payne key");
+    snprintf(path, sizeof(path), "%s/vibe.json", cfg);
+    fp = fopen(path, "r");
+    expect(fp != NULL, "nopass vibe.json");
+    if (fp != NULL) {
+        nread = fread(body, 1, sizeof(body) - 1, fp);
+        body[nread] = '\0';
+        fclose(fp);
+    }
+    expect(strstr(body, "nsec") == NULL, "nopass vibe.json has no nsec");
+    snprintf(path, sizeof(path), "%s/agents/coach/nsec", home);
+    memset(&st, 0, sizeof(st));
+    expect(stat(path, &st) == 0, "nopass coach nsec file");
+    if (stat(path, &st) == 0) {
+        expect(S_ISREG(st.st_mode), "nopass coach nsec regular");
+        expect((st.st_mode & 0777) == 0600, "nopass coach nsec mode 0600");
+    }
+    hush_launch_init(&again);
+    expect(hush_launch_restore_identity(&again) == HUSH_OK, "nopass id again");
+    expect(hush_launch_restore_vibe(&again) == HUSH_OK, "nopass vibe again");
+    expect(again.has_vibe, "nopass restored vibe");
+    expect(strcmp(again.payne.pubkey_hex, keys.payne.pubkey_hex) == 0,
+           "nopass payne pubkey held");
+    for (i = 0; i < sizeof(slugs) / sizeof(slugs[0]); i++) {
+        char msg[80];
+
+        snprintf(msg, sizeof(msg), "nopass %s pubkey held", slugs[i]);
+        if (strcmp(agent_pub(&again, slugs[i]), agent_pub(&keys, slugs[i])) != 0)
+            fprintf(stderr, "  %s %s -> %s\n", slugs[i],
+                    agent_pub(&keys, slugs[i]), agent_pub(&again, slugs[i]));
+        expect(strcmp(agent_pub(&again, slugs[i]),
+                      agent_pub(&keys, slugs[i])) == 0, msg);
+    }
+    hush_store_destroy(store);
 }
 
 int main(void)
@@ -56,7 +149,7 @@ int main(void)
     expect(hush_launch_format_session(&launch, 10555, json, sizeof(json),
                                       &n) == HUSH_OK,
            "session after ack");
-    expect(strstr(json, "\"nsec\":\"\"") != NULL, "nsec cleared");
+    expect(strstr(json, "\"nsec\",\"\"") != NULL, "nsec cleared");
     expect(hush_launch_create_vibe(&launch, store, "HQ",
                                    "primary endpoint") == HUSH_OK,
            "vibe");
@@ -410,6 +503,7 @@ int main(void)
         expect(strstr(body, "payne_provider_0") != NULL, "vibe has payne_provider");
     }
     hush_store_destroy(store);
+    test_nopass_robot_keys();
     hush_pass_set_helper(NULL);
     if (g_fail)
         return 1;
