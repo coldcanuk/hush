@@ -1478,6 +1478,16 @@ when policy flips; new considers honor the new leash.
 - Feather 36–72px on splash, no animation beyond a quiet fade if cheap.
 - Author pills: you / Payne / agent / human.
 
+## Walk B2–B4 (phone log, quick-bar labels, inventory edit)
+
+Delta 2026-10-02, walkthrough blockers on main `e4a34366`. Scope is these three only.
+
+**B2 expanded inventory edit.** `#inv-menu` is `position: fixed` and used to be `z-index: 40`, under `.drawer` (`z-index: 60`), so a right-click in the expanded inventory (`#inv-expand-drawer`, opened from quick-bar slot 1 when no tile is selected) painted the menu behind the drawer. `#inv-menu` is now `z-index: 75` (the channel menu stays at 40). The drawer has a visible **Edit** button (`#inv-expand-edit`). It stays disabled until a tile is selected (a click that does not drag). Its accessible name is "Edit the selected robot" when nothing is selected, and "Edit " plus that robot's name when one is. Activating it opens the same robot editor as the menu's `edit` item. Double-clicking a tile opens that editor too. A click that does not move the tile does not rebuild the tile, so the second click of a double-click still lands on it. Help under the title: "Expanded 8×5 grid. Compact sidebar stays 4×3. Select a robot and press Edit, or double-click it. Right-click and choose edit."
+
+**B3 phone message list.** At `max-width: 640px` the hive used one grid row, `minmax(0, 1fr)`, and `#roster-pane` sat on an implicit auto row. With a tall roster the `1fr` track went to 0, `#fo-log-wrap` (`flex: 1; min-height: 0`) went to 0, and `html, body { height: 100% }` kept the document from scrolling. At that breakpoint `html` and `body` are `height: auto; min-height: 100%` with `body { overflow-y: auto }`, `#hive` is `height: auto` with `min-height: calc(100dvh - 72px)`, and `#fo-log-wrap` has `min-height: 9rem`. A short roster still fills the screen; a tall one keeps the dispatch log and the page scrolls. Wider than 640px is unchanged.
+
+**B4 quick-bar labels.** At `max-width: 480px` each folder tab hides its `<kbd>` (the digit stays on `aria-keyshortcuts` and the button `title`), uses a smaller size and letter-spacing, and must fit its full label (Inventory, Character, New channel, Stop) inside the button. At wider widths the key chips stay.
+
 ## Hick cuts
 - Header primary choices: brand + badge. Actions live on the tool rail.
   Install is opportunistic and explained. Badge is status.

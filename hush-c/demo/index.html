@@ -1870,6 +1870,59 @@ button.fo-person { min-height: var(--btn-h-sm); }
    the #quick-bar top where the quick-bar overlays the drawer, so no row
    shows crisp and cut at the quick-bar edge. */
 #fo-drawer.is-overflowing::after { bottom: var(--fade-bottom, -10px); }
+
+/* Walk B2: the robot menu is position:fixed at z-index 40, and the
+   expanded inventory is a .drawer at z-index 60, so a right-click in
+   that drawer painted the menu behind it. Lift only #inv-menu above
+   the drawer (the channel menu stays at 40). */
+#inv-menu.menu { z-index: 75; }
+#inv-expand-drawer .drawer-head { gap: 8px; }
+#inv-expand-edit { margin-left: auto; min-height: var(--btn-h-md); padding: 0 var(--btn-px-md); font-size: var(--btn-fs-md); }
+/* Walk B3: at <=640px the hive is one grid row (minmax(0, 1fr)) plus an
+   implicit auto row for #roster-pane. A tall roster (8 people) consumes
+   the definite hive height, the 1fr track collapses, and #fo-log-wrap
+   (flex 1, min-height 0) goes to 0. html/body height 100% then keeps
+   scrollHeight equal to the viewport, so the messages cannot be scrolled
+   back. Size the log from its content (at least 9rem) and let the page
+   grow and scroll. Short rosters still fill the viewport via min-height. */
+@media (max-width: 640px) {
+  html, body { height: auto; min-height: 100%; }
+  body { overflow-y: auto; }
+  #hive.shell.hive {
+    height: auto;
+    flex: 1 0 auto;
+    min-height: calc(100dvh - 72px);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  #fo-log-wrap { min-height: 9rem; }
+}
+/* Walk B4: at 375 the four folder tabs plus the gear are narrower than
+   their labels, and overflow:hidden plus the key chip clips them
+   (INVENTOR / CHARACTE / NEW CHAN). On a narrow bar, hide the key chip
+   (the shortcut stays on aria-keyshortcuts and the title), tighten the
+   tab, and keep the whole label inside the button. */
+@media (max-width: 480px) {
+  .qb-slot.folder-tab,
+  html[data-theme="field-office"] .qb-slot.folder-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    margin-right: -4px;
+    padding: 4px 3px 5px;
+    letter-spacing: 0;
+    font-size: 0.5rem;
+    overflow: hidden;
+    clip-path: polygon(4px 0, calc(100% - 4px) 0, 100% 100%, 0 100%);
+  }
+  .qb-slot.folder-tab kbd { display: none; }
+  #quick-bar .qb-label {
+    display: block;
+    overflow: hidden;
+    text-overflow: clip;
+    white-space: nowrap;
+    text-align: center;
+    min-width: 0;
+  }
+}
 </style>
 </head>
 <body>
@@ -2598,9 +2651,10 @@ button.fo-person { min-height: var(--btn-h-sm); }
     <div class="panel wide">
       <div class="drawer-head">
         <h2>Robots inventory</h2>
+        <button class="btn" id="inv-expand-edit" type="button" disabled aria-label="Edit the selected robot" title="Select a robot first">Edit</button>
         <button class="drawer-x" id="inv-expand-close" type="button" aria-label="Close expanded inventory">×</button>
       </div>
-      <p class="help">Expanded 8×5 grid. Compact sidebar stays 4×3.</p>
+      <p class="help" id="inv-expand-help">Expanded 8×5 grid. Compact sidebar stays 4×3. Select a robot and press Edit, or double-click it. Right-click and choose edit.</p>
       <div id="robot-inventory-full" aria-label="Expanded robot inventory"></div>
     </div>
   </div>
@@ -7145,10 +7199,21 @@ button.fo-person { min-height: var(--btn-h-sm); }
       renderAllInventories();
     }
 
+    function syncInvExpandEdit() {
+      const btn = $("inv-expand-edit");
+      if (!btn) return;
+      const bot = invSelectedSlug ? robotModels().find((b) => b.slug === invSelectedSlug) : null;
+      btn.disabled = !bot;
+      const label = bot ? ("Edit " + (bot.name || bot.slug)) : "Edit the selected robot";
+      btn.setAttribute("aria-label", label);
+      btn.title = bot ? label : "Select a robot first";
+    }
+
     function renderAllInventories() {
       renderInventory($("robot-inventory"), INV_COLS, INV_ROWS, INV_CELL, true);
       const full = $("robot-inventory-full");
       if (full) renderInventory(full, INV_EXPAND_COLS, INV_EXPAND_ROWS, INV_EXPAND_CELL, false);
+      syncInvExpandEdit();
     }
 
     function startRobotConversation(bot) {
@@ -7219,6 +7284,13 @@ button.fo-person { min-height: var(--btn-h-sm); }
           ev.preventDefault();
           ev.stopPropagation();
           openInvMenu(it.slug, ev.clientX, ev.clientY);
+        });
+        el.addEventListener("dblclick", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          invDrag = null;
+          const bot = robotModels().find((b) => b.slug === it.slug);
+          if (bot) openAgentDrawer(bot);
         });
         el.addEventListener("click", (ev) => {
           if (ev.metaKey) {
@@ -7291,8 +7363,18 @@ button.fo-person { min-height: var(--btn-h-sm); }
         if (!moved && it.slug) invSelectedSlug = it.slug;
       }
       invDrag = null;
-      saveInvLayout();
-      renderAllInventories();
+      /* A click that does not move must not rebuild the tile. Rebuilding
+         between the two clicks of a double-click drops the dblclick. */
+      if (moved) {
+        saveInvLayout();
+        renderAllInventories();
+      } else {
+        document.querySelectorAll(".inv-item").forEach((e) => {
+          e.classList.remove("dragging");
+          e.classList.toggle("selected", !!invSelectedSlug && e.dataset.slug === invSelectedSlug);
+        });
+        syncInvExpandEdit();
+      }
     }
 
     function paintVoiceRow(selected) {
@@ -8412,6 +8494,10 @@ button.fo-person { min-height: var(--btn-h-sm); }
     });
     if ($("inv-expand-close")) $("inv-expand-close").addEventListener("click", () => {
       $("inv-expand-drawer").classList.remove("show");
+    });
+    if ($("inv-expand-edit")) $("inv-expand-edit").addEventListener("click", () => {
+      const bot = robotModels().find((b) => b.slug === invSelectedSlug);
+      if (bot) openAgentDrawer(bot);
     });
     /* UI-M4 phone thin nav: on narrow viewports the same Inventory +
        Character tabs (with i/c keys and #quick-bar) are the primary nav.

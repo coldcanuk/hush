@@ -175,6 +175,47 @@ const CONTRAST_EXPR = (sel) => `(() => {
 })()`;
   const RATIO_OF = (m) => (m && typeof m.ratio === 'number' ? m.ratio : null);
 
+
+const LOG_PROBE_FN = `function(th, force) {
+  document.documentElement.setAttribute('data-theme', th);
+  const list = document.querySelector('#fo-roster-list');
+  const pane = document.querySelector('#roster-pane');
+  const keep = list.innerHTML;
+  const paneMin = pane.style.minHeight;
+  while (list.querySelectorAll('.fo-person').length < 8) {
+    const b = document.createElement('div');
+    b.className = 'fo-person static';
+    const n = document.createElement('span');
+    n.className = 'fo-person-name';
+    n.textContent = 'Person ' + list.querySelectorAll('.fo-person').length;
+    const k = document.createElement('span');
+    k.className = 'fo-person-kind';
+    k.textContent = 'robot';
+    b.appendChild(n);
+    b.appendChild(k);
+    list.appendChild(b);
+  }
+  if (force) pane.style.minHeight = '900px';
+  const log = document.querySelector('#fo-log-wrap');
+  const lr = log.getBoundingClientRect();
+  const scroller = document.scrollingElement || document.documentElement;
+  const before = scroller.scrollTop;
+  scroller.scrollTop = before + 280;
+  const moved = scroller.scrollTop > before + 40;
+  scroller.scrollTop = before;
+  const out = {
+    people: list.querySelectorAll('.fo-person').length,
+    logH: Math.round(lr.height),
+    logTop: Math.round(lr.top),
+    inView: lr.height > 0 && lr.top < window.innerHeight && lr.bottom > 0,
+    docH: scroller.scrollHeight, inner: window.innerHeight, moved,
+    overflowY: getComputedStyle(document.body).overflowY
+  };
+  list.innerHTML = keep;
+  pane.style.minHeight = paneMin;
+  return out;
+}`;
+
 async function main() {
   const chrome = resolveChrome();
   const track = (proc) => { liveProcs.push(proc); return proc; };
@@ -766,6 +807,117 @@ async function main() {
     checkSavePass(await savePassSent('Raise a robot', `document.querySelector('#raise-agent').click()`, true), false, 'no pass, box hidden');
     checkSavePass(await savePassSent('Edit locked robot', editRobot('coach'), true), false, 'no pass, update');
     await cdp.eval(`document.querySelector('#agent-close').click()`);
+
+    // Walk B2-B4. These read painted behaviour. B3 injects roster rows in
+    // the same turn it measures, because tick() rebuilds that list every
+    // second; the rows use the real .fo-person rule.
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await sleep(200);
+    await cdp.eval(`['agent-drawer','inv-expand-drawer'].forEach((id) => { const e = document.getElementById(id); if (e) e.classList.remove('show'); })`);
+    await cdp.click('#qb-1');
+    await cdp.waitFor(`!!document.querySelector('#inv-expand-drawer.show') && !!document.querySelector('#robot-inventory-full .inv-item[data-slug="coach"]')`, 'expanded inventory coach');
+    const menu = await cdp.eval(`(() => {
+      const el = document.querySelector('#robot-inventory-full .inv-item[data-slug="coach"]');
+      const r = el.getBoundingClientRect();
+      el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 10, clientY: r.top + 10, button: 2 }));
+      const m = document.querySelector('#inv-menu');
+      const mr = m.getBoundingClientRect();
+      const hit = document.elementFromPoint(mr.left + mr.width / 2, mr.top + 12);
+      return {
+        show: m.classList.contains('show'),
+        z: getComputedStyle(m).zIndex,
+        dz: getComputedStyle(document.querySelector('#inv-expand-drawer')).zIndex,
+        inMenu: !!(hit && hit.closest && hit.closest('#inv-menu')),
+        label: (m.querySelector('button[data-act="edit"]') || { textContent: '' }).textContent.trim()
+      };
+    })()`);
+    console.log('inv menu: ' + JSON.stringify(menu));
+    check(menu.show && Number(menu.z) > Number(menu.dz) && menu.inMenu && menu.label === 'edit',
+      `inventory menu is above the drawer and hittable: ${JSON.stringify(menu)}`);
+    await cdp.eval(`document.querySelector('#inv-menu button[data-act="edit"]').click()`);
+    await cdp.waitFor(`document.querySelector('#agent-drawer.show') && document.querySelector('#agent-name').value === 'Coach'`, 'edit from menu');
+    await cdp.eval(`document.querySelector('#agent-close').click()`);
+    const help = await cdp.eval(`document.querySelector('#inv-expand-help').textContent`);
+    check(help.includes('Select a robot and press Edit, or double-click it.') && help.includes('Right-click and choose edit.') && help.includes('Expanded 8×5 grid.'),
+      `inventory help states the edit paths: ${help}`);
+    await cdp.eval(`document.querySelector('#inv-expand').click()`);
+    await cdp.waitFor(`!!document.querySelector('#inv-expand-drawer.show') && !!document.querySelector('#robot-inventory-full .inv-item[data-slug="coach"]')`, 'inventory for Edit button');
+    const pt = await cdp.eval(`(() => { const el = document.querySelector('#robot-inventory-full .inv-item[data-slug="coach"]'); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', clickCount: 1, buttons: 1 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt.x, y: pt.y, button: 'left', clickCount: 1, buttons: 0 });
+    await sleep(150);
+    const editBtn = await cdp.eval(`(() => { const b = document.querySelector('#inv-expand-edit'); return { dis: b.disabled, aria: b.getAttribute('aria-label'), title: b.title, text: b.textContent.trim() }; })()`);
+    console.log('edit button: ' + JSON.stringify(editBtn));
+    check(!editBtn.dis && editBtn.text === 'Edit' && editBtn.aria === 'Edit Coach' && editBtn.title === 'Edit Coach',
+      `Edit button names the selected robot: ${JSON.stringify(editBtn)}`);
+    await cdp.eval(`document.querySelector('#inv-expand-edit').click()`);
+    await cdp.waitFor(`document.querySelector('#agent-drawer.show') && document.querySelector('#agent-name').value === 'Coach' && document.querySelector('#agent-title').textContent.startsWith('Edit')`, 'edit from button');
+    await cdp.eval(`document.querySelector('#agent-close').click()`);
+    await cdp.eval(`document.querySelector('#inv-expand').click()`);
+    await cdp.waitFor(`!!document.querySelector('#inv-expand-drawer.show') && !!document.querySelector('#robot-inventory-full .inv-item[data-slug="coach"]')`, 'inventory for double-click');
+    const pt2 = await cdp.eval(`(() => { const el = document.querySelector('#robot-inventory-full .inv-item[data-slug="coach"]'); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt2.x, y: pt2.y, button: 'left', clickCount: 1, buttons: 1 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt2.x, y: pt2.y, button: 'left', clickCount: 1, buttons: 0 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt2.x, y: pt2.y, button: 'left', clickCount: 2, buttons: 1 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt2.x, y: pt2.y, button: 'left', clickCount: 2, buttons: 0 });
+    await cdp.waitFor(`document.querySelector('#agent-drawer.show') && document.querySelector('#agent-name').value === 'Coach'`, 'edit from double-click', 4000);
+    await cdp.eval(`document.querySelector('#agent-close').click()`);
+    await cdp.eval(`const d = document.querySelector('#inv-expand-drawer'); if (d) d.classList.remove('show');`);
+
+    const themeKeep = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
+    const qbWant = ['Inventory', 'Character', 'New channel', 'Stop'];
+    for (const [w, h] of [[375, 812], [1440, 900]]) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+      await sleep(200);
+      for (const th of ['field-office', 'dark']) {
+        const rows = await cdp.eval(`((th) => { document.documentElement.setAttribute('data-theme', th);
+          return [...document.querySelectorAll('#quick-bar .qb-slot')].map((btn) => {
+            const lab = btn.querySelector('.qb-label');
+            const kbd = btn.querySelector('kbd');
+            const range = document.createRange();
+            range.selectNodeContents(lab);
+            const tr = range.getBoundingClientRect();
+            const br = btn.getBoundingClientRect();
+            const x = Math.max(br.left + 2, Math.min(tr.right - 1, br.right - 2));
+            const hit = document.elementFromPoint(x, (tr.top + tr.bottom) / 2);
+            return { id: btn.id, text: lab.textContent, sw: btn.scrollWidth, cw: btn.clientWidth,
+              kbd: kbd ? getComputedStyle(kbd).display : '',
+              inside: tr.width > 0 && tr.right <= br.right + 1.5 && tr.left >= br.left - 1.5,
+              hit: !!(hit && btn.contains(hit)), aria: btn.getAttribute('aria-keyshortcuts'), title: btn.title };
+          }); })(${JSON.stringify(th)})`);
+        console.log(`qb ${th} ${w}: ` + JSON.stringify(rows));
+        check(rows.map((r) => r.text).join('|') === qbWant.join('|'), `quick-bar labels at ${w} ${th}: ${JSON.stringify(rows)}`);
+        for (const r of rows) {
+          check(r.sw <= r.cw + 1 && r.inside && r.hit, `quick-bar ${r.id} label fits at ${w} ${th}: ${JSON.stringify(r)}`);
+          check(r.aria === String(qbWant.indexOf(r.text) + 1) && r.title.startsWith(r.text), `quick-bar ${r.id} keeps its shortcut: ${JSON.stringify(r)}`);
+          if (w <= 480)
+            check(r.kbd === 'none', `key chip hidden at ${w}: ${JSON.stringify(r)}`);
+          else
+            check(r.kbd !== 'none', `key chip stays at ${w}: ${JSON.stringify(r)}`);
+        }
+      }
+    }
+
+    const logProbe = async (w, h, th, force) => {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+      await sleep(150);
+      const expr = '(' + LOG_PROBE_FN + ')(' + JSON.stringify(th) + ',' + (force ? 'true' : 'false') + ')';
+      return await cdp.eval(expr);
+    };
+    for (const th of ['field-office', 'dark']) {
+      const phone = await logProbe(375, 812, th, false);
+      const tall = await logProbe(375, 812, th, true);
+      const desk = await logProbe(1440, 900, th, false);
+      console.log(`log ${th}: ` + JSON.stringify({ phone, tall, desk }));
+      check(phone.people >= 8 && phone.logH >= 140 && phone.inView, `375 log stays up with 8 people (${th}): ${JSON.stringify(phone)}`);
+      check(tall.logH >= 140 && tall.docH > tall.inner && tall.moved && tall.overflowY !== 'hidden',
+        `375 page scrolls when the roster is taller than the screen (${th}): ${JSON.stringify(tall)}`);
+      check(desk.logH >= 300 && desk.inView, `1440 log stays up with 8 people (${th}): ${JSON.stringify(desk)}`);
+    }
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+    await cdp.eval(`document.documentElement.setAttribute('data-theme', ${JSON.stringify(themeKeep)})`);
+    await sleep(200);
+
     await cdp.click('#hive-close');
     await cdp.waitFor(`!!document.querySelector('#hive-leave.show')`, 'leave chooser');
     Object.assign(contrasts, { leave: await sample(['#leave-exit', '#leave-close', '#leave-cancel']) });

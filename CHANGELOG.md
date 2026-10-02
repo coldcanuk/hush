@@ -8,6 +8,8 @@ the top-level `VERSION` file.
 
 ### Fixed
 
+- Phone walkthrough: the expanded inventory menu no longer opens behind the drawer, and Edit plus double-click open a robot; at phone width the dispatch log keeps a minimum height and the page scrolls when the roster is tall; quick-bar labels fit at 375px.
+
 - Worker failures are no longer silent: a dying worker writes a
   HUSH_JOB_ERR line into its output stream, the relay carries the reason
   into job->diag, and the failure note prints it ("...through deepseek-api
