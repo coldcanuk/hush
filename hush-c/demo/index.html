@@ -6044,7 +6044,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
 
     /* Copy of the relay's missing-runtime note. The reply stays in the
      * thread; #stream still shows this sentence on the root card.
-     * That card must not also say that robot is thinking. */
+     * That card must not also say that robot is thinking or reacting. */
     function providerFailureSentence(kids) {
       const list = kids || [];
       for (let i = 0; i < list.length; i++) {
@@ -6679,9 +6679,11 @@ button.fo-person { min-height: var(--btn-h-sm); }
             const pill = document.createElement("span");
             let phase = mentionAckPhase(e.id, bot, jobs);
             /* A missing-runtime sentence is already the answer. Do not
-             * also say that robot is thinking. The emoji thumb may stay. */
+             * also say that robot is thinking or reacting. The emoji
+             * thumb may stay. Do not rename the phase to another
+             * in-progress word. */
             if (quietRobot && (bot.name || "robot") === quietRobot &&
-                phase === "thinking")
+                (phase === "thinking" || phase === "reacting"))
               phase = "emoji";
             pill.className = "robot-ack " + phase;
             pill.title = (bot.name || "robot") + " is " + phase;

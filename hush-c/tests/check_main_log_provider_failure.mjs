@@ -236,8 +236,9 @@ sandbox.window.addEventListener = () => {};
 sandbox.window.removeEventListener = () => {};
 
 let bootError = null;
+const context = vm.createContext(sandbox);
 try {
-  vm.runInContext(script, vm.createContext(sandbox), { filename: "index.html" });
+  vm.runInContext(script, context, { filename: "index.html" });
 } catch (err) {
   bootError = err;
 }
@@ -279,7 +280,8 @@ const events = [
   },
   {
     id: other, kind: 1, channel: "welcome", reply_to: "",
-    content: "hello", pubkey: "humanpub", created_at: now
+    content: "hello", pubkey: "humanpub", created_at: now,
+    mentions: [MAJOR_NPUB]
   },
   {
     id: "e".repeat(64), kind: 1, channel: "welcome", reply_to: other,
@@ -337,23 +339,45 @@ if (/\.log-failure\s*\{[^}]*display\s*:\s*none/.test(html))
 function cardsOf(el) {
   return (el.children || []).filter((c) => c.classList && c.classList.contains("note"));
 }
-function hasThinkingMark(el) {
-  if (!el || el.nodeType === 3) return false;
-  if (el.classList && el.classList.contains("think")) return true;
-  if (el.classList && el.classList.contains("robot-ack") && el.classList.contains("thinking"))
-    return true;
-  const own = (el.textContent || "");
-  if (el.classList && el.classList.contains("note") && own.indexOf("is thinking") >= 0)
-    return true;
-  return (el.children || []).some((c) => hasThinkingMark(c));
+function progressAcks(el, out) {
+  if (!el || el.nodeType === 3) return;
+  if (el.classList && el.classList.contains("robot-ack")) out.push(el);
+  (el.children || []).forEach((c) => progressAcks(c, out));
 }
-const cards = cardsOf(stream);
-const failedCard = cards.find((c) => (c.textContent || "").indexOf(FAIL) >= 0);
-const normalCard = cards.find((c) => (c.textContent || "").indexOf("hello") >= 0);
+function inProgressText(s) {
+  const t = String(s || "");
+  return t.indexOf("is thinking") >= 0 || t.indexOf("is reacting") >= 0;
+}
+function ackSaysInProgress(el) {
+  const cls = String(el.className || "");
+  const title = String(el.title || "");
+  return /\bthinking\b/.test(cls) || /\breacting\b/.test(cls) ||
+    /\bthinking\b/.test(title) || /\breacting\b/.test(title);
+}
+function cardShowsInProgress(el) {
+  if (!el) return false;
+  if (inProgressText(el.textContent)) return true;
+  if (el.classList && el.classList.contains("think")) return true;
+  const acks = [];
+  progressAcks(el, acks);
+  return acks.some((a) => ackSaysInProgress(a) || inProgressText(a.textContent));
+}
+function freshCards() {
+  const stream = document.getElementById("stream");
+  const cards = cardsOf(stream);
+  return {
+    stream,
+    failed: cards.find((c) => (c.textContent || "").indexOf(FAIL) >= 0),
+    normal: cards.find((c) => (c.textContent || "").indexOf("hello") >= 0)
+  };
+}
+let cards = freshCards();
+const failedCard = cards.failed;
+const normalCard = cards.normal;
 if (!failedCard)
   fail("failure sentence is not on a root card");
-if (hasThinkingMark(failedCard) || (failedCard.textContent || "").indexOf("is thinking") >= 0)
-  fail("root card shows a thinking mark while the failure sentence is on it");
+if (cardShowsInProgress(failedCard))
+  fail("root card shows a thinking or reacting mark while the failure sentence is on it");
 if (!normalCard)
   fail("normal root card is missing");
 if ((normalCard.textContent || "").indexOf(FAIL) >= 0)
@@ -361,5 +385,46 @@ if ((normalCard.textContent || "").indexOf(FAIL) >= 0)
 if ((normalCard.textContent || "").indexOf("is thinking") < 0)
   fail("a normal card with no failure sentence lost its thinking mark");
 
+/* A live job past the thinking window paints "reacting". The failure
+ * card must not. A card with no failure sentence still may. */
+vm.runInContext(`
+  const realNow = Date.now.bind(Date);
+  Date.now = () => realNow() + 1500;
+`, context);
+try {
+  render(events, {
+    ok: true, version: "0.0.1", events: 5, clients: 1,
+    thinking: [
+      { name: "Major", parent: root },
+      { name: "Major", parent: other }
+    ]
+  });
+} catch (err) {
+  console.error(err && err.stack ? err.stack : err);
+  fail("second render threw");
+}
+cards = freshCards();
+if (!cards.failed)
+  fail("failure sentence left the root card after the reacting window");
+if (cardShowsInProgress(cards.failed))
+  fail("root card shows thinking or reacting after the reacting window");
+const failedAcks = [];
+progressAcks(cards.failed, failedAcks);
+if (failedAcks.some((a) => ackSaysInProgress(a)))
+  fail("failure card robot-ack class or title still says thinking or reacting");
+if ((cards.failed.textContent || "").indexOf("\u{1F44D}") < 0 &&
+    (cards.failed.innerHTML || "").indexOf("\u{1F44D}") < 0) {
+  const thumb = failedAcks.some((a) => String(a.innerHTML || a.textContent || "").indexOf("\u{1F44D}") >= 0);
+  if (!thumb)
+    fail("emoji thumb was removed from the failure card");
+}
+if (!cards.normal)
+  fail("normal root card disappeared after the reacting window");
+if ((cards.normal.textContent || "").indexOf("is reacting") < 0)
+  fail("a normal card with no failure sentence did not reach reacting");
+if ((cards.normal.textContent || "").indexOf(FAIL) >= 0)
+  fail("normal card picked up the failure sentence after the reacting window");
+
 console.log("main-log failure: #stream shows the provider sentence without the thread pane");
-console.log("main-log failure: thinking mark is absent on the failure card and present on a normal card");
+console.log("main-log failure: thinking and reacting marks are absent on the failure card");
+console.log("main-log failure: a card with no failure sentence still shows thinking, then reacting");
