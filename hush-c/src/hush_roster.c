@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "hush_event.h"
+#include "hush_home.h"
 #include "hush_pass.h"
 #include "hush_provider.h"
 #include "hush_roster.h"
@@ -443,6 +444,10 @@ hush_status_t hush_roster_add_agent(hush_roster_t *roster,
         return HUSH_ERR_CRYPTO;
     if (save_pass)
         hush_roster_try_save_agent(agent->slug, agent->id.nsec);
+    /* Disk copy survives a restart when pass is missing. Templates pass
+     * save_pass 0, so this is their only copy. */
+    if (hush_home_store_agent_nsec(agent->slug, agent->id.nsec) != HUSH_OK)
+        return HUSH_ERR_IO;
     if (hush_roster_store_agent_profile(store, agent) != HUSH_OK)
         return HUSH_ERR_FULL;
     if (hush_roster_store_agent_note(store, agent) != HUSH_OK)

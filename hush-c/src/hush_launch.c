@@ -316,7 +316,7 @@ static hush_status_t hush_launch_put_roster(const hush_launch_t *launch,
                                             char *out, size_t outsz,
                                             size_t *off);
 
-/* Restores one agent nsec from pass, or generates a fresh key. */
+/* Restores one agent nsec: pass, else the home file, else a new key. */
 static hush_status_t hush_launch_restore_agent_id(hush_roster_agent_t *agent);
 
 /* Fills launch vibe fields from json. Requires vibe_name. */
@@ -418,7 +418,7 @@ static hush_status_t hush_launch_take_agent(hush_launch_t *launch,
 static hush_status_t hush_launch_take_members(hush_launch_t *launch,
                                               const char *json);
 
-/* Restores Payne from pass or generates a fresh key. */
+/* Restores Payne: pass, else the home file, else a new key. */
 static hush_status_t hush_launch_restore_payne(hush_launch_t *launch);
 
 /* Writes one Goose slot when the ranked list is empty. */
@@ -1476,6 +1476,9 @@ static hush_status_t hush_launch_seed_hive(hush_launch_t *launch,
         return HUSH_ERR_CRYPTO;
     if (launch->save_pass)
         hush_launch_try_save(launch, HUSH_PASS_PAYNE_NSEC, launch->payne.nsec);
+    if (hush_home_store_agent_nsec(HUSH_LAUNCH_PAYNE_SLUG,
+                                   launch->payne.nsec) != HUSH_OK)
+        return HUSH_ERR_IO;
     if (hush_launch_push_channel(launch, HUSH_LAUNCH_CHAN_GENERAL) != HUSH_OK)
         return HUSH_ERR_FULL;
     if (hush_launch_push_channel(launch, HUSH_LAUNCH_CHAN_WELCOME) != HUSH_OK)
@@ -2925,23 +2928,63 @@ static hush_status_t hush_launch_take_projects(hush_launch_t *launch,
     return HUSH_OK;
 }
 
-static hush_status_t hush_launch_restore_agent_id(hush_roster_agent_t *agent)
+/* Imports secret into id and wipes secret. */
+static hush_status_t hush_launch_import_wiped(hush_identity_t *id, char *secret,
+                                              size_t secretsz)
+{
+    hush_status_t st;
+
+    assert(id != NULL);
+    assert(secret != NULL);
+    st = hush_identity_import(id, secret);
+    hush_launch_cleanse_secret(secret, secretsz);
+    return st;
+}
+
+/* True when pass holds slug's nsec and it imports. */
+static int hush_launch_pass_id(hush_identity_t *id, const char *slug)
 {
     char path[HUSH_PASS_PATH_MAX];
     char secret[HUSH_PASS_SECRET_MAX];
 
-    assert(agent != NULL);
-    if (snprintf(path, sizeof(path), "agents/%s/nsec", agent->slug)
-        >= (int)sizeof(path))
-        return hush_identity_generate(&agent->id);
-    if (hush_pass_has(path)
-        && hush_pass_get(secret, sizeof(secret), path) == HUSH_OK
-        && hush_identity_import(&agent->id, secret) == HUSH_OK) {
+    assert(id != NULL);
+    assert(slug != NULL);
+    memset(secret, 0, sizeof(secret));
+    if (snprintf(path, sizeof(path), "agents/%s/nsec", slug) >= (int)sizeof(path))
+        return 0;
+    if (!hush_pass_has(path))
+        return 0;
+    if (hush_pass_get(secret, sizeof(secret), path) != HUSH_OK) {
         hush_launch_cleanse_secret(secret, sizeof(secret));
+        return 0;
+    }
+    if (hush_launch_import_wiped(id, secret, sizeof(secret)) != HUSH_OK)
+        return 0;
+    (void)hush_home_store_agent_nsec(slug, id->nsec);
+    return 1;
+}
+
+static hush_status_t hush_launch_restore_agent_id(hush_roster_agent_t *agent)
+{
+    char secret[HUSH_PASS_SECRET_MAX];
+    hush_status_t st;
+
+    assert(agent != NULL);
+    if (hush_launch_pass_id(&agent->id, agent->slug))
+        return HUSH_OK;
+    memset(secret, 0, sizeof(secret));
+    st = hush_home_load_agent_nsec(secret, sizeof(secret), agent->slug);
+    if (st == HUSH_OK) {
+        if (hush_launch_import_wiped(&agent->id, secret, sizeof(secret)) != HUSH_OK)
+            return HUSH_ERR_CRYPTO;
         return HUSH_OK;
     }
     hush_launch_cleanse_secret(secret, sizeof(secret));
-    return hush_identity_generate(&agent->id);
+    if (st != HUSH_ERR_NOT_FOUND)
+        return st;
+    if (hush_identity_generate(&agent->id) != HUSH_OK)
+        return HUSH_ERR_CRYPTO;
+    return hush_home_store_agent_nsec(agent->slug, agent->id.nsec);
 }
 
 static const char *hush_launch_restore_provider(const char *id)
@@ -3078,21 +3121,34 @@ static hush_status_t hush_launch_take_roster(hush_launch_t *launch,
 static hush_status_t hush_launch_restore_payne(hush_launch_t *launch)
 {
     char secret[HUSH_PASS_SECRET_MAX];
+    hush_status_t st;
 
     assert(launch != NULL);
     hush_identity_clear(&launch->payne);
+    memset(secret, 0, sizeof(secret));
     if (hush_pass_has(HUSH_PASS_PAYNE_NSEC)
         && hush_pass_get(secret, sizeof(secret), HUSH_PASS_PAYNE_NSEC) == HUSH_OK
         && hush_identity_import(&launch->payne, secret) == HUSH_OK) {
+        (void)hush_home_store_agent_nsec(HUSH_LAUNCH_PAYNE_SLUG, secret);
         hush_launch_cleanse_secret(secret, sizeof(secret));
         return HUSH_OK;
     }
     hush_launch_cleanse_secret(secret, sizeof(secret));
+    memset(secret, 0, sizeof(secret));
+    st = hush_home_load_agent_nsec(secret, sizeof(secret), HUSH_LAUNCH_PAYNE_SLUG);
+    if (st == HUSH_OK) {
+        if (hush_launch_import_wiped(&launch->payne, secret, sizeof(secret))
+            != HUSH_OK)
+            return HUSH_ERR_CRYPTO;
+        return HUSH_OK;
+    }
+    if (st != HUSH_ERR_NOT_FOUND)
+        return st;
     if (hush_identity_generate(&launch->payne) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
     if (launch->save_pass)
         hush_launch_try_save(launch, HUSH_PASS_PAYNE_NSEC, launch->payne.nsec);
-    return HUSH_OK;
+    return hush_home_store_agent_nsec(HUSH_LAUNCH_PAYNE_SLUG, launch->payne.nsec);
 }
 
 static int hush_launch_kind_ok(const char *kind)
