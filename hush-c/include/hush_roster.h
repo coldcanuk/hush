@@ -110,7 +110,7 @@ void hush_roster_init(hush_roster_t *roster);
 /* True when mime or filename is plaintext or Markdown. */
 int hush_roster_is_context_mime(const char *mime, const char *filename);
 
-/* True when theme is one of the seven named palettes. */
+/* True when theme is one of the eight named palettes. */
 int hush_roster_is_theme(const char *theme);
 
 /* True when provider is one of the known named runtimes. */
