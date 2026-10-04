@@ -551,3 +551,73 @@ console.log("main-log failure: a card with no failure sentence still shows think
 console.log("thread ask: failure outcome has no thinking, reacting, or is-emoji title; the thumb stays");
 console.log("thread ask: a thread with no failure sentence still shows reacting");
 console.log("on-deck line stays its own note and is not labeled a model reply");
+
+/* The thread-send finally used to repaint thinkingFor() with no filter,
+ * after tick(), so a live job put "is thinking" back on the chip and
+ * #thread-send title. No relay: stub fetch, run the real submit handler,
+ * and require tick's render to have landed before the assertion. */
+sandbox.openThreadPane(root);
+try {
+  render(events, {
+    ok: true, version: "0.0.1", events: 5, clients: 1,
+    thinking: []
+  });
+} catch (err) {
+  console.error(err && err.stack ? err.stack : err);
+  fail("clearing the live job before send threw");
+}
+document.title = "before-send";
+sandbox.fetch = async (url) => {
+  const u = String(url);
+  const body = (obj) => ({
+    ok: true,
+    status: 200,
+    json: async () => obj,
+    text: async () => ""
+  });
+  if (u.indexOf("/api/status") >= 0) {
+    return body({
+      ok: true, version: "tick-saw-status", build: "test",
+      events: 5, clients: 1,
+      thinking: [{ name: "Major", parent: root }]
+    });
+  }
+  if (u.indexOf("/api/events") >= 0) return body({ events: events });
+  if (u.indexOf("/api/session") >= 0) {
+    return body({
+      logged_in: false,
+      ready: true,
+      channels: [{ name: "welcome", slug: "welcome", id: "", group_id: "" }],
+      payne: { name: "Major", npub: MAJOR_NPUB, pubkey: "majorpub" }
+    });
+  }
+  if (u.indexOf("/api/presence") >= 0) return body({ lines: [] });
+  if (u.indexOf("/api/thread") >= 0) {
+    return body({ ok: true, root: root, turns: [], count: 0, brief: "" });
+  }
+  return body({ ok: true, running: false });
+};
+const threadMsg = document.getElementById("thread-msg");
+threadMsg.value = "ping";
+const threadForm = document.getElementById("thread-form");
+const onSubmit = (threadForm.listeners && threadForm.listeners.submit || [])[0];
+if (typeof onSubmit !== "function")
+  fail("thread submit handler is not registered");
+try {
+  await onSubmit({ preventDefault() {} });
+} catch (err) {
+  console.error(err && err.stack ? err.stack : err);
+  fail("thread submit threw");
+}
+if (String(document.title).indexOf("tick-saw-status") < 0)
+  fail("thread send did not finish tick, so the finally path was not reached: " + document.title);
+const sendAfter = document.getElementById("thread-send");
+const thinkAfter = document.getElementById("thread-think");
+if (inProgressText(thinkAfter.textContent) || inProgressText(sendAfter.title) || ackSaysInProgress(sendAfter))
+  fail("thread send finally put an in-progress mark back: think=" +
+    JSON.stringify(thinkAfter.textContent) + " title=" + JSON.stringify(sendAfter.title));
+const afterLines = [];
+walk(document.getElementById("stream"), afterLines);
+if (afterLines.length !== 1 || afterLines[0].textContent !== FAIL)
+  fail("main-log failure sentence changed after the send finally path");
+console.log("thread send finally: tick restored a thinking job and the chip stayed quiet");

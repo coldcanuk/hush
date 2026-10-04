@@ -5236,7 +5236,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
         $("thread-send-error").textContent = "Reply was not sent. Your draft is still here; try again.";
       } finally {
         sendingThread = false;
-        paintThreadThink(thinkingFor(openThread, lastStatus));
+        paintThreadThink(jobsAfterFailure(thinkingFor(openThread, lastStatus)));
       }
     });
     $("stats").addEventListener("click", () => {
