@@ -229,6 +229,11 @@
     /* WS4: leash/refusal notes are the relay speaking, not a robot answer. */
     .note.leash { border-style: dashed; }
     .note.leash .meta { color: var(--warn); }
+    /* Missing-runtime failure, on the root card in #stream. Not a robot answer. */
+    .log-failure {
+      margin-top: 8px; white-space: pre-wrap; word-break: break-word;
+      color: var(--warn); line-height: 1.45;
+    }
     .code-block {
       margin: 8px 0 0; padding: 10px 12px; overflow: auto;
       background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
@@ -6037,6 +6042,29 @@ button.fo-person { min-height: var(--btn-h-sm); }
       return LEASH_MARKS.some((m) => s.indexOf(m) === 0);
     }
 
+    /* Copy of the relay's missing-runtime note. The reply stays in the
+     * thread; #stream still shows this sentence on the root card.
+     * That card must not also say that robot is thinking or reacting. */
+    function providerFailureSentence(kids) {
+      const list = kids || [];
+      for (let i = 0; i < list.length; i++) {
+        const raw = String(list[i] && list[i].content || "");
+        if (raw.indexOf("No selected provider is ready") === 0) return raw;
+      }
+      return "";
+    }
+
+    /* Name inside "No selected provider is ready for <name>. …". */
+    function providerFailureRobot(sentence) {
+      const prefix = "No selected provider is ready for ";
+      const s = String(sentence || "");
+      if (s.indexOf(prefix) !== 0) return "";
+      const rest = s.slice(prefix.length);
+      const dot = rest.indexOf(".");
+      if (dot < 1) return "";
+      return rest.slice(0, dot);
+    }
+
     /* WS4: live streamed answers, keyed by thread + robot. */
     const partials = {};
 
@@ -6586,7 +6614,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       }
     });
 
-    function paintNote(e, extra) {
+    function paintNote(e, extra, quietRobot) {
       const n = document.createElement("div");
       const mine = isMineNote(e);
       n.className = (e.reply_to ? "note reply" : "note") + (mine ? " mine" : "") +
@@ -6649,7 +6677,14 @@ button.fo-person { min-height: var(--btn-h-sm); }
           const emojiSet = ["👍", "🎯", "🏆"];
           acks.forEach((bot, i) => {
             const pill = document.createElement("span");
-            const phase = mentionAckPhase(e.id, bot, jobs);
+            let phase = mentionAckPhase(e.id, bot, jobs);
+            /* A missing-runtime sentence is already the answer. Do not
+             * also say that robot is thinking or reacting. The emoji
+             * thumb may stay. Do not rename the phase to another
+             * in-progress word. */
+            if (quietRobot && (bot.name || "robot") === quietRobot &&
+                (phase === "thinking" || phase === "reacting"))
+              phase = "emoji";
             pill.className = "robot-ack " + phase;
             pill.title = (bot.name || "robot") + " is " + phase;
             const line = presenceSlugFor(bot.pubkey || bot.npub);
@@ -6937,8 +6972,13 @@ button.fo-person { min-height: var(--btn-h-sm); }
           roots.forEach((e) => {
             const kids = repliesTo(filtered, e.id);
             const jobs = thinkingFor(e.id, status);
+            const failure = providerFailureSentence(kids);
+            const quiet = providerFailureRobot(failure);
+            const cardJobs = quiet
+              ? jobs.filter((j) => j && j.name !== quiet)
+              : jobs;
             const n = paintNote(e, (node) => {
-              paintThink(node, jobs);
+              paintThink(node, cardJobs);
               if (kids.length || jobs.length) {
                 const btn = document.createElement("button");
                 btn.type = "button";
@@ -6947,7 +6987,14 @@ button.fo-person { min-height: var(--btn-h-sm); }
                 btn.addEventListener("click", () => openThreadPane(e.id));
                 node.appendChild(btn);
               }
-            });
+            }, quiet);
+            if (failure) {
+              const line = document.createElement("div");
+              line.className = "log-failure";
+              line.setAttribute("role", "status");
+              line.textContent = failure;
+              n.appendChild(line);
+            }
             s.appendChild(n);
           });
           s.scrollTop = s.scrollHeight;
