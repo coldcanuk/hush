@@ -433,6 +433,45 @@ static size_t count_hits(const char *haystack, const char *needle)
     return found;
 }
 
+
+/* A republished id with another turn between the copies counts once.
+ * A different id still counts. */
+static void test_nonadjacent_duplicate(void)
+{
+    hush_event_t ev;
+    hush_thread_turn_t turns[8];
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+    char id_a[HUSH_EVENT_ID_HEX_LEN + 1];
+    char id_b[HUSH_EVENT_ID_HEX_LEN + 1];
+    static char body[HUSH_THREAD_JSON_MAX];
+    size_t count;
+    size_t n = 0;
+
+    id_for(root, 960);
+    id_for(id_a, 961);
+    id_for(id_b, 962);
+    make_note(&ev, id_a, "turn-A");
+    add_root_tag(&ev, root);
+    hush_thread_record(&ev);
+    make_note(&ev, id_b, "turn-B");
+    add_root_tag(&ev, root);
+    hush_thread_record(&ev);
+    make_note(&ev, id_a, "turn-A-again");
+    add_root_tag(&ev, root);
+    hush_thread_record(&ev);
+    expect(hush_thread_count(root) == 2, "non-adjacent duplicate counts once");
+    count = hush_thread_read(root, turns, 8);
+    expect(count == 2, "read keeps two distinct ids");
+    expect(strcmp(turns[0].id, id_a) == 0, "first id still counts");
+    expect(strcmp(turns[0].content, "turn-A") == 0, "first copy kept");
+    expect(strcmp(turns[1].id, id_b) == 0, "different id still counts");
+    expect(hush_thread_format_json(root, body, sizeof(body), &n) == HUSH_OK,
+           "duplicate thread formats");
+    expect(strstr(body, "\"count\":2") != NULL, "json count is distinct ids");
+    expect(count_hits(body, id_a) == 1, "republished id appears once");
+    expect(count_hits(body, id_b) == 1, "other id appears once");
+}
+
 static void test_format_json(void)
 {
     static char body[HUSH_THREAD_JSON_MAX];
@@ -511,13 +550,18 @@ int main(void)
         return 1;
     id_for(root, 1);
     test_root_and_reply();
+    /* Cap is measured on a fresh root. Root 1 already holds ids the series
+     * would republish, and those must not count twice. */
+    id_for(root, 80);
     test_newest_cap(root);
+    id_for(root, 1);
     test_escaping();
     test_truncation();
     test_brief(root);
     test_roll();
     test_fill_restart();
     test_fill_partial();
+    test_nonadjacent_duplicate();
     test_format_json();
     test_bad_roots();
     test_ignored();

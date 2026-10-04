@@ -272,25 +272,38 @@ size_t hush_store_query(const hush_store_t *store,
                         hush_event_t *out_events,
                         size_t max_events)
 {
-    if (store == NULL || out_events == NULL)
+    size_t written = 0;
+    size_t n;
+    size_t k;
+
+    if (store == NULL || out_events == NULL || max_events == 0)
         return 0;
 
-    size_t written = 0;
-    size_t n = (nfilters == 0) ? 1 : nfilters;
+    n = (nfilters == 0) ? 1 : nfilters;
 
-    for (size_t i = 0; i < store->count && written < max_events; ++i) {
+    /* Newest match first, then flip so the caller sees the window in
+     * ring order. A short ring is unchanged. A long one no longer stops
+     * on the oldest max_events. */
+    for (k = 0; k < store->count && written < max_events; ++k) {
+        size_t i = store->count - 1 - k;
         const hush_event_t *ev = hush_store_at(store, i);
         bool any = false;
-        for (size_t fi = 0; fi < n; ++fi) {
+        size_t fi;
+
+        for (fi = 0; fi < n; ++fi) {
             const hush_filter_t *f = (nfilters == 0) ? NULL : &filters[fi];
             if (f == NULL || hush_filter_match(f, ev)) {
                 any = true;
                 break;
             }
         }
-        if (any) {
+        if (any)
             out_events[written++] = *ev;
-        }
+    }
+    for (k = 0; k < written / 2; ++k) {
+        hush_event_t tmp = out_events[k];
+        out_events[k] = out_events[written - 1 - k];
+        out_events[written - 1 - k] = tmp;
     }
     return written;
 }

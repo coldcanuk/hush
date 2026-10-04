@@ -213,6 +213,38 @@ int main(void)
         /* crashed is deliberately leaked: that is the crash simulation. */
     }
 
+
+    {
+        /* REQ's 64-slot window must be the newest events, not the oldest. */
+        hush_store_t *window = NULL;
+        hush_event_t batch;
+        hush_event_t out[64];
+        size_t nq;
+        size_t wi;
+
+        expect(hush_store_create(&window) == HUSH_OK, "window create");
+        for (wi = 0; wi < 300; wi++) {
+            char id[HUSH_EVENT_ID_HEX_LEN + 1];
+            char content[16];
+            size_t k;
+
+            memset(id, '0', (size_t)HUSH_EVENT_ID_HEX_LEN);
+            id[HUSH_EVENT_ID_HEX_LEN] = '\0';
+            for (k = 0; k < 8; k++)
+                id[HUSH_EVENT_ID_HEX_LEN - 1 - k] = "0123456789abcdef"
+                    [(wi >> (4 * k)) & 15u];
+            snprintf(content, sizeof(content), "m%zu", wi);
+            fill_note(&batch, id, 1, content);
+            expect(hush_store_insert(window, &batch) == HUSH_OK, "window insert");
+        }
+        nq = hush_store_query(window, NULL, 0, out, 64);
+        expect(nq == 64, "window returns 64");
+        expect(strcmp(out[0].content, "m236") == 0, "window is not oldest-first");
+        expect(strcmp(out[63].content, "m299") == 0, "window ends at the newest");
+        expect(strcmp(out[0].content, "m0") != 0, "oldest event is not served");
+        hush_store_destroy(window);
+    }
+
     if (g_fail)
         return 1;
     printf("test_store ok\n");

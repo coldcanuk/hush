@@ -31,7 +31,8 @@ hush_status_t hush_store_persist_open(hush_store_t *store);
  * snapshots every HUSH_STORE_SNAPSHOT_INSERTS inserts. */
 hush_status_t hush_store_insert(hush_store_t *store, const hush_event_t *ev);
 
-/* Collect up to max_events matching any filter. Returns count written. */
+/* Collect up to max_events matching any filter. When more match, the
+ * newest max_events are kept. Written oldest-of-window first. */
 size_t hush_store_query(const hush_store_t *store, const hush_filter_t *filters,
                         size_t nfilters, hush_event_t *out_events, size_t max_events);
 
