@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GATE = "Log in and set up your vibe before changing robots."
 NAME = "Robot name is required."
 NAME_CHARS = "Robot names need a letter (A-Z) or digit."
+NAME_PRINT = ("Robot names cannot include line breaks or other characters that do not print.")
 TAKEN = "A robot named Walkbot One already exists."
 # A name that is not the same but reads the same in A-Z letters and digits.
 LIKE = "Too close to {}: names must differ in letters (A-Z) or 0-9."
@@ -447,17 +448,32 @@ def check_name_rule(relay):
     check_names("Major's reserved id is never given out", relay,
                 {"sgt-major-payne-2": "Sgt Major Payne"})
     relay.ok("/api/agent", {"action": "delete", "slug": "sgt-major-payne-2"})
-    # A raw-byte API name (a browser never sends one) is echoed with '?'.
-    # The session JSON then carries the raw bytes too (not #230's), so only
-    # the status is read here.
-    status, _, _ = relay.call("POST", "/api/agent",
-                              b'{"name":"Ctl\x01Line\nBot","system_prompt":"Walk the floor.",'
-                              b'"provider":"grok-build","save_pass":false}')
-    if status != 200:
-        raise AssertionError(f"reasons: setup raw-byte name -> {status}")
-    expect(relay, "control bytes echo as ?", "/api/agent", robot("Ctl Line Bot"),
-           LIKE.format("Ctl?Line?Bot"))
-    relay.ok("/api/agent", {"action": "delete", "slug": "ctl-line-bot"})
+    # A raw control byte in the posted name (not a JSON escape) is
+    # refused before it is saved. GET /api/session stays valid JSON.
+    raw_name = (b'{"name":"Ctl\x01Line\nBot","system_prompt":"Walk the floor.",'
+                b'"provider":"grok-build","save_pass":false}')
+    expect(relay, "raw control byte in a robot name", "/api/agent", raw_name,
+           NAME_PRINT)
+    status, _, raw = relay.call("GET", "/api/session")
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(f"GET /api/session after a refused control name "
+                        f"is not JSON: {err}; HTTP {status} {raw[:120]!r}")
+        session = None
+    if session is not None:
+        names = [a.get("name") for a in session.get("agents", [])]
+        hidden = [n for n in names if n and ("Ctl" in n or "\x01" in n)]
+        if status != 200 or hidden:
+            FAILURES.append(f"refused control name must not be saved; "
+                            f"HTTP {status} names {names}")
+        else:
+            print("reasons: ok GET /api/session is JSON and the control name was not saved")
+    expect(relay, "rename to a raw control byte", "/api/agent",
+           b'{"action":"update","slug":"walkbot-two","name":"Quiet\x01Hand"}',
+           NAME_PRINT)
+    check_names("rename to a control byte writes nothing", relay,
+                {"walkbot-two": "Quiet Hand"})
     check_name_key(relay)
     check_rename_ids(relay)
     check_suffixed_favorites(relay)

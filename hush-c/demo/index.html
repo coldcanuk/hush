@@ -2472,7 +2472,7 @@ html[data-theme="dark"] #thread-send:active {
         </div>
         <div id="fav-strip">
           <div class="lbl">Favorite loadouts · saved on this relay</div>
-          <p class="help" id="fav-note">Name the current doll to reuse it later. Saved per robot under robots/&lt;slug&gt;/loadouts/. Load swaps the whole doll at once; unload only clears the highlight. Names use letters, digits, spaces, - or _ (max 47), up to 32 per robot.</p>
+          <p class="help" id="fav-note">Name the current doll to reuse it later. Each robot keeps its own saved names. Load swaps the whole doll at once; unload only clears the highlight. Names use letters, digits, spaces, - or _ (max 47), up to 32 per robot.</p>
           <div class="pill-row fav-row">
             <input id="fav-name" type="text" maxlength="48" placeholder="Favorite name">
             <button class="inv-btn" id="fav-save" type="button">Save favorite</button>
@@ -2484,7 +2484,7 @@ html[data-theme="dark"] #thread-send:active {
       <label class="passbox"><input id="agent-pass" type="checkbox" checked>
         Checked to save its key in your password manager.</label>
       <details class="howto" id="agent-pass-howto"><summary>How to find it later</summary>
-        <p>In a terminal, run <code>pass show hush/agents/&lt;slug&gt;/nsec</code>.</p></details>
+        <p>In a terminal, run <code>pass show hush/agents/&lt;robot-id&gt;/nsec</code>.</p></details>
       <p class="warn" id="agent-err"></p>
       <div class="actions">
         <button class="btn" id="agent-save" type="button" aria-label="Create robot">Create<span class="act-noun"> robot</span></button>

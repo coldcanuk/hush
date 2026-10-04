@@ -297,7 +297,7 @@ async function main() {
       const h = document.querySelector('#agent-pass-howto');
       const shown = (e) => e.getClientRects().length > 0;
       return { title: document.querySelector('#agent-title').textContent, label: shown(l), howto: shown(h),
-        open: h.open, text: l.textContent.trim(), cmd: h.textContent.includes('pass show hush/agents/<slug>/nsec') };
+        open: h.open, text: l.textContent.trim(), cmd: h.textContent.includes('pass show hush/agents/<robot-id>/nsec') };
     })()`);
   };
   const editRobot = (slug) => `document.querySelector('#robot-list .robot-card[data-slug="${slug}"] .robot-actions button').click()`;

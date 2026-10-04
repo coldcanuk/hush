@@ -275,7 +275,8 @@ hush_status_t hush_http_serve_presence_post(int fd, const char *body,
         return HUSH_ERR_DENIED;
     }
     if (!hush_http_json_field(body, "slug", slug, sizeof(slug))) {
-        hush_http_reply(fd, "400 Bad Request", "text/plain", "need slug\n", 10);
+        hush_http_reply(fd, "400 Bad Request", "text/plain",
+                        "Need a status.\n", 15);
         return HUSH_ERR_PARSE;
     }
     if (!hush_http_json_field(body, "root", root, sizeof(root)) ||
@@ -293,7 +294,8 @@ hush_status_t hush_http_serve_presence_post(int fd, const char *body,
     in.now = time(NULL);
     st = hush_presence_publish(store, &in);
     if (st == HUSH_ERR_PARSE) {
-        hush_http_reply(fd, "400 Bad Request", "text/plain", "bad slug\n", 9);
+        hush_http_reply(fd, "400 Bad Request", "text/plain",
+                        "That status is not recognized.\n", 31);
         return st;
     }
     if (st != HUSH_OK) {
