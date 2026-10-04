@@ -6043,7 +6043,8 @@ button.fo-person { min-height: var(--btn-h-sm); }
     }
 
     /* Copy of the relay's missing-runtime note. The reply stays in the
-     * thread; #stream still shows this sentence on the root card. */
+     * thread; #stream still shows this sentence on the root card.
+     * That card must not also say that robot is thinking. */
     function providerFailureSentence(kids) {
       const list = kids || [];
       for (let i = 0; i < list.length; i++) {
@@ -6051,6 +6052,17 @@ button.fo-person { min-height: var(--btn-h-sm); }
         if (raw.indexOf("No selected provider is ready") === 0) return raw;
       }
       return "";
+    }
+
+    /* Name inside "No selected provider is ready for <name>. …". */
+    function providerFailureRobot(sentence) {
+      const prefix = "No selected provider is ready for ";
+      const s = String(sentence || "");
+      if (s.indexOf(prefix) !== 0) return "";
+      const rest = s.slice(prefix.length);
+      const dot = rest.indexOf(".");
+      if (dot < 1) return "";
+      return rest.slice(0, dot);
     }
 
     /* WS4: live streamed answers, keyed by thread + robot. */
@@ -6602,7 +6614,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
       }
     });
 
-    function paintNote(e, extra) {
+    function paintNote(e, extra, quietRobot) {
       const n = document.createElement("div");
       const mine = isMineNote(e);
       n.className = (e.reply_to ? "note reply" : "note") + (mine ? " mine" : "") +
@@ -6665,7 +6677,12 @@ button.fo-person { min-height: var(--btn-h-sm); }
           const emojiSet = ["👍", "🎯", "🏆"];
           acks.forEach((bot, i) => {
             const pill = document.createElement("span");
-            const phase = mentionAckPhase(e.id, bot, jobs);
+            let phase = mentionAckPhase(e.id, bot, jobs);
+            /* A missing-runtime sentence is already the answer. Do not
+             * also say that robot is thinking. The emoji thumb may stay. */
+            if (quietRobot && (bot.name || "robot") === quietRobot &&
+                phase === "thinking")
+              phase = "emoji";
             pill.className = "robot-ack " + phase;
             pill.title = (bot.name || "robot") + " is " + phase;
             const line = presenceSlugFor(bot.pubkey || bot.npub);
@@ -6953,8 +6970,13 @@ button.fo-person { min-height: var(--btn-h-sm); }
           roots.forEach((e) => {
             const kids = repliesTo(filtered, e.id);
             const jobs = thinkingFor(e.id, status);
+            const failure = providerFailureSentence(kids);
+            const quiet = providerFailureRobot(failure);
+            const cardJobs = quiet
+              ? jobs.filter((j) => j && j.name !== quiet)
+              : jobs;
             const n = paintNote(e, (node) => {
-              paintThink(node, jobs);
+              paintThink(node, cardJobs);
               if (kids.length || jobs.length) {
                 const btn = document.createElement("button");
                 btn.type = "button";
@@ -6963,8 +6985,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
                 btn.addEventListener("click", () => openThreadPane(e.id));
                 node.appendChild(btn);
               }
-            });
-            const failure = providerFailureSentence(kids);
+            }, quiet);
             if (failure) {
               const line = document.createElement("div");
               line.className = "log-failure";

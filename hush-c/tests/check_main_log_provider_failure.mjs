@@ -254,10 +254,20 @@ if (typeof render !== "function") {
 const root = "a".repeat(64);
 const other = "d".repeat(64);
 const now = Math.floor(Date.now() / 1000);
+const MAJOR_NPUB = "npub1majormajormajormajormajormajormajormajormajormajormajor";
+if (typeof sandbox.applySession !== "function")
+  fail("applySession is not available");
+sandbox.applySession({
+  logged_in: false,
+  ready: false,
+  channels: [],
+  payne: { name: "Major", npub: MAJOR_NPUB, pubkey: "majorpub" }
+});
 const events = [
   {
     id: root, kind: 1, channel: "welcome", reply_to: "",
-    content: "@Major what time is it", pubkey: "humanpub", created_at: now
+    content: "@Major what time is it", pubkey: "humanpub", created_at: now,
+    mentions: [MAJOR_NPUB]
   },
   {
     id: "b".repeat(64), kind: 1, channel: "welcome", reply_to: root,
@@ -278,7 +288,13 @@ const events = [
 ];
 
 try {
-  render(events, { ok: true, version: "0.0.1", events: 5, clients: 1, thinking: [] });
+  render(events, {
+    ok: true, version: "0.0.1", events: 5, clients: 1,
+    thinking: [
+      { name: "Major", parent: root },
+      { name: "Major", parent: other }
+    ]
+  });
 } catch (err) {
   console.error(err && err.stack ? err.stack : err);
   fail("render threw");
@@ -318,4 +334,32 @@ if (html.indexOf('class="log-failure"') < 0 && html.indexOf("line.className = \"
 if (/\.log-failure\s*\{[^}]*display\s*:\s*none/.test(html))
   fail(".log-failure is hidden");
 
+function cardsOf(el) {
+  return (el.children || []).filter((c) => c.classList && c.classList.contains("note"));
+}
+function hasThinkingMark(el) {
+  if (!el || el.nodeType === 3) return false;
+  if (el.classList && el.classList.contains("think")) return true;
+  if (el.classList && el.classList.contains("robot-ack") && el.classList.contains("thinking"))
+    return true;
+  const own = (el.textContent || "");
+  if (el.classList && el.classList.contains("note") && own.indexOf("is thinking") >= 0)
+    return true;
+  return (el.children || []).some((c) => hasThinkingMark(c));
+}
+const cards = cardsOf(stream);
+const failedCard = cards.find((c) => (c.textContent || "").indexOf(FAIL) >= 0);
+const normalCard = cards.find((c) => (c.textContent || "").indexOf("hello") >= 0);
+if (!failedCard)
+  fail("failure sentence is not on a root card");
+if (hasThinkingMark(failedCard) || (failedCard.textContent || "").indexOf("is thinking") >= 0)
+  fail("root card shows a thinking mark while the failure sentence is on it");
+if (!normalCard)
+  fail("normal root card is missing");
+if ((normalCard.textContent || "").indexOf(FAIL) >= 0)
+  fail("normal card picked up the failure sentence");
+if ((normalCard.textContent || "").indexOf("is thinking") < 0)
+  fail("a normal card with no failure sentence lost its thinking mark");
+
 console.log("main-log failure: #stream shows the provider sentence without the thread pane");
+console.log("main-log failure: thinking mark is absent on the failure card and present on a normal card");
