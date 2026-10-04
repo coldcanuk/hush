@@ -18,7 +18,7 @@ Put each private key in one of these stores. One store is enough.
 
 - you: `hush/identity/nsec`
 - Payne: `hush/agents/sgt-major-payne/nsec`
-- a robot: `hush/agents/<slug>/nsec`
+- a robot: `hush/agents/<agent name>/nsec`
 
 The first-launch backup step can still save your key into `pass` when that box is checked. Payne and robots already had a `pass` path. This does not change that.
 
@@ -26,11 +26,11 @@ The first-launch backup step can still save your key into `pass` when that box i
 
 - you: `hush-identity-nsec`
 - Payne: `hush-agents-sgt-major-payne-nsec`
-- a robot: `hush-agents-<slug>-nsec`
+- a robot: `hush-agents-<agent name>-nsec`
 
 Slashes in the `pass` path become hyphens in the item title, with `hush-` in front.
 
-The Pop!_OS keyring uses two attributes: `service` is `hush`, and `item` is the path without the `hush/` prefix (`identity/nsec`, `agents/sgt-major-payne/nsec`, or `agents/<slug>/nsec`).
+The Pop!_OS keyring uses two attributes: `service` is `hush`, and `item` is the path without the `hush/` prefix (`identity/nsec`, `agents/sgt-major-payne/nsec`, or `agents/<agent name>/nsec`).
 
 ## How to unlock after a restart
 
@@ -61,7 +61,7 @@ Use the Payne or robot path in that same shape when the key belongs to them.
 If `pass`, `op`, or `secret-tool` is not installed, or the store has no key for that identity, Hush keeps the restart behavior it already had.
 
 - Your login stays logged out. The session says `restart_lost_login` when a vibe is already saved. That is the honest path. Hush does not create a new human key and present it as you.
-- Payne and robots that already have the older home file (`agents/<slug>/nsec`) still load from that file. This change does not extend that file store and does not route the new unlock through it.
-- When no store has the key and that older file is also absent, Hush may create a new robot key the way it already did. The new key has a new public id. It is not the old one.
+- An older home file (`agents/<agent name>/nsec`) is leftover. It is not a place to keep a key. A private key is never written to a plain file.
+- When none of the three stores has the key, Hush may create a new robot key the way it already did. The new key has a new public id. It is not the old one.
 
 Hush will not mint a new identity and call it the old one.
