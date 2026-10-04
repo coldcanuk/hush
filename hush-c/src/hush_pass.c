@@ -142,6 +142,22 @@ int hush_pass_has(const char *path)
     return hush_pass_run(NULL, 0, NULL, argv) == HUSH_OK;
 }
 
+hush_status_t hush_pass_delete(const char *path)
+{
+    char helper[HUSH_PASS_CMD_MAX];
+    char *argv[4];
+    hush_status_t st;
+
+    g_last_error[0] = '\0';
+    if (!hush_pass_path_is_ok(path))
+        return HUSH_ERR_ARG;
+    st = hush_pass_resolve_helper(helper, sizeof(helper));
+    if (st != HUSH_OK)
+        return st;
+    hush_pass_fill_argv(argv, helper, "rm", path);
+    return hush_pass_run(NULL, 0, NULL, argv);
+}
+
 int hush_pass_available(void)
 {
     const char *over = NULL;

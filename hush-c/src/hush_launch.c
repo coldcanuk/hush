@@ -2957,7 +2957,8 @@ static int hush_launch_pass_copy(char *out, size_t outsz, const char *path)
 
 /* Vault copy is <hush home>/agents/<slug>/nsec via hush_home_load_agent_nsec.
  * This tree has no vault.onerelay.app client. When that file and pass both
- * hold a value, the file is truth. Matching pass stays. A different pass
+ * hold a value, the file is truth. A matching pass copy is deleted after
+ * the file is imported. The file is not rewritten. A different pass
  * value is left in place and is not written onto the file, and the file is
  * not written onto pass. Pass alone (no file) is imported and not copied
  * onto disk. When neither store has a key, mint one into the home file.
@@ -2986,6 +2987,15 @@ static hush_status_t hush_launch_restore_stored_id(hush_launch_t *launch,
         hush_launch_cleanse_secret(file_secret, sizeof(file_secret));
         hush_launch_cleanse_secret(pass_secret, sizeof(pass_secret));
         return HUSH_ERR_DENIED;
+    }
+    if (st == HUSH_OK && have_pass) {
+        hush_launch_cleanse_secret(pass_secret, sizeof(pass_secret));
+        if (hush_launch_import_wiped(id, file_secret, sizeof(file_secret))
+            != HUSH_OK)
+            return HUSH_ERR_CRYPTO;
+        if (hush_pass_delete(pass_path) != HUSH_OK)
+            return HUSH_ERR_IO;
+        return HUSH_OK;
     }
     if (st == HUSH_OK) {
         hush_launch_cleanse_secret(pass_secret, sizeof(pass_secret));

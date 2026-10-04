@@ -214,8 +214,6 @@ static void test_vault_match_stays(void)
     char passdir[128];
     char file_coach[HUSH_IDENTITY_NSEC_MAX];
     char file_payne[HUSH_IDENTITY_NSEC_MAX];
-    char pass_coach[HUSH_PASS_SECRET_MAX];
-    char pass_payne[HUSH_PASS_SECRET_MAX];
 
     if (!vault_case_open(&keys, &store, home, sizeof(home),
                          passdir, sizeof(passdir), "match")) {
@@ -241,14 +239,8 @@ static void test_vault_match_stays(void)
     expect(file_holds_nsec(home, "coach", file_coach), "match coach file stays");
     expect(file_holds_nsec(home, HUSH_LAUNCH_PAYNE_SLUG, file_payne),
            "match payne file stays");
-    expect(hush_pass_get(pass_coach, sizeof(pass_coach),
-                         "agents/coach/nsec") == HUSH_OK,
-           "match coach pass read");
-    expect(strcmp(pass_coach, file_coach) == 0, "match coach pass stays");
-    expect(hush_pass_get(pass_payne, sizeof(pass_payne),
-                         HUSH_PASS_PAYNE_NSEC) == HUSH_OK,
-           "match payne pass read");
-    expect(strcmp(pass_payne, file_payne) == 0, "match payne pass stays");
+    expect(!hush_pass_has("agents/coach/nsec"), "match coach pass gone");
+    expect(!hush_pass_has(HUSH_PASS_PAYNE_NSEC), "match payne pass gone");
     hush_store_destroy(store);
 }
 
