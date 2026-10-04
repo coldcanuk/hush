@@ -1355,7 +1355,7 @@ html[data-theme="field-office"] header,
 html[data-theme="field-office"] #quick-bar,
 html[data-theme="field-office"] .composer { background: #e2d5b8; }
 html[data-theme="field-office"] #kit-menu { border: 2px solid #5c4a3d; background: #e2d5b8; }
-html[data-theme="field-office"] #thread-resize { background: #d4c5a3; border: 2px solid #5c4a3d; }
+html[data-theme="field-office"] #thread-resize { border: 0; background: transparent; }
 /* Carved dossier frames: double rules on the big paper surfaces. */
 html[data-theme="field-office"] .panel,
 html[data-theme="field-office"] .card,
@@ -1927,6 +1927,110 @@ button.fo-person { min-height: var(--btn-h-sm); }
     text-align: center;
     min-width: 0;
   }
+}
+
+/* Office paper + thread corner grip.
+   The resize handle had been a filled square beside Send, so it read as
+   a stray button. It is an ink crop-mark in the pane corner now.
+   The sheet stays on the locked manila tokens: chrome #e2d5b8, the big
+   log and thread pane #d4c5a3, slips and the composer ribbon #ebdcb9.
+   Ink is #2a241e, stamp red #a3352c, borders #5c4a3d. No soft blur. */
+html[data-theme="field-office"] {
+  background-color: #d4c5a3;
+  color: #2a241e;
+}
+html[data-theme="field-office"] body {
+  background-color: #d4c5a3;
+  color: #2a241e;
+}
+html[data-theme="field-office"] header,
+html[data-theme="field-office"] .room,
+html[data-theme="field-office"] .composer,
+html[data-theme="field-office"] nav,
+html[data-theme="field-office"] #roster-pane {
+  background-color: #e2d5b8;
+  color: #2a241e;
+}
+html[data-theme="field-office"] #stream,
+html[data-theme="field-office"] #thread-pane,
+html[data-theme="field-office"] #thread-stream {
+  background-color: #d4c5a3;
+  color: #2a241e;
+}
+html[data-theme="field-office"] #thread-stream {
+  background-image: repeating-linear-gradient(transparent 0 27px, rgb(92 74 61 / 0.18) 27px 28px);
+}
+html[data-theme="field-office"] .note,
+html[data-theme="field-office"] #thread-stream .note,
+html[data-theme="field-office"] #thread-stream .note.mine,
+html[data-theme="field-office"] .composer-box {
+  background-color: #ebdcb9;
+  color: #2a241e;
+}
+html[data-theme="field-office"] #msg,
+html[data-theme="field-office"] #thread-msg {
+  color: #2a241e;
+  font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
+}
+html[data-theme="field-office"] #thread-form {
+  padding-right: 28px;
+  padding-bottom: 18px;
+}
+html[data-theme="field-office"] #thread-resize {
+  width: 14px;
+  height: 14px;
+  right: 6px;
+  bottom: 6px;
+  border: 0;
+  box-sizing: border-box;
+  background-color: transparent;
+  background-image: linear-gradient(135deg, transparent 0 42%, #5c4a3d 42% 52%, transparent 52% 64%, #5c4a3d 64% 74%, transparent 74%);
+  box-shadow: none;
+}
+html[data-theme="field-office"] #thread-send {
+  background: #a3352c;
+  color: #e2d5b8;
+  border: 2px solid #5c4a3d;
+  border-radius: 3px;
+  box-shadow: 2px 2px 0 #5c4a3d;
+  font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+/* Dark theme only. Same two controls, dark materials: not manila.
+   Thread Send was the shared accent chip (gray fill, 8px radius).
+   The resize hatch used --muted, which is light gray on this sheet. */
+html[data-theme="dark"] #thread-form {
+  padding-right: 28px;
+  padding-bottom: 18px;
+}
+html[data-theme="dark"] #thread-resize {
+  width: 14px;
+  height: 14px;
+  right: 6px;
+  bottom: 6px;
+  border: 0;
+  box-sizing: border-box;
+  background-color: transparent;
+  background-image: linear-gradient(135deg, transparent 0 42%, #000 42% 52%, transparent 52% 64%, #000 64% 74%, transparent 74%);
+  box-shadow: none;
+}
+html[data-theme="dark"] #thread-send {
+  background: var(--surface);
+  color: var(--fg);
+  border: 2px solid var(--line);
+  border-radius: 3px;
+  box-shadow: 2px 2px 0 #000;
+  font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+html[data-theme="dark"] #thread-send:hover,
+html[data-theme="dark"] #thread-send:active {
+  filter: none;
+  background: var(--surface-2);
+  color: var(--fg);
+  box-shadow: 2px 2px 0 #000;
 }
 </style>
 </head>
