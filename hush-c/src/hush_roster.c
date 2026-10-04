@@ -16,7 +16,7 @@
 enum {
     HUSH_ROSTER_KIND_META = 0,
     HUSH_ROSTER_KIND_NOTE = 1,
-    HUSH_ROSTER_THEME_COUNT = 7,
+    HUSH_ROSTER_THEME_COUNT = 8,
     HUSH_ROSTER_ROLE_COUNT = 2,
     /* A new robot whose id is held gets "-2", then "-3", and so on. */
     HUSH_ROSTER_SUFFIX_FIRST = 2,
@@ -33,7 +33,8 @@ static const char *const hush_roster_themes[HUSH_ROSTER_THEME_COUNT] = {
     "dracula",
     "desert",
     "monochrome",
-    "christmas"
+    "christmas",
+    "field-office"
 };
 
 static const char *const hush_roster_roles[HUSH_ROSTER_ROLE_COUNT] = {

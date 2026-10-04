@@ -38,6 +38,8 @@ int main(void)
     expect(hush_roster_is_theme("dracula"), "dracula ok");
     expect(hush_roster_is_theme("color-blind"), "color-blind ok");
     expect(!hush_roster_is_theme("neon"), "neon rejected");
+    expect(hush_roster_is_theme("field-office"), "field-office ok");
+    expect(!hush_roster_is_theme("feild-office"), "field-office typo rejected");
     expect(hush_roster_is_context_mime("text/plain", "notes.txt"), "plain");
     expect(hush_roster_is_context_mime("text/markdown", "brief.md"), "md mime");
     expect(hush_roster_is_context_mime("", "orders.md"), "md ext");
