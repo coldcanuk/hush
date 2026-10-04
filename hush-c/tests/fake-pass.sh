@@ -17,8 +17,11 @@ case "$cmd" in
     has)
         [ -f "$file" ] || exit 1
         ;;
+    rm)
+        rm -f "$file"
+        ;;
     *)
-        echo "fake-pass: usage save|get|has <path>" >&2
+        echo "fake-pass: usage save|get|has|rm <path>" >&2
         exit 2
         ;;
 esac

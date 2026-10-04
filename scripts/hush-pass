@@ -6,6 +6,7 @@
 #   hush-pass save <path> [value]     # value from argv or stdin
 #   hush-pass get  <path>
 #   hush-pass has  <path>
+#   hush-pass rm   <path>
 #   hush-pass ls
 #
 # Retrieve examples:
@@ -42,10 +43,14 @@ case "$cmd" in
         [ -n "$path" ] || die "usage: hush-pass has <path>"
         pass show "${PREFIX}/${path}" >/dev/null 2>&1
         ;;
+    rm)
+        [ -n "$path" ] || die "usage: hush-pass rm <path>"
+        pass rm -f "${PREFIX}/${path}"
+        ;;
     ls|list)
         pass ls "$PREFIX" 2>/dev/null || true
         ;;
     *)
-        die "usage: hush-pass save|get|has|ls [path]"
+        die "usage: hush-pass save|get|has|rm|ls [path]"
         ;;
 esac

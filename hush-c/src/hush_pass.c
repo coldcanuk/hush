@@ -142,6 +142,22 @@ int hush_pass_has(const char *path)
     return hush_pass_run(NULL, 0, NULL, argv) == HUSH_OK;
 }
 
+hush_status_t hush_pass_delete(const char *path)
+{
+    char helper[HUSH_PASS_CMD_MAX];
+    char *argv[4];
+    hush_status_t st;
+
+    g_last_error[0] = '\0';
+    if (!hush_pass_path_is_ok(path))
+        return HUSH_ERR_ARG;
+    st = hush_pass_resolve_helper(helper, sizeof(helper));
+    if (st != HUSH_OK)
+        return st;
+    hush_pass_fill_argv(argv, helper, "rm", path);
+    return hush_pass_run(NULL, 0, NULL, argv);
+}
+
 int hush_pass_available(void)
 {
     const char *over = NULL;
@@ -341,13 +357,28 @@ static hush_status_t hush_pass_write_secret(int fd, const char *stdin_text)
     return HUSH_OK;
 }
 
+/* Discards helper stdout. A verb such as rm may print; closing an unread
+ * pipe kills that helper with SIGPIPE and the delete looks like a failure. */
+static void hush_pass_drain(int fd)
+{
+    char sink[256];
+    ssize_t r;
+
+    do {
+        r = read(fd, sink, sizeof(sink));
+    } while (r > 0);
+    memset(sink, 0, sizeof(sink));
+}
+
 static void hush_pass_read_out(int fd, char *out, size_t outsz)
 {
     size_t nread = 0;
     ssize_t r;
 
-    if (out == NULL || outsz == 0)
+    if (out == NULL || outsz == 0) {
+        hush_pass_drain(fd);
         return;
+    }
     while (nread + 1 < outsz) {
         r = read(fd, out + nread, outsz - 1 - nread);
         if (r <= 0)
