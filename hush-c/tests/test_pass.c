@@ -27,6 +27,34 @@ static void expect(int cond, const char *msg)
 }
 
 /* Rejects saves through a missing helper and reports error text. */
+/* rm that prints on stdout must still remove the entry. */
+static void test_pass_delete_prints(void)
+{
+    char script[TEST_PATH_MAX];
+    FILE *fp;
+
+    snprintf(script, sizeof(script), "/tmp/hush-pass-rm-%ld.sh", (long)getpid());
+    fp = fopen(script, "w");
+    expect(fp != NULL, "rm script");
+    if (fp == NULL)
+        return;
+    fputs("#!/bin/sh\n", fp);
+    fputs("echo removed\n", fp);
+    fputs("dir=\"${HUSH_FAKE_PASS_DIR:-/tmp/hush-fake-pass}\"\n", fp);
+    fputs("file=\"$dir/$(printf '%s' \"$2\" | tr '/' '_')\"\n", fp);
+    fputs("rm -f \"$file\"\n", fp);
+    expect(fclose(fp) == 0, "rm script close");
+    expect(chmod(script, 0700) == 0, "rm script mode");
+    hush_pass_set_helper(script);
+    expect(hush_pass_delete(HUSH_PASS_PAYNE_NSEC) == HUSH_OK,
+           "delete while printing");
+    hush_pass_set_helper("tests/fake-pass.sh");
+    if (access("tests/fake-pass.sh", X_OK) != 0)
+        hush_pass_set_helper("./tests/fake-pass.sh");
+    expect(!hush_pass_has(HUSH_PASS_PAYNE_NSEC), "payne pass gone");
+    unlink(script);
+}
+
 static void test_pass_missing_helper(void)
 {
     char err[HUSH_PASS_ERR_MAX];
@@ -176,6 +204,7 @@ int main(void)
            "get payne");
     expect(strcmp(secret, "nsec1payne") == 0, "payne value");
 
+    test_pass_delete_prints();
     test_pass_missing_helper();
     test_pass_available();
     if (g_fail)

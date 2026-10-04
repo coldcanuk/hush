@@ -357,13 +357,28 @@ static hush_status_t hush_pass_write_secret(int fd, const char *stdin_text)
     return HUSH_OK;
 }
 
+/* Discards helper stdout. A verb such as rm may print; closing an unread
+ * pipe kills that helper with SIGPIPE and the delete looks like a failure. */
+static void hush_pass_drain(int fd)
+{
+    char sink[256];
+    ssize_t r;
+
+    do {
+        r = read(fd, sink, sizeof(sink));
+    } while (r > 0);
+    memset(sink, 0, sizeof(sink));
+}
+
 static void hush_pass_read_out(int fd, char *out, size_t outsz)
 {
     size_t nread = 0;
     ssize_t r;
 
-    if (out == NULL || outsz == 0)
+    if (out == NULL || outsz == 0) {
+        hush_pass_drain(fd);
         return;
+    }
     while (nread + 1 < outsz) {
         r = read(fd, out + nread, outsz - 1 - nread);
         if (r <= 0)
