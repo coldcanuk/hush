@@ -19,6 +19,7 @@
 #include "hush_home.h"
 #include "hush_json.h"
 #include "hush_launch.h"
+#include "hush_keystore.h"
 #include "hush_pass.h"
 #include "hush_skill.h"
 
@@ -518,15 +519,18 @@ static void hush_launch_cleanse_secret(char *buf, size_t bufsz)
 hush_status_t hush_launch_restore_identity(hush_launch_t *launch)
 {
     char secret[HUSH_PASS_SECRET_MAX];
+    hush_keystore_kind kind = HUSH_KEYSTORE_NONE;
+    hush_status_t loaded;
     hush_status_t imported;
 
     if (launch == NULL)
         return HUSH_ERR_ARG;
     if (launch->logged_in)
         return HUSH_OK;
-    if (!hush_pass_has(HUSH_PASS_IDENTITY_NSEC))
-        return HUSH_OK;
-    if (hush_pass_get(secret, sizeof(secret), HUSH_PASS_IDENTITY_NSEC) != HUSH_OK) {
+    memset(secret, 0, sizeof(secret));
+    loaded = hush_keystore_load_from(&kind, secret, sizeof(secret),
+                                    HUSH_PASS_IDENTITY_NSEC);
+    if (loaded != HUSH_OK) {
         hush_launch_cleanse_secret(secret, sizeof(secret));
         return HUSH_OK;
     }
@@ -538,8 +542,8 @@ hush_status_t hush_launch_restore_identity(hush_launch_t *launch)
     }
     launch->logged_in = 1;
     launch->backup_acked = 1;
-    launch->save_pass = 1;
-    launch->pass_saved = 1;
+    launch->save_pass = (kind == HUSH_KEYSTORE_PASS) ? 1 : 0;
+    launch->pass_saved = launch->save_pass;
     launch->pass_error[0] = '\0';
     return HUSH_OK;
 }
@@ -2961,7 +2965,9 @@ static int hush_launch_pass_copy(char *out, size_t outsz, const char *path)
  * the file is imported. The file is not rewritten. A different pass
  * value is left in place and is not written onto the file, and the file is
  * not written onto pass. Pass alone (no file) is imported and not copied
- * onto disk. When neither store has a key, mint one into the home file.
+ * onto disk. When the file is absent, op then secret-tool are tried before
+ * a mint. A key from either store is imported and not written to the home
+ * file. When no store has a key, mint one into the home file.
  * save_pass_on_mint may also put that new value in pass. */
 static hush_status_t hush_launch_restore_stored_id(hush_launch_t *launch,
                                                    hush_identity_t *id,
@@ -3014,6 +3020,13 @@ static hush_status_t hush_launch_restore_stored_id(hush_launch_t *launch,
             != HUSH_OK)
             return HUSH_ERR_CRYPTO;
         return HUSH_OK;
+    }
+    hush_launch_cleanse_secret(pass_secret, sizeof(pass_secret));
+    /* op or secret-tool, after pass missed. Not copied onto a key file. */
+    if (hush_keystore_load(pass_secret, sizeof(pass_secret), pass_path) == HUSH_OK) {
+        if (hush_launch_import_wiped(id, pass_secret, sizeof(pass_secret))
+            == HUSH_OK)
+            return HUSH_OK;
     }
     hush_launch_cleanse_secret(pass_secret, sizeof(pass_secret));
     if (hush_identity_generate(id) != HUSH_OK)

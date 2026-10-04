@@ -169,7 +169,8 @@ hush_status_t hush_launch_import_identity(hush_launch_t *launch,
  * to pass. Fails if not logged in. */
 hush_status_t hush_launch_ack_backup(hush_launch_t *launch, int save_pass);
 
-/* Loads hush/identity/nsec when present. Soft-fails if pass is absent. */
+/* Loads the human nsec from pass, 1Password, or secret-tool.
+ * Soft-fails when every store misses. Does not mint a replacement. */
 hush_status_t hush_launch_restore_identity(hush_launch_t *launch);
 
 /* Notes a boot that left a vibe without a login. Safe on NULL. */
