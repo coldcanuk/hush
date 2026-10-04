@@ -712,7 +712,11 @@ or thread root (single on-deck guard). Subsequent mentions use only
 emoji ack + normal reply.
 
 Mentioning a robot starts a thread. The channel `#stream` lists **root**
-notes only (empty `reply_to`). A root with replies or a live job shows
+notes only (empty `reply_to`), except a reply that opens with
+"No selected provider is ready": that sentence is also painted in plain
+words on the root card (`.log-failure`), so the main log shows the
+failure without opening `#thread-pane` and without scrolling the thread.
+A root with replies or a live job shows
 `.thread-btn` (“Thread · N”). Click opens `#thread-pane`.
 
 `#thread-pane` is a floating hive panel (same `--surface` / `--line` /
