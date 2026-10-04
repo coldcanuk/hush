@@ -326,7 +326,7 @@ and a pencil to edit it again.
 - pass checkbox default-on, same plain words as the backup step (pre-walk
   r3): `Checked to save its key in your password manager.` The
   retrieve command sits behind a closed details line (`#agent-pass-howto`,
-  "How to find it later"): `pass show hush/agents/<slug>/nsec`. r4 (Gauge
+  "How to find it later"): `pass show hush/agents/<robot-id>/nsec`. r4 (Gauge
   B1): both show only on Raise (the create path saves the key) while
   `pass_available` is not false; every Edit path (Major, locked, plain)
   saves no key, so they are hidden there, and hidden or with pass
@@ -382,7 +382,7 @@ that would leave 0 is refused with inline copy (“Keep at least one
 skill equipped.”) — and PE-3 implements it client + server + tests.
 Favorites: none today (`hush-quickbar` is journey shortcuts, not skill
 loadouts). Favorites v1: per-robot named JSON sets under
-`$HOME/.hush/robots/<slug>/loadouts/`, each 1–8 skills; load replaces
+`$HOME/.hush/robots/<robot-id>/loadouts/`, each 1–8 skills; load replaces
 the doll atomically (never passes through empty); unload clears the
 favorite association only, never the doll. Equip stays on `i` =
 inventory doll (`#skill-loadout` / `#agent-drawer`); `c` = character
@@ -457,7 +457,7 @@ this relay, skipping missing ids with inline copy; Unload clears the
 active highlight only, never the doll; Delete removes the list entry
 only, never the doll. Persistence is relay-side: per-robot named JSON
 sets (`{"name":..,"skills":[..]}`, 1–8 ids each) under
-`$HOME/.hush/robots/<slug>/loadouts/`, served by `POST /api/loadout`
+`$HOME/.hush/robots/<robot-id>/loadouts/`, served by `POST /api/loadout`
 (`save` / `list` / `load` / `delete`); unknown or `robot:<other>:` ids
 are refused at save. Favorites survive leave→return; the active
 highlight does not. PE-3 min-1 still holds everywhere (last-gem lift,
@@ -468,7 +468,7 @@ Load and delete resolve any alias of the stored name; load reports
 the stored name while delete replies ok.
 Hardening (same PE-4 scope): robot slugs and favorite names are
 allowlist-validated at every entry — `../` and separators never leave
-`robots/<slug>/loadouts/`; load/delete/list create no directories;
+`robots/<robot-id>/loadouts/`; load/delete/list create no directories;
 saves overwrite only the exact same display name (a slug clash with a
 different name is refused with inline copy); at most 32 favorites per
 robot (the 33rd save is refused, so the list never drops entries); a
@@ -1514,7 +1514,7 @@ Delta 2026-10-02, walkthrough blockers on main `e4a34366`. Scope is these three 
 - Skills: `$HOME/.hush/skills/{system,user,robots}/`. Product buckets are
   System (application-wide: shipped `system/` + hive-forged `user/`) and
   This robot (`robots/<slug>/`). Catalog JSON `"scopes":["system","robot"]`.
-- Favorites v1: `$HOME/.hush/robots/<slug>/loadouts/` named JSON sets,
+- Favorites v1: `$HOME/.hush/robots/<robot-id>/loadouts/` named JSON sets,
   1–8 skills each (PE-4 2026-09-24; relay-saved via `POST /api/loadout`).
 - Avatar on disk: sniffed JPEG/PNG only; client downscales ≤96px.
 - Kind 0 `picture` is a URL, never a data URI (`HUSH_EVENT_MAX_CONTENT = 4096`).

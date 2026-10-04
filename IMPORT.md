@@ -61,7 +61,7 @@ On the identity backup step, when `pass` is available, the checkbox is **checked
 - Without `pass`, the box is off, dimmed and disabled, and the step says "Hush can't save this key on this computer, so keep your copy somewhere safe."
 - Always offered on that step: **Copy value** so you can save the secret in 1Password, Bitwarden, a paper backup, or any other manager.
 
-When you raise a new robot with `pass` available, the robot editor shows "Checked to save its key in your password manager." with `pass show hush/agents/<slug>/nsec` behind the same "How to find it later" line. Editing a robot saves no key, so the box is hidden there; it is also hidden when `pass` is missing.
+When you raise a new robot with `pass` available, the robot editor shows "Checked to save its key in your password manager." with `pass show hush/agents/<robot-id>/nsec` behind the same "How to find it later" line. Editing a robot saves no key, so the box is hidden there; it is also hidden when `pass` is missing.
 
 Retrieve later:
 
@@ -115,7 +115,7 @@ Hush (MVP) is an in-memory relay. Events are lost on restart unless you add pers
 
 - When creating or importing an agent in a Hush-aware tool:
   - Provide the name.
-  - In the Hush UI, raising a new robot with `pass` available offers the default-checked box "Checked to save its key in your password manager." with a "How to find it later" details line holding `pass show hush/agents/<slug>/nsec`. Editing a robot, or a relay without `pass`, shows no box (nothing is saved there).
+  - In the Hush UI, raising a new robot with `pass` available offers the default-checked box "Checked to save its key in your password manager." with a "How to find it later" details line holding `pass show hush/agents/<robot-id>/nsec`. Editing a robot, or a relay without `pass`, shows no box (nothing is saved there).
   - If previously saved with `pass`, the tool can retrieve it via `scripts/hush-pass get` or `pass show hush/agents/<name>/nsec`.
 - Point the agent at your Hush relay URL.
 - Start the agent. It should be able to sign events and participate in channels.
