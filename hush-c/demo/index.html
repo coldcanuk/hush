@@ -3809,7 +3809,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
         roster.innerHTML = "";
         mentionRoster().forEach((person) => {
           const slug = presenceSlugFor(person.pubkey || person.npub);
-          const live = ((st.thinking || []).some((t) => t && t.name === person.name));
+          const live = jobsAfterFailure(st.thinking).some((t) => t && t.name === person.name);
           const div = document.createElement("div");
           div.className = "fo-person static" + (live ? " live" : "");
           div.innerHTML = "<span class=\"dot" + ((slug || live) ? " on" : "") + "\"></span>" +
@@ -3827,7 +3827,7 @@ button.fo-person { min-height: var(--btn-h-sm); }
           roots.length + (roots.length === 1 ? " NOTE" : " NOTES") + " ON #" + channel,
           "WHISPER " + (st.whisper ? "READY" : "OFF") + " · TURN " + (st.turn_running ? "RUNNING" : "OFF")
         ];
-        const jobs = (st.thinking || []).map((t) => (t.name || "robot") + " THINKING").slice(0, 4);
+        const jobs = jobsAfterFailure(st.thinking).map((t) => (t.name || "robot") + " THINKING").slice(0, 4);
         feed.innerHTML = "";
         lines.concat(jobs).forEach((line) => {
           const p = document.createElement("div");
@@ -6044,7 +6044,8 @@ button.fo-person { min-height: var(--btn-h-sm); }
 
     /* Copy of the relay's missing-runtime note. The reply stays in the
      * thread; #stream still shows this sentence on the root card.
-     * That card must not also say that robot is thinking or reacting. */
+     * That card and the thread ask card must not also say that robot
+     * is thinking, reacting, or otherwise in progress. */
     function providerFailureSentence(kids) {
       const list = kids || [];
       for (let i = 0; i < list.length; i++) {
@@ -6063,6 +6064,33 @@ button.fo-person { min-height: var(--btn-h-sm); }
       const dot = rest.indexOf(".");
       if (dot < 1) return "";
       return rest.slice(0, dot);
+    }
+
+    /* Live replies plus saved turns, so a reopened thread still sees
+     * the missing-runtime sentence. */
+    function failureSources(rootId, kids) {
+      const list = (kids || []).slice();
+      const mem = threadMem[rootId];
+      if (mem && Array.isArray(mem.turns)) {
+        mem.turns.forEach((t) => {
+          if (t && t.content) list.push({ content: t.content });
+        });
+      }
+      return list;
+    }
+
+    /* True when this root's outcome names that robot in the
+     * missing-runtime sentence. Other jobs stay in progress. */
+    function providerFailureQuiets(parentId, name) {
+      if (!parentId || !name) return false;
+      const kids = repliesTo(visibleNotes(lastEvents || []), parentId);
+      const who = providerFailureRobot(providerFailureSentence(failureSources(parentId, kids)));
+      return !!who && who === name;
+    }
+
+    function jobsAfterFailure(jobs) {
+      return (jobs || []).filter((job) =>
+        job && !providerFailureQuiets(job.parent, job.name || "robot"));
     }
 
     /* WS4: live streamed answers, keyed by thread + robot. */
@@ -6679,14 +6707,17 @@ button.fo-person { min-height: var(--btn-h-sm); }
             const pill = document.createElement("span");
             let phase = mentionAckPhase(e.id, bot, jobs);
             /* A missing-runtime sentence is already the answer. Do not
-             * also say that robot is thinking or reacting. The emoji
-             * thumb may stay. Do not rename the phase to another
-             * in-progress word. */
-            if (quietRobot && (bot.name || "robot") === quietRobot &&
-                (phase === "thinking" || phase === "reacting"))
+             * also say that robot is thinking or reacting, and do not
+             * leave a title that names a phase ("is emoji" included).
+             * The emoji thumb may stay. Do not rename the phase to
+             * another in-progress word. */
+            const quieted = !!(quietRobot && (bot.name || "robot") === quietRobot);
+            if (quieted && (phase === "thinking" || phase === "reacting"))
               phase = "emoji";
             pill.className = "robot-ack " + phase;
-            pill.title = (bot.name || "robot") + " is " + phase;
+            pill.title = quieted
+              ? (bot.name || "robot")
+              : ((bot.name || "robot") + " is " + phase);
             const line = presenceSlugFor(bot.pubkey || bot.npub);
             if (phase === "thinking")
               pill.textContent = (bot.name || "robot") + " is thinking" +
@@ -6813,17 +6844,22 @@ button.fo-person { min-height: var(--btn-h-sm); }
         ((owner && owner.name) || "a teammate") + (lead ? " · Lead: " + lead.name : "") +
         (names.length === 1 ? " · Follow-ups go to " + names[0] : " · @ a robot to direct its next turn"));
       const jobs = thinkingFor(root.id, lastStatus);
+      const failure = providerFailureSentence(failureSources(rootId, kids));
+      const quiet = providerFailureRobot(failure);
+      const threadJobs = quiet
+        ? jobs.filter((j) => j && j.name !== quiet)
+        : jobs;
       const key = threadKeyOf(root, kids, jobs);
       const box = $("thread-stream");
       const shown = $("thread-pane").classList.contains("show");
       if (shown && key === threadSeen) {
-        paintThreadThink(jobs);
+        paintThreadThink(threadJobs);
         return;
       }
       const near = !shown || forcePin || threadNearBottom(box);
       const keep = box.scrollTop;
       box.innerHTML = "";
-      if (!isDevLogNote(root)) box.appendChild(paintNote(root));
+      if (!isDevLogNote(root)) box.appendChild(paintNote(root, null, quiet));
       if (mem && mem.turns) {
         if (mem.brief) {
           const brief = document.createElement("div");
@@ -6850,13 +6886,13 @@ button.fo-person { min-height: var(--btn-h-sm); }
           box.appendChild(paintNote(ev, (node) => {
             const meta = node.querySelector(".meta");
             if (meta) meta.textContent += " · saved";
-          }));
+          }, quiet));
         });
       }
       kids.forEach((k) => {
-        if (!isDevLogNote(k)) box.appendChild(paintNote(k));
+        if (!isDevLogNote(k)) box.appendChild(paintNote(k, null, quiet));
       });
-      paintThreadThink(jobs);
+      paintThreadThink(threadJobs);
       threadSeen = key;
       if (near) box.scrollTop = box.scrollHeight;
       else box.scrollTop = keep;
