@@ -6,7 +6,7 @@ Hush is a legible C11 Nostr relay core, developed with Codex.
 
 ## Prime Directive (absolute)
 
-1. **Always** create a worktree under `worktrees/<slug>` on branch `gb/<slug>`.
+1. **Always** create a worktree under `worktrees/<short-name>` on branch `gb/<short-name>`.
 2. **Commit and push** only on that worktree branch.
 3. Land on `main` **only** with a **Pull Request** → review → **auto-merge** (or approved GitHub merge).
 4. After the PR is **merged**, **delete** the worktree (and the `gb/*` branch).
@@ -20,9 +20,9 @@ No exceptions for docs, hooks, “tiny fixes,” or agent convenience.
 cd /opt/repo/hush
 git checkout main && git pull --ff-only origin main
 git status   # clean + on main
-FEATURE_SLUG="short-slug"
-git worktree add -b "gb/${FEATURE_SLUG}" "worktrees/${FEATURE_SLUG}"
-cd "worktrees/${FEATURE_SLUG}"
+FEATURE_NAME="short-name"
+git worktree add -b "gb/${FEATURE_NAME}" "worktrees/${FEATURE_NAME}"
+cd "worktrees/${FEATURE_NAME}"
 ```
 
 Worktrees live **inside this repo only**. Never `/opt/repo/worktrees` or paths outside Hush.
@@ -38,13 +38,13 @@ git push -u origin HEAD
 
 ```bash
 git push -u origin HEAD
-gh pr create --base main --head "gb/${FEATURE_SLUG}" --title "…" --body "…"
+gh pr create --base main --head "gb/${FEATURE_NAME}" --title "…" --body "…"
 gh pr merge --auto --merge
 # wait until merged, then:
 cd /opt/repo/hush && git pull --ff-only origin main
-git worktree remove "worktrees/${FEATURE_SLUG}"
-git branch -d "gb/${FEATURE_SLUG}" 2>/dev/null || true
-git push origin --delete "gb/${FEATURE_SLUG}" 2>/dev/null || true
+git worktree remove "worktrees/${FEATURE_NAME}"
+git branch -d "gb/${FEATURE_NAME}" 2>/dev/null || true
+git push origin --delete "gb/${FEATURE_NAME}" 2>/dev/null || true
 ```
 
 See also: [BRANCHING.md](BRANCHING.md), [.agents/skills/worktree/SKILL.md](.agents/skills/worktree/SKILL.md).

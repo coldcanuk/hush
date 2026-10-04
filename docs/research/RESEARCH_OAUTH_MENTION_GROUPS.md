@@ -65,7 +65,7 @@ Success / DoD (measurable):
 
 - Composer is a bare `<input id="msg">`. No `@` handler.
 - `POST /api/event` stores `kind` (default 1) + one `h` tag = channel
-  slug. No `p` tags.
+  id. No `p` tags.
 - `GET /api/events` returns `id,pubkey,kind,created_at,content,channel`.
   No tags beyond channel.
 - Agents already have `npub` in session JSON
@@ -80,7 +80,7 @@ Success / DoD (measurable):
 - `hush_launch_channel_t` is `{name, slug}` only. Cap 16.
 - Create: `POST /api/channel {name}`. No delete. No update.
 - Sidebar `paintChannels` rebuilds buttons. No `−`. No contextmenu.
-- `#h` on stored notes is the **slug** (`welcome`, `general`, …).
+- `#h` on stored notes is the **channel id** (`welcome`, `general`, …).
 - vibe.json: `channel_name_i`, `channel_slug_i`. No UUID. No group.
 
 ## NIP findings (https://github.com/nostr-protocol/nips)
@@ -94,7 +94,7 @@ Success / DoD (measurable):
 | **NIP-28** | Public channels 40–44. Unrecommended. Do not implement. |
 
 Hush `NOSTR.md` already claims NIP-29 as the native model. Today’s C
-core stores slugs, not UUIDs, and does not emit 39000.
+core stores channel ids, not UUIDs, and does not emit 39000.
 
 ## Architecture decisions (locked)
 
@@ -112,7 +112,7 @@ core stores slugs, not UUIDs, and does not emit 39000.
 
 3. **A Hush channel is a NIP-29 group.** Each channel gets a UUID
    (`id`). Existing channels receive a UUID on restore if missing, then
-   vibe.json is saved. **`#h` stays the slug** so already-stored notes
+   vibe.json is saved. **`#h` stays the channel id** so already-stored notes
    keep matching. The UUID is the stable NIP-29-shaped identifier for
    grouping and manage. Full 39000 emission is a follow-up.
 
@@ -122,12 +122,12 @@ core stores slugs, not UUIDs, and does not emit 39000.
    inheritance (NIP-29 subgroup rule).
 
 5. **Manage Channel** stores per-channel human npubs (max 8) and robot
-   slugs (max 8). Empty lists mean “whole hive” (current open
+   ids (max 8). Empty lists mean “whole hive” (current open
    behavior). Non-empty lists are the roster for that channel.
 
 6. **Delete** removes the channel from the table and vibe.json. Refuse
    if it is the last channel. Confirm in the UI. Notes already stored
-   under that slug stay in the store (no mass delete).
+   under that id stay in the store (no mass delete).
 
 7. **JSON caps.** `HUSH_LAUNCH_JSON_MAX` and `HUSH_LAUNCH_FILE_MAX`
    rise from 16384 to 32768 so UUID + group + membership fit.
@@ -136,8 +136,8 @@ core stores slugs, not UUIDs, and does not emit 39000.
 
 1. vibe.json overflow → bump file/session caps; keep membership caps
    at 8+8; tests write a full hive and restore.
-2. `#h` slug vs UUID mismatch with third-party NIP-29 clients → keep
-   slug on the wire this slice; document the follow-up.
+2. `#h` channel id vs UUID mismatch with third-party NIP-29 clients → keep
+   id on the wire this slice; document the follow-up.
 3. OAuth `use_home` pretends configured too early → UI keys off
    `has_home` only.
 4. `@` in the middle of a word → trigger only after whitespace or

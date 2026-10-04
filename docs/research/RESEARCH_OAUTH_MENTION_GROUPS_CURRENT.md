@@ -30,9 +30,9 @@ All major DoD items from PLAN_OAUTH_MENTION_GROUPS.md are already present on thi
 - `hush_launch_remove_channel` exists (refuses last channel)
 - `paintChannels` renders groups + loose channels
 - Right-click contextmenu on channel rows: Add/Remove from Group, Delete, Manage
-- `#manage-chan` drawer: add/remove humans (npubs) + robots (slugs), max 8 each
+- `#manage-chan` drawer: add/remove humans (npubs) + robots (robot ids), max 8 each
 - `POST /api/channel` + actions for group/delete/manage
-- `#h` remains slug for wire compatibility; UUID is stable id for grouping
+- `#h` remains channel id for wire compatibility; UUID is stable id for grouping
 
 **JSON / caps:**
 - HUSH_LAUNCH_JSON_MAX / FILE_MAX bumped to 32768 in prior
@@ -71,7 +71,7 @@ All major DoD items from PLAN_OAUTH_MENTION_GROUPS.md are already present on thi
 
 Implementation on this base satisfies the primary DoD items (OAuth close-window/authenticated, @ mentions with nostr:npub + p-tags, channel UUIDs + groups, right-click manage/delete, Manage Channel modal, tests + embed).
 No code changes required for this verification slice.
-H4 lock (local vibe state, slug on #h, UUID for grouping, has_home for auth, NIP-27 style mentions, no full NIP-29 wire events this slice) holds.
+H4 lock (local vibe state, channel id on #h, UUID for grouping, has_home for auth, NIP-27 style mentions, no full NIP-29 wire events this slice) holds.
 
 ## Commands executed
 - git worktree add -b gb/oauth-mention-groups from clean main

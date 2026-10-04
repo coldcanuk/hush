@@ -69,8 +69,8 @@ Topic leash, token budget, bring-back, hop cap, cooldown, no-loop, on-topic, civ
 
 ## Clone / lock
 
-Locked template robots (Coach, Auditor, Voice) seed on vibe. `POST /api/agent {action:clone,slug}` copies to `<name> copy` unlocked. Payne slug → `HUSH_ERR_DENIED`. Enable slider stays. Locked originals refuse name/prompt/skill edits; enable still works.
+Locked template robots (Coach, Auditor, Voice) seed on vibe. `POST /api/agent {action:clone,slug}` copies to `<name> copy` unlocked. Payne robot id → `HUSH_ERR_DENIED`. Enable slider stays. Locked originals refuse name/prompt/skill edits; enable still works.
 
 ## Seed path
 
-Repo `skills/system/<slug>/SKILL.md` copied into `~/.hush/skills/system` via `hush_skill_seed_pack`. Tests pass pack dir. Catalog max 256. JSON max 64k.
+Repo `skills/system/<skill-name>/SKILL.md` copied into `~/.hush/skills/system` via `hush_skill_seed_pack`. Tests pass pack dir. Catalog max 256. JSON max 64k.

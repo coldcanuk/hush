@@ -13,7 +13,7 @@ Date: 2026-08-24
 3. Profile drawer edits first/last/email/org + theme + avatar; Logout is server POST /api/identity {action:"logout"}.
 4. Kind 0 for human includes name/display_name/about/picture when set. Email/org Hush-local.
 5. Hive has Add human (npub/invite) and Create agent. Private vibe shows join token.
-6. Agent create: name, system_prompt (required), provider (required), avatar, context files (text/plain or Markdown only, max 3). Agent nsec via pass hush/agents/<slug>/nsec (default on). Kind 0 published.
+6. Agent create: name, system_prompt (required), provider (required), avatar, context files (text/plain or Markdown only, max 3). Agent nsec via pass hush/agents/<robot-id>/nsec (default on). Kind 0 published.
 7. .agents/skills/agent-create/SKILL.md exists with full contract (Payne/Goose can create agents).
 8. 7 themes via data-theme + CSS vars; persist in localStorage + session.
 9. ./configure && make && make test + check_launch.sh pass.

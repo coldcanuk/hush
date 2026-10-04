@@ -3,7 +3,7 @@
 **Branch:** `gb/skill-two-scope`
 **Worktree:** `worktrees/skill-two-scope`
 **Gate:** `docs/research/RESEARCH_SKILL_TWO_SCOPE.md`
-**Land:** PR to main only (Prime Directive). Worktree path is `worktrees/<slug>`.
+**Land:** PR to main only (Prime Directive). Worktree path is `worktrees/<short-name>`.
 **Status:** executed. `make test` passed. Ready for merge.
 
 ## Scope
@@ -20,14 +20,14 @@ Rewriting `user:` ids; deleting `user/` directory; skill executor; Payne identit
 - User-dir skills have JSON `scope":"system"` and keep `user:` ids.
 - Armory labels are System and This robot. No “user” chip group.
 - Forge: System (application-wide) / This robot.
-- Equipping `robot:happy:x` on another slug is denied.
+- Equipping `robot:happy:x` on another robot id is denied.
 - `make test` + `check_launch.sh`. PR merged.
 
 ### Constraints
 C11 + write-legible-c. Embed UI. Tests never write real `~/.hush` except via `HUSH_HOME`.
 
 ### Top risks
-Id rewrite; test greps; Raise forge without slug.
+Id rewrite; test greps; Raise forge without id.
 
 ## Phase 0 — Isolation (COMPLETE)
 
@@ -56,19 +56,19 @@ cross-robot robot-skills. Forge copy + radios.
 ### Milestone 3.1 — Catalog JSON two scopes + user-dir as system
 
 `hush_skill.c` `format_json` scopes array. After `read_one` from user dir,
-`slot->scope` = system. Keep id `user:slug`.
+`slot->scope` = system. Keep id `user:id`.
 
 **Verification:** `test_skill` JSON scopes `system,robot`; `user:joke-book` still
 in catalog; forged user skill `"scope":"system"`.
 
 **Commit:** `Milestone 3.1: catalog presents system+robot only`
 
-### Milestone 3.2 — Deny robot-skill on the wrong slug
+### Milestone 3.2 — Deny robot-skill on the wrong robot id
 
-`hush_http_check_loadout` takes slug; if `skill.robot` nonempty and ≠ slug,
+`hush_http_check_loadout` takes robot id; if `skill.robot` nonempty and ≠ robot id,
 `HUSH_ERR_DENIED`.
 
-**Verification:** unit or launch POST happy’s robot skill onto another slug fails.
+**Verification:** unit or launch POST happy’s robot skill onto another robot id fails.
 
 **Commit:** `Milestone 3.2: robot skills stay on their robot`
 

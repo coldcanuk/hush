@@ -63,7 +63,7 @@ on the selected Raise/Edit radio.
 **E4** `hush_provider.h` — nine named runtimes. Status is
 hive-global (`providers.json` + `pass` `hush/providers/<id>/*` +
 home detect). There is no per-robot secret field and no
-`hush/agents/<slug>/providers/` path.
+`hush/agents/<robot-id>/providers/` path.
 
 **E5** `hush_roster.h:53` + `index.html:1648-1659` — a raised
 robot stores one `provider` id. Payne stores a ranked list
@@ -97,7 +97,7 @@ returns to the hub.
 |---|---|---|
 | A1 | Operator wants help copy generated for Profile / Settings / Call / Configure Providers | LOCK — "Generate help text" |
 | A2 | Invite / channel / robot / project help stay as shipped | LOCK |
-| A3 | Per-robot secrets (a second pass tree per slug) are **not** this slice | LOCK — E4/E6; would be a new research lock |
+| A3 | Per-robot secrets (a second pass tree per robot id) are **not** this slice | LOCK — E4/E6; would be a new research lock |
 | A4 | Existing `/api/provider` is enough; no new C endpoint | LOCK — E3/E4 |
 | A5 | Left-nav Edit + radio + pencil stay; hub does not replace them | LOCK — operator said that surface already exists |
 | A6 | Live hive restart is still the operator's job | residual, same as #49/#50 |
@@ -145,7 +145,7 @@ Providers, and splits Min/Max vs Close/Exit into two grids.
   copy:  Credentials are hive-wide. Each robot still picks which
          runtime it uses. Left-nav Edit is that pick.
   list:  one row per hush_provider id (9)
-         label · status · used-by slugs · ✎
+         label · status · used-by robot ids · ✎
   click / ✎ → openProviderDrawer(id)   (existing panel)
 
 #provider-drawer  unchanged fields / routes

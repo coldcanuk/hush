@@ -9,7 +9,7 @@ Base: `main` `59f5ed59f` (PR #96)
 RDAP. Research gate:
 [`../research/RESEARCH_RESTORE_LAUNCH_RAIL.md`](../research/RESEARCH_RESTORE_LAUNCH_RAIL.md).
 Commit after every Milestone on this branch. Land only via PR.
-Never write `main`. Worktree path is `/opt/repo/hush/worktrees/<slug>`
+Never write `main`. Worktree path is `/opt/repo/hush/worktrees/<short-name>`
 (Prime Directive), not `../gb-*-wt`.
 
 ## 2. Scope

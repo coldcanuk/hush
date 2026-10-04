@@ -10,7 +10,7 @@ Methodology: RDAP. Research gate:
 ## Scope
 
 Click **Edit** on Sgt. Major Payne. Configure ranked SaaS / CLI
-providers. Name, slug, standing orders stay locked. Payne stays
+providers. Name, robot id, standing orders stay locked. Payne stays
 undeletable. No live API spawn. No fallback walk at job time.
 
 ## Audit of this plan
@@ -68,7 +68,7 @@ undeletable. No live API spawn. No fallback walk at job time.
       `payne.provider` + `payne.providers` array via a helper
       (do not grow `hush_launch_format_head` past 40 lines).
 - [x] Task 3 of M3.1: `hush_http.c` — `POST /api/agent` with
-      `slug == sgt-major-payne` updates the list; ignores
+      `robot id == sgt-major-payne` updates the list; ignores
       name/prompt; delete still denied. New leaf
       `hush_http_update_payne`.
 - Verify: `rg "payne_provider_|set_payne_providers|npayne_providers" hush-c`.

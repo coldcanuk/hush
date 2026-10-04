@@ -178,7 +178,7 @@ which is the review's point, even though the raw wire path cannot reach it today
   `hush-pass` (default, :13) or `../scripts/hush-pass` when present (:14); the helper runs
   `pass insert -m -f hush/<path>` / `pass show hush/<path>` (`scripts/hush-pass:29-43`).
 - Keys: `HUSH_PASS_IDENTITY_NSEC = "identity/nsec"`, `HUSH_PASS_PAYNE_NSEC = "agents/sgt-major-payne/nsec"`
-  (`hush-c/include/hush_pass.h:16-17`); robot keys are `agents/<slug>/nsec`
+  (`hush-c/include/hush_pass.h:16-17`); robot keys are `agents/<robot-id>/nsec`
   (`hush-c/src/hush_launch.c:2672`, `hush-c/src/hush_roster.c:783`).
 - Human lifecycle: create `hush_launch.c:429-440`; import `:442-459`; save on backup-ack
   `:461-475` → `hush_launch_try_save(HUSH_PASS_IDENTITY_NSEC, launch->human.nsec)` `:1891-1907`;

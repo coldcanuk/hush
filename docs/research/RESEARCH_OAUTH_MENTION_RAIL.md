@@ -109,7 +109,7 @@ does not spawn a live reply.
 
 **E14** `grok --help` (this session): `-p, --single <PROMPT>` “Prints the response to stdout and exits”; `--output-format`; `--system-prompt-override`; `--always-approve`.
 
-**E15** `hush-c/src/hush_launch.c:1855-1868` — raised-robot nsec is restored from `pass` `agents/<slug>/nsec` (or generated). In-memory identity exists for a reply author.
+**E15** `hush-c/src/hush_launch.c:1855-1868` — raised-robot nsec is restored from `pass` `agents/<robot-id>/nsec` (or generated). In-memory identity exists for a reply author.
 
 #### Smuggled assumptions
 

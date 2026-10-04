@@ -10,7 +10,7 @@ Base: main 745103e0c (post server-ack-notes M5)
 - hush_roster_fill_agent: requires name, prompt (non-empty), provider (is_provider)
 - hush_roster_fill_context: rejects ncontext > 3, bad MIME via copy_context
 - hush_roster_remove_agent: refuses PAYNE_SLUG, compacts
-- http: /api/agent accepts "system_prompt", "provider", "context_name_*" etc. up to 3; delete by slug
+- http: /api/agent accepts "system_prompt", "provider", "context_name_*" etc. up to 3; delete by robot id
 - launch: add_agent / remove_agent delegate to roster; session JSON emits provider + prompt preview + ncontext
 
 Evidence (hush_roster.c):

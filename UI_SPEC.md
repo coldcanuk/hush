@@ -190,7 +190,7 @@ holds an nsec or provider secret. Install and first-run create
   Click outside closes the menu. `edit` opens `#agent-drawer`.
   Grid snap + occupancy. Neon/brass cyberpunk-steampunk theme.
   Create/raise from rail or inventory header. Payne (`Major`) is a live
-  roster tile. Persist slot layout by slug (always 1×1).
+  roster tile. Persist slot layout by robot id (always 1×1).
   Seed / Clear / Raise are one equal button class. Seed is a Payne-gated
   team briefing (not local Cosplay tiles). Clear resets the saved slot
   layout only; robots and secrets stay.
@@ -270,7 +270,7 @@ Drawer fields:
 Email is **session-only**. Never written into kind 0.
 
 Kind 0 for the human:
-`name` = first or slug; `display_name` = "First Last";
+`name` = first name or an id; `display_name` = "First Last";
 `about` may append organization; `picture` = avatar URL.
 
 ### 6. Settings
@@ -345,7 +345,7 @@ and a pencil to edit it again.
 **Payne Edit.** Drawer title is `Edit Major`. Display name is locked
 `Major` (`HUSH_LAUNCH_PAYNE_NAME`). Standing orders are locked
 (`HUSH_LAUNCH_PAYNE_ABOUT`). Name and system-prompt fields are
-read-only. Slug stays `sgt-major-payne`. Delete stays disabled.
+read-only. Robot id stays `sgt-major-payne`. Delete stays disabled.
 Every robot, including Major, has an Enable/Disable switch
 (`#agent-enabled`). Disabled robots use `.inv-item.disabled`
 (greyscale) and do not answer mentions. Raise and Edit also have
@@ -466,10 +466,10 @@ labels stay browser-only per the honesty polish; favorites are the
 only new relay-saved skill state, and the strip says so inline.
 Load and delete resolve any alias of the stored name; load reports
 the stored name while delete replies ok.
-Hardening (same PE-4 scope): robot slugs and favorite names are
+Hardening (same PE-4 scope): robot ids and favorite names are
 allowlist-validated at every entry — `../` and separators never leave
 `robots/<robot-id>/loadouts/`; load/delete/list create no directories;
-saves overwrite only the exact same display name (a slug clash with a
+saves overwrite only the exact same display name (a file-name clash with a
 different name is refused with inline copy); at most 32 favorites per
 robot (the 33rd save is refused, so the list never drops entries); a
 `skill_8` overflow, overlong name/robot/skill values, repeated skill
@@ -489,7 +489,7 @@ legible; row names ellipsize with the full name on hover (title) and
 on keyboard focus (focus-visible expansion plus outline), and nothing
 overflows the drawer edge at desktop or phone widths. Refusals name
 the exact rule: names allow letters, digits, spaces, - or _ (max 47);
-skills 1–8; at most 32 favorites; no slug collisions. The drawer
+skills 1–8; at most 32 favorites; no robot id collisions. The drawer
 validates names against the identical allowlist before POSTing, so a
 refused save sends no request and logs no console error; the relay
 stays the authority and refuses anything else with 400.
@@ -499,9 +499,9 @@ Delta 2026-09-22 (WS6 loadout-doll pass): `#skill-cycle` lives in
 `#agent-drawer` only (no hive-nav cycle); the doll is 8 sockets around
 the portrait center (9 cells = `HUSH_SKILL_EQUIP_MAX` 8 + portrait);
 click assigns/prunes, pointer drag drops onto an empty socket.
-A `robot:<other>:<name>` skill is refused on this slug. Forge still writes
+A `robot:<other>:<name>` skill is refused on this robot id. Forge still writes
 a SKILL.md. `POST /api/agent` with the
-Payne slug updates providers, picture, voice, skills, and `enabled`.
+Payne robot id updates providers, picture, voice, skills, and `enabled`.
 Name and `system_prompt` on that POST are ignored. Session
 `payne.provider` is `providers[0]`; `payne.providers` is the full
 array. Missing list restores to `["goose"]`. `payne.enabled` defaults
@@ -512,7 +512,7 @@ Client rejects other MIME. Server re-checks. Max 3 files, 4096 bytes each.
 `POST /api/agent {name, system_prompt, provider, save_pass, picture?, context_name_0, context_mime_0, context_text_0, …_2}`.
 Payne update: `POST /api/agent {slug:"sgt-major-payne", provider_0…N}`.
 
-Delete: `POST /api/agent {action:"delete", slug}`. Payne slug is refused.
+Delete: `POST /api/agent {action:"delete", slug}`. Payne robot id is refused.
 
 Agent-creation skill: `.agents/skills/agent-create/SKILL.md`.
 
@@ -633,7 +633,7 @@ demo). No Raylib dependency on the main hush-relay.
 | `GET /api/events` | notes plus `reply_to` (first `e` tag; empty when the note is not a reply). |
 | `GET /api/thread?root=<64-hex>` | durable thread memory: `{ok,root,brief,count,truncated,turns[]}` (`id/pubkey/at/content`, newest 32 oldest-first). Unknown roots return empty; malformed roots are 400. |
 | `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id). Content may contain `nostr:npub1…`. Mentions enter `hush_intel` (burst / policy) before `hush_agent`. |
-| `POST /api/canvas` | `{project, path, content}` writes `content` to `path` under that launch project's directory. `project` is a slug. `path` is a relative file (no `..`, no absolute). Missing project, empty content, or a path that escapes the project → `{ok:false,error}`. |
+| `POST /api/canvas` | `{project, path, content}` writes `content` to `path` under that launch project's directory. `project` is a project id. `path` is a relative file (no `..`, no absolute). Missing project, empty content, or a path that escapes the project → `{ok:false,error}`. |
 | `POST /api/fixup` | `{instruction, text}` runs a one-shot `grok -p` and returns `{ok:true,text}` or `{ok:false,error}`. Does **not** insert a hive note. Instruction max 500. Text max `HUSH_EVENT_MAX_CONTENT`. |
 | `POST /api/complete` | `{prefix, suffix}` starts a Fill-in-the-Middle job and returns `{ok:true,token}` immediately. Does **not** wait on Grok. Does **not** insert a hive note. A new start replaces any in-flight job. |
 | `GET /api/complete?t=` | `{ok:true,pending:true}` while the token is busy, `{ok:true,text}` when ready (max `HUSH_CANVAS_PRED_MAX` = 512), or `{ok:false,error}`. |
@@ -863,13 +863,13 @@ in-process libcurl.
 ### 14. Channel groups + manage (NIP-29 parent)
 
 A Hush channel is a NIP-29-shaped group: random 32-hex `id`, `#h` on
-the wire stays the **slug** so existing notes keep matching. A Hush
+the wire stays the **channel id** so existing notes keep matching. A Hush
 **Group** is a NIP-29 parent (`groups[].id`). `channel.group_id` empty
 means ungrouped. Membership does not inherit (NIP-29 subgroup rule).
 
 Sidebar: grouped channels under the group name, then ungrouped.
 Each row: name, compact red `−` (`.chan-del`, 24×24) deletes after
-confirm (“Delete #slug? Notes stay on disk.”). Last channel cannot
+confirm (“Delete #<channel-id>? Notes stay on disk.”). Last channel cannot
 be deleted. When `status.whisper` is true a Voice icon (`.chan-voice`)
 sits on the row (§17).
 
@@ -1049,7 +1049,7 @@ rows) on the left; Official Dispatch Log (`main`: same
 `#room`/`#count`/`#vibe-vis`/`#stream` hooks under a telegram
 eyebrow) + `SEND DISPATCH` composer (`#send` relabeled, same submit
 path) in the center; `#roster-pane` right rail with Active
-personnel (roster + `presenceSlugFor` slugs + `thinking` live flag)
+personnel (roster + `presenceSlugFor` status text + `thinking` live flag)
 and Status feed (`/api/status` snapshot: live/down, port, stored,
 sockets, whisper, TURN; channel note counts; thinking jobs) — all
 real surfaces, static aside so the Escape single-dismiss contract
@@ -1387,7 +1387,7 @@ render pills, not checkboxes.
 When `whisper` is true:
 
 - Each robot card shows `.robot-call` (1:1). Opens `#stage`, joins,
-  signals `{t:"join", role:"agent", from: slug}`. Copy: “One-to-one
+  signals `{t:"join", role:"agent", from: <robot-id>}`. Copy: “One-to-one
   with <name>. Mute any voice you do not want.”
 - Each channel row shows `.chan-voice`. Opens `#stage` for that
   channel and invites roster robots (Payne if the roster is empty).
@@ -1513,7 +1513,7 @@ Delta 2026-10-02, walkthrough blockers on main `e4a34366`. Scope is these three 
   directory with `HUSH_CONFIG_DIR` / `HUSH_HOME` (tests). Never nsec.
 - Skills: `$HOME/.hush/skills/{system,user,robots}/`. Product buckets are
   System (application-wide: shipped `system/` + hive-forged `user/`) and
-  This robot (`robots/<slug>/`). Catalog JSON `"scopes":["system","robot"]`.
+  This robot (`robots/<robot-id>/`). Catalog JSON `"scopes":["system","robot"]`.
 - Favorites v1: `$HOME/.hush/robots/<robot-id>/loadouts/` named JSON sets,
   1–8 skills each (PE-4 2026-09-24; relay-saved via `POST /api/loadout`).
 - Avatar on disk: sniffed JPEG/PNG only; client downscales ≤96px.

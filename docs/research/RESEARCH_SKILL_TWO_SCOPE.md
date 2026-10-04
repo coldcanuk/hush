@@ -21,7 +21,7 @@ Three product buckets (system / user / robot) do not match how skills are used.
 |---|---|
 | Three wire scopes | `hush_skill.h` `SCOPE_SYSTEM/USER/ROBOT` |
 | Catalog JSON `"scopes":["system","user","robot"]` | `hush_skill_format_json` |
-| Disk `~/.hush/skills/{system,user,robots/<slug>}` | `hush_home_skills_dir` |
+| Disk `~/.hush/skills/{system,user,robots/<robot-id>}` | `hush_home_skills_dir` |
 | Forge allows `user` or `robot` only (system denied) | `hush_skill_forge` |
 | Armory paints three labels | `paintSkillArmory` `["system","user","robot"]` |
 | Forge radios “User-wide” / “This robot” | `#forge-drawer` |
@@ -30,7 +30,7 @@ Three product buckets (system / user / robot) do not match how skills are used.
 | Tests assert three scopes + `user:joke-book` | `test_skill.c`, `check_launch.sh` |
 
 Shipped pack lives in `system/`. Hive-forged hive-wide files live in `user/`
-so seed never overwrites them. IDs `user:<slug>` may already be equipped.
+so seed never overwrites them. IDs `user:<id>` may already be equipped.
 
 ## 3. Decision (locked)
 
@@ -38,8 +38,8 @@ so seed never overwrites them. IDs `user:<slug>` may already be equipped.
 
 | Product | Disk | ID | Who may wear it |
 |---|---|---|---|
-| System (application-wide) | `skills/system` (shipped) + `skills/user` (forged hive-wide) | `system:<slug>` / `user:<slug>` | Any role-legal robot |
-| This robot | `skills/robots/<slug>/` | `robot:<slug>:<name>` | Only that slug |
+| System (application-wide) | `skills/system` (shipped) + `skills/user` (forged hive-wide) | `system:<robot-id>` / `user:<robot-id>` | Any role-legal robot |
+| This robot | `skills/robots/<robot-id>/` | `robot:<robot-id>:<name>` | Only that robot id |
 
 - After load, catalog `scope` for user-dir skills is **system** (id unchanged).
 - JSON `"scopes":["system","robot"]`.
@@ -47,7 +47,7 @@ so seed never overwrites them. IDs `user:<slug>` may already be equipped.
 - Forge radios: **System (application-wide)** (`value=user`, writable hive-wide)
   and **This robot** (`value=robot`). Still cannot forge into the shipped pack
   (`scope=system` POST remains denied).
-- Equip of `robot:<other>:<name>` on this slug → `HUSH_ERR_DENIED` in
+- Equip of `robot:<other>:<name>` on this robot id → `HUSH_ERR_DENIED` in
   `hush_http_check_loadout`.
 - Non-goal: migrating existing `user:` ids; deleting `user/` on disk;
   per-slot item types; skill executor.
@@ -56,7 +56,7 @@ so seed never overwrites them. IDs `user:<slug>` may already be equipped.
 
 1. Equipped `user:` ids must keep working — do not rewrite ids.
 2. Tests grep three-scope JSON — update to two.
-3. Robot-only forge during Raise (no slug) already fails PARSE; keep.
+3. Robot-only forge during Raise (no robot id) already fails PARSE; keep.
 
 ## 5. Remaining plan
 

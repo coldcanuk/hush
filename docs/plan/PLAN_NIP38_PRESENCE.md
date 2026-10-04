@@ -11,7 +11,7 @@ Primary: robots and humans advertise a NIP-38 (`30315`) presence **line** per jo
 
 Non-goals: HTTP webhooks, 44102, chaperon status, schnorr, replacing `thinking[]`.
 
-Success: `make test` green; unit tests for slugs, replace, skip chaperon, private omit, stuck keep-alive; UI hides 30315/1038 from chat; `/api/presence` lists lines; two launches.
+Success: `make test` green; unit tests for status names, replace, skip chaperon, private omit, stuck keep-alive; UI hides 30315/1038 from chat; `/api/presence` lists lines; two launches.
 
 ## Remaining
 

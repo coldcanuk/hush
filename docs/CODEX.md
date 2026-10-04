@@ -2,7 +2,7 @@
 
 Codex is Hush's development agent. Read [AGENTS.md](../AGENTS.md) and
 [PRIME_DIRECTIVE.md](../PRIME_DIRECTIVE.md) before changing the repository.
-Create a `worktrees/<slug>` checkout on `gb/<slug>`, commit and push there,
+Create a `worktrees/<short-name>` checkout on `gb/<short-name>`, commit and push there,
 land through PR review and GitHub merge, then remove the merged worktree and
 branch. Never commit, push, or merge directly into local main.
 

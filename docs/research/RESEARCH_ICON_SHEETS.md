@@ -4,7 +4,7 @@ Worktree: `/opt/repo/hush/worktrees/icon-sheets`
 Branch: `gb/icon-sheets`
 Base: `main` `b583af502`
 
-Prime Directive isolation (`worktrees/<slug>` + PR), not `../gb-*-wt`.
+Prime Directive isolation (`worktrees/<short-name>` + PR), not `../gb-*-wt`.
 
 ## Sources (`~/Pictures/hush_icons/`)
 

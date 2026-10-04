@@ -179,7 +179,7 @@ Formula: `Final = 0.4x + 0.4y + 0.2z`
 | Sub | Score | Evidence |
 |---|---|---|
 | X write-legible-c | 6.0 | Presence module is close (bounds, asserts on some leaves). Agent is a god file. No wake module. `make_d` takes a token, collapsing keys. |
-| Y required tests | 2.0 | `test_presence.c` covers slugs, replace, Idle expiry, REQ hide. Missing restart `d`, ledger, two-device, lease-vs-Stuck, done replay, combined private JSON. |
+| Y required tests | 2.0 | `test_presence.c` covers status names, replace, Idle expiry, REQ hide. Missing restart `d`, ledger, two-device, lease-vs-Stuck, done replay, combined private JSON. |
 | Z cevent contract | 8.5 | Drops/ack wrap tests exist in `test_cevent.c`. `g_ack` one-owner is **not** documented in `hush_cevent.h`. JSON_MAX untouched. |
 | **Final** | **5.0** | |
 

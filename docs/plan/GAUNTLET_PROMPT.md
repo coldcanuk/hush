@@ -28,7 +28,7 @@ Apply the same pass curve: soft-miss \(< 7.8\) → keep going; band 7.8–8.9 �
 
 ## Phase 3: Backlog and Build Plan
 1. **Take Count**: Inventory flaws, broken elements, needed modifications, and genuine improvements.
-2. **Formulate a Plan**: Step-by-step build plan. Prefer fixing HARD FAIL and soft-miss categories first. Adhere to `AGENTS.md` and `PRIME_DIRECTIVE.md` (worktrees, `gb/<slug>`, PR-only land).
+2. **Formulate a Plan**: Step-by-step build plan. Prefer fixing HARD FAIL and soft-miss categories first. Adhere to `AGENTS.md` and `PRIME_DIRECTIVE.md` (worktrees, `gb/<short-name>`, PR-only land).
 
 ## Phase 4: The Gauntlet Loop & Verification
 Execute the build plan in a continuous iteration loop ("The Gauntlet").

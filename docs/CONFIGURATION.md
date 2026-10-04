@@ -73,7 +73,7 @@ Not exhaustive; each row below was checked in code.
 
 | Variable | Role |
 |---|---|
-| `HUSH_HOME` | Hive home: session token, `config/`, `agents/`, `skills/`, `robots/<slug>/loadouts/` (PE-4 favorites), `threads/`. Tests override per-run; unset means `~/.hush`. |
+| `HUSH_HOME` | Hive home: session token, `config/`, `agents/`, `skills/`, `robots/<robot-id>/loadouts/` (PE-4 favorites), `threads/`. Tests override per-run; unset means `~/.hush`. |
 | `HUSH_CONFIG_DIR` | Overrides the config directory (`vibe.json`, `providers.json`). Tests set it alongside `HUSH_HOME`. |
 | `HUSH_PORT` | Scopes the `make` rebuild guard (`scripts/check-relay-port.sh`): argument, else `$HUSH_PORT`, else `10555`. See [`OPERATIONS.md`](OPERATIONS.md#rebuild-guard-make). |
 | `HUSH_KILL_GRACE_S` | Seconds `make install` / `make clean` wait between SIGTERM and SIGKILL when stopping relays (`scripts/kill-relay.sh`, default 3). |
@@ -96,7 +96,7 @@ Not exhaustive; each row below was checked in code.
 | `$HUSH_HOME/config/vibe.json` (`0600`) | Named vibe, channels, projects, profile (no email), members, raised-robot labels. Never holds an nsec or provider secret. Survives rebuild / Exit. |
 | `$HUSH_HOME/config/providers.json` (`0600`) | Provider overlay: host and model per id. Secret values are never in here. |
 | `$HUSH_HOME/threads/<root>.log` (`0600`, `O_NOFOLLOW`) | Durable per-thread transcripts (plus `<root>.brief`); served via `GET /api/thread`. |
-| `$HUSH_HOME/robots/<slug>/loadouts/` | PE-4 favorite loadouts (1–8 skill ids each, up to 32 per robot), written via `POST /api/loadout`. |
+| `$HUSH_HOME/robots/<robot-id>/loadouts/` | PE-4 favorite loadouts (1–8 skill ids each, up to 32 per robot), written via `POST /api/loadout`. |
 | `$XDG_RUNTIME_DIR/hush/relay-<port>.pid`, else `~/.local/state/hush/relay-<port>.pid` | Relay pidfile used by `--quit` and the rebuild guard: `pid starttime port` on Linux, only `pid` elsewhere. |
 | `$HUSH_HOME/skills/{system,user,robots}/` | Forged skills. Product scopes are System (application-wide) and This robot; `make clean` never touches this tree. |
 

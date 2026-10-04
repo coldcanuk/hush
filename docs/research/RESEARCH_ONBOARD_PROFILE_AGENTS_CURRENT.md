@@ -24,7 +24,7 @@ The bulk of PLAN_ONBOARD_PROFILE_AGENTS.md DoD is already implemented on this ba
 - Add human (npub/invite)
 - Create agent (name, system_prompt required, provider, avatar, context files)
 - Private vibe shows join token; public does not
-- Agent nsec via pass at hush/agents/<slug>/nsec (default on)
+- Agent nsec via pass at hush/agents/<robot-id>/nsec (default on)
 - Kind 0 published for human + agents (name, display_name, about, picture)
 - Context MIME: text/plain or Markdown only (checked)
 

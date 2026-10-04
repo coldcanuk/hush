@@ -83,7 +83,7 @@ Gate: Data **yes 8/10**, Sherlock **yes 8/10** (still verify intro counts in a t
 
 ## Chaperon
 
-- Channel names a chaperon slug. Babysit only: on-topic / bring-back / user triggers.
+- Channel names a chaperon channel id. Babysit only: on-topic / bring-back / user triggers.
 - **Major** may work **and** chaperon.
 - User-created `role=chaperon` robots never take a work grok job.
 - Chaperon need not be in the channel robot list as a worker.

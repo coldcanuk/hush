@@ -122,6 +122,6 @@ Close dismisses the window; the hive keeps listening (re-attach from the launche
 
 Plans and research live under `docs/` — never `PLAN_*.md` at the root. Key entries: [`docs/OPERATIONS.md`](docs/OPERATIONS.md), [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md), [`docs/CODEX.md`](docs/CODEX.md), [`docs/pass-integration.md`](docs/pass-integration.md), [`docs/plan/`](docs/plan/), [`docs/research/`](docs/research/), [`docs/ops/`](docs/ops/).
 
-Development uses Codex with worktrees (`gb/<slug>` branches, PR → review → auto-merge, never direct `main` writes). Law: [`PRIME_DIRECTIVE.md`](PRIME_DIRECTIVE.md), [`AGENTS.md`](AGENTS.md), [`BRANCHING.md`](BRANCHING.md). Every `.c`/`.h` follows the machine-legibility standard (`.agents/skills/write-legible-c/SKILL.md`), strict C11 build, `./configure && make && make test`.
+Development uses Codex with worktrees (`gb/<short-name>` branches, PR → review → auto-merge, never direct `main` writes). Law: [`PRIME_DIRECTIVE.md`](PRIME_DIRECTIVE.md), [`AGENTS.md`](AGENTS.md), [`BRANCHING.md`](BRANCHING.md). Every `.c`/`.h` follows the machine-legibility standard (`.agents/skills/write-legible-c/SKILL.md`), strict C11 build, `./configure && make && make test`.
 
 Machine-readable summary: [`llms.txt`](llms.txt). Citation: [`CITATION.cff`](CITATION.cff). Ethics: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).

@@ -28,9 +28,9 @@ On launch the hive shows **Robots Inventory** with Payne and Happy, but:
 | Open editor | `click` on `.inv-item` → `openAgentDrawer`; `pointerdown` starts drag and `preventDefault` | `renderInventory` / `beginInvDrag` |
 | Channel menu | `#chan-menu`, `openChanMenu`, `hideChanMenu`, document click outside | `index.html` + CSS `.menu` |
 | Agent drawer | `#agent-drawer`: name, prompt, context, 9 providers, picture sheets | markup ~954 |
-| Payne lock | `agent-identity` hidden; title `Edit Sgt Major Payne`; POST slug updates providers only | `openAgentDrawer`, `hush_http_update_payne` |
-| Agent POST | delete / Payne slug / else **create** (`hush_launch_add_agent`) | `hush_http_serve_agent` |
-| Roster persist | vibe.json `agent_name/slug/provider/prompt` — **no picture** | `hush_launch_put_agents` / `take_agent` |
+| Payne lock | `agent-identity` hidden; title `Edit Sgt Major Payne`; POST robot id updates providers only | `openAgentDrawer`, `hush_http_update_payne` |
+| Agent POST | delete / Payne robot id / else **create** (`hush_launch_add_agent`) | `hush_http_serve_agent` |
+| Roster persist | vibe.json `agent_name/robot id/provider/prompt` — **no picture** | `hush_launch_put_agents` / `take_agent` |
 | Payne session | `HUSH_LAUNCH_PAYNE_NAME` constant, not a roster row | `hush_launch.h` / `format_payne_providers` |
 | Config dir | `$HUSH_CONFIG_DIR` else `$XDG_CONFIG_HOME/hush` else `$HOME/.config/hush` | `hush_launch_config_dir` |
 | Provider overlay | `$XDG_CONFIG_HOME/hush` else `$HOME/.config/hush` (**no** `HUSH_CONFIG_DIR`) | `hush_provider_config_dir` |
@@ -42,7 +42,7 @@ On launch the hive shows **Robots Inventory** with Payne and Happy, but:
 ## 3. Constraints
 
 - C11 strict + write-legible-c on every `.c`/`.h`.
-- Prime Directive: worktree `worktrees/<slug>` on `gb/<slug>`; land via PR only.
+- Prime Directive: worktree `worktrees/<short-name>` on `gb/<short-name>`; land via PR only.
 - Embed UI: edit `hush-c/demo/index.html` then `scripts/embed-ui.sh`.
 - Tests override homes so they never mkdir the developer’s real `~/.hush`.
 - Non-goals: Raylib inventory, variable-size tiles, live LLM forge job,
@@ -72,7 +72,7 @@ flowchart TD
   O -->|click loadout chip| P[prune]
   I --> Q[Forge a skill]
   Q --> R[POST /api/skill]
-  R --> S["~/.hush/skills/user or robots/slug"]
+  R --> S["~/.hush/skills/user or robots/robot id"]
   I --> T[Save]
   T --> U["POST /api/agent action=update"]
   U --> V["~/.hush/config/vibe.json"]
@@ -85,7 +85,7 @@ flowchart LR
     AG[agents/]
     SYS[skills/system/forge-skill]
     USR[skills/user/]
-    ROB[skills/robots/slug/]
+    ROB[skills/robots/robot id/]
   end
   INSTALL[make install / first-run hush_home_ensure] --> home
   CAT[GET /api/skills] --> SYS
@@ -130,7 +130,7 @@ Vibe persist adds `agent_picture`, `agent_voice`, `agent_skill_N`.
 Voice ids (shown only when whisper is available): `alloy`, `echo`, `fable`,
 `onyx`, `nova`, `shimmer`.
 
-Skill id: `system:<slug>` / `user:<slug>` / `robot:<robot-slug>:<slug>`.
+Skill id: `system:<skill-name>` / `user:<skill-name>` / `robot:<robot-id>:<skill-name>`.
 
 ### HTTP
 

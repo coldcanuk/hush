@@ -6,7 +6,7 @@
 
 ## Decisions (from operator)
 
-1. Slugs are closed names. `Debugging Code` is one slug. Family `Debugging <Thing>` is allowed (`Debugging Algorithms`, `Debugging HTML`, …).
+1. Status names are closed names. `Debugging Code` is one status name. Family `Debugging <Thing>` is allowed (`Debugging Algorithms`, `Debugging HTML`, …).
 2. One presence line **per job** (`d` = `hive:<job-token>`).
 3. Author is the actor’s identity (robot or human pubkey / nsec). Not the relay’s dummy key. Not a chaperon.
 4. Idle/Waiting expire to nothing. Job start + heartbeat are the two clocks. **Stuck** does not expire; keep-alive while stuck. Major intervenes; disable clears it.
@@ -34,7 +34,7 @@ Nostr has **no** online/away/offline presence NIP. Issue [nips#160](https://gith
 | Store | append-only ring 1024; **no** addressable replace |
 | Event ids | MVP hex, not schnorr (existing deviation in `hush_event.c`) |
 | Public | `launch.vibe_public`; NIP-01 `REQ` currently dumps matching store rows |
-| Chaperon | `hush_agent_is_work_ok` returns 0 for `role=chaperon`; Major slug is allowed |
+| Chaperon | `hush_agent_is_work_ok` returns 0 for `role=chaperon`; Major robot id is allowed |
 | HTTP events | `/api/events` emits every store row including non-chat kinds |
 
 ## Frozen protocol (Hush convention on NIP-38)
@@ -42,19 +42,19 @@ Nostr has **no** online/away/offline presence NIP. Issue [nips#160](https://gith
 **Presence line (NIP-38)**  
 - kind `30315`  
 - `d` = `hive:<job-token>` (human uses token `human` when not on a grok job)  
-- `content` = slug (or empty to clear)  
+- `content` = id (or empty to clear)  
 - tags: `d`, optional `expiration` (unix seconds), `h` channel  
 - author = robot hex or human hex  
 
 **Trail (new regular kind, append-only)**  
 - kind **`1038`** (Hush presence trail; not addressable)  
-- same author, `content` = slug, tags `d` + `h`  
+- same author, `content` = id, tags `d` + `h`  
 - survives replacements of 30315  
 
 **Cevent**  
 - type `presence` on each publish; type `stuck` on each stuck keep-alive  
 
-**Slug table (exact, plus Debugging family)**  
+**Id table (exact, plus Debugging family)**  
 
 `Building`, `Researching`, `Planning`, `Debugging Code`, `Conversing`, `Shooting the Breeze`, `Wasting Tokens`, `Stuck`, `Working`, `Waiting`, `Idle`  
 
@@ -90,4 +90,4 @@ Outbound HTTP webhooks. Kind 44102 / NIP-MR. Chaperon presence. Replacing thinki
 2. 30315 in `/api/events` looks like chat. **Mitigation:** kind filter in UI + skip in event JSON stream for 30315/1038.  
 3. Private hive `REQ` leak. **Mitigation:** omit those kinds when `!vibe_public`.  
 4. Stuck ↔ Major loop. **Mitigation:** never Stuck-nudge Major about Major; `robot_busy` on parent.  
-5. Slug spam. **Mitigation:** heartbeat 15s; publish only on change or keep-alive.
+5. Id spam. **Mitigation:** heartbeat 15s; publish only on change or keep-alive.

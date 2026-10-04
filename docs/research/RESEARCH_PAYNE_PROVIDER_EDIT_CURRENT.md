@@ -15,7 +15,7 @@ The implementation for PLAN_PAYNE_PROVIDER_EDIT.md is already present on this ba
 - hush_launch_set_payne_providers, default [goose], put/take for payne_provider_N, format in session JSON as payne.providers array + payne.provider (primary)
 
 **HTTP:**
-- POST /api/agent with slug=="sgt-major-payne" routes to hush_http_update_payne
+- POST /api/agent with robot id=="sgt-major-payne" routes to hush_http_update_payne
 - Updates providers list via set_payne_providers; ignores name/prompt; delete still denied
 
 **Dispatch:**
@@ -26,7 +26,7 @@ The implementation for PLAN_PAYNE_PROVIDER_EDIT.md is already present on this ba
 - robotModels includes Payne with providers array (fallback ["goose"])
 - openAgentDrawer accepts Payne (locked=true but edit allowed for providers)
 - "Edit Sgt Major Payne" title, payne-provider-pills visible, order radios/pills
-- Save posts slug + provider_0..N
+- Save posts id + provider_0..N
 - Card subtitle shows primary + +N
 - Name/prompt/delete locked (Delete disabled with message)
 
