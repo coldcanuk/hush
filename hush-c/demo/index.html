@@ -3236,6 +3236,10 @@ button.fo-person { min-height: var(--btn-h-sm); }
       hideChanMenu();
       invMenuSlug = slug;
       if (slug) invSelectedSlug = slug;
+      /* A right-click selects the robot. The Edit button reads that
+         selection only through syncInvExpandEdit, which a click calls
+         and this path did not. */
+      syncInvExpandEdit();
       m.classList.add("show");
       m.style.left = Math.min(x, window.innerWidth - 160) + "px";
       m.style.top = Math.min(y, window.innerHeight - 80) + "px";

@@ -816,6 +816,10 @@ async function main() {
     await cdp.eval(`['agent-drawer','inv-expand-drawer'].forEach((id) => { const e = document.getElementById(id); if (e) e.classList.remove('show'); })`);
     await cdp.click('#qb-1');
     await cdp.waitFor(`!!document.querySelector('#inv-expand-drawer.show') && !!document.querySelector('#robot-inventory-full .inv-item[data-slug="coach"]')`, 'expanded inventory coach');
+    const editIdle = await cdp.eval(`(() => { const b = document.querySelector('#inv-expand-edit'); return { dis: b.disabled, aria: b.getAttribute('aria-label'), title: b.title, text: b.textContent.trim() }; })()`);
+    console.log('edit idle: ' + JSON.stringify(editIdle));
+    check(editIdle.dis === true && editIdle.text === 'Edit' && editIdle.aria === 'Edit the selected robot' && editIdle.title === 'Select a robot first',
+      `Edit stays disabled until a robot is selected: ${JSON.stringify(editIdle)}`);
     const menu = await cdp.eval(`(() => {
       const el = document.querySelector('#robot-inventory-full .inv-item[data-slug="coach"]');
       const r = el.getBoundingClientRect();
@@ -834,6 +838,10 @@ async function main() {
     console.log('inv menu: ' + JSON.stringify(menu));
     check(menu.show && Number(menu.z) > Number(menu.dz) && menu.inMenu && menu.label === 'edit',
       `inventory menu is above the drawer and hittable: ${JSON.stringify(menu)}`);
+    const editRight = await cdp.eval(`(() => { const b = document.querySelector('#inv-expand-edit'); return { dis: b.disabled, aria: b.getAttribute('aria-label'), title: b.title, text: b.textContent.trim() }; })()`);
+    console.log('edit after right-click: ' + JSON.stringify(editRight));
+    check(!editRight.dis && editRight.text === 'Edit' && editRight.aria === 'Edit Coach' && editRight.title === 'Edit Coach',
+      `right-click enables Edit for that robot: ${JSON.stringify(editRight)}`);
     await cdp.eval(`document.querySelector('#inv-menu button[data-act="edit"]').click()`);
     await cdp.waitFor(`document.querySelector('#agent-drawer.show') && document.querySelector('#agent-name').value === 'Coach'`, 'edit from menu');
     await cdp.eval(`document.querySelector('#agent-close').click()`);
@@ -910,6 +918,8 @@ async function main() {
       const desk = await logProbe(1440, 900, th, false);
       console.log(`log ${th}: ` + JSON.stringify({ phone, tall, desk }));
       check(phone.people >= 8 && phone.logH >= 140 && phone.inView, `375 log stays up with 8 people (${th}): ${JSON.stringify(phone)}`);
+      check(phone.people >= 8 && phone.moved && phone.docH > 812 && phone.overflowY !== 'visible',
+        `375 unforced 8-row page scrolls (${th}): ${JSON.stringify(phone)}`);
       check(tall.logH >= 140 && tall.docH > tall.inner && tall.moved && tall.overflowY !== 'hidden',
         `375 page scrolls when the roster is taller than the screen (${th}): ${JSON.stringify(tall)}`);
       check(desk.logH >= 300 && desk.inView, `1440 log stays up with 8 people (${th}): ${JSON.stringify(desk)}`);
