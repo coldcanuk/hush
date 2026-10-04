@@ -98,9 +98,18 @@ after=$(curl -sf "http://127.0.0.1:${port}/api/status")
 after_n=$(printf '%s' "$after" | sed -n 's/.*"events":\([0-9]*\).*/\1/p')
 test "$before_n" = "$after_n" || fail "complete must not insert a hive note"
 
-! grep -R --include='*.c' --include='*.h' -n 'curl/curl.h' src include >/dev/null \
-    || fail "sources include curl/curl.h"
-! grep -n -- '-lcurl' Makefile >/dev/null || fail "Makefile links -lcurl"
+# Canvas FIM stays free of libcurl. The vault client is the one source
+# allowed to include the real header and link it through pkg-config.
+curl_hits=$(grep -R --include='*.c' --include='*.h' -l 'curl/curl.h' src include || true)
+for hit in $curl_hits; do
+    case "$hit" in
+        src/hush_vault.c) ;;
+        *) fail "sources include curl/curl.h" ;;
+    esac
+done
+if grep -n -- '-lcurl' Makefile | grep -v 'pkg-config --libs libcurl' >/dev/null; then
+    fail "Makefile links -lcurl"
+fi
 ! grep -R --include='*.c' --include='*.h' -n 'pthread' src include >/dev/null \
     || fail "sources use pthread"
 
