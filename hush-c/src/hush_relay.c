@@ -1618,6 +1618,7 @@ static void hush_handle_req_msg(struct client *c, const hush_client_msg_t *msg)
     memcpy(c->sub_id, msg->sub_id, sizeof(c->sub_id));
     c->filter = msg->filters[0];
     c->has_sub = 1;
+    /* The 64-slot window is the newest matches, not the oldest in the ring. */
     n = hush_store_query(g_store, msg->filters, msg->nfilters, results, 64);
     for (i = 0; i < n; ++i) {
         if (!hush_presence_req_ok(results[i].kind, g_launch.vibe_public))

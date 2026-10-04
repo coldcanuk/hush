@@ -61,11 +61,11 @@ void hush_thread_brief_set(const char *root, const char *text);
  * are no-ops; never removes an existing brief. */
 void hush_thread_brief_roll(const char *root, const char *text);
 
-/* Number of transcript turns for root. */
+/* Number of distinct transcript ids for root. A republished id counts once. */
 size_t hush_thread_count(const char *root);
 
 /* Formats the durable memory for root as one JSON object: ok, root, brief,
- * count (every stored turn), truncated (count exceeds turns[]), and turns[]
+ * count (distinct ids), truncated (count exceeds turns[]), and turns[]
  * (newest HUSH_THREAD_TURNS_MAX, oldest first). Unknown roots format an
  * honest empty object. Fails with ARG on a bad root or output, FULL when
  * outsz cannot hold the body. */

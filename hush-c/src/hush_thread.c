@@ -137,11 +137,47 @@ void hush_thread_record(const hush_event_t *ev)
     (void)fclose(fp);
 }
 
+struct hush_thread_seen {
+    char id[HUSH_EVENT_ID_HEX_LEN + 1];
+};
+
+/* Records id. Returns 1 when already seen, 0 when newly recorded, -1 when
+ * the set cannot grow. Distinct ids are the contract, not adjacency. */
+static int hush_thread_note_id(struct hush_thread_seen **seen, size_t *count,
+                               size_t *cap, const char *id)
+{
+    size_t i;
+    size_t next;
+    struct hush_thread_seen *grown;
+
+    assert(seen != NULL);
+    assert(count != NULL);
+    assert(cap != NULL);
+    assert(id != NULL);
+    for (i = 0; i < *count; ++i) {
+        if (strcmp((*seen)[i].id, id) == 0)
+            return 1;
+    }
+    if (*count == *cap) {
+        next = (*cap == 0) ? 16 : (*cap * 2);
+        grown = realloc(*seen, next * sizeof(*grown));
+        if (grown == NULL)
+            return -1;
+        *seen = grown;
+        *cap = next;
+    }
+    memcpy((*seen)[*count].id, id, sizeof((*seen)[*count].id));
+    (*count)++;
+    return 0;
+}
+
 size_t hush_thread_read(const char *root, hush_thread_turn_t *out, size_t max)
 {
     char log_path[HUSH_HOME_PATH_MAX];
     char line[HUSH_THREAD_LINE_MAX];
-    char last[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    struct hush_thread_seen *seen = NULL;
+    size_t seen_n = 0;
+    size_t seen_cap = 0;
     FILE *fp;
     size_t count = 0;
 
@@ -157,13 +193,14 @@ size_t hush_thread_read(const char *root, hush_thread_turn_t *out, size_t max)
         return 0;
     while (fgets(line, sizeof(line), fp) != NULL) {
         hush_thread_turn_t turn;
+        int noted;
 
         memset(&turn, 0, sizeof(turn));
         if (!hush_thread_parse_line(line, &turn))
             continue;
-        if (last[0] != '\0' && strcmp(last, turn.id) == 0)
+        noted = hush_thread_note_id(&seen, &seen_n, &seen_cap, turn.id);
+        if (noted != 0)
             continue;
-        memcpy(last, turn.id, sizeof(last));
         if (count < max) {
             out[count++] = turn;
         } else {
@@ -171,6 +208,7 @@ size_t hush_thread_read(const char *root, hush_thread_turn_t *out, size_t max)
             out[max - 1] = turn;
         }
     }
+    free(seen);
     (void)fclose(fp);
     return count;
 }
@@ -179,7 +217,9 @@ size_t hush_thread_count(const char *root)
 {
     char log_path[HUSH_HOME_PATH_MAX];
     char line[HUSH_THREAD_LINE_MAX];
-    char last[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    struct hush_thread_seen *seen = NULL;
+    size_t seen_n = 0;
+    size_t seen_cap = 0;
     hush_thread_turn_t turn;
     FILE *fp;
     size_t count = 0;
@@ -191,13 +231,16 @@ size_t hush_thread_count(const char *root)
     if (fp == NULL)
         return 0;
     while (fgets(line, sizeof(line), fp) != NULL) {
+        int noted;
+
         if (!hush_thread_parse_line(line, &turn))
             continue;
-        if (last[0] != '\0' && strcmp(last, turn.id) == 0)
+        noted = hush_thread_note_id(&seen, &seen_n, &seen_cap, turn.id);
+        if (noted != 0)
             continue;
-        memcpy(last, turn.id, sizeof(last));
         count++;
     }
+    free(seen);
     (void)fclose(fp);
     return count;
 }
