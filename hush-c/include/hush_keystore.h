@@ -34,6 +34,11 @@ int hush_keystore_ready(hush_keystore_kind kind);
 hush_status_t hush_keystore_save(hush_keystore_kind kind, const char *path,
                                  const char *secret);
 
+/* Offers secret to one ready store. Uses pass when use_pass is set.
+ * Otherwise tries op, then secret-tool. A miss leaves the secret
+ * in the caller's memory. Never writes a plain file. */
+void hush_keystore_offer(int use_pass, const char *path, const char *secret);
+
 /* Reads one store into out. A missing tool is HUSH_ERR_NOT_FOUND.
  * Also fails HUSH_ERR_ARG or HUSH_ERR_IO. */
 hush_status_t hush_keystore_load_kind(hush_keystore_kind kind, char *out,

@@ -7,7 +7,7 @@
 #include <time.h>
 
 #include "hush_event.h"
-#include "hush_home.h"
+#include "hush_keystore.h"
 #include "hush_pass.h"
 #include "hush_provider.h"
 #include "hush_roster.h"
@@ -87,8 +87,9 @@ static void hush_roster_fill_event(hush_event_t *ev, const char *pubkey_hex,
 /* JSON-escapes src into dst. */
 static size_t hush_roster_json_escape(const char *src, char *dst, size_t dstsz);
 
-/* Best-effort pass insert. Never fails the caller. */
-static void hush_roster_try_save_agent(const char *slug, const char *secret);
+/* Offers a new secret to a store. Never writes a plain file. */
+static void hush_roster_keep_agent_key(const char *slug, const char *secret,
+                                      int use_pass);
 
 /* Decodes npub1… or 64-hex into pubkey hex + npub. */
 static hush_status_t hush_roster_parse_pubkey(char *out_hex, char *out_npub,
@@ -443,12 +444,7 @@ hush_status_t hush_roster_add_agent(hush_roster_t *roster,
         return st;
     if (hush_identity_generate(&agent->id) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
-    if (save_pass)
-        hush_roster_try_save_agent(agent->slug, agent->id.nsec);
-    /* Disk copy survives a restart when pass is missing. Templates pass
-     * save_pass 0, so this is their only copy. */
-    if (hush_home_store_agent_nsec(agent->slug, agent->id.nsec) != HUSH_OK)
-        return HUSH_ERR_IO;
+    hush_roster_keep_agent_key(agent->slug, agent->id.nsec, save_pass);
     if (hush_roster_store_agent_profile(store, agent) != HUSH_OK)
         return HUSH_ERR_FULL;
     if (hush_roster_store_agent_note(store, agent) != HUSH_OK)
@@ -937,7 +933,8 @@ static size_t hush_roster_json_escape(const char *src, char *dst, size_t dstsz)
     return o;
 }
 
-static void hush_roster_try_save_agent(const char *slug, const char *secret)
+static void hush_roster_keep_agent_key(const char *slug, const char *secret,
+                                      int use_pass)
 {
     char path[HUSH_PASS_PATH_MAX];
 
@@ -945,7 +942,7 @@ static void hush_roster_try_save_agent(const char *slug, const char *secret)
     assert(secret != NULL);
     if (snprintf(path, sizeof(path), "agents/%s/nsec", slug) >= (int)sizeof(path))
         return;
-    (void)hush_pass_save(path, secret);
+    hush_keystore_offer(use_pass, path, secret);
 }
 
 static hush_status_t hush_roster_parse_pubkey(char *out_hex, char *out_npub,

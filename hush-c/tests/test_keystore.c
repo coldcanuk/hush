@@ -213,7 +213,7 @@ static void test_store_restores(hush_keystore_kind kind, const char *tag)
         expect(0, tag);
         return;
     }
-    expect(count_nsec_files(home) > 0, "seed still writes the old robot file");
+    expect(count_nsec_files(home) == 0, "seed writes no plain key file");
     expect(save_open_ids(kind, &keys) == HUSH_OK, "save into one store");
     drop_nsec_files(home);
     expect(count_nsec_files(home) == 0, "plaintext keys removed before restore");
@@ -262,6 +262,7 @@ static void test_missing_refuses_lookalike(void)
     expect(again.restart_lost_login, "honest restart-loss flag");
     expect(strcmp(again.payne.pubkey_hex, keys.payne.pubkey_hex) != 0,
            "minted Payne is not the old public id");
+    expect(count_nsec_files(home) == 0, "mint wrote no plain key file");
     expect(strcmp(again.human.pubkey_hex, keys.human.pubkey_hex) != 0,
            "missing human is not the old public id");
 }

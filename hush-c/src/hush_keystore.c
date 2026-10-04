@@ -151,6 +151,22 @@ hush_status_t hush_keystore_save(hush_keystore_kind kind, const char *path,
     return HUSH_ERR_ARG;
 }
 
+void hush_keystore_offer(int use_pass, const char *path, const char *secret)
+{
+    if (!hush_keystore_path_ok(path) || secret == NULL || secret[0] == '\0')
+        return;
+    if (use_pass) {
+        (void)hush_keystore_save(HUSH_KEYSTORE_PASS, path, secret);
+        return;
+    }
+    if (hush_keystore_ready(HUSH_KEYSTORE_OP)) {
+        (void)hush_keystore_save(HUSH_KEYSTORE_OP, path, secret);
+        return;
+    }
+    if (hush_keystore_ready(HUSH_KEYSTORE_SECRET))
+        (void)hush_keystore_save(HUSH_KEYSTORE_SECRET, path, secret);
+}
+
 hush_status_t hush_keystore_load_kind(hush_keystore_kind kind, char *out,
                                      size_t outsz, const char *path)
 {

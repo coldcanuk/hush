@@ -62,6 +62,6 @@ If `pass`, `op`, or `secret-tool` is not installed, or the store has no key for 
 
 - Your login stays logged out. The session says `restart_lost_login` when a vibe is already saved. That is the honest path. Hush does not create a new human key and present it as you.
 - An older home file (`agents/<agent name>/nsec`) is leftover. It is not a place to keep a key. A private key is never written to a plain file.
-- When none of the three stores has the key, Hush may create a new robot key the way it already did. The new key has a new public id. It is not the old one.
+- When none of the three stores has the key, a new robot key stays in memory until pass, 1Password, or the keyring is chosen. That key has a new public id. It is not the old one. It is not written to a plain file.
 
 Hush will not mint a new identity and call it the old one.
