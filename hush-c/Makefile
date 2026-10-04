@@ -16,6 +16,8 @@ LDFLAGS := -lcrypto
 # Parent ./configure writes HUSH_HAVE_X11 and -lX11 when Xlib is present.
 -include ../config.mk
 override LDFLAGS += -Wl,-z,noexecstack
+override CFLAGS += $(shell pkg-config --cflags libcurl)
+override LDFLAGS += $(shell pkg-config --libs libcurl)
 
 # These can be overridden by top-level or configure
 PREFIX ?= $(HOME)/.local
