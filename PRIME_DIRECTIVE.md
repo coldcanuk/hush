@@ -10,7 +10,7 @@ Hush is a **C11** project. It is not Buzz. Rust/desktop/mobile history is irrele
 ## The rule (no exceptions)
 
 1. **Always create a worktree** for any change (code, docs, config, hooks, version bumps).
-2. **Commit and push only on the worktree branch** (`gb/<slug>`).
+2. **Commit and push only on the worktree branch** (`gb/<short-name>`).
 3. **Land on `main` only via Pull Request** (merge request): open PR → review → **auto-merge** (or explicit approve + merge on GitHub).
 4. **After the PR is successfully merged into `main`**, delete the worktree and the local branch.
 5. **Writing directly to `main` is strictly prohibited**
@@ -25,8 +25,8 @@ There is no “small change” exception. There is no “docs only” exception.
 | Item | Path / name |
 |------|-------------|
 | Main checkout | `/opt/repo/hush` (branch `main` only; keep clean) |
-| Worktree path | `/opt/repo/hush/worktrees/<slug>` **only** |
-| Branch name | `gb/<slug>` |
+| Worktree path | `/opt/repo/hush/worktrees/<short-name>` **only** |
+| Branch name | `gb/<short-name>` |
 | Forbidden worktree roots | `/opt/repo/worktrees`, any path outside this repo |
 | Remote | `https://github.com/coldcanuk/hush.git` |
 | Long-lived branch | `main` only |
@@ -43,20 +43,20 @@ git checkout main
 git pull --ff-only origin main
 git status   # MUST be clean; MUST be on main
 
-FEATURE_SLUG="short-kebab-slug"    # e.g. prime-directive
-BRANCH="gb/${FEATURE_SLUG}"
-WT="worktrees/${FEATURE_SLUG}"
+FEATURE_NAME="short-kebab-name"    # e.g. prime-directive
+BRANCH="gb/${FEATURE_NAME}"
+WT="worktrees/${FEATURE_NAME}"
 
 git worktree add -b "$BRANCH" "$WT"
 cd "$WT"
 pwd | grep -q '/hush/worktrees/' || { echo "FATAL: worktree outside repo"; exit 1; }
-git branch --show-current          # must print gb/<slug>
+git branch --show-current          # must print gb/<short-name>
 ```
 
 ### B. During work
 
 ```bash
-# still inside worktrees/<slug>
+# still inside worktrees/<short-name>
 git add …
 git commit -m "…"
 git push -u origin HEAD            # push the gb/* branch, never main
@@ -67,7 +67,7 @@ Commit after every milestone. Push the branch often.
 ### C. Finish — Pull Request only
 
 ```bash
-# inside worktrees/<slug>
+# inside worktrees/<short-name>
 git push -u origin HEAD
 
 gh pr create \
@@ -91,10 +91,10 @@ cd /opt/repo/hush
 git checkout main
 git pull --ff-only origin main
 
-git worktree remove "worktrees/${FEATURE_SLUG}"
-git branch -d "gb/${FEATURE_SLUG}" 2>/dev/null || true
+git worktree remove "worktrees/${FEATURE_NAME}"
+git branch -d "gb/${FEATURE_NAME}" 2>/dev/null || true
 # remote gb/* branch: delete after merge if GitHub did not
-git push origin --delete "gb/${FEATURE_SLUG}" 2>/dev/null || true
+git push origin --delete "gb/${FEATURE_NAME}" 2>/dev/null || true
 
 git worktree list   # only main checkout should remain
 git status          # clean, on main
@@ -133,10 +133,10 @@ cd /opt/repo/hush
 
 ## Codex checklist (every task)
 
-- [ ] Am I inside `…/hush/worktrees/<slug>` on `gb/<slug>`?
+- [ ] Am I inside `…/hush/worktrees/<short-name>` on `gb/<short-name>`?
 - [ ] Did I commit **and** push the branch (not main)?
 - [ ] Did I open a PR into `main` (not merge locally)?
-- [ ] After merge: did I remove the worktree and delete `gb/<slug>`?
+- [ ] After merge: did I remove the worktree and delete `gb/<short-name>`?
 - [ ] Is main checkout clean and not holding my edits?
 
 If any answer is no → stop and fix process before more code.

@@ -15,4 +15,4 @@ M3.3 `make test`, two launches, embed UI, PR.
 
 ## Verification
 
-Catalog JSON scopes + watermarks. ≥20 chaperon. Named sources represented. `mobile-trace` names Android and iOS. Old slugs absent. Clone Coach / deny Major.
+Catalog JSON scopes + watermarks. ≥20 chaperon. Named sources represented. `mobile-trace` names Android and iOS. Old skill names absent. Clone Coach / deny Major.

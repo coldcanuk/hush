@@ -4,7 +4,7 @@ Worktree: `/opt/repo/hush/worktrees/restore-launch-rail`
 Branch: `gb/restore-launch-rail`
 Base: `main` `59f5ed59f` (PR #96)
 
-Methodology: RDAP. Isolation is Prime Directive (`worktrees/<slug>` + PR),
+Methodology: RDAP. Isolation is Prime Directive (`worktrees/<short-name>` + PR),
 not the pasted `../gb-*-wt` / local merge-to-main snippet.
 
 ## 1. Primary goal / non-goals / DoD (locked)

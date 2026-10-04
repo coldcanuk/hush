@@ -323,7 +323,7 @@ conversation classifier.
 - Cancelling a live `grok` child this slice.
 - Voice barge-in policy.
 - Nested NIP-10, Codex/Goose live CLIs, new channel kinds on the
-  wire (still kind 1 + `#h` slug).
+  wire (still kind 1 + `#h` channel id).
 - Auto robot-originated roots even when `robot_talk=on`.
 - Changing starter channel names.
 

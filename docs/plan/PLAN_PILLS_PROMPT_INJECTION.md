@@ -12,7 +12,7 @@ Channels have their own "about" (topic). When a robot is mentioned on a channel,
 - Keep hygiene. No behavior change when about is empty.
 
 ## Evidence from prior
-- Channels already have name/slug/id/group + policy (robot_reply etc).
+- Channels already have name/robot id/id/group + policy (robot_reply etc).
 - Agent jobs look up channel for dispatch.
 - Prompt fill happens in fill_job before spawn.
 

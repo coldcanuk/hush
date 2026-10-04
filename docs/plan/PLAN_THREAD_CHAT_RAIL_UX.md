@@ -137,7 +137,7 @@ PR merge + worktree removed.
 - Task 2 of M6.1: `gh pr merge --auto --merge`. After MERGED:
   pull main, `git worktree remove worktrees/thread-chat-rail-ux`,
   delete branch.
-- Verify: `git worktree list` has no this slug; main clean.
+- Verify: `git worktree list` has no this short name; main clean.
 - Commit: none on main.
 
 ## 4. Audit of this plan

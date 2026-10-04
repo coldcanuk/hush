@@ -51,7 +51,7 @@ C `hush_roster_remove_agent` / `hush_launch_remove_agent` return
 **E5** `POST /api/agent` only creates (`hush_launch_add_agent`)
 or deletes (`action:"delete"`). There is no update path. Creating
 an agent named "Sgt Major Payne" would slugify to
-`sgt-major-payne` and collide with the seeded slug.
+`sgt-major-payne` and collide with the seeded robot id.
 
 **E6** Agent dispatch looks Payne up separately and forces Goose:
 
@@ -122,7 +122,7 @@ keep today's behavior.
 | Field | Rule |
 |---|---|
 | Name | Always `Sgt Major Payne`. Input disabled / omitted. |
-| Slug | Always `sgt-major-payne`. |
+| Robot id | Always `sgt-major-payne`. |
 | About / system prompt | Always `HUSH_LAUNCH_PAYNE_ABOUT`. Prompt field disabled / omitted. |
 | nsec / npub | Unchanged. Still `pass` + vibe restore. |
 | Delete | Still denied. Delete button stays disabled. |
@@ -226,8 +226,8 @@ Raise path unchanged.
    forbidden.
 5. **New module `hush_payne.c`.** Too much surface. Launch
    already owns Payne + vibe.json.
-6. **Let POST /api/agent create a second Payne.** Slug
-   collision. Refuse add when slug is Payne; update instead.
+6. **Let POST /api/agent create a second Payne.** Robot id
+   collision. Refuse add when robot id is Payne; update instead.
 
 ## Scope (frozen)
 

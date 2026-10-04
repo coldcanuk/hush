@@ -80,7 +80,7 @@ Sits under Robots Inventory. Compact belt:
 Drop target: `.inv-item` tiles. Held skill + `pointerdown` on a tile **must not**
 start `beginInvDrag`. Drop `POST /api/agent` with `skill_0…` + `nskills` only
 (name/prompt omitted so `hush_roster_apply_update` leaves them). Payne uses the
-Payne slug path (no `action:update`). Locked templates refuse (clone first).
+Payne robot id path (no `action:update`). Locked templates refuse (clone first).
 Payne is identity-locked but **skill-editable** (existing `update_payne_profile`).
 
 ### B. Editor paper doll (replace the chip wall)

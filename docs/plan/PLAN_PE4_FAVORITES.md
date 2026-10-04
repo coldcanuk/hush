@@ -15,14 +15,14 @@
 - Delete removes the list entry only — never the doll.
 - Persistence is relay-side: per-robot named JSON sets
   (`{"name":..,"skills":[..]}`, 1–8 skill ids each) under
-  `$HOME/.hush/robots/<slug>/loadouts/`, served by `POST /api/loadout`
+  `$HOME/.hush/robots/<robot-id>/loadouts/`, served by `POST /api/loadout`
   (`save` / `list` / `load` / `delete`). Unknown, `robot:<other>:` or
-  repeated ids are refused at save, as are slug clashes with a different
+  repeated ids are refused at save, as are id clashes with a different
   stored name (exact-name overwrite allowed), a 33rd favorite, a
-  `skill_8` overflow, overlong values, and non-UTF-8 names. Robot slugs
+  `skill_8` overflow, overlong values, and non-UTF-8 names. Robot ids
   and names are allowlist-validated at every entry; load/delete/list
   create no directories. Favorites survive leave→return; the highlight
-  does not. New robots (no slug yet) cannot save favorites.
+  does not. New robots (no robot id yet) cannot save favorites.
 - PE-3 min-1 holds everywhere: last-gem lift, empty-draft save, empty
   loadout write, and empty favorite all refuse with
   “Keep at least one skill equipped.” (or the favorite-specific copy).

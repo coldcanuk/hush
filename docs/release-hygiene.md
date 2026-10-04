@@ -6,7 +6,7 @@ Short note for the WS1 blocking-CI work. Scope is hygiene only; no product chang
 
 - Source of truth: top-level `VERSION` (currently `0.0.1`).
 - `CHANGELOG.md` follows Keep a Changelog; versions come from `VERSION`.
-- Bump `VERSION` on its own worktree branch (`gb/<slug>`) and land via PR like any other change.
+- Bump `VERSION` on its own worktree branch (`gb/<short-name>`) and land via PR like any other change.
 
 ## Tags
 

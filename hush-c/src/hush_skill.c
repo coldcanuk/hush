@@ -41,9 +41,9 @@ enum {
     "overwrites them.\n" \
     "This robot: one custom robot only (Bender wears Futurama).\n\n" \
     "## Layout (~/.hush/)\n\n" \
-    "system: ~/.hush/skills/system/<slug>/SKILL.md\n" \
-    "user: ~/.hush/skills/user/<slug>/SKILL.md\n" \
-    "robot: ~/.hush/skills/robots/<robot-slug>/<slug>/SKILL.md\n\n" \
+    "system: ~/.hush/skills/system/<skill-name>/SKILL.md\n" \
+    "user: ~/.hush/skills/user/<skill-name>/SKILL.md\n" \
+    "robot: ~/.hush/skills/robots/<robot-name>/<skill-name>/SKILL.md\n\n" \
     "## Equip and prune\n\n" \
     "Open a robot's Edit screen. Choose an available skill to assign it, " \
     "or choose an assigned skill to remove it. Save the robot to apply changes.\n\n" \

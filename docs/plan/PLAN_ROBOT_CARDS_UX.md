@@ -56,7 +56,7 @@ every milestone on the worktree branch. Land on `main` only via PR.
 
 1. Session JSON growth → preview-truncate prompt to 160 chars.
 2. HTTP/roster line budgets → small helpers only.
-3. Delete-on-create affordance → always visible, disabled until slug.
+3. Delete-on-create affordance → always visible, disabled until id.
 
 ## 3. Plan
 
@@ -85,7 +85,7 @@ and UI_SPEC updates that name the new contract.
 - M3.1 Provider allowlist, `HUSH_ROSTER_CONTEXT_MAX = 3`,
   `provider` on agent + in, `hush_roster_is_provider`, require
   prompt + provider on add, format `provider` + prompt preview.
-- M3.2 `hush_roster_remove_agent` by slug (not Payne).
+- M3.2 `hush_roster_remove_agent` by robot id (not Payne).
 - M3.3 HTTP: parse provider, up to 3 indexed context triples,
   `action=delete`. Launch wrappers.
 - M3.4 Tests in `test_roster.c` + `check_launch.sh`.

@@ -4,7 +4,7 @@ Worktree: `/opt/repo/hush/worktrees/conv-fidelity-pics`
 Branch: `gb/conv-fidelity-pics`
 Base: `main` `64ed68f5f`
 
-Prime Directive isolation (`worktrees/<slug>` + PR), not `../gb-*-wt`.
+Prime Directive isolation (`worktrees/<short-name>` + PR), not `../gb-*-wt`.
 
 ## Why Raylib was dropped as the hive renderer
 

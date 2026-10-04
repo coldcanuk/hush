@@ -29,9 +29,9 @@ Date: 2026-08-24
 - hush_launch_remove_channel (refuses last channel)
 - paintChannels renders grouped + loose; contextmenu on rows
 - Right-click actions: Add To Group, Remove From Group, Delete Channel, Manage Channel
-- #manage-chan: add/remove humans (npubs) + robots (slugs); Save; max 8 each
+- #manage-chan: add/remove humans (npubs) + robots (robot ids); Save; max 8 each
 - POST /api/channel supports action: group/delete/manage
-- #h remains slug for wire notes; UUID is stable grouping id
+- #h remains channel id for wire notes; UUID is stable grouping id
 
 ## JSON / caps
 - HUSH_LAUNCH_JSON_MAX / FILE_MAX = 32768 (prior)
@@ -50,7 +50,7 @@ Date: 2026-08-24
 ## Constraints
 - Prime Directive: gb/* only; PR to main
 - C11 + legible-c (existing code)
-- #h slug stays; UUID for local grouping
+- #h channel id stays; UUID for local grouping
 - has_home = authenticated signal
 - No full NIP-29 wire events this slice
 

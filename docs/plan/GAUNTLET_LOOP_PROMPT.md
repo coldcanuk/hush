@@ -50,7 +50,7 @@ Score every applicable category after each gauntlet pass. One sentence defines a
 | C6 | **Functionality** | The requested job works end-to-end for a real user path (not a demo path). | 1.2 |
 | C7 | **UX Chill** | Max-relax Application UI: clear hierarchy, Fitts/Hick respect, no panic chrome. | 1.0 |
 | C8 | **ARPG Feel** | Where the feature touches inventory/skills/summoning, it feels equip/cast tactile. Pure infra → mark N/A. | 0.8 |
-| C9 | **Process Law** | On `gb/<slug>` worktree only; PRIME_DIRECTIVE + AGENTS.md honored; no writes to `main`. | 1.0 |
+| C9 | **Process Law** | On `gb/<short-name>` worktree only; PRIME_DIRECTIVE + AGENTS.md honored; no writes to `main`. | 1.0 |
 | C10 | **Evidence Honesty** | Every raised score cites proof; Skeptic/Critic would not reject the claim. | 1.2 |
 
 ### N/A handling
@@ -131,7 +131,7 @@ For every feature, task, or pipeline you are asked to implement or fix, execute 
 
 ### Phase 1: Context & Strategy (Research)
 1. Read the Prime Directive (`PRIME_DIRECTIVE.md`) and `AGENTS.md`.
-2. Ensure you are on a `gb/<slug>` worktree branch. Never touch `main` directly.
+2. Ensure you are on a `gb/<short-name>` worktree branch. Never touch `main` directly.
 3. Assess mechanical requirements: Does this feature need an ARPG-style interaction? How does it map to Nostr events?
 4. Publish a **baseline scorecard** (honest, often capped) before coding.
 
@@ -165,7 +165,7 @@ For every feature, task, or pipeline you are asked to implement or fix, execute 
 
 ```text
 === HUSH GAUNTLET SCORECARD ===
-Feature: <slug>
+Feature: <id>
 Iteration: <n>
 
 C1 Build Clean      s=?.?  w=1.0  evid: <one line>

@@ -21,7 +21,10 @@ enum {
     /* A new robot whose id is held gets "-2", then "-3", and so on. */
     HUSH_ROSTER_SUFFIX_FIRST = 2,
     /* Room for "-" plus the digits of the last suffix tried, and the NUL. */
-    HUSH_ROSTER_SUFFIX_MAX = 8
+    HUSH_ROSTER_SUFFIX_MAX = 8,
+    /* Bytes that do not print. JSON forbids the ones below space. */
+    HUSH_ROSTER_ASCII_SPACE = 0x20,
+    HUSH_ROSTER_ASCII_DEL = 0x7f
 };
 
 #define HUSH_ROSTER_CHAN_AGENTS "agents"
@@ -236,6 +239,25 @@ int hush_roster_is_same_name(const char *name, const char *current)
         return 0;
     hush_roster_copy_text(trimmed, sizeof(trimmed), name, "");
     return strcmp(trimmed, current) == 0;
+}
+
+int hush_roster_name_prints(const char *name)
+{
+    char trimmed[HUSH_ROSTER_NAME_MAX] = {0};
+    size_t i = 0;
+
+    if (name == NULL)
+        return 1;
+    hush_roster_copy_text(trimmed, sizeof(trimmed), name, "");
+    while (trimmed[i] != '\0') {
+        unsigned char c = (unsigned char)trimmed[i];
+
+        if (c < (unsigned char)HUSH_ROSTER_ASCII_SPACE ||
+            c == (unsigned char)HUSH_ROSTER_ASCII_DEL)
+            return 0;
+        i++;
+    }
+    return 1;
 }
 
 const hush_roster_agent_t *
@@ -560,6 +582,8 @@ static hush_status_t hush_roster_fill_agent(hush_roster_t *roster,
     assert(in != NULL);
     hush_roster_copy_text(agent->name, sizeof(agent->name), in->name, "");
     if (agent->name[0] == '\0')
+        return HUSH_ERR_PARSE;
+    if (!hush_roster_name_prints(agent->name))
         return HUSH_ERR_PARSE;
     hush_roster_slugify(agent->slug, sizeof(agent->slug), agent->name);
     if (agent->slug[0] == '\0')
@@ -1110,6 +1134,8 @@ static int hush_roster_rename_ok(const hush_roster_t *roster,
     assert(roster != NULL && agent != NULL && name != NULL);
     hush_roster_copy_text(trimmed, sizeof(trimmed), name, "");
     if (trimmed[0] == '\0')
+        return 0;
+    if (!hush_roster_name_prints(trimmed))
         return 0;
     if (hush_roster_is_same_name(trimmed, agent->name))
         return 1;

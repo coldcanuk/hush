@@ -7,7 +7,7 @@ for the rest of this build.
 - **Knowledge document:** [docs/research/REVIEW_HUSH_0.0.1.md](../research/REVIEW_HUSH_0.0.1.md)
 - **Phase 1 synthesis:** [docs/research/RESEARCH_REVIEW_HARDENING.md](../research/RESEARCH_REVIEW_HARDENING.md)
 - **Landed:** PR #152 (Phases 0–3) merged; `gb/relay-correctness` carries Phase 4.
-- **Branch/worktree:** phases use `gb/<phase-slug>` in `worktrees/<phase-slug>`
+- **Branch/worktree:** phases use `gb/<short-name>` in `worktrees/<short-name>`
 - **Methodology:** RDAP (Double Diamond, risk-driven research iterations, small
   atomic Milestones with a Definition of Done).
 

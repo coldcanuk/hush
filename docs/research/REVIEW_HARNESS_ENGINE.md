@@ -109,7 +109,7 @@ The following were traced by hand against the code and are correct:
   duplicate, `hush_make_event_id()` in `hush_http.c` (the human-message path,
   `0x9e3779b9` variant), was found during migration and removed too. Only
   `hush_skill_make_id()` remains — that one is a deterministic catalog key
-  (`robot:slug`), not a Nostr event id, so it correctly stays separate.
+  (`robot:robot id`), not a Nostr event id, so it correctly stays separate.
   Verified against three hard-coded NIP-01 SHA-256 preimages in
   `tests/test_event.c`.
 - **~~`hush_provider_update_all()` is built but unwired.~~** **Fixed in this

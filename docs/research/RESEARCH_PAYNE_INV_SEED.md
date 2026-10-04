@@ -4,13 +4,13 @@ Worktree: `/opt/repo/hush/worktrees/payne-inv-seed`
 Branch: `gb/payne-inv-seed`
 Base: `main` `0bc5985c0`
 
-Prime Directive path (`worktrees/<slug>` + PR), not `../gb-*-wt`.
+Prime Directive path (`worktrees/<short-name>` + PR), not `../gb-*-wt`.
 
 ## Why Payne and Happy are missing
 
 **E1.** `#robot-list` is `style="display:none"` (`hush-c/demo/index.html:745`).
 `paintRobots()` still fills that hidden list from `robotModels()`, which
-**does** include `session.payne` (locked slug `sgt-major-payne`) and
+**does** include `session.payne` (locked robot id `sgt-major-payne`) and
 `session.agents` (e.g. Happy). The human cannot see them.
 
 **E2.** Visible UI is `#robot-inventory`, backed by a **parallel**
@@ -21,7 +21,7 @@ sync. Cold load / tick `paint()` calls `renderInventory()` on empty
 `invItems`.
 
 **E3.** Seed currently runs `seedInventoryDemo()` which pushes **fake**
-tiles named Happy / Sgt Major Payne / Cipher with slugs like
+tiles named Happy / Sgt Major Payne / Cipher with robot ids like
 `sgt-major-payne` that are **not** `POST /api/agent` robots.
 
 **E4.** C already ships Payne: `HUSH_LAUNCH_PAYNE_NAME` /

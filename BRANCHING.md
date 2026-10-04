@@ -6,19 +6,19 @@
 
 - `main` is the **only** long-lived branch.
 - **All** development uses short-lived worktrees at  
-  **`/opt/repo/hush/worktrees/<slug>`** on branch **`gb/<slug>`**.
+  **`/opt/repo/hush/worktrees/<short-name>`** on branch **`gb/<short-name>`**.
 - Never place worktrees under `/opt/repo/worktrees` or outside this repository.
 - **Never commit on `main`. Never push to `main`.**  
   Landing is **Pull Request only** (review + auto-merge / approved merge on GitHub).
-- After the PR merges: remove the worktree, delete `gb/<slug>` locally and on origin if still present.
+- After the PR merges: remove the worktree, delete `gb/<short-name>` locally and on origin if still present.
 - Origin is main-only fetch (`remote.origin.fetch` + `tagopt = --no-tags`). Do not revive Buzz branches/tags.
 
 ## Codex workflow (mandatory)
 
 ```
-clean main → worktree add gb/<slug> → commit/push on branch
+clean main → worktree add gb/<short-name> → commit/push on branch
   → gh pr create → review → auto-merge
-  → pull main → worktree remove → delete gb/<slug>
+  → pull main → worktree remove → delete gb/<short-name>
 ```
 
 Local `git merge` into `main` is **not** an acceptable land path.
@@ -36,8 +36,8 @@ Local `git merge` into `main` is **not** an acceptable land path.
 cd /opt/repo/hush
 git checkout main
 git pull --ff-only origin main
-git worktree remove worktrees/<slug>
-git branch -d gb/<slug>
-git push origin --delete gb/<slug>   # if remote branch remains
+git worktree remove worktrees/<short-name>
+git branch -d gb/<short-name>
+git push origin --delete gb/<short-name>   # if remote branch remains
 git worktree list
 ```

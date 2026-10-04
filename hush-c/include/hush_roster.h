@@ -140,6 +140,11 @@ int hush_roster_is_name_clash(const char *name, const char *other);
  * for byte. Saving a robot's current name unchanged is never refused. */
 int hush_roster_is_same_name(const char *name, const char *current);
 
+/* True when name, trimmed the way add and update trim it, has no byte
+ * below ASCII space and no DEL. Empty and NULL are true: a blank name
+ * is a different refusal. */
+int hush_roster_name_prints(const char *name);
+
 /* Returns the robot other than except (may be NULL) whose current name
  * clashes with name (hush_roster_is_name_clash), or NULL when none does. */
 const hush_roster_agent_t *

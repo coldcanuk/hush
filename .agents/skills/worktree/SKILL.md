@@ -8,10 +8,10 @@ description: "MANDATORY Hush lifecycle: worktree → commit/push on gb/* → PR 
 
 ## Hard rules
 
-1. Always create a worktree (`worktrees/<slug>`, branch `gb/<slug>`).
+1. Always create a worktree (`worktrees/<short-name>`, branch `gb/<short-name>`).
 2. Commit **and** push on that branch only.
 3. Land via **Pull Request** into `main` (review + auto-merge). Never commit/push/merge onto local `main` to land.
-4. After merge: delete the worktree and `gb/<slug>`.
+4. After merge: delete the worktree and `gb/<short-name>`.
 5. Direct writes to `main` are **strictly prohibited**.
 
 Worktree path **must** be inside this repo (`…/hush/worktrees/…`).  
@@ -25,9 +25,9 @@ git checkout main
 git pull --ff-only origin main
 git status   # must be clean and on main
 
-FEATURE_SLUG="short-slug"
-BRANCH="gb/${FEATURE_SLUG}"
-WT="worktrees/${FEATURE_SLUG}"
+FEATURE_NAME="short-name"
+BRANCH="gb/${FEATURE_NAME}"
+WT="worktrees/${FEATURE_NAME}"
 
 git worktree add -b "$BRANCH" "$WT"
 cd "$WT"
@@ -56,8 +56,8 @@ gh pr merge --auto --merge
 cd /opt/repo/hush
 git checkout main
 git pull --ff-only origin main
-SLUG="${BRANCH#gb/}"
-git worktree remove "worktrees/${SLUG}"
+SHORT="${BRANCH#gb/}"
+git worktree remove "worktrees/${SHORT}"
 git branch -d "$BRANCH" 2>/dev/null || true
 git push origin --delete "$BRANCH" 2>/dev/null || true
 git worktree list

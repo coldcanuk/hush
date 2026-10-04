@@ -412,7 +412,7 @@ Commit after every completed Milestone with message: "Milestone X.Y: <concise>"
 
 ### M1.4 Branch/main protection + worktree discipline
 - Hush does NOT carry Buzz's 580 branches. Remote tracking is historical.
-- Policy: `git branch -r` output is not used for work. Feature work ONLY via `git worktree add -b gb/<slug> worktrees/<slug>` from clean main.
+- Policy: `git branch -r` output is not used for work. Feature work ONLY via `git worktree add -b gb/<short-name> worktrees/<short-name>` from clean main.
 - main protected by social + documented contract: direct commits to main forbidden except for merge of completed worktrees.
 - Orphaned wts: forbidden inside Hush. All wts under worktrees/ inside the git repo. External /opt/repo/*-wt* belong to sibling experiments; prune via their owning .git or rm when confirmed loose.
 - Goose prime directive: the AGENTS.md will be replaced by short Goose-specific; .goose/ is the skills/config home.
@@ -838,7 +838,7 @@ See [`../plan/PLAN_PWA.md`](../plan/PLAN_PWA.md).
 | Login / identity | secp256k1 + NIP-19 + kind 0 metadata | generate / import / backup / session |
 | Community | Hush: host-authoritative (NOSTR.md). NIP-72 unrecommended; NIP-29 groups | **vibe** = this relay named |
 | Channel | NIP-29 `#h` + kind 9007 create / kind 9 chat; Buzz starter `#general` + `#welcome-everyone` | seed `general`, `welcome`, `agents` |
-| Project | NIP-34 kind 30617 repo announcement + `git clone` URL | name + `git init` under `~/hush/projects/<slug>` |
+| Project | NIP-34 kind 30617 repo announcement + `git clone` URL | name + `git init` under `~/hush/projects/<project-id>` |
 | Vibe | “main server / primary endpoint” | named local relay (NIP-11-shaped name/about) |
 | First agent | Buzz Welcome Team = Fizz / Honey / Bumble | **Sgt Major Payne** (organizer; find or create robots) |
 | Auth to relay | NIP-42 kind 22242 | **not** in this slice (SECURITY.md: planned) |
@@ -951,7 +951,7 @@ See [`../plan/PLAN_FIRST_LAUNCH.md`](../plan/PLAN_FIRST_LAUNCH.md).
 | Secret | `pass` path | Retrieve CLI |
 |---|---|---|
 | Human identity nsec | `hush/identity/nsec` | `pass show hush/identity/nsec` |
-| Agent nsec | `hush/agents/<slug>/nsec` | `pass show hush/agents/<slug>/nsec` |
+| Agent nsec | `hush/agents/<robot-id>/nsec` | `pass show hush/agents/<robot-id>/nsec` |
 | Other token | `hush/<category>/<name>` | `pass show hush/<category>/<name>` |
 
 Helper equivalents:
@@ -966,7 +966,7 @@ hush-pass has  identity/nsec
 
 `Checked to save password to Unix Password Manager. Retrieve with: pass show hush/identity/nsec`
 
-(For agents, the retrieve path is `pass show hush/agents/<slug>/nsec`.)
+(For agents, the retrieve path is `pass show hush/agents/<robot-id>/nsec`.)
 
 **Modal:** the existing first-launch backup card *is* the modal. Import also gets the same backup card (do not auto-ack). Any later secret-generation UI reuses the same pattern.
 
@@ -1293,7 +1293,7 @@ Human seeded as `"you"` / `"hive operator"`. Payne uses `HUSH_LAUNCH_PAYNE_NAME`
 | Secret | Path |
 |---|---|
 | Human nsec | `hush/identity/nsec` |
-| Agent nsec | `hush/agents/<slug>/nsec` |
+| Agent nsec | `hush/agents/<robot-id>/nsec` |
 | Payne | `hush/agents/sgt-major-payne/nsec` |
 
 Checkbox default-on; missing `pass` never blocks identity.
@@ -1322,7 +1322,7 @@ Hush `NOSTR.md` already documents kind 0 sync of display_name / avatar / about /
 
 | Form field | Kind 0 | Session-only |
 |---|---|---|
-| First + last | `display_name` = `"First Last"`; `name` = first or slug | also `first_name`, `last_name` |
+| First + last | `display_name` = `"First Last"`; `name` = first or id | also `first_name`, `last_name` |
 | Organization | optional suffix on `about` | `organization` |
 | Email | **never** published (privacy) | `email` |
 | Avatar | `picture` = `http://127.0.0.1:<port>/avatar/<pubkey>` | — |
@@ -1337,7 +1337,7 @@ From `/opt/repo/buzz` desktop (not ported):
 1. Intent: definition vs definition+start (`agentCreateIntent.ts`). Hush MVP is **definition + identity** (generate nsec, kind 0, roster entry). No ACP spawn.
 2. Fields actually collected: **name**, **avatar** (`accept="image/gif,image/jpeg,image/png,image/webp"`), **systemPrompt**. Avatar may be emoji SVG data URL or uploaded image resolved to a hosted URL (`resolveManagedAgentAvatarUrl`).
 3. Managed agent create (`channelAgents.ts`) persists `systemPrompt`, `avatarUrl`, name, then a kind 0.
-4. Secrets: Buzz uses OS keychain; Hush uses `pass` at `hush/agents/<slug>/nsec`, same modal contract as identity.
+4. Secrets: Buzz uses OS keychain; Hush uses `pass` at `hush/agents/<robot-id>/nsec`, same modal contract as identity.
 
 **Hush extras the user asked for (not in Buzz create dialog):** context files. Only `text/plain` and Markdown. Check MIME **and** extension on the client; **re-check on the server**. Cap: 4 files, 4096 bytes each (named constants). Store as agent-owned text, not as Nostr events (content would blow kind 0). Session may list `{name, mime, bytes}` only.
 
@@ -1372,7 +1372,7 @@ Contract for Payne/Goose:
 1. Collect name, system prompt, optional avatar, optional context files.
 2. `POST /api/agent` JSON. Never put nsec in chat.
 3. Confirm with session `agents[]` entry (npub, slug).
-4. Tell the human retrieve path: `pass show hush/agents/<slug>/nsec`.
+4. Tell the human retrieve path: `pass show hush/agents/<robot-id>/nsec`.
 
 Payne walkthrough microcopy (one line per field): “State the robot’s name.” / “Write its standing orders.” / “Attach only plain text or Markdown. I will refuse the rest.”
 
@@ -1498,7 +1498,7 @@ Modern “commit then review” pattern, still one drawer:
 4. **AI provider** — required radio/select of the eight names. No default selected (forces a choice). Cannot Raise without one.
 5. pass checkbox unchanged (default on).
 6. Primary CTA **Raise this robot**. Ghost Close.
-7. **Delete this robot** — red, full-width, bottom. Disabled (and explained) on a fresh raise. Enabled when editing an existing slug.
+7. **Delete this robot** — red, full-width, bottom. Disabled (and explained) on a fresh raise. Enabled when editing an existing robot id.
 
 ### Server contract (additive)
 
@@ -1523,7 +1523,7 @@ POST /api/agent
 { "action": "delete", "slug": "sentry" }
 ```
 
-Payne slug `sgt-major-payne` is rejected.
+Payne robot id `sgt-major-payne` is rejected.
 
 Session agent object grows:
 
@@ -1552,7 +1552,7 @@ Provider allowlist (one definition site):
 2. **`hush_http.c` / `hush_roster.c` line budgets** — keep new work in small helpers; do not inline array parse in `serve_agent`.
 3. **Delete vs pass** — leave `pass` entries; document. Inventing `pass rm` is out of scope.
 4. **Accordion vs independent cards** — independent expand is what the user asked (“each robot will have a card that can expand/collapse”). Independent wins; rail scrolls.
-5. **Delete button on create form** — user asked for a red delete at the bottom of the form. Show it always; disable until a slug exists (after raise, or when opened from a card).
+5. **Delete button on create form** — user asked for a red delete at the bottom of the form. Show it always; disable until an id exists (after raise, or when opened from a card).
 
 ## Verification performed (this research)
 
@@ -2018,7 +2018,7 @@ button. Header Hick unchanged.
 | Grok `~/.grok/auth.json` | existence → `has_home` | Keep unread. Do not copy. |
 | Codex `~/.codex` | directory → `has_home` | Keep unread. Do not copy. |
 | Cline editor secret store | not present here | Keep unread. Do not copy. |
-| Identity / agent nsec | already `hush/identity/nsec`, `hush/agents/<slug>/nsec` | Out of scope. |
+| Identity / agent nsec | already `hush/identity/nsec`, `hush/agents/<robot-id>/nsec` | Out of scope. |
 | Vibe join token | session JSON | Out of scope. |
 | TURN username/password | `hush_turn` generated LTC | Out of scope. |
 
@@ -2164,7 +2164,7 @@ always re-reads `hush_pass_has`. Overlay never stores the values.
   4. `make clean` still only deletes build products (`hush-c/Makefile` `rm -f $(OBJS) libhush.a hush-relay …`). It never touches `~/.config/hush`.
   5. File contains no nsec. GET `/api/session` after restore still has `"nsec":""` once backup is acked.
   6. Payne nsec, if previously saved, is restored from `pass` (`hush/agents/sgt-major-payne/nsec`); otherwise a new Payne key is generated and optionally saved.
-  7. Raised-agent nsecs restore from `pass` (`hush/agents/<slug>/nsec`) when present; missing pass is a soft-fail (identity regenerated or slot kept without secret).
+  7. Raised-agent nsecs restore from `pass` (`hush/agents/<robot-id>/nsec`) when present; missing pass is a soft-fail (identity regenerated or slot kept without secret).
   8. Provider drawer copy matches researched auth (Grok/Codex OAuth-or-key, Goose `goose configure`, Cline ClinePass/BYOK — **not** OAuth-first).
   9. `./configure && make && make test` pass. Worktree + PR lifecycle.
 
@@ -2263,7 +2263,7 @@ Secrets: never nsec, never provider keys. Payne/agent nsecs stay in
 1. Load vibe.json → fill launch + roster metadata.
 2. If `hush_pass_has(HUSH_PASS_PAYNE_NSEC)` import Payne; else generate
    and save only when `save_pass` is already on from identity restore.
-3. For each agent slug, if `pass` has `agents/<slug>/nsec` import;
+3. For each agent robot id, if `pass` has `agents/<robot-id>/nsec` import;
    else generate a fresh key (soft) so the card still has an npub.
 
 Write triggers (after successful mutation): create vibe, set visibility,

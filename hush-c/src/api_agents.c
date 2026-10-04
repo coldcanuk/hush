@@ -20,6 +20,8 @@
 #define HUSH_AGENT_WHY_GATE "Log in and set up your vibe before changing robots."
 #define HUSH_AGENT_WHY_NAME "Robot name is required."
 #define HUSH_AGENT_WHY_NAME_CHARS "Robot names need a letter (A-Z) or digit."
+#define HUSH_AGENT_WHY_NAME_PRINT \
+    "Robot names cannot include line breaks or other characters that do not print."
 #define HUSH_AGENT_WHY_TAKEN "A robot named %s already exists."
 #define HUSH_AGENT_WHY_LIKE \
     "Too close to %s: names must differ in letters (A-Z) or 0-9."
@@ -97,8 +99,9 @@ static void hush_http_slug_why(char *why, size_t whysz, hush_status_t st,
 static void hush_http_clone_why(char *why, size_t whysz, hush_status_t st,
                                 const char *slug);
 /* Writes why for a rename of slug to name that the roster refuses: blank
- * after trimming, no letter A-Z or digit, or a name that clashes with
- * another robot's current name. 1 when a rule matched. */
+ * after trimming, a character that does not print, no letter A-Z or digit,
+ * or a name that clashes with another robot's current name. 1 when a rule
+ * matched. */
 static int hush_http_rename_why(char *why, size_t whysz, const char *slug,
                                 const char *name);
 /* Writes why for a bad provider list or voice. 1 when a rule matched. */
@@ -625,6 +628,10 @@ static void hush_http_create_why(char *why, size_t whysz,
         (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_NAME);
         return;
     }
+    if (!hush_roster_name_prints(in->name)) {
+        (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_NAME_PRINT);
+        return;
+    }
     hush_roster_slug_of(slug, sizeof(slug), in->name);
     if (slug[0] == '\0') {
         (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_NAME_CHARS);
@@ -672,8 +679,13 @@ static int hush_http_rename_why(char *why, size_t whysz, const char *slug,
         (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_NAME);
         return 1;
     }
-    /* An unchanged name is never refused, even an older one that breaks
-     * the rules below (symbol-only, or shared before names had to differ). */
+    if (!hush_roster_name_prints(name)) {
+        (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_NAME_PRINT);
+        return 1;
+    }
+    /* An unchanged name that still prints is never refused, even an older
+     * one that breaks the rules below (symbol-only, or shared before names
+     * had to differ). */
     if (robot != NULL && hush_roster_is_same_name(name, robot->name))
         return 0;
     hush_roster_slug_of(next, sizeof(next), name);

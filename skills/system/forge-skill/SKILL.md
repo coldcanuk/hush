@@ -15,24 +15,24 @@ Pruning unequips; the file stays on disk.
 | Product | Who may wear it | Disk |
 |---|---|---|
 | System (application-wide) | Any role-legal robot | shipped `skills/system/`; hive-forged `skills/user/` |
-| This robot | Only that robot (Bender ↔ Futurama) | `skills/robots/<robot-slug>/` |
+| This robot | Only that robot (Bender ↔ Futurama) | `skills/robots/<robot-name>/` |
 
-Hive-forged System skills keep ids `user:<slug>` so equipped loadouts stay
+Hive-forged System skills keep ids `user:<skill-name>` so equipped loadouts stay
 valid. Catalog JSON reports them as `"scope":"system"`.
 
 ## Layout (`~/.hush/`)
 
 | Disk | Path |
 |---|---|
-| system | `~/.hush/skills/system/<slug>/SKILL.md` |
-| user | `~/.hush/skills/user/<slug>/SKILL.md` |
-| robot | `~/.hush/skills/robots/<robot-slug>/<slug>/SKILL.md` |
+| system | `~/.hush/skills/system/<skill-name>/SKILL.md` |
+| user | `~/.hush/skills/user/<skill-name>/SKILL.md` |
+| robot | `~/.hush/skills/robots/<robot-name>/<skill-name>/SKILL.md` |
 
 ## File shape
 
 ```
 ---
-name: short-slug
+name: short-name
 description: One-line summary.
 ---
 
@@ -48,7 +48,7 @@ What the robot should do when this skill is equipped.
 Open a robot’s Edit inventory (`i`). Cycle gems like Diablo II amulets,
 then drop one onto an empty loadout socket. Lift a worn gem to prune it.
 Equipped ids persist on the robot (`skill_0` … `skill_7`). A This robot
-skill cannot be equipped on a different slug.
+skill cannot be equipped on a different robot.
 
 ## Forge (this skill)
 
@@ -64,6 +64,6 @@ Do not forge into `system` from the UI. Do not write nsecs, API keys, or
 ## Verify
 
 ```
-ls ~/.hush/skills/user/<slug>/SKILL.md
-curl -s http://127.0.0.1:10555/api/skills | grep <slug>
+ls ~/.hush/skills/user/<skill-name>/SKILL.md
+curl -s http://127.0.0.1:10555/api/skills | grep <skill-name>
 ```

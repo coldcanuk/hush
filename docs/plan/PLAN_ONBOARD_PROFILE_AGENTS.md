@@ -63,7 +63,7 @@ After ready:
 6. Agent create: name, system prompt, avatar, context files. Server
    rejects any file whose MIME/extension is not `text/plain` or
    Markdown. Agent nsec saved via `pass` at
-   `hush/agents/<slug>/nsec` (default on). Kind 0 published for the agent.
+   `hush/agents/<robot-id>/nsec` (default on). Kind 0 published for the agent.
 7. `.agents/skills/agent-create/SKILL.md` exists and documents the API
    Payne/Goose uses to create agents.
 8. Seven themes apply via `data-theme` + CSS variables; persist in
@@ -246,14 +246,14 @@ gcc, make, openssl, curl, git, gh, python3 (embed). `pass` optional
   - Commit: `Milestone 3.5: add humans to the vibe`
 
 - M3.6: Agent creation + MIME-checked context files + Payne skill.
-  - Task 1 of M3.6: `hush_roster_add_agent`: generate identity, slug,
+  - Task 1 of M3.6: `hush_roster_add_agent`: generate identity, robot id,
     system prompt, context slots (max 4 files, 4096 bytes each,
     MIME `text/plain` | `text/markdown` | `text/x-markdown` or
     extension `.txt`/`.md`). Save nsec via pass default-on.
   - Task 2 of M3.6: Kind 0 for agent (`name`, `about`=prompt excerpt,
     `picture` if any). Welcome note in `#agents`.
   - Task 3 of M3.6: `POST /api/agent`. Session `agents[]` includes
-    Payne + created agents (npub, name, slug — never nsec after ack).
+    Payne + created agents (npub, name, robot id — never nsec after ack).
   - Task 4 of M3.6: Agent drawer UI: avatar, name, system prompt
     textarea, context file input (`accept=".txt,.md,text/plain,text/markdown"`).
     JS rejects other MIME **and** server re-checks. Payne walkthrough
@@ -261,7 +261,7 @@ gcc, make, openssl, curl, git, gh, python3 (embed). `pass` optional
   - Task 5 of M3.6: Write `.agents/skills/agent-create/SKILL.md`
     (Payne/Goose: collect fields, POST `/api/agent`, confirm).
   - Task 6 of M3.6: Tests: happy path, reject `application/pdf` and
-    `image/png` as context, pass path `hush/agents/<slug>/nsec`.
+    `image/png` as context, pass path `hush/agents/<robot-id>/nsec`.
   - Task 7 of M3.6: §14 checklist. Embed + make test.
   - Commit: `Milestone 3.6: Payne-led agent create + MIME context + skill`
 

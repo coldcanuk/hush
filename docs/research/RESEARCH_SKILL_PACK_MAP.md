@@ -6,7 +6,7 @@
 
 ## Shipped hive pack (before MAP)
 
-| Cluster | Slug | Role | Category | Source / notes |
+| Cluster | Id | Role | Category | Source / notes |
 |---|---|---|---|---|
 | Chaperon rails | topic-leash | chaperon | guardrail | hive original |
 | Chaperon rails | on-topic | chaperon | guardrail | overlaps topic-leash |
@@ -106,7 +106,7 @@ topic-leash, token-budget, bring-back, hop-cap, cool-down, no-loop, civility, se
 
 ### Worker / any (rename vendor leftovers)
 
-| Old slug (must be absent) | New slug | Role | Category | Sources folded |
+| Old id (must be absent) | New id | Role | Category | Sources folded |
 |---|---|---|---|---|
 | ai-engineering-coach | canvas-coach | worker | quality | Microsoft coach + obra/superpowers process |
 | security-audit | hive-audit | worker | security | Cloudflare |
@@ -129,7 +129,7 @@ Locked templates: Coach equips `system:canvas-coach`. Auditor equips `system:hiv
 
 ## Shipped after MAP (grouped)
 
-| Cluster | Slug | Role | Named source |
+| Cluster | Id | Role | Named source |
 |---|---|---|---|
 | Chaperon rails | topic-leash, token-budget, bring-back, hop-cap, cool-down, no-loop, civility, secret-watch, pii-redact, rate-limit, human-cue, silence-nudge, claim-check, channel-kind, job-cap, night-watch, conflict-break, summary-handoff, guardrail-log, chaperon-ack | chaperon | hive (20) |
 | Reverse engineering | token-extract | worker | SkillUI C |

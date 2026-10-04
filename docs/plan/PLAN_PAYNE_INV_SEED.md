@@ -60,7 +60,7 @@ job — `POST /api/agent` with wizard prompt.
 - Task 1: CSS compact 4-col, center, `inv-btn` equal grid; drop duplicate
   8-col rules.
 - Task 2: `INV_COLS=4` `INV_ROWS=3`; `INV_EXPAND_COLS=8` `INV_EXPAND_ROWS=5`;
-  `syncInventoryFromRoster` in `paint`; persist layout by slug;
+  `syncInventoryFromRoster` in `paint`; persist layout by robot id;
   Payne 1×3, others 1×1; Clear resets layout not roster.
 - Task 3: Expand drawer `#inv-expand-drawer` / `#robot-inventory-full`.
 - Task 4: `UI_SPEC.md` §4 compact 4×3.

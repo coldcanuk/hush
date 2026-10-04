@@ -9,7 +9,7 @@ The human must uncheck the box to opt out.
 | Secret | Store path | Retrieve |
 |---|---|---|
 | Human identity nsec | `hush/identity/nsec` | `pass show hush/identity/nsec` |
-| Agent nsec | `hush/agents/<slug>/nsec` | `pass show hush/agents/<slug>/nsec` |
+| Agent nsec | `hush/agents/<robot-id>/nsec` | `pass show hush/agents/<robot-id>/nsec` |
 | Provider API key | `hush/providers/<id>/api_key` | `pass show hush/providers/<id>/api_key` |
 | Provider username | `hush/providers/<id>/username` | `pass show hush/providers/<id>/username` |
 | Provider password | `hush/providers/<id>/password` | `pass show hush/providers/<id>/password` |
@@ -43,7 +43,7 @@ Whenever Hush generates or first-shows a secret:
 
 Robot editor (no modal; the robot's key is not shown): raising a new
 robot with `pass` available shows `Checked to save its key in your
-password manager.` with `pass show hush/agents/<slug>/nsec`
+password manager.` with `pass show hush/agents/<robot-id>/nsec`
 behind the same "How to find it later" line; left checked, the create
 request saves the key (a failed save is not reported to the UI yet).
 Edit paths save no key and show no box, and neither does a relay

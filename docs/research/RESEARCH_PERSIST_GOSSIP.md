@@ -69,7 +69,7 @@ Relay: `persist_open` after create; insert saves when enabled; cleanup saves.
 1. Save-every-insert + fsync latency. Mitigation: packed records, still fsync (required). Cap 1024.
 2. Load memcpy of raw structs skipping replace. Mitigation: insert-only load.
 3. 1039 flood. Mitigation: one record per claim/done, ring still evicts; not addressable so trail exists but stays bounded by the 1024 cap.
-4. Private hive: 1039 visible on REQ. Mitigation: content is state+hashes, not slugs; 30315 stays hidden. Documented.
+4. Private hive: 1039 visible on REQ. Mitigation: content is state+hashes, not status names; 30315 stays hidden. Documented.
 5. Two boxes, no EVENT path, no shared home → gossip cannot fire. Mitigation: document; persist still helps one-box restart.
 
 ## Success

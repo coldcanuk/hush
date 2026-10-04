@@ -24,7 +24,7 @@ must create an agent with skills on the fly.
 3. POST JSON to the running relay (default `http://127.0.0.1:10555`).
 4. Confirm from the session `agents[]` entry (`name`, `slug`, `npub`, `provider`).
 5. Tell the human the retrieve path:
-   `pass show hush/agents/<slug>/nsec`
+   `pass show hush/agents/<robot-id>/nsec`
 
 ## MIME
 

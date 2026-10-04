@@ -15,7 +15,7 @@ Date: 2026-08-24
 ## M3.1 Persist + HTTP
 - HUSH_LAUNCH_PAYNE_PROVIDERS_MAX=4, payne_providers[], npayne_providers
 - hush_launch_set_payne_providers, default [goose], put/take for payne_provider_N, format in session (payne.providers + payne.provider)
-- POST /api/agent slug==sgt-major-payne → hush_http_update_payne (updates providers; ignores name/prompt; delete denied)
+- POST /api/agent robot id==sgt-major-payne → hush_http_update_payne (updates providers; ignores name/prompt; delete denied)
 - Verified in source + tests
 
 ## M4.1 Dispatch
@@ -27,7 +27,7 @@ Date: 2026-08-24
 - robotModels reads session.payne.providers (fallback ["goose"])
 - openAgentDrawer accepts Payne (locked but edit allowed for providers)
 - "Edit Sgt Major Payne", payne-provider-pills, order radios/pills
-- Save posts slug + provider_0..N
+- Save posts id + provider_0..N
 - Card subtitle: primary + +N
 - Name/prompt/delete locked (Delete disabled)
 - Verified in source + served + check_launch greps
@@ -44,7 +44,7 @@ Date: 2026-08-24
 
 ## DoD (satisfied)
 - [x] Edit on Sgt. Major Payne configures ranked SaaS/CLI providers
-- [x] Name, slug, standing orders locked; Payne undeletable
+- [x] Name, robot id, standing orders locked; Payne undeletable
 - [x] No live API spawn; no fallback walk
 - [x] Spec, persist, dispatch, UI, tests complete
 - [x] make test passes

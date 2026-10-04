@@ -53,7 +53,7 @@
   - UX is functional but per user: needs "small tweaks that make it human friendly".
 - **Robots section (current):**
   - Sidebar `#robot-list` (nav): `paintRobots()` renders `.robot-card` articles (expand/collapse with +/-).
-  - Cards show name, slug/npub short, provider, prompt preview, context count, actions (edit/delete).
+  - Cards show name, id/npub short, provider, prompt preview, context count, actions (edit/delete).
   - Matches PLAN_ROBOT_CARDS_UX (expand, pills for prompt/context, provider radios).
   - NOT spatial inventory. No grid, no drag-drop, no slots, no variable size items, no Diablo/Vein aesthetics.
 - **Build / native:**
