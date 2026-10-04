@@ -36,6 +36,64 @@ static const char *agent_pub(const hush_launch_t *launch, const char *slug)
     return "";
 }
 
+/* In-memory nsec for slug, or "" when the roster has no such robot. */
+static const char *agent_nsec(const hush_launch_t *launch, const char *slug)
+{
+    size_t i;
+
+    if (launch == NULL || slug == NULL)
+        return "";
+    for (i = 0; i < launch->roster.nagents; i++) {
+        if (strcmp(launch->roster.agents[i].slug, slug) == 0)
+            return launch->roster.agents[i].id.nsec;
+    }
+    return "";
+}
+
+/* Reads agents/<slug>/nsec. 0 when missing or empty. */
+static int read_nsec_file(char *out, size_t outsz, const char *home,
+                          const char *slug)
+{
+    char path[256];
+    FILE *fp;
+    size_t nread;
+
+    if (out == NULL || outsz == 0 || home == NULL || slug == NULL)
+        return 0;
+    out[0] = '\0';
+    snprintf(path, sizeof(path), "%s/agents/%s/nsec", home, slug);
+    fp = fopen(path, "r");
+    if (fp == NULL)
+        return 0;
+    nread = fread(out, 1, outsz - 1, fp);
+    fclose(fp);
+    out[nread] = '\0';
+    if (nread > 0 && out[nread - 1] == '\n')
+        out[nread - 1] = '\0';
+    return out[0] != '\0';
+}
+
+/* True when the home file bytes match nsec (optional trailing newline). */
+static int file_holds_nsec(const char *home, const char *slug, const char *nsec)
+{
+    char body[HUSH_IDENTITY_NSEC_MAX];
+
+    if (nsec == NULL || nsec[0] == '\0')
+        return 0;
+    if (!read_nsec_file(body, sizeof(body), home, slug))
+        return 0;
+    return strcmp(body, nsec) == 0;
+}
+
+/* Removes agents/<slug>/nsec. 0 when the file was not there. */
+static int drop_nsec_file(const char *home, const char *slug)
+{
+    char path[256];
+
+    snprintf(path, sizeof(path), "%s/agents/%s/nsec", home, slug);
+    return unlink(path) == 0;
+}
+
 /* nopass restart must keep Payne, the templates, and Walkbot One. */
 static void test_nopass_robot_keys(void)
 {
@@ -111,6 +169,132 @@ static void test_nopass_robot_keys(void)
         expect(strcmp(agent_pub(&again, slugs[i]),
                       agent_pub(&keys, slugs[i])) == 0, msg);
     }
+    hush_store_destroy(store);
+}
+
+/* Pass wins when agents/<slug>/nsec holds a different key. */
+static void test_pass_beats_file(void)
+{
+    static hush_launch_t keys;
+    static hush_launch_t again;
+    static hush_identity_t pass_coach;
+    static hush_identity_t pass_payne;
+    hush_store_t *store = NULL;
+    char home[128];
+    char cfg[128];
+    char passdir[128];
+    char file_coach[HUSH_IDENTITY_NSEC_MAX];
+    char file_payne[HUSH_IDENTITY_NSEC_MAX];
+
+    snprintf(home, sizeof(home), "/tmp/hush-b1-order-home-%d", (int)getpid());
+    snprintf(cfg, sizeof(cfg), "/tmp/hush-b1-order-cfg-%d", (int)getpid());
+    snprintf(passdir, sizeof(passdir), "/tmp/hush-b1-order-pass-%d",
+             (int)getpid());
+    if (mkdir(home, 0700) != 0 || mkdir(cfg, 0700) != 0 ||
+        mkdir(passdir, 0700) != 0) {
+        expect(0, "order temp dirs");
+        return;
+    }
+    expect(setenv("HUSH_HOME", home, 1) == 0, "order home");
+    expect(setenv("HUSH_CONFIG_DIR", cfg, 1) == 0, "order config");
+    expect(setenv("HUSH_FAKE_PASS_DIR", passdir, 1) == 0, "order pass dir");
+    hush_pass_set_helper("tests/fake-pass.sh");
+    hush_launch_init(&keys);
+    expect(hush_store_create(&store) == HUSH_OK, "order store");
+    expect(hush_launch_create_identity(&keys) == HUSH_OK, "order create");
+    expect(hush_launch_ack_backup(&keys, 0) == HUSH_OK, "order ack opt-out");
+    expect(!keys.save_pass, "order save_pass off");
+    expect(hush_launch_create_vibe(&keys, store, "HQ", "b1") == HUSH_OK,
+           "order vibe");
+    expect(agent_pub(&keys, "coach")[0] != '\0', "order coach file key");
+    expect(keys.payne.pubkey_hex[0] != '\0', "order payne file key");
+    expect(hush_identity_generate(&pass_coach) == HUSH_OK, "order pass coach");
+    expect(hush_identity_generate(&pass_payne) == HUSH_OK, "order pass payne");
+    expect(read_nsec_file(file_coach, sizeof(file_coach), home, "coach"),
+           "order coach file read");
+    expect(read_nsec_file(file_payne, sizeof(file_payne), home,
+                          HUSH_LAUNCH_PAYNE_SLUG),
+           "order payne file read");
+    expect(strcmp(file_coach, pass_coach.nsec) != 0, "order coach secrets differ");
+    expect(strcmp(file_payne, pass_payne.nsec) != 0, "order payne secrets differ");
+    expect(hush_pass_save("agents/coach/nsec", pass_coach.nsec) == HUSH_OK,
+           "order save coach pass");
+    expect(hush_pass_save(HUSH_PASS_PAYNE_NSEC, pass_payne.nsec) == HUSH_OK,
+           "order save payne pass");
+    hush_launch_init(&again);
+    expect(hush_launch_restore_identity(&again) == HUSH_OK, "order id again");
+    expect(hush_launch_restore_vibe(&again) == HUSH_OK, "order vibe again");
+    expect(strcmp(agent_pub(&again, "coach"), pass_coach.pubkey_hex) == 0,
+           "order coach follows pass");
+    expect(strcmp(agent_pub(&again, "coach"), agent_pub(&keys, "coach")) != 0,
+           "order coach ignores file");
+    expect(strcmp(again.payne.pubkey_hex, pass_payne.pubkey_hex) == 0,
+           "order payne follows pass");
+    expect(strcmp(again.payne.pubkey_hex, keys.payne.pubkey_hex) != 0,
+           "order payne ignores file");
+    hush_store_destroy(store);
+}
+
+/* Generate with no pass entry and no file must write the new nsec. */
+static void test_generate_writes_nsec(void)
+{
+    static hush_launch_t keys;
+    static hush_launch_t again;
+    static hush_launch_t third;
+    hush_store_t *store = NULL;
+    char home[128];
+    char cfg[128];
+    char passdir[128];
+
+    snprintf(home, sizeof(home), "/tmp/hush-b1-gen-home-%d", (int)getpid());
+    snprintf(cfg, sizeof(cfg), "/tmp/hush-b1-gen-cfg-%d", (int)getpid());
+    snprintf(passdir, sizeof(passdir), "/tmp/hush-b1-gen-pass-%d",
+             (int)getpid());
+    if (mkdir(home, 0700) != 0 || mkdir(cfg, 0700) != 0 ||
+        mkdir(passdir, 0700) != 0) {
+        expect(0, "genwrite temp dirs");
+        return;
+    }
+    expect(setenv("HUSH_HOME", home, 1) == 0, "genwrite home");
+    expect(setenv("HUSH_CONFIG_DIR", cfg, 1) == 0, "genwrite config");
+    expect(setenv("HUSH_FAKE_PASS_DIR", passdir, 1) == 0, "genwrite pass dir");
+    hush_pass_set_helper("tests/fake-pass.sh");
+    hush_launch_init(&keys);
+    expect(hush_store_create(&store) == HUSH_OK, "genwrite store");
+    expect(hush_launch_create_identity(&keys) == HUSH_OK, "genwrite create");
+    expect(hush_launch_ack_backup(&keys, 0) == HUSH_OK, "genwrite ack opt-out");
+    expect(!keys.save_pass, "genwrite save_pass off");
+    expect(hush_launch_create_vibe(&keys, store, "HQ", "b1") == HUSH_OK,
+           "genwrite vibe");
+    expect(agent_pub(&keys, "coach")[0] != '\0', "genwrite coach seeded");
+    expect(keys.payne.pubkey_hex[0] != '\0', "genwrite payne seeded");
+    expect(drop_nsec_file(home, "coach"), "genwrite drop coach");
+    expect(drop_nsec_file(home, HUSH_LAUNCH_PAYNE_SLUG), "genwrite drop payne");
+    hush_launch_init(&again);
+    expect(hush_launch_restore_identity(&again) == HUSH_OK, "genwrite id");
+    expect(hush_launch_restore_vibe(&again) == HUSH_OK, "genwrite vibe again");
+    expect(strcmp(agent_pub(&again, "coach"), agent_pub(&keys, "coach")) != 0,
+           "genwrite coach minted");
+    expect(file_holds_nsec(home, "coach", agent_nsec(&again, "coach")),
+           "genwrite coach file matches key");
+    expect(strcmp(again.payne.pubkey_hex, keys.payne.pubkey_hex) != 0,
+           "genwrite payne minted");
+    expect(file_holds_nsec(home, HUSH_LAUNCH_PAYNE_SLUG, again.payne.nsec),
+           "genwrite payne file matches key");
+    expect(drop_nsec_file(home, "coach"), "genwrite drop coach again");
+    expect(drop_nsec_file(home, HUSH_LAUNCH_PAYNE_SLUG),
+           "genwrite drop payne again");
+    hush_launch_init(&third);
+    expect(hush_launch_restore_identity(&third) == HUSH_OK, "genwrite id third");
+    expect(hush_launch_restore_vibe(&third) == HUSH_OK, "genwrite vibe third");
+    expect(strcmp(agent_pub(&third, "coach"), agent_pub(&again, "coach")) != 0,
+           "genwrite coach minted again");
+    expect(file_holds_nsec(home, "coach", agent_nsec(&third, "coach")),
+           "genwrite coach file matches new key");
+    expect(strcmp(third.payne.pubkey_hex, again.payne.pubkey_hex) != 0,
+           "genwrite payne minted again");
+    expect(file_holds_nsec(home, HUSH_LAUNCH_PAYNE_SLUG, third.payne.nsec),
+           "genwrite payne file matches new key");
     hush_store_destroy(store);
 }
 
@@ -504,6 +688,8 @@ int main(void)
     }
     hush_store_destroy(store);
     test_nopass_robot_keys();
+    test_pass_beats_file();
+    test_generate_writes_nsec();
     hush_pass_set_helper(NULL);
     if (g_fail)
         return 1;
