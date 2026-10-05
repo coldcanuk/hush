@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -47,7 +48,8 @@ _Static_assert(sizeof HUSH_FAVORITE_SAVE_MID - 1 ==
 _Static_assert(sizeof HUSH_FAVORITE_SAVE_TAIL - 1 ==
                HUSH_FAVORITE_SAVE_TAIL_LEN, "save tail");
 
-/* One scan pass over dir; off/first/valid/dropped live here. */
+/* One scan pass over dir; off/first/valid/dropped live here.
+ * items holds up to COUNT_MAX favorites for name-sorted emit. */
 typedef struct {
     char *out;
     size_t outsz;
@@ -56,6 +58,7 @@ typedef struct {
     int *first;
     size_t valid;
     int dropped;
+    hush_favorite_t *items;
 } hush_favorite_scan_t;
 
 /* Writes the validated loadouts dir for robot into out. Fails ARG. */
@@ -109,11 +112,20 @@ static void hush_favorite_make_draft(hush_favorite_t *out, const char *clean,
                                      char ids[][HUSH_SKILL_ID_MAX],
                                      size_t nids);
 
+/* kept entries after an optional same-name replace. */
+static size_t hush_favorite_kept(size_t count, int has_stored);
+
 /* Refuses clashes, cap overfill, plus lists that could not emit. */
 static hush_status_t hush_favorite_gate_save(const char *dir,
                                              const char *slug,
                                              const char *robot,
                                              const hush_favorite_t *draft);
+
+/* Name order for list emit (case-insensitive). */
+static int hush_favorite_name_cmp(const void *a, const void *b);
+
+/* qsort items then put_one each into the list JSON. */
+static hush_status_t hush_favorite_emit_sorted(hush_favorite_scan_t *scan);
 
 /* Gates, creates, formats, then atomically stores one favorite. */
 static hush_status_t hush_favorite_commit(const char *dir, const char *slug,
@@ -389,6 +401,7 @@ hush_status_t hush_favorite_list_json(const char *robot, char *out,
     int first = 1;
     int n = 0;
     hush_status_t st = HUSH_OK;
+    hush_favorite_t *items = NULL;
     hush_favorite_scan_t scan = {
         .out = out,
         .outsz = outsz,
@@ -396,26 +409,45 @@ hush_status_t hush_favorite_list_json(const char *robot, char *out,
         .dir = dir,
         .first = &first,
         .valid = 0,
-        .dropped = 0
+        .dropped = 0,
+        .items = NULL
     };
 
     if (robot == NULL || out == NULL || outsz == 0)
         return HUSH_ERR_ARG;
+    items = calloc((size_t)HUSH_FAVORITE_COUNT_MAX, sizeof *items);
+    if (items == NULL)
+        return HUSH_ERR_IO;
+    scan.items = items;
     st = hush_favorite_loadouts(dir, sizeof dir, robot);
-    if (st != HUSH_OK)
+    if (st != HUSH_OK) {
+        free(items);
         return st;
-    if (hush_favorite_escape(esc, sizeof esc, robot) != HUSH_OK)
+    }
+    if (hush_favorite_escape(esc, sizeof esc, robot) != HUSH_OK) {
+        free(items);
         return HUSH_ERR_FULL;
+    }
     n = snprintf(out, outsz, "%s%s%s", HUSH_FAVORITE_LIST_HEAD, esc,
                  HUSH_FAVORITE_LIST_MID);
-    if (n < 0 || (size_t)n >= outsz)
+    if (n < 0 || (size_t)n >= outsz) {
+        free(items);
         return HUSH_ERR_FULL;
+    }
     off = (size_t)n;
     st = hush_favorite_scan_dir(&scan);
+    if (st != HUSH_OK) {
+        free(items);
+        return st;
+    }
+    if (scan.dropped) {
+        free(items);
+        return HUSH_ERR_FULL;
+    }
+    st = hush_favorite_emit_sorted(&scan);
+    free(items);
     if (st != HUSH_OK)
         return st;
-    if (scan.dropped)
-        return HUSH_ERR_FULL;
     return hush_favorite_list_close(out, outsz, &off, out_len);
 }
 
@@ -678,6 +710,13 @@ static void hush_favorite_make_draft(hush_favorite_t *out, const char *clean,
     out->nskills = nids;
 }
 
+static size_t hush_favorite_kept(size_t count, int has_stored)
+{
+    if (has_stored && count > 0)
+        return count - 1;
+    return count;
+}
+
 static hush_status_t hush_favorite_gate_save(const char *dir,
                                              const char *slug,
                                              const char *robot,
@@ -688,14 +727,10 @@ static hush_status_t hush_favorite_gate_save(const char *dir,
     size_t count = 0;
     size_t bytes = 0;
     size_t replace = 0;
-    size_t kept = 0;
     int has_stored = 0;
     hush_status_t st = HUSH_OK;
 
-    assert(dir != NULL);
-    assert(slug != NULL);
-    assert(robot != NULL);
-    assert(draft != NULL);
+    assert(dir != NULL && slug != NULL && robot != NULL && draft != NULL);
     st = hush_favorite_slug_entry(entry, sizeof entry, slug);
     if (st != HUSH_OK)
         return st;
@@ -715,10 +750,8 @@ static hush_status_t hush_favorite_gate_save(const char *dir,
         return HUSH_ERR_FULL;
     if (bytes < replace)
         return HUSH_ERR_IO;
-    kept = count;
-    if (has_stored && kept > 0)
-        kept--;
-    if (!hush_favorite_has_room(robot, kept, bytes - replace, draft))
+    if (!hush_favorite_has_room(robot, hush_favorite_kept(count, has_stored),
+                                bytes - replace, draft))
         return HUSH_ERR_FULL;
     return HUSH_OK;
 }
@@ -1036,6 +1069,7 @@ static hush_status_t hush_favorite_scan_entry(hush_favorite_scan_t *scan,
 
     assert(scan != NULL);
     assert(entry != NULL);
+    assert(scan->items != NULL);
     if (!hush_favorite_is_list_entry(entry))
         return HUSH_OK;
     if (hush_favorite_read_entry(&fav, scan->dir, entry) != HUSH_OK)
@@ -1044,11 +1078,34 @@ static hush_status_t hush_favorite_scan_entry(hush_favorite_scan_t *scan,
         scan->dropped = 1;
         return HUSH_OK;
     }
-    if (hush_favorite_put_one(scan->out, scan->outsz, scan->off, &fav,
-                              *scan->first) != HUSH_OK)
-        return HUSH_ERR_FULL;
-    *scan->first = 0;
-    scan->valid++;
+    scan->items[scan->valid++] = fav;
+    return HUSH_OK;
+}
+
+static int hush_favorite_name_cmp(const void *a, const void *b)
+{
+    const hush_favorite_t *fa = a;
+    const hush_favorite_t *fb = b;
+
+    assert(fa != NULL && fb != NULL);
+    return strcasecmp(fa->name, fb->name);
+}
+
+static hush_status_t hush_favorite_emit_sorted(hush_favorite_scan_t *scan)
+{
+    size_t i = 0;
+
+    assert(scan != NULL);
+    assert(scan->items != NULL);
+    assert(scan->first != NULL);
+    qsort(scan->items, scan->valid, sizeof scan->items[0],
+          hush_favorite_name_cmp);
+    for (i = 0; i < scan->valid; i++) {
+        if (hush_favorite_put_one(scan->out, scan->outsz, scan->off,
+                                  &scan->items[i], *scan->first) != HUSH_OK)
+            return HUSH_ERR_FULL;
+        *scan->first = 0;
+    }
     return HUSH_OK;
 }
 

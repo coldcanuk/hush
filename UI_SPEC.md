@@ -502,6 +502,20 @@ refused save sends no request and logs no console error; the relay
 stays the authority and refuses anything else with 400.
 Preserved: M11 dial, M9 folder tabs + zero tool rail, M8 overlay, M7
 chrome-hard / field-office.
+Delta 2026-10-05 (PE-4.1 favorites polish, #210): Favorites list is sorted
+**by name** (case-insensitive) on list emit and in the drawer — names are
+how operators find a doll, and recency is not stored on disk. When the robot
+already holds 32 favorites, a **FULL** notice sits next to Save (not only in
+`#agent-err` at the drawer bottom); new names are refused, same-name replace
+still allowed. A refused save **keeps** the typed name so the operator can
+fix and retry; a successful save clears the field. Saving under an
+**existing exact name** silently replaces that favorite's skill snapshot
+(intended update path; slug clashes with a *different* display name stay
+refused). Server 400 bodies for favorites-full and other refusals remain
+specific reason lines (not bare `bad request`; see `check_reasons.py`).
+Comment items on #210 (robot names with spaces; generic API 400 reasons)
+were already shipped by #230 / #253 on main — not re-done here.
+
 Delta 2026-09-22 (WS6 loadout-doll pass): `#skill-cycle` lives in
 `#agent-drawer` only (no hive-nav cycle); the doll is 8 sockets around
 the portrait center (9 cells = `HUSH_SKILL_EQUIP_MAX` 8 + portrait);

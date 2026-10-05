@@ -642,6 +642,87 @@ static void check_io(fav_fixture_t *fx)
            "unlocked lists");
 }
 
+/* FILE_MAX boundary (Gauge N5-1): load accepts FILE_MAX-1 bytes and
+ * refuses FILE_MAX bytes (no truncation). */
+static void check_file_max(fav_fixture_t *fx)
+{
+    char dir[HUSH_HOME_PATH_MAX] = {0};
+    char file[HUSH_HOME_PATH_MAX] = {0};
+    char body[HUSH_FAVORITE_FILE_MAX + 8] = {0};
+    hush_favorite_t fav = {0};
+    size_t core = 0;
+    size_t i = 0;
+    FILE *fp = NULL;
+    int n = 0;
+
+    /* Create the loadouts tree via a normal save, then overwrite the file. */
+    expect(hush_favorite_save("bound", "Edge", fx->ids, 1) == HUSH_OK,
+           "bound seed save");
+    expect(hush_home_loadouts_dir(dir, sizeof dir, "bound") == HUSH_OK,
+           "bound dir");
+    n = snprintf(file, sizeof file, "%s/edge.json", dir);
+    expect(n > 0 && (size_t)n < sizeof file, "bound path");
+    /* Minimal valid favorite; pad with spaces before the closing brace so
+     * the file is exactly FILE_MAX-1 (writer ceiling) or FILE_MAX. */
+    core = (size_t)snprintf(body, sizeof body,
+                            "{\"name\":\"Edge\",\"robot\":\"bound\","
+                            "\"skills\":[\"%s\"]", fx->ids[0]);
+    expect(core > 0 && core < (size_t)HUSH_FAVORITE_FILE_MAX - 4,
+           "core fits under FILE_MAX");
+    for (i = core; i < (size_t)HUSH_FAVORITE_FILE_MAX - 2; i++)
+        body[i] = ' ';
+    body[HUSH_FAVORITE_FILE_MAX - 2] = '}';
+    body[HUSH_FAVORITE_FILE_MAX - 1] = '\n';
+    fp = fopen(file, "w");
+    if (fp == NULL) {
+        expect(0, "write FILE_MAX-1");
+        return;
+    }
+    expect(fwrite(body, 1, (size_t)HUSH_FAVORITE_FILE_MAX - 1, fp)
+               == (size_t)HUSH_FAVORITE_FILE_MAX - 1,
+           "wrote FILE_MAX-1");
+    fclose(fp);
+    expect(hush_favorite_load("bound", "Edge", &fav) == HUSH_OK,
+           "load FILE_MAX-1 OK");
+    expect(strcmp(fav.name, "Edge") == 0, "Edge name");
+    fp = fopen(file, "w");
+    if (fp == NULL) {
+        expect(0, "write FILE_MAX");
+        return;
+    }
+    expect(fwrite(body, 1, (size_t)HUSH_FAVORITE_FILE_MAX - 1, fp)
+               == (size_t)HUSH_FAVORITE_FILE_MAX - 1, "wrote core");
+    expect(fputc(' ', fp) == ' ', "pad byte");
+    fclose(fp);
+    expect(hush_favorite_load("bound", "Edge", &fav) == HUSH_ERR_FULL,
+           "load FILE_MAX FULL");
+    expect(unlink(file) == 0, "bound cleanup");
+}
+
+/* List emits favorites sorted by name (case-insensitive). */
+static void check_list_sort(fav_fixture_t *fx)
+{
+    size_t out_len = 0;
+    const char *a = NULL;
+    const char *b = NULL;
+    const char *c = NULL;
+
+    expect(hush_favorite_save("sorter", "Zebra", fx->ids, 1) == HUSH_OK,
+           "save Zebra");
+    expect(hush_favorite_save("sorter", "alpha", fx->ids, 1) == HUSH_OK,
+           "save alpha");
+    expect(hush_favorite_save("sorter", "Middle", fx->ids, 1) == HUSH_OK,
+           "save Middle");
+    expect(hush_favorite_list_json("sorter", fx->list, sizeof fx->list,
+                                   &out_len) == HUSH_OK,
+           "sorter lists");
+    a = strstr(fx->list, "\"name\":\"alpha\"");
+    b = strstr(fx->list, "\"name\":\"Middle\"");
+    c = strstr(fx->list, "\"name\":\"Zebra\"");
+    expect(a && b && c, "sorter names present");
+    expect(a < b && b < c, "sorter name order alpha < Middle < Zebra");
+}
+
 int main(void)
 {
     fav_fixture_t fx = {0};
@@ -660,6 +741,8 @@ int main(void)
     check_edge(&fx);
     check_hostile(&fx);
     check_io(&fx);
+    check_file_max(&fx);
+    check_list_sort(&fx);
     if (g_fail)
         return 1;
     printf("test_favorite ok\n");

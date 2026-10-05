@@ -911,6 +911,7 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
 #fav-strip { margin: 12px 0; min-width: 0; }
 #fav-strip .lbl { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
 .fav-row { align-items: center; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+#fav-full { color: var(--warn); margin: 0; flex: 1 1 auto; min-width: 8rem; }
 #fav-name {
   flex: 1 1 100%; min-width: 0; min-height: 36px; padding: 4px 8px;
   border: 1px solid var(--line);
@@ -2485,6 +2486,7 @@ html[data-theme="dark"] #thread-send:active {
             <input id="fav-name" type="text" maxlength="48" placeholder="Favorite name">
             <button class="inv-btn" id="fav-save" type="button">Save favorite</button>
             <button class="inv-btn" id="fav-unload" type="button">Unload</button>
+            <span class="help" id="fav-full" hidden aria-live="polite"></span>
           </div>
           <div id="fav-list" class="fav-list" aria-label="Favorite loadouts"></div>
         </div>
@@ -8180,10 +8182,21 @@ html[data-theme="dark"] #thread-send:active {
       activeFavorite = "";
       paintFavorites();
     }
+    function paintFavFull() {
+      const note = $("fav-full");
+      if (!note) return;
+      const full = !!editSlug && !favLoadError
+        && favList.length >= FAV_COUNT_MAX;
+      note.hidden = !full;
+      note.textContent = full
+        ? ("FULL — " + FAV_COUNT_MAX + " favorites. Delete one to save another.")
+        : "";
+    }
     function paintFavorites() {
       const box = $("fav-list");
       if (!box) return;
       box.innerHTML = "";
+      paintFavFull();
       if (!editSlug) {
         box.innerHTML = "<p class='help'>Raise the robot before saving favorites.</p>";
         return;
@@ -8238,7 +8251,9 @@ html[data-theme="dark"] #thread-send:active {
       if (!editSlug) { paintFavorites(); return; }
       try {
         const data = await api("/api/loadout", { action: "list", robot: editSlug });
-        favList = (data && data.favorites) ? data.favorites : [];
+        favList = (data && data.favorites) ? data.favorites.slice() : [];
+        favList.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""),
+          undefined, { sensitivity: "base" }));
       } catch (e) {
         favList = [];
         favLoadError = true;
@@ -8258,7 +8273,14 @@ html[data-theme="dark"] #thread-send:active {
       const clash = favList.some((f) => f.name !== name && favSlug(f.name) === favSlug(name));
       if (clash) { skillNotice("That name clashes with a saved favorite. Rename it, or delete the old one first."); return; }
       if (favList.length >= FAV_COUNT_MAX && !favList.some((f) => f.name === name)) {
-        skillNotice("This robot already has 32 favorites. Delete one to save another.");
+        paintFavFull();
+        const note = $("fav-full");
+        if (note) {
+          note.hidden = false;
+          note.textContent = "FULL — " + FAV_COUNT_MAX
+            + " favorites. Delete one to save another.";
+        }
+        /* Keep the typed name so the operator can delete one and retry. */
         return;
       }
       const body = { action: "save", robot: editSlug, name: name };
@@ -8266,6 +8288,7 @@ html[data-theme="dark"] #thread-send:active {
       try {
         await api("/api/loadout", body);
         activeFavorite = name;
+        /* Clear only after a successful save; refused saves keep the typed name. */
         if ($("fav-name")) $("fav-name").value = "";
         skillNotice("Favorite saved on this relay. Save the robot to keep the loadout.");
         await refreshFavorites();
