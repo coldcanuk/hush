@@ -5,7 +5,8 @@ Each case posts a refused write to an isolated live relay and compares the
 400 body byte for byte with the reason the C code sends. Rewording or
 dropping a reason in src/api_agents.c or src/api_favorite.c fails here,
 naming the case, the wanted line, and the line the relay sent. The UI half
-checks that the robot drawer shows the server reason in #agent-err.
+checks that the robot drawer shows the server reason in #agent-err, and that
+clone, delete, Save Major, and favorite save/delete use that same expression.
 """
 
 import json
@@ -66,6 +67,11 @@ FAV_CORRUPT = "That saved favorite file is corrupt."
 # the existing #agent-err line under the form (fallback copy unchanged).
 UI_KEEPS_REASON = 'err.reason = r.status === 400 ? (await r.text().catch(() => "")).trim() : "";'
 UI_SHOWS_REASON = '$("agent-err").textContent = (e && e.reason) || "Could not save that robot.";'
+UI_CLONE_REASON = '$("agent-err").textContent = (e && e.reason) || "Could not clone that robot.";'
+UI_DELETE_REASON = '$("agent-err").textContent = (e && e.reason) || "Could not delete that robot.";'
+UI_MAJOR_REASON = '$("agent-err").textContent = (e && e.reason) || "Could not save Major.";'
+UI_FAV_SAVE_REASON = 'skillNotice((e && e.reason) || "Could not save that favorite.");'
+UI_FAV_DELETE_REASON = 'skillNotice((e && e.reason) || "Could not delete that favorite.");'
 UI_NAME_RULE = ('<p class="help" id="agent-name-rule">'
                 'Names must differ in letters (A-Z) or 0-9.</p>')
 UI_NAME_HELP = ('<p class="help" id="agent-name-help">'
@@ -358,6 +364,13 @@ def check_robot_clones(relay):
     relay.ok("/api/agent", {"action": "clone", "slug": "twin"})
     expect(relay, "clone twice", "/api/agent", {"action": "clone", "slug": "twin"},
            "A robot named Twin copy already exists.")
+    # Walkbot One is created in check_robot_names on this same relay.
+    relay.ok("/api/agent", {"action": "clone", "slug": "walkbot-one"})
+    expect(relay, "clone Walkbot One twice", "/api/agent",
+           {"action": "clone", "slug": "walkbot-one"},
+           "A robot named Walkbot One copy already exists.")
+    # Drop the copy so later creates still have a free roster slot.
+    relay.ok("/api/agent", {"action": "delete", "slug": "walkbot-one-copy"})
 
 
 def agent_in_memory(relay, slug):
@@ -814,7 +827,9 @@ def check_ui(relay):
     _, _, served = relay.call("GET", "/")
     served = served.decode("utf-8", "replace")
     for label, text in (("demo/index.html", demo), ("served UI", served)):
-        for need in (UI_KEEPS_REASON, UI_SHOWS_REASON, UI_NAME_RULE, UI_ERR_WRAP,
+        for need in (UI_KEEPS_REASON, UI_SHOWS_REASON, UI_CLONE_REASON,
+                     UI_DELETE_REASON, UI_MAJOR_REASON, UI_FAV_SAVE_REASON,
+                     UI_FAV_DELETE_REASON, UI_NAME_RULE, UI_ERR_WRAP,
                      UI_RULE_SHOWN, UI_NAME_HELP, UI_HELP_SHOWN):
             if need in text:
                 print(f"reasons: ok {label} has {need[:48]}... ({len(need)} chars)")

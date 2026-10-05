@@ -4747,7 +4747,7 @@ html[data-theme="dark"] #thread-send:active {
         $("agent-drawer").classList.remove("show");
         resetAgentDraft();
         if (typeof syncInventoryFromRoster === "function") syncInventoryFromRoster();
-      } catch (e) { $("agent-err").textContent = "Could not clone that robot."; }
+      } catch (e) { $("agent-err").textContent = (e && e.reason) || "Could not clone that robot."; }
     });
     document.querySelectorAll("input[name='agent-role']").forEach((el) => {
       el.addEventListener("change", () => paintSkillBoard(editSlug));
@@ -4963,7 +4963,7 @@ html[data-theme="dark"] #thread-send:active {
           $("agent-drawer").classList.remove("show");
           resetAgentDraft();
           if (typeof syncInventoryFromRoster === "function") syncInventoryFromRoster();
-        } catch (e) { $("agent-err").textContent = "Could not save Major."; }
+        } catch (e) { $("agent-err").textContent = (e && e.reason) || "Could not save Major."; }
         return;
       }
       const name = draftName || autoRobotName();
@@ -5018,7 +5018,7 @@ html[data-theme="dark"] #thread-send:active {
         applySession(await api("/api/agent", { action: "delete", slug: editSlug }));
         $("agent-drawer").classList.remove("show");
         resetAgentDraft();
-      } catch (e) { $("agent-err").textContent = "Could not delete that robot."; }
+      } catch (e) { $("agent-err").textContent = (e && e.reason) || "Could not delete that robot."; }
     });
     $("add-proj").addEventListener("click", async () => {
       const name = $("new-proj").value.trim();
@@ -8187,7 +8187,7 @@ html[data-theme="dark"] #thread-send:active {
         skillNotice("Favorite saved on this relay. Save the robot to keep the loadout.");
         await refreshFavorites();
       } catch (e) {
-        skillNotice("Could not save that favorite.");
+        skillNotice((e && e.reason) || "Could not save that favorite.");
       }
     }
     function applyFavoriteLoad(fav) {
@@ -8216,7 +8216,7 @@ html[data-theme="dark"] #thread-send:active {
         skillNotice("Favorite deleted. The doll keeps its skills.");
         await refreshFavorites();
       } catch (e) {
-        skillNotice("Could not delete that favorite.");
+        skillNotice((e && e.reason) || "Could not delete that favorite.");
       }
     }
 
