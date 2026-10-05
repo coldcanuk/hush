@@ -1265,22 +1265,20 @@ int hush_launch_is_ready(const hush_launch_t *launch)
 static void hush_launch_copy_name(char *dst, size_t dstsz,
                                   const char *text, const char *fallback)
 {
-    size_t i = 0;
+    size_t n = 0;
 
     assert(dst != NULL);
     assert(dstsz > 0);
     assert(fallback != NULL);
+    dst[0] = '\0';
     if (text != NULL) {
-        while (text[i] != '\0' && isspace((unsigned char)text[i]))
+        while (*text != '\0' && isspace((unsigned char)*text))
             text++;
-        while (text[i] != '\0' && i + 1 < dstsz) {
-            dst[i] = text[i];
-            i++;
-        }
-        while (i > 0 && isspace((unsigned char)dst[i - 1]))
-            i--;
+        n = hush_json_copy_bounded(dst, dstsz, text);
+        while (n > 0 && isspace((unsigned char)dst[n - 1]))
+            n--;
+        dst[n] = '\0';
     }
-    dst[i] = '\0';
     if (dst[0] == '\0') {
         strncpy(dst, fallback, dstsz - 1);
         dst[dstsz - 1] = '\0';
@@ -2357,10 +2355,10 @@ static int hush_launch_json_string(const char *json, const char *key,
         return 0;
     value.start = open;
     value.len = (size_t)(end - open + 1);
-    if (hush_json_decode(out, outsz, &value) != HUSH_OK) {
-        out[0] = '\0';
+    /* decode_keep: never blank on invalid UTF-8 / mid-character cuts from
+     * an older vibe file — erase would drop the whole robot on reload. */
+    if (hush_json_decode_keep(out, outsz, &value) != HUSH_OK)
         return 0;
-    }
     return out[0] != '\0';
 }
 

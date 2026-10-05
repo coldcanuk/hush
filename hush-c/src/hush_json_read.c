@@ -377,3 +377,166 @@ static hush_status_t hush_json_put_scalar(char *out, size_t outsz, size_t *offse
     out[*offset] = '\0';
     return HUSH_OK;
 }
+
+static int hush_json_keep_hex(unsigned char ch)
+{
+    if (ch >= '0' && ch <= '9')
+        return (int)(ch - '0');
+    if (ch >= 'a' && ch <= 'f')
+        return (int)(ch - 'a') + 10;
+    if (ch >= 'A' && ch <= 'F')
+        return (int)(ch - 'A') + 10;
+    return -1;
+}
+
+/* Lossy body copy: decode RFC 8259 escapes when well-formed; keep content
+ * otherwise. Invalid UTF-8 raw bytes become U+FFFD so session JSON stays
+ * valid — never blank the field. */
+static size_t hush_json_keep_put(char *out, size_t outsz, size_t o,
+                                 const char *bytes, size_t n)
+{
+    size_t k;
+
+    if (o + n >= outsz)
+        return o;
+    for (k = 0; k < n; k++)
+        out[o + k] = bytes[k];
+    return o + n;
+}
+
+static size_t hush_json_keep_body(char *out, size_t outsz,
+                                  const char *body, size_t body_len)
+{
+    static const char repl[] = "\xEF\xBF\xBD"; /* U+FFFD */
+    size_t i = 0;
+    size_t o = 0;
+
+    assert(out != NULL && outsz > 0);
+    if (body == NULL)
+        body_len = 0;
+    while (i < body_len && o + 1 < outsz) {
+        unsigned char ch = (unsigned char)body[i];
+
+        if (ch == '\\' && i + 1 < body_len) {
+            i++;
+            ch = (unsigned char)body[i];
+            if (ch == '"' || ch == '\\' || ch == '/') {
+                o = hush_json_keep_put(out, outsz, o, (const char *)&ch, 1);
+                i++;
+                continue;
+            }
+            if (ch == 'n' || ch == 'r' || ch == 't' || ch == 'b' || ch == 'f') {
+                char ctrl = '\n';
+
+                if (ch == 'r')
+                    ctrl = '\r';
+                else if (ch == 't')
+                    ctrl = '\t';
+                else if (ch == 'b')
+                    ctrl = '\b';
+                else if (ch == 'f')
+                    ctrl = '\f';
+                o = hush_json_keep_put(out, outsz, o, &ctrl, 1);
+                i++;
+                continue;
+            }
+            if (ch == 'u' && i + 4 < body_len) {
+                unsigned code = 0;
+                int ok = 1;
+                size_t h;
+
+                for (h = 1; h <= 4; h++) {
+                    int digit = hush_json_keep_hex((unsigned char)body[i + h]);
+
+                    if (digit < 0) {
+                        ok = 0;
+                        break;
+                    }
+                    code = (code << 4) | (unsigned)digit;
+                }
+                if (ok) {
+                    char utf[4];
+                    size_t n = 0;
+
+                    i += 5;
+                    if (code == 0)
+                        code = 0xFFFDu;
+                    if (code <= 0x7Fu) {
+                        utf[0] = (char)code;
+                        n = 1;
+                    } else if (code <= 0x7FFu) {
+                        utf[0] = (char)(0xC0u | (code >> 6));
+                        utf[1] = (char)(0x80u | (code & 0x3Fu));
+                        n = 2;
+                    } else if (code <= 0xFFFFu) {
+                        utf[0] = (char)(0xE0u | (code >> 12));
+                        utf[1] = (char)(0x80u | ((code >> 6) & 0x3Fu));
+                        utf[2] = (char)(0x80u | (code & 0x3Fu));
+                        n = 3;
+                    } else {
+                        n = 0;
+                    }
+                    if (n == 0)
+                        o = hush_json_keep_put(out, outsz, o, repl, 3);
+                    else
+                        o = hush_json_keep_put(out, outsz, o, utf, n);
+                    continue;
+                }
+            }
+            o = hush_json_keep_put(out, outsz, o, (const char *)&ch, 1);
+            i++;
+            continue;
+        }
+        /* Raw byte(s): copy a well-formed UTF-8 scalar, else U+FFFD. */
+        {
+            size_t remain = body_len - i;
+            size_t seq = 0;
+            unsigned char b0 = ch;
+
+            if (b0 <= 0x7Fu)
+                seq = 1;
+            else if (b0 >= 0xC2u && b0 <= 0xDFu && remain >= 2
+                     && ((unsigned char)body[i + 1] & 0xC0u) == 0x80u)
+                seq = 2;
+            else if (b0 >= 0xE0u && b0 <= 0xEFu && remain >= 3
+                     && ((unsigned char)body[i + 1] & 0xC0u) == 0x80u
+                     && ((unsigned char)body[i + 2] & 0xC0u) == 0x80u)
+                seq = 3;
+            else if (b0 >= 0xF0u && b0 <= 0xF4u && remain >= 4
+                     && ((unsigned char)body[i + 1] & 0xC0u) == 0x80u
+                     && ((unsigned char)body[i + 2] & 0xC0u) == 0x80u
+                     && ((unsigned char)body[i + 3] & 0xC0u) == 0x80u)
+                seq = 4;
+            if (seq == 0) {
+                o = hush_json_keep_put(out, outsz, o, repl, 3);
+                i++;
+            } else {
+                o = hush_json_keep_put(out, outsz, o, body + i, seq);
+                i += seq;
+            }
+        }
+    }
+    out[o] = '\0';
+    return o;
+}
+
+hush_status_t hush_json_decode_keep(char *out, size_t outsz,
+                                    const hush_json_value_t *value)
+{
+    hush_status_t st;
+
+    if (out == NULL || outsz == 0 || value == NULL || value->start == NULL)
+        return HUSH_ERR_ARG;
+    st = hush_json_decode(out, outsz, value);
+    if (st == HUSH_OK)
+        return HUSH_OK;
+    /* Strict decode refused (invalid UTF-8, mid-character cut from an older
+     * save, etc.). Keep the string body so restart cannot erase the field. */
+    if (value->len < (size_t)2 || value->start[0] != '"'
+        || value->start[value->len - 1] != '"') {
+        out[0] = '\0';
+        return st;
+    }
+    (void)hush_json_keep_body(out, outsz, value->start + 1, value->len - 2);
+    return out[0] != '\0' ? HUSH_OK : st;
+}

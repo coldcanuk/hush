@@ -680,7 +680,7 @@ def check_restart():
             # Controls in prompt/intro must reload as bytes, not letter garble.
             ctrl_prompt = (
                 b'{"action":"update","slug":"walkbot-two",'
-                b'"system_prompt":"Keep\\tA\\rB\\u001bC"}'
+                b'"system_prompt":"Keep\\tA\\rB\\u001bC\\bD\\fE say \\"hi\\""}'
             )
             status, _, raw = relay.call("POST", "/api/agent", ctrl_prompt)
             try:
@@ -712,13 +712,13 @@ def check_restart():
                 agents = [a for a in session.get("agents", [])
                           if a.get("slug") == "walkbot-two"]
                 prompt = agents[0].get("prompt") if agents else ""
-                if (prompt != "Keep\tA\rB\x1bC"):
+                want = "Keep\tA\rB\x1bC\bD\fE say \"hi\""
+                if prompt != want:
                     FAILURES.append(
-                        f"restart must reload decoded prompt controls; "
-                        f"got {prompt!r} (garble would look like "
-                        f"KeeptA / Keepu001bC)")
+                        f"restart must reload decoded prompt controls "
+                        f"incl backspace/formfeed/escaped quote; got {prompt!r}")
                 else:
-                    print("reasons: ok restart keeps decoded prompt controls")
+                    print("reasons: ok restart keeps b/f/quote/tab/esc controls")
             kept = favorite_names(relay, "walkbot-two-2")
             if kept != ["Keep Fav"]:
                 FAILURES.append(f"restart must keep walkbot-two-2's favorite; got {kept}")
@@ -949,6 +949,130 @@ def check_picture_json_escape(relay):
         FAILURES.append(f"Major picture round-trip failed; got {got!r}")
     else:
         print("reasons: ok Major picture quote/tab round-trips in session JSON")
+
+
+
+
+
+def inject_mid_utf8_cut(relay, slug):
+    """Simulate an older build that cut a prompt mid-character in vibe.json."""
+    path = relay.directory / "config" / "vibe.json"
+    raw = path.read_bytes()
+    vibe = json.loads(raw.decode("utf-8", errors="surrogateescape"))
+    idx = None
+    for i in range(int(vibe.get("nagents", 0))):
+        if vibe.get(f"agent_slug_{i}") == slug:
+            idx = i
+            break
+    if idx is None:
+        raise AssertionError(f"inject: {slug} missing from vibe")
+    vibe[f"agent_prompt_{idx}"] = "UpgradeKeepé"
+    encoded = json.dumps(vibe, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8", errors="surrogateescape")
+    needle = "UpgradeKeepé".encode()
+    pos = encoded.find(needle)
+    if pos < 0:
+        raise AssertionError("inject: prompt needle missing")
+    patched = encoded[: pos + len(needle) - 1] + encoded[pos + len(needle) :]
+    path.write_bytes(patched)
+
+
+def check_no_silent_erase():
+    """Truncation and decode failure must not erase prompts/intros/robots.
+
+    Uses its own relay with pass saved so restart keeps login (same as
+    check_restart).
+    """
+    with tempfile.TemporaryDirectory(prefix="hush-reasons-erase-") as raw:
+        relay = Relay(Path(raw))
+        relay.start()
+        try:
+            relay.ok("/api/identity", {"action": "create"})
+            relay.ok("/api/identity", {"action": "ack_backup", "save_pass": True})
+            relay.ok("/api/vibe", {"name": "HQ", "about": "erase"})
+            long_prompt = "é" * 600
+            long_intro = "日本語" * 40
+            made = relay.ok("/api/agent", robot("Erase Guard",
+                                               system_prompt=long_prompt,
+                                               intro=long_intro))
+            agents = [a for a in made.get("agents", [])
+                      if a.get("slug") == "erase-guard"]
+            if not agents:
+                FAILURES.append("Erase Guard missing after create")
+                return
+            disk = agent_on_disk(relay, "erase-guard")
+            prompt = disk.get("agent_prompt") or ""
+            intro = disk.get("agent_intro") or ""
+            plen = len(prompt.encode("utf-8"))
+            ilen = len(intro.encode("utf-8"))
+            if "é" not in prompt or plen > 1024 or plen < 1000:
+                FAILURES.append(
+                    f"long é prompt must keep ~1024 UTF-8 bytes on boundary; "
+                    f"got bytes={plen} {prompt[:20]!r}")
+            elif prompt.encode("utf-8").endswith(b"\xc3"):
+                FAILURES.append(
+                    f"long é prompt ends mid-character: {prompt[-4:]!r}")
+            else:
+                print(f"reasons: ok long é prompt kept ({len(prompt)} chars, "
+                      f"{plen} bytes)")
+            if "日" not in intro or ilen > 240 or ilen < 200:
+                FAILURES.append(
+                    f"long 日本語 intro must keep ~240 UTF-8 bytes on boundary; "
+                    f"got bytes={ilen} {intro[:20]!r}")
+            else:
+                print(f"reasons: ok long 日本語 intro kept ({len(intro)} chars, "
+                      f"{ilen} bytes)")
+
+            raw_name = (
+                b'{"name":"Raw\xffBot","system_prompt":"Walk the floor.",'
+                b'"provider":"grok-build","save_pass":false}'
+            )
+            status, _, body = relay.call("POST", "/api/agent", raw_name)
+            if status != 200 or b"raw-bot" not in body:
+                FAILURES.append(
+                    f"0xFF name create: HTTP {status} {body[:160]!r}")
+            else:
+                print("reasons: ok 0xFF name create returned 200 with raw-bot id")
+
+            relay.stop()
+            vibe_path = relay.directory / "config" / "vibe.json"
+            if b"\xff" not in vibe_path.read_bytes():
+                FAILURES.append("0xFF name not written into vibe.json")
+            inject_mid_utf8_cut(relay, "erase-guard")
+            relay.start()
+            if b"\xff" not in vibe_path.read_bytes():
+                FAILURES.append("0xFF-named robot wiped from vibe on restart")
+            else:
+                print("reasons: ok 0xFF-named robot survives restart in vibe.json")
+
+            status, _, body = relay.call("GET", "/api/session")
+            try:
+                session = json.loads(body)
+            except json.JSONDecodeError as err:
+                FAILURES.append(f"session after mid-cut vibe not JSON: {err}")
+                return
+            agents = [a for a in session.get("agents", [])
+                      if a.get("slug") == "erase-guard"]
+            if not agents:
+                FAILURES.append(
+                    "mid-character vibe cut wiped Erase Guard on reload")
+            else:
+                p = agents[0].get("prompt") or ""
+                if "UpgradeKeep" not in p:
+                    FAILURES.append(
+                        f"mid-cut reload blanked prompt; got {p!r}")
+                else:
+                    print("reasons: ok mid-character vibe cut kept agent + "
+                          "prompt prefix")
+                if "日" not in (agents[0].get("intro") or ""):
+                    FAILURES.append(
+                        f"日本語 intro lost across mid-cut restart; "
+                        f"got {agents[0].get('intro')!r}")
+                else:
+                    print("reasons: ok 日本語 intro survives mid-cut restart")
+        finally:
+            relay.stop()
+
 
 
 def check_context_size(relay):
@@ -1184,6 +1308,7 @@ def main():
         finally:
             relay.stop()
     check_restart()
+    check_no_silent_erase()
     if FAILURES:
         for line in FAILURES:
             print(f"reasons check failed: {line}", file=sys.stderr)

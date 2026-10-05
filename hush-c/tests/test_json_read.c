@@ -18,14 +18,42 @@ typedef struct {
 static void hush_json_test_selection(void);
 /* Checks malformed encoding, missing paths, and insufficient capacity. */
 static void hush_json_test_rejection(void);
+static void hush_json_test_decode_keep(void);
 /* Verifies each required selected value without permitting truncation. */
 static void hush_json_test_case(const hush_json_test_case_t *test);
+
+
+/* Invalid UTF-8 in a JSON string must not blank under decode_keep. */
+static void hush_json_test_decode_keep(void)
+{
+    char decoded[HUSH_JSON_TEST_BUFFER_BYTES] = {0};
+    /* "A" + lone 0xC3 + "B" — strict decode fails; keep must retain content. */
+    char raw[] = { '"', 'A', (char)0xC3, 'B', '"', 0 };
+    hush_json_value_t value = { .start = raw, .len = 5 };
+
+    assert(hush_json_decode(decoded, sizeof(decoded), &value) == HUSH_ERR_PARSE);
+    assert(hush_json_decode_keep(decoded, sizeof(decoded), &value) == HUSH_OK);
+    assert(decoded[0] == 'A');
+    /* Lone 0xC3 becomes U+FFFD (ef bf bd), then 'B'. */
+    assert((unsigned char)decoded[1] == 0xEF);
+    assert((unsigned char)decoded[2] == 0xBF);
+    assert((unsigned char)decoded[3] == 0xBD);
+    assert(decoded[4] == 'B');
+    /* Good escapes still decode. */
+    {
+        const char *esc = "\"x\\b\\fy\"";
+        hush_json_value_t v = { .start = esc, .len = strlen(esc) };
+        assert(hush_json_decode_keep(decoded, sizeof(decoded), &v) == HUSH_OK);
+        assert(strcmp(decoded, "x\b\fy") == 0);
+    }
+}
 
 /* C runtime ABI requires an integer status and unprefixed entry point. */
 int main(void)
 {
     hush_json_test_selection();
     hush_json_test_rejection();
+    hush_json_test_decode_keep();
     return puts("test_json_read ok") < 0 ? 1 : 0;
 }
 

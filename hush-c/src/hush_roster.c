@@ -731,22 +731,22 @@ static hush_status_t hush_roster_format_members(const hush_roster_t *roster,
 static void hush_roster_copy_text(char *dst, size_t dstsz,
                                   const char *text, const char *fallback)
 {
-    size_t i = 0;
+    size_t n = 0;
 
     assert(dst != NULL);
     assert(dstsz > 0);
     assert(fallback != NULL);
+    dst[0] = '\0';
     if (text != NULL) {
-        while (text[i] != '\0' && isspace((unsigned char)text[i]))
+        while (*text != '\0' && isspace((unsigned char)*text))
             text++;
-        while (text[i] != '\0' && i + 1 < dstsz) {
-            dst[i] = text[i];
-            i++;
-        }
-        while (i > 0 && isspace((unsigned char)dst[i - 1]))
-            i--;
+        /* Cap on a UTF-8 character boundary so vibe reload cannot see a
+         * mid-character cut and erase the field on strict decode. */
+        n = hush_json_copy_bounded(dst, dstsz, text);
+        while (n > 0 && isspace((unsigned char)dst[n - 1]))
+            n--;
+        dst[n] = '\0';
     }
-    dst[i] = '\0';
     if (dst[0] == '\0' && fallback[0] != '\0') {
         strncpy(dst, fallback, dstsz - 1);
         dst[dstsz - 1] = '\0';
