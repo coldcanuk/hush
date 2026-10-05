@@ -57,6 +57,7 @@ function noPassRestated(visible) {
     NEVER_SHARE,
     'This key is your account. Copy it now. Hush cannot recover it if you lose it.',
     'Your unique identity key has been created',
+    'Your identity key has been imported',
     'Copy value',
     'Reveal',
     'Hide',
@@ -103,7 +104,6 @@ function resolveChrome() {
   }
   fail('no Chrome on PATH (need google-chrome or chromium) and HUSH_CHROME_BIN unset');
 }
-
 
 function testWaitMs() {
   const raw = process.env.HUSH_TEST_WAIT_S;
@@ -173,11 +173,16 @@ async function launchChromeReady(chrome, track, deadlineMs) {
   for (let attempt = 1; attempt <= 2; attempt++) {
     const port = await freePort();
     const userDir = fs.mkdtempSync(path.join(os.tmpdir(), 'id1-chrome-'));
+    /* CI often sets a junk DBUS_SESSION_BUS_ADDRESS; Chrome then logs
+     * dbus parse errors while starting. Drop it for the Chrome child. */
+    const chromeEnv = Object.assign({}, process.env);
+    delete chromeEnv.DBUS_SESSION_BUS_ADDRESS;
     const chromeProc = track(spawn(chrome,
       ['--headless', '--no-sandbox', '--disable-gpu', '--no-first-run',
+        '--disable-dev-shm-usage', '--disable-software-rasterizer',
         `--remote-debugging-port=${port}`, `--user-data-dir=${userDir}`,
         'about:blank'],
-      { stdio: ['ignore', 'ignore', 'pipe'] }));
+      { stdio: ['ignore', 'ignore', 'pipe'], env: chromeEnv }));
     const result = await waitChromeDevtools(chromeProc, port, deadlineMs);
     if (result.ok) {
       return { chromeProc, userDir, port, httpBase: result.httpBase, stderr: result.stderr };
@@ -419,7 +424,7 @@ async function main() {
       const h = document.querySelector('#agent-pass-howto');
       const shown = (e) => e.getClientRects().length > 0;
       return { title: document.querySelector('#agent-title').textContent, label: shown(l), howto: shown(h),
-        open: h.open, text: l.textContent.trim(), cmd: h.textContent.includes('pass show hush/agents/<robot-id>/nsec') };
+        open: h.open, text: l.textContent.trim(), cmd: h.textContent.includes('pass ls hush/agents') && !h.textContent.includes('<robot-id>') };
     })()`);
   };
   const editRobot = (slug) => `document.querySelector('#robot-list .robot-card[data-slug="${slug}"] .robot-actions button').click()`;
@@ -567,19 +572,79 @@ async function main() {
     t = await gateText();
     check(await cdp.eval(`document.querySelector('label[for="nsec-in"]').textContent`) === 'Secret key (nsec)', 'import label is plain');
     check(t.includes('secret key (nsec)'), 'import card names the key in plain words');
-    // Pre-walk r4 (claim trace): the import card promises only what the
-    // flow does. Import loads the key in memory (nothing is saved before
-    // the backup step) and no public key is shown before that step.
-    check(t.includes('Paste your secret key (nsec). Nothing is saved before the next step.') &&
-      !/public key|npub/i.test(t), 'import card makes no public-key promise');
-    const preview = await cdp.eval(`(() => { const i = document.querySelector('#nsec-in'); i.value = 'nsec1example';
-      i.dispatchEvent(new Event('input')); return document.querySelector('#npub-preview').textContent; })()`);
-    check(preview === 'Looks like a secret key (nsec).', `import preview makes no public-key promise: ${preview}`);
+    // #234: import promises the matching npub and shows the full key before save.
+    check(t.includes('Paste your secret key (nsec). We show the matching public key (npub) before anything is saved.'),
+      'import card promises matching npub before save');
+    // Short junk (under the nsec1 length floor): refuse immediately, no API.
+    await cdp.eval(`(() => { const i = document.querySelector('#nsec-in'); i.value = 'nsec1example';
+      i.dispatchEvent(new Event('input')); })()`);
+    await sleep(50);
+    let previewBad = await cdp.eval(`document.querySelector('#npub-preview').textContent`);
+    check(previewBad === 'That does not look like a valid secret key.',
+      `import preview rejects short junk nsec: ${JSON.stringify(previewBad)}`);
+    // Long junk hits preview API and must still refuse (not blank).
+    await cdp.eval(`(() => { const i = document.querySelector('#nsec-in');
+      i.value = 'nsec1exampleexampleexampleexampleexampleexampleexamplexx';
+      i.dispatchEvent(new Event('input')); })()`);
+    await sleep(500);
+    previewBad = await cdp.eval(`document.querySelector('#npub-preview').textContent`);
+    check(previewBad === 'That does not look like a valid secret key.',
+      `import preview rejects long junk nsec via API: ${JSON.stringify(previewBad)}`);
+    const knownNsec = 'nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5';
+    const knownNpub = 'npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg';
+    await cdp.eval(`(() => { const i = document.querySelector('#nsec-in'); i.value = ${JSON.stringify(knownNsec)};
+      i.dispatchEvent(new Event('input')); })()`);
+    await cdp.waitFor(`(document.querySelector('#npub-preview').textContent || '').includes(${JSON.stringify(knownNpub)})`,
+      'import preview shows full matching npub', 5000);
+    const previewOk = await cdp.eval(`document.querySelector('#npub-preview').textContent`);
+    check(previewOk.includes('Matching public key (npub):') && previewOk.includes(knownNpub),
+      `import preview shows full npub: ${previewOk}`);
+    // F-A (Gauge P2-2): at 375 the full npub must not sidescroll the page
+    // or overflow the gate card. Mutant dropping #npub-preview wrap CSS fails.
+    await cdp.send('Emulation.setDeviceMetricsOverride',
+      { width: 375, height: 800, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    const faPin = await cdp.eval(`(() => {
+      const doc = document.documentElement;
+      const prev = document.querySelector('#npub-preview');
+      const card = prev && prev.closest('.card');
+      if (!prev || !card) return { err: 'missing preview/card' };
+      const pr = prev.getBoundingClientRect();
+      const cr = card.getBoundingClientRect();
+      return {
+        docSW: doc.scrollWidth, iw: window.innerWidth,
+        prevSW: prev.scrollWidth, prevCW: prev.clientWidth,
+        cardSW: card.scrollWidth, cardCW: card.clientWidth,
+        prevRight: Math.round(pr.right * 10) / 10,
+        cardRight: Math.round(cr.right * 10) / 10,
+        hasNpub: (prev.textContent || '').includes(${JSON.stringify(knownNpub)})
+      };
+    })()`);
+    check(faPin.hasNpub && !faPin.err,
+      `F-A: full npub still showing at 375: ${JSON.stringify(faPin)}`);
+    check(faPin.docSW <= faPin.iw,
+      `F-A: document.scrollWidth <= innerWidth at 375: ${JSON.stringify(faPin)}`);
+    check(faPin.prevSW <= faPin.prevCW + 1,
+      `F-A: #npub-preview fits its box at 375: ${JSON.stringify(faPin)}`);
+    check(faPin.cardSW <= faPin.cardCW + 1,
+      `F-A: .gate .card fits at 375: ${JSON.stringify(faPin)}`);
+    check(faPin.prevRight <= faPin.cardRight + 1,
+      `F-A: preview right edge inside card at 375: ${JSON.stringify(faPin)}`);
+    await cdp.send('Emulation.setDeviceMetricsOverride',
+      { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+    await sleep(200);
     await cdp.click('#back-import');
     await cdp.waitFor(`!!document.querySelector('#create-id')`, 'landing after import');
 
     await cdp.click('#create-id');
     await cdp.waitFor(`!!document.querySelector('#save-pass')`, 'backup');
+    {
+      const createdTitle = await gateText();
+      check(createdTitle.includes('Your unique identity key has been created'),
+        'create backup title says has been created');
+      check(!createdTitle.includes('has been imported'),
+        'create backup title is not the import variant');
+    }
     const checked = await cdp.eval(`document.querySelector('#save-pass').checked`);
     check(checked === false, 'backup checkbox renders unchecked without pass');
     const disabled = await cdp.eval(`document.querySelector('#save-pass').disabled`);
@@ -669,6 +734,8 @@ async function main() {
       const pb = parseFloat(getComputedStyle(d).paddingBottom) || 0;
       const extra = d.offsetHeight - d.clientHeight; // borders (+ padding when border-box)
       const out = [];
+      // Content-bottom latch (F-C): bare probe has no padding, so ±3px
+      // still flips the cue; blank row-padding alone does not.
       for (const free of [-3, 1, -3, 6]) {
         d.style.height = (content + free + (getComputedStyle(d).boxSizing === 'border-box' ? extra : 0)) + 'px';
         await frames();
@@ -724,7 +791,12 @@ async function main() {
     const fadeState = `(() => { const d = document.querySelector('#fo-drawer'); d.scrollTop = 0;
       const r = d.getBoundingClientRect(); const inner = r.top + d.clientTop; const bottom = inner + d.clientHeight; const x = Math.round(r.left + r.width / 2);
       let vis = bottom; for (let y = Math.floor(bottom) - 1; y > inner; y--) { const e = document.elementFromPoint(x, y); if (e && d.contains(e)) { vis = y + 1; break; } }
-      let last = 0; for (const c of d.children) if (c.getClientRects().length) last = Math.max(last, c.getBoundingClientRect().bottom);
+      let last = 0; const visit = (el) => { if (!el.getClientRects().length) return; let hasKid = false;
+        for (const c of el.children) { if (!c.getClientRects().length) continue; hasKid = true; visit(c); }
+        if (hasKid) return; const br = el.getBoundingClientRect(); const cs = getComputedStyle(el);
+        const inset = (parseFloat(cs.paddingBottom) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+        last = Math.max(last, br.bottom - inset); };
+      for (const c of d.children) visit(c);
       return { sh: d.scrollHeight, ch: d.clientHeight, last: Math.round(last * 10) / 10, vis: Math.round(vis * 10) / 10, under: Math.round((bottom - vis) * 10) / 10,
         on: d.classList.contains('is-overflowing'), fade: parseFloat(getComputedStyle(d, '::after').bottom), pb: parseFloat(getComputedStyle(d).paddingBottom),
         onscreen: r.left >= -0.5 && r.right <= innerWidth + 0.5 }; })()`;
@@ -733,7 +805,7 @@ async function main() {
     const fadeCheck = (r, where) => {
       check(r.onscreen, `drawer is on screen for the fade check at ${where}: ${JSON.stringify(r)}`);
       const hidden = r.last > r.vis + 0.5;
-      check(r.on === hidden, `drawer fade is ${hidden ? 'on' : 'off'} when ${hidden ? 'a row reaches past' : 'every row is above'} the visible bottom at ${where}: ${JSON.stringify(r)}`);
+      check(r.on === hidden, `drawer fade is ${hidden ? 'on' : 'off'} when ${hidden ? 'content reaches past' : 'every content edge is above'} the visible bottom at ${where}: ${JSON.stringify(r)}`);
       // The fade ends at the visible bottom (sticky, measured from the
       // content box): bottom = (px under the quick-bar) - padding-bottom.
       if (r.on)
@@ -763,14 +835,14 @@ async function main() {
       const rows = fadeBand.filter((r) => r.w === bw);
       for (const r of rows) fadeCheck(r, `${bw}x${r.h}`);
       const one = rows.find((r) => r.h === h0 - 1);
-      check(one && one.on && one.last > one.vis + 0.5 && one.last <= one.vis + 1.5, `drawer fade shows when a row is 1px under at ${bw}x${h0 - 1}: ${JSON.stringify(one)}`);
+      check(one && one.on && one.last > one.vis + 0.5 && one.last <= one.vis + 1.5, `drawer fade shows when content is 1px under at ${bw}x${h0 - 1}: ${JSON.stringify(one)}`);
       const band = rows.filter((r) => r.h >= h0);
       check(band.filter((r) => r.sh > r.ch + 1).length >= 5, `padding band exercised at ${bw} (scrollHeight > clientHeight): ${JSON.stringify(band)}`);
       for (const r of band) check(!r.on, `drawer fade stays off when only padding overflows at ${bw}x${r.h}: ${JSON.stringify(r)}`);
     }
 
     // r5 (Ops 1440x883 nit): at 1440x883 a last row exactly at the edge
-    // gets no fade and a row 1px under gets it.
+    // gets no fade and a row 1px under gets it (content bottom).
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 883, deviceScaleFactor: 1, mobile: false });
     await sleep(300);
     const at883 = [];
@@ -786,14 +858,14 @@ async function main() {
     }
     console.log('drawer fade at 1440x883: ' + JSON.stringify(at883));
     check(at883[0].prep === 0 && !at883[0].on, `1440x883: last row at the edge, no fade: ${JSON.stringify(at883[0])}`);
-    check(at883[1].prep === 1 && at883[1].on, `1440x883: last row 1px under the edge, fade on: ${JSON.stringify(at883[1])}`);
+    check(at883[1].prep === 1 && at883[1].on, `1440x883: last content 1px under the edge, fade on: ${JSON.stringify(at883[1])}`);
     for (const r of at883) fadeCheck(r, '1440x883');
 
     // r5 (Ops FAIL-1): at phone widths the fixed #quick-bar covers the
     // drawer bottom. The probe puts the last row at the quick-bar top at
     // h 780 (field-office), then every height 700-812 at 375, 414, 480,
     // 560 and 640 (Gauge P2-1: every width that has the quick-bar),
-    // in field-office and dark, must have the fade on iff a row reaches
+    // in field-office and dark, must have the fade on iff content reaches
     // past the quick-bar top, with the fade ending at that edge. The
     // sweep must include heights where rows hide only under the quick-bar
     // (inside the client box: r4 left the fade off there) and 375x812.
@@ -823,6 +895,63 @@ async function main() {
       check(underOnly.filter((r) => r.w === pw && r.th === th).length >= 10, `phone sweep has rows hidden only under the quick-bar at ${pw} ${th}`);
     check(phone.some((r) => r.w === 375 && r.h === 812), 'phone sweep includes 375x812');
     for (const r of phone) fadeCheck(r, `${r.w}x${r.h} ${r.th}`);
+
+    // F-C' (Gauge P2-4): Ops false-cue band at 375 (fo h699–705). Real
+    // drawer content (no fade-band probe): when the last .fo-person text is
+    // fully above the visible bottom, is-overflowing MUST be off. The r3
+    // direct-children walk counted nested .fo-person padding and stayed on.
+    await fadeRemove();
+    for (const h of [699, 702, 705]) {
+      await cdp.send('Emulation.setDeviceMetricsOverride',
+        { width: 375, height: h, deviceScaleFactor: 1, mobile: false });
+      await sleep(250);
+      const fc = await cdp.eval(`(async () => {
+        const frames = () => new Promise((r) => requestAnimationFrame(() =>
+          requestAnimationFrame(() => setTimeout(r, 40))));
+        const d = document.querySelector('#fo-drawer');
+        if (!document.querySelector('#hive').classList.contains('nav-open'))
+          document.querySelector('#nav-toggle').click();
+        for (let i = 0; i < 40; i++) {
+          await frames();
+          const q = d.getBoundingClientRect();
+          if (d.clientHeight && q.left >= -0.5 && q.right <= innerWidth + 0.5) break;
+        }
+        d.scrollTop = 0;
+        document.documentElement.setAttribute('data-theme', 'field-office');
+        await frames();
+        const persons = [...d.querySelectorAll('.fo-person')];
+        const row = persons[persons.length - 1];
+        if (!row) return { err: 'no fo-person' };
+        const name = row.querySelector('.fo-person-name') || row;
+        const tr = name.getBoundingClientRect();
+        const box = d.getBoundingClientRect();
+        const inner = box.top + d.clientTop;
+        let vis = inner + d.clientHeight;
+        const x = Math.round(box.left + box.width / 2);
+        for (let y = Math.floor(vis) - 1; y > inner; y--) {
+          const e = document.elementFromPoint(x, y);
+          if (e && d.contains(e)) { vis = y + 1; break; }
+        }
+        const textBottom = tr.bottom;
+        const textFullyVisible = textBottom <= vis + 0.5;
+        return {
+          on: d.classList.contains('is-overflowing'),
+          textBottom: Math.round(textBottom * 10) / 10,
+          vis: Math.round(vis * 10) / 10,
+          textFullyVisible,
+          nPeople: persons.length,
+          name: (name.textContent || '').trim()
+        };
+      })()`, true);
+      check(!fc.err && fc.nPeople > 0,
+        `F-C' setup at 375x${h}: ${JSON.stringify(fc)}`);
+      if (fc.textFullyVisible)
+        check(!fc.on,
+          `F-C': fade off when last person fully visible at 375x${h} fo: ${JSON.stringify(fc)}`);
+    }
+    await cdp.send('Emulation.setDeviceMetricsOverride',
+      { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+    await sleep(200);
 
     // Pre-walk r3 (Ops F2): every drawer stat, including the build stamp,
     // shows whole inside the clip wrapper (no glyph cut at its right edge).
@@ -1112,6 +1241,43 @@ async function main() {
     const createLogout = contrasts.landing['#create-id'];
     check(RATIO_OF(createLogout) !== null, 'create-key button renders');
     await cdp.shot('logout-landing');
+
+    // #234: after import, backup title is the import variant (not "created").
+    await cdp.click('#use-id');
+    await cdp.waitFor(`!!document.querySelector('#nsec-in')`, 'import after logout');
+    await cdp.eval(`(() => { const i = document.querySelector('#nsec-in');
+      i.value = 'nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5';
+      i.dispatchEvent(new Event('input')); })()`);
+    await sleep(400);
+    await cdp.click('#do-import');
+    await cdp.waitFor(`!!document.querySelector('#save-pass')`, 'backup after re-import');
+    t = await gateText();
+    check(t.includes('Your identity key has been imported'),
+      'backup after import uses imported title');
+    check(!t.includes('has been created'),
+      'backup after import does not say has been created');
+    // F-B: reload boots splash; tick adopts session (incl. identity_imported);
+    // Begin must then show the import backup title — not "created".
+    // Waiting for #save-pass right after reload is wrong (splash has #begin).
+    await cdp.send('Page.reload', {});
+    await cdp.waitFor(`!!document.querySelector('#begin')`, 'splash after import reload');
+    await sleep(400); // let tick() assign session + syncIdentityViaImport
+    await cdp.click('#begin');
+    await cdp.waitFor(`!!document.querySelector('#save-pass')`, 'backup after import reload Begin');
+    t = await gateText();
+    check(t.includes('Your identity key has been imported'),
+      'backup after import reload Begin still says imported');
+    check(!t.includes('has been created'),
+      'backup after import reload Begin does not say created');
+    // B1 / Gauge P2-3: raw API logout with NO applySession — tick() must
+    // poll session and route logged_out → landing (backup would stick otherwise).
+    await cdp.eval(`(async () => {
+      await fetch('/api/identity', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'logout' }) });
+    })()`, true);
+    await cdp.waitFor(`!!document.querySelector('#create-id')`,
+      'landing after import-title logout via tick', 15000);
 
     // Fresh loads boot the field-office theme until a POST applies the
     // saved profile theme, so re-enter the landing that way to measure
