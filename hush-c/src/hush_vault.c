@@ -104,6 +104,8 @@ static hush_status_t hush_vault_use_opener(hush_vault_session_t *session,
 static void hush_vault_wipe_http(hush_vault_http_t *http);
 static void hush_vault_wipe_call_secrets(hush_vault_call_t *call);
 static void hush_vault_wipe_session_secrets(hush_vault_session_t *session);
+static void hush_vault_zero(void *buf, size_t n);
+static void hush_vault_slist_free(struct curl_slist *list);
 
 /* libcurl requires this pointer. It is not a Hush dispatch table. */
 static size_t hush_vault_write_body(char *ptr, size_t size, size_t nmemb,
@@ -161,18 +163,43 @@ hush_status_t hush_vault_session_call(hush_vault_call_t *out,
 }
 
 
+void (*hush_vault_zero_hook)(const void *buf, size_t n) = NULL;
+
+static void hush_vault_zero(void *buf, size_t n)
+{
+    if (hush_vault_zero_hook != NULL)
+        hush_vault_zero_hook(buf, n);
+    hush_secure_zero(buf, n);
+}
+
+/* Wipes each strdup'd header string, then frees the list. libcurl may still
+ * keep request-buffer copies we cannot reach. */
+static void hush_vault_slist_free(struct curl_slist *list)
+{
+    struct curl_slist *node = list;
+
+    while (node != NULL) {
+        if (node->data != NULL)
+            hush_vault_zero(node->data, strlen(node->data) + 1);
+        node = node->next;
+    }
+    curl_slist_free_all(list);
+}
+
+/* Zeros the HTTP body buffer. http must not be NULL. */
 static void hush_vault_wipe_http(hush_vault_http_t *http)
 {
     assert(http != NULL);
-    hush_secure_zero(http->body, sizeof(http->body));
+    hush_vault_zero(http->body, sizeof(http->body));
     http->http_status = 0;
 }
 
+/* Zeros call-log body and token copies. call must not be NULL. */
 static void hush_vault_wipe_call_secrets(hush_vault_call_t *call)
 {
     assert(call != NULL);
-    hush_secure_zero(call->body, sizeof(call->body));
-    hush_secure_zero(call->token, sizeof(call->token));
+    hush_vault_zero(call->body, sizeof(call->body));
+    hush_vault_zero(call->token, sizeof(call->token));
     call->has_body = 0;
     call->has_token = 0;
 }
@@ -184,8 +211,8 @@ static void hush_vault_wipe_session_secrets(hush_vault_session_t *session)
     size_t idx = 0;
 
     assert(session != NULL);
-    hush_secure_zero(session->token, sizeof(session->token));
-    hush_secure_zero(session->jwt, sizeof(session->jwt));
+    hush_vault_zero(session->token, sizeof(session->token));
+    hush_vault_zero(session->jwt, sizeof(session->jwt));
     session->ttl_seconds = 0;
     session->minted = 0;
     for (idx = 0; idx < (size_t)HUSH_VAULT_CALL_MAX; ++idx)
@@ -359,12 +386,12 @@ static hush_status_t hush_vault_header_list(struct curl_slist **out,
     wrote = snprintf(token_header, sizeof(token_header),
                      "X-Vault-Token: %s", call->token);
     if (wrote < 0 || (size_t)wrote >= sizeof(token_header)) {
-        curl_slist_free_all(list);
+        hush_vault_slist_free(list);
         st = HUSH_ERR_FULL;
         goto done;
     }
     if (curl_slist_append(list, token_header) == NULL) {
-        curl_slist_free_all(list);
+        hush_vault_slist_free(list);
         st = HUSH_ERR_IO;
         goto done;
     }
@@ -372,7 +399,7 @@ static hush_status_t hush_vault_header_list(struct curl_slist **out,
     assert(*out != NULL);
     st = HUSH_OK;
 done:
-    hush_secure_zero(token_header, sizeof(token_header));
+    hush_vault_zero(token_header, sizeof(token_header));
     return st;
 }
 
@@ -444,14 +471,14 @@ static hush_status_t hush_vault_curl(hush_vault_http_t *out,
         st = HUSH_ERR_IO;
     if (st == HUSH_OK && curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &code) != CURLE_OK)
         st = HUSH_ERR_IO;
-    curl_slist_free_all(headers);
+    hush_vault_slist_free(headers);
     curl_easy_cleanup(easy);
     if (st == HUSH_OK) {
         out->http_status = (int32_t)code;
         hush_vault_copy(out->body, sizeof(out->body), storage);
         assert(out->http_status >= 0);
     }
-    hush_secure_zero(storage, sizeof(storage));
+    hush_vault_zero(storage, sizeof(storage));
     return st;
 }
 
@@ -550,7 +577,7 @@ static hush_status_t hush_vault_accept_auth(hush_vault_session_t *session,
     assert(session != NULL);
     assert(json != NULL);
     next[0] = '\0';
-    hush_secure_zero(session->token, sizeof(session->token));
+    hush_vault_zero(session->token, sizeof(session->token));
     session->ttl_seconds = 0;
     if (hush_json_lookup(&token, json, "/auth/client_token") != HUSH_OK) {
         st = HUSH_ERR_DENIED;
@@ -577,7 +604,7 @@ static hush_status_t hush_vault_accept_auth(hush_vault_session_t *session,
     assert(session->token[0] != '\0');
     st = HUSH_OK;
 done:
-    hush_secure_zero(next, sizeof(next));
+    hush_vault_zero(next, sizeof(next));
     return st;
 }
 
@@ -631,7 +658,7 @@ static hush_status_t hush_vault_adopt_token(hush_vault_session_t *session,
     if (len + 1 > sizeof(session->token))
         return HUSH_ERR_FULL;
     memcpy(session->token, token, len + 1);
-    hush_secure_zero(session->jwt, sizeof(session->jwt));
+    hush_vault_zero(session->jwt, sizeof(session->jwt));
     session->ttl_seconds = 0;
     session->minted = 0;
     assert(session->minted == 0);
@@ -686,12 +713,12 @@ hush_status_t hush_vault_login(hush_vault_session_t *session, const char *jwt)
     st = hush_vault_store_jwt(session, jwt);
     if (st != HUSH_OK)
         return st;
-    hush_secure_zero(session->token, sizeof(session->token));
+    hush_vault_zero(session->token, sizeof(session->token));
     session->minted = 0;
     st = hush_vault_login_body(body, sizeof(body), session->jwt);
     if (st == HUSH_OK)
         st = hush_vault_post_auth(session, HUSH_VAULT_LOGIN_PATH, body);
-    hush_secure_zero(body, sizeof(body));
+    hush_vault_zero(body, sizeof(body));
     if (st != HUSH_OK)
         return st;
     session->minted = 1;
@@ -726,7 +753,7 @@ hush_status_t hush_vault_revoke(hush_vault_session_t *session)
     query.body = HUSH_VAULT_REVOKE_BODY;
     query.send_token = 1;
     st = hush_vault_exchange(session, &http, &query);
-    hush_secure_zero(session->token, sizeof(session->token));
+    hush_vault_zero(session->token, sizeof(session->token));
     session->ttl_seconds = 0;
     session->minted = 0;
     if (st == HUSH_OK)
@@ -891,10 +918,12 @@ hush_status_t hush_vault_open(hush_vault_session_t *session,
     if (!hush_pass_has(HUSH_VAULT_PASS_OPENER))
         return HUSH_ERR_NOT_FOUND;
     st = hush_pass_get(opener, sizeof(opener), HUSH_VAULT_PASS_OPENER);
-    if (st != HUSH_OK)
+    if (st != HUSH_OK) {
+        hush_vault_zero(opener, sizeof(opener));
         return st;
+    }
     st = hush_vault_use_opener(session, opener);
-    hush_secure_zero(opener, sizeof(opener));
+    hush_vault_zero(opener, sizeof(opener));
     if (st != HUSH_OK)
         return st;
     return hush_vault_read_ntfy(session, out);

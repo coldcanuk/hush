@@ -250,7 +250,7 @@ fi
 if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libcurl; then
     echo "FOUND:   libcurl ($(pkg-config --modversion libcurl))"
 else
-    echo "MISSING: libcurl headers (install libcurl4-openssl-dev or your distro's libcurl-dev package)"
+    echo "MISSING: libcurl (need pkg-config and libcurl headers; on Debian/Ubuntu: pkg-config libcurl4-openssl-dev)"
     MISSING="$MISSING libcurl"
 fi
 

@@ -72,7 +72,7 @@ System-wide install and calling: `sudo make install PREFIX=/usr`, conference cal
 
 ## Build
 
-Build packages (Debian/Ubuntu names, same list CI installs): `gcc`, `make`, `libssl-dev`, `libcurl4-openssl-dev`, `python3`. Optional for window controls: `libx11-dev`. `./configure` fails with a clear `MISSING: libcurl` line naming `libcurl4-openssl-dev` when the libcurl headers are absent.
+Build packages (Debian/Ubuntu names, same list CI installs): `gcc`, `make`, `pkg-config`, `libssl-dev`, `libcurl4-openssl-dev`, `python3`. Optional for window controls: `libx11-dev`. `./configure` fails with a clear `MISSING: libcurl` line naming `libcurl4-openssl-dev` when the libcurl headers are absent.
 
 `make test` refuses to start until `make check-deps` can name every required tool. Required: `sh`, `python3`, `curl`, Node 22 or newer, `git`, `cc`, `make`, `ps`, `awk`, GNU `stat` (`stat -c`), and Chrome or Chromium (`HUSH_CHROME_BIN`, `google-chrome`, `chromium`, or `chromium-browser`). Optional, reported but not required: `Xvfb` (window checks skip without it) and `gcc` (`cc` is enough to compile; `gcc` is only a syntax check).
 
