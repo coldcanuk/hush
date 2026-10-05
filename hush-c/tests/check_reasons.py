@@ -719,6 +719,109 @@ def check_restart():
             relay.stop()
 
 
+
+def check_prompt_control_roundtrip(relay):
+    """Controls in system_prompt must round-trip as valid JSON.
+
+    Unescape decodes every HTTP JSON field; the session serializer must
+    escape all controls below space so POST /api/agent and GET /api/session
+    still parse. Names still refuse the same controls (checked earlier).
+    """
+    create = (
+        b'{"name":"Prompt Ctrl",'
+        b'"system_prompt":"Line\\tTwo\\rThree\\bX\\u001bY\\fZ",'
+        b'"provider":"grok-build","save_pass":false}'
+    )
+    status, ctype, raw = relay.call("POST", "/api/agent", create)
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(
+            f"POST /api/agent with control prompt is not JSON: {err}; "
+            f"HTTP {status} {raw[:160]!r}")
+        return
+    if status != 200 or not ctype.startswith("application/json"):
+        FAILURES.append(
+            f"create with control prompt: want 200 application/json; "
+            f"got HTTP {status} {ctype} {raw[:160]!r}")
+        return
+    agents = [a for a in session.get("agents", [])
+              if a.get("name") == "Prompt Ctrl"]
+    if not agents:
+        FAILURES.append("Prompt Ctrl missing from create session reply")
+        return
+    prompt = agents[0].get("prompt") or ""
+    want_chars = (
+        ("tab", "\t"),
+        ("cr", "\r"),
+        ("bs", "\b"),
+        ("esc", "\x1b"),
+        ("ff", "\f"),
+    )
+    missing = [label for label, ch in want_chars if ch not in prompt]
+    if missing:
+        FAILURES.append(
+            f"create session prompt missing decoded controls {missing}; "
+            f"got {prompt!r}")
+    else:
+        print("reasons: ok create session JSON with control prompt parses")
+
+    status, ctype, raw = relay.call("GET", "/api/session")
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(
+            f"GET /api/session after control prompt is not JSON: {err}; "
+            f"HTTP {status} {raw[:160]!r}")
+        return
+    if status != 200:
+        FAILURES.append(f"GET /api/session after control prompt: HTTP {status}")
+        return
+    agents = [a for a in session.get("agents", [])
+              if a.get("name") == "Prompt Ctrl"]
+    if not agents:
+        FAILURES.append("Prompt Ctrl missing from GET /api/session")
+        return
+    prompt = agents[0].get("prompt") or ""
+    missing = [label for label, ch in want_chars if ch not in prompt]
+    if missing:
+        FAILURES.append(
+            f"GET session prompt missing decoded controls {missing}; "
+            f"got {prompt!r}")
+    else:
+        print("reasons: ok GET /api/session JSON with control prompt parses")
+
+    # Edit the same robot with more escaped controls; reply must stay JSON.
+    edit = (
+        b'{"action":"update","slug":"prompt-ctrl",'
+        b'"system_prompt":"Edit\\u0009A\\nB\\u001BY"}'
+    )
+    status, ctype, raw = relay.call("POST", "/api/agent", edit)
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(
+            f"edit with control prompt is not JSON: {err}; "
+            f"HTTP {status} {raw[:160]!r}")
+        return
+    if status != 200:
+        FAILURES.append(
+            f"edit with control prompt: want 200; got HTTP {status} "
+            f"{raw[:160]!r}")
+        return
+    agents = [a for a in session.get("agents", [])
+              if a.get("slug") == "prompt-ctrl"]
+    if not agents:
+        FAILURES.append("prompt-ctrl missing after edit")
+        return
+    prompt = agents[0].get("prompt") or ""
+    if "\t" not in prompt or "\n" not in prompt or "\x1b" not in prompt:
+        FAILURES.append(f"edit session prompt missing controls; got {prompt!r}")
+    else:
+        print("reasons: ok edit session JSON with control prompt parses")
+    relay.ok("/api/agent", {"action": "delete", "slug": "prompt-ctrl"})
+
+
 def check_context_size(relay):
     """A context text is refused past 4096 bytes, not silently cut."""
     files = {"context_name_0": "brief.md", "context_mime_0": "text/markdown"}
@@ -942,6 +1045,7 @@ def main():
             check_robot_slugs(relay)
             check_robot_rename(relay)
             check_name_rule(relay)
+            check_prompt_control_roundtrip(relay)
             check_context_size(relay)
             check_favorite_inputs(relay, owned)
             check_favorite_store(relay)

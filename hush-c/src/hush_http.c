@@ -839,6 +839,33 @@ static size_t hush_http_json_put_escape(char *dst, size_t dstsz, size_t off,
     }
     if (ch == 'u' && hush_http_json_take_u(p + 1, &code)) {
         *src = p + 1 + (size_t)HUSH_HTTP_JSON_HEX_DIGITS;
+        /* UTF-16 surrogates: join a high+low pair into one code point.
+         * Lone halves are rejected (consumed, not written) so we never
+         * emit CESU-8 or other invalid UTF-8. */
+        if (code >= 0xD800u && code <= 0xDBFFu) {
+            const char *q = *src;
+            unsigned lo = 0;
+
+            if (q[0] == '\\' && q[1] == 'u'
+                && hush_http_json_take_u(q + 2, &lo)
+                && lo >= 0xDC00u && lo <= 0xDFFFu) {
+                unsigned cp = 0x10000u
+                    + ((code - 0xD800u) << 10)
+                    + (lo - 0xDC00u);
+
+                *src = q + 2 + (size_t)HUSH_HTTP_JSON_HEX_DIGITS;
+                if (off + 4 >= dstsz)
+                    return off;
+                dst[off] = (char)(0xF0u | (cp >> 18));
+                dst[off + 1] = (char)(0x80u | ((cp >> 12) & 0x3Fu));
+                dst[off + 2] = (char)(0x80u | ((cp >> 6) & 0x3Fu));
+                dst[off + 3] = (char)(0x80u | (cp & 0x3Fu));
+                return off + 4;
+            }
+            return off;
+        }
+        if (code >= 0xDC00u && code <= 0xDFFFu)
+            return off;
         /* A decoded NUL would truncate the C string and hide trailing
          * letters. Keep a non-zero control so the print check refuses. */
         if (code == 0)
