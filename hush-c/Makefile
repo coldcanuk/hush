@@ -158,6 +158,11 @@ tests/test_%: tests/test_%.c libhush.a
 
 # test_vault links the in-tree fake curl stub (no real libcurl) and wraps
 # hush_secure_zero so wipe-pin tests observe vault wipes without a prod hook.
+# test_wipe_pins observes hush_secure_zero and BN_clear_free via ld --wrap only.
+tests/test_wipe_pins: tests/test_wipe_pins.c libhush.a
+	$(CC) $(CFLAGS) $< libhush.a -o $@ $(LDFLAGS) \
+		-Wl,--wrap=hush_secure_zero -Wl,--wrap=BN_clear_free
+
 tests/test_vault: tests/test_vault.c tests/fake_curl_vault.c tests/fake_curl_vault.h libhush.a
 	$(CC) $(CFLAGS) tests/test_vault.c tests/fake_curl_vault.c libhush.a -o $@ 		$(filter-out $(shell pkg-config --libs libcurl),$(LDFLAGS)) 		-Wl,--wrap=hush_secure_zero
 
@@ -178,6 +183,7 @@ test: check-deps $(TEST_BINS) hush-relay
 	export HUSH_AUTO_UPDATE=0; \
 	unset HUSH_HOME HUSH_CONFIG_DIR XDG_CONFIG_HOME; \
 	for t in $(TEST_BINS); do echo "RUN $$t"; ./$$t || exit 1; done; \
+	sh tests/check_mem_platforms.sh || exit 1; \
 	sh tests/check_pwa.sh || exit 1; \
 	sh tests/check_build.sh || exit 1; \
 	sh tests/check_stamp_mix.sh || exit 1; \
