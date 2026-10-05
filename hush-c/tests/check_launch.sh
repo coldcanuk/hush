@@ -543,6 +543,11 @@ if [ -z "$cue_at" ] || [ "$cue_at" -le "$touch_end" ] \
   || ! echo "$html" | grep -q -F -e 'const drawerRO = new ResizeObserver(syncDrawerOverflow);'; then
   fail "drawer bottom fade must show only when the drawer overflows (UI-M12d r5)"
 fi
+# #237 F-C: fade latch uses leaf content bottom (padding excluded).
+echo "$html" | grep -q -F 'parseFloat(cs.paddingBottom)' \
+  || fail "drawer fade must measure content bottom (exclude child padding)"
+echo "$html" | grep -q -F 'const visit = (el) =>' \
+  || fail "drawer fade must walk leaves (F-C': nested row padding must not count)"
 style_end=$(line_of '^</style>$')
 if [ -z "$style_end" ] || [ "$style_end" -le "$touch_end" ] \
   || echo "$html" | sed -n "${m12d_at},${style_end}p" | grep -q '\(height\|width\|block-size\): *44px'; then
@@ -641,7 +646,8 @@ echo "$html" | grep -q 'isContextFile' || fail "HTML missing MIME check"
 # words as the backup step; the retrieve command sits behind a details line.
 echo "$html" | grep -q -F 'Checked to save its key in your password manager.' || fail "pass checkbox copy"
 echo "$html" | grep -q -F '<details class="howto" id="agent-pass-howto"><summary>How to find it later</summary>' || fail "robot pass how-to details"
-echo "$html" | grep -q -F 'run <code>pass show hush/agents/&lt;robot-id&gt;/nsec</code>' || fail "robot pass retrieve command"
+echo "$html" | grep -q -F 'pass ls hush/agents' || fail "robot pass retrieve command"
+echo "$html" | grep -q -F '&lt;robot-id&gt;' && fail "robot pass howto must not invent robot-id" || true
 echo "$html" | grep -q 'Unix Password Manager' && fail "no Unix Password Manager jargon in the UI"
 # Pre-walk r5 (Ops FAIL-2): the profile Picture row is hidden whole, with
 # no placeholder copy (nothing saves a profile picture yet).
@@ -653,6 +659,18 @@ echo "$html" | grep -q 'savePass = true' || fail "checkbox defaults on"
 echo "$html" | grep -q 'lastGateHtml' || fail "gate paint must skip unchanged trees"
 echo "$html" | grep -q 'data-lpignore' || fail "nsec input must ignore password-manager autofill"
 echo "$html" | grep -q 'dialog class=\\\"secret\\\"' || fail "secret modal"
+# #234 B2: preview derives npub without logging in (mutant that also launches must die).
+prev=$(curl -sf -X POST "http://127.0.0.1:${port}/api/identity" \
+    -H 'Content-Type: application/json' \
+    -d '{"action":"preview","nsec":"nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5"}')
+echo "$prev" | grep -q '"ok":true' || fail "preview should return ok"
+echo "$prev" | grep -q '"npub":"npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"' \
+    || fail "preview should return the known matching npub"
+echo "$prev" | grep -q '"logged_in"' && fail "preview must not be a session reply"
+after_prev=$(curl -sf "http://127.0.0.1:${port}/api/session")
+echo "$after_prev" | grep -q '"logged_in":false' || fail "preview must leave session logged out"
+echo "$after_prev" | grep -q '"npub":""' || fail "preview must leave session npub empty"
+
 created=$(curl -sf -X POST "http://127.0.0.1:${port}/api/identity" \
     -H 'Content-Type: application/json' \
     -d '{"action":"create"}')
@@ -885,4 +903,42 @@ echo "$restored" | grep -q '"has_vibe":true' || fail "restart should restore vib
 echo "$restored" | grep -q '"name":"HQ"' || fail "restart should keep vibe name"
 echo "$restored" | grep -q '"slug":"incidents"' || fail "restart should keep channel"
 echo "$restored" | grep -q '"first_name":"Ada"' || fail "restart should keep profile"
+
+# #234 F-B + B1: tick block must syncIdentityViaImport after session=sess
+# and route !logged_in → landing (awk scoped to tick — not vacuous greps).
+awk '
+  /async function tick\(\)/ { in_tick=1; next }
+  in_tick && /^    (async )?function / { in_tick=0 }
+  in_tick && /session = sess;/ { sess=NR }
+  in_tick && sess && NR==sess+1 && /syncIdentityViaImport\(\);/ { sync=1 }
+  in_tick && /!session\.logged_in/ { lo=1 }
+  in_tick && lo && /page = "landing"/ { land=1 }
+  END {
+    if (!sync) { print "tick must call syncIdentityViaImport right after session = sess" > "/dev/stderr"; exit 1 }
+    if (!land) { print "tick must set page=landing when !session.logged_in" > "/dev/stderr"; exit 1 }
+  }
+' demo/index.html || fail "tick must syncIdentityViaImport and route logged_out to landing"
+
+# #234 F-A: #npub-preview wrap CSS present (UI@375 pin is in check_restart_ui).
+awk '
+  /#npub-preview \{/ { blk=1 }
+  blk && /overflow-wrap: anywhere/ { ow=1 }
+  blk && /word-break: break-all/ { wb=1 }
+  blk && /\.gate \.card/ { blk=0 }
+  END {
+    if (!ow || !wb) { print "#npub-preview must set overflow-wrap/word-break (F-A)" > "/dev/stderr"; exit 1 }
+  }
+' demo/index.html || fail "F-A #npub-preview wrap CSS missing"
+echo "$html" | grep -q -F '.gate .card { max-width: min(34rem, 100%); overflow-x: hidden; box-sizing: border-box; }' \
+  || fail "F-A .gate .card must hide horizontal overflow"
+
+# #237: paintSkillBoard before drawer show (gem flash).
+# Extract openAgentDrawer and require paintSkillBoard line number < show line.
+awk '
+  /function openAgentDrawer\(bot\)/ { in_fn=1 }
+  in_fn && /paintSkillBoard\(bot && bot\.slug\);/ { p=NR }
+  in_fn && /\$\("agent-drawer"\)\.classList\.add\("show"\);/ { s=NR; if (p>0 && p<s) ok=1; in_fn=0 }
+  END { if (!ok) { print "paintSkillBoard must precede agent-drawer show" > "/dev/stderr"; exit 1 } }
+' demo/index.html || fail "paintSkillBoard must precede agent-drawer show in openAgentDrawer"
+
 echo "launch routes ok"

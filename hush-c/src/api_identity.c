@@ -9,12 +9,15 @@
 #include "hush_http_internal.h"
 #include "hush_mem.h"
 #include "hush_pass.h"
+#include "hush_identity.h"
 
 /* Rotates the join token and returns the new plaintext exactly once. */
 static hush_status_t hush_http_serve_vibe_rotate(int fd);
 
 /* Imports an nsec and wipes the stack copy on every return. */
 static hush_status_t hush_http_import_nsec(int fd, const char *body);
+/* Derives npub from nsec without logging in; wipes secrets. */
+static hush_status_t hush_http_preview_nsec(int fd, const char *body);
 
 int hush_http_want_save_pass(const char *body)
 {
@@ -39,6 +42,8 @@ hush_status_t hush_http_serve_identity(int fd, const char *body)
         return hush_http_reply_session(fd, hush_launch_create_identity(hush_http_launch()));
     if (strcmp(action, "import") == 0)
         return hush_http_import_nsec(fd, body);
+    if (strcmp(action, "preview") == 0)
+        return hush_http_preview_nsec(fd, body);
     if (strcmp(action, "ack_backup") == 0)
         return hush_http_reply_session(fd,
                                        hush_launch_ack_backup(hush_http_launch(),
@@ -133,6 +138,36 @@ static hush_status_t hush_http_import_nsec(int fd, const char *body)
     st = hush_launch_import_identity(hush_http_launch(), secret);
     hush_secure_zero(secret, sizeof(secret));
     return hush_http_reply_session(fd, st);
+}
+
+/* Preview: derive the matching npub without changing login state. */
+static hush_status_t hush_http_preview_nsec(int fd, const char *body)
+{
+    char secret[HUSH_IDENTITY_NSEC_MAX] = {0};
+    hush_identity_t id;
+    hush_status_t st;
+    char out[HUSH_IDENTITY_NPUB_MAX + 48];
+    int n;
+
+    assert(body != NULL);
+    memset(&id, 0, sizeof(id));
+    if (!hush_http_json_field(body, "nsec", secret, sizeof(secret))) {
+        hush_secure_zero(secret, sizeof(secret));
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    }
+    st = hush_identity_import(&id, secret);
+    hush_secure_zero(secret, sizeof(secret));
+    if (st != HUSH_OK) {
+        hush_identity_clear(&id);
+        return hush_http_reply_session(fd, st);
+    }
+    n = snprintf(out, sizeof(out),
+                 "{\"ok\":true,\"npub\":\"%s\"}\n", id.npub);
+    hush_identity_clear(&id);
+    if (n < 0 || (size_t)n >= sizeof(out))
+        return hush_http_reply_session(fd, HUSH_ERR_FULL);
+    hush_http_reply(fd, "200 OK", "application/json", out, (size_t)n);
+    return HUSH_OK;
 }
 
 /* Rotates the join token and returns the new plaintext exactly once. */

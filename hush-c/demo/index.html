@@ -400,6 +400,14 @@
       background: transparent; color: var(--fg); border: 1px solid var(--line);
     }
     .help { margin-top: 16px; font-size: 0.8rem; color: var(--faint); }
+    /* #234 F-A: full npub must wrap inside the gate card at 375 (no page sidescroll). */
+    #npub-preview {
+      overflow-wrap: anywhere;
+      word-break: break-all;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    .gate .card { max-width: min(34rem, 100%); overflow-x: hidden; box-sizing: border-box; }
     .help button { background: none; border: 0; color: var(--accent); padding: 0; font: inherit; }
     .keybox {
       font-family: var(--mono); font-size: 0.82rem; word-break: break-all;
@@ -2484,7 +2492,7 @@ html[data-theme="dark"] #thread-send:active {
       <label class="passbox"><input id="agent-pass" type="checkbox" checked>
         Checked to save its key in your password manager.</label>
       <details class="howto" id="agent-pass-howto"><summary>How to find it later</summary>
-        <p>In a terminal, run <code>pass show hush/agents/&lt;robot-id&gt;/nsec</code>.</p></details>
+        <p>Saved robot keys live under <code>hush/agents/</code> in pass. Run <code>pass ls hush/agents</code> to list them, then <code>pass show</code> on the path you need.</p></details>
       <p class="warn" id="agent-err"></p>
       <div class="actions">
         <button class="btn" id="agent-save" type="button" aria-label="Create robot">Create<span class="act-noun"> robot</span></button>
@@ -2812,6 +2820,7 @@ html[data-theme="dark"] #thread-send:active {
     let session = { logged_in: false, ready: false, channels: [] };
     let page = "splash"; // splash detects, shows Payne branding, then advances to gate or hive
     let pendingNsec = "";
+    let identityViaImport = false;
     let keyRevealed = false;
     let savePass = true;
     let gateErr = "";
@@ -2991,8 +3000,17 @@ html[data-theme="dark"] #thread-send:active {
       });
     }
 
+    /* Keep identityViaImport in lockstep with every API session assign.
+       tick() used to do `session = sess` alone; after reload Begin then
+       painted backup with the create title while the server flag was true
+       (#234 F-B). */
+    function syncIdentityViaImport() {
+      identityViaImport = !!(session && session.identity_imported);
+    }
+
     function applySession(s) {
       session = s || session;
+      syncIdentityViaImport();
       if (session.ready && page !== "payne") page = "hive";
       else if (session.logged_in && !session.backup_acked) page = "backup";
       else if (session.logged_in && session.backup_acked && !session.has_vibe) page = "vibe";
@@ -3079,7 +3097,7 @@ html[data-theme="dark"] #thread-send:active {
       if (page === "import") {
         return card("Use an existing key",
           stepBar(1) +
-          "<p>Paste your secret key (nsec). Nothing is saved before the next step.</p>" +
+          "<p>Paste your secret key (nsec). We show the matching public key (npub) before anything is saved.</p>" +
           "<label for=\"nsec-in\">Secret key (nsec)</label>" +
           "<input id=\"nsec-in\" type=\"password\" autocomplete=\"off\" spellcheck=\"false\" data-lpignore=\"true\" data-form-type=\"other\" placeholder=\"nsec1…\">" +
           "<div class=\"help\" id=\"npub-preview\"></div>" +
@@ -3107,7 +3125,9 @@ html[data-theme="dark"] #thread-send:active {
           ? "<p class=\"warn\">" + neverShare + "</p>"
           : "<p class=\"warn\">" + neverShare + " Uncheck the box only if you do not want your password manager to keep it.</p>";
         return "<dialog class=\"secret\" id=\"secret-modal\" open>" +
-          card("Your unique identity key has been created",
+          card(identityViaImport
+            ? "Your identity key has been imported"
+            : "Your unique identity key has been created",
           stepBar(2) +
           "<p>This key is your account. Copy it now. Hush cannot recover it if you lose it.</p>" +
           "<div class=\"keybox" + (keyRevealed ? " revealed" : "") + "\" id=\"nsec-box\">" + shown + "</div>" +
@@ -3193,13 +3213,14 @@ html[data-theme="dark"] #thread-send:active {
 
     function bindGate() {
       const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("click", fn); };
-      on("create-id", () => postIdentity({ action: "create" }));
+      on("create-id", () => { identityViaImport = false; postIdentity({ action: "create" }); });
       on("use-id", () => { page = "import"; gateErr = ""; paint(); });
       on("show-help", () => { page = "help"; paint(); });
       on("back-help", () => { page = "landing"; paint(); });
       on("back-import", () => { page = "landing"; gateErr = ""; paint(); });
       on("do-import", () => {
         const nsec = ($("nsec-in") && $("nsec-in").value || "").trim();
+        identityViaImport = true;
         postIdentity({ action: "import", nsec: nsec });
       });
       on("reveal-key", () => { keyRevealed = !keyRevealed; paint(); });
@@ -3216,6 +3237,9 @@ html[data-theme="dark"] #thread-send:active {
       if (box) box.addEventListener("change", () => { savePass = box.checked; });
       on("begin", () => {
         gateErr = "";
+        /* Session may already be from tick(); re-sync so reload→Begin
+           keeps the import backup title (#234 F-B). */
+        syncIdentityViaImport();
         if (session.ready) page = "hive";
         else if (session.logged_in && !session.backup_acked) page = "backup";
         else if (session.logged_in && session.backup_acked && !session.has_vibe) page = "vibe";
@@ -3232,12 +3256,51 @@ html[data-theme="dark"] #thread-send:active {
         postJson("/api/vibe", { name: name, about: about, visibility: visibility });
       });
       const inp = $("nsec-in");
-      if (inp) inp.addEventListener("input", () => {
-        const v = inp.value.trim();
-        $("npub-preview").textContent = v.startsWith("nsec1")
-          ? "Looks like a secret key (nsec)."
-          : "";
-      });
+      if (inp) {
+        let previewTok = 0;
+        let previewTimer = 0;
+        inp.addEventListener("input", () => {
+          const v = inp.value.trim();
+          const box = $("npub-preview");
+          if (!box) return;
+          if (previewTimer) clearTimeout(previewTimer);
+          if (!v.startsWith("nsec1")) {
+            box.textContent = "";
+            box.dataset.npub = "";
+            previewTok++;
+            return;
+          }
+          /* Too short to be a real nsec1 (typically ~63 chars) — refuse
+             in the preview instead of clearing, so junk paste is honest. */
+          if (v.length < 20) {
+            box.textContent = "That does not look like a valid secret key.";
+            box.dataset.npub = "";
+            previewTok++;
+            return;
+          }
+          box.textContent = "Checking public key…";
+          const tok = ++previewTok;
+          previewTimer = setTimeout(async () => {
+            previewTimer = 0;
+            if (tok !== previewTok) return;
+            try {
+              const data = await api("/api/identity", { action: "preview", nsec: v });
+              if (tok !== previewTok) return;
+              if (data && data.npub) {
+                box.textContent = "Matching public key (npub): " + data.npub;
+                box.dataset.npub = data.npub;
+              } else {
+                box.textContent = "That does not look like a valid secret key.";
+                box.dataset.npub = "";
+              }
+            } catch (e) {
+              if (tok !== previewTok) return;
+              box.textContent = "That does not look like a valid secret key.";
+              box.dataset.npub = "";
+            }
+          }, 280);
+        });
+      }
     }
 
     async function postIdentity(body) {
@@ -3979,7 +4042,8 @@ html[data-theme="dark"] #thread-send:active {
        the top of the fixed #quick-bar where it overlays the drawer (phone
        widths; the drawer's 64px bottom padding lets the last row scroll
        clear of it), else the client box bottom. Any part of a row past
-       that edge (even 1px) sets the class, and --fade-bottom lifts the
+       that edge (content bottom, past padding) sets the class (#237
+       F-C: no crisp text cut without fade), and --fade-bottom lifts the
        sticky fade so it ends at that edge, over the cut row. */
     function syncDrawerOverflow() {
       const d = $("fo-drawer");
@@ -3987,10 +4051,26 @@ html[data-theme="dark"] #thread-send:active {
       const inner = box.top + d.clientTop;
       const top = inner - d.scrollTop;
       let last = 0;
-      for (const c of d.children) {
-        if (!c.getClientRects().length) continue;
-        last = Math.max(last, c.getBoundingClientRect().bottom - top);
-      }
+      /* Walk to leaves and use each leaf's content bottom. Direct-child
+         inset alone still counted blank padding inside #fo-individuals
+         rows (7px .fo-person padding) as overflow — false fade over a
+         fully visible Marshal at 375 (#237 F-C'). */
+      const visit = (el) => {
+        if (!el.getClientRects().length) return;
+        let hasKid = false;
+        for (const c of el.children) {
+          if (!c.getClientRects().length) continue;
+          hasKid = true;
+          visit(c);
+        }
+        if (hasKid) return;
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        const inset = (parseFloat(cs.paddingBottom) || 0)
+          + (parseFloat(cs.borderBottomWidth) || 0);
+        last = Math.max(last, r.bottom - top - inset);
+      };
+      for (const c of d.children) visit(c);
       let seen = d.clientHeight;
       const qb = $("quick-bar");
       if (qb && qb.getClientRects().length) {
@@ -4714,7 +4794,6 @@ html[data-theme="dark"] #thread-send:active {
       if ($("agent-clone"))
         $("agent-clone").disabled = !(bot && bot.slug && bot.slug !== PAYNE_SLUG);
       paintVoiceRow(bot && bot.voice);
-      loadSkillCatalog(bot && bot.slug);
       refreshFavorites();
       {
         const parsed = parsePicId(draftPicture);
@@ -4724,6 +4803,10 @@ html[data-theme="dark"] #thread-send:active {
       paintAgentPicPicker();
       paintProviderPencil();
       loadProviders();
+      /* #237: reset gems/watermark before first paint so Raise after Edit
+         locked does not flash the previous robot's disabled loadout. */
+      paintSkillBoard(bot && bot.slug);
+      loadSkillCatalog(bot && bot.slug);
       $("agent-drawer").classList.add("show");
     }
 
@@ -8414,8 +8497,15 @@ html[data-theme="dark"] #thread-send:active {
         if (pres && pres.lines)
           lastPresence = pres.lines;
         session = sess;
+        syncIdentityViaImport();
         whisperReady = !!st.whisper;
         if (session.ready && page !== "payne") page = "hive";
+        else if (!session.logged_in
+            && page !== "import" && page !== "help" && page !== "splash")
+          /* API logout (or expired session) must leave backup/vibe the same
+             way applySession does. Do not auto-jump splash→backup here —
+             Begin owns that path (#234 F-B). */
+          page = "landing";
         paint();
         badge(true, session.npub ? session.npub.slice(0, 12) + "…" : "listening",
           st.port ? "Relay listening on port " + st.port : "");
