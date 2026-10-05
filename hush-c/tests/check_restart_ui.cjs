@@ -483,12 +483,21 @@ async function main() {
     // #234: import promises the matching npub and shows the full key before save.
     check(t.includes('Paste your secret key (nsec). We show the matching public key (npub) before anything is saved.'),
       'import card promises matching npub before save');
+    // Short junk (under the nsec1 length floor): refuse immediately, no API.
     await cdp.eval(`(() => { const i = document.querySelector('#nsec-in'); i.value = 'nsec1example';
       i.dispatchEvent(new Event('input')); })()`);
-    await sleep(450);
-    const previewBad = await cdp.eval(`document.querySelector('#npub-preview').textContent`);
-    check(/does not look like a valid|Checking public key/i.test(previewBad),
-      `import preview rejects junk nsec: ${previewBad}`);
+    await sleep(50);
+    let previewBad = await cdp.eval(`document.querySelector('#npub-preview').textContent`);
+    check(previewBad === 'That does not look like a valid secret key.',
+      `import preview rejects short junk nsec: ${JSON.stringify(previewBad)}`);
+    // Long junk hits preview API and must still refuse (not blank).
+    await cdp.eval(`(() => { const i = document.querySelector('#nsec-in');
+      i.value = 'nsec1exampleexampleexampleexampleexampleexampleexamplexx';
+      i.dispatchEvent(new Event('input')); })()`);
+    await sleep(500);
+    previewBad = await cdp.eval(`document.querySelector('#npub-preview').textContent`);
+    check(previewBad === 'That does not look like a valid secret key.',
+      `import preview rejects long junk nsec via API: ${JSON.stringify(previewBad)}`);
     const knownNsec = 'nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5';
     const knownNpub = 'npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg';
     await cdp.eval(`(() => { const i = document.querySelector('#nsec-in'); i.value = ${JSON.stringify(knownNsec)};

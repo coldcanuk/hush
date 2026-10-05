@@ -3244,8 +3244,16 @@ html[data-theme="dark"] #thread-send:active {
           const box = $("npub-preview");
           if (!box) return;
           if (previewTimer) clearTimeout(previewTimer);
-          if (!v.startsWith("nsec1") || v.length < 20) {
+          if (!v.startsWith("nsec1")) {
             box.textContent = "";
+            box.dataset.npub = "";
+            previewTok++;
+            return;
+          }
+          /* Too short to be a real nsec1 (typically ~63 chars) — refuse
+             in the preview instead of clearing, so junk paste is honest. */
+          if (v.length < 20) {
+            box.textContent = "That does not look like a valid secret key.";
             box.dataset.npub = "";
             previewTok++;
             return;
