@@ -54,7 +54,7 @@ typedef struct {
     char *out;
     size_t outsz;
     size_t *off;
-    const char *dir;
+    char *dir; /* writable loadouts path; sized HUSH_HOME_PATH_MAX */
     int *first;
     size_t valid;
     int dropped;
@@ -127,12 +127,9 @@ static int hush_favorite_name_cmp(const void *a, const void *b);
 /* qsort items then put_one each into the list JSON. */
 static hush_status_t hush_favorite_emit_sorted(hush_favorite_scan_t *scan);
 
-/* Scan + emit into out; caller owns items alloc/free. */
+/* Scan + emit via scan fields; caller owns items alloc/free. */
 static hush_status_t hush_favorite_list_body(hush_favorite_scan_t *scan,
-                                             char *dir, size_t dirsz,
-                                             const char *robot,
-                                             char *out, size_t outsz,
-                                             size_t *off);
+                                             const char *robot);
 
 /* Gates, creates, formats, then atomically stores one favorite. */
 static hush_status_t hush_favorite_commit(const char *dir, const char *slug,
@@ -418,8 +415,7 @@ hush_status_t hush_favorite_list_json(const char *robot, char *out,
     if (items == NULL)
         return HUSH_ERR_IO;
     scan.items = items;
-    st = hush_favorite_list_body(&scan, dir, sizeof dir, robot, out, outsz,
-                                 &off);
+    st = hush_favorite_list_body(&scan, robot);
     free(items);
     if (st != HUSH_OK)
         return st;
@@ -427,27 +423,25 @@ hush_status_t hush_favorite_list_json(const char *robot, char *out,
 }
 
 static hush_status_t hush_favorite_list_body(hush_favorite_scan_t *scan,
-                                             char *dir, size_t dirsz,
-                                             const char *robot,
-                                             char *out, size_t outsz,
-                                             size_t *off)
+                                             const char *robot)
 {
     char esc[HUSH_SKILL_ROBOT_MAX * 2] = {0};
     int n = 0;
     hush_status_t st = HUSH_OK;
 
-    assert(scan != NULL && dir != NULL && robot != NULL);
-    assert(out != NULL && off != NULL && scan->items != NULL);
-    st = hush_favorite_loadouts(dir, dirsz, robot);
+    assert(scan != NULL && robot != NULL);
+    assert(scan->out != NULL && scan->off != NULL && scan->dir != NULL);
+    assert(scan->items != NULL && scan->outsz > 0);
+    st = hush_favorite_loadouts(scan->dir, HUSH_HOME_PATH_MAX, robot);
     if (st != HUSH_OK)
         return st;
     if (hush_favorite_escape(esc, sizeof esc, robot) != HUSH_OK)
         return HUSH_ERR_FULL;
-    n = snprintf(out, outsz, "%s%s%s", HUSH_FAVORITE_LIST_HEAD, esc,
-                 HUSH_FAVORITE_LIST_MID);
-    if (n < 0 || (size_t)n >= outsz)
+    n = snprintf(scan->out, scan->outsz, "%s%s%s", HUSH_FAVORITE_LIST_HEAD,
+                 esc, HUSH_FAVORITE_LIST_MID);
+    if (n < 0 || (size_t)n >= scan->outsz)
         return HUSH_ERR_FULL;
-    *off = (size_t)n;
+    *scan->off = (size_t)n;
     st = hush_favorite_scan_dir(scan);
     if (st != HUSH_OK)
         return st;

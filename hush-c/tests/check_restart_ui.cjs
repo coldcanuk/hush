@@ -1175,6 +1175,8 @@ async function main() {
       && fullPin.text.includes('FULL — 32'),
       `FULL1 #fav-full visible next to Save at 32: ${JSON.stringify(fullPin)}`);
     await cdp.eval(`(() => {
+      const err = document.querySelector('#agent-err');
+      if (err) err.textContent = 'Favorite saved on this relay. Save the robot to keep the loadout.';
       const i = document.querySelector('#fav-name');
       i.value = 'Brand New Cap';
       i.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1196,13 +1198,16 @@ async function main() {
     const keepPin = await cdp.eval(`({ name: document.querySelector('#fav-name').value,
       sent: window.__favSent,
       fullHidden: document.querySelector('#fav-full').hidden,
-      fullText: (document.querySelector('#fav-full').textContent || '').trim() })`);
+      fullText: (document.querySelector('#fav-full').textContent || '').trim(),
+      agentErr: (document.querySelector('#agent-err').textContent || '') })`);
     check(keepPin.name === 'Brand New Cap',
       `KEEP1 fav-name kept after refused new save: ${JSON.stringify(keepPin)}`);
     check(keepPin.sent === null,
       `FULL2 new-name refuse at 32 sent no save request: ${JSON.stringify(keepPin)}`);
     check(!keepPin.fullHidden && keepPin.fullText.includes('FULL — 32'),
       `FULL2 notice still shown after refuse: ${JSON.stringify(keepPin)}`);
+    check(keepPin.agentErr === '',
+      `ERR1 refuse clears #agent-err: ${JSON.stringify(keepPin)}`);
     await cdp.eval(`(async () => {
       const i = document.querySelector('#fav-name');
       i.value = 'Cap 0';
