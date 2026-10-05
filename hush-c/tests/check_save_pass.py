@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Issue #235: create/update with save_pass must not report plain OK on pass fail.
 
-Pins HTTP 400 reasons (missing|fail) and session robot_pass_error. Update with
-save_pass:true must store agents/<slug>/nsec. M7 template pass write; M8/M9
-update refuse + robot_pass_error. Path is pinned in test_save_pass.c.
+Pins HTTP 400 reasons (missing|fail) and session robot_pass_error. N1: update
+400 leaves roster unchanged. N2: save_pass off still offers templates to op.
+B1/B2 context why; B3 identity isolation; B4a no op widen when save_pass on.
+M7–M9 template pass write / update refuse. Path pinned in test_save_pass.c.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PASS_MISSING = "Could not save the robot's key to pass: pass is not available."
 PASS_FAIL = "Could not save the robot's key to pass: pass helper failed."
 PASS_PATH = "Could not save the robot's key to pass: path is too long."
+NO_FILES = "Ollama cannot read context files."
 
 FAILURES: list[str] = []
 
@@ -35,7 +37,8 @@ def free_port() -> int:
 
 
 class Relay:
-    def __init__(self, directory: Path, pass_helper: str, fake_dir: Path | None = None):
+    def __init__(self, directory: Path, pass_helper: str, fake_dir: Path | None = None,
+                 extra_env: dict | None = None):
         self.directory = directory
         self.home = directory / "home"
         self.port = free_port()
@@ -49,6 +52,8 @@ class Relay:
         )
         if fake_dir is not None:
             env["HUSH_FAKE_PASS_DIR"] = str(fake_dir)
+        if extra_env:
+            env.update(extra_env)
         env.pop("XDG_CONFIG_HOME", None)
         self.environment = env
         self.log = (directory / "relay.log").open("w+")
@@ -233,16 +238,28 @@ def check_update_honours():
             relay.stop()
 
 
+def op_titles(fake_op: Path) -> set[str]:
+    items = fake_op / "items" / "Hush"
+    if not items.is_dir():
+        return set()
+    return {p.name for p in items.iterdir() if p.is_file()}
 
 
 def check_template_pass_write():
-    """M7: vibe create with save_pass writes template keys to pass only."""
+    """M7: vibe create with save_pass writes template keys to pass only.
+    B4a: with fake op armed, save_pass on must not widen to op."""
     with tempfile.TemporaryDirectory(prefix="hush-sp-m7-") as raw:
         root = Path(raw)
         fake = root / "fakepass"
         fake.mkdir()
+        fake_op = root / "fakeop"
+        fake_op.mkdir()
         helper = str(ROOT / "tests" / "fake-pass.sh")
-        relay = Relay(root, helper, fake)
+        op_helper = str(ROOT / "tests" / "fake-op.py")
+        relay = Relay(root, helper, fake, extra_env={
+            "HUSH_OP_HELPER": op_helper,
+            "HUSH_FAKE_OP_DIR": str(fake_op),
+        })
         relay.start()
         try:
             relay.ok("/api/identity", {"action": "create"})
@@ -256,16 +273,50 @@ def check_template_pass_write():
                         f"M7 template pass write missing {need}; store={store}")
             else:
                 print("save_pass: ok M7 template keys in pass")
-            # B4: no widening — fake-pass only; op/secret helpers unset.
-            if any(n.startswith("agents_") and not n.endswith("_nsec")
-                   for n in store):
-                FAILURES.append(f"M7 unexpected pass entries: {store}")
+            titles = op_titles(fake_op)
+            for need in ("hush-agents-coach-nsec", "hush-agents-auditor-nsec",
+                         "hush-agents-marshal-nsec"):
+                if need in titles:
+                    FAILURES.append(
+                        f"B4a save_pass on must not widen to op; saw {need} in {titles}")
+            else:
+                print("save_pass: ok B4a no op widen when save_pass on")
+        finally:
+            relay.stop()
+
+
+def check_template_offer_when_save_pass_off():
+    """N2: save_pass off restores base offer — templates land in op."""
+    with tempfile.TemporaryDirectory(prefix="hush-sp-n2-") as raw:
+        root = Path(raw)
+        fake_op = root / "fakeop"
+        fake_op.mkdir()
+        op_helper = str(ROOT / "tests" / "fake-op.py")
+        # Pass helper override alone would hide PATH op; explicit OP_HELPER wins.
+        relay = Relay(root, "/nonexistent/pass", extra_env={
+            "HUSH_OP_HELPER": op_helper,
+            "HUSH_FAKE_OP_DIR": str(fake_op),
+        })
+        relay.start()
+        try:
+            relay.ok("/api/identity", {"action": "create"})
+            relay.ok("/api/identity", {"action": "ack_backup", "save_pass": False})
+            relay.ok("/api/vibe", {"name": "HQ", "about": "save-pass"})
+            titles = op_titles(fake_op)
+            for need in ("hush-agents-coach-nsec", "hush-agents-auditor-nsec",
+                         "hush-agents-marshal-nsec"):
+                if need not in titles:
+                    FAILURES.append(
+                        f"N2 save_pass off must offer templates to op; "
+                        f"missing {need}; have {titles}")
+            else:
+                print("save_pass: ok N2 templates offered to op when save_pass off")
         finally:
             relay.stop()
 
 
 def check_update_refuses_fail():
-    """M8/M9: update save_pass:true with failing helper → 400 + robot_pass_error."""
+    """M8/M9/N1: update save_pass:true with failing helper → 400, prompt unchanged."""
     with tempfile.TemporaryDirectory(prefix="hush-sp-m8-") as raw:
         root = Path(raw)
         helper = root / "failpass.sh"
@@ -275,13 +326,30 @@ def check_update_refuses_fail():
         relay.start()
         try:
             boot(relay)
-            relay.ok("/api/agent", robot("Echo", save_pass=False))
+            created = relay.ok("/api/agent", robot("Echo", save_pass=False))
+            agents = {a.get("slug"): a for a in created.get("agents", [])}
+            before = agents.get("echo", {}).get("system_prompt") or agents.get("echo", {}).get("prompt")
+            # Session agents may use 'prompt' field — probe both.
+            sess = relay.session()
+            echo = next((a for a in sess.get("agents", []) if a.get("slug") == "echo"), None)
+            if echo is None:
+                FAILURES.append("M8 setup missing echo")
+                return
+            prompt_before = echo.get("system_prompt") or echo.get("prompt") or ""
             expect_400(
                 relay, "update save_pass helper fail",
-                {"action": "update", "slug": "echo", "system_prompt": "Updated.",
+                {"action": "update", "slug": "echo", "system_prompt": "Changed.",
                  "save_pass": True},
                 PASS_FAIL)
             sess = relay.session()
+            echo = next((a for a in sess.get("agents", []) if a.get("slug") == "echo"), None)
+            prompt_after = (echo or {}).get("system_prompt") or (echo or {}).get("prompt") or ""
+            if prompt_after != prompt_before:
+                FAILURES.append(
+                    f"N1 update 400 must leave prompt unchanged; "
+                    f"before={prompt_before!r} after={prompt_after!r}")
+            else:
+                print("save_pass: ok N1 prompt unchanged after update 400")
             err = sess.get("robot_pass_error", "")
             if "pass helper failed" not in err and err != "save failed":
                 FAILURES.append(f"M9 update must set robot_pass_error; got {err!r}")
@@ -291,30 +359,124 @@ def check_update_refuses_fail():
                 FAILURES.append(
                     f"M9 must leave identity pass_error empty; got "
                     f"{sess.get('pass_error')!r}")
+            if sess.get("pass_saved") is True:
+                FAILURES.append("B3c update fail must not set pass_saved true")
         finally:
             relay.stop()
 
 
 def check_sticky_save_pass_false():
-    """B2: prior robot_pass_error must not poison later save_pass:false why."""
+    """B2: sticky robot_pass_error must not replace a refused save_pass:false why."""
     with tempfile.TemporaryDirectory(prefix="hush-sp-b2-") as raw:
-        relay = Relay(Path(raw), "/nonexistent/pass")
+        root = Path(raw)
+        fake = root / "fakepass"
+        fake.mkdir()
+        helper = str(ROOT / "tests" / "fake-pass.sh")
+        relay = Relay(root, "/nonexistent/pass")
         relay.start()
         try:
             boot(relay)
             expect_400(relay, "sticky setup missing", robot("Delta"), PASS_MISSING)
-            # Later create without save_pass must succeed (offer path).
-            status, _, raw = relay.call(
-                "POST", "/api/agent", robot("Foxtrot", save_pass=False))
-            if status != 200:
-                FAILURES.append(
-                    f"B2 save_pass:false after sticky want 200; "
-                    f"got {status} {raw[:200]!r}")
+            # Refused save_pass:false with Ollama+context must keep context why.
+            status, ctype, raw = relay.call(
+                "POST", "/api/agent",
+                robot("Foxtrot", save_pass=False, provider="ollama",
+                      context_name_0="brief.md",
+                      context_mime_0="text/markdown",
+                      context_text_0="hi"))
+            want = (NO_FILES + "\n").encode()
+            if status == 400 and raw == want and ctype.startswith("text/plain"):
+                print("save_pass: ok B2 sticky does not steal context why")
             else:
-                print("save_pass: ok B2 sticky does not block save_pass:false")
+                FAILURES.append(
+                    f"B2 save_pass:false context refuse want {want!r}; "
+                    f"got HTTP {status} {ctype} {raw[:200]!r}")
         finally:
             relay.stop()
 
+
+def check_context_denied_with_save_pass():
+    """B1a/B1b: save_pass:true + Ollama context keeps context why, not pass."""
+    with tempfile.TemporaryDirectory(prefix="hush-sp-b1-") as raw:
+        root = Path(raw)
+        fake = root / "fakepass"
+        fake.mkdir()
+        helper = str(ROOT / "tests" / "fake-pass.sh")
+        relay = Relay(root, helper, fake)
+        relay.start()
+        try:
+            boot(relay)
+            expect_400(
+                relay, "B1 save_pass + ollama context",
+                robot("Golf", save_pass=True, provider="ollama",
+                      context_name_0="brief.md",
+                      context_mime_0="text/markdown",
+                      context_text_0="hi"),
+                NO_FILES)
+            sess = relay.session()
+            if sess.get("robot_pass_error", ""):
+                FAILURES.append(
+                    f"B1 must leave robot_pass_error empty; got "
+                    f"{sess.get('robot_pass_error')!r}")
+            else:
+                print("save_pass: ok B1 context why leaves robot_pass_error empty")
+            if sess.get("pass_error", ""):
+                FAILURES.append(
+                    f"B1 must leave identity pass_error empty; got "
+                    f"{sess.get('pass_error')!r}")
+        finally:
+            relay.stop()
+
+
+def check_robot_success_pass_saved():
+    """B3b: successful robot save_pass must not set identity pass_saved."""
+    with tempfile.TemporaryDirectory(prefix="hush-sp-b3b-") as raw:
+        root = Path(raw)
+        fake = root / "fakepass"
+        fake.mkdir()
+        helper = str(ROOT / "tests" / "fake-pass.sh")
+        relay = Relay(root, helper, fake)
+        relay.start()
+        try:
+            boot(relay)
+            if relay.session().get("pass_saved") is True:
+                FAILURES.append("B3b setup: pass_saved already true")
+                return
+            relay.ok("/api/agent", robot("Hotel", save_pass=True))
+            sess = relay.session()
+            if sess.get("pass_saved") is True:
+                FAILURES.append("B3b robot success must leave pass_saved false")
+            else:
+                print("save_pass: ok B3b pass_saved stays false after robot save")
+        finally:
+            relay.stop()
+
+
+
+def check_seed_never_blocks_vibe():
+    """M6: save_pass true + missing pass must still create vibe (KEY_NONE seed)."""
+    with tempfile.TemporaryDirectory(prefix="hush-sp-m6-") as raw:
+        root = Path(raw)
+        relay = Relay(root, "/nonexistent/pass")
+        relay.start()
+        try:
+            relay.ok("/api/identity", {"action": "create"})
+            relay.ok("/api/identity", {"action": "ack_backup", "save_pass": True})
+            status, _, rawb = relay.call("POST", "/api/vibe",
+                                         {"name": "HQ", "about": "save-pass"})
+            if status != 200:
+                FAILURES.append(
+                    f"M6 vibe with save_pass+missing pass want 200; "
+                    f"got {status} {rawb[:200]!r}")
+            else:
+                print("save_pass: ok M6 vibe not blocked when pass missing")
+            sess = relay.session()
+            slugs = {a.get("slug") for a in sess.get("agents", [])}
+            for need in ("coach", "auditor", "marshal"):
+                if need not in slugs:
+                    FAILURES.append(f"M6 templates missing {need}; {slugs}")
+        finally:
+            relay.stop()
 
 def check_c_defines():
     text = (ROOT / "src" / "api_agents.c").read_text()
@@ -331,8 +493,12 @@ def main():
     check_fail()
     check_update_honours()
     check_template_pass_write()
+    check_template_offer_when_save_pass_off()
     check_update_refuses_fail()
     check_sticky_save_pass_false()
+    check_context_denied_with_save_pass()
+    check_robot_success_pass_saved()
+    check_seed_never_blocks_vibe()
     if FAILURES:
         for line in FAILURES:
             print(f"save_pass check failed: {line}", file=sys.stderr)

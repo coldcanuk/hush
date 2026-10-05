@@ -668,7 +668,6 @@ static int hush_launch_renames_to_payne(const hush_launch_t *launch,
            !hush_roster_is_same_name(in->name, agent->name);
 }
 
-
 /* Names this request's robot pass outcome. Identity pass_saved/pass_error
  * stay untouched (B3). Clear robot_pass_error on entry when save_pass so a
  * prior failure cannot stick into a later refusal (B1/B2). */
@@ -805,13 +804,20 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         in.has_skills = 1;
         in.locked = 1;
         /* Templates: never block vibe on pass. #235 hard-refuse is API-only. */
-        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
-                                   HUSH_ROSTER_KEY_NONE, NULL));
+        /* N2: save_pass off keeps base offer(op/secret); on = pass-only. */
         if (launch->save_pass) {
-            const hush_roster_agent_t *seeded;
+            HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
+                                       HUSH_ROSTER_KEY_NONE, NULL));
+            {
+                const hush_roster_agent_t *seeded;
 
-            seeded = &launch->roster.agents[launch->roster.nagents - 1];
-            (void)hush_roster_write_agent_pass(seeded->slug, seeded->id.nsec);
+                seeded = &launch->roster.agents[launch->roster.nagents - 1];
+                (void)hush_roster_write_agent_pass(seeded->slug,
+                                                   seeded->id.nsec);
+            }
+        } else {
+            HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
+                                       HUSH_ROSTER_KEY_OFFER, NULL));
         }
     }
     if (!hush_launch_has_agent_slug(launch, "auditor")) {
@@ -827,13 +833,20 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         in.has_skills = 1;
         in.locked = 1;
         /* Templates: best-effort pass write; never block vibe (#235). */
-        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
-                                   HUSH_ROSTER_KEY_NONE, NULL));
+        /* N2: save_pass off keeps base offer(op/secret); on = pass-only. */
         if (launch->save_pass) {
-            const hush_roster_agent_t *seeded;
+            HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
+                                       HUSH_ROSTER_KEY_NONE, NULL));
+            {
+                const hush_roster_agent_t *seeded;
 
-            seeded = &launch->roster.agents[launch->roster.nagents - 1];
-            (void)hush_roster_write_agent_pass(seeded->slug, seeded->id.nsec);
+                seeded = &launch->roster.agents[launch->roster.nagents - 1];
+                (void)hush_roster_write_agent_pass(seeded->slug,
+                                                   seeded->id.nsec);
+            }
+        } else {
+            HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
+                                       HUSH_ROSTER_KEY_OFFER, NULL));
         }
     }
     if (!hush_launch_has_agent_slug(launch, "marshal")) {
@@ -858,13 +871,20 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         hush_launch_push_template_skill(&in, "system:token-budget");
         in.has_skills = 1;
         in.locked = 1;
-        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
-                                   HUSH_ROSTER_KEY_NONE, NULL));
+        /* N2: save_pass off keeps base offer(op/secret); on = pass-only. */
         if (launch->save_pass) {
-            const hush_roster_agent_t *seeded;
+            HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
+                                       HUSH_ROSTER_KEY_NONE, NULL));
+            {
+                const hush_roster_agent_t *seeded;
 
-            seeded = &launch->roster.agents[launch->roster.nagents - 1];
-            (void)hush_roster_write_agent_pass(seeded->slug, seeded->id.nsec);
+                seeded = &launch->roster.agents[launch->roster.nagents - 1];
+                (void)hush_roster_write_agent_pass(seeded->slug,
+                                                   seeded->id.nsec);
+            }
+        } else {
+            HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
+                                       HUSH_ROSTER_KEY_OFFER, NULL));
         }
     }
     return hush_launch_save_vibe(launch);
@@ -884,8 +904,8 @@ hush_status_t hush_launch_update_agent(hush_launch_t *launch, const char *slug,
         return HUSH_ERR_PARSE;
     if (save_pass)
         launch->robot_pass_error[0] = '\0';
-    /* Roster first: do not write pass on a refused rename/update (P3). */
-    HUSH_TRY(hush_roster_update_agent(&launch->roster, slug, in));
+    /* Pass before roster: a pass 400 must leave the robot byte-identical
+     * in memory (no vibe save). */
     if (save_pass) {
         st = hush_roster_save_agent_pass(&launch->roster, slug);
         if (st != HUSH_OK) {
@@ -894,6 +914,7 @@ hush_status_t hush_launch_update_agent(hush_launch_t *launch, const char *slug,
         }
         launch->robot_pass_error[0] = '\0';
     }
+    HUSH_TRY(hush_roster_update_agent(&launch->roster, slug, in));
     return hush_launch_save_vibe(launch);
 }
 

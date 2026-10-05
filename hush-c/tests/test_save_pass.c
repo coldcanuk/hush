@@ -236,7 +236,6 @@ static void test_update_honours_save_pass(void)
     hush_store_destroy(store);
 }
 
-
 /* Update save_pass:true must refuse when pass cannot store (M8/M9). */
 static void test_update_refuses_pass_fail(void)
 {
@@ -278,6 +277,103 @@ static void test_update_refuses_pass_fail(void)
            "updfail surfaces robot_pass_error");
     expect(launch.pass_error[0] == '\0',
            "updfail leaves identity pass_error alone");
+    /* N1: roster must stay byte-identical after pass 400. */
+    a = hush_roster_agent_by_slug(&launch.roster, slug);
+    expect(a != NULL, "updfail Echo still present");
+    if (a != NULL)
+        expect(strcmp(a->prompt, "Walk the floor.") == 0,
+               "updfail prompt unchanged after 400");
+    hush_store_destroy(store);
+}
+
+
+/* B1a/B1b: context DENIED must not name a robot pass outcome. */
+static void test_context_denied_keeps_pass_st(void)
+{
+    static hush_launch_t launch;
+    hush_store_t *store = NULL;
+    hush_roster_agent_in_t in;
+    char home[128];
+    char pass_dir[128];
+    size_t before;
+
+    wipe_helpers();
+    snprintf(pass_dir, sizeof(pass_dir), "/tmp/hush-sp-b1-%d", (int)getpid());
+    expect(arm_pass(pass_dir), "b1 arm");
+    if (!raise_hive(&launch, home, sizeof(home))) {
+        expect(0, "b1 hive");
+        return;
+    }
+    expect(hush_store_create(&store) == HUSH_OK, "b1 store");
+    before = launch.roster.nagents;
+    fill_agent(&in, "Golf");
+    memcpy(in.provider, HUSH_ROSTER_PROVIDER_OLLAMA,
+           sizeof(HUSH_ROSTER_PROVIDER_OLLAMA));
+    memcpy(in.context[0].name, "brief.md", 9);
+    memcpy(in.context[0].mime, HUSH_ROSTER_MIME_PLAIN,
+           sizeof(HUSH_ROSTER_MIME_PLAIN));
+    in.context[0].text = "hi";
+    in.context[0].bytes = 2;
+    in.ncontext = 1;
+    expect(hush_launch_add_agent(&launch, store, &in, 1) == HUSH_ERR_DENIED,
+           "b1 context DENIED");
+    expect(launch.roster.nagents == before, "b1 added no robot");
+    expect(launch.robot_pass_error[0] == '\0',
+           "b1 leaves robot_pass_error empty");
+    expect(launch.pass_error[0] == '\0',
+           "b1 leaves identity pass_error empty");
+    hush_store_destroy(store);
+}
+
+/* B3b: robot create success must not set identity pass_saved. */
+static void test_robot_success_leaves_pass_saved(void)
+{
+    static hush_launch_t launch;
+    hush_store_t *store = NULL;
+    hush_roster_agent_in_t in;
+    char home[128];
+    char pass_dir[128];
+
+    wipe_helpers();
+    snprintf(pass_dir, sizeof(pass_dir), "/tmp/hush-sp-b3b-%d", (int)getpid());
+    expect(arm_pass(pass_dir), "b3b arm");
+    if (!raise_hive(&launch, home, sizeof(home))) {
+        expect(0, "b3b hive");
+        return;
+    }
+    expect(launch.pass_saved == 0, "b3b start pass_saved off");
+    expect(hush_store_create(&store) == HUSH_OK, "b3b store");
+    fill_agent(&in, "Hotel");
+    expect(hush_launch_add_agent(&launch, store, &in, 1) == HUSH_OK,
+           "b3b create save_pass=1");
+    expect(launch.pass_saved == 0, "b3b robot success leaves pass_saved");
+    expect(launch.pass_error[0] == '\0', "b3b identity pass_error empty");
+    hush_store_destroy(store);
+}
+
+/* B3c: robot pass fail must not clear identity pass_saved. */
+static void test_robot_fail_leaves_pass_saved(void)
+{
+    static hush_launch_t launch;
+    hush_store_t *store = NULL;
+    hush_roster_agent_in_t in;
+    char home[128];
+    char helper_dir[128];
+
+    wipe_helpers();
+    snprintf(helper_dir, sizeof(helper_dir), "/tmp/hush-sp-b3c-%d",
+             (int)getpid());
+    expect(arm_fail_pass(helper_dir), "b3c arm");
+    if (!raise_hive(&launch, home, sizeof(home))) {
+        expect(0, "b3c hive");
+        return;
+    }
+    launch.pass_saved = 1;
+    expect(hush_store_create(&store) == HUSH_OK, "b3c store");
+    fill_agent(&in, "India");
+    expect(hush_launch_add_agent(&launch, store, &in, 1) == HUSH_ERR_IO,
+           "b3c create fails");
+    expect(launch.pass_saved == 1, "b3c robot fail leaves pass_saved");
     hush_store_destroy(store);
 }
 
@@ -288,6 +384,9 @@ int main(void)
     test_fail_refuses_create();
     test_update_honours_save_pass();
     test_update_refuses_pass_fail();
+    test_context_denied_keeps_pass_st();
+    test_robot_success_leaves_pass_saved();
+    test_robot_fail_leaves_pass_saved();
     if (g_fail)
         return 1;
     printf("test_save_pass ok\n");
