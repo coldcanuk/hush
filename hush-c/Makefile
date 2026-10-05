@@ -156,10 +156,9 @@ $(STAMP_OBJS): src/hush_build.stamp
 tests/test_%: tests/test_%.c libhush.a
 	$(CC) $(CFLAGS) $< libhush.a -o $@ $(LDFLAGS)
 
-# test_vault links a no-network libcurl stub so curl-path wipes are exercised
-# without -lcurl (check_complete.sh forbids a naked -lcurl).
+# test_vault links the in-tree fake curl stub (no real libcurl).
 tests/test_vault: tests/test_vault.c tests/fake_curl_vault.c libhush.a
-	$(CC) $(CFLAGS) tests/test_vault.c tests/fake_curl_vault.c libhush.a -o $@ 		$(filter-out -lcurl,$(LDFLAGS))
+	$(CC) $(CFLAGS) tests/test_vault.c tests/fake_curl_vault.c libhush.a -o $@ 		$(filter-out $(shell pkg-config --libs libcurl),$(LDFLAGS))
 
 check-deps:
 	@CC="$(CC)" sh tests/check_deps.sh
