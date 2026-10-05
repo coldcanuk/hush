@@ -77,6 +77,7 @@ typedef struct {
     size_t call_count;
 } hush_vault_session_t;
 
+
 /* Zeros session. replies stays unset, so later calls use libcurl. */
 void hush_vault_session_init(hush_vault_session_t *session);
 

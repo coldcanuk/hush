@@ -156,6 +156,11 @@ $(STAMP_OBJS): src/hush_build.stamp
 tests/test_%: tests/test_%.c libhush.a
 	$(CC) $(CFLAGS) $< libhush.a -o $@ $(LDFLAGS)
 
+# test_vault links the in-tree fake curl stub (no real libcurl) and wraps
+# hush_secure_zero so wipe-pin tests observe vault wipes without a prod hook.
+tests/test_vault: tests/test_vault.c tests/fake_curl_vault.c tests/fake_curl_vault.h libhush.a
+	$(CC) $(CFLAGS) tests/test_vault.c tests/fake_curl_vault.c libhush.a -o $@ 		$(filter-out $(shell pkg-config --libs libcurl),$(LDFLAGS)) 		-Wl,--wrap=hush_secure_zero
+
 check-deps:
 	@CC="$(CC)" sh tests/check_deps.sh
 

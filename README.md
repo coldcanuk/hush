@@ -38,11 +38,11 @@ Under the hood (also on `main`): Nostr NIP-01 chat basics, `poll(2)` single-thre
 
 ## Quick start (actually ran on the VM)
 
-These commands succeeded on a cloud Ubuntu VM from base `44c66f88` (that apt line had no `curl`). The VM run was **not re-run at this head**; CI `build-test` runs apt, `./configure`, `make` and `make test` on ubuntu-24.04. The build prerequisites are `gcc`, `make`, `libssl-dev` (OpenSSL headers) and `python3`. Tools `make test` needs are listed under [Build](#build). `libx11-dev` is optional: without it `./configure` says so and Minimize/Maximize become no-ops.
+These commands succeeded on a cloud Ubuntu VM from base `44c66f88` (that apt line had no `curl`). The VM run was **not re-run at this head**; CI `build-test` runs apt, `./configure`, `make` and `make test` on ubuntu-24.04. The build prerequisites are `gcc`, `make`, `libssl-dev` (OpenSSL headers), `libcurl4-openssl-dev` (libcurl headers) and `python3`. Tools `make test` needs are listed under [Build](#build). `libx11-dev` is optional: without it `./configure` says so and Minimize/Maximize become no-ops.
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y gcc make libssl-dev python3 curl libx11-dev   # libx11-dev optional
+sudo apt-get install -y gcc make libssl-dev libcurl4-openssl-dev python3 curl libx11-dev   # libx11-dev optional
 ./configure
 make
 make test        # ends with: ALL TESTS PASSED
@@ -71,6 +71,8 @@ google-chrome --headless --disable-gpu --no-sandbox \
 System-wide install and calling: `sudo make install PREFIX=/usr`, conference calls need coturn's `turnserver` (the relay uses `$TURNSERVER` when it names an executable, else the first of `/usr/bin/turnserver`, `/usr/sbin/turnserver`, `/usr/local/bin/turnserver` and `/opt/homebrew/bin/turnserver`; it does not search `PATH`) plus Whisper for agent voice. Packaging: `make deb`, `make rpm`, `make flatpak`. See [Installation](#installation) and [`UI_SPEC.md`](UI_SPEC.md) §17.
 
 ## Build
+
+Build packages (Debian/Ubuntu names, same list CI installs): `gcc`, `make`, `pkg-config`, `libssl-dev`, `libcurl4-openssl-dev`, `python3`. Optional for window controls: `libx11-dev`. `./configure` fails with a clear `MISSING: libcurl` line naming `libcurl4-openssl-dev` when the libcurl headers are absent.
 
 `make test` refuses to start until `make check-deps` can name every required tool. Required: `sh`, `python3`, `curl`, Node 22 or newer, `git`, `cc`, `make`, `ps`, `awk`, GNU `stat` (`stat -c`), and Chrome or Chromium (`HUSH_CHROME_BIN`, `google-chrome`, `chromium`, or `chromium-browser`). Optional, reported but not required: `Xvfb` (window checks skip without it) and `gcc` (`cc` is enough to compile; `gcc` is only a syntax check).
 
