@@ -685,6 +685,10 @@ hush_status_t hush_launch_add_agent(hush_launch_t *launch,
 
 hush_status_t hush_launch_remove_agent(hush_launch_t *launch, const char *slug)
 {
+    char path[HUSH_PASS_PATH_MAX];
+    hush_status_t wipe = HUSH_OK;
+    hush_status_t st;
+
     if (launch == NULL || slug == NULL)
         return HUSH_ERR_ARG;
     if (slug[0] == '\0')
@@ -695,12 +699,25 @@ hush_status_t hush_launch_remove_agent(hush_launch_t *launch, const char *slug)
         return HUSH_ERR_DENIED;
     if (!hush_launch_has_agent_slug(launch, slug))
         return HUSH_ERR_NOT_FOUND;
+    /* Fresh identity on reuse: clear the signer from every store hush
+     * can reach before the roster forgets the id. Best-effort: a
+     * partial wipe is reported after the roster delete still lands. */
+    if (snprintf(path, sizeof(path), "agents/%s/nsec", slug) >= (int)sizeof(path))
+        return HUSH_ERR_ARG;
+    wipe = hush_keystore_remove(path);
     /* Favorites are keyed by robot id. Drop the files before the
      * roster forgets the id, or the next robot to reuse it inherits
      * them. Unlink only: nothing is renamed aside. */
-    HUSH_TRY(hush_favorite_clear_robot(slug));
-    HUSH_TRY(hush_roster_remove_agent(&launch->roster, slug));
-    return hush_launch_save_vibe(launch);
+    st = hush_favorite_clear_robot(slug);
+    if (st != HUSH_OK)
+        return st;
+    st = hush_roster_remove_agent(&launch->roster, slug);
+    if (st != HUSH_OK)
+        return st;
+    st = hush_launch_save_vibe(launch);
+    if (st != HUSH_OK)
+        return st;
+    return wipe;
 }
 
 hush_status_t hush_launch_clone_agent(hush_launch_t *launch,

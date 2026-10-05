@@ -83,4 +83,18 @@ if len(args) >= 2 and args[0] == "item" and args[1] == "create":
         handle.write(secret)
     sys.exit(0)
 
+if len(args) >= 2 and args[0] == "item" and args[1] == "delete":
+    if "--vault" not in args or "--title" not in args:
+        sys.exit(2)
+    vault = args[args.index("--vault") + 1]
+    title = args[args.index("--title") + 1]
+    write_meta(
+        "last_delete.json",
+        {"vault": vault, "title": title, "argv": args},
+    )
+    path = item_path(vault, title)
+    if os.path.isfile(path):
+        os.remove(path)
+    sys.exit(0)
+
 sys.exit(2)

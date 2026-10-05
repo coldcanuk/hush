@@ -126,6 +126,11 @@ static hush_status_t hush_keystore_secret_save(const char *path,
 static hush_status_t hush_keystore_secret_load(char *out, size_t outsz,
                                               const char *path);
 
+/* pass / op / secret-tool delete adapters. Missing is OK. */
+static hush_status_t hush_keystore_pass_remove(const char *path);
+static hush_status_t hush_keystore_op_remove(const char *path);
+static hush_status_t hush_keystore_secret_remove(const char *path);
+
 int hush_keystore_ready(hush_keystore_kind kind)
 {
     char bin[HUSH_KEYSTORE_CMD_MAX];
@@ -165,6 +170,43 @@ void hush_keystore_offer(int use_pass, const char *path, const char *secret)
     }
     if (hush_keystore_ready(HUSH_KEYSTORE_SECRET))
         (void)hush_keystore_save(HUSH_KEYSTORE_SECRET, path, secret);
+}
+
+hush_status_t hush_keystore_remove_kind(hush_keystore_kind kind,
+                                        const char *path)
+{
+    if (!hush_keystore_path_ok(path))
+        return HUSH_ERR_ARG;
+    if (!hush_keystore_ready(kind))
+        return HUSH_OK;
+    if (kind == HUSH_KEYSTORE_PASS)
+        return hush_keystore_pass_remove(path);
+    if (kind == HUSH_KEYSTORE_OP)
+        return hush_keystore_op_remove(path);
+    if (kind == HUSH_KEYSTORE_SECRET)
+        return hush_keystore_secret_remove(path);
+    return HUSH_ERR_ARG;
+}
+
+hush_status_t hush_keystore_remove(const char *path)
+{
+    static const hush_keystore_kind order[HUSH_KEYSTORE_STORE_COUNT] = {
+        HUSH_KEYSTORE_PASS,
+        HUSH_KEYSTORE_OP,
+        HUSH_KEYSTORE_SECRET
+    };
+    size_t i;
+    hush_status_t worst = HUSH_OK;
+
+    if (!hush_keystore_path_ok(path))
+        return HUSH_ERR_ARG;
+    for (i = 0; i < (size_t)HUSH_KEYSTORE_STORE_COUNT; i++) {
+        hush_status_t st = hush_keystore_remove_kind(order[i], path);
+
+        if (st != HUSH_OK && worst == HUSH_OK)
+            worst = st;
+    }
+    return worst;
 }
 
 hush_status_t hush_keystore_load_kind(hush_keystore_kind kind, char *out,
@@ -767,4 +809,56 @@ static hush_status_t hush_keystore_secret_load(char *out, size_t outsz,
     argv[5] = (char *)path;
     argv[6] = NULL;
     return hush_keystore_run(out, outsz, NULL, argv);
+}
+
+static hush_status_t hush_keystore_pass_remove(const char *path)
+{
+    assert(path != NULL);
+    if (!hush_pass_has(path))
+        return HUSH_OK;
+    return hush_pass_delete(path);
+}
+
+static hush_status_t hush_keystore_op_remove(const char *path)
+{
+    char bin[HUSH_KEYSTORE_CMD_MAX];
+    char item[HUSH_KEYSTORE_ITEM_MAX];
+    const char *vault = NULL;
+    char *argv[HUSH_KEYSTORE_ARGV_MAX];
+
+    assert(path != NULL);
+    if (!hush_keystore_bin(bin, sizeof(bin), HUSH_KEYSTORE_OP))
+        return HUSH_ERR_IO;
+    vault = hush_keystore_vault();
+    if (vault == NULL)
+        return HUSH_ERR_ARG;
+    if (hush_keystore_item(item, sizeof(item), path) != HUSH_OK)
+        return HUSH_ERR_ARG;
+    argv[0] = bin;
+    argv[1] = (char *)"item";
+    argv[2] = (char *)"delete";
+    argv[3] = (char *)"--vault";
+    argv[4] = (char *)vault;
+    argv[5] = (char *)"--title";
+    argv[6] = item;
+    argv[7] = NULL;
+    return hush_keystore_run(NULL, 0, NULL, argv);
+}
+
+static hush_status_t hush_keystore_secret_remove(const char *path)
+{
+    char bin[HUSH_KEYSTORE_CMD_MAX];
+    char *argv[HUSH_KEYSTORE_ARGV_MAX];
+
+    assert(path != NULL);
+    if (!hush_keystore_bin(bin, sizeof(bin), HUSH_KEYSTORE_SECRET))
+        return HUSH_ERR_IO;
+    argv[0] = bin;
+    argv[1] = (char *)"clear";
+    argv[2] = (char *)HUSH_KEYSTORE_ATTR_SERVICE;
+    argv[3] = (char *)HUSH_KEYSTORE_ATTR_HUSH;
+    argv[4] = (char *)HUSH_KEYSTORE_ATTR_ITEM;
+    argv[5] = (char *)path;
+    argv[6] = NULL;
+    return hush_keystore_run(NULL, 0, NULL, argv);
 }
