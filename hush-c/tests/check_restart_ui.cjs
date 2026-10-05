@@ -358,7 +358,8 @@ async function main() {
   const chromeProc = launched.chromeProc;
   const userDir = launched.userDir;
   if (process.env.ID1_CHROME_ONLY === '1') {
-    console.log('restart UI chrome ready (' + launched.httpBase + ')');
+    console.log('restart UI chrome ready (' + launched.httpBase +
+                ', deadline ' + deadlineMs + 'ms)');
     try { chromeProc.kill('SIGTERM'); } catch (e) { /* gone */ }
     process.exit(0);
   }

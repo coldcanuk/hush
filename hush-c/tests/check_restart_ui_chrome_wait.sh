@@ -32,6 +32,16 @@ echo "$out" | grep -q 'restart UI chrome ready' \
     || fail "expected chrome ready line, got: $out"
 echo "restart UI chrome wait ok (http poll)"
 
+# --- Default 30s: HUSH_TEST_WAIT_S unset → ready line shows deadline 30000ms ---
+unset HUSH_TEST_WAIT_S || true
+export HUSH_CHROME_BIN="$fake"
+export HUSH_FAKE_CHROME_DELAY_MS=250
+export ID1_CHROME_ONLY=1
+out=$(node tests/check_restart_ui.cjs 2>&1) || fail "default-30 wait failed: $out"
+echo "$out" | grep -q 'deadline 30000ms' \
+    || fail "default 30s pin want deadline 30000ms, got: $out"
+echo "restart UI chrome wait ok (default 30000ms)"
+
 # --- (a) never-ready: exit 1, exactly 2 launches, deadline text, fast ---
 tmpdir=$(mktemp -d)
 log="$tmpdir/launches"
