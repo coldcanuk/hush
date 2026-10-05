@@ -725,7 +725,8 @@ echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", last
   || fail "overflow toggle must compare last > seen + 0.5 (UI-M12d #229 W8)"
 
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
-# #241 walk nits: no harness jargon; favorites plural; default theme is paper.
+# #241 walk nits: provider note, favorites plural, Esc stack, B3 claim pins.
+# (Server default theme field-office is pinned later via vibe JSON.)
 echo "$html" | grep -q -F 'Provider / API priority (required)' \
   || fail "#241 provider note must not say harness"
 if echo "$html" | grep -q -F 'Harness / API priority'; then
@@ -733,11 +734,44 @@ if echo "$html" | grep -q -F 'Harness / API priority'; then
 fi
 echo "$html" | grep -q -F '((fav.skills || []).length === 1) ? "1 skill"' \
   || fail "#241 favorites must pluralize 1 skill"
-echo "$html" | grep -q -F 'new-chan-drawer' \
-  || fail "#241 new-chan drawer missing from dismiss stack check prep"
-# dismissJourneyLayer must list new-chan-drawer for Esc.
-if ! echo "$html" | grep -A6 'function dismissJourneyLayer' | grep -q 'new-chan-drawer'; then
+# dismissJourneyLayer must list new-chan-drawer and settings for Esc (not a
+# vacuous whole-file id grep — id="new-chan-drawer" always exists).
+if ! echo "$html" | grep -A8 'function dismissJourneyLayer' | grep -q 'new-chan-drawer'; then
   fail "#241 Esc must dismiss new-chan-drawer"
+fi
+if ! echo "$html" | grep -A8 'function dismissJourneyLayer' | grep -q '"settings"'; then
+  fail "#241 Esc must dismiss settings"
+fi
+# B3 / Gauge: claimed #241 UI bytes whose revert must FAIL this gate.
+echo "$html" | grep -q -F 'value="field-office" checked' \
+  || fail "#241 M1b theme radio default must be field-office"
+echo "$html" | grep -q -F 'Public key on file — open Profile to copy it.' \
+  || fail "#241 M2a Meet Major must not show raw npub"
+echo "$html" | grep -q -F 'lastStatus = { ok: false };' \
+  || fail "#241 M5 tick catch must clear lastStatus"
+echo "$html" | grep -q -F 'paintRosterPane(lastStatus);' \
+  || fail "#241 M5 tick catch must repaint roster/feed"
+echo "$html" | grep -q -F 'err.scrollIntoView({ block: "nearest", behavior: "smooth" })' \
+  || fail "#241 M7a skillNotice must scrollIntoView"
+echo "$html" | grep -q -F 'skillNotice("Keep at least one skill equipped.")' \
+  || fail "#241 M7b save path must use skillNotice"
+echo "$html" | grep -q -F 'st.ok ? ("Relay listening"' \
+  || fail "#241 M9a status feed must use plain Relay listening copy"
+if echo "$html" | grep -q -F '"RELAY LIVE"'; then
+  fail "#241 M9a status feed must not say RELAY LIVE"
+fi
+# M10: theme change posts /api/profile only when logged in.
+if ! echo "$html" | grep -A12 "input\[name='theme'\]" | grep -q 'if (!session.logged_in) return;'; then
+  # fallback: nearby comment + guard
+  if ! echo "$html" | grep -B2 -A6 'api("/api/profile", { theme:' | grep -q 'if (!session.logged_in) return;'; then
+    fail "#241 M10 theme POST must guard session.logged_in"
+  fi
+fi
+# B1: outside/backdrop click must test panel containment (not drawer.contains).
+echo "$html" | grep -q -F 'panel.contains(ev.target)' \
+  || fail "#241 B1 outside click must use panel.contains (not drawer.contains)"
+if echo "$html" | grep -A8 'const d = \$("new-chan-drawer");' | grep -q 'd.contains(ev.target)'; then
+  fail "#241 B1 must not use drawer.contains for outside click"
 fi
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + pills"
 echo "$html" | grep -q 'id="provider-username"' || fail "HTML missing provider username"

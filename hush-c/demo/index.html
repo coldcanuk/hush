@@ -4174,12 +4174,17 @@ html[data-theme="dark"] #thread-send:active {
       $("new-chan").focus();
     }));
     $("new-chan-close").addEventListener("click", () => $("new-chan-drawer").classList.remove("show"));
-    /* #241: Esc is in dismissJourneyLayer; outside click closes too. */
+    /* #241 B1: Esc is in dismissJourneyLayer. Outside/backdrop click closes.
+       .drawer is position:fixed; inset:0 — the dimmed area IS the drawer, so
+       d.contains(ev.target) is always true and must not be used. Close when
+       the target is the drawer itself or outside its .panel. */
     document.addEventListener("pointerdown", (ev) => {
       const d = $("new-chan-drawer");
       if (!d || !d.classList.contains("show")) return;
-      if (d.contains(ev.target)) return;
-      if (ev.target && ev.target.closest && ev.target.closest("#nav-new-channel"))
+      const panel = d.querySelector(".panel");
+      if (panel && panel.contains(ev.target)) return;
+      if (ev.target && ev.target.closest &&
+          (ev.target.closest("#nav-new-channel") || ev.target.closest("#add-chan")))
         return;
       d.classList.remove("show");
     });
@@ -5581,11 +5586,12 @@ html[data-theme="dark"] #thread-send:active {
         if (id !== except && $(id)) $(id).classList.remove("show");
       });
     }
-    /* UI-M4: single-dismiss Escape contract. Exactly one layer per press,
-       topmost first: held skill gem, leave chooser, robot editor and its
-       sub-panels, expanded inventory, character sheet, quick-slot picker,
-       phone overflow nav. Typing guards (navTyping / quickbarTyping) are
-       untouched: they guard the i/c/1-4 shortcuts, not Escape. */
+    /* UI-M4 / #241: single-dismiss Escape contract. Exactly one layer per
+       press, topmost first: held skill gem, leave chooser, robot editor and
+       its sub-panels, new-channel drawer, expanded inventory, character
+       sheet, Settings, quick-slot picker, phone overflow nav. Typing guards
+       (navTyping / quickbarTyping) are untouched: they guard the i/c/1-4
+       shortcuts, not Escape. */
     function dismissJourneyLayer() {
       const order = ["avatar-drawer", "forge-drawer", "skill-drawer",
         "new-chan-drawer", "agent-drawer", "inv-expand-drawer", "profile",

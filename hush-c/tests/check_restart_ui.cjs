@@ -1076,6 +1076,59 @@ async function main() {
     await cdp.shot('hive-fo');
     if (VIEW_W === 1440) await badgeFit('after login', 'npub1');
 
+    // #241 B1: New channel — backdrop (drawer itself) closes; inside .panel stays open.
+    {
+      const nc = await cdp.eval(`(() => {
+        const d = document.getElementById('new-chan-drawer');
+        if (!d) return { err: 'missing drawer' };
+        d.classList.add('show');
+        const panel = d.querySelector('.panel');
+        const pr = panel.getBoundingClientRect();
+        // Backdrop: top-left of the fixed inset drawer (outside the panel).
+        let bx = 20, by = Math.min(800, Math.floor(window.innerHeight - 20));
+        let hit = document.elementFromPoint(bx, by);
+        if (hit && panel.contains(hit)) {
+          bx = 20; by = 20;
+          hit = document.elementFromPoint(bx, by);
+        }
+        if (hit) hit.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true, clientX: bx, clientY: by, pointerId: 1
+        }));
+        const afterBackdrop = d.classList.contains('show');
+        d.classList.add('show');
+        const ix = pr.left + pr.width / 2, iy = pr.top + 40;
+        const hitIn = document.elementFromPoint(ix, iy);
+        if (hitIn) hitIn.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true, clientX: ix, clientY: iy, pointerId: 2
+        }));
+        const afterInside = d.classList.contains('show');
+        // Esc / Settings pin (P3): Settings open then Escape closes it.
+        d.classList.remove('show');
+        const settings = document.getElementById('settings');
+        let settingsAfterEsc = null;
+        if (settings) {
+          settings.classList.add('show');
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          settingsAfterEsc = settings.classList.contains('show');
+          settings.classList.remove('show');
+        }
+        return {
+          hitId: hit && hit.id, hitClass: hit && hit.className,
+          afterBackdrop, afterInside,
+          hitIn: hitIn && (hitIn.id || hitIn.tagName),
+          settingsAfterEsc
+        };
+      })()`);
+      console.log('new-chan outside click: ' + JSON.stringify(nc));
+      check(!nc.err, `new-chan drawer present for outside-click pin: ${JSON.stringify(nc)}`);
+      check(nc.afterBackdrop === false,
+        `#241 B1 backdrop click closes new-chan drawer: ${JSON.stringify(nc)}`);
+      check(nc.afterInside === true,
+        `#241 B1 inside-panel click keeps new-chan open: ${JSON.stringify(nc)}`);
+      check(nc.settingsAfterEsc === false,
+        `#241 P3 Esc closes Settings: ${JSON.stringify(nc)}`);
+    }
+
     // Pre-walk r4 (Gauge B1), no pass installed: the robot editor never
     // claims to save the key, on Raise or any Edit path.
     await cdp.waitFor(`!!document.querySelector('#robot-list .robot-card[data-slug="coach"]')`, 'robot cards');
