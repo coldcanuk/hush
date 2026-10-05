@@ -175,7 +175,7 @@ def check_fail():
     with tempfile.TemporaryDirectory(prefix="hush-sp-fail-") as raw:
         root = Path(raw)
         helper = root / "failpass.sh"
-        helper.write_text("#!/bin/sh\nexit 1\n")
+        helper.write_text("#!/bin/sh\ncat >/dev/null\nexit 1\n")
         helper.chmod(0o755)
         relay = Relay(root, str(helper))
         relay.start()
@@ -234,6 +234,12 @@ def check_update_honours():
                     f"before={store_before} after={store_after}")
             else:
                 print("save_pass: ok update honour stored agents_bravo_nsec")
+            # B3d: successful update must not flip identity pass_saved.
+            if relay.session().get("pass_saved") is True:
+                FAILURES.append(
+                    "B3d update success must leave identity pass_saved false")
+            else:
+                print("save_pass: ok B3d pass_saved stays false after update")
         finally:
             relay.stop()
 
@@ -320,7 +326,7 @@ def check_update_refuses_fail():
     with tempfile.TemporaryDirectory(prefix="hush-sp-m8-") as raw:
         root = Path(raw)
         helper = root / "failpass.sh"
-        helper.write_text("#!/bin/sh\nexit 1\n")
+        helper.write_text("#!/bin/sh\ncat >/dev/null\nexit 1\n")
         helper.chmod(0o755)
         relay = Relay(root, str(helper))
         relay.start()

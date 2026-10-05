@@ -61,7 +61,7 @@ static int arm_fail_pass(const char *dir)
     fp = fopen(path, "w");
     if (fp == NULL)
         return 0;
-    fputs("#!/bin/sh\nexit 1\n", fp);
+    fputs("#!/bin/sh\ncat >/dev/null\nexit 1\n", fp);
     fclose(fp);
     if (chmod(path, 0755) != 0)
         return 0;
@@ -227,12 +227,20 @@ static void test_update_honours_save_pass(void)
            "upd create left pass empty");
     memset(&in, 0, sizeof(in));
     snprintf(in.prompt, sizeof(in.prompt), "Updated prompt.");
+    /* B3e_update: preset identity pass_error; robot success must not clear it. */
+    snprintf(launch.pass_error, sizeof(launch.pass_error), "%s",
+             "pass helper failed");
+    expect(launch.pass_saved == 0, "upd start pass_saved off");
     expect(hush_launch_update_agent(&launch, slug, &in, 1) == HUSH_OK,
            "upd save_pass=1");
     expect(hush_keystore_load_kind(HUSH_KEYSTORE_PASS, loaded, sizeof(loaded),
                                    path) == HUSH_OK,
            "upd wrote pass");
     expect(strcmp(loaded, a->id.nsec) == 0, "upd pass holds Bravo nsec");
+    /* B3d: update success must not set identity pass_saved. */
+    expect(launch.pass_saved == 0, "b3d upd success leaves pass_saved");
+    expect(strcmp(launch.pass_error, "pass helper failed") == 0,
+           "b3e_upd leaves identity pass_error");
     hush_store_destroy(store);
 }
 
@@ -343,11 +351,15 @@ static void test_robot_success_leaves_pass_saved(void)
     }
     expect(launch.pass_saved == 0, "b3b start pass_saved off");
     expect(hush_store_create(&store) == HUSH_OK, "b3b store");
+    /* B3e_create: preset identity pass_error; robot success must not clear it. */
+    snprintf(launch.pass_error, sizeof(launch.pass_error), "%s",
+             "pass helper failed");
     fill_agent(&in, "Hotel");
     expect(hush_launch_add_agent(&launch, store, &in, 1) == HUSH_OK,
            "b3b create save_pass=1");
     expect(launch.pass_saved == 0, "b3b robot success leaves pass_saved");
-    expect(launch.pass_error[0] == '\0', "b3b identity pass_error empty");
+    expect(strcmp(launch.pass_error, "pass helper failed") == 0,
+           "b3e_create leaves identity pass_error");
     hush_store_destroy(store);
 }
 
