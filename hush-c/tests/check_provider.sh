@@ -2,19 +2,22 @@
 # Provider configure: GET/POST /api/provider, scan, no key echo.
 set -eu
 cd "$(dirname "$0")/.."
+. ./tests/hush_free_port.sh
 # Session-token gate plus a hermetic pass store, so the harness never reads the
 # operator's real credentials. curl() adds the hive token to every call.
 test_home="$(mktemp -d)"
-export HUSH_HOME="${HUSH_HOME:-$test_home/hush}"
+export HUSH_HOME="$test_home/hush"
+export HUSH_CONFIG_DIR="$HUSH_HOME/config"
 export HUSH_PASS_HELPER="$(pwd)/tests/fake-pass.sh"
 export HUSH_FAKE_PASS_DIR="$(mktemp -d)"
 curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" "$@"; }
 
 bin=./hush-relay
-port=18769
+port=$(hush_free_port) || exit 1
 log=$(mktemp)
 home=$(mktemp -d)
 pid=""
+bad_body=""
 
 cleanup() {
     if [ -n "$pid" ]; then
@@ -22,6 +25,7 @@ cleanup() {
         wait "$pid" 2>/dev/null || true
     fi
     rm -f "$log"
+    if [ -n "$bad_body" ]; then rm -f "$bad_body"; fi
     rm -rf "$home"
 }
 trap cleanup EXIT
@@ -135,7 +139,8 @@ scan=$(curl -s -X POST "http://127.0.0.1:${port}/api/provider/scan" \
 echo "$scan" | grep -q '"ok":false' || fail "scan should fail closed host"
 echo "$scan" | grep -q 'sk-' && fail "scan leaked key"
 
-bad=$(curl -s -o /tmp/hush-bad-provider -w '%{http_code}' \
+bad_body=$(mktemp)
+bad=$(curl -s -o "$bad_body" -w '%{http_code}' \
     -X POST "http://127.0.0.1:${port}/api/provider" \
     -H 'Content-Type: application/json' \
     -d '{"provider":"nope"}')

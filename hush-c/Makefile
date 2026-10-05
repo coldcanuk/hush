@@ -78,7 +78,7 @@ ICON_PANEL_OBJS := $(foreach s,$(ICON_PANELS),src/hush_icon_panel_$(s).o)
 TESTS := $(wildcard tests/test_*.c)
 TEST_BINS := $(TESTS:.c=)
 
-.PHONY: all test clean demo install uninstall check-prefix check-stamp
+.PHONY: all test clean demo install uninstall check-prefix check-stamp check-deps
 
 # An empty PREFIX would resolve BINDIR to /bin and let install/uninstall
 # scribble outside any prefix; an empty BINDIR would resolve install targets
@@ -156,40 +156,55 @@ $(STAMP_OBJS): src/hush_build.stamp
 tests/test_%: tests/test_%.c libhush.a
 	$(CC) $(CFLAGS) $< libhush.a -o $@ $(LDFLAGS)
 
-test: $(TEST_BINS) hush-relay
-	@for t in $(TEST_BINS); do echo "RUN $$t"; ./$$t || exit 1; done
-	@sh tests/check_pwa.sh
-	@sh tests/check_build.sh
-	@sh tests/check_stamp_mix.sh
-	@sh tests/check_launch.sh
-	@sh tests/check_restart.sh
-	@sh tests/check_restart_ui_deps.sh
-	@sh tests/check_restart_ui.sh
-	@CC="$(CC)" python3 tests/check_win.py
-	@python3 tests/check_browser_launch.py
-	@sh tests/check_exit.sh
-	@sh tests/check_pkg_upgrade.sh
-	@sh tests/check_make_guard.sh
-	@sh tests/check_stop_relays.sh
-	@sh tests/check_prefix.sh
-	@sh tests/check_provider.sh
-	@sh tests/check_agent.sh
-	@sh tests/check_codex.sh
-	@sh tests/check_ollama.sh
-	@sh tests/check_failover.sh
-	@python3 tests/check_collaboration.py
-	@sh tests/check_ws4.sh
-	@sh tests/check_main_log_provider_failure.sh
-	@sh tests/check_ws5m2.sh
-	@python3 tests/check_authz.py
-	@python3 tests/check_ws.py
-	@python3 tests/check_limits.py
-	@python3 tests/check_trust.py
-	@python3 tests/check_reasons.py
-	@sh tests/check_fixup.sh
-	@sh tests/check_complete.sh
-	@sh tests/check_turn.sh
-	@echo "ALL TESTS PASSED"
+check-deps:
+	@CC="$(CC)" sh tests/check_deps.sh
+
+# Scrub the caller's hive env, pin one umask, and point HOME and the runtime
+# dir at temp directories. Harnesses that vary HOME or XDG_RUNTIME_DIR on
+# purpose (check_exit.sh) still do so after this.
+test: check-deps $(TEST_BINS) hush-relay
+	@set -eu; \
+	umask 022; \
+	ht_home=$$(mktemp -d); \
+	ht_run=$$(mktemp -d); \
+	trap 'rm -rf "$$ht_home" "$$ht_run"' EXIT; \
+	export HOME="$$ht_home"; \
+	export XDG_RUNTIME_DIR="$$ht_run"; \
+	export HUSH_AUTO_UPDATE=0; \
+	unset HUSH_HOME HUSH_CONFIG_DIR XDG_CONFIG_HOME; \
+	for t in $(TEST_BINS); do echo "RUN $$t"; ./$$t || exit 1; done; \
+	sh tests/check_pwa.sh || exit 1; \
+	sh tests/check_build.sh || exit 1; \
+	sh tests/check_stamp_mix.sh || exit 1; \
+	sh tests/check_launch.sh || exit 1; \
+	sh tests/check_restart.sh || exit 1; \
+	sh tests/check_restart_ui_deps.sh || exit 1; \
+	sh tests/check_restart_ui.sh || exit 1; \
+	CC="$(CC)" python3 tests/check_win.py || exit 1; \
+	python3 tests/check_browser_launch.py || exit 1; \
+	sh tests/check_exit.sh || exit 1; \
+	sh tests/check_pkg_upgrade.sh || exit 1; \
+	sh tests/check_make_guard.sh || exit 1; \
+	sh tests/check_stop_relays.sh || exit 1; \
+	sh tests/check_prefix.sh || exit 1; \
+	sh tests/check_provider.sh || exit 1; \
+	sh tests/check_agent.sh || exit 1; \
+	sh tests/check_codex.sh || exit 1; \
+	sh tests/check_ollama.sh || exit 1; \
+	sh tests/check_failover.sh || exit 1; \
+	python3 tests/check_collaboration.py || exit 1; \
+	sh tests/check_ws4.sh || exit 1; \
+	sh tests/check_main_log_provider_failure.sh || exit 1; \
+	sh tests/check_ws5m2.sh || exit 1; \
+	python3 tests/check_authz.py || exit 1; \
+	python3 tests/check_ws.py || exit 1; \
+	python3 tests/check_limits.py || exit 1; \
+	python3 tests/check_trust.py || exit 1; \
+	python3 tests/check_reasons.py || exit 1; \
+	sh tests/check_fixup.sh || exit 1; \
+	sh tests/check_complete.sh || exit 1; \
+	sh tests/check_turn.sh || exit 1; \
+	echo "ALL TESTS PASSED"
 
 clean:
 	rm -f $(OBJS) $(OBJS:.o=.d) $(ICON_PANEL_OBJS) libhush.a hush-relay \

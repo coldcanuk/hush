@@ -13,7 +13,19 @@
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
+const net = require('node:net');
 const path = require('node:path');
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.once('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const chosen = srv.address().port;
+      srv.close((err) => (err ? reject(err) : resolve(chosen)));
+    });
+  });
+}
 
 const RELAY = process.env.HUSH_RELAY_BIN || path.join(__dirname, '..', 'hush-relay');
 const TAG = process.env.ID1_TAG || 'after';
@@ -406,7 +418,7 @@ async function main() {
     // Phase A: pass missing the whole way.
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'id1-home-'));
     const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'id1-cfg-'));
-    const port = 18772;
+    const port = await freePort();
     let R = await startRelay(home, cfg, '/nonexistent-hush-pass-helper', null, port);
     let proc = R.proc;
     let s = await sess(port, R.headers);

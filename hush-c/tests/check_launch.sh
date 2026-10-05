@@ -2,21 +2,32 @@
 # Smoke-test first-launch session routes on a throwaway hush-relay.
 set -eu
 cd "$(dirname "$0")/.."
+. ./tests/hush_free_port.sh
 # Session-token gate plus a hermetic pass store, so the harness never reads the
 # operator's real credentials. curl() adds the hive token to every call.
 test_home="$(mktemp -d)"
-export HUSH_HOME="${HUSH_HOME:-$test_home/hush}"
+export HUSH_HOME="$test_home/hush"
 export HUSH_PASS_HELPER="$(pwd)/tests/fake-pass.sh"
 export HUSH_FAKE_PASS_DIR="$(mktemp -d)"
 curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" "$@"; }
 
 bin=./hush-relay
-port=18766
+port=$(hush_free_port) || exit 1
 log=$(mktemp)
 cfg=$(mktemp -d)
 hush_home=$(mktemp -d)
 export HUSH_CONFIG_DIR="$cfg"
 export HUSH_HOME="$hush_home"
+proj_alpha=$(mktemp -d)
+bad_canvas=$(mktemp)
+min1_copy=$(mktemp)
+no_major_clone=$(mktemp)
+bad_role=$(mktemp)
+min1_sentry=$(mktemp)
+cross_skill=$(mktemp)
+noprov_agent=$(mktemp)
+bad_agent=$(mktemp)
+payne_del=$(mktemp)
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
 cleanup() {
@@ -25,7 +36,9 @@ cleanup() {
         wait "$pid" 2>/dev/null || true
     fi
     rm -f "$log"
-    rm -rf "$cfg" "$hush_home" /tmp/hush-check-alpha /tmp/hush-bad-canvas
+    rm -rf "$cfg" "$hush_home" "$proj_alpha"
+    rm -f "$bad_canvas" "$min1_copy" "$no_major_clone" "$bad_role" \
+        "$min1_sentry" "$cross_skill" "$noprov_agent" "$bad_agent" "$payne_del"
 }
 trap cleanup EXIT
 i=0
@@ -718,16 +731,16 @@ chan=$(curl -sf -X POST "http://127.0.0.1:${port}/api/channel" \
 echo "$chan" | grep -q '"slug":"incidents"' || fail "channel recreate"
 proj=$(curl -sf -X POST "http://127.0.0.1:${port}/api/project" \
     -H 'Content-Type: application/json' \
-    -d '{"name":"alpha","path":"/tmp/hush-check-alpha","git":"true"}')
+    -d '{"name":"alpha","path":"'"$proj_alpha"'","git":"true"}')
 echo "$proj" | grep -q '"slug":"alpha"' || fail "project create"
-test -d /tmp/hush-check-alpha/.git || fail "git init"
+test -d "$proj_alpha/.git" || fail "git init"
 can=$(curl -sf -X POST "http://127.0.0.1:${port}/api/canvas" \
     -H 'Content-Type: application/json' \
     -d '{"project":"alpha","path":"snippet-1.py","content":"print(1)"}')
 echo "$can" | grep -q '"ok":true' || fail "canvas save"
-test -f /tmp/hush-check-alpha/snippet-1.py || fail "canvas file missing"
-grep -q 'print(1)' /tmp/hush-check-alpha/snippet-1.py || fail "canvas content"
-badcan=$(curl -s -o /tmp/hush-bad-canvas -w '%{http_code}' -X POST \
+test -f "$proj_alpha/snippet-1.py" || fail "canvas file missing"
+grep -q 'print(1)' "$proj_alpha/snippet-1.py" || fail "canvas content"
+badcan=$(curl -s -o "$bad_canvas" -w '%{http_code}' -X POST \
     "http://127.0.0.1:${port}/api/canvas" \
     -H 'Content-Type: application/json' \
     -d '{"project":"alpha","path":"../escape.py","content":"no"}')
@@ -748,7 +761,7 @@ echo "$cloned" | grep -q '"slug":"coach-copy"' || fail "clone coach"
 echo "$cloned" | grep -q '"name":"Coach copy"' || fail "clone display name"
 echo "$cloned" | grep -q '"name":"Coach copy"[^}]*"skills":\["system:canvas-coach"\]' \
     || fail "clone copy wears coach skill"
-prunedcopy=$(curl -s -o /tmp/hush-min1-copy -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
+prunedcopy=$(curl -s -o "$min1_copy" -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"action":"update","slug":"coach-copy","skill_0":"","nskills":0}')
 test "$prunedcopy" != "200" || fail "PE-3 min-1 must refuse unequip to empty"
@@ -757,7 +770,7 @@ echo "$keptcopy" | grep -q '"name":"Coach copy"[^}]*"skills":\["system:canvas-co
     || fail "refused unequip must keep the worn skill"
 echo "$keptcopy" | grep -q '"name":"Coach","slug":"coach"[^}]*"skills":\["system:canvas-coach"\]' \
     || fail "locked coach must keep skill after copy prune"
-noclone=$(curl -s -o /tmp/hush-no-major-clone -w '%{http_code}' \
+noclone=$(curl -s -o "$no_major_clone" -w '%{http_code}' \
     -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"action":"clone","slug":"sgt-major-payne"}')
@@ -767,7 +780,7 @@ ui=$(curl -sf -X POST "http://127.0.0.1:${port}/api/skillui" \
     -d '{"html":"body{color:#112233;font-family:sans-serif;padding:8px}","name":"fixture"}')
 echo "$ui" | grep -q '#112233' || fail "skillui color"
 echo "$ui" | grep -q 'sans-serif' || fail "skillui font"
-badrole=$(curl -s -o /tmp/hush-bad-role -w '%{http_code}' \
+badrole=$(curl -s -o "$bad_role" -w '%{http_code}' \
     -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"action":"update","slug":"sentry","skill_0":"system:civility"}')
@@ -783,7 +796,7 @@ offag=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
 echo "$offag" | grep -q '"enabled":false' || fail "raised robot must disable"
 echo "$offag" | grep -q '"name":"Sentry"[^}]*system:forge-skill' \
     || fail "disable must not drop loadout"
-pruned=$(curl -s -o /tmp/hush-min1-sentry -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
+pruned=$(curl -s -o "$min1_sentry" -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"action":"update","slug":"sentry","skill_0":""}')
 test "$pruned" != "200" || fail "PE-3 min-1 must refuse last-skill unequip"
@@ -802,7 +815,7 @@ robotskill=$(curl -sf -X POST "http://127.0.0.1:${port}/api/skill" \
     -H 'Content-Type: application/json' \
     -d '{"name":"futurama","summary":"Sarcastic delivery.","body":"Be Bender.","scope":"robot","robot":"sentry"}')
 echo "$robotskill" | grep -q 'robot:sentry:futurama' || fail "forge robot skill"
-cross=$(curl -s -o /tmp/hush-cross-skill -w '%{http_code}' \
+cross=$(curl -s -o "$cross_skill" -w '%{http_code}' \
     -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"action":"update","slug":"coach","skill_0":"robot:sentry:futurama"}')
@@ -811,11 +824,11 @@ own=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"action":"update","slug":"sentry","skill_0":"robot:sentry:futurama"}')
 echo "$own" | grep -q 'robot:sentry:futurama' || fail "robot skill must equip on owner"
-noprov=$(curl -s -o /tmp/hush-noprov-agent -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
+noprov=$(curl -s -o "$noprov_agent" -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"name":"Ghost","system_prompt":"Watch.","save_pass":false}')
 test "$noprov" != "200" || fail "provider required"
-bad=$(curl -s -o /tmp/hush-bad-agent -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
+bad=$(curl -s -o "$bad_agent" -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"name":"Badfile","system_prompt":"Watch.","provider":"goose","context_name":"x.pdf","context_mime":"application/pdf","context_text":"%PDF"}')
 test "$bad" != "200" || fail "pdf context must be rejected"
@@ -843,7 +856,7 @@ on=$(curl -sf -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"slug":"sgt-major-payne","enabled":true}')
 echo "$on" | grep -q '"enabled":true' || fail "Payne must enable"
-stay=$(curl -s -o /tmp/hush-payne-del -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
+stay=$(curl -s -o "$payne_del" -w '%{http_code}' -X POST "http://127.0.0.1:${port}/api/agent" \
     -H 'Content-Type: application/json' \
     -d '{"action":"delete","slug":"sgt-major-payne"}')
 test "$stay" != "200" || fail "Payne must not delete"

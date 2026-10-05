@@ -48,7 +48,7 @@ endif
 # Override per-invocation, e.g. `HUSH_PORT=10556 make`.
 GUARD_PORT ?= $(HUSH_PORT)
 
-.PHONY: all test clean install uninstall guard stop-relays clean-relays check-prefix check-stamp package-deb package-rpm packages deb rpm flatpak openbsd freebsd bsd dist
+.PHONY: all test clean install uninstall guard stop-relays clean-relays check-prefix check-stamp check-deps package-deb package-rpm packages deb rpm flatpak openbsd freebsd bsd dist
 # guard: is defined below but must never become the default goal.
 .DEFAULT_GOAL := all
 
@@ -135,6 +135,9 @@ check-stamp:
 
 all: guard check-stamp
 	$(MAKE) -C hush-c all CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)"
+
+check-deps:
+	$(MAKE) -C hush-c check-deps CC="$(CC)"
 
 test:
 	$(MAKE) -C hush-c test CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)"
