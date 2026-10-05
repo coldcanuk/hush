@@ -6,9 +6,12 @@
 // or any behaviour is missing.
 //
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
+// HUSH_TEST_WAIT_S (Chrome DevTools ready deadline, default 30),
 // ID1_TAG (shot filename tag, default "after"), ID1_NO_ASSERT=1 (navigate
 // and shoot without asserting, for before/after pairs), ID1_VIEW_W
-// (viewport width, default 1440), ID1_ART (shot/JSON dir).
+// (viewport width, default 1440), ID1_ART (shot/JSON dir),
+// ID1_CHROME_ONLY=1 (launch Chrome and wait for DevTools, then exit —
+// used by the #265 wait pin).
 'use strict';
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -100,6 +103,102 @@ function resolveChrome() {
     }
   }
   fail('no Chrome on PATH (need google-chrome or chromium) and HUSH_CHROME_BIN unset');
+}
+
+function testWaitMs() {
+  const raw = process.env.HUSH_TEST_WAIT_S;
+  const sec = raw === undefined || raw === '' ? 30 : Number(raw);
+  if (!Number.isFinite(sec) || sec <= 0)
+    fail('HUSH_TEST_WAIT_S must be a positive number of seconds');
+  return Math.floor(sec * 1000);
+}
+
+/* Waits until Chrome's remote-debugging HTTP port answers /json/list, or
+ * stderr prints the classic DevTools line. Bound by deadlineMs. Returns
+ * { ok, httpBase, stderr, detail }. */
+async function waitChromeDevtools(chromeProc, port, deadlineMs) {
+  let stderr = '';
+  let exited = null;
+  const onData = (d) => { stderr += d.toString(); };
+  const onExit = (code, signal) => { exited = { code, signal }; };
+  chromeProc.stderr.on('data', onData);
+  chromeProc.once('exit', onExit);
+  const t0 = Date.now();
+  const httpBase = `http://127.0.0.1:${port}`;
+  try {
+    while (Date.now() - t0 < deadlineMs) {
+      if (exited) {
+        return {
+          ok: false,
+          httpBase: null,
+          stderr,
+          detail: `Chrome exited early code=${exited.code} signal=${exited.signal}`,
+        };
+      }
+      const m = stderr.match(/DevTools listening on (ws:\/\/\S+)/);
+      if (m) {
+        const fromLine = m[1].replace(/^ws:\/\//, 'http://').replace(/\/devtools.*$/, '');
+        return { ok: true, httpBase: fromLine, stderr, detail: 'stderr' };
+      }
+      try {
+        const res = await fetch(httpBase + '/json/list', {
+          signal: AbortSignal.timeout(400),
+        });
+        if (res.ok) {
+          const targets = await res.json();
+          if (Array.isArray(targets))
+            return { ok: true, httpBase, stderr, detail: 'http' };
+        }
+      } catch (e) {
+        /* not listening yet */
+      }
+      await sleep(100);
+    }
+    return {
+      ok: false,
+      httpBase: null,
+      stderr,
+      detail: `deadline ${deadlineMs}ms elapsed`,
+    };
+  } finally {
+    chromeProc.stderr.off('data', onData);
+  }
+}
+
+/* Spawns headless Chrome on a fixed free port. One relaunch if the first
+ * attempt hits the DevTools-ready deadline without an early exit (startup
+ * race). */
+async function launchChromeReady(chrome, track, deadlineMs) {
+  let last = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const port = await freePort();
+    const userDir = fs.mkdtempSync(path.join(os.tmpdir(), 'id1-chrome-'));
+    /* CI often sets a junk DBUS_SESSION_BUS_ADDRESS; Chrome then logs
+     * dbus parse errors while starting. Drop it for the Chrome child. */
+    const chromeEnv = Object.assign({}, process.env);
+    delete chromeEnv.DBUS_SESSION_BUS_ADDRESS;
+    const chromeProc = track(spawn(chrome,
+      ['--headless', '--no-sandbox', '--disable-gpu', '--no-first-run',
+        '--disable-dev-shm-usage', '--disable-software-rasterizer',
+        `--remote-debugging-port=${port}`, `--user-data-dir=${userDir}`,
+        'about:blank'],
+      { stdio: ['ignore', 'ignore', 'pipe'], env: chromeEnv }));
+    const result = await waitChromeDevtools(chromeProc, port, deadlineMs);
+    if (result.ok) {
+      return { chromeProc, userDir, port, httpBase: result.httpBase, stderr: result.stderr };
+    }
+    last = result;
+    try { chromeProc.kill('SIGTERM'); } catch (e) { /* gone */ }
+    try { fs.rmSync(userDir, { recursive: true, force: true }); } catch (e) { /* best effort */ }
+    const idx = liveProcs.indexOf(chromeProc);
+    if (idx >= 0)
+      liveProcs.splice(idx, 1);
+    /* Early exit is a hard failure — retrying will not help a missing binary. */
+    if (result.detail.startsWith('Chrome exited early'))
+      break;
+  }
+  fail('Chrome printed no DevTools URL: ' +
+       (last ? `${last.detail}; ${last.stderr.slice(0, 400)}` : 'no attempt'));
 }
 
 class Cdp {
@@ -254,40 +353,17 @@ const LOG_PROBE_FN = `function(th, force) {
 async function main() {
   const chrome = resolveChrome();
   const track = (proc) => { liveProcs.push(proc); return proc; };
-  /* CI runners often set a junk DBUS_SESSION_BUS_ADDRESS; Chrome then
-     logs dbus parse errors and never prints DevTools listening (flake).
-     Drop a broken/empty address and retry once if the first launch stalls. */
-  const chromeEnv = Object.assign({}, process.env);
-  delete chromeEnv.DBUS_SESSION_BUS_ADDRESS;
-  const chromeArgs = (userDir) => [
-    '--headless', '--no-sandbox', '--disable-gpu', '--no-first-run',
-    '--disable-dev-shm-usage', '--disable-software-rasterizer',
-    '--remote-debugging-port=0', `--user-data-dir=${userDir}`, 'about:blank'];
-  async function launchChrome() {
-    const userDir = fs.mkdtempSync(path.join(os.tmpdir(), 'id1-chrome-'));
-    const proc = track(spawn(chrome, chromeArgs(userDir), {
-      stdio: ['ignore', 'ignore', 'pipe'], env: chromeEnv }));
-    let stderr = '';
-    proc.stderr.on('data', (d) => { stderr += d.toString(); });
-    const t0 = Date.now();
-    while (Date.now() - t0 < 20000) {
-      const m = stderr.match(/DevTools listening on (ws:\/\/\S+)/);
-      if (m) return { proc, userDir, devtools: m[1], stderr };
-      if (proc.exitCode !== null) break;
-      await sleep(200);
-    }
-    try { proc.kill('SIGTERM'); } catch (e) { /* gone */ }
-    return { proc, userDir, devtools: null, stderr };
-  }
-  let launched = await launchChrome();
-  if (!launched.devtools)
-    launched = await launchChrome();
-  const chromeProc = launched.proc;
+  const deadlineMs = testWaitMs();
+  const launched = await launchChromeReady(chrome, track, deadlineMs);
+  const chromeProc = launched.chromeProc;
   const userDir = launched.userDir;
-  const devtools = launched.devtools;
-  if (!devtools)
-    fail('Chrome printed no DevTools URL: ' + (launched.stderr || '').slice(0, 300));
-  const httpBase = devtools.replace(/^ws:\/\//, 'http://').replace(/\/devtools.*$/, '');
+  if (process.env.ID1_CHROME_ONLY === '1') {
+    console.log('restart UI chrome ready (' + launched.httpBase +
+                ', deadline ' + deadlineMs + 'ms)');
+    try { chromeProc.kill('SIGTERM'); } catch (e) { /* gone */ }
+    process.exit(0);
+  }
+  const httpBase = launched.httpBase;
   const targets = await (await fetch(httpBase + '/json/list')).json();
   const pageTarget = targets.find((t) => t.type === 'page');
   if (!pageTarget)
