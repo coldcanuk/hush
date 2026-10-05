@@ -451,8 +451,37 @@ fi
 # each allowlisted line must end in { or }. The check does not parse CSS
 # strings or escapes (a /* inside a quoted string, or an escaped brace in a
 # selector, gets past it; tracked in #229).
+# #229 V6/V6b/V7/V7b: blank quoted strings before comment strip; a \{ or \}
+# is not a rule boundary (escaped braces must not fake allowlist adjacency).
 if echo "$html" | sed -n "${touch_at},${touch_end}p" | awk '
-  { t = $0; c = ""
+  function blank_strings(s,    out, i, n, c, q) {
+    out = ""; n = length(s); q = ""
+    for (i = 1; i <= n; i++) {
+      c = substr(s, i, 1)
+      if (q != "") {
+        if (c == "\\" && i < n) { out = out "  "; i++; continue }
+        if (c == q) q = ""
+        out = out " "
+        continue
+      }
+      if (c == "\"" || c == "\47") { q = c; out = out " "; continue }
+      out = out c
+    }
+    return out
+  }
+  function ends_brace(s,    ch, i) {
+    for (i = length(s); i >= 1; i--) {
+      ch = substr(s, i, 1)
+      if (ch == " " || ch == "\t") continue
+      if (ch == "{" || ch == "}") {
+        if (i > 1 && substr(s, i - 1, 1) == "\\") return 0
+        return 1
+      }
+      return 0
+    }
+    return 0
+  }
+  { t = blank_strings($0); c = ""
     while (t != "") {
       if (inc) { e = index(t, "*/"); if (!e) break; t = substr(t, e + 2); inc = 0; continue }
       s = index(t, "/*"); if (!s) { c = c t; break }
@@ -461,7 +490,7 @@ if echo "$html" | sed -n "${touch_at},${touch_end}p" | awk '
     sub(/[ \t]+$/, "", c) }
   $0 == "  .mention-box { padding-block: 8px; }" ||
   $0 == "  #fo-drawer { padding-bottom: 64px; } /* last row clears the fixed #quick-bar */" ||
-  $0 == "  .fav-item { padding-block: 8px; }" { if (prev !~ /[{}]$/) bad = 1 }
+  $0 == "  .fav-item { padding-block: 8px; }" { if (!ends_brace(prev)) bad = 1 }
   c ~ /[^ \t]/ { prev = c } END { exit bad ? 0 : 1 }'; then
   fail "touch allowlist lines must stay whole rules (UI-M12d)"
 fi
@@ -492,12 +521,39 @@ done
 # every width (the inventory grid stays inside its frame); the main-view
 # roster rows are static, so the touch block leaves their pitch alone (the
 # you row and the panel top stay visible at 375x812).
+# #229 P3-1: shrink rule must be live (not comment-wrapped) and the touch
+# block must not re-enable flex-shrink on drawer sections / inventory.
 shrink_at=$(echo "$html" | grep -n -x -F -e '#fo-drawer > * { flex-shrink: 0; } /* drawer scrolls; its sections never squash */' | head -n 1 | cut -d: -f1)
 if [ -z "$shrink_at" ] || [ "$shrink_at" -le "$m12d_at" ] || [ "$shrink_at" -ge "$touch_at" ]; then
   fail "BOARDS drawer sections must not shrink (UI-M12d)"
 fi
-if echo "$html" | sed -n "${touch_at},${touch_end}p" | grep -q 'fo-roster-list\|roster-pane'; then
-  fail "touch block must not change the main-view roster (UI-M12d)"
+# O5: the exact shrink line must not sit inside an open /* … */ comment.
+if echo "$html" | awk -v n="$shrink_at" '
+  NR < n {
+    t = $0
+    while (t != "") {
+      if (inc) { e = index(t, "*/"); if (!e) { t = ""; break } t = substr(t, e + 2); inc = 0; continue }
+      s = index(t, "/*"); if (!s) break
+      t = substr(t, s + 2); inc = 1
+    }
+  }
+  NR == n { exit inc ? 0 : 1 }
+'; then
+  fail "drawer flex-shrink:0 must not be comment-wrapped (UI-M12d #229 O5)"
+fi
+if echo "$html" | sed -n "${touch_at},${touch_end}p" | grep -q 'flex-shrink'; then
+  fail "touch block must not override flex-shrink (UI-M12d #229 O6/O7)"
+fi
+# #229 P3-2: no touch rule on the main-view roster (broader than name grep).
+if echo "$html" | sed -n "${touch_at},${touch_end}p" \
+  | grep -qE 'fo-roster-list|roster-pane|fo-roster-sec|fo-person\.static'; then
+  fail "touch block must not change the main-view roster (UI-M12d #229 O3)"
+fi
+# O4: base roster list pitch stays 4px; no later #fo-roster-list gap bump.
+echo "$html" | grep -q -x -F -e '#fo-roster-list, #fo-individual-list { display: flex; flex-direction: column; gap: 4px; }' \
+  || fail "main-view roster list must keep gap: 4px (UI-M12d #229 O4)"
+if echo "$html" | grep -E -e '^#fo-roster-list[[:space:]]*\{[^}]*gap:[[:space:]]*(1[6-9]|[2-9][0-9])px'; then
+  fail "main-view roster list gap must stay 4px (UI-M12d #229 O4)"
 fi
 menu_at=$(line_of '^\.menu button, \.mention-box button {$')
 if [ -z "$menu_at" ] || [ "$menu_at" -le "$m12d_at" ] || [ "$menu_at" -ge "$touch_at" ] \
@@ -553,6 +609,121 @@ if [ -z "$style_end" ] || [ "$style_end" -le "$touch_end" ] \
   || echo "$html" | sed -n "${m12d_at},${style_end}p" | grep -q '\(height\|width\|block-size\): *44px'; then
   fail "UI-M12d block must not size a control at 44px"
 fi
+# #229 P3-4 O13: a second <style> with min-height:44px used to slip past
+# the first-</style> scan. Keep one style block; anything after it must
+# not size controls at 44px (incl. min-height).
+style_n=$(echo "$html" | grep -c -F -e '</style>' || true)
+if [ "$style_n" -ne 1 ]; then
+  fail "demo must keep a single </style> (UI-M12d #229 O13)"
+fi
+if echo "$html" | sed -n "$((style_end + 1)),\$p"   | grep -E '(min-)?(height|width|block-size):[[:space:]]*44px'; then
+  fail "no trailing <style> may size a control at 44px (UI-M12d #229 O13)"
+fi
+# #229 P3-4 O12: --btn-h-* must stay compact; a later coarse media must not
+# raise tokens to 44px (token ban covers only the touch block above).
+if echo "$html" | grep -E -e '--btn-h-(xs|sm|md):[[:space:]]*44px'; then
+  fail "btn height tokens must stay compact, never 44px (UI-M12d #229 O12)"
+fi
+
+# ---- #229 gate hardening (P3-1..P3-4 + V/X/Y/W) ----
+# P3-3 O8: button.fo-person stays on the sm tier between M12d and touch.
+fo_person_at=$(line_of '^button\.fo-person { min-height: var(--btn-h-sm); }$')
+if [ -z "$fo_person_at" ] || [ "$fo_person_at" -le "$m12d_at" ] || [ "$fo_person_at" -ge "$touch_at" ]; then
+  fail "button.fo-person must use sm tier before the touch block (UI-M12d #229 O8)"
+fi
+# P3-3 O9/O9b/O17: after the touch pitch rule, no later gap/row-gap override
+# on the BOARDS individuals lists (0 collapses the shared hit; 16 reopens F2).
+indiv_gap_at=$(echo "$html" | sed -n "${touch_at},${touch_end}p" \
+  | grep -n -x -F -e '  #fo-individuals, #fo-individual-list { gap: 8px; }' \
+  | head -n 1 | cut -d: -f1)
+if [ -z "$indiv_gap_at" ]; then
+  fail "touch pitch for BOARDS individuals must stay gap: 8px (UI-M12d)"
+fi
+indiv_gap_abs=$((touch_at + indiv_gap_at - 1))
+if echo "$html" | sed -n "$((indiv_gap_abs + 1)),${style_end}p" \
+  | grep -E -e '#fo-individual(s|-list)[^{]*\{[^}]*(row-)?gap:[[:space:]]*(0|0px|16px)([^0-9]|$)'; then
+  fail "BOARDS individuals pitch must not be overridden after touch (UI-M12d #229 O9/O17)"
+fi
+
+# X1: .act-noun clip must not be undone by a later rule.
+if echo "$html" | sed -n "$((noun_at + 1)),${style_end}p" \
+  | grep -E '\.act-noun[^{]*\{[^}]*(position:[[:space:]]*static|clip-path:[[:space:]]*none)'; then
+  fail ".act-noun must stay visually hidden at <=480px (UI-M12d #229 X1)"
+fi
+# X2: setActionLabel keeps an .act-noun span (not verb+" "+noun textContent).
+set_at=$(echo "$html" | grep -n -F -e '    function setActionLabel(el, verb, noun) {' | head -n 1 | cut -d: -f1)
+if [ -z "$set_at" ]; then
+  fail "setActionLabel missing (UI-M12d #229 X2)"
+fi
+set_end=$(echo "$html" | awk -v s="$set_at" 'NR > s && /^    }$/ { print NR; exit }')
+if [ -z "$set_end" ] \
+  || ! echo "$html" | sed -n "${set_at},${set_end}p" | grep -q -F 'createElement("span")' \
+  || ! echo "$html" | sed -n "${set_at},${set_end}p" | grep -q -F 'className = "act-noun"' \
+  || ! echo "$html" | sed -n "${set_at},${set_end}p" | grep -q -F 'replaceChildren(verb, hid)' \
+  || echo "$html" | sed -n "${set_at},${set_end}p" | grep -q 'textContent = verb'; then
+  fail "setActionLabel must keep .act-noun span, not two-line text (UI-M12d #229 X2)"
+fi
+# X3: stats items stay inline (no display:block stack on #stats > span).
+if echo "$html" | grep -E '#stats[[:space:]]*>[[:space:]]*span[^{]*\{[^}]*display:[[:space:]]*block'; then
+  fail "drawer stats must not stack as display:block spans (UI-M12d #229 X3)"
+fi
+# X4: no createElement("br") (sockets<br> already banned; dynamic br too).
+if echo "$html" | grep -q -F 'createElement("br")' || echo "$html" | grep -q -F "createElement('br')"; then
+  fail "drawer must not insert <br> between stats (UI-M12d #229 X4)"
+fi
+
+# Y1 / W6 / W9: only .is-overflowing::after owns the fade; no bare ::after,
+# display:none, or background:none overrides after the locked rules.
+if echo "$html" | grep -E -e '^#fo-drawer::after[[:space:]]*\{'; then
+  fail "drawer fade must be #fo-drawer.is-overflowing::after only (UI-M12d #229 Y1)"
+fi
+if echo "$html" | sed -n "$((cue_at + 1)),${style_end}p" \
+  | grep -E '#fo-drawer\.is-overflowing::after[^{]*\{[^}]*(display:[[:space:]]*none|background:[[:space:]]*none)'; then
+  fail "drawer fade ::after must not be blanked later (UI-M12d #229 W6/W9)"
+fi
+# W7: locked cue rule must not be comment-wrapped (line_of still finds it).
+if echo "$html" | awk -v n="$cue_at" '
+  NR < n {
+    t = $0
+    while (t != "") {
+      if (inc) { e = index(t, "*/"); if (!e) { t = ""; break } t = substr(t, e + 2); inc = 0; continue }
+      s = index(t, "/*"); if (!s) break
+      t = substr(t, s + 2); inc = 1
+    }
+  }
+  NR == n { exit inc ? 0 : 1 }
+'; then
+  fail "drawer fade cue rule must not be comment-wrapped (UI-M12d #229 W7)"
+fi
+# W1: both observe calls present.
+echo "$html" | grep -q -x -F -e '      drawerRO.observe($("fo-drawer"));' \
+  || fail "drawerRO must observe #fo-drawer (UI-M12d #229 W1)"
+echo "$html" | grep -q -x -F -e '      [...$("fo-drawer").children].forEach((c) => drawerRO.observe(c));' \
+  || fail "drawerRO must observe drawer children (UI-M12d #229 W1)"
+# W2: ResizeObserver gate is live (not if (false && …)).
+echo "$html" | grep -q -x -F -e '    if (window.ResizeObserver) {' \
+  || fail "ResizeObserver gate must be if (window.ResizeObserver) (UI-M12d #229 W2)"
+# W3: syncDrawerOverflow has no early return before the toggle.
+sync_at=$(echo "$html" | grep -n -F -e '    function syncDrawerOverflow() {' | head -n 1 | cut -d: -f1)
+sync_end=$(echo "$html" | awk -v s="$sync_at" 'NR > s && /^    }$/ { print NR; exit }')
+if [ -z "$sync_at" ] || [ -z "$sync_end" ]; then
+  fail "syncDrawerOverflow missing (UI-M12d #229 W3)"
+fi
+if echo "$html" | sed -n "$((sync_at + 1)),$((sync_end - 1))p" | grep -qE '^[[:space:]]*return;'; then
+  fail "syncDrawerOverflow must not early-return (UI-M12d #229 W3)"
+fi
+# W4: exactly one is-overflowing toggle (no invert).
+tog_n=$(echo "$html" | grep -c -F 'classList.toggle("is-overflowing"' || true)
+if [ "$tog_n" -ne 1 ]; then
+  fail "exactly one is-overflowing toggle allowed (UI-M12d #229 W4)"
+fi
+# W8: overflow test uses measured last/seen, not a huge constant cue.
+if echo "$html" | sed -n "${sync_at},${sync_end}p" | grep -qE 'cue[[:space:]]*=[[:space:]]*1e9|last[[:space:]]*=[[:space:]]*1e9'; then
+  fail "syncDrawerOverflow must not force a huge cue constant (UI-M12d #229 W8)"
+fi
+echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", last > seen + 0.5);' \
+  || fail "overflow toggle must compare last > seen + 0.5 (UI-M12d #229 W8)"
+
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + pills"
 echo "$html" | grep -q 'id="provider-username"' || fail "HTML missing provider username"
