@@ -10,6 +10,7 @@
 # changed.
 set -eu
 cd "$(dirname "$0")/.."
+. ./tests/hush_free_port.sh
 
 root=$(cd .. && pwd)
 guard="$root/scripts/check-relay-port.sh"
@@ -52,7 +53,7 @@ export HUSH_FAKE_PASS_DIR="$test_home/pass"
 mkdir -p "$HUSH_CONFIG_DIR" "$XDG_RUNTIME_DIR" "$HUSH_STATE_DIR" "$HUSH_FAKE_PASS_DIR"
 
 bin=./hush-relay
-port=18783
+port=$(hush_free_port) || exit 1
 log="$test_home/relay.log"
 pid=""
 child_pid=""
@@ -191,7 +192,7 @@ pid=""
 # Without the probe the guard cannot tell which port a live relay owns,
 # so any hush-relay process plus no curl refuses, even for a free port
 # with no pidfile. Uses its own port Q far from the other fixtures.
-n1_port=$((port + 31))
+n1_port=$(hush_free_port) || exit 1
 "$bin" --no-open "$n1_port" >"$log" 2>&1 &
 n1_pid=$!
 wait_up "$n1_port" || fail "N1 relay did not start on $n1_port"

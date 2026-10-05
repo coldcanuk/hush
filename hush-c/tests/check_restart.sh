@@ -5,9 +5,10 @@
 # header reset) in the served UI.
 set -eu
 cd "$(dirname "$0")/.."
+. ./tests/hush_free_port.sh
 
 bin=./hush-relay
-port=18771
+port=$(hush_free_port) || exit 1
 log=$(mktemp)
 home=$(mktemp -d)
 cfg=$(mktemp -d)

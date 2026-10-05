@@ -3,10 +3,11 @@
 # --quit codes: 0 stopped, 1 nothing to stop, 2 stop failed or refused.
 set -eu
 cd "$(dirname "$0")/.."
+. ./tests/hush_free_port.sh
 # Session-token gate plus a hermetic pass store, so the harness never reads the
 # operator's real credentials. curl() adds the hive token to every call.
 test_home="$(mktemp -d)"
-export HUSH_HOME="${HUSH_HOME:-$test_home/hush}"
+export HUSH_HOME="$test_home/hush"
 export HUSH_PASS_HELPER="$(pwd)/tests/fake-pass.sh"
 export HUSH_FAKE_PASS_DIR="$(mktemp -d)"
 curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" "$@"; }
@@ -15,7 +16,7 @@ export XDG_RUNTIME_DIR="$test_home/run"
 mkdir -m 700 "$XDG_RUNTIME_DIR"
 
 bin=./hush-relay
-port=18768
+port=$(hush_free_port) || exit 1
 log=$(mktemp)
 cfg=$(mktemp -d)
 export HUSH_CONFIG_DIR="$cfg"
@@ -245,7 +246,7 @@ pid=""
 # --quit exits 0 only after the relay is confirmed stopped and reaps the
 # leftover --app child; --quit with no relay running must fail loudly.
 virgin_home="$(mktemp -d)"
-virgin_port=$((port + 1))
+virgin_port=$(hush_free_port) || exit 1
 saved_home="$HOME"
 if [ "${XDG_RUNTIME_DIR+x}" = "x" ]; then
     saved_runtime="$XDG_RUNTIME_DIR"
@@ -304,7 +305,7 @@ virgin_fake_bin=""
 # --quit must refuse pidfiles it cannot prove are a hush-relay, and must
 # report stale, corrupt, and reserved pids honestly. The planted process
 # is never signalled. Ports here have no relay running.
-refuse_port=$((port + 3))
+refuse_port=$(hush_free_port) || exit 1
 refuse_dir="$XDG_RUNTIME_DIR/hush"
 mkdir -p "$refuse_dir"
 refuse_pidfile="$refuse_dir/relay-$refuse_port.pid"
@@ -376,7 +377,7 @@ rm -f "$refuse_pidfile"
 # A relay frozen with SIGSTOP cannot die on SIGTERM: --quit waits the full
 # owner budget, exits 2, and leaves pid and pidfile alone. SIGCONT then
 # lets the pending SIGTERM land and the relay exits cleanly.
-stop_port=$((port + 5))
+stop_port=$(hush_free_port) || exit 1
 "$bin" --no-open "$stop_port" >"$log" 2>&1 &
 stop_pid=$!
 wait_up "$stop_port" || fail "stop-test relay did not start"
@@ -400,7 +401,7 @@ stop_pid=""
 
 # Symlinked pidfile file or dir: the write path must refuse loudly while
 # the relay still serves. Cleanup is via token /api/exit (no pidfile).
-sym_port=$((port + 7))
+sym_port=$(hush_free_port) || exit 1
 sym_base="$(mktemp -d)"
 sym_xdg="$sym_base/run"
 mkdir -p "$sym_xdg"
@@ -421,7 +422,7 @@ wait_down "$sym_pid" || fail "symlink-file relay did not stop"
 wait "$sym_pid" 2>/dev/null || true
 sym_pid=""
 
-sym2_port=$((port + 9))
+sym2_port=$(hush_free_port) || exit 1
 rm -rf "$sym_xdg/hush"
 ln -s "$sym_home/elsewhere" "$sym_xdg/hush"
 HOME="$sym_home" XDG_RUNTIME_DIR="$sym_xdg" "$bin" --no-open "$sym2_port" >"$log" 2>&1 &
@@ -438,7 +439,7 @@ sym2_pid=""
 
 # No HOME and no XDG_RUNTIME_DIR: no pidfile fallback remains. The relay
 # must warn loudly, still serve, and --quit must report nothing to stop.
-noset_port=$((port + 11))
+noset_port=$(hush_free_port) || exit 1
 env -u XDG_RUNTIME_DIR -u HOME "$bin" --no-open "$noset_port" >"$log" 2>&1 &
 noset_pid=$!
 wait_up "$noset_port" || fail "no-env relay did not start (must serve anyway)"
@@ -460,7 +461,7 @@ link_real="$link_base/real"
 mkdir -p "$link_real"
 link_home="$link_base/link"
 ln -s "$link_real" "$link_home"
-link_port=$((port + 13))
+link_port=$(hush_free_port) || exit 1
 HOME="$link_home" env -u XDG_RUNTIME_DIR "$bin" --no-open "$link_port" >"$log" 2>&1 &
 link_pid=$!
 wait_up "$link_port" || fail "symlink-ancestor relay did not start"
@@ -480,7 +481,7 @@ link_pid=""
 repl_bin="$test_home/hush-relay-repl"
 cp "$bin" "$repl_bin"
 chmod +x "$repl_bin"
-repl_port=$((port + 15))
+repl_port=$(hush_free_port) || exit 1
 "$repl_bin" --no-open "$repl_port" >"$log" 2>&1 &
 repl_pid=$!
 wait_up "$repl_port" || fail "replace-test relay did not start"
@@ -498,8 +499,10 @@ repl_pid=""
 
 # A pidfile naming a live relay from another port is refused (F1): the
 # wrong-port quit exits 2 and both relays stay up.
-mm_a_port=$((port + 17))
-mm_b_port=$((port + 19))
+_mm=$(hush_free_port 2) || exit 1
+mm_a_port=$(printf '%s\n' "$_mm" | awk 'NR==1')
+mm_b_port=$(printf '%s\n' "$_mm" | awk 'NR==2')
+test -n "$mm_a_port" && test -n "$mm_b_port" && test "$mm_a_port" != "$mm_b_port" || exit 1
 "$bin" --no-open "$mm_a_port" >"$log" 2>&1 &
 mm_a_pid=$!
 wait_up "$mm_a_port" || fail "mismatch relay A did not start"
@@ -532,7 +535,7 @@ mode_xdg="$mode_base/run"
 mode_home="$(mktemp -d)"
 mkdir -p "$mode_xdg/hush"
 chmod 777 "$mode_xdg/hush"
-mode_port=$((port + 21))
+mode_port=$(hush_free_port) || exit 1
 HOME="$mode_home" XDG_RUNTIME_DIR="$mode_xdg" "$bin" --no-open "$mode_port" >"$log" 2>&1 &
 mode_pid=$!
 wait_up "$mode_port" || fail "mode-test relay must serve anyway"
@@ -554,7 +557,7 @@ else
 acc_base="$(mktemp -d)"
 mkdir -p "$acc_base/run"
 chmod 555 "$acc_base/run"
-acc_port=$((port + 23))
+acc_port=$(hush_free_port) || exit 1
 HOME="$mode_home" XDG_RUNTIME_DIR="$acc_base/run" "$bin" --no-open "$acc_port" >"$log" 2>&1 &
 acc_pid=$!
 wait_up "$acc_port" || fail "acc-test relay must serve anyway"
