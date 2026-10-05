@@ -92,8 +92,9 @@ static void hush_roster_fill_event(hush_event_t *ev, const char *pubkey_hex,
 static size_t hush_roster_json_escape(const char *src, char *dst, size_t dstsz);
 
 /* Offers a new secret to a store. Never writes a plain file. */
-static void hush_roster_keep_agent_key(const char *slug, const char *secret,
-                                      int use_pass);
+static hush_status_t hush_roster_keep_agent_key(const char *slug,
+                                                const char *secret,
+                                                int use_pass);
 
 /* Decodes npub1… or 64-hex into pubkey hex + npub. */
 static hush_status_t hush_roster_parse_pubkey(char *out_hex, char *out_npub,
@@ -467,7 +468,13 @@ hush_status_t hush_roster_add_agent(hush_roster_t *roster,
         return st;
     if (hush_identity_generate(&agent->id) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
-    hush_roster_keep_agent_key(agent->slug, agent->id.nsec, save_pass);
+    {
+        hush_status_t kept;
+
+        kept = hush_roster_keep_agent_key(agent->slug, agent->id.nsec, save_pass);
+        if (kept != HUSH_OK)
+            return kept;
+    }
     if (hush_roster_store_agent_profile(store, agent) != HUSH_OK)
         return HUSH_ERR_FULL;
     if (hush_roster_store_agent_note(store, agent) != HUSH_OK)
@@ -949,16 +956,47 @@ static size_t hush_roster_json_escape(const char *src, char *dst, size_t dstsz)
     return hush_json_escape(src, dst, dstsz);
 }
 
-static void hush_roster_keep_agent_key(const char *slug, const char *secret,
-                                      int use_pass)
+/* Saves the robot key when use_pass is set. Missing pass, a failed
+ * helper, or an overlong path each return a distinct status so the
+ * HTTP layer can name the refusal. use_pass 0 keeps the offer path. */
+static hush_status_t hush_roster_keep_agent_key(const char *slug,
+                                                const char *secret,
+                                                int use_pass)
 {
     char path[HUSH_PASS_PATH_MAX];
 
     assert(slug != NULL);
     assert(secret != NULL);
     if (snprintf(path, sizeof(path), "agents/%s/nsec", slug) >= (int)sizeof(path))
-        return;
-    hush_keystore_offer(use_pass, path, secret);
+        return HUSH_ERR_ARG;
+    if (!use_pass) {
+        hush_keystore_offer(0, path, secret);
+        return HUSH_OK;
+    }
+    if (!hush_pass_available())
+        return HUSH_ERR_DENIED;
+    return hush_pass_save(path, secret);
+}
+
+hush_status_t hush_roster_write_agent_pass(const char *slug,
+                                           const char *secret)
+{
+    if (slug == NULL || secret == NULL || slug[0] == '\0' || secret[0] == '\0')
+        return HUSH_ERR_ARG;
+    return hush_roster_keep_agent_key(slug, secret, 1);
+}
+
+hush_status_t hush_roster_save_agent_pass(const hush_roster_t *roster,
+                                          const char *slug)
+{
+    const hush_roster_agent_t *agent;
+
+    if (roster == NULL || slug == NULL || slug[0] == '\0')
+        return HUSH_ERR_ARG;
+    agent = hush_roster_agent_by_slug(roster, slug);
+    if (agent == NULL)
+        return HUSH_ERR_NOT_FOUND;
+    return hush_roster_write_agent_pass(agent->slug, agent->id.nsec);
 }
 
 static hush_status_t hush_roster_parse_pubkey(char *out_hex, char *out_npub,

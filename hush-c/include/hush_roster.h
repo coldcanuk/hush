@@ -215,6 +215,15 @@ hush_status_t hush_roster_remove_agent(hush_roster_t *roster, const char *slug);
 hush_status_t hush_roster_update_agent(hush_roster_t *roster, const char *slug,
                                        const hush_roster_agent_in_t *in);
 
+/* Writes agents/<slug>/nsec to pass for an existing roster robot.
+ * Missing pass → DENIED; helper fail → IO; overlong path → ARG. */
+hush_status_t hush_roster_save_agent_pass(const hush_roster_t *roster,
+                                          const char *slug);
+
+/* Same pass write as create/update, by slug + secret (path pin / tests). */
+hush_status_t hush_roster_write_agent_pass(const char *slug,
+                                           const char *secret);
+
 /* Clones an agent to "<name> copy" unlocked. Payne is refused. */
 hush_status_t hush_roster_clone_agent(hush_roster_t *roster,
                                       hush_store_t *store,

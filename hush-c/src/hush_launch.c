@@ -673,13 +673,38 @@ hush_status_t hush_launch_add_agent(hush_launch_t *launch,
                                     const hush_roster_agent_in_t *in,
                                     int save_pass)
 {
+    hush_status_t st;
+
     if (launch == NULL || store == NULL || in == NULL)
         return HUSH_ERR_ARG;
     if (!launch->has_vibe || !launch->logged_in)
         return HUSH_ERR_ARG;
     if (hush_launch_is_payne_name(launch, in->name))
         return HUSH_ERR_PARSE;
-    HUSH_TRY(hush_roster_add_agent(&launch->roster, store, in, save_pass));
+    st = hush_roster_add_agent(&launch->roster, store, in, save_pass);
+    if (st != HUSH_OK) {
+        /* Pass-key refusals only: fill_agent never returns IO. ARG after a
+         * successful fill is the overlong agents/<slug>/nsec path. DENIED
+         * here with save_pass is missing pass (skill DENIED is returned
+         * earlier by the HTTP loadout check). */
+        if (save_pass && st == HUSH_ERR_IO) {
+            launch->pass_saved = 0;
+            hush_pass_last_error(launch->pass_error, sizeof(launch->pass_error));
+            if (launch->pass_error[0] == '\0')
+                memcpy(launch->pass_error, "save failed", 12);
+        } else if (save_pass && st == HUSH_ERR_DENIED) {
+            launch->pass_saved = 0;
+            memcpy(launch->pass_error, "pass is not available", 22);
+        } else if (save_pass && st == HUSH_ERR_ARG) {
+            launch->pass_saved = 0;
+            memcpy(launch->pass_error, "path is too long", 17);
+        }
+        return st;
+    }
+    if (save_pass) {
+        launch->pass_saved = 1;
+        launch->pass_error[0] = '\0';
+    }
     return hush_launch_save_vibe(launch);
 }
 
@@ -813,14 +838,37 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
 }
 
 hush_status_t hush_launch_update_agent(hush_launch_t *launch, const char *slug,
-                                       const hush_roster_agent_in_t *in)
+                                       const hush_roster_agent_in_t *in,
+                                       int save_pass)
 {
+    hush_status_t st;
+
     if (launch == NULL || slug == NULL || in == NULL)
         return HUSH_ERR_ARG;
     if (!launch->has_vibe || !launch->logged_in)
         return HUSH_ERR_ARG;
     if (hush_launch_renames_to_payne(launch, slug, in))
         return HUSH_ERR_PARSE;
+    if (save_pass) {
+        st = hush_roster_save_agent_pass(&launch->roster, slug);
+        if (st != HUSH_OK) {
+            launch->pass_saved = 0;
+            if (st == HUSH_ERR_IO) {
+                hush_pass_last_error(launch->pass_error,
+                                     sizeof(launch->pass_error));
+                if (launch->pass_error[0] == '\0')
+                    memcpy(launch->pass_error, "save failed", 12);
+            } else if (st == HUSH_ERR_DENIED)
+                memcpy(launch->pass_error, "pass is not available", 22);
+            else if (st == HUSH_ERR_ARG)
+                memcpy(launch->pass_error, "path is too long", 17);
+            else
+                launch->pass_error[0] = '\0';
+            return st;
+        }
+        launch->pass_saved = 1;
+        launch->pass_error[0] = '\0';
+    }
     HUSH_TRY(hush_roster_update_agent(&launch->roster, slug, in));
     return hush_launch_save_vibe(launch);
 }

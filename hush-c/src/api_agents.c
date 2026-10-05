@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "hush_home.h"
+#include "hush_pass.h"
 #include "hush_http_internal.h"
 #include "hush_provider.h"
 #include "hush_roster.h"
@@ -42,6 +43,12 @@
 #define HUSH_AGENT_WHY_MAJOR "Major cannot be deleted or cloned."
 #define HUSH_AGENT_WHY_CLONE_LONG \
     "That name would be too long after adding \" copy\". Shorten the name first."
+#define HUSH_AGENT_WHY_PASS_MISSING \
+    "Could not save the robot's key to pass: pass is not available."
+#define HUSH_AGENT_WHY_PASS_PATH \
+    "Could not save the robot's key to pass: path is too long."
+#define HUSH_AGENT_WHY_PASS_FAIL_FMT \
+    "Could not save the robot's key to pass: %s."
 
 /* Room for one byte past the limit: a context text longer than
  * HUSH_ROSTER_CONTEXT_BYTES reads as CONTEXT_BYTES + 1 bytes, so the
@@ -95,7 +102,43 @@ static void hush_http_create_why(char *why, size_t whysz,
 /* Writes why for a refused update of slug; empty when no rule matches. */
 static void hush_http_update_why(char *why, size_t whysz, const char *slug,
                                  const hush_roster_agent_in_t *in);
+/* Writes why for a refused pass save (missing|fail|path). 1 when matched. */
+static int hush_http_pass_why(char *why, size_t whysz, hush_status_t st);
 /* Writes why for a refused delete or clone of slug by status. */
+static int hush_http_pass_why(char *why, size_t whysz, hush_status_t st)
+{
+    hush_launch_t *launch;
+    char detail[96];
+    size_t n;
+    int wrote;
+
+    if (why == NULL || whysz == 0)
+        return 0;
+    launch = hush_http_launch();
+    if (launch == NULL || launch->pass_error[0] == '\0')
+        return 0;
+    if (st == HUSH_ERR_DENIED) {
+        snprintf(why, whysz, "%s", HUSH_AGENT_WHY_PASS_MISSING);
+        return 1;
+    }
+    if (st == HUSH_ERR_ARG) {
+        snprintf(why, whysz, "%s", HUSH_AGENT_WHY_PASS_PATH);
+        return 1;
+    }
+    if (st != HUSH_ERR_IO)
+        return 0;
+    /* Cap the helper text so the 400 line fits HUSH_HTTP_WHY_MAX. */
+    n = strlen(launch->pass_error);
+    if (n >= sizeof(detail))
+        n = sizeof(detail) - 1;
+    memcpy(detail, launch->pass_error, n);
+    detail[n] = '\0';
+    wrote = snprintf(why, whysz, HUSH_AGENT_WHY_PASS_FAIL_FMT, detail);
+    if (wrote < 0 || (size_t)wrote >= whysz)
+        snprintf(why, whysz, "%s", "Could not save the robot's key to pass: save failed.");
+    return 1;
+}
+
 static void hush_http_slug_why(char *why, size_t whysz, hush_status_t st,
                                const char *slug);
 /* Writes why for a refused clone of slug, in hush_roster_clone_agent's
@@ -184,8 +227,10 @@ static hush_status_t hush_http_create_agent(int fd, const char *body,
         return hush_http_reply_session(fd, st);
     st = hush_launch_add_agent(hush_http_launch(), store, &in,
                                hush_http_want_save_pass(body));
-    if (st != HUSH_OK)
-        hush_http_create_why(why, sizeof(why), &in);
+    if (st != HUSH_OK) {
+        if (!hush_http_pass_why(why, sizeof(why), st))
+            hush_http_create_why(why, sizeof(why), &in);
+    }
     return hush_http_reply_refused(fd, st, why);
 }
 
@@ -305,9 +350,12 @@ static hush_status_t hush_http_update_agent(int fd, const char *body)
                                  hush_http_agent_role(slug, &in), slug);
     if (st != HUSH_OK)
         return hush_http_reply_refused(fd, st, why);
-    st = hush_launch_update_agent(hush_http_launch(), slug, &in);
-    if (st != HUSH_OK)
-        hush_http_update_why(why, sizeof(why), slug, &in);
+    st = hush_launch_update_agent(hush_http_launch(), slug, &in,
+                                  hush_http_want_save_pass(body));
+    if (st != HUSH_OK) {
+        if (!hush_http_pass_why(why, sizeof(why), st))
+            hush_http_update_why(why, sizeof(why), slug, &in);
+    }
     return hush_http_reply_refused(fd, st, why);
 }
 
