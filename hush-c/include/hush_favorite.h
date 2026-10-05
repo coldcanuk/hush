@@ -87,6 +87,12 @@ hush_status_t hush_favorite_load(const char *robot, const char *name,
  * HUSH_ERR_IO on disk errors. */
 hush_status_t hush_favorite_delete(const char *robot, const char *name);
 
+/* Drops the robot's loadouts directory. A missing tree succeeds.
+ * Nothing is renamed or moved. Fails with HUSH_ERR_ARG on a bad
+ * pointer or a bad robot slug, HUSH_ERR_FULL on overflow or a
+ * tree past the scan cap, HUSH_ERR_IO on disk errors. */
+hush_status_t hush_favorite_clear_robot(const char *robot);
+
 /* Writes {"ok":true,"robot":..,"favorites":[..]} into out, creating no
  * directories; a missing tree lists empty. Skips unreadable files.
  * Fails with HUSH_ERR_ARG on bad pointers or a bad robot slug,

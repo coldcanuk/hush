@@ -190,6 +190,16 @@ static hush_status_t hush_favorite_end_scan(DIR *dp, size_t total);
 static hush_status_t hush_favorite_list_close(char *out, size_t outsz,
                                               size_t *off, size_t *out_len);
 
+/* Unlinks dir/name when it is not a directory. */
+static hush_status_t hush_favorite_unlink_one(const char *dir,
+                                              const char *name);
+
+/* Unlinks files directly under dir. A missing dir succeeds. */
+static hush_status_t hush_favorite_clear_dir(const char *dir);
+
+/* Removes dir. A missing dir succeeds. */
+static hush_status_t hush_favorite_drop_dir(const char *dir);
+
 hush_status_t hush_favorite_save(const char *robot, const char *name,
                                  char ids[][HUSH_SKILL_ID_MAX], size_t nids)
 {
@@ -290,6 +300,84 @@ hush_status_t hush_favorite_delete(const char *robot, const char *name)
     if (unlink(path) != 0)
         return errno == ENOENT ? HUSH_ERR_NOT_FOUND : HUSH_ERR_IO;
     return HUSH_OK;
+}
+
+hush_status_t hush_favorite_clear_robot(const char *robot)
+{
+    char dir[HUSH_HOME_PATH_MAX] = {0};
+    hush_status_t st = HUSH_OK;
+
+    if (robot == NULL)
+        return HUSH_ERR_ARG;
+    st = hush_favorite_loadouts(dir, sizeof dir, robot);
+    if (st != HUSH_OK)
+        return st;
+    st = hush_favorite_clear_dir(dir);
+    if (st != HUSH_OK)
+        return st;
+    return hush_favorite_drop_dir(dir);
+}
+
+static hush_status_t hush_favorite_unlink_one(const char *dir,
+                                              const char *name)
+{
+    char path[HUSH_HOME_PATH_MAX] = {0};
+    int n = 0;
+
+    assert(dir != NULL);
+    assert(name != NULL);
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+        return HUSH_OK;
+    n = snprintf(path, sizeof path, "%s/%s", dir, name);
+    if (n < 0 || (size_t)n >= sizeof path)
+        return HUSH_ERR_FULL;
+    if (!hush_favorite_is_under_dir(path, dir))
+        return HUSH_ERR_IO;
+    /* unlink removes a symlink itself. A directory is left in place
+     * and reported, so this never walks out of the loadouts tree. */
+    if (unlink(path) != 0 && errno != ENOENT)
+        return HUSH_ERR_IO;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_favorite_clear_dir(const char *dir)
+{
+    DIR *dp = NULL;
+    size_t total = 0;
+    hush_status_t st = HUSH_OK;
+
+    assert(dir != NULL);
+    st = hush_favorite_open_dir(&dp, dir);
+    if (st == HUSH_ERR_NOT_FOUND)
+        return HUSH_OK;
+    if (st != HUSH_OK)
+        return st;
+    while (total < (size_t)HUSH_FAVORITE_SCAN_MAX) {
+        struct dirent *ent = NULL;
+
+        st = hush_favorite_next_dirent(dp, &ent);
+        if (st == HUSH_ERR_NOT_FOUND)
+            break;
+        if (st != HUSH_OK) {
+            closedir(dp);
+            return st;
+        }
+        total++;
+        st = hush_favorite_unlink_one(dir, ent->d_name);
+        if (st != HUSH_OK) {
+            closedir(dp);
+            return st;
+        }
+    }
+    return hush_favorite_end_scan(dp, total);
+}
+
+static hush_status_t hush_favorite_drop_dir(const char *dir)
+{
+    assert(dir != NULL);
+    if (rmdir(dir) == 0 || errno == ENOENT)
+        return HUSH_OK;
+    return HUSH_ERR_IO;
 }
 
 hush_status_t hush_favorite_list_json(const char *robot, char *out,
