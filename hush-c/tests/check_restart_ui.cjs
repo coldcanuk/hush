@@ -254,22 +254,39 @@ const LOG_PROBE_FN = `function(th, force) {
 async function main() {
   const chrome = resolveChrome();
   const track = (proc) => { liveProcs.push(proc); return proc; };
-  const userDir = fs.mkdtempSync(path.join(os.tmpdir(), 'id1-chrome-'));
-  const chromeProc = track(spawn(chrome,
-    ['--headless', '--no-sandbox', '--disable-gpu', '--no-first-run',
-      '--remote-debugging-port=0', `--user-data-dir=${userDir}`, 'about:blank'],
-    { stdio: ['ignore', 'ignore', 'pipe'] }));
-  let devtools = null;
-  const t0 = Date.now();
-  let stderr = '';
-  chromeProc.stderr.on('data', (d) => { stderr += d.toString(); });
-  while (Date.now() - t0 < 20000) {
-    const m = stderr.match(/DevTools listening on (ws:\/\/\S+)/);
-    if (m) { devtools = m[1]; break; }
-    await sleep(200);
+  /* CI runners often set a junk DBUS_SESSION_BUS_ADDRESS; Chrome then
+     logs dbus parse errors and never prints DevTools listening (flake).
+     Drop a broken/empty address and retry once if the first launch stalls. */
+  const chromeEnv = Object.assign({}, process.env);
+  delete chromeEnv.DBUS_SESSION_BUS_ADDRESS;
+  const chromeArgs = (userDir) => [
+    '--headless', '--no-sandbox', '--disable-gpu', '--no-first-run',
+    '--disable-dev-shm-usage', '--disable-software-rasterizer',
+    '--remote-debugging-port=0', `--user-data-dir=${userDir}`, 'about:blank'];
+  async function launchChrome() {
+    const userDir = fs.mkdtempSync(path.join(os.tmpdir(), 'id1-chrome-'));
+    const proc = track(spawn(chrome, chromeArgs(userDir), {
+      stdio: ['ignore', 'ignore', 'pipe'], env: chromeEnv }));
+    let stderr = '';
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    const t0 = Date.now();
+    while (Date.now() - t0 < 20000) {
+      const m = stderr.match(/DevTools listening on (ws:\/\/\S+)/);
+      if (m) return { proc, userDir, devtools: m[1], stderr };
+      if (proc.exitCode !== null) break;
+      await sleep(200);
+    }
+    try { proc.kill('SIGTERM'); } catch (e) { /* gone */ }
+    return { proc, userDir, devtools: null, stderr };
   }
+  let launched = await launchChrome();
+  if (!launched.devtools)
+    launched = await launchChrome();
+  const chromeProc = launched.proc;
+  const userDir = launched.userDir;
+  const devtools = launched.devtools;
   if (!devtools)
-    fail('Chrome printed no DevTools URL: ' + stderr.slice(0, 300));
+    fail('Chrome printed no DevTools URL: ' + (launched.stderr || '').slice(0, 300));
   const httpBase = devtools.replace(/^ws:\/\//, 'http://').replace(/\/devtools.*$/, '');
   const targets = await (await fetch(httpBase + '/json/list')).json();
   const pageTarget = targets.find((t) => t.type === 'page');
