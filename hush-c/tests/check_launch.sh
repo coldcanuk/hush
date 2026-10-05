@@ -745,8 +745,30 @@ fi
 # B3 / Gauge: claimed #241 UI bytes whose revert must FAIL this gate.
 echo "$html" | grep -q -F 'value="field-office" checked' \
   || fail "#241 M1b theme radio default must be field-office"
-echo "$html" | grep -q -F 'Public key on file — open Profile to copy it.' \
-  || fail "#241 M2a Meet Major must not show raw npub"
+# #241 r4 F1/F2: Meet Major — no false Profile pointer; one At ease line.
+if echo "$html" | grep -q -F 'Public key on file'; then
+  fail "#241 F1 Meet Major must not point at Profile for Major's key"
+fi
+echo "$html" | grep -q -F "<p><strong>At ease.</strong> I'm Major. Tell me what you want built and I'll find — or raise — the right robot for the job.</p>" \
+  || fail "#241 F2 Meet Major must ship the single At ease intro"
+# Exactly one visible At ease (strong) in the payne card; no p.npub.
+at_ease_n=$(echo "$html" | sed -n '/page === "payne"/,/meet-payne/p' | grep -c '<strong>At ease.</strong>' || true)
+test "$at_ease_n" -eq 1 || fail "#241 F2 Meet Major must say At ease exactly once (got $at_ease_n)"
+if echo "$html" | sed -n '/page === "payne"/,/meet-payne/p' | grep -q 'p.npub'; then
+  fail "#241 Meet Major must not reference p.npub on the gate card"
+fi
+# F3 Settings a11y helpers present.
+echo "$html" | grep -q -F 'function openSettings()' \
+  || fail "#241 F3 openSettings missing"
+echo "$html" | grep -q -F 'function closeSettings()' \
+  || fail "#241 F3 closeSettings missing"
+echo "$html" | grep -q -F 'settingsReturnFocus' \
+  || fail "#241 F3 settingsReturnFocus missing"
+echo "$html" | grep -q -F 'function settingsFocusables()' \
+  || fail "#241 F3 settingsFocusables missing"
+if ! echo "$html" | grep -A20 'function dismissJourneyLayer' | grep -q 'closeSettings()'; then
+  fail "#241 F3 Esc must close Settings via closeSettings (return focus)"
+fi
 echo "$html" | grep -q -F 'lastStatus = { ok: false };' \
   || fail "#241 M5 tick catch must clear lastStatus"
 echo "$html" | grep -q -F 'paintRosterPane(lastStatus);' \

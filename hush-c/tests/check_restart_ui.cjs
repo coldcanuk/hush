@@ -1102,21 +1102,11 @@ async function main() {
           bubbles: true, cancelable: true, clientX: ix, clientY: iy, pointerId: 2
         }));
         const afterInside = d.classList.contains('show');
-        // Esc / Settings pin (P3): Settings open then Escape closes it.
         d.classList.remove('show');
-        const settings = document.getElementById('settings');
-        let settingsAfterEsc = null;
-        if (settings) {
-          settings.classList.add('show');
-          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-          settingsAfterEsc = settings.classList.contains('show');
-          settings.classList.remove('show');
-        }
         return {
           hitId: hit && hit.id, hitClass: hit && hit.className,
           afterBackdrop, afterInside,
-          hitIn: hitIn && (hitIn.id || hitIn.tagName),
-          settingsAfterEsc
+          hitIn: hitIn && (hitIn.id || hitIn.tagName)
         };
       })()`);
       console.log('new-chan outside click: ' + JSON.stringify(nc));
@@ -1125,11 +1115,65 @@ async function main() {
         `#241 B1 backdrop click closes new-chan drawer: ${JSON.stringify(nc)}`);
       check(nc.afterInside === true,
         `#241 B1 inside-panel click keeps new-chan open: ${JSON.stringify(nc)}`);
-      check(nc.settingsAfterEsc === false,
-        `#241 P3 Esc closes Settings: ${JSON.stringify(nc)}`);
     }
 
-    // Pre-walk r4 (Gauge B1), no pass installed: the robot editor never
+        // #241 r4 F3: Settings — focus enters dialog, Tab stays inside, Esc returns to Kit.
+    {
+      const sf = await cdp.eval(`(() => {
+        const kit = document.getElementById('rail-toggle');
+        const settings = document.getElementById('settings');
+        if (!kit || !settings || typeof openSettings !== 'function' || typeof closeSettings !== 'function'
+            || typeof settingsFocusables !== 'function')
+          return { err: 'missing settings a11y helpers' };
+        kit.focus();
+        openSettings();
+        const afterOpen = {
+          show: settings.classList.contains('show'),
+          inDialog: !!(document.activeElement && settings.contains(document.activeElement)),
+          ae: document.activeElement && (document.activeElement.id || document.activeElement.tagName)
+        };
+        const list = settingsFocusables();
+        let wrapForward = false, wrapBack = false;
+        if (list.length >= 2) {
+          list[list.length - 1].focus();
+          document.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Tab', code: 'Tab', bubbles: true, cancelable: true
+          }));
+          wrapForward = document.activeElement === list[0];
+          list[0].focus();
+          document.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Tab', code: 'Tab', bubbles: true, cancelable: true, shiftKey: true
+          }));
+          wrapBack = document.activeElement === list[list.length - 1];
+        }
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        const afterEsc = {
+          show: settings.classList.contains('show'),
+          backOnKit: document.activeElement === kit,
+          ae: document.activeElement && (document.activeElement.id || document.activeElement.tagName)
+        };
+        openSettings();
+        const closeBtn = document.getElementById('settings-close');
+        if (closeBtn) closeBtn.click();
+        const afterClose = {
+          show: settings.classList.contains('show'),
+          backOnKit: document.activeElement === kit
+        };
+        return { afterOpen, wrapForward, wrapBack, afterEsc, afterClose, nFocusable: list.length };
+      })()`);
+      console.log('settings a11y: ' + JSON.stringify(sf));
+      check(!sf.err, `#241 F3 settings helpers present: ${JSON.stringify(sf)}`);
+      check(sf.afterOpen && sf.afterOpen.show && sf.afterOpen.inDialog,
+        `#241 F3 openSettings moves focus into dialog: ${JSON.stringify(sf)}`);
+      check(sf.wrapForward === true && sf.wrapBack === true,
+        `#241 F3 Tab trap wraps inside Settings: ${JSON.stringify(sf)}`);
+      check(sf.afterEsc && sf.afterEsc.show === false && sf.afterEsc.backOnKit,
+        `#241 F3 Esc closes Settings and returns focus to Kit: ${JSON.stringify(sf)}`);
+      check(sf.afterClose && sf.afterClose.show === false && sf.afterClose.backOnKit,
+        `#241 F3 Close returns focus to Kit: ${JSON.stringify(sf)}`);
+    }
+
+// Pre-walk r4 (Gauge B1), no pass installed: the robot editor never
     // claims to save the key, on Raise or any Edit path.
     await cdp.waitFor(`!!document.querySelector('#robot-list .robot-card[data-slug="coach"]')`, 'robot cards');
     check((await sess(port, R.headers)).pass_available === false, 'phase A relay reports no pass');

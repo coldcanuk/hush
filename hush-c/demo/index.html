@@ -3163,13 +3163,12 @@ html[data-theme="dark"] #thread-send:active {
           actions([{ id: "do-vibe", label: "Stand up the hive" }]));
       }
       if (page === "payne") {
-        const p = session.payne || {};
+        /* #241 r4 F1/F2: no false Profile pointer (Profile is the user, not
+           Major); one At ease + one find/raise line. Major's key is not on
+           this gate card — no raw npub. */
         return card("Major",
           stepBar(4) +
-          "<p><strong>At ease.</strong> " +
-          esc(p.about || "I find the right robot — or raise one.") + "</p>" +
-          (p.npub ? "<p class=\"help\">Public key on file — open Profile to copy it.</p>" : "") +
-          "<p>At ease. I'm Major. Tell me what you want built and I'll find — or raise — the right robot for the job.</p>" +
+          "<p><strong>At ease.</strong> I'm Major. Tell me what you want built and I'll find — or raise — the right robot for the job.</p>" +
           errLine() +
           actions([{ id: "meet-payne", label: "Carry on." }]));
       }
@@ -5459,11 +5458,68 @@ html[data-theme="dark"] #thread-send:active {
     const peers = {};
     const seenSig = {};
 
-    $("settings-btn").addEventListener("click", () => {
-      $("settings").classList.add("show");
+    /* #241 r4 F3: Settings a11y — focus enters the dialog, Tab stays inside,
+       Esc/Close returns focus to the Kit opener (rail-toggle), not BODY. */
+    let settingsReturnFocus = null;
+    function settingsFocusables() {
+      const d = $("settings");
+      if (!d) return [];
+      return Array.prototype.slice.call(d.querySelectorAll(
+        "button, [href], input, select, textarea, [tabindex]:not([tabindex=\"-1\"])"
+      )).filter((el) => !el.disabled && el.getAttribute("aria-hidden") !== "true"
+        && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
+    }
+    function openSettings() {
+      const d = $("settings");
+      if (!d) return;
+      const ae = document.activeElement;
+      const kit = $("kit-menu");
+      /* settings-btn lives in #kit-menu; kit hide removes it from the tree,
+         so remember the Kit stamp (#rail-toggle) as the return target. */
+      if (ae && kit && kit.contains(ae))
+        settingsReturnFocus = $("rail-toggle") || ae;
+      else
+        settingsReturnFocus = ae || $("rail-toggle");
+      d.classList.add("show");
+      d.setAttribute("aria-modal", "true");
       syncSettings();
-    });
-    $("settings-close").addEventListener("click", () => $("settings").classList.remove("show"));
+      const list = settingsFocusables();
+      const first = list[0] || d;
+      try { first.focus(); } catch (e) {}
+    }
+    function closeSettings() {
+      const d = $("settings");
+      if (!d) return;
+      d.classList.remove("show");
+      d.removeAttribute("aria-modal");
+      const back = settingsReturnFocus || $("rail-toggle");
+      settingsReturnFocus = null;
+      if (back && typeof back.focus === "function") {
+        try { back.focus(); } catch (e) {}
+      }
+    }
+    $("settings-btn").addEventListener("click", () => { openSettings(); });
+    $("settings-close").addEventListener("click", () => { closeSettings(); });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Tab") return;
+      const d = $("settings");
+      if (!d || !d.classList.contains("show")) return;
+      const list = settingsFocusables();
+      if (!list.length) return;
+      const first = list[0], last = list[list.length - 1];
+      if (!d.contains(document.activeElement)) {
+        ev.preventDefault();
+        first.focus();
+        return;
+      }
+      if (ev.shiftKey && document.activeElement === first) {
+        ev.preventDefault();
+        last.focus();
+      } else if (!ev.shiftKey && document.activeElement === last) {
+        ev.preventDefault();
+        first.focus();
+      }
+    }, true);
     /* UI-M1: Character sheet (Profile drawer) shared by rail button, quick tab, and `c`.
        UI-M4: taking the character journey hides the inventory layers, so
        the sheet never stacks over (or under) them. */
@@ -5599,7 +5655,8 @@ html[data-theme="dark"] #thread-send:active {
       for (let k = 0; k < order.length; k++) {
         const el = $(order[k]);
         if (el && el.classList.contains("show")) {
-          el.classList.remove("show");
+          if (order[k] === "settings") closeSettings();
+          else el.classList.remove("show");
           return true;
         }
       }
