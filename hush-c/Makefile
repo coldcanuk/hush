@@ -212,6 +212,7 @@ test: check-deps $(TEST_BINS) hush-relay
 	python3 tests/check_limits.py || exit 1; \
 	python3 tests/check_trust.py || exit 1; \
 	python3 tests/check_reasons.py || exit 1; \
+	python3 tests/check_save_pass.py || exit 1; \
 	sh tests/check_fixup.sh || exit 1; \
 	sh tests/check_complete.sh || exit 1; \
 	sh tests/check_turn.sh || exit 1; \

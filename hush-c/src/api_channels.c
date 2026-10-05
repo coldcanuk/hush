@@ -184,7 +184,9 @@ hush_status_t hush_http_reply_refused(int fd, hush_status_t st,
     char line[HUSH_HTTP_WHY_MAX + 1] = {0};
     int n = 0;
 
-    if (st == HUSH_OK || st == HUSH_ERR_IO || why == NULL || why[0] == '\0')
+    /* Named why wins even for HUSH_ERR_IO so robot pass-save refusals
+     * can say missing|fail|path instead of a bare 500. */
+    if (st == HUSH_OK || why == NULL || why[0] == '\0')
         return hush_http_reply_session(fd, st);
     n = snprintf(line, sizeof line, "%s\n", why);
     if (n < 0 || (size_t)n >= sizeof line)

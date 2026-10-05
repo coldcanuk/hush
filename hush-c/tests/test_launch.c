@@ -499,7 +499,7 @@ int main(void)
             memcpy(lock_in.name, "Nope", 5);
             lock_in.has_enabled = 1;
             lock_in.enabled = 0;
-            expect(hush_launch_update_agent(&launch, "coach", &lock_in) ==
+            expect(hush_launch_update_agent(&launch, "coach", &lock_in, 0) ==
                        HUSH_OK,
                    "locked enable");
         }

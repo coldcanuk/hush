@@ -123,6 +123,8 @@ typedef struct {
     int save_pass;
     int pass_saved;
     char pass_error[HUSH_PASS_ERR_MAX];
+    /* Last robot create/update pass outcome; never the identity key. */
+    char robot_pass_error[HUSH_PASS_ERR_MAX];
     hush_identity_t human;
     hush_identity_t payne;
     char payne_providers[HUSH_LAUNCH_PAYNE_PROVIDERS_MAX][HUSH_ROSTER_PROVIDER_MAX];
@@ -212,9 +214,11 @@ hush_status_t hush_launch_clone_agent(hush_launch_t *launch,
 hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
                                          hush_store_t *store);
 
-/* Updates a raised agent's name, prompt, picture, voice, and skills. */
+/* Updates a raised agent's name, prompt, picture, voice, and skills.
+ * save_pass 1 writes agents/<slug>/nsec to pass (same path as create). */
 hush_status_t hush_launch_update_agent(hush_launch_t *launch, const char *slug,
-                                       const hush_roster_agent_in_t *in);
+                                       const hush_roster_agent_in_t *in,
+                                       int save_pass);
 
 /* Updates Payne picture, voice, skills, and enabled. Name and prompt stay
  * locked to the platform identity. */

@@ -200,11 +200,22 @@ typedef struct {
     size_t ncontext;
 } hush_roster_agent_in_t;
 
-/* Creates an agent identity. Requires name, prompt, and provider. */
+/* Key write for a new agent: none, soft op/secret offer, or pass (hard). */
+enum {
+    HUSH_ROSTER_KEY_NONE = 0,
+    HUSH_ROSTER_KEY_OFFER = 1,
+    HUSH_ROSTER_KEY_PASS = 2
+};
+
+/* Creates an agent identity. Requires name, prompt, and provider.
+ * key_mode selects keep behaviour. When key_mode is PASS and keep fails,
+ * *pass_st (if non-NULL) receives that keep status and the agent is not
+ * added; fill/context refusals leave *pass_st as HUSH_OK. */
 hush_status_t hush_roster_add_agent(hush_roster_t *roster,
                                     hush_store_t *store,
                                     const hush_roster_agent_in_t *in,
-                                    int save_pass);
+                                    int key_mode,
+                                    hush_status_t *pass_st);
 
 /* Drops an agent by slug. Payne's slug is refused. */
 hush_status_t hush_roster_remove_agent(hush_roster_t *roster, const char *slug);
@@ -214,6 +225,15 @@ hush_status_t hush_roster_remove_agent(hush_roster_t *roster, const char *slug);
  * accept enable and intro changes. */
 hush_status_t hush_roster_update_agent(hush_roster_t *roster, const char *slug,
                                        const hush_roster_agent_in_t *in);
+
+/* Writes agents/<slug>/nsec to pass for an existing roster robot.
+ * Missing pass → DENIED; helper fail → IO; overlong path → ARG. */
+hush_status_t hush_roster_save_agent_pass(const hush_roster_t *roster,
+                                          const char *slug);
+
+/* Same pass write as create/update, by slug + secret (path pin / tests). */
+hush_status_t hush_roster_write_agent_pass(const char *slug,
+                                           const char *secret);
 
 /* Clones an agent to "<name> copy" unlocked. Payne is refused. */
 hush_status_t hush_roster_clone_agent(hush_roster_t *roster,
