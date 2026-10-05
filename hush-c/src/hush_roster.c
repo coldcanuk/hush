@@ -664,9 +664,14 @@ static hush_status_t hush_roster_format_profile(const hush_roster_t *roster,
         return HUSH_ERR_FULL;
     *off += (size_t)n;
     hush_roster_json_escape(roster->profile.organization, esc, sizeof(esc));
-    n = snprintf(out + *off, outsz - *off,
-                 ",\"organization\":\"%s\",\"picture\":\"%s\"},\"agents\":[",
-                 esc, roster->profile.picture);
+    {
+        char esc_pic[HUSH_ROSTER_PATH_MAX * HUSH_JSON_U_LEN];
+
+        hush_roster_json_escape(roster->profile.picture, esc_pic, sizeof(esc_pic));
+        n = snprintf(out + *off, outsz - *off,
+                     ",\"organization\":\"%s\",\"picture\":\"%s\"},\"agents\":[",
+                     esc, esc_pic);
+    }
     if (n < 0 || *off + (size_t)n >= outsz)
         return HUSH_ERR_FULL;
     *off += (size_t)n;
@@ -1201,6 +1206,7 @@ static hush_status_t hush_roster_format_one_agent(const hush_roster_agent_t *age
     char esc[HUSH_ROSTER_NAME_MAX * HUSH_JSON_U_LEN];
     char preview[HUSH_ROSTER_PROMPT_PREVIEW + 1];
     char esc_prompt[HUSH_ROSTER_PROMPT_PREVIEW * HUSH_JSON_U_LEN];
+    char esc_picture[HUSH_ROSTER_PATH_MAX * HUSH_JSON_U_LEN];
     char prov[HUSH_ROSTER_PROVIDERS_MAX * (HUSH_ROSTER_PROVIDER_MAX + 3)];
     size_t poff = 0;
     size_t i;
@@ -1212,6 +1218,7 @@ static hush_status_t hush_roster_format_one_agent(const hush_roster_agent_t *age
     hush_roster_json_escape(agent->name, esc, sizeof(esc));
     hush_roster_preview_prompt(preview, sizeof(preview), agent->prompt);
     hush_roster_json_escape(preview, esc_prompt, sizeof(esc_prompt));
+    hush_roster_json_escape(agent->picture, esc_picture, sizeof(esc_picture));
     for (i = 0; i < agent->nproviders; i++) {
         n = snprintf(prov + poff, sizeof(prov) - poff, "%s\"%s\"",
                      i == 0 ? "" : ",", agent->providers[i]);
@@ -1227,7 +1234,7 @@ static hush_status_t hush_roster_format_one_agent(const hush_roster_agent_t *age
                  "\"ncontext\":%zu,\"skills\":",
                  first ? "" : ",",
                  esc, agent->slug, agent->id.npub, agent->id.pubkey_hex,
-                 agent->provider, prov, esc_prompt, agent->picture, agent->voice,
+                 agent->provider, prov, esc_prompt, esc_picture, agent->voice,
                  agent->enabled ? "true" : "false",
                  agent->locked ? "true" : "false",
                  agent->role[0] ? agent->role : HUSH_ROSTER_ROLE_WORKER,

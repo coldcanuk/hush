@@ -28,6 +28,18 @@ int main(void)
     char out[64];
     char tiny[3];
     unsigned char leaf[] = {0xF0, 0x9F, 0x8C, 0xBF, 0}; /* U+1F33F */
+    struct {
+        char buf[3];
+        unsigned char canary;
+    } three;
+    struct {
+        char buf[4];
+        unsigned char canary;
+    } four;
+    struct {
+        char buf[5];
+        unsigned char canary;
+    } five;
 
     /* Short escapes. */
     check("a\\nb\"", "a\nb", "newline");
@@ -65,11 +77,43 @@ int main(void)
     hush_http_json_unescape_copy("a\\uD800b\"", out, sizeof(out));
     expect(strcmp(out, "ab") == 0, "lone high skipped");
 
-    /* Size guard: tiny buffer must not overrun; result stays terminated. */
+    /* Size guard: 1-byte short escape. */
     memset(tiny, 0x5A, sizeof(tiny));
     hush_http_json_unescape_copy("\\n\\n\\n\"", tiny, sizeof(tiny));
     expect(tiny[sizeof(tiny) - 1] == '\0', "size guard NUL");
     expect((unsigned char)tiny[0] == '\n' || tiny[0] == '\0', "size guard byte");
+
+    /* M12: 3-byte BMP write must not overrun when dstsz == 3 (2 data + NUL). */
+    memset(&three, 0x5A, sizeof(three));
+    three.canary = 0xA5;
+    hush_http_json_unescape_copy("\\u0800\"", three.buf, sizeof(three.buf));
+    expect(three.canary == 0xA5, "3-byte no overrun");
+    expect(three.buf[0] == '\0', "3-byte too small stays empty");
+
+    /* Enough room for U+0800 (3 UTF-8 bytes + NUL). */
+    memset(&four, 0x5A, sizeof(four));
+    four.canary = 0xA5;
+    hush_http_json_unescape_copy("\\u0800\"", four.buf, sizeof(four.buf));
+    expect(four.canary == 0xA5, "3-byte fit no overrun");
+    expect((unsigned char)four.buf[0] == 0xE0, "3-byte fit b0");
+    expect((unsigned char)four.buf[1] == 0xA0, "3-byte fit b1");
+    expect((unsigned char)four.buf[2] == 0x80, "3-byte fit b2");
+    expect(four.buf[3] == '\0', "3-byte fit NUL");
+
+    /* M18: 4-byte surrogate write must not overrun when dstsz == 4. */
+    memset(&four, 0x5A, sizeof(four));
+    four.canary = 0xA5;
+    hush_http_json_unescape_copy("\\uD83C\\uDF3F\"", four.buf, sizeof(four.buf));
+    expect(four.canary == 0xA5, "4-byte no overrun");
+    expect(four.buf[0] == '\0', "4-byte too small stays empty");
+
+    /* Enough room for 🌿 (4 UTF-8 bytes + NUL). */
+    memset(&five, 0x5A, sizeof(five));
+    five.canary = 0xA5;
+    hush_http_json_unescape_copy("\\uD83C\\uDF3F\"", five.buf, sizeof(five.buf));
+    expect(five.canary == 0xA5, "4-byte fit no overrun");
+    expect(memcmp(five.buf, leaf, 4) == 0, "4-byte fit bytes");
+    expect(five.buf[4] == '\0', "4-byte fit NUL");
 
     /* NUL escape becomes the non-zero stand-in. */
     check("a\\u0000b\"", "a\x01" "b", "nul stand-in");

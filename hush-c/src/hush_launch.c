@@ -1701,14 +1701,20 @@ static hush_status_t hush_launch_format_payne_providers(
     hex = launch->has_vibe ? launch->payne.pubkey_hex : "";
     about = launch->has_vibe ? hush_launch_payne_prompt(launch) : "";
     primary = launch->npayne_providers > 0 ? launch->payne_providers[0] : "";
-    n = snprintf(out + *off, outsz - *off,
-                 "\"name\":\"%s\",\"npub\":\"%s\",\"pubkey\":\"%s\","
-                 "\"about\":\"%s\",\"prompt\":\"%s\",\"picture\":\"%s\","
-                 "\"voice\":\"%s\",\"enabled\":%s,\"provider\":\"%s\","
-                 "\"providers\":[",
-                 name, npub, hex, about, about, launch->payne_picture,
-                 launch->payne_voice,
-                 launch->payne_enabled ? "true" : "false", primary);
+    {
+        char esc_picture[HUSH_ROSTER_PATH_MAX * HUSH_JSON_U_LEN];
+
+        hush_launch_json_escape(launch->payne_picture, esc_picture,
+                                sizeof(esc_picture));
+        n = snprintf(out + *off, outsz - *off,
+                     "\"name\":\"%s\",\"npub\":\"%s\",\"pubkey\":\"%s\","
+                     "\"about\":\"%s\",\"prompt\":\"%s\",\"picture\":\"%s\","
+                     "\"voice\":\"%s\",\"enabled\":%s,\"provider\":\"%s\","
+                     "\"providers\":[",
+                     name, npub, hex, about, about, esc_picture,
+                     launch->payne_voice,
+                     launch->payne_enabled ? "true" : "false", primary);
+    }
     if (n < 0 || *off + (size_t)n >= outsz)
         return HUSH_ERR_FULL;
     *off += (size_t)n;
@@ -2319,7 +2325,9 @@ static int hush_launch_json_string(const char *json, const char *key,
 {
     char quoted[HUSH_LAUNCH_KEY_MAX + 8];
     const char *p;
-    size_t i = 0;
+    const char *open;
+    const char *end;
+    hush_json_value_t value;
 
     assert(out != NULL);
     assert(outsz > 0);
@@ -2332,13 +2340,27 @@ static int hush_launch_json_string(const char *json, const char *key,
     p = strstr(json, quoted);
     if (p == NULL)
         return 0;
-    p += strlen(quoted);
-    while (*p != '\0' && *p != '"' && i + 1 < outsz) {
-        if (*p == '\\' && p[1] != '\0')
-            p++;
-        out[i++] = *p++;
+    /* Point at the opening quote of the value; decode RFC 8259 escapes so
+     * vibe reload mirrors hush_json_escape (no atbrnc / u001b garble). */
+    open = p + strlen(quoted) - 1;
+    end = open + 1;
+    while (*end != '\0') {
+        if (*end == '\\' && end[1] != '\0') {
+            end += 2;
+            continue;
+        }
+        if (*end == '"')
+            break;
+        end++;
     }
-    out[i] = '\0';
+    if (*end != '"')
+        return 0;
+    value.start = open;
+    value.len = (size_t)(end - open + 1);
+    if (hush_json_decode(out, outsz, &value) != HUSH_OK) {
+        out[0] = '\0';
+        return 0;
+    }
     return out[0] != '\0';
 }
 

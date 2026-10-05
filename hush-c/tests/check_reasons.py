@@ -677,6 +677,18 @@ def check_restart():
             relay.ok("/api/agent", robot("Walkbot Two"))
             relay.ok("/api/agent", {"action": "update", "slug": "walkbot-two",
                                     "name": "Quiet Hand"})
+            # Controls in prompt/intro must reload as bytes, not letter garble.
+            ctrl_prompt = (
+                b'{"action":"update","slug":"walkbot-two",'
+                b'"system_prompt":"Keep\\tA\\rB\\u001bC"}'
+            )
+            status, _, raw = relay.call("POST", "/api/agent", ctrl_prompt)
+            try:
+                json.loads(raw)
+            except json.JSONDecodeError as err:
+                FAILURES.append(f"pre-restart control prompt not JSON: {err}")
+            if status != 200:
+                FAILURES.append(f"pre-restart control prompt: HTTP {status}")
             relay.ok("/api/agent", robot("Walkbot Two"))
             relay.ok("/api/loadout", fav("save", robot="walkbot-two-2", name="Keep Fav",
                                          skill_0="system:hive-patterns"))
@@ -690,6 +702,23 @@ def check_restart():
             relay.start()
             check_names("restart keeps ids and names", relay,
                         {"walkbot-two": "Quiet Hand", "walkbot-two-2": "Walkbot Two"})
+            status, _, raw = relay.call("GET", "/api/session")
+            try:
+                session = json.loads(raw)
+            except json.JSONDecodeError as err:
+                FAILURES.append(f"GET session after restart not JSON: {err}")
+                session = None
+            if session is not None:
+                agents = [a for a in session.get("agents", [])
+                          if a.get("slug") == "walkbot-two"]
+                prompt = agents[0].get("prompt") if agents else ""
+                if (prompt != "Keep\tA\rB\x1bC"):
+                    FAILURES.append(
+                        f"restart must reload decoded prompt controls; "
+                        f"got {prompt!r} (garble would look like "
+                        f"KeeptA / Keepu001bC)")
+                else:
+                    print("reasons: ok restart keeps decoded prompt controls")
             kept = favorite_names(relay, "walkbot-two-2")
             if kept != ["Keep Fav"]:
                 FAILURES.append(f"restart must keep walkbot-two-2's favorite; got {kept}")
@@ -820,6 +849,106 @@ def check_prompt_control_roundtrip(relay):
     else:
         print("reasons: ok edit session JSON with control prompt parses")
     relay.ok("/api/agent", {"action": "delete", "slug": "prompt-ctrl"})
+
+    # M20: prompt preview is 160 chars; each BS escapes to \u0008 (6 bytes).
+    # esc_prompt must be PREVIEW * HUSH_JSON_U_LEN — a *2 buffer cannot hold
+    # 80 backspaces (480 escaped bytes > 320).
+    n_bs = 80
+    create_bs = (
+        b'{"name":"Buf Pin",'
+        b'"system_prompt":"' + b'\\b' * n_bs + b'",'
+        b'"provider":"grok-build","save_pass":false}'
+    )
+    status, _, raw = relay.call("POST", "/api/agent", create_bs)
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(f"POST with {n_bs} BS prompt is not JSON: {err}")
+        return
+    agents = [a for a in session.get("agents", []) if a.get("name") == "Buf Pin"]
+    if not agents:
+        FAILURES.append("Buf Pin missing after create")
+    else:
+        got = (agents[0].get("prompt") or "").count("\b")
+        if got < n_bs:
+            FAILURES.append(
+                f"esc_prompt must hold {n_bs} backspaces (needs HUSH_JSON_U_LEN); "
+                f"got {got} — a *2 buffer would cap near 53")
+        else:
+            print(f"reasons: ok esc_prompt holds {got} backspaces (HUSH_JSON_U_LEN)")
+    relay.ok("/api/agent", {"action": "delete", "slug": "buf-pin"})
+
+
+def check_picture_json_escape(relay):
+    """Robot, profile, and Major picture fields must be JSON-escaped.
+
+    A quote or control in picture must not break session/POST JSON, and the
+    decoded value must round-trip (including escaped quotes).
+    """
+    # Robot picture: quote + tab.
+    pic = (
+        b'{"action":"update","slug":"walkbot-one",'
+        b'"picture":"x\\"y\\tz"}'
+    )
+    status, _, raw = relay.call("POST", "/api/agent", pic)
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(f"robot picture with quote/tab is not JSON: {err}; "
+                        f"{raw[:160]!r}")
+        return
+    if status != 200:
+        FAILURES.append(f"robot picture update: HTTP {status} {raw[:160]!r}")
+        return
+    agents = [a for a in session.get("agents", [])
+              if a.get("slug") == "walkbot-one"]
+    want_pic = 'x"y\tz'
+    got_pic = agents[0].get("picture") if agents else None
+    if got_pic != want_pic:
+        FAILURES.append(f"robot picture round-trip failed; got {got_pic!r}")
+    else:
+        print("reasons: ok robot picture quote/tab round-trips in session JSON")
+
+    # Profile picture.
+    prof = (
+        b'{"picture":"p\\"q\\u001br"}'
+    )
+    status, _, raw = relay.call("POST", "/api/profile", prof)
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(f"profile picture with quote/ESC is not JSON: {err}; "
+                        f"{raw[:160]!r}")
+        return
+    if status != 200:
+        FAILURES.append(f"profile picture update: HTTP {status} {raw[:160]!r}")
+        return
+    got = (session.get("profile") or {}).get("picture")
+    if got != 'p"q\x1br':
+        FAILURES.append(f"profile picture round-trip failed; got {got!r}")
+    else:
+        print("reasons: ok profile picture quote/ESC round-trips in session JSON")
+
+    # Major (Payne) picture via /api/agent with payne slug.
+    major = (
+        b'{"action":"update","slug":"sgt-major-payne",'
+        b'"picture":"m\\"n\\tb"}'
+    )
+    status, _, raw = relay.call("POST", "/api/agent", major)
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(f"Major picture with quote/tab is not JSON: {err}; "
+                        f"{raw[:160]!r}")
+        return
+    if status != 200:
+        FAILURES.append(f"Major picture update: HTTP {status} {raw[:160]!r}")
+        return
+    got = (session.get("payne") or {}).get("picture")
+    if got != 'm"n\tb':
+        FAILURES.append(f"Major picture round-trip failed; got {got!r}")
+    else:
+        print("reasons: ok Major picture quote/tab round-trips in session JSON")
 
 
 def check_context_size(relay):
@@ -1046,6 +1175,7 @@ def main():
             check_robot_rename(relay)
             check_name_rule(relay)
             check_prompt_control_roundtrip(relay)
+            check_picture_json_escape(relay)
             check_context_size(relay)
             check_favorite_inputs(relay, owned)
             check_favorite_store(relay)
