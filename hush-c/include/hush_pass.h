@@ -50,4 +50,9 @@ hush_status_t hush_pass_delete(const char *path);
  * check; runs nothing and writes nothing. */
 int hush_pass_available(void);
 
+/* True when set_helper or HUSH_PASS_HELPER names a helper.
+ * Live 1Password or keyring tools stay off in that test seam. */
+int hush_pass_uses_override(void);
+
+
 #endif /* HUSH_PASS_H */

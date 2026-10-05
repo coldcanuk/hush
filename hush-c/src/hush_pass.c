@@ -174,6 +174,19 @@ int hush_pass_available(void)
     return 0;
 }
 
+
+int hush_pass_uses_override(void)
+{
+    const char *over = NULL;
+
+    if (g_helper[0] != '\0')
+        return 1;
+    over = getenv(HUSH_PASS_ENV_HELPER);
+    if (over != NULL && over[0] != '\0')
+        return 1;
+    return 0;
+}
+
 static int hush_pass_prog_ok(const char *prog)
 {
     const char *path = NULL;

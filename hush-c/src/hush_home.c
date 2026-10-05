@@ -42,14 +42,7 @@ static hush_status_t hush_home_seed_forge(const char *root);
 /* True when HUSH_CONFIG_DIR is set and HUSH_HOME is not. */
 static int hush_home_config_isolated(void);
 
-/* mkdir 0700 home/agents/<slug> and write the nsec path. */
-static hush_status_t hush_home_prepare_nsec(char *path, size_t pathsz,
-                                            const char *slug);
-
-/* Writes secret to path as a 0600 file. */
-static hush_status_t hush_home_write_nsec(const char *path, const char *secret);
-
-/* Reads a 0600 nsec file. Too long or empty is HUSH_ERR_NOT_FOUND. */
+/* Reads a leftover nsec file. Too long or empty is HUSH_ERR_NOT_FOUND. */
 static hush_status_t hush_home_read_nsec(char *out, size_t outsz,
                                          const char *path);
 
@@ -397,64 +390,6 @@ static int hush_home_config_isolated(void)
     return 0;
 }
 
-static hush_status_t hush_home_prepare_nsec(char *path, size_t pathsz,
-                                            const char *slug)
-{
-    char root[HUSH_HOME_PATH_MAX] = {0};
-    char agents[HUSH_HOME_PATH_MAX] = {0};
-    char dir[HUSH_HOME_PATH_MAX] = {0};
-
-    assert(path != NULL);
-    assert(slug != NULL);
-    path[0] = '\0';
-    hush_home_root(root, sizeof(root));
-    if (root[0] == '\0')
-        return HUSH_ERR_IO;
-    if (hush_home_mkdir(root) != HUSH_OK)
-        return HUSH_ERR_IO;
-    hush_home_join(agents, sizeof(agents), root, HUSH_HOME_DIR_AGENTS);
-    if (agents[0] == '\0')
-        return HUSH_ERR_FULL;
-    if (hush_home_mkdir(agents) != HUSH_OK)
-        return HUSH_ERR_IO;
-    hush_home_join(dir, sizeof(dir), agents, slug);
-    if (dir[0] == '\0')
-        return HUSH_ERR_FULL;
-    if (hush_home_mkdir(dir) != HUSH_OK)
-        return HUSH_ERR_IO;
-    hush_home_join(path, pathsz, dir, "nsec");
-    if (path[0] == '\0')
-        return HUSH_ERR_FULL;
-    return HUSH_OK;
-}
-
-static hush_status_t hush_home_write_nsec(const char *path, const char *secret)
-{
-    int fd = -1;
-    size_t want = 0;
-    ssize_t wrote = 0;
-
-    assert(path != NULL);
-    assert(secret != NULL);
-    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
-              0600);
-    if (fd < 0)
-        return HUSH_ERR_IO;
-    if (fchmod(fd, 0600) != 0) {
-        close(fd);
-        return HUSH_ERR_IO;
-    }
-    want = strlen(secret);
-    wrote = write(fd, secret, want);
-    if (wrote < 0 || (size_t)wrote != want) {
-        close(fd);
-        return HUSH_ERR_IO;
-    }
-    if (close(fd) != 0)
-        return HUSH_ERR_IO;
-    return HUSH_OK;
-}
-
 static hush_status_t hush_home_read_nsec(char *out, size_t outsz,
                                          const char *path)
 {
@@ -491,19 +426,11 @@ static hush_status_t hush_home_read_nsec(char *out, size_t outsz,
 
 hush_status_t hush_home_store_agent_nsec(const char *slug, const char *secret)
 {
-    char path[HUSH_HOME_PATH_MAX] = {0};
-    hush_status_t st = HUSH_OK;
-
     if (slug == NULL || secret == NULL || secret[0] == '\0')
         return HUSH_ERR_ARG;
     if (!hush_home_is_robot_slug(slug))
         return HUSH_ERR_ARG;
-    if (hush_home_config_isolated())
-        return HUSH_OK;
-    st = hush_home_prepare_nsec(path, sizeof(path), slug);
-    if (st != HUSH_OK)
-        return st;
-    return hush_home_write_nsec(path, secret);
+    return HUSH_ERR_IO;
 }
 
 hush_status_t hush_home_load_agent_nsec(char *out, size_t outsz,

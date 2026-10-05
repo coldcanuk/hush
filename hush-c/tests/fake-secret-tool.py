@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+# Test double for the secret-tool commands Hush actually runs.
+import os
+import sys
+
+root = os.environ.get("HUSH_FAKE_SECRET_DIR", "/tmp/hush-fake-secret")
+os.makedirs(root, mode=0o700, exist_ok=True)
+
+
+def value_after(argv, name):
+    if name not in argv:
+        return None
+    idx = argv.index(name)
+    if idx + 1 >= len(argv):
+        return None
+    return argv[idx + 1]
+
+
+args = sys.argv[1:]
+if not args:
+    sys.exit(2)
+item = value_after(args, "item")
+service = value_after(args, "service")
+if item is None or service != "hush":
+    sys.exit(2)
+path = os.path.join(root, item.replace("/", "_"))
+if args[0] == "lookup":
+    if not os.path.isfile(path):
+        sys.exit(1)
+    with open(path, "r", encoding="utf-8") as handle:
+        sys.stdout.write(handle.read())
+    sys.exit(0)
+if args[0] == "store":
+    secret = sys.stdin.read()
+    if secret == "":
+        sys.exit(1)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(secret)
+    sys.exit(0)
+sys.exit(2)

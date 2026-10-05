@@ -19,6 +19,7 @@
 #include "hush_home.h"
 #include "hush_json.h"
 #include "hush_launch.h"
+#include "hush_keystore.h"
 #include "hush_pass.h"
 #include "hush_skill.h"
 
@@ -316,7 +317,7 @@ static hush_status_t hush_launch_put_roster(const hush_launch_t *launch,
                                             char *out, size_t outsz,
                                             size_t *off);
 
-/* Restores one agent nsec: pass, else the home file, else a new key. */
+/* Restores one agent nsec from a store. A miss mints a new in-memory key. */
 static hush_status_t hush_launch_restore_agent_id(hush_roster_agent_t *agent);
 
 /* Fills launch vibe fields from json. Requires vibe_name. */
@@ -418,7 +419,7 @@ static hush_status_t hush_launch_take_agent(hush_launch_t *launch,
 static hush_status_t hush_launch_take_members(hush_launch_t *launch,
                                               const char *json);
 
-/* Restores Payne: pass, else the home file, else a new key. */
+/* Restores Payne from a store. A miss mints a new in-memory key. */
 static hush_status_t hush_launch_restore_payne(hush_launch_t *launch);
 
 /* Writes one Goose slot when the ranked list is empty. */
@@ -518,15 +519,18 @@ static void hush_launch_cleanse_secret(char *buf, size_t bufsz)
 hush_status_t hush_launch_restore_identity(hush_launch_t *launch)
 {
     char secret[HUSH_PASS_SECRET_MAX];
+    hush_keystore_kind kind = HUSH_KEYSTORE_NONE;
+    hush_status_t loaded;
     hush_status_t imported;
 
     if (launch == NULL)
         return HUSH_ERR_ARG;
     if (launch->logged_in)
         return HUSH_OK;
-    if (!hush_pass_has(HUSH_PASS_IDENTITY_NSEC))
-        return HUSH_OK;
-    if (hush_pass_get(secret, sizeof(secret), HUSH_PASS_IDENTITY_NSEC) != HUSH_OK) {
+    memset(secret, 0, sizeof(secret));
+    loaded = hush_keystore_load_from(&kind, secret, sizeof(secret),
+                                    HUSH_PASS_IDENTITY_NSEC);
+    if (loaded != HUSH_OK) {
         hush_launch_cleanse_secret(secret, sizeof(secret));
         return HUSH_OK;
     }
@@ -538,8 +542,8 @@ hush_status_t hush_launch_restore_identity(hush_launch_t *launch)
     }
     launch->logged_in = 1;
     launch->backup_acked = 1;
-    launch->save_pass = 1;
-    launch->pass_saved = 1;
+    launch->save_pass = (kind == HUSH_KEYSTORE_PASS) ? 1 : 0;
+    launch->pass_saved = launch->save_pass;
     launch->pass_error[0] = '\0';
     return HUSH_OK;
 }
@@ -734,7 +738,8 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         hush_launch_push_template_skill(&in, "system:canvas-coach");
         in.has_skills = 1;
         in.locked = 1;
-        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
+        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
+                                       launch->save_pass));
     }
     if (!hush_launch_has_agent_slug(launch, "auditor")) {
         memset(&in, 0, sizeof(in));
@@ -748,7 +753,8 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         hush_launch_push_template_skill(&in, "system:hive-audit");
         in.has_skills = 1;
         in.locked = 1;
-        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
+        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
+                                       launch->save_pass));
     }
     if (!hush_launch_has_agent_slug(launch, "marshal")) {
         memset(&in, 0, sizeof(in));
@@ -772,7 +778,8 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         hush_launch_push_template_skill(&in, "system:token-budget");
         in.has_skills = 1;
         in.locked = 1;
-        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
+        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
+                                       launch->save_pass));
     }
     return hush_launch_save_vibe(launch);
 }
@@ -1475,9 +1482,8 @@ static hush_status_t hush_launch_seed_hive(hush_launch_t *launch,
         return HUSH_ERR_CRYPTO;
     if (launch->save_pass)
         hush_launch_try_save(launch, HUSH_PASS_PAYNE_NSEC, launch->payne.nsec);
-    if (hush_home_store_agent_nsec(HUSH_LAUNCH_PAYNE_SLUG,
-                                   launch->payne.nsec) != HUSH_OK)
-        return HUSH_ERR_IO;
+    else
+        hush_keystore_offer(0, HUSH_PASS_PAYNE_NSEC, launch->payne.nsec);
     if (hush_launch_push_channel(launch, HUSH_LAUNCH_CHAN_GENERAL) != HUSH_OK)
         return HUSH_ERR_FULL;
     if (hush_launch_push_channel(launch, HUSH_LAUNCH_CHAN_WELCOME) != HUSH_OK)
@@ -2940,87 +2946,38 @@ static hush_status_t hush_launch_import_wiped(hush_identity_t *id, char *secret,
     return st;
 }
 
-/* Reads pass at path into out. 0 when missing or unreadable. */
-static int hush_launch_pass_copy(char *out, size_t outsz, const char *path)
-{
-    assert(out != NULL);
-    assert(path != NULL);
-    out[0] = '\0';
-    if (!hush_pass_has(path))
-        return 0;
-    if (hush_pass_get(out, outsz, path) != HUSH_OK || out[0] == '\0') {
-        hush_launch_cleanse_secret(out, outsz);
-        return 0;
-    }
-    return 1;
-}
-
-/* Vault copy is <hush home>/agents/<slug>/nsec via hush_home_load_agent_nsec.
- * This tree has no vault.onerelay.app client. When that file and pass both
- * hold a value, the file is truth. A matching pass copy is deleted after
- * the file is imported. The file is not rewritten. A different pass
- * value is left in place and is not written onto the file, and the file is
- * not written onto pass. Pass alone (no file) is imported and not copied
- * onto disk. When neither store has a key, mint one into the home file.
- * save_pass_on_mint may also put that new value in pass. */
+/* Imports a stored secret. A miss mints a new in-memory key.
+ * That key is not the old public id. A plain file is never written.
+ * A leftover home file is not a store. */
 static hush_status_t hush_launch_restore_stored_id(hush_launch_t *launch,
                                                    hush_identity_t *id,
                                                    const char *slug,
                                                    const char *pass_path,
                                                    int save_pass_on_mint)
 {
-    char file_secret[HUSH_PASS_SECRET_MAX];
-    char pass_secret[HUSH_PASS_SECRET_MAX];
+    char secret[HUSH_PASS_SECRET_MAX];
     hush_status_t st;
-    int have_pass;
 
     assert(id != NULL);
     assert(slug != NULL);
     assert(pass_path != NULL);
-    memset(file_secret, 0, sizeof(file_secret));
-    memset(pass_secret, 0, sizeof(pass_secret));
-    st = hush_home_load_agent_nsec(file_secret, sizeof(file_secret), slug);
-    have_pass = hush_launch_pass_copy(pass_secret, sizeof(pass_secret),
-                                      pass_path);
-    if (st == HUSH_OK && have_pass
-        && strcmp(file_secret, pass_secret) != 0) {
-        hush_launch_cleanse_secret(file_secret, sizeof(file_secret));
-        hush_launch_cleanse_secret(pass_secret, sizeof(pass_secret));
-        return HUSH_ERR_DENIED;
-    }
-    if (st == HUSH_OK && have_pass) {
-        hush_launch_cleanse_secret(pass_secret, sizeof(pass_secret));
-        if (hush_launch_import_wiped(id, file_secret, sizeof(file_secret))
-            != HUSH_OK)
-            return HUSH_ERR_CRYPTO;
-        if (hush_pass_delete(pass_path) != HUSH_OK)
-            return HUSH_ERR_IO;
-        return HUSH_OK;
-    }
+    memset(secret, 0, sizeof(secret));
+    st = hush_keystore_load(secret, sizeof(secret), pass_path);
     if (st == HUSH_OK) {
-        hush_launch_cleanse_secret(pass_secret, sizeof(pass_secret));
-        if (hush_launch_import_wiped(id, file_secret, sizeof(file_secret))
-            != HUSH_OK)
+        if (hush_launch_import_wiped(id, secret, sizeof(secret)) != HUSH_OK)
             return HUSH_ERR_CRYPTO;
         return HUSH_OK;
     }
-    hush_launch_cleanse_secret(file_secret, sizeof(file_secret));
-    if (st != HUSH_ERR_NOT_FOUND) {
-        hush_launch_cleanse_secret(pass_secret, sizeof(pass_secret));
+    hush_launch_cleanse_secret(secret, sizeof(secret));
+    if (st != HUSH_ERR_NOT_FOUND)
         return st;
-    }
-    if (have_pass) {
-        if (hush_launch_import_wiped(id, pass_secret, sizeof(pass_secret))
-            != HUSH_OK)
-            return HUSH_ERR_CRYPTO;
-        return HUSH_OK;
-    }
-    hush_launch_cleanse_secret(pass_secret, sizeof(pass_secret));
     if (hush_identity_generate(id) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
     if (save_pass_on_mint && launch != NULL)
         hush_launch_try_save(launch, pass_path, id->nsec);
-    return hush_home_store_agent_nsec(slug, id->nsec);
+    else
+        hush_keystore_offer(0, pass_path, id->nsec);
+    return HUSH_OK;
 }
 
 static hush_status_t hush_launch_restore_agent_id(hush_roster_agent_t *agent)

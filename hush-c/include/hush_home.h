@@ -64,10 +64,9 @@ int hush_home_is_robot_slug(const char *slug);
  * tests never write the real user home. Always mkdir the config dir. */
 hush_status_t hush_home_ensure(void);
 
-/* Writes slug's nsec to <hush home>/agents/<slug>/nsec, mode 0600.
- * Never writes vibe.json. When HUSH_CONFIG_DIR is set and HUSH_HOME is
- * not, returns HUSH_OK and writes nothing so tests skip ~/.hush.
- * HUSH_ERR_ARG on a bad slug or empty secret. HUSH_ERR_IO on disk. */
+/* Refuses to write a plain key file. A new key belongs in pass, op,
+ * or the keyring, or it stays in memory. HUSH_ERR_ARG on a bad slug
+ * or an empty secret. HUSH_ERR_IO because no plain file is written. */
 hush_status_t hush_home_store_agent_nsec(const char *slug, const char *secret);
 
 /* Reads that file into out. HUSH_ERR_NOT_FOUND when missing, isolated,
