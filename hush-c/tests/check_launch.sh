@@ -753,8 +753,11 @@ echo "$html" | grep -q -F 'paintRosterPane(lastStatus);' \
   || fail "#241 M5 tick catch must repaint roster/feed"
 echo "$html" | grep -q -F 'err.scrollIntoView({ block: "nearest", behavior: "smooth" })' \
   || fail "#241 M7a skillNotice must scrollIntoView"
-echo "$html" | grep -q -F 'skillNotice("Keep at least one skill equipped.")' \
-  || fail "#241 M7b save path must use skillNotice"
+# M7b: agent-save path must call skillNotice (other keep-one sites exist).
+if ! echo "$html" | grep -A25 '\$("agent-save").addEventListener("click"' \
+    | grep -q -F 'skillNotice("Keep at least one skill equipped.")'; then
+  fail "#241 M7b agent-save path must use skillNotice"
+fi
 echo "$html" | grep -q -F 'st.ok ? ("Relay listening"' \
   || fail "#241 M9a status feed must use plain Relay listening copy"
 if echo "$html" | grep -q -F '"RELAY LIVE"'; then
