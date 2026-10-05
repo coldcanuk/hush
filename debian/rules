@@ -1,12 +1,21 @@
-#!/bin/sh
+#!/usr/bin/make -f
 # debian/rules - Hush relay build rules
 # Simple dh-based rules for a C11 project with no external deps.
+# Clean and test stay inside this source tree: never clean-relays,
+# kill-relay.sh, uninstall, or a cd out of the package root.
 
 %:
 	dh $@
 
+override_dh_auto_clean:
+	$(MAKE) -C hush-c clean
+	rm -f hush-*.tar.gz
+
 override_dh_auto_build:
-	cd .. && ./configure && make
+	./configure --prefix=/usr && $(MAKE)
 
 override_dh_auto_install:
-	cd .. && make install DESTDIR=$(CURDIR)/debian/hush-relay PREFIX=/usr
+	$(MAKE) install DESTDIR=$(CURDIR)/debian/hush-relay PREFIX=/usr
+
+override_dh_auto_test:
+	env -u CI -u GITHUB_ACTIONS -u HUSH_TEST_STOP_RELAYS $(MAKE) test
