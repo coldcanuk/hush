@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include "hush_event.h"
+#include "hush_favorite.h"
 #include "hush_home.h"
 #include "hush_json.h"
 #include "hush_launch.h"
@@ -686,8 +687,18 @@ hush_status_t hush_launch_remove_agent(hush_launch_t *launch, const char *slug)
 {
     if (launch == NULL || slug == NULL)
         return HUSH_ERR_ARG;
+    if (slug[0] == '\0')
+        return HUSH_ERR_ARG;
     if (!launch->has_vibe || !launch->logged_in)
         return HUSH_ERR_ARG;
+    if (strcmp(slug, HUSH_ROSTER_PAYNE_SLUG) == 0)
+        return HUSH_ERR_DENIED;
+    if (!hush_launch_has_agent_slug(launch, slug))
+        return HUSH_ERR_NOT_FOUND;
+    /* Favorites are keyed by robot id. Drop the files before the
+     * roster forgets the id, or the next robot to reuse it inherits
+     * them. Unlink only: nothing is renamed aside. */
+    HUSH_TRY(hush_favorite_clear_robot(slug));
     HUSH_TRY(hush_roster_remove_agent(&launch->roster, slug));
     return hush_launch_save_vibe(launch);
 }
