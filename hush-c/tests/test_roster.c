@@ -82,7 +82,7 @@ int main(void)
     agent.context[0].text = "# stand to";
     agent.context[0].bytes = 11;
     agent.ncontext = 1;
-    expect(hush_roster_add_agent(&roster, store, &agent, 1) == HUSH_OK,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_PASS, NULL) == HUSH_OK,
            "agent");
     expect(roster.nagents == 1, "one agent");
     expect(strcmp(roster.agents[0].context[0].text, "# stand to") == 0,
@@ -94,12 +94,12 @@ int main(void)
     memset(&agent, 0, sizeof(agent));
     memcpy(agent.name, "NoPrompt", 9);
     memcpy(agent.provider, "goose", 6);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_ERR_PARSE,
            "prompt required");
     memset(&agent, 0, sizeof(agent));
     memcpy(agent.name, "NoProvider", 11);
     memcpy(agent.prompt, "Watch.", 7);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_ERR_PARSE,
            "provider required");
     memset(&agent, 0, sizeof(agent));
     memcpy(agent.name, "Badfile", 8);
@@ -110,7 +110,7 @@ int main(void)
     agent.context[0].text = "%PDF";
     agent.context[0].bytes = 4;
     agent.ncontext = 1;
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_DENIED,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_ERR_DENIED,
            "pdf denied");
     expect(roster.nagents == 1, "still one agent");
     memset(&agent, 0, sizeof(agent));
@@ -122,7 +122,7 @@ int main(void)
     agent.context[0].text = "# stand to";
     agent.context[0].bytes = 11;
     agent.ncontext = 1;
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_DENIED,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_ERR_DENIED,
            "text-only provider denies file context");
     expect(roster.nagents == 1, "still one agent after context gate");
     expect(hush_roster_format_json(&roster, json, sizeof(json), &n) == HUSH_OK,
@@ -216,7 +216,7 @@ int main(void)
     memcpy(agent.skills[0], "system:canvas-coach", 20);
     agent.nskills = 1;
     agent.locked = 1;
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_OK,
            "locked coach");
     expect(roster.agents[0].locked == 1, "coach locked");
     expect(roster.agents[0].nskills == 1, "coach wears skill");
@@ -265,12 +265,12 @@ int main(void)
     memcpy(agent.name, "!!!", 4);
     memcpy(agent.prompt, "Watch.", 7);
     memcpy(agent.provider, "goose", 6);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_ERR_PARSE,
            "symbol-only name refused");
     expect(roster.nagents == 2, "no robot for a symbol-only name");
     /* Letters outside A-Z do not count yet ("Robot" in Cyrillic, UTF-8). */
     memcpy(agent.name, "\xd0\xa0\xd0\xbe\xd0\xb1\xd0\xbe\xd1\x82", 11);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_ERR_PARSE,
            "Cyrillic-only name refused");
     expect(roster.nagents == 2, "no robot for a Cyrillic-only name");
     memset(&agent, 0, sizeof(agent));
@@ -296,21 +296,21 @@ int main(void)
     memcpy(agent.name, "Walkbot Two", 12);
     memcpy(agent.prompt, "Watch.", 7);
     memcpy(agent.provider, "goose", 6);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_OK,
            "walkbot two");
     memcpy(agent.name, "Calm Hand", 10);
     expect(hush_roster_update_agent(&roster, "walkbot-two", &agent) == HUSH_OK,
            "rename walkbot-two");
     memcpy(agent.name, "Walkbot Two", 12);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_OK,
            "a renamed robot's old name is free");
     expect(strcmp(roster.agents[3].slug, "walkbot-two-2") == 0,
            "held id gets -2");
     memcpy(agent.name, "walkbot two!", 13);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_ERR_PARSE,
            "same letters and digits refused");
     memcpy(agent.name, "Calm Hand", 10);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_ERR_PARSE,
            "a current name refused");
     memcpy(agent.name, "WALKBOT TWO", 12);
     expect(hush_roster_update_agent(&roster, "walkbot-two", &agent) ==
@@ -321,13 +321,13 @@ int main(void)
     expect(roster.nagents == 4, "no robot for refused names");
     memset(agent.name, 0, sizeof(agent.name));
     memcpy(agent.name, "Sgt Major Payne", 16);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_OK,
            "payne-like name");
     expect(strcmp(roster.agents[4].slug, "sgt-major-payne-2") == 0,
            "payne's id is never given out");
     /* A 63-character id cut to fit its suffix. */
     memset(agent.name, 'a', (size_t)HUSH_ROSTER_NAME_MAX - 1);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_OK,
            "63-byte name");
     memset(agent.name, 0, sizeof(agent.name));
     memcpy(agent.name, "Short", 6);
@@ -335,7 +335,7 @@ int main(void)
                HUSH_OK,
            "rename the 63-byte robot");
     memset(agent.name, 'a', (size_t)HUSH_ROSTER_NAME_MAX - 1);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_OK,
            "63-byte name again");
     expect(strlen(roster.agents[6].slug) == (size_t)HUSH_ROSTER_NAME_MAX - 1 &&
                strcmp(roster.agents[6].slug + strlen(roster.agents[6].slug) - 2,
@@ -375,19 +375,19 @@ int main(void)
     expect(!hush_roster_is_name_clash("!!!", "@@@"), "empty keys never clash");
     memset(agent.name, 0, sizeof(agent.name));
     memcpy(agent.name, "WalkbotTwo", 11);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_ERR_PARSE,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_ERR_PARSE,
            "no word break refused on add");
     expect(roster.nagents == 7, "no robot for a key clash");
     /* Rename never compares ids: the name Delta is free while its id is
      * held by a robot now named Echo. */
     memcpy(agent.name, "Delta", 6);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_OK,
            "delta");
     memcpy(agent.name, "Echo", 5);
     expect(hush_roster_update_agent(&roster, "delta", &agent) == HUSH_OK,
            "rename delta to Echo");
     memcpy(agent.name, "Foxtrot", 8);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_OK,
            "foxtrot");
     memset(agent.name, 0, sizeof(agent.name));
     memcpy(agent.name, "Delta", 6);
@@ -399,7 +399,7 @@ int main(void)
     /* A cut that ends on '-' drops it before the suffix: no "a--2". */
     memset(agent.name, 'A', 60);
     memcpy(agent.name + 60, " BC", 3);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_OK,
            "63-byte name ending in a word");
     expect(strlen(roster.agents[9].slug) == 63, "63-byte slug");
     memset(agent.name, 0, sizeof(agent.name));
@@ -409,7 +409,7 @@ int main(void)
            "rename the 63-byte slug robot");
     memset(agent.name, 'A', 60);
     memcpy(agent.name + 60, " BC", 3);
-    expect(hush_roster_add_agent(&roster, store, &agent, 0) == HUSH_OK,
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER, NULL) == HUSH_OK,
            "63-byte name ending in a word again");
     memset(key, 'a', 60);
     memcpy(key + 60, "-2", 3);

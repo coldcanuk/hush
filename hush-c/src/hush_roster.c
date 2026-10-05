@@ -94,7 +94,7 @@ static size_t hush_roster_json_escape(const char *src, char *dst, size_t dstsz);
 /* Offers a new secret to a store. Never writes a plain file. */
 static hush_status_t hush_roster_keep_agent_key(const char *slug,
                                                 const char *secret,
-                                                int use_pass);
+                                                int key_mode);
 
 /* Decodes npub1… or 64-hex into pubkey hex + npub. */
 static hush_status_t hush_roster_parse_pubkey(char *out_hex, char *out_npub,
@@ -449,11 +449,15 @@ static hush_status_t hush_roster_copy_providers(hush_roster_agent_t *agent,
 hush_status_t hush_roster_add_agent(hush_roster_t *roster,
                                     hush_store_t *store,
                                     const hush_roster_agent_in_t *in,
-                                    int save_pass)
+                                    int key_mode,
+                                    hush_status_t *pass_st)
 {
     hush_roster_agent_t *agent;
     hush_status_t st;
+    hush_status_t kept;
 
+    if (pass_st != NULL)
+        *pass_st = HUSH_OK;
     if (roster == NULL || store == NULL || in == NULL)
         return HUSH_ERR_ARG;
     if (roster->nagents >= (size_t)HUSH_ROSTER_AGENTS_MAX)
@@ -468,12 +472,11 @@ hush_status_t hush_roster_add_agent(hush_roster_t *roster,
         return st;
     if (hush_identity_generate(&agent->id) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
-    {
-        hush_status_t kept;
-
-        kept = hush_roster_keep_agent_key(agent->slug, agent->id.nsec, save_pass);
-        if (kept != HUSH_OK)
-            return kept;
+    kept = hush_roster_keep_agent_key(agent->slug, agent->id.nsec, key_mode);
+    if (kept != HUSH_OK) {
+        if (pass_st != NULL && key_mode == HUSH_ROSTER_KEY_PASS)
+            *pass_st = kept;
+        return kept;
     }
     if (hush_roster_store_agent_profile(store, agent) != HUSH_OK)
         return HUSH_ERR_FULL;
@@ -558,7 +561,7 @@ hush_status_t hush_roster_clone_agent(hush_roster_t *roster,
     in.has_intro_enabled = 1;
     memcpy(in.intro, src->intro, sizeof(in.intro));
     in.has_intro = 1;
-    return hush_roster_add_agent(roster, store, &in, 0);
+    return hush_roster_add_agent(roster, store, &in, HUSH_ROSTER_KEY_OFFER, NULL);
 }
 
 hush_status_t hush_roster_format_json(const hush_roster_t *roster,
@@ -956,23 +959,26 @@ static size_t hush_roster_json_escape(const char *src, char *dst, size_t dstsz)
     return hush_json_escape(src, dst, dstsz);
 }
 
-/* Saves the robot key when use_pass is set. Missing pass, a failed
- * helper, or an overlong path each return a distinct status so the
- * HTTP layer can name the refusal. use_pass 0 keeps the offer path. */
+/* Writes the robot key by key_mode. PASS names missing|fail|path at this
+ * call site (DENIED / IO / ARG). OFFER is soft op/secret. NONE writes nowhere. */
 static hush_status_t hush_roster_keep_agent_key(const char *slug,
                                                 const char *secret,
-                                                int use_pass)
+                                                int key_mode)
 {
     char path[HUSH_PASS_PATH_MAX];
 
     assert(slug != NULL);
     assert(secret != NULL);
+    if (key_mode == HUSH_ROSTER_KEY_NONE)
+        return HUSH_OK;
     if (snprintf(path, sizeof(path), "agents/%s/nsec", slug) >= (int)sizeof(path))
         return HUSH_ERR_ARG;
-    if (!use_pass) {
+    if (key_mode == HUSH_ROSTER_KEY_OFFER) {
         hush_keystore_offer(0, path, secret);
         return HUSH_OK;
     }
+    if (key_mode != HUSH_ROSTER_KEY_PASS)
+        return HUSH_ERR_ARG;
     if (!hush_pass_available())
         return HUSH_ERR_DENIED;
     return hush_pass_save(path, secret);
@@ -983,7 +989,7 @@ hush_status_t hush_roster_write_agent_pass(const char *slug,
 {
     if (slug == NULL || secret == NULL || slug[0] == '\0' || secret[0] == '\0')
         return HUSH_ERR_ARG;
-    return hush_roster_keep_agent_key(slug, secret, 1);
+    return hush_roster_keep_agent_key(slug, secret, HUSH_ROSTER_KEY_PASS);
 }
 
 hush_status_t hush_roster_save_agent_pass(const hush_roster_t *roster,

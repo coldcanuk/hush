@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Issue #235: create/update with save_pass must not report plain OK on pass fail.
 
-Pins HTTP 400 reasons (missing|fail) and session pass_error. Update with
-save_pass:true must store agents/<slug>/nsec. Path is pinned in test_save_pass.c.
+Pins HTTP 400 reasons (missing|fail) and session robot_pass_error. Update with
+save_pass:true must store agents/<slug>/nsec. M7 template pass write; M8/M9
+update refuse + robot_pass_error. Path is pinned in test_save_pass.c.
 """
 
 from __future__ import annotations
@@ -151,11 +152,16 @@ def check_missing():
                 FAILURES.append(f"missing create must not add a robot; {before} -> {after}")
             else:
                 print("save_pass: ok missing create added no robot")
-            err = relay.session().get("pass_error", "")
+            sess = relay.session()
+            err = sess.get("robot_pass_error", "")
             if err != "pass is not available":
-                FAILURES.append(f"missing must surface pass_error; got {err!r}")
+                FAILURES.append(f"missing must surface robot_pass_error; got {err!r}")
             else:
-                print("save_pass: ok missing pass_error in session")
+                print("save_pass: ok missing robot_pass_error in session")
+            if sess.get("pass_error", ""):
+                FAILURES.append(
+                    f"missing must leave identity pass_error empty; got "
+                    f"{sess.get('pass_error')!r}")
         finally:
             relay.stop()
 
@@ -178,11 +184,16 @@ def check_fail():
                 FAILURES.append(f"fail create must not add a robot; {before} -> {after}")
             else:
                 print("save_pass: ok fail create added no robot")
-            err = relay.session().get("pass_error", "")
+            sess = relay.session()
+            err = sess.get("robot_pass_error", "")
             if "pass helper failed" not in err:
-                FAILURES.append(f"fail must surface pass_error; got {err!r}")
+                FAILURES.append(f"fail must surface robot_pass_error; got {err!r}")
             else:
-                print("save_pass: ok fail pass_error in session")
+                print("save_pass: ok fail robot_pass_error in session")
+            if sess.get("pass_error", ""):
+                FAILURES.append(
+                    f"fail must leave identity pass_error empty; got "
+                    f"{sess.get('pass_error')!r}")
         finally:
             relay.stop()
 
@@ -222,6 +233,89 @@ def check_update_honours():
             relay.stop()
 
 
+
+
+def check_template_pass_write():
+    """M7: vibe create with save_pass writes template keys to pass only."""
+    with tempfile.TemporaryDirectory(prefix="hush-sp-m7-") as raw:
+        root = Path(raw)
+        fake = root / "fakepass"
+        fake.mkdir()
+        helper = str(ROOT / "tests" / "fake-pass.sh")
+        relay = Relay(root, helper, fake)
+        relay.start()
+        try:
+            relay.ok("/api/identity", {"action": "create"})
+            relay.ok("/api/identity", {"action": "ack_backup", "save_pass": True})
+            relay.ok("/api/vibe", {"name": "HQ", "about": "save-pass"})
+            store = sorted(p.name for p in fake.iterdir())
+            for need in ("agents_coach_nsec", "agents_auditor_nsec",
+                         "agents_marshal_nsec"):
+                if need not in store:
+                    FAILURES.append(
+                        f"M7 template pass write missing {need}; store={store}")
+            else:
+                print("save_pass: ok M7 template keys in pass")
+            # B4: no widening — fake-pass only; op/secret helpers unset.
+            if any(n.startswith("agents_") and not n.endswith("_nsec")
+                   for n in store):
+                FAILURES.append(f"M7 unexpected pass entries: {store}")
+        finally:
+            relay.stop()
+
+
+def check_update_refuses_fail():
+    """M8/M9: update save_pass:true with failing helper → 400 + robot_pass_error."""
+    with tempfile.TemporaryDirectory(prefix="hush-sp-m8-") as raw:
+        root = Path(raw)
+        helper = root / "failpass.sh"
+        helper.write_text("#!/bin/sh\nexit 1\n")
+        helper.chmod(0o755)
+        relay = Relay(root, str(helper))
+        relay.start()
+        try:
+            boot(relay)
+            relay.ok("/api/agent", robot("Echo", save_pass=False))
+            expect_400(
+                relay, "update save_pass helper fail",
+                {"action": "update", "slug": "echo", "system_prompt": "Updated.",
+                 "save_pass": True},
+                PASS_FAIL)
+            sess = relay.session()
+            err = sess.get("robot_pass_error", "")
+            if "pass helper failed" not in err and err != "save failed":
+                FAILURES.append(f"M9 update must set robot_pass_error; got {err!r}")
+            else:
+                print("save_pass: ok M9 update robot_pass_error")
+            if sess.get("pass_error", ""):
+                FAILURES.append(
+                    f"M9 must leave identity pass_error empty; got "
+                    f"{sess.get('pass_error')!r}")
+        finally:
+            relay.stop()
+
+
+def check_sticky_save_pass_false():
+    """B2: prior robot_pass_error must not poison later save_pass:false why."""
+    with tempfile.TemporaryDirectory(prefix="hush-sp-b2-") as raw:
+        relay = Relay(Path(raw), "/nonexistent/pass")
+        relay.start()
+        try:
+            boot(relay)
+            expect_400(relay, "sticky setup missing", robot("Delta"), PASS_MISSING)
+            # Later create without save_pass must succeed (offer path).
+            status, _, raw = relay.call(
+                "POST", "/api/agent", robot("Foxtrot", save_pass=False))
+            if status != 200:
+                FAILURES.append(
+                    f"B2 save_pass:false after sticky want 200; "
+                    f"got {status} {raw[:200]!r}")
+            else:
+                print("save_pass: ok B2 sticky does not block save_pass:false")
+        finally:
+            relay.stop()
+
+
 def check_c_defines():
     text = (ROOT / "src" / "api_agents.c").read_text()
     for need in (PASS_MISSING, PASS_PATH, "Could not save the robot's key to pass: %s."):
@@ -236,6 +330,9 @@ def main():
     check_missing()
     check_fail()
     check_update_honours()
+    check_template_pass_write()
+    check_update_refuses_fail()
+    check_sticky_save_pass_false()
     if FAILURES:
         for line in FAILURES:
             print(f"save_pass check failed: {line}", file=sys.stderr)

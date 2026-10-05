@@ -123,6 +123,8 @@ typedef struct {
     int save_pass;
     int pass_saved;
     char pass_error[HUSH_PASS_ERR_MAX];
+    /* Last robot create/update pass outcome; never the identity key. */
+    char robot_pass_error[HUSH_PASS_ERR_MAX];
     hush_identity_t human;
     hush_identity_t payne;
     char payne_providers[HUSH_LAUNCH_PAYNE_PROVIDERS_MAX][HUSH_ROSTER_PROVIDER_MAX];

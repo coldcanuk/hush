@@ -668,12 +668,36 @@ static int hush_launch_renames_to_payne(const hush_launch_t *launch,
            !hush_roster_is_same_name(in->name, agent->name);
 }
 
+
+/* Names this request's robot pass outcome. Identity pass_saved/pass_error
+ * stay untouched (B3). Clear robot_pass_error on entry when save_pass so a
+ * prior failure cannot stick into a later refusal (B1/B2). */
+static void hush_launch_note_robot_pass(hush_launch_t *launch, hush_status_t st)
+{
+    assert(launch != NULL);
+    launch->robot_pass_error[0] = '\0';
+    if (st == HUSH_OK)
+        return;
+    if (st == HUSH_ERR_IO) {
+        hush_pass_last_error(launch->robot_pass_error,
+                             sizeof(launch->robot_pass_error));
+        if (launch->robot_pass_error[0] == '\0')
+            memcpy(launch->robot_pass_error, "save failed", 12);
+    } else if (st == HUSH_ERR_DENIED) {
+        memcpy(launch->robot_pass_error, "pass is not available", 22);
+    } else if (st == HUSH_ERR_ARG) {
+        memcpy(launch->robot_pass_error, "path is too long", 17);
+    }
+}
+
 hush_status_t hush_launch_add_agent(hush_launch_t *launch,
                                     hush_store_t *store,
                                     const hush_roster_agent_in_t *in,
                                     int save_pass)
 {
     hush_status_t st;
+    hush_status_t pass_st = HUSH_OK;
+    int key_mode;
 
     if (launch == NULL || store == NULL || in == NULL)
         return HUSH_ERR_ARG;
@@ -681,30 +705,19 @@ hush_status_t hush_launch_add_agent(hush_launch_t *launch,
         return HUSH_ERR_ARG;
     if (hush_launch_is_payne_name(launch, in->name))
         return HUSH_ERR_PARSE;
-    st = hush_roster_add_agent(&launch->roster, store, in, save_pass);
+    if (save_pass)
+        launch->robot_pass_error[0] = '\0';
+    key_mode = save_pass ? HUSH_ROSTER_KEY_PASS : HUSH_ROSTER_KEY_OFFER;
+    st = hush_roster_add_agent(&launch->roster, store, in, key_mode, &pass_st);
     if (st != HUSH_OK) {
-        /* Pass-key refusals only: fill_agent never returns IO. ARG after a
-         * successful fill is the overlong agents/<slug>/nsec path. DENIED
-         * here with save_pass is missing pass (skill DENIED is returned
-         * earlier by the HTTP loadout check). */
-        if (save_pass && st == HUSH_ERR_IO) {
-            launch->pass_saved = 0;
-            hush_pass_last_error(launch->pass_error, sizeof(launch->pass_error));
-            if (launch->pass_error[0] == '\0')
-                memcpy(launch->pass_error, "save failed", 12);
-        } else if (save_pass && st == HUSH_ERR_DENIED) {
-            launch->pass_saved = 0;
-            memcpy(launch->pass_error, "pass is not available", 22);
-        } else if (save_pass && st == HUSH_ERR_ARG) {
-            launch->pass_saved = 0;
-            memcpy(launch->pass_error, "path is too long", 17);
-        }
+        /* Name pass outcome only when THIS keep failed (pass_st). Context
+         * or fill DENIED leaves pass_st OK so HTTP keeps that why (B1). */
+        if (save_pass && pass_st != HUSH_OK)
+            hush_launch_note_robot_pass(launch, pass_st);
         return st;
     }
-    if (save_pass) {
-        launch->pass_saved = 1;
-        launch->pass_error[0] = '\0';
-    }
+    if (save_pass)
+        launch->robot_pass_error[0] = '\0';
     return hush_launch_save_vibe(launch);
 }
 
@@ -792,7 +805,8 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         in.has_skills = 1;
         in.locked = 1;
         /* Templates: never block vibe on pass. #235 hard-refuse is API-only. */
-        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
+        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
+                                   HUSH_ROSTER_KEY_NONE, NULL));
         if (launch->save_pass) {
             const hush_roster_agent_t *seeded;
 
@@ -813,7 +827,8 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         in.has_skills = 1;
         in.locked = 1;
         /* Templates: best-effort pass write; never block vibe (#235). */
-        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
+        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
+                                   HUSH_ROSTER_KEY_NONE, NULL));
         if (launch->save_pass) {
             const hush_roster_agent_t *seeded;
 
@@ -843,7 +858,8 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         hush_launch_push_template_skill(&in, "system:token-budget");
         in.has_skills = 1;
         in.locked = 1;
-        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
+        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
+                                   HUSH_ROSTER_KEY_NONE, NULL));
         if (launch->save_pass) {
             const hush_roster_agent_t *seeded;
 
@@ -866,27 +882,18 @@ hush_status_t hush_launch_update_agent(hush_launch_t *launch, const char *slug,
         return HUSH_ERR_ARG;
     if (hush_launch_renames_to_payne(launch, slug, in))
         return HUSH_ERR_PARSE;
+    if (save_pass)
+        launch->robot_pass_error[0] = '\0';
+    /* Roster first: do not write pass on a refused rename/update (P3). */
+    HUSH_TRY(hush_roster_update_agent(&launch->roster, slug, in));
     if (save_pass) {
         st = hush_roster_save_agent_pass(&launch->roster, slug);
         if (st != HUSH_OK) {
-            launch->pass_saved = 0;
-            if (st == HUSH_ERR_IO) {
-                hush_pass_last_error(launch->pass_error,
-                                     sizeof(launch->pass_error));
-                if (launch->pass_error[0] == '\0')
-                    memcpy(launch->pass_error, "save failed", 12);
-            } else if (st == HUSH_ERR_DENIED)
-                memcpy(launch->pass_error, "pass is not available", 22);
-            else if (st == HUSH_ERR_ARG)
-                memcpy(launch->pass_error, "path is too long", 17);
-            else
-                launch->pass_error[0] = '\0';
+            hush_launch_note_robot_pass(launch, st);
             return st;
         }
-        launch->pass_saved = 1;
-        launch->pass_error[0] = '\0';
+        launch->robot_pass_error[0] = '\0';
     }
-    HUSH_TRY(hush_roster_update_agent(&launch->roster, slug, in));
     return hush_launch_save_vibe(launch);
 }
 
@@ -1843,7 +1850,7 @@ static int hush_launch_write_session_open(const hush_launch_t *launch, uint16_t 
                  "{\"ok\":true,\"logged_in\":%s,\"backup_acked\":%s,"
                  "\"has_vibe\":%s,\"ready\":%s,\"save_pass\":%s,"
                  "\"pass_saved\":%s,\"pass_available\":%s,\"pass_error\":\"%s\","
-                 "\"restart_lost_login\":%s,\"port\":%u,"
+                 "\"robot_pass_error\":\"%s\",\"restart_lost_login\":%s,\"port\":%u,"
                  "\"npub\":\"%s\",\"pubkey\":\"%s\",\"nsec\":\"%s\","
                  "\"vibe\":{\"name\":\"%s\",\"about\":\"%s\","
                  "\"visibility\":\"%s\",\"discoverable\":%s,"
@@ -1857,6 +1864,7 @@ static int hush_launch_write_session_open(const hush_launch_t *launch, uint16_t 
                  launch->pass_saved ? "true" : "false",
                  hush_pass_available() ? "true" : "false",
                  launch->pass_error,
+                 launch->robot_pass_error,
                  launch->restart_lost_login ? "true" : "false",
                  (unsigned)port,
                  launch->logged_in ? launch->human.npub : "",

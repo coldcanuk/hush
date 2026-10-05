@@ -148,8 +148,10 @@ static void test_missing_refuses_create(void)
     expect(hush_launch_add_agent(&launch, store, &in, 1) == HUSH_ERR_DENIED,
            "missing create returns DENIED");
     expect(launch.roster.nagents == before, "missing create added no robot");
-    expect(strcmp(launch.pass_error, "pass is not available") == 0,
-           "missing surfaces pass_error");
+    expect(strcmp(launch.robot_pass_error, "pass is not available") == 0,
+           "missing surfaces robot_pass_error");
+    expect(launch.pass_error[0] == '\0',
+           "missing leaves identity pass_error alone");
     hush_store_destroy(store);
 }
 
@@ -176,10 +178,12 @@ static void test_fail_refuses_create(void)
     expect(hush_launch_add_agent(&launch, store, &in, 1) == HUSH_ERR_IO,
            "fail create returns IO");
     expect(launch.roster.nagents == before, "fail create added no robot");
-    expect(launch.pass_error[0] != '\0', "fail surfaces pass_error");
-    expect(strstr(launch.pass_error, "pass helper failed") != NULL ||
-               strstr(launch.pass_error, "save failed") != NULL,
-           "fail pass_error names the helper");
+    expect(launch.robot_pass_error[0] != '\0', "fail surfaces robot_pass_error");
+    expect(strstr(launch.robot_pass_error, "pass helper failed") != NULL ||
+               strstr(launch.robot_pass_error, "save failed") != NULL,
+           "fail robot_pass_error names the helper");
+    expect(launch.pass_error[0] == '\0',
+           "fail leaves identity pass_error alone");
     hush_store_destroy(store);
 }
 
@@ -232,12 +236,58 @@ static void test_update_honours_save_pass(void)
     hush_store_destroy(store);
 }
 
+
+/* Update save_pass:true must refuse when pass cannot store (M8/M9). */
+static void test_update_refuses_pass_fail(void)
+{
+    static hush_launch_t launch;
+    hush_store_t *store = NULL;
+    hush_roster_agent_in_t in;
+    const hush_roster_agent_t *a;
+    char home[128];
+    char helper_dir[128];
+    char slug[HUSH_ROSTER_NAME_MAX];
+    size_t i;
+
+    wipe_helpers();
+    snprintf(helper_dir, sizeof(helper_dir), "/tmp/hush-sp-updfail-%d",
+             (int)getpid());
+    expect(arm_fail_pass(helper_dir), "updfail arm");
+    if (!raise_hive(&launch, home, sizeof(home))) {
+        expect(0, "updfail hive");
+        return;
+    }
+    expect(hush_store_create(&store) == HUSH_OK, "updfail store");
+    fill_agent(&in, "Echo");
+    expect(hush_launch_add_agent(&launch, store, &in, 0) == HUSH_OK,
+           "updfail create save_pass=0");
+    a = NULL;
+    for (i = 0; i < launch.roster.nagents; i++) {
+        if (strcmp(launch.roster.agents[i].name, "Echo") == 0)
+            a = &launch.roster.agents[i];
+    }
+    expect(a != NULL, "updfail Echo present");
+    if (a == NULL)
+        return;
+    snprintf(slug, sizeof(slug), "%s", a->slug);
+    memset(&in, 0, sizeof(in));
+    snprintf(in.prompt, sizeof(in.prompt), "Updated.");
+    expect(hush_launch_update_agent(&launch, slug, &in, 1) == HUSH_ERR_IO,
+           "updfail update returns IO");
+    expect(launch.robot_pass_error[0] != '\0',
+           "updfail surfaces robot_pass_error");
+    expect(launch.pass_error[0] == '\0',
+           "updfail leaves identity pass_error alone");
+    hush_store_destroy(store);
+}
+
 int main(void)
 {
     test_path_too_long();
     test_missing_refuses_create();
     test_fail_refuses_create();
     test_update_honours_save_pass();
+    test_update_refuses_pass_fail();
     if (g_fail)
         return 1;
     printf("test_save_pass ok\n");
