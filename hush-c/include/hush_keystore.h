@@ -39,6 +39,18 @@ hush_status_t hush_keystore_save(hush_keystore_kind kind, const char *path,
  * in the caller's memory. Never writes a plain file. */
 void hush_keystore_offer(int use_pass, const char *path, const char *secret);
 
+/* Removes path from every ready store (pass, op, secret-tool).
+ * A missing entry in a store is OK. Tries every ready store even when
+ * one fails. Returns HUSH_OK when every attempt succeeded or found
+ * nothing; HUSH_ERR_IO when at least one ready store failed a remove;
+ * HUSH_ERR_ARG on a bad path. */
+hush_status_t hush_keystore_remove(const char *path);
+
+/* Removes path from one store. Missing is HUSH_OK. Not ready is
+ * HUSH_OK (nothing to clear). Fails HUSH_ERR_ARG or HUSH_ERR_IO. */
+hush_status_t hush_keystore_remove_kind(hush_keystore_kind kind,
+                                        const char *path);
+
 /* Reads one store into out. A missing tool is HUSH_ERR_NOT_FOUND.
  * Also fails HUSH_ERR_ARG or HUSH_ERR_IO. */
 hush_status_t hush_keystore_load_kind(hush_keystore_kind kind, char *out,

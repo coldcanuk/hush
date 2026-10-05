@@ -52,4 +52,11 @@ if args[0] == "store":
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(secret)
     sys.exit(0)
+if args[0] == "clear":
+    with open(os.path.join(root, "last_clear.json"), "w", encoding="utf-8") as handle:
+        json.dump({"argv": args}, handle)
+        handle.write("\n")
+    if os.path.isfile(path):
+        os.remove(path)
+    sys.exit(0)
 sys.exit(2)
