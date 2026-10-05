@@ -115,11 +115,13 @@ check-prefix:
 		exit 1; \
 	fi
 
-# Stale-stamp tripwire (warn-only): config.mk bakes HUSH_BUILD_SHA at
-# configure time, so committing after configure leaves the binary stamped
-# with the old SHA. tests/check_build.sh still fails the suite on mismatch;
-# this just warns early during make/install without breaking tarball builds
-# (no git) or unconfigured trees (no config.mk, empty HUSH_BUILD_SHA).
+# Stale-stamp tripwire (warn-only). A git checkout refreshes the SHA from
+# HEAD so the warning does not fire after a commit; hush-c/Makefile is what
+# actually rebuilds the objects. Tarball builds have no git and skip this.
+HUSH_LIVE_SHA := $(shell git rev-parse --short HEAD 2>/dev/null)
+ifneq ($(HUSH_LIVE_SHA),)
+HUSH_BUILD_SHA := $(shell printf '%s' '$(HUSH_LIVE_SHA)' | tr -cd 'A-Za-z0-9._+-')
+endif
 check-stamp:
 	@baked="$(HUSH_BUILD_SHA)"; \
 	head=""; \

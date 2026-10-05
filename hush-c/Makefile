@@ -52,6 +52,17 @@ override CFLAGS += -DHUSH_CODEX_SKILL_SHARE=\"$(CODEX_SKILL_SHARE)\"
 # HEAD). Defaults keep non-configure builds working; hush_build.h agrees.
 HUSH_BUILD_VERSION ?= 0.0.1
 HUSH_BUILD_SHA ?= unknown
+# config.mk freezes the stamp at configure time. A later commit must not
+# leave stamp-bearing objects on the old SHA, so refresh from git when this
+# tree is a checkout. Tarball builds have no git and keep the value above.
+HUSH_LIVE_SHA := $(shell git rev-parse --short HEAD 2>/dev/null)
+HUSH_LIVE_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null)
+ifneq ($(HUSH_LIVE_SHA),)
+HUSH_BUILD_SHA := $(shell printf '%s' '$(HUSH_LIVE_SHA)' | tr -cd 'A-Za-z0-9._+-')
+endif
+ifneq ($(HUSH_LIVE_VERSION),)
+HUSH_BUILD_VERSION := $(shell printf '%s' '$(HUSH_LIVE_VERSION)' | tr -cd 'A-Za-z0-9._+-')
+endif
 override CFLAGS += -DHUSH_BUILD_VERSION=\"$(HUSH_BUILD_VERSION)\"
 override CFLAGS += -DHUSH_BUILD_SHA=\"$(HUSH_BUILD_SHA)\"
 
@@ -92,10 +103,9 @@ check-prefix:
 		exit 1; \
 	fi
 
-# Stale-stamp tripwire (warn-only): ../config.mk bakes HUSH_BUILD_SHA at
-# configure time, so committing after configure leaves the binary stamped
-# with the old SHA. tests/check_build.sh still fails the suite on mismatch;
-# this just warns early during make/install (always exits 0).
+# Stale-stamp tripwire (warn-only). Git checkouts refresh HUSH_BUILD_SHA
+# above, so this stays quiet there. It still warns when a frozen SHA and a
+# short HEAD disagree. Always exits 0. tests/check_build.sh fails the suite.
 check-stamp:
 	@baked="$(HUSH_BUILD_SHA)"; \
 	head=""; \
@@ -130,6 +140,19 @@ src/http_static.o: src/hush_ui_html.h
 src/%.o: src/%.c
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
+# These two objects are the ones that embed HUSH_BUILD_SHA / HUSH_BUILD_VERSION
+# as string literals (api status and --help). The stamp file is rewritten only
+# when those values change, so an incremental rebuild after a commit refreshes
+# both and does not relink a mixed pair. hush-stamp-force is an empty rule
+# that is never a file: the recipe runs every make, but STAMP_OBJS rebuild
+# only when the stamp contents change. Do not mark it .PHONY.
+STAMP_OBJS := src/api_status.o src/hush_relay_main.o
+src/hush_build.stamp: hush-stamp-force
+	@printf '%s\n%s\n' '$(HUSH_BUILD_VERSION)' '$(HUSH_BUILD_SHA)' > $@.tmp
+	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
+hush-stamp-force:
+$(STAMP_OBJS): src/hush_build.stamp
+
 tests/test_%: tests/test_%.c libhush.a
 	$(CC) $(CFLAGS) $< libhush.a -o $@ $(LDFLAGS)
 
@@ -137,6 +160,7 @@ test: $(TEST_BINS) hush-relay
 	@for t in $(TEST_BINS); do echo "RUN $$t"; ./$$t || exit 1; done
 	@sh tests/check_pwa.sh
 	@sh tests/check_build.sh
+	@sh tests/check_stamp_mix.sh
 	@sh tests/check_launch.sh
 	@sh tests/check_restart.sh
 	@sh tests/check_restart_ui_deps.sh
@@ -169,7 +193,8 @@ test: $(TEST_BINS) hush-relay
 
 clean:
 	rm -f $(OBJS) $(OBJS:.o=.d) $(ICON_PANEL_OBJS) libhush.a hush-relay \
-		$(TEST_BINS) src/hush_relay_main.o src/hush_ui_html.h
+		$(TEST_BINS) src/hush_relay_main.o src/hush_ui_html.h \
+		src/hush_build.stamp src/hush_build.stamp.tmp
 
 demo:
 	@echo "See hush-c/demo/ for the chat UI (also served by hush-relay on /)"
