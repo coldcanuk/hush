@@ -344,7 +344,7 @@ static void test_close_wipes_secrets(void)
 
 
 
-/* --- wipe observer (N1): records hush_vault_zero hook calls --- */
+/* --- wipe observer (N1): --wrap=hush_secure_zero records wipe calls --- */
 
 enum {
     WIPE_LOG_MAX = 64,
@@ -412,15 +412,28 @@ static int wipe_log_count(size_t n, const char *needle)
     return count;
 }
 
+/* Linked only into test_vault via -Wl,--wrap=hush_secure_zero. */
+void __real_hush_secure_zero(void *buf, size_t n);
+void __wrap_hush_secure_zero(void *buf, size_t n);
+
+static int g_wipe_observe;
+
+void __wrap_hush_secure_zero(void *buf, size_t n)
+{
+    if (g_wipe_observe)
+        wipe_log_hook(buf, n);
+    __real_hush_secure_zero(buf, n);
+}
+
 static void wipe_log_install(void)
 {
     wipe_log_reset();
-    hush_vault_zero_hook = wipe_log_hook;
+    g_wipe_observe = 1;
 }
 
 static void wipe_log_clear(void)
 {
-    hush_vault_zero_hook = NULL;
+    g_wipe_observe = 0;
     wipe_log_reset();
 }
 

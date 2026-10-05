@@ -162,13 +162,10 @@ hush_status_t hush_vault_session_call(hush_vault_call_t *out,
     return HUSH_OK;
 }
 
-
-void (*hush_vault_zero_hook)(const void *buf, size_t n) = NULL;
-
+/* Forwards to hush_secure_zero. test_vault may --wrap hush_secure_zero. */
 static void hush_vault_zero(void *buf, size_t n)
 {
-    if (hush_vault_zero_hook != NULL)
-        hush_vault_zero_hook(buf, n);
+    assert(buf != NULL || n == 0);
     hush_secure_zero(buf, n);
 }
 
