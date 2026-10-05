@@ -665,11 +665,12 @@ async function main() {
     const fadeState = `(() => { const d = document.querySelector('#fo-drawer'); d.scrollTop = 0;
       const r = d.getBoundingClientRect(); const inner = r.top + d.clientTop; const bottom = inner + d.clientHeight; const x = Math.round(r.left + r.width / 2);
       let vis = bottom; for (let y = Math.floor(bottom) - 1; y > inner; y--) { const e = document.elementFromPoint(x, y); if (e && d.contains(e)) { vis = y + 1; break; } }
-      let last = 0; for (const c of d.children) if (c.getClientRects().length) {
-        const br = c.getBoundingClientRect(); const cs = getComputedStyle(c);
+      let last = 0; const visit = (el) => { if (!el.getClientRects().length) return; let hasKid = false;
+        for (const c of el.children) { if (!c.getClientRects().length) continue; hasKid = true; visit(c); }
+        if (hasKid) return; const br = el.getBoundingClientRect(); const cs = getComputedStyle(el);
         const inset = (parseFloat(cs.paddingBottom) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
-        last = Math.max(last, br.bottom - inset);
-      }
+        last = Math.max(last, br.bottom - inset); };
+      for (const c of d.children) visit(c);
       return { sh: d.scrollHeight, ch: d.clientHeight, last: Math.round(last * 10) / 10, vis: Math.round(vis * 10) / 10, under: Math.round((bottom - vis) * 10) / 10,
         on: d.classList.contains('is-overflowing'), fade: parseFloat(getComputedStyle(d, '::after').bottom), pb: parseFloat(getComputedStyle(d).paddingBottom),
         onscreen: r.left >= -0.5 && r.right <= innerWidth + 0.5 }; })()`;
@@ -1072,15 +1073,19 @@ async function main() {
       'backup after import uses imported title');
     check(!t.includes('has been created'),
       'backup after import does not say has been created');
-    // F-B: provenance is in session (identity_imported), so reload keeps
-    // the imported title — not the create wording.
+    // F-B: reload boots splash; tick adopts session (incl. identity_imported);
+    // Begin must then show the import backup title — not "created".
+    // Waiting for #save-pass right after reload is wrong (splash has #begin).
     await cdp.send('Page.reload', {});
-    await cdp.waitFor(`!!document.querySelector('#save-pass')`, 'backup after import reload');
+    await cdp.waitFor(`!!document.querySelector('#begin')`, 'splash after import reload');
+    await sleep(400); // let tick() assign session + syncIdentityViaImport
+    await cdp.click('#begin');
+    await cdp.waitFor(`!!document.querySelector('#save-pass')`, 'backup after import reload Begin');
     t = await gateText();
     check(t.includes('Your identity key has been imported'),
-      'backup after import reload still says imported');
+      'backup after import reload Begin still says imported');
     check(!t.includes('has been created'),
-      'backup after import reload does not say created');
+      'backup after import reload Begin does not say created');
     // B1: log out so the following theme/reload flow sees landing again
     // (reload alone does NOT clear a logged-in backup gate).
     await cdp.eval(`(async () => {

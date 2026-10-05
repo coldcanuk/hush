@@ -543,9 +543,11 @@ if [ -z "$cue_at" ] || [ "$cue_at" -le "$touch_end" ] \
   || ! echo "$html" | grep -q -F -e 'const drawerRO = new ResizeObserver(syncDrawerOverflow);'; then
   fail "drawer bottom fade must show only when the drawer overflows (UI-M12d r5)"
 fi
-# #237 F-C: fade latch uses content bottom (padding excluded).
+# #237 F-C: fade latch uses leaf content bottom (padding excluded).
 echo "$html" | grep -q -F 'parseFloat(cs.paddingBottom)' \
   || fail "drawer fade must measure content bottom (exclude child padding)"
+echo "$html" | grep -q -F 'const visit = (el) =>' \
+  || fail "drawer fade must walk leaves (F-C': nested row padding must not count)"
 style_end=$(line_of '^</style>$')
 if [ -z "$style_end" ] || [ "$style_end" -le "$touch_end" ] \
   || echo "$html" | sed -n "${m12d_at},${style_end}p" | grep -q '\(height\|width\|block-size\): *44px'; then
@@ -901,6 +903,13 @@ echo "$restored" | grep -q '"has_vibe":true' || fail "restart should restore vib
 echo "$restored" | grep -q '"name":"HQ"' || fail "restart should keep vibe name"
 echo "$restored" | grep -q '"slug":"incidents"' || fail "restart should keep channel"
 echo "$restored" | grep -q '"first_name":"Ada"' || fail "restart should keep profile"
+
+# #234 F-B: tick and Begin sync identityViaImport from session.
+echo "$html" | grep -q -F 'function syncIdentityViaImport()' \
+  || fail "must define syncIdentityViaImport for durable import title"
+echo "$html" | grep -q -F 'session = sess;
+        syncIdentityViaImport();' \
+  || fail "tick must syncIdentityViaImport after session = sess"
 
 # #237: paintSkillBoard before drawer show (gem flash).
 # Extract openAgentDrawer and require paintSkillBoard line number < show line.

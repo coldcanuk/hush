@@ -3000,10 +3000,17 @@ html[data-theme="dark"] #thread-send:active {
       });
     }
 
+    /* Keep identityViaImport in lockstep with every API session assign.
+       tick() used to do `session = sess` alone; after reload Begin then
+       painted backup with the create title while the server flag was true
+       (#234 F-B). */
+    function syncIdentityViaImport() {
+      identityViaImport = !!(session && session.identity_imported);
+    }
+
     function applySession(s) {
       session = s || session;
-      /* Durable across reload: server session carries identity_imported. */
-      identityViaImport = !!(session.identity_imported);
+      syncIdentityViaImport();
       if (session.ready && page !== "payne") page = "hive";
       else if (session.logged_in && !session.backup_acked) page = "backup";
       else if (session.logged_in && session.backup_acked && !session.has_vibe) page = "vibe";
@@ -3230,6 +3237,9 @@ html[data-theme="dark"] #thread-send:active {
       if (box) box.addEventListener("change", () => { savePass = box.checked; });
       on("begin", () => {
         gateErr = "";
+        /* Session may already be from tick(); re-sync so reload→Begin
+           keeps the import backup title (#234 F-B). */
+        syncIdentityViaImport();
         if (session.ready) page = "hive";
         else if (session.logged_in && !session.backup_acked) page = "backup";
         else if (session.logged_in && session.backup_acked && !session.has_vibe) page = "vibe";
@@ -4041,17 +4051,26 @@ html[data-theme="dark"] #thread-send:active {
       const inner = box.top + d.clientTop;
       const top = inner - d.scrollTop;
       let last = 0;
-      for (const c of d.children) {
-        if (!c.getClientRects().length) continue;
-        /* Content bottom (exclude the child's own padding/border). A ~12px
-           latch on the row BOX left 1–5px of text cut with no fade (#237
-           Ops F-C). Blank drawer padding still does not count. */
-        const r = c.getBoundingClientRect();
-        const cs = getComputedStyle(c);
+      /* Walk to leaves and use each leaf's content bottom. Direct-child
+         inset alone still counted blank padding inside #fo-individuals
+         rows (7px .fo-person padding) as overflow — false fade over a
+         fully visible Marshal at 375 (#237 F-C'). */
+      const visit = (el) => {
+        if (!el.getClientRects().length) return;
+        let hasKid = false;
+        for (const c of el.children) {
+          if (!c.getClientRects().length) continue;
+          hasKid = true;
+          visit(c);
+        }
+        if (hasKid) return;
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
         const inset = (parseFloat(cs.paddingBottom) || 0)
           + (parseFloat(cs.borderBottomWidth) || 0);
         last = Math.max(last, r.bottom - top - inset);
-      }
+      };
+      for (const c of d.children) visit(c);
       let seen = d.clientHeight;
       const qb = $("quick-bar");
       if (qb && qb.getClientRects().length) {
@@ -8478,6 +8497,7 @@ html[data-theme="dark"] #thread-send:active {
         if (pres && pres.lines)
           lastPresence = pres.lines;
         session = sess;
+        syncIdentityViaImport();
         whisperReady = !!st.whisper;
         if (session.ready && page !== "payne") page = "hive";
         paint();
