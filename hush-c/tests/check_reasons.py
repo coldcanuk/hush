@@ -274,6 +274,52 @@ def check_robot_loadout(relay, owned):
     heavy = [forge(relay, f"heavy {i}", body=big) for i in range(3)]
     extra = {f"skill_{i}": sid for i, sid in enumerate(heavy)}
     expect(relay, "loadout over budget", "/api/agent", robot("Pat", **extra), BUDGET)
+    check_ninth_skill(relay, heavy[0])
+
+
+def check_ninth_skill(relay, one):
+    """skill_8 and nskills over 8 are the budget 400, not a silent drop."""
+    ids = [forge(relay, f"ninth {i}") for i in range(9)]
+    extra = {f"skill_{i}": sid for i, sid in enumerate(ids)}
+    expect(relay, "create skill_8", "/api/agent", robot("Nine", **extra), BUDGET)
+    expect(relay, "create nskills over 8", "/api/agent",
+           robot("Nine Count", skill_0=one, nskills=9), BUDGET)
+    status, _, raw = relay.call("GET", "/api/session")
+    slugs = [a.get("slug") for a in json.loads(raw).get("agents", [])]
+    if status != 200 or "nine" in slugs or "nine-count" in slugs:
+        FAILURES.append(f"skill_8 and nskills 9 must not create a robot; got {slugs}")
+    else:
+        print("reasons: ok ninth skill did not create a robot")
+    status, _, raw = relay.call("GET", "/api/skills")
+    listed = {s.get("id") for s in json.loads(raw).get("skills", [])}
+    missing = [sid for sid in ids if sid not in listed]
+    if status != 200 or missing:
+        FAILURES.append(f"forged skills must stay created; missing {missing}")
+    else:
+        print("reasons: ok forged skills stayed in the catalog")
+    before = agent_in_memory(relay, "walkbot-one")
+    expect(relay, "update skill_8", "/api/agent",
+           {"action": "update", "slug": "walkbot-one",
+            "skill_0": ids[0], "skill_8": ids[8]}, BUDGET)
+    expect(relay, "update nskills over 8", "/api/agent",
+           {"action": "update", "slug": "walkbot-one",
+            "skill_0": ids[0], "nskills": 9}, BUDGET)
+    after = agent_in_memory(relay, "walkbot-one")
+    if before.get("skills") != after.get("skills") or before.get("name") != after.get("name"):
+        FAILURES.append("a refused ninth skill must leave the robot unchanged: "
+                        f"{before.get('skills')} -> {after.get('skills')}")
+    else:
+        print("reasons: ok skill_8 update left the robot unchanged")
+    made = relay.ok("/api/agent", robot("Cap Eight", skill_0=one, nskills=8))
+    slugs = [a.get("slug") for a in made.get("agents", [])]
+    if "cap-eight" not in slugs:
+        FAILURES.append(f"nskills 8 with one skill must still create; got {slugs}")
+    else:
+        kept = agent_in_memory(relay, "cap-eight").get("skills")
+        if kept != [one]:
+            FAILURES.append(f"nskills 8 must keep the one skill, not invent more; got {kept}")
+        else:
+            print("reasons: ok nskills 8 with one skill still creates")
 
 
 def check_robot_slugs(relay):
@@ -740,6 +786,29 @@ def reason_strings():
     return found
 
 
+
+FORGE_CHECK = "loadoutRefuseReason(equippedSkills, skillById(data.id))"
+FORGE_HOLD = "if (reason) refused = reason;"
+FORGE_PUSH = "else equippedSkills.push(data.id);"
+FORGE_SAY = "if (refused) skillNotice(refused);"
+# The cap uses the sentence the other equip paths already show. One sentence.
+FORGE_CAP = "This robot has reached its skill capacity. Remove a skill first."
+
+
+def check_forge_cap(label, text):
+    """Create a skill uses the same capacity check and does not add a sentence."""
+    needs = (FORGE_CHECK, FORGE_HOLD, FORGE_PUSH, FORGE_SAY, FORGE_CAP)
+    missing = [need for need in needs if need not in text]
+    if missing:
+        FAILURES.append(f"{label} forge must use the existing capacity sentence; "
+                        f"missing {missing}")
+        return
+    if "created but not equipped" in text:
+        FAILURES.append(f"{label} must not invent a second forge sentence")
+        return
+    print(f"reasons: ok {label} forge uses the existing capacity sentence")
+
+
 def check_ui(relay):
     demo = (ROOT / "demo" / "index.html").read_text()
     _, _, served = relay.call("GET", "/")
@@ -776,6 +845,7 @@ def check_ui(relay):
         else:
             print(f"reasons: ok {label} has #agent-name-rule in #agent-identity "
                   "after the name input")
+        check_forge_cap(label, text)
     words = [UI_NAME_RULE] + reason_strings()
     slugged = [w for w in words if re.search(r"slug", w, re.IGNORECASE)]
     if slugged or len(words) < 30:

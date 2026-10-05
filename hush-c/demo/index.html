@@ -8659,11 +8659,17 @@ html[data-theme="dark"] #thread-send:active {
         const data = await api("/api/skill", {
           name: name, summary: summary, body: body, scope: scope, robot: editSlug || ""
         });
-        if (data && data.id && equippedSkills.indexOf(data.id) < 0)
-          equippedSkills.push(data.id);
-        clearActiveFavorite();
+        let refused = "";
         closeForge();
         await loadSkillCatalog(editSlug);
+        if (data && data.id && equippedSkills.indexOf(data.id) < 0) {
+          const reason = loadoutRefuseReason(equippedSkills, skillById(data.id));
+          if (reason) refused = reason;
+          else equippedSkills.push(data.id);
+        }
+        clearActiveFavorite();
+        if (refused) skillNotice(refused);
+        else if (data && data.id) paintSkillBoard(editSlug);
       } catch (e) {
         $("forge-err").textContent = "Could not forge that skill.";
       }
