@@ -60,13 +60,13 @@ static void test_health_and_login_contract(void)
     expect(status == 200, "health status");
     expect(hush_vault_session_call(&call, &session, 0) == HUSH_OK, "health call");
     expect(strcmp(call.method, "GET") == 0, "health method");
-    expect(strcmp(call.url, HUSH_VAULT_ORIGIN HUSH_VAULT_HEALTH_PATH) == 0,
+    expect(strcmp(call.url, "https://vault.onerelay.app/v1/sys/health") == 0,
            "health url");
     expect(!call.has_token && !call.has_body, "health has no token or body");
     expect(hush_vault_login(&session, "fresh.identity.0") == HUSH_OK, "login");
     expect(hush_vault_session_call(&call, &session, 1) == HUSH_OK, "login call");
     expect(strcmp(call.method, "POST") == 0, "login method");
-    expect(strcmp(call.url, HUSH_VAULT_ORIGIN HUSH_VAULT_LOGIN_PATH) == 0,
+    expect(strcmp(call.url, "https://vault.onerelay.app/v1/auth/cursor-ntfy/login") == 0,
            "login url");
     expect(!call.has_token, "login sends no vault token");
     expect(strcmp(call.body,
@@ -117,7 +117,7 @@ static void test_renew_revoke_and_lookup(void)
     expect(hush_vault_renew(&session) == HUSH_OK, "renew falls back to login");
     expect(strcmp(session.token, "renewed") == 0, "renewed token");
     expect(hush_vault_session_call(&call, &session, 1) == HUSH_OK, "renew call");
-    expect(strcmp(call.url, HUSH_VAULT_ORIGIN HUSH_VAULT_RENEW_PATH) == 0,
+    expect(strcmp(call.url, "https://vault.onerelay.app/v1/auth/token/renew-self") == 0,
            "renew url");
     expect(strcmp(call.body, HUSH_VAULT_RENEW_BODY) == 0, "renew body");
     expect(call.has_token, "renew sends token");
@@ -128,7 +128,7 @@ static void test_renew_revoke_and_lookup(void)
     expect(hush_vault_revoke(&session) == HUSH_OK, "revoke");
     expect(session.token[0] == '\0', "revoke clears token");
     expect(hush_vault_session_call(&call, &session, 3) == HUSH_OK, "revoke call");
-    expect(strcmp(call.url, HUSH_VAULT_ORIGIN HUSH_VAULT_REVOKE_PATH) == 0,
+    expect(strcmp(call.url, "https://vault.onerelay.app/v1/auth/token/revoke-self") == 0,
            "revoke url");
     expect(strcmp(call.body, "{}") == 0, "revoke body");
     expect(call.has_token, "revoke sent the token");
@@ -153,7 +153,7 @@ static void test_lookup_self_contract(void)
     expect(status == 200, "lookup status");
     expect(hush_vault_session_call(&call, &session, 1) == HUSH_OK, "lookup call");
     expect(strcmp(call.method, "GET") == 0, "lookup method");
-    expect(strcmp(call.url, HUSH_VAULT_ORIGIN HUSH_VAULT_LOOKUP_PATH) == 0,
+    expect(strcmp(call.url, "https://vault.onerelay.app/v1/auth/token/lookup-self") == 0,
            "lookup url");
     expect(call.has_token && !call.has_body, "lookup token and no body");
 }
@@ -189,7 +189,7 @@ static void test_secret_shape_and_revoked_retry(void)
     expect(strcmp(cred.username, "eggdrop") == 0, "username");
     expect(strcmp(cred.password, "private-test-password") == 0, "password");
     expect(hush_vault_session_call(&call, &session, 2) == HUSH_OK, "relogin");
-    expect(strcmp(call.url, HUSH_VAULT_ORIGIN HUSH_VAULT_LOGIN_PATH) == 0,
+    expect(strcmp(call.url, "https://vault.onerelay.app/v1/auth/cursor-ntfy/login") == 0,
            "retry is login");
     expect(strcmp(session.token, "new-token") == 0, "replacement token");
 }
@@ -229,7 +229,7 @@ static void test_open_from_pass_keeps_store(void)
     expect(!hush_pass_has("vault/onerelay/ntfy"), "secret not copied to pass");
     expect(hush_vault_close(&session) == HUSH_OK, "close minted");
     expect(hush_vault_session_call(&call, &session, 2) == HUSH_OK, "close call");
-    expect(strcmp(call.url, HUSH_VAULT_ORIGIN HUSH_VAULT_REVOKE_PATH) == 0,
+    expect(strcmp(call.url, "https://vault.onerelay.app/v1/auth/token/revoke-self") == 0,
            "close revokes minted token");
     expect(session.token[0] == '\0', "closed token cleared");
 
@@ -242,7 +242,7 @@ static void test_open_from_pass_keeps_store(void)
     expect(hush_vault_open(&session, &cred) == HUSH_OK, "open token");
     expect(session.call_count == 1, "adopted token skips login");
     expect(hush_vault_session_call(&call, &session, 0) == HUSH_OK, "get call");
-    expect(strcmp(call.url, HUSH_VAULT_ORIGIN HUSH_VAULT_SECRET_PATH) == 0,
+    expect(strcmp(call.url, "https://vault.onerelay.app/v1/pass/data/ae/eggdrop/ntfy") == 0,
            "secret url");
     expect(strcmp(call.token, "hvs.adopted") == 0, "pass token header");
     expect(session.minted == 0, "adopted is not minted");
@@ -272,8 +272,78 @@ static void test_missing_opener(void)
     hush_pass_set_helper(NULL);
 }
 
+
+static int buffer_all_zero(const char *buf, size_t n)
+{
+    size_t idx = 0;
+
+    for (idx = 0; idx < n; ++idx) {
+        if (buf[idx] != '\0')
+            return 0;
+    }
+    return 1;
+}
+
+/* Pins the body contract strings so a header-macro mutant fails (Gauge V1-V3). */
+static void test_contract_literals(void)
+{
+    expect(strcmp(HUSH_VAULT_ORIGIN, "https://vault.onerelay.app") == 0,
+           "origin literal");
+    expect(strcmp(HUSH_VAULT_HEALTH_PATH, "/v1/sys/health") == 0, "health path");
+    expect(strcmp(HUSH_VAULT_LOGIN_PATH, "/v1/auth/cursor-ntfy/login") == 0,
+           "login path");
+    expect(strcmp(HUSH_VAULT_SECRET_PATH, "/v1/pass/data/ae/eggdrop/ntfy") == 0,
+           "secret path");
+    expect(strcmp(HUSH_VAULT_RENEW_PATH, "/v1/auth/token/renew-self") == 0,
+           "renew path");
+    expect(strcmp(HUSH_VAULT_REVOKE_PATH, "/v1/auth/token/revoke-self") == 0,
+           "revoke path");
+    expect(strcmp(HUSH_VAULT_LOOKUP_PATH, "/v1/auth/token/lookup-self") == 0,
+           "lookup path");
+}
+
+/* After close, token/JWT/call-log secret copies must be full-buffer zero. */
+static void test_close_wipes_secrets(void)
+{
+    hush_vault_session_t session;
+    hush_vault_reply_t replies[2];
+    hush_vault_call_t call;
+    size_t idx = 0;
+
+    memset(replies, 0, sizeof(replies));
+    fill_auth(&replies[0], "short-lived-token", 300, "[\"eggdrop-ntfy\"]");
+    replies[1].http_status = 204;
+    hush_vault_session_init(&session);
+    hush_vault_session_use_fixture(&session, replies, 2);
+    expect(hush_vault_login(&session, "fresh.identity.0") == HUSH_OK, "login");
+    expect(session.token[0] != '\0', "token present before close");
+    expect(session.jwt[0] != '\0', "jwt present before close");
+    expect(hush_vault_session_call(&call, &session, 0) == HUSH_OK, "login call");
+    expect(call.body[0] != '\0', "login body recorded");
+    expect(hush_vault_close(&session) == HUSH_OK, "close");
+    expect(buffer_all_zero(session.token, sizeof(session.token)),
+           "token fully wiped");
+    expect(buffer_all_zero(session.jwt, sizeof(session.jwt)), "jwt fully wiped");
+    expect(session.ttl_seconds == 0, "ttl cleared");
+    expect(session.minted == 0, "minted cleared");
+    expect(session.call_count == 2, "login and revoke recorded");
+    for (idx = 0; idx < session.call_count; ++idx) {
+        expect(hush_vault_session_call(&call, &session, idx) == HUSH_OK,
+               "call after wipe");
+        expect(buffer_all_zero(call.body, sizeof(call.body)), "call body wiped");
+        expect(buffer_all_zero(call.token, sizeof(call.token)), "call token wiped");
+        expect(!call.has_body && !call.has_token, "call secret flags cleared");
+    }
+    expect(hush_vault_session_call(&call, &session, 1) == HUSH_OK, "revoke call");
+    expect(strcmp(call.url,
+                  "https://vault.onerelay.app/v1/auth/token/revoke-self") == 0,
+           "revoke url kept");
+}
+
+
 int main(void)
 {
+    test_contract_literals();
     test_health_and_login_contract();
     test_refuses_broad_or_long_token();
     test_renew_revoke_and_lookup();
@@ -281,6 +351,7 @@ int main(void)
     test_secret_shape_and_revoked_retry();
     test_open_from_pass_keeps_store();
     test_missing_opener();
+    test_close_wipes_secrets();
     if (g_fail) {
         fprintf(stderr, "test_vault failed\n");
         return 1;

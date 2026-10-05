@@ -245,6 +245,15 @@ else
     MISSING="$MISSING openssl"
 fi
 
+# libcurl is required: hush_vault.c includes curl/curl.h and the Makefile
+# links with `pkg-config --libs libcurl`.
+if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libcurl; then
+    echo "FOUND:   libcurl ($(pkg-config --modversion libcurl))"
+else
+    echo "MISSING: libcurl headers (install libcurl4-openssl-dev or your distro's libcurl-dev package)"
+    MISSING="$MISSING libcurl"
+fi
+
 if [ -f /usr/include/X11/Xlib.h ]; then
     X11_CFLAGS="-DHUSH_HAVE_X11=1"
     X11_LIBS="-lX11"
@@ -261,7 +270,7 @@ case "$OS_UNAME" in
             echo ">>> Linux (Debian/Ubuntu/Pop!_OS) detected <<<"
             echo "For the optimal experience on Pop!_OS run:"
             echo "  sudo apt update"
-            echo "  sudo apt install -y build-essential pkg-config libssl-dev"
+            echo "  sudo apt install -y build-essential pkg-config libssl-dev libcurl4-openssl-dev"
             echo "This ensures gcc, make, and all required headers are present."
         else
             echo ">>> Linux detected <<<"
