@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # Test double for the secret-tool commands Hush actually runs.
+# Rejects an nsec on argv (stdin only). Records last store argv.
+import json
 import os
 import sys
 
@@ -16,9 +18,18 @@ def value_after(argv, name):
     return argv[idx + 1]
 
 
+def reject_secret_on_argv(args, secret=None):
+    for arg in args:
+        if arg.startswith("nsec"):
+            sys.exit(3)
+        if secret is not None and secret != "" and arg == secret:
+            sys.exit(3)
+
+
 args = sys.argv[1:]
 if not args:
     sys.exit(2)
+reject_secret_on_argv(args)
 item = value_after(args, "item")
 service = value_after(args, "service")
 if item is None or service != "hush":
@@ -34,6 +45,10 @@ if args[0] == "store":
     secret = sys.stdin.read()
     if secret == "":
         sys.exit(1)
+    reject_secret_on_argv(args, secret)
+    with open(os.path.join(root, "last_store.json"), "w", encoding="utf-8") as handle:
+        json.dump({"argv": args, "stdin_has_secret": True}, handle)
+        handle.write("\n")
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(secret)
     sys.exit(0)
