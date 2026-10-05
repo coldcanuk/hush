@@ -16,6 +16,60 @@ import urllib.request
 
 
 ROOT = Path(__file__).resolve().parents[1]
+POLL_S = 0.05
+
+
+def seconds_from_env(name, default):
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return float(default)
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise SystemExit(f"{name} must be a number of seconds") from error
+    if not (value > 0) or value == float("inf"):
+        raise SystemExit(f"{name} must be a positive finite number of seconds")
+    return value
+
+
+# One wall-clock budget for every readiness poll. A slow machine sets
+# HUSH_TEST_WAIT_S; the suite does not grow a second deadline.
+TEST_WAIT_S = seconds_from_env("HUSH_TEST_WAIT_S", 30)
+# Socket budget for one relay HTTP call. Kept separate so a long poll
+# does not also stretch every urlopen, and a slow POST is not stuck at 5s.
+HTTP_TIMEOUT_S = seconds_from_env("HUSH_HTTP_TIMEOUT_S", 20)
+
+
+def relay_log_tail(relay, limit=2000):
+    log = getattr(relay, "log", None)
+    path = getattr(log, "name", None) if log is not None else None
+    if not path:
+        return ""
+    try:
+        data = Path(path).read_bytes()
+    except OSError as error:
+        return f"(relay log unreadable: {error})"
+    return data[-limit:].decode("utf-8", errors="replace")
+
+
+def fail_wait(relay, started, what):
+    """Print elapsed time, provider request count, and the relay log tail."""
+    elapsed = time.monotonic() - started
+    count = len(Endpoint.requests)
+    tail = relay_log_tail(relay) if relay is not None else ""
+    print(
+        f"timeout: {what}; elapsed {elapsed:.2f}s; provider requests {count}; relay log tail:\n{tail}",
+        flush=True,
+    )
+    raise AssertionError(
+        f"timeout: {what}; elapsed {elapsed:.2f}s; provider requests {count}"
+    )
+
+
+def poll_deadline(seconds):
+    budget = TEST_WAIT_S if seconds is None else seconds
+    started = time.monotonic()
+    return started, started + budget
 
 
 def free_port():
@@ -25,6 +79,8 @@ def free_port():
 
 
 class Relay:
+    active = None
+
     def __init__(self, directory):
         self.directory = directory
         self.port = free_port()
@@ -34,18 +90,21 @@ class Relay:
                                 HUSH_AUTO_UPDATE="0")
         self.log = (directory / "relay.log").open("w+")
         self.process = None
+        Relay.active = self
 
     def start(self):
         self.process = subprocess.Popen([os.environ.get("HUSH_TEST_RELAY_BIN", str(ROOT / "hush-relay")), "--no-open", str(self.port)],
                                         cwd=ROOT, env=self.environment, stdout=self.log,
                                         stderr=subprocess.STDOUT)
-        for _ in range(100):
+        started, deadline = poll_deadline(None)
+        while True:
             try:
                 self.request("/api/session")
                 return
             except (OSError, ValueError):
-                time.sleep(0.05)
-        raise AssertionError("Isolated relay did not start")
+                if time.monotonic() >= deadline:
+                    fail_wait(self, started, "relay start")
+                time.sleep(POLL_S)
 
     def stop(self):
         if self.process is not None:
@@ -59,10 +118,18 @@ class Relay:
         request = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=payload,
                                          headers={"Content-Type": "application/json",
                                                   "X-Hush-Token": token})
+        started = time.monotonic()
         try:
-            response = urllib.request.urlopen(request, timeout=5)
+            response = urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_S)
         except urllib.error.HTTPError as error:
             response = error
+        except urllib.error.URLError as error:
+            reason = getattr(error, "reason", None)
+            if isinstance(reason, (TimeoutError, socket.timeout)):
+                fail_wait(self, started, f"HTTP {path}")
+            raise
+        except (TimeoutError, socket.timeout):
+            fail_wait(self, started, f"HTTP {path}")
         with response:
             raw = response.read()
             assert response.status == expected, (path, response.status, expected, raw[:160])
@@ -161,7 +228,9 @@ class Endpoint(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         self.requests.append((self.path, body, dict(self.headers)))
         if Endpoint.hold is not None:
-            Endpoint.hold.wait(timeout=15)
+            # Safety only. The test releases the hold. Four poll budgets
+            # cover the waits that run while the provider is paused.
+            Endpoint.hold.wait(timeout=TEST_WAIT_S * 4)
         if body.get("stream") and self.mode in ("ok", "full", "oversized", "failure"):
             self.write_stream(self.reply_text(body))
             return
@@ -193,14 +262,16 @@ class Endpoint(BaseHTTPRequestHandler):
             pass
 
 
-def wait_reply(relay, marker):
-    for _ in range(150):
+def wait_reply(relay, marker, seconds=None):
+    started, deadline = poll_deadline(seconds)
+    while True:
         events = relay.request("/api/events")["events"]
         hits = [event for event in events if marker in event["content"]]
         if hits:
             return hits[-1]
-        time.sleep(0.05)
-    raise AssertionError("Expected harness reply missing: " + marker)
+        if time.monotonic() >= deadline:
+            fail_wait(relay, started, "reply " + marker)
+        time.sleep(POLL_S)
 
 
 def check_providers(relay):
@@ -327,24 +398,29 @@ def check_streaming(relay, bot):
     try:
         posted = post_thread(relay, bot, "STREAM_TARGET: answer in pieces")
         partial = ""
-        for _ in range(200):
+        started, deadline = poll_deadline(None)
+        while True:
             answer = relay.request("/api/reply", {"root": posted["id"], "robot": bot["name"]})
             if answer["running"] and answer["text"]:
                 partial = answer["text"]
                 break
+            if time.monotonic() >= deadline:
+                fail_wait(relay, started, "streaming partial")
             time.sleep(0.02)
         assert partial, "no partial answer was visible"
         assert expected.startswith(partial), (expected, partial)
         assert len(partial) < len(expected), ("stream arrived whole", partial)
         landed = []
-        for _ in range(200):
+        started, deadline = poll_deadline(None)
+        while True:
             events = relay.request("/api/events")["events"]
             landed = [event for event in events
                       if event.get("reply_to") == posted["id"] and event["content"] == expected]
             if landed:
                 break
-            time.sleep(0.05)
-        assert landed, "streamed reply never landed"
+            if time.monotonic() >= deadline:
+                fail_wait(relay, started, "streamed reply")
+            time.sleep(POLL_S)
         idle = relay.request("/api/reply", {"root": posted["id"], "robot": bot["name"]})
         assert idle == {"ok": True, "running": False, "text": ""}, idle
         relay.request("/api/reply", {"root": posted["id"]}, expected=400)
@@ -354,12 +430,14 @@ def check_streaming(relay, bot):
     print("streaming: partial answers paint before the provider finishes OK")
 
 
-def wait_request_count(expected):
-    for _ in range(200):
+def wait_request_count(expected, seconds=None):
+    started, deadline = poll_deadline(seconds)
+    while True:
         if len(Endpoint.requests) >= expected:
             return
-        time.sleep(0.05)
-    raise AssertionError("Provider request never arrived")
+        if time.monotonic() >= deadline:
+            fail_wait(Relay.active, started, f"provider request count {expected}")
+        time.sleep(POLL_S)
 
 
 def check_jobcap(relay, bot):
@@ -385,12 +463,14 @@ def check_jobcap(relay, bot):
     print("budgets: channel at max_jobs refuses the next dispatch with an honest note OK")
 
 
-def wait_idle(relay):
-    for _ in range(200):
+def wait_idle(relay, seconds=None):
+    started, deadline = poll_deadline(seconds)
+    while True:
         if not relay.request("/api/status")["thinking"]:
             return
-        time.sleep(0.05)
-    raise AssertionError("Agent did not finish")
+        if time.monotonic() >= deadline:
+            fail_wait(relay, started, "agent idle")
+        time.sleep(POLL_S)
 
 
 def check_memory(relay, bot, host, skill_id, swap_id):
@@ -487,8 +567,11 @@ def check_chaining(relay):
         if not iteration:
             root = next(event for event in relay.request("/api/events")["events"]
                         if event["content"] == body["content"])
-        wait_request_count(before + 4)  # election, plan, writer, reviewer
-        wait_idle(relay)
+        # Election, plan, writer, reviewer are sequential. One TEST_WAIT_S
+        # is the budget for a single provider call, so this window is four.
+        chain_budget = TEST_WAIT_S * 4
+        wait_request_count(before + 4, seconds=chain_budget)
+        wait_idle(relay, seconds=chain_budget)
         requests = Endpoint.requests[before:]
         assert all(request[1]["model"] == "custom" for request in requests)
         assert "election committee" in requests[0][1]["messages"][0]["content"]
