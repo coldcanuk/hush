@@ -39,12 +39,65 @@ static void hush_json_test_decode_keep(void)
     assert((unsigned char)decoded[2] == 0xBF);
     assert((unsigned char)decoded[3] == 0xBD);
     assert(decoded[4] == 'B');
-    /* Good escapes still decode. */
+    /* Good escapes still decode on the STRICT path (valid UTF-8 body). */
     {
         const char *esc = "\"x\\b\\fy\"";
         hush_json_value_t v = { .start = esc, .len = strlen(esc) };
         assert(hush_json_decode_keep(decoded, sizeof(decoded), &v) == HUSH_OK);
         assert(strcmp(decoded, "x\b\fy") == 0);
+    }
+    /* Fallback path (strict fails on invalid UTF-8): \b \f \t and \u still decode. */
+    {
+        /* "x\b\f\t\u0041" + lone 0xFF + "y" */
+        char fb[] = {
+            '"', 'x', '\\', 'b', '\\', 'f', '\\', 't', '\\', 'u', '0', '0', '4', '1',
+            (char)0xFF, 'y', '"', 0
+        };
+        hush_json_value_t v = { .start = fb, .len = sizeof(fb) - 1 };
+        assert(hush_json_decode(decoded, sizeof(decoded), &v) == HUSH_ERR_PARSE);
+        assert(hush_json_decode_keep(decoded, sizeof(decoded), &v) == HUSH_OK);
+        assert(decoded[0] == 'x');
+        assert(decoded[1] == '\b');
+        assert(decoded[2] == '\f');
+        assert(decoded[3] == '\t');
+        assert(decoded[4] == 'A');
+        assert((unsigned char)decoded[5] == 0xEF);
+        assert((unsigned char)decoded[6] == 0xBF);
+        assert((unsigned char)decoded[7] == 0xBD);
+        assert(decoded[8] == 'y');
+        assert(decoded[9] == '\0');
+    }
+    /* CESU / overlong / OOR raw sequences become U+FFFD, not copied raw. */
+    {
+        char cesu[] = {
+            '"', (char)0xED, (char)0xA0, (char)0x80, 'X',
+            (char)0xE0, (char)0x80, (char)0x80, 'Y',
+            (char)0xF4, (char)0x90, (char)0x80, (char)0x80, 'Z', '"', 0
+        };
+        hush_json_value_t v = { .start = cesu, .len = sizeof(cesu) - 1 };
+        assert(hush_json_decode_keep(decoded, sizeof(decoded), &v) == HUSH_OK);
+        /* Each invalid byte → U+FFFD; ASCII separators remain. */
+        /* ED A0 80 → 3×FFFD, X; E0 80 80 → 3×FFFD, Y; F4… → 4×FFFD, Z */
+        assert((unsigned char)decoded[0] == 0xEF);
+        assert((unsigned char)decoded[9] == 'X');
+        assert((unsigned char)decoded[10] == 0xEF);
+        assert((unsigned char)decoded[19] == 'Y');
+        assert((unsigned char)decoded[20] == 0xEF);
+        assert((unsigned char)decoded[32] == 'Z');
+        assert(decoded[33] == '\0');
+    }
+    /* keep_put guard must stay >= (not >): "AB" + 0xFF into 5-byte buf.
+     * FFFD needs 3 bytes after "AB"; o+n >= outsz refuses; mutant ">" overflows. */
+    {
+        char tiny[5];
+        char overflow[] = { '"', 'A', 'B', (char)0xFF, '"', 0 };
+        hush_json_value_t v = { .start = overflow, .len = 5 };
+        memset(tiny, 0xA5, sizeof(tiny));
+        assert(hush_json_decode_keep(tiny, sizeof(tiny), &v) == HUSH_OK);
+        assert(tiny[0] == 'A' && tiny[1] == 'B' && tiny[2] == '\0');
+        /* Bytes past the NUL must stay untouched (no overflow write). */
+        assert((unsigned char)tiny[3] == 0xA5);
+        assert((unsigned char)tiny[4] == 0xA5);
     }
 }
 

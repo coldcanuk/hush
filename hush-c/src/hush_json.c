@@ -146,8 +146,16 @@ static int hush_json_utf8_incomplete(unsigned char b0, size_t remain)
     return 0;
 }
 
+size_t hush_json_utf8_scalar(const char *text, size_t remain)
+{
+    if (text == NULL)
+        return 0;
+    return hush_json_utf8_seq((const unsigned char *)text, remain);
+}
+
 size_t hush_json_copy_bounded(char *dst, size_t dstsz, const char *src)
 {
+    static const char repl[] = "\xEF\xBF\xBD"; /* U+FFFD */
     size_t i = 0;
     size_t off = 0;
 
@@ -157,24 +165,41 @@ size_t hush_json_copy_bounded(char *dst, size_t dstsz, const char *src)
         src = "";
     while (src[i] != '\0' && off + 1 < dstsz) {
         const unsigned char *p = (const unsigned char *)(src + i);
-        size_t remain = 0;
+        size_t src_remain = 0;
+        size_t dst_room = dstsz - 1 - off;
         size_t seq = 0;
         size_t k = 0;
 
-        while (src[i + remain] != '\0')
-            remain++;
-        /* Cap remain to what still fits in dst (excluding NUL). */
-        if (remain > dstsz - 1 - off)
-            remain = dstsz - 1 - off;
-        seq = hush_json_utf8_seq(p, remain);
+        while (src[i + src_remain] != '\0')
+            src_remain++;
+        seq = hush_json_utf8_seq(p, src_remain);
         if (seq == 0) {
-            if (hush_json_utf8_incomplete(p[0], remain))
+            /* Truncated only when src ends mid-sequence (remaining bytes are
+             * all continuations). Otherwise the lead is invalid → U+FFFD. */
+            if (hush_json_utf8_incomplete(p[0], src_remain)) {
+                size_t j;
+                int all_cont = 1;
+
+                for (j = 1; j < src_remain; j++) {
+                    if (!hush_json_utf8_cont(p[j])) {
+                        all_cont = 0;
+                        break;
+                    }
+                }
+                if (all_cont)
+                    break;
+            }
+            /* Invalid byte: U+FFFD so live session JSON stays valid UTF-8. */
+            if (dst_room < 3)
                 break;
-            /* Invalid lone byte (e.g. 0xFF): keep it. */
-            dst[off++] = src[i++];
+            dst[off] = repl[0];
+            dst[off + 1] = repl[1];
+            dst[off + 2] = repl[2];
+            off += 3;
+            i++;
             continue;
         }
-        if (off + seq >= dstsz)
+        if (seq > dst_room)
             break;
         for (k = 0; k < seq; k++)
             dst[off + k] = src[i + k];

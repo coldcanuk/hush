@@ -37,14 +37,17 @@ hush_status_t hush_json_decode(char *out, size_t outsz,
  * encoding with PARSE or a missing terminator within capacity with FULL. */
 hush_status_t hush_json_count_chars(size_t *out, const char *text, size_t capacity);
 
+/* Bytes in one well-formed UTF-8 scalar at text (E0/ED/F0/F4-aware), else 0. */
+size_t hush_json_utf8_scalar(const char *text, size_t remain);
+
 /* Copies src into dst (at most dstsz-1 bytes + NUL). Stops on a UTF-8
  * character boundary: incomplete trailing sequences are dropped; lone
- * invalid bytes (e.g. 0xFF) are kept so fields are never silently erased. */
+ * invalid bytes become U+FFFD so live session JSON stays valid UTF-8. */
 size_t hush_json_copy_bounded(char *dst, size_t dstsz, const char *src);
 
 /* Like hush_json_decode, but never blanks a non-empty JSON string on PARSE
  * (invalid UTF-8, mid-character cut from an older build, etc.). Good escapes
- * still decode; undecodable bytes are kept raw. FULL truncates to fit. */
+ * still decode; undecodable bytes become U+FFFD. FULL truncates to fit. */
 hush_status_t hush_json_decode_keep(char *out, size_t outsz,
                                     const hush_json_value_t *value);
 

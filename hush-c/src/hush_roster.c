@@ -1016,21 +1016,17 @@ static void hush_roster_hex_encode(char *out65, const unsigned char *raw)
 static void hush_roster_preview_prompt(char *dst, size_t dstsz,
                                        const char *prompt)
 {
-    size_t i = 0;
     size_t cap;
 
     assert(dst != NULL);
     assert(dstsz > 0);
     if (prompt == NULL)
         prompt = "";
-    cap = dstsz - 1;
-    if (cap > (size_t)HUSH_ROSTER_PROMPT_PREVIEW)
-        cap = (size_t)HUSH_ROSTER_PROMPT_PREVIEW;
-    while (prompt[i] != '\0' && i < cap) {
-        dst[i] = prompt[i];
-        i++;
-    }
-    dst[i] = '\0';
+    cap = dstsz;
+    if (cap > (size_t)HUSH_ROSTER_PROMPT_PREVIEW + 1)
+        cap = (size_t)HUSH_ROSTER_PROMPT_PREVIEW + 1;
+    /* Cap on a UTF-8 character boundary so session JSON stays valid. */
+    (void)hush_json_copy_bounded(dst, cap, prompt);
 }
 
 static int hush_roster_is_payne_slug(const char *slug)

@@ -459,7 +459,7 @@ static size_t hush_json_keep_body(char *out, size_t outsz,
                     size_t n = 0;
 
                     i += 5;
-                    if (code == 0)
+                    if (code == 0 || (code >= 0xD800u && code <= 0xDFFFu))
                         code = 0xFFFDu;
                     if (code <= 0x7Fu) {
                         utf[0] = (char)code;
@@ -487,26 +487,10 @@ static size_t hush_json_keep_body(char *out, size_t outsz,
             i++;
             continue;
         }
-        /* Raw byte(s): copy a well-formed UTF-8 scalar, else U+FFFD. */
+        /* Raw byte(s): strict UTF-8 scalar (E0/ED/F0/F4), else U+FFFD. */
         {
-            size_t remain = body_len - i;
-            size_t seq = 0;
-            unsigned char b0 = ch;
+            size_t seq = hush_json_utf8_scalar(body + i, body_len - i);
 
-            if (b0 <= 0x7Fu)
-                seq = 1;
-            else if (b0 >= 0xC2u && b0 <= 0xDFu && remain >= 2
-                     && ((unsigned char)body[i + 1] & 0xC0u) == 0x80u)
-                seq = 2;
-            else if (b0 >= 0xE0u && b0 <= 0xEFu && remain >= 3
-                     && ((unsigned char)body[i + 1] & 0xC0u) == 0x80u
-                     && ((unsigned char)body[i + 2] & 0xC0u) == 0x80u)
-                seq = 3;
-            else if (b0 >= 0xF0u && b0 <= 0xF4u && remain >= 4
-                     && ((unsigned char)body[i + 1] & 0xC0u) == 0x80u
-                     && ((unsigned char)body[i + 2] & 0xC0u) == 0x80u
-                     && ((unsigned char)body[i + 3] & 0xC0u) == 0x80u)
-                seq = 4;
             if (seq == 0) {
                 o = hush_json_keep_put(out, outsz, o, repl, 3);
                 i++;

@@ -1023,6 +1023,64 @@ def check_no_silent_erase():
                 print(f"reasons: ok long 日本語 intro kept ({len(intro)} chars, "
                       f"{ilen} bytes)")
 
+            # Preview must cut on a UTF-8 boundary (session stores ~160-byte prompt).
+            preview_prompt = "x" + ("é" * 600)
+            made_prev = relay.ok("/api/agent", robot(
+                "Preview Guard", system_prompt=preview_prompt, intro="hi"))
+            prev_agents = [a for a in made_prev.get("agents", [])
+                           if a.get("slug") == "preview-guard"]
+            if not prev_agents:
+                FAILURES.append("Preview Guard missing after create")
+            else:
+                try:
+                    json.dumps(made_prev, ensure_ascii=False).encode("utf-8")
+                    live_ok = True
+                except (TypeError, UnicodeEncodeError) as err:
+                    live_ok = False
+                    FAILURES.append(f"create reply not UTF-8 after long preview: {err}")
+                # Re-fetch session for live validity of preview field.
+                status, _, sbody = relay.call("GET", "/api/session")
+                try:
+                    session = json.loads(sbody.decode("utf-8"))
+                    pagents = [a for a in session.get("agents", [])
+                               if a.get("slug") == "preview-guard"]
+                    if not pagents:
+                        FAILURES.append("Preview Guard missing from live session")
+                    else:
+                        pp = pagents[0].get("prompt") or ""
+                        pb = pp.encode("utf-8")
+                        if len(pb) > 160:
+                            FAILURES.append(
+                                f"preview prompt longer than 160 bytes: {len(pb)}")
+                        elif pb.endswith(b"\xc3"):
+                            FAILURES.append(
+                                f"preview ends mid-character: {pp[-4:]!r}")
+                        else:
+                            print(f"reasons: ok preview boundary "
+                                  f"({len(pp)} chars, {len(pb)} bytes)")
+                except (UnicodeDecodeError, json.JSONDecodeError) as err:
+                    FAILURES.append(
+                        f"live session INVALID after long non-ASCII preview: {err}")
+
+            # Launch copy_name (vibe name/about) must stay on UTF-8 boundary.
+            long_about = "é" * 200
+            long_vibe_name = "x" + ("日" * 30)
+            vibe = relay.ok("/api/vibe", {"name": long_vibe_name, "about": long_about})
+            try:
+                json.dumps(vibe, ensure_ascii=False).encode("utf-8")
+                status, _, sbody = relay.call("GET", "/api/session")
+                session = json.loads(sbody.decode("utf-8"))
+                about = (session.get("vibe") or {}).get("about") or ""
+                vname = (session.get("vibe") or {}).get("name") or ""
+                if about.encode("utf-8").endswith(b"\xc3"):
+                    FAILURES.append(f"vibe about mid-character: {about[-4:]!r}")
+                elif vname.encode("utf-8").endswith((b"\xe6", b"\xe6\x97")):
+                    FAILURES.append(f"vibe name mid-character: {vname[-4:]!r}")
+                else:
+                    print("reasons: ok vibe name/about UTF-8 boundary (launch copy)")
+            except (UnicodeDecodeError, json.JSONDecodeError, TypeError) as err:
+                FAILURES.append(f"vibe/session INVALID after long vibe fields: {err}")
+
             raw_name = (
                 b'{"name":"Raw\xffBot","system_prompt":"Walk the floor.",'
                 b'"provider":"grok-build","save_pass":false}'
@@ -1033,24 +1091,54 @@ def check_no_silent_erase():
                     f"0xFF name create: HTTP {status} {body[:160]!r}")
             else:
                 print("reasons: ok 0xFF name create returned 200 with raw-bot id")
+            # Live POST reply and session must be valid UTF-8 (invalid → U+FFFD on save).
+            try:
+                body.decode("utf-8")
+                json.loads(body)
+            except (UnicodeDecodeError, json.JSONDecodeError) as err:
+                FAILURES.append(f"0xFF create reply not valid UTF-8 JSON: {err}")
+            else:
+                print("reasons: ok 0xFF create reply is valid UTF-8 JSON")
+            status, _, sbody = relay.call("GET", "/api/session")
+            try:
+                sbody.decode("utf-8")
+                session = json.loads(sbody)
+                raw_agents = [a for a in session.get("agents", [])
+                              if a.get("slug") == "raw-bot"]
+                if not raw_agents:
+                    FAILURES.append("raw-bot missing from live session after 0xFF create")
+                else:
+                    print("reasons: ok live session lists raw-bot after 0xFF create")
+            except (UnicodeDecodeError, json.JSONDecodeError) as err:
+                FAILURES.append(f"live session INVALID after 0xFF create: {err}")
 
             relay.stop()
             vibe_path = relay.directory / "config" / "vibe.json"
-            if b"\xff" not in vibe_path.read_bytes():
-                FAILURES.append("0xFF name not written into vibe.json")
+            # On save, 0xFF becomes U+FFFD (escaped in JSON), not raw 0xFF.
+            vibe_bytes = vibe_path.read_bytes()
+            if b"\xff" in vibe_bytes:
+                FAILURES.append("vibe.json still contains raw 0xFF after save")
+            elif b"raw-bot" not in vibe_bytes and b"Raw" not in vibe_bytes:
+                FAILURES.append("0xFF-named robot not written into vibe.json")
+            else:
+                print("reasons: ok 0xFF name saved as repaired UTF-8 in vibe.json")
             inject_mid_utf8_cut(relay, "erase-guard")
             relay.start()
-            if b"\xff" not in vibe_path.read_bytes():
-                FAILURES.append("0xFF-named robot wiped from vibe on restart")
-            else:
-                print("reasons: ok 0xFF-named robot survives restart in vibe.json")
-
             status, _, body = relay.call("GET", "/api/session")
             try:
-                session = json.loads(body)
-            except json.JSONDecodeError as err:
+                session = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as err:
                 FAILURES.append(f"session after mid-cut vibe not JSON: {err}")
                 return
+            # M45: repaired-name robot must still be listed after load/restart.
+            raw_agents = [a for a in session.get("agents", [])
+                          if a.get("slug") == "raw-bot"]
+            if not raw_agents:
+                FAILURES.append(
+                    "0xFF-named robot (raw-bot) wiped from session on restart")
+            else:
+                print("reasons: ok raw-bot still listed in session after restart")
+
             agents = [a for a in session.get("agents", [])
                       if a.get("slug") == "erase-guard"]
             if not agents:
