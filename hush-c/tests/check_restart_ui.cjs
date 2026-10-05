@@ -524,6 +524,40 @@ async function main() {
     const previewOk = await cdp.eval(`document.querySelector('#npub-preview').textContent`);
     check(previewOk.includes('Matching public key (npub):') && previewOk.includes(knownNpub),
       `import preview shows full npub: ${previewOk}`);
+    // F-A (Gauge P2-2): at 375 the full npub must not sidescroll the page
+    // or overflow the gate card. Mutant dropping #npub-preview wrap CSS fails.
+    await cdp.send('Emulation.setDeviceMetricsOverride',
+      { width: 375, height: 800, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    const faPin = await cdp.eval(`(() => {
+      const doc = document.documentElement;
+      const prev = document.querySelector('#npub-preview');
+      const card = prev && prev.closest('.card');
+      if (!prev || !card) return { err: 'missing preview/card' };
+      const pr = prev.getBoundingClientRect();
+      const cr = card.getBoundingClientRect();
+      return {
+        docSW: doc.scrollWidth, iw: window.innerWidth,
+        prevSW: prev.scrollWidth, prevCW: prev.clientWidth,
+        cardSW: card.scrollWidth, cardCW: card.clientWidth,
+        prevRight: Math.round(pr.right * 10) / 10,
+        cardRight: Math.round(cr.right * 10) / 10,
+        hasNpub: (prev.textContent || '').includes(${JSON.stringify(knownNpub)})
+      };
+    })()`);
+    check(faPin.hasNpub && !faPin.err,
+      `F-A: full npub still showing at 375: ${JSON.stringify(faPin)}`);
+    check(faPin.docSW <= faPin.iw,
+      `F-A: document.scrollWidth <= innerWidth at 375: ${JSON.stringify(faPin)}`);
+    check(faPin.prevSW <= faPin.prevCW + 1,
+      `F-A: #npub-preview fits its box at 375: ${JSON.stringify(faPin)}`);
+    check(faPin.cardSW <= faPin.cardCW + 1,
+      `F-A: .gate .card fits at 375: ${JSON.stringify(faPin)}`);
+    check(faPin.prevRight <= faPin.cardRight + 1,
+      `F-A: preview right edge inside card at 375: ${JSON.stringify(faPin)}`);
+    await cdp.send('Emulation.setDeviceMetricsOverride',
+      { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+    await sleep(200);
     await cdp.click('#back-import');
     await cdp.waitFor(`!!document.querySelector('#create-id')`, 'landing after import');
 
@@ -786,6 +820,63 @@ async function main() {
       check(underOnly.filter((r) => r.w === pw && r.th === th).length >= 10, `phone sweep has rows hidden only under the quick-bar at ${pw} ${th}`);
     check(phone.some((r) => r.w === 375 && r.h === 812), 'phone sweep includes 375x812');
     for (const r of phone) fadeCheck(r, `${r.w}x${r.h} ${r.th}`);
+
+    // F-C' (Gauge P2-4): Ops false-cue band at 375 (fo h699–705). Real
+    // drawer content (no fade-band probe): when the last .fo-person text is
+    // fully above the visible bottom, is-overflowing MUST be off. The r3
+    // direct-children walk counted nested .fo-person padding and stayed on.
+    await fadeRemove();
+    for (const h of [699, 702, 705]) {
+      await cdp.send('Emulation.setDeviceMetricsOverride',
+        { width: 375, height: h, deviceScaleFactor: 1, mobile: false });
+      await sleep(250);
+      const fc = await cdp.eval(`(async () => {
+        const frames = () => new Promise((r) => requestAnimationFrame(() =>
+          requestAnimationFrame(() => setTimeout(r, 40))));
+        const d = document.querySelector('#fo-drawer');
+        if (!document.querySelector('#hive').classList.contains('nav-open'))
+          document.querySelector('#nav-toggle').click();
+        for (let i = 0; i < 40; i++) {
+          await frames();
+          const q = d.getBoundingClientRect();
+          if (d.clientHeight && q.left >= -0.5 && q.right <= innerWidth + 0.5) break;
+        }
+        d.scrollTop = 0;
+        document.documentElement.setAttribute('data-theme', 'field-office');
+        await frames();
+        const persons = [...d.querySelectorAll('.fo-person')];
+        const row = persons[persons.length - 1];
+        if (!row) return { err: 'no fo-person' };
+        const name = row.querySelector('.fo-person-name') || row;
+        const tr = name.getBoundingClientRect();
+        const box = d.getBoundingClientRect();
+        const inner = box.top + d.clientTop;
+        let vis = inner + d.clientHeight;
+        const x = Math.round(box.left + box.width / 2);
+        for (let y = Math.floor(vis) - 1; y > inner; y--) {
+          const e = document.elementFromPoint(x, y);
+          if (e && d.contains(e)) { vis = y + 1; break; }
+        }
+        const textBottom = tr.bottom;
+        const textFullyVisible = textBottom <= vis + 0.5;
+        return {
+          on: d.classList.contains('is-overflowing'),
+          textBottom: Math.round(textBottom * 10) / 10,
+          vis: Math.round(vis * 10) / 10,
+          textFullyVisible,
+          nPeople: persons.length,
+          name: (name.textContent || '').trim()
+        };
+      })()`, true);
+      check(!fc.err && fc.nPeople > 0,
+        `F-C' setup at 375x${h}: ${JSON.stringify(fc)}`);
+      if (fc.textFullyVisible)
+        check(!fc.on,
+          `F-C': fade off when last person fully visible at 375x${h} fo: ${JSON.stringify(fc)}`);
+    }
+    await cdp.send('Emulation.setDeviceMetricsOverride',
+      { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+    await sleep(200);
 
     // Pre-walk r3 (Ops F2): every drawer stat, including the build stamp,
     // shows whole inside the clip wrapper (no glyph cut at its right edge).
@@ -1103,18 +1194,15 @@ async function main() {
       'backup after import reload Begin still says imported');
     check(!t.includes('has been created'),
       'backup after import reload Begin does not say created');
-    // B1: log out so the following theme/reload flow sees landing again
-    // (reload alone does NOT clear a logged-in backup gate). Apply the
-    // logout session through applySession so the gate routes immediately;
-    // tick() also routes logged_out→landing if the poll lands first.
+    // B1 / Gauge P2-3: raw API logout with NO applySession — tick() must
+    // poll session and route logged_out → landing (backup would stick otherwise).
     await cdp.eval(`(async () => {
-      const r = await fetch('/api/identity', { method: 'POST',
+      await fetch('/api/identity', { method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'logout' }) });
-      const s = await r.json();
-      if (typeof applySession === 'function') applySession(s);
     })()`, true);
-    await cdp.waitFor(`!!document.querySelector('#create-id')`, 'landing after import-title logout');
+    await cdp.waitFor(`!!document.querySelector('#create-id')`,
+      'landing after import-title logout via tick', 15000);
 
     // Fresh loads boot the field-office theme until a POST applies the
     // saved profile theme, so re-enter the landing that way to measure

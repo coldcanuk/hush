@@ -904,15 +904,33 @@ echo "$restored" | grep -q '"name":"HQ"' || fail "restart should keep vibe name"
 echo "$restored" | grep -q '"slug":"incidents"' || fail "restart should keep channel"
 echo "$restored" | grep -q '"first_name":"Ada"' || fail "restart should keep profile"
 
-# #234 F-B: tick and Begin sync identityViaImport from session.
-echo "$html" | grep -q -F 'function syncIdentityViaImport()' \
-  || fail "must define syncIdentityViaImport for durable import title"
-echo "$html" | grep -q -F 'session = sess;
-        syncIdentityViaImport();' \
-  || fail "tick must syncIdentityViaImport after session = sess"
-# B1 / r5: tick must route logged_out → landing (API logout leaves backup otherwise).
-echo "$html" | grep -q -F 'page = "landing"' \
-  || fail "tick/applySession must route to landing when logged out"
+# #234 F-B + B1: tick block must syncIdentityViaImport after session=sess
+# and route !logged_in → landing (awk scoped to tick — not vacuous greps).
+awk '
+  /async function tick\(\)/ { in_tick=1; next }
+  in_tick && /^    (async )?function / { in_tick=0 }
+  in_tick && /session = sess;/ { sess=NR }
+  in_tick && sess && NR==sess+1 && /syncIdentityViaImport\(\);/ { sync=1 }
+  in_tick && /!session\.logged_in/ { lo=1 }
+  in_tick && lo && /page = "landing"/ { land=1 }
+  END {
+    if (!sync) { print "tick must call syncIdentityViaImport right after session = sess" > "/dev/stderr"; exit 1 }
+    if (!land) { print "tick must set page=landing when !session.logged_in" > "/dev/stderr"; exit 1 }
+  }
+' demo/index.html || fail "tick must syncIdentityViaImport and route logged_out to landing"
+
+# #234 F-A: #npub-preview wrap CSS present (UI@375 pin is in check_restart_ui).
+awk '
+  /#npub-preview \{/ { blk=1 }
+  blk && /overflow-wrap: anywhere/ { ow=1 }
+  blk && /word-break: break-all/ { wb=1 }
+  blk && /\.gate \.card/ { blk=0 }
+  END {
+    if (!ow || !wb) { print "#npub-preview must set overflow-wrap/word-break (F-A)" > "/dev/stderr"; exit 1 }
+  }
+' demo/index.html || fail "F-A #npub-preview wrap CSS missing"
+echo "$html" | grep -q -F '.gate .card { max-width: min(34rem, 100%); overflow-x: hidden; box-sizing: border-box; }' \
+  || fail "F-A .gate .card must hide horizontal overflow"
 
 # #237: paintSkillBoard before drawer show (gem flash).
 # Extract openAgentDrawer and require paintSkillBoard line number < show line.
