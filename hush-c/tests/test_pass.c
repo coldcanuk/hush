@@ -108,14 +108,48 @@ static void test_pass_helper_only(const char *base)
     expect(!hush_pass_available(), "helper present, pass absent");
 }
 
+/* Repo helper ../scripts/hush-pass counts with no hush-pass on PATH.
+ * pass present is available. pass absent is not (kills a stuck-true). */
+static void test_pass_repo_helper(const char *base)
+{
+    char rel[TEST_PATH_MAX];
+
+    assert(base != NULL);
+    snprintf(rel, sizeof(rel), "%s/scripts", base);
+    expect(mkdir(rel, TEST_DIR_MODE) == 0, "repo scripts mkdir");
+    snprintf(rel, sizeof(rel), "%s/scripts/hush-pass", base);
+    test_make_fake(rel);
+    expect(access(rel, X_OK) == 0, "repo helper stub");
+    snprintf(rel, sizeof(rel), "%s/repo-pass", base);
+    expect(mkdir(rel, TEST_DIR_MODE) == 0, "repo pass mkdir");
+    snprintf(rel, sizeof(rel), "%s/repo-pass/pass", base);
+    test_make_fake(rel);
+    snprintf(rel, sizeof(rel), "%s/repo-empty", base);
+    expect(mkdir(rel, TEST_DIR_MODE) == 0, "repo empty mkdir");
+    snprintf(rel, sizeof(rel), "%s/repo-cwd", base);
+    expect(mkdir(rel, TEST_DIR_MODE) == 0 && chdir(rel) == 0, "repo cwd");
+    hush_pass_set_helper(NULL);
+    unsetenv(HUSH_PASS_ENV_HELPER);
+    snprintf(rel, sizeof(rel), "%s/repo-pass", base);
+    expect(setenv("PATH", rel, 1) == 0, "repo-helper PATH");
+    expect(hush_pass_available(), "repo helper with pass");
+    snprintf(rel, sizeof(rel), "%s/repo-empty", base);
+    expect(setenv("PATH", rel, 1) == 0, "repo-helper empty PATH");
+    expect(!hush_pass_available(), "repo helper, pass absent");
+}
+
 /* Removes the scratch tree that test_pass_available builds under base
  * (/tmp/hush-avail-<pid>), so repeated runs leave nothing behind. */
 static void test_pass_cleanup(const char *base)
 {
     static const char *const files[] = {
-        "bin/pass", "bin/hush-pass", "helper-only/hush-pass"
+        "bin/pass", "bin/hush-pass", "helper-only/hush-pass",
+        "scripts/hush-pass", "repo-pass/pass"
     };
-    static const char *const dirs[] = { "bin", "helper-only" };
+    static const char *const dirs[] = {
+        "bin", "helper-only", "scripts", "repo-pass", "repo-empty",
+        "repo-cwd"
+    };
     char p[TEST_PATH_MAX];
 
     assert(base != NULL);
@@ -164,11 +198,31 @@ static void test_pass_available(void)
     setenv("PATH", emptydir, 1);
     expect(!hush_pass_available(), "helper and pass absent");
     test_pass_helper_only(base);
+    test_pass_repo_helper(base);
     if (kept != NULL) {
         setenv("PATH", kept, 1);
         free(kept);
     }
     test_pass_cleanup(base);
+}
+
+
+/* Removes the fake store at dir (/tmp/hush-unit-pass-<pid>). */
+static void test_pass_store_cleanup(const char *dir)
+{
+    static const char *const names[] = {
+        "identity_nsec", "agents_sgt-major-payne_nsec"
+    };
+    char path[TEST_PATH_MAX];
+    size_t i;
+
+    assert(dir != NULL);
+    for (i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        snprintf(path, sizeof(path), "%s/%s", dir, names[i]);
+        unlink(path);
+    }
+    rmdir(dir);
+    expect(access(dir, F_OK) != 0, "unit pass store removed");
 }
 
 int main(void)
@@ -207,6 +261,7 @@ int main(void)
     test_pass_delete_prints();
     test_pass_missing_helper();
     test_pass_available();
+    test_pass_store_cleanup(dir);
     if (g_fail)
         return 1;
     printf("test_pass ok\n");

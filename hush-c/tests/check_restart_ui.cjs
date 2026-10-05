@@ -38,9 +38,31 @@ fs.mkdirSync(ART, { recursive: true });
 // Shown on the backup step on both paths (with and without pass).
 const NEVER_SHARE = 'Never share your secret key. Anyone with it can impersonate you.';
 // The one no-pass reason on the backup step (CoS copy, pre-walk polish).
-// It must appear exactly once, and nothing else on that screen may restate it.
+// It must appear exactly once in visible text (not textContent, which still
+// sees a hidden node). Nothing else on that screen may restate it, including
+// a paraphrase that does not reuse the original phrases.
 const NOPASS_REASON = "Hush can't save this key on this computer, so keep your copy somewhere safe.";
-const REASON_ECHO = /can.t save|cannot save|not installed|unavailable|somewhere safe/i;
+const REASON_ECHO = /can.?t save|cannot save|can.?t be saved|cannot be saved|not installed|unavailable|not available|somewhere safe|nothing to save|on this computer|keep your copy|keep a copy|unable to save|will not save|won'?t save|no way to save/i;
+
+// True when visible backup text restates the no-pass reason after the one
+// canonical sentence and the known non-reason controls are removed.
+function noPassRestated(visible) {
+  let rest = String(visible || '').split(NOPASS_REASON).join('\n');
+  const allowed = [
+    'Save to password manager',
+    'I saved it',
+    NEVER_SHARE,
+    'This key is your account. Copy it now. Hush cannot recover it if you lose it.',
+    'Your unique identity key has been created',
+    'Copy value',
+    'Reveal',
+    'Hide',
+    '2 / 4'
+  ];
+  for (const phrase of allowed)
+    rest = rest.split(phrase).join(' ');
+  return REASON_ECHO.test(rest);
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -478,8 +500,9 @@ async function main() {
     t = await gateText();
     check(!t.includes('Checked to save'), 'backup label drops the Checked-to-save line without pass');
     check(!t.includes('Uncheck the box'), 'backup drops the Uncheck line without pass');
-    check(t.split(NOPASS_REASON).length === 2, 'backup shows the no-pass reason exactly once');
-    check(!REASON_ECHO.test(t.split(NOPASS_REASON).join(' ')), 'backup states the no-pass reason only once');
+    const vis = await gateVisible();
+    check(vis.split(NOPASS_REASON).length === 2, 'backup shows the no-pass reason exactly once');
+    check(!noPassRestated(vis), 'backup does not restate the no-pass reason');
     check(!/\bpass\b/i.test(await gateVisible()), 'backup shows no bare pass without pass');
     check(t.includes(NEVER_SHARE), 'backup keeps the never-share warning without pass');
     check((t.match(/Copy it now/g) || []).length === 1, 'backup says Copy it now once without pass');
@@ -490,8 +513,27 @@ async function main() {
     check(await cdp.eval(`!document.querySelector('#gate details')`), 'backup shows no how-to-find line without pass');
     await cdp.shot('backup-nopass');
 
+    // No-pass "I saved it" must send save_pass false. The request is
+    // recorded and still delivered, so setup continues.
+    await cdp.eval(`(() => {
+      window.__hushAck = null;
+      window.__hushAckFetch = window.fetch;
+      window.fetch = (u, o) => {
+        try {
+          if (o && o.method === 'POST' && String(u).endsWith('/api/identity')) {
+            const b = JSON.parse(String(o.body || ''));
+            if (b && b.action === 'ack_backup') window.__hushAck = b;
+          }
+        } catch (e) { /* the real request still goes out */ }
+        return window.__hushAckFetch(u, o);
+      };
+    })()`);
     await cdp.click('#ack-key');
     await cdp.waitFor(`!!document.querySelector('#vibe-name')`, 'vibe step');
+    const ack = await cdp.eval(`window.__hushAck`);
+    check(ack && ack.action === 'ack_backup' && ack.save_pass === false,
+      `no-pass ack sends save_pass false: ${JSON.stringify(ack)}`);
+    await cdp.eval(`(() => { if (window.__hushAckFetch) window.fetch = window.__hushAckFetch; })()`);
     Object.assign(contrasts, { setup: await sample(['#do-vibe']) });
     await cdp.eval(`document.querySelector('#vibe-name').value = 'CDPHIVE'`);
     await cdp.click('#do-vibe');

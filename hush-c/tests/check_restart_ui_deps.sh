@@ -21,6 +21,24 @@ if out=$(run_wrapper CI=true); then
 fi
 echo "$out" | grep -q 'restart UI check FATAL: node is required' \
     || fail "missing node must print FATAL when CI is set: $out"
+# A node that fails `node -e` (the >= 22 WebSocket probe) must skip there.
+# If check_restart_ui.sh drops that probe, this stub is a good node and the
+# skip names Chrome instead, so this check fails.
+printf '%s\n' '#!/bin/sh' \
+    'for a in "$@"; do' \
+    '    [ "$a" = "-e" ] && exit 1' \
+    'done' \
+    'exit 0' > "$bin/node"
+chmod 755 "$bin/node"
+out=$(run_wrapper) || fail "old node must not fail when CI is unset: $out"
+echo "$out" | grep -q 'node has no global WebSocket' \
+    || fail "old node must skip on the version probe: $out"
+if out=$(run_wrapper CI=true); then
+    fail "old node must fail when CI is set: $out"
+fi
+echo "$out" | grep -q 'node has no global WebSocket' \
+    || fail "old node must be fatal on the version probe when CI is set: $out"
+rm -f "$bin/node"
 node_bin=$(command -v node || true)
 if [ -n "$node_bin" ]; then
     ln -s "$node_bin" "$bin/node"
