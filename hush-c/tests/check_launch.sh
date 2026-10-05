@@ -538,7 +538,7 @@ fi
 # fade is lifted to end there.
 cue_at=$(line_of '^#fo-drawer\.is-overflowing::after { content: ""; flex: 0 0 12px; position: sticky; bottom: -10px; background: linear-gradient(transparent, var(--surface)); pointer-events: none; }$')
 if [ -z "$cue_at" ] || [ "$cue_at" -le "$touch_end" ] \
-  || ! echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", last > seen + 0.5);' \
+  || ! echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", last > seen + 12);' \
   || ! echo "$html" | grep -q -x -F -e '#fo-drawer.is-overflowing::after { bottom: var(--fade-bottom, -10px); }' \
   || ! echo "$html" | grep -q -F -e 'const drawerRO = new ResizeObserver(syncDrawerOverflow);'; then
   fail "drawer bottom fade must show only when the drawer overflows (UI-M12d r5)"
@@ -641,7 +641,8 @@ echo "$html" | grep -q 'isContextFile' || fail "HTML missing MIME check"
 # words as the backup step; the retrieve command sits behind a details line.
 echo "$html" | grep -q -F 'Checked to save its key in your password manager.' || fail "pass checkbox copy"
 echo "$html" | grep -q -F '<details class="howto" id="agent-pass-howto"><summary>How to find it later</summary>' || fail "robot pass how-to details"
-echo "$html" | grep -q -F 'run <code>pass show hush/agents/&lt;robot-id&gt;/nsec</code>' || fail "robot pass retrieve command"
+echo "$html" | grep -q -F 'pass ls hush/agents' || fail "robot pass retrieve command"
+echo "$html" | grep -q -F '&lt;robot-id&gt;' && fail "robot pass howto must not invent robot-id" || true
 echo "$html" | grep -q 'Unix Password Manager' && fail "no Unix Password Manager jargon in the UI"
 # Pre-walk r5 (Ops FAIL-2): the profile Picture row is hidden whole, with
 # no placeholder copy (nothing saves a profile picture yet).

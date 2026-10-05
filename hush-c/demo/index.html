@@ -2484,7 +2484,7 @@ html[data-theme="dark"] #thread-send:active {
       <label class="passbox"><input id="agent-pass" type="checkbox" checked>
         Checked to save its key in your password manager.</label>
       <details class="howto" id="agent-pass-howto"><summary>How to find it later</summary>
-        <p>In a terminal, run <code>pass show hush/agents/&lt;robot-id&gt;/nsec</code>.</p></details>
+        <p>Saved robot keys live under <code>hush/agents/</code> in pass. Run <code>pass ls hush/agents</code> to list them, then <code>pass show</code> on the path you need.</p></details>
       <p class="warn" id="agent-err"></p>
       <div class="actions">
         <button class="btn" id="agent-save" type="button" aria-label="Create robot">Create<span class="act-noun"> robot</span></button>
@@ -2812,6 +2812,7 @@ html[data-theme="dark"] #thread-send:active {
     let session = { logged_in: false, ready: false, channels: [] };
     let page = "splash"; // splash detects, shows Payne branding, then advances to gate or hive
     let pendingNsec = "";
+    let identityViaImport = false;
     let keyRevealed = false;
     let savePass = true;
     let gateErr = "";
@@ -3079,7 +3080,7 @@ html[data-theme="dark"] #thread-send:active {
       if (page === "import") {
         return card("Use an existing key",
           stepBar(1) +
-          "<p>Paste your secret key (nsec). Nothing is saved before the next step.</p>" +
+          "<p>Paste your secret key (nsec). We show the matching public key (npub) before anything is saved.</p>" +
           "<label for=\"nsec-in\">Secret key (nsec)</label>" +
           "<input id=\"nsec-in\" type=\"password\" autocomplete=\"off\" spellcheck=\"false\" data-lpignore=\"true\" data-form-type=\"other\" placeholder=\"nsec1…\">" +
           "<div class=\"help\" id=\"npub-preview\"></div>" +
@@ -3107,7 +3108,9 @@ html[data-theme="dark"] #thread-send:active {
           ? "<p class=\"warn\">" + neverShare + "</p>"
           : "<p class=\"warn\">" + neverShare + " Uncheck the box only if you do not want your password manager to keep it.</p>";
         return "<dialog class=\"secret\" id=\"secret-modal\" open>" +
-          card("Your unique identity key has been created",
+          card(identityViaImport
+            ? "Your identity key has been imported"
+            : "Your unique identity key has been created",
           stepBar(2) +
           "<p>This key is your account. Copy it now. Hush cannot recover it if you lose it.</p>" +
           "<div class=\"keybox" + (keyRevealed ? " revealed" : "") + "\" id=\"nsec-box\">" + shown + "</div>" +
@@ -3193,13 +3196,14 @@ html[data-theme="dark"] #thread-send:active {
 
     function bindGate() {
       const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("click", fn); };
-      on("create-id", () => postIdentity({ action: "create" }));
+      on("create-id", () => { identityViaImport = false; postIdentity({ action: "create" }); });
       on("use-id", () => { page = "import"; gateErr = ""; paint(); });
       on("show-help", () => { page = "help"; paint(); });
       on("back-help", () => { page = "landing"; paint(); });
       on("back-import", () => { page = "landing"; gateErr = ""; paint(); });
       on("do-import", () => {
         const nsec = ($("nsec-in") && $("nsec-in").value || "").trim();
+        identityViaImport = true;
         postIdentity({ action: "import", nsec: nsec });
       });
       on("reveal-key", () => { keyRevealed = !keyRevealed; paint(); });
@@ -3232,12 +3236,43 @@ html[data-theme="dark"] #thread-send:active {
         postJson("/api/vibe", { name: name, about: about, visibility: visibility });
       });
       const inp = $("nsec-in");
-      if (inp) inp.addEventListener("input", () => {
-        const v = inp.value.trim();
-        $("npub-preview").textContent = v.startsWith("nsec1")
-          ? "Looks like a secret key (nsec)."
-          : "";
-      });
+      if (inp) {
+        let previewTok = 0;
+        let previewTimer = 0;
+        inp.addEventListener("input", () => {
+          const v = inp.value.trim();
+          const box = $("npub-preview");
+          if (!box) return;
+          if (previewTimer) clearTimeout(previewTimer);
+          if (!v.startsWith("nsec1") || v.length < 20) {
+            box.textContent = "";
+            box.dataset.npub = "";
+            previewTok++;
+            return;
+          }
+          box.textContent = "Checking public key…";
+          const tok = ++previewTok;
+          previewTimer = setTimeout(async () => {
+            previewTimer = 0;
+            if (tok !== previewTok) return;
+            try {
+              const data = await api("/api/identity", { action: "preview", nsec: v });
+              if (tok !== previewTok) return;
+              if (data && data.npub) {
+                box.textContent = "Matching public key (npub): " + data.npub;
+                box.dataset.npub = data.npub;
+              } else {
+                box.textContent = "That does not look like a valid secret key.";
+                box.dataset.npub = "";
+              }
+            } catch (e) {
+              if (tok !== previewTok) return;
+              box.textContent = "That does not look like a valid secret key.";
+              box.dataset.npub = "";
+            }
+          }, 280);
+        });
+      }
     }
 
     async function postIdentity(body) {
@@ -3979,8 +4014,9 @@ html[data-theme="dark"] #thread-send:active {
        the top of the fixed #quick-bar where it overlays the drawer (phone
        widths; the drawer's 64px bottom padding lets the last row scroll
        clear of it), else the client box bottom. Any part of a row past
-       that edge (even 1px) sets the class, and --fade-bottom lifts the
-       sticky fade so it ends at that edge, over the cut row. */
+       that edge by more than the fade height (~12px) sets the class
+       (#237), and --fade-bottom lifts the sticky fade so it ends at that
+       edge, over the cut row. */
     function syncDrawerOverflow() {
       const d = $("fo-drawer");
       const box = d.getBoundingClientRect();
@@ -4001,7 +4037,9 @@ html[data-theme="dark"] #thread-send:active {
       }
       const pad = parseFloat(getComputedStyle(d).paddingBottom) || 0;
       d.style.setProperty("--fade-bottom", (d.clientHeight - seen - pad) + "px");
-      d.classList.toggle("is-overflowing", last > seen + 0.5);
+      /* #237: ignore overflow smaller than the fade (~12px) so blank
+         padding bands do not latch the cue over empty space. */
+      d.classList.toggle("is-overflowing", last > seen + 12);
     }
     if (window.ResizeObserver) {
       const drawerRO = new ResizeObserver(syncDrawerOverflow);
@@ -4714,7 +4752,6 @@ html[data-theme="dark"] #thread-send:active {
       if ($("agent-clone"))
         $("agent-clone").disabled = !(bot && bot.slug && bot.slug !== PAYNE_SLUG);
       paintVoiceRow(bot && bot.voice);
-      loadSkillCatalog(bot && bot.slug);
       refreshFavorites();
       {
         const parsed = parsePicId(draftPicture);
@@ -4724,6 +4761,10 @@ html[data-theme="dark"] #thread-send:active {
       paintAgentPicPicker();
       paintProviderPencil();
       loadProviders();
+      /* #237: reset gems/watermark before first paint so Raise after Edit
+         locked does not flash the previous robot's disabled loadout. */
+      paintSkillBoard(bot && bot.slug);
+      loadSkillCatalog(bot && bot.slug);
       $("agent-drawer").classList.add("show");
     }
 

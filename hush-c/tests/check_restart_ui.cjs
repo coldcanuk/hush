@@ -54,6 +54,7 @@ function noPassRestated(visible) {
     NEVER_SHARE,
     'This key is your account. Copy it now. Hush cannot recover it if you lose it.',
     'Your unique identity key has been created',
+    'Your identity key has been imported',
     'Copy value',
     'Reveal',
     'Hide',
@@ -331,7 +332,7 @@ async function main() {
       const h = document.querySelector('#agent-pass-howto');
       const shown = (e) => e.getClientRects().length > 0;
       return { title: document.querySelector('#agent-title').textContent, label: shown(l), howto: shown(h),
-        open: h.open, text: l.textContent.trim(), cmd: h.textContent.includes('pass show hush/agents/<robot-id>/nsec') };
+        open: h.open, text: l.textContent.trim(), cmd: h.textContent.includes('pass ls hush/agents') && !h.textContent.includes('<robot-id>') };
     })()`);
   };
   const editRobot = (slug) => `document.querySelector('#robot-list .robot-card[data-slug="${slug}"] .robot-actions button').click()`;
@@ -479,19 +480,36 @@ async function main() {
     t = await gateText();
     check(await cdp.eval(`document.querySelector('label[for="nsec-in"]').textContent`) === 'Secret key (nsec)', 'import label is plain');
     check(t.includes('secret key (nsec)'), 'import card names the key in plain words');
-    // Pre-walk r4 (claim trace): the import card promises only what the
-    // flow does. Import loads the key in memory (nothing is saved before
-    // the backup step) and no public key is shown before that step.
-    check(t.includes('Paste your secret key (nsec). Nothing is saved before the next step.') &&
-      !/public key|npub/i.test(t), 'import card makes no public-key promise');
-    const preview = await cdp.eval(`(() => { const i = document.querySelector('#nsec-in'); i.value = 'nsec1example';
-      i.dispatchEvent(new Event('input')); return document.querySelector('#npub-preview').textContent; })()`);
-    check(preview === 'Looks like a secret key (nsec).', `import preview makes no public-key promise: ${preview}`);
+    // #234: import promises the matching npub and shows the full key before save.
+    check(t.includes('Paste your secret key (nsec). We show the matching public key (npub) before anything is saved.'),
+      'import card promises matching npub before save');
+    await cdp.eval(`(() => { const i = document.querySelector('#nsec-in'); i.value = 'nsec1example';
+      i.dispatchEvent(new Event('input')); })()`);
+    await sleep(450);
+    const previewBad = await cdp.eval(`document.querySelector('#npub-preview').textContent`);
+    check(/does not look like a valid|Checking public key/i.test(previewBad),
+      `import preview rejects junk nsec: ${previewBad}`);
+    const knownNsec = 'nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5';
+    const knownNpub = 'npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg';
+    await cdp.eval(`(() => { const i = document.querySelector('#nsec-in'); i.value = ${JSON.stringify(knownNsec)};
+      i.dispatchEvent(new Event('input')); })()`);
+    await cdp.waitFor(`(document.querySelector('#npub-preview').textContent || '').includes(${JSON.stringify(knownNpub)})`,
+      'import preview shows full matching npub', 5000);
+    const previewOk = await cdp.eval(`document.querySelector('#npub-preview').textContent`);
+    check(previewOk.includes('Matching public key (npub):') && previewOk.includes(knownNpub),
+      `import preview shows full npub: ${previewOk}`);
     await cdp.click('#back-import');
     await cdp.waitFor(`!!document.querySelector('#create-id')`, 'landing after import');
 
     await cdp.click('#create-id');
     await cdp.waitFor(`!!document.querySelector('#save-pass')`, 'backup');
+    {
+      const createdTitle = await gateText();
+      check(createdTitle.includes('Your unique identity key has been created'),
+        'create backup title says has been created');
+      check(!createdTitle.includes('has been imported'),
+        'create backup title is not the import variant');
+    }
     const checked = await cdp.eval(`document.querySelector('#save-pass').checked`);
     check(checked === false, 'backup checkbox renders unchecked without pass');
     const disabled = await cdp.eval(`document.querySelector('#save-pass').disabled`);
@@ -581,7 +599,8 @@ async function main() {
       const pb = parseFloat(getComputedStyle(d).paddingBottom) || 0;
       const extra = d.offsetHeight - d.clientHeight; // borders (+ padding when border-box)
       const out = [];
-      for (const free of [-3, 1, -3, 6]) {
+      // #237: overflow under ~12px (fade height) must not latch the cue.
+      for (const free of [-15, 1, -15, 6]) {
         d.style.height = (content + free + (getComputedStyle(d).boxSizing === 'border-box' ? extra : 0)) + 'px';
         await frames();
         out.push({ free, got: d.clientHeight - content, on: d.classList.contains('is-overflowing'),
@@ -644,8 +663,9 @@ async function main() {
     const fadeRemove = () => cdp.eval(`(() => { const p = document.querySelector('#fade-band-probe'); if (p) p.remove(); })()`);
     const fadeCheck = (r, where) => {
       check(r.onscreen, `drawer is on screen for the fade check at ${where}: ${JSON.stringify(r)}`);
-      const hidden = r.last > r.vis + 0.5;
-      check(r.on === hidden, `drawer fade is ${hidden ? 'on' : 'off'} when ${hidden ? 'a row reaches past' : 'every row is above'} the visible bottom at ${where}: ${JSON.stringify(r)}`);
+      // #237: cue only when overflow exceeds about the 12px fade height.
+      const hidden = r.last > r.vis + 12;
+      check(r.on === hidden, `drawer fade is ${hidden ? 'on' : 'off'} when overflow ${hidden ? 'exceeds' : 'is within'} the fade band at ${where}: ${JSON.stringify(r)}`);
       // The fade ends at the visible bottom (sticky, measured from the
       // content box): bottom = (px under the quick-bar) - padding-bottom.
       if (r.on)
@@ -664,7 +684,8 @@ async function main() {
       await sleep(300);
       const prep = await fadeProbe(0);
       check(prep.open && Math.abs(prep.last - prep.vis) <= 1, `fade band probe puts the last row at the visible bottom at ${bw}x${h0}: ${JSON.stringify(prep)}`);
-      for (let h = h0 - 2; h <= h1; h++) {
+      // Sweep deep enough under the edge to clear the 12px fade band (#237).
+      for (let h = h0 - 20; h <= h1; h++) {
         await cdp.send('Emulation.setDeviceMetricsOverride', { width: bw, height: h, deviceScaleFactor: 1, mobile: false });
         fadeBand.push(Object.assign({ w: bw, h }, await cdp.eval(`(async () => { await ${frames2}; return ${fadeState}; })()`, true)));
       }
@@ -674,19 +695,23 @@ async function main() {
     for (const [bw, h0] of [[1440, 900], [375, 778]]) {
       const rows = fadeBand.filter((r) => r.w === bw);
       for (const r of rows) fadeCheck(r, `${bw}x${r.h}`);
-      const one = rows.find((r) => r.h === h0 - 1);
-      check(one && one.on && one.last > one.vis + 0.5 && one.last <= one.vis + 1.5, `drawer fade shows when a row is 1px under at ${bw}x${h0 - 1}: ${JSON.stringify(one)}`);
+      const shallow = rows.find((r) => r.h === h0 - 1);
+      check(shallow && !shallow.on && shallow.last > shallow.vis + 0.5 && shallow.last <= shallow.vis + 1.5,
+        `drawer fade stays off for 1px overflow (under fade height) at ${bw}x${h0 - 1}: ${JSON.stringify(shallow)}`);
+      const deep = rows.find((r) => r.h === h0 - 16);
+      check(deep && deep.on && deep.last > deep.vis + 12,
+        `drawer fade shows when overflow exceeds fade height at ${bw}x${h0 - 16}: ${JSON.stringify(deep)}`);
       const band = rows.filter((r) => r.h >= h0);
       check(band.filter((r) => r.sh > r.ch + 1).length >= 5, `padding band exercised at ${bw} (scrollHeight > clientHeight): ${JSON.stringify(band)}`);
       for (const r of band) check(!r.on, `drawer fade stays off when only padding overflows at ${bw}x${r.h}: ${JSON.stringify(r)}`);
     }
 
     // r5 (Ops 1440x883 nit): at 1440x883 a last row exactly at the edge
-    // gets no fade and a row 1px under gets it.
+    // gets no fade; 1px under stays off (#237 fade-height band); 15px under gets it.
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 883, deviceScaleFactor: 1, mobile: false });
     await sleep(300);
     const at883 = [];
-    for (const target of [0, 1]) {
+    for (const target of [0, 1, 15]) {
       const pr = await fadeProbe(target);
       // The probe row is new and unobserved; nudge the window so the
       // drawer's ResizeObserver re-runs the overflow test.
@@ -698,7 +723,8 @@ async function main() {
     }
     console.log('drawer fade at 1440x883: ' + JSON.stringify(at883));
     check(at883[0].prep === 0 && !at883[0].on, `1440x883: last row at the edge, no fade: ${JSON.stringify(at883[0])}`);
-    check(at883[1].prep === 1 && at883[1].on, `1440x883: last row 1px under the edge, fade on: ${JSON.stringify(at883[1])}`);
+    check(at883[1].prep === 1 && !at883[1].on, `1440x883: 1px under stays off (fade-height band): ${JSON.stringify(at883[1])}`);
+    check(at883[2].prep >= 14 && at883[2].on, `1440x883: overflow past fade height shows cue: ${JSON.stringify(at883[2])}`);
     for (const r of at883) fadeCheck(r, '1440x883');
 
     // r5 (Ops FAIL-1): at phone widths the fixed #quick-bar covers the
@@ -706,7 +732,8 @@ async function main() {
     // h 780 (field-office), then every height 700-812 at 375, 414, 480,
     // 560 and 640 (Gauge P2-1: every width that has the quick-bar),
     // in field-office and dark, must have the fade on iff a row reaches
-    // past the quick-bar top, with the fade ending at that edge. The
+    // past the quick-bar top by more than the fade height (~12px), with
+    // the fade ending at that edge. The
     // sweep must include heights where rows hide only under the quick-bar
     // (inside the client box: r4 left the fade off there) and 375x812.
     const phone = [];
@@ -1024,6 +1051,22 @@ async function main() {
     const createLogout = contrasts.landing['#create-id'];
     check(RATIO_OF(createLogout) !== null, 'create-key button renders');
     await cdp.shot('logout-landing');
+
+    // #234: after import, backup title is the import variant (not "created").
+    await cdp.click('#use-id');
+    await cdp.waitFor(`!!document.querySelector('#nsec-in')`, 'import after logout');
+    await cdp.eval(`(() => { const i = document.querySelector('#nsec-in');
+      i.value = 'nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5';
+      i.dispatchEvent(new Event('input')); })()`);
+    await sleep(400);
+    await cdp.click('#do-import');
+    await cdp.waitFor(`!!document.querySelector('#save-pass')`, 'backup after re-import');
+    t = await gateText();
+    check(t.includes('Your identity key has been imported'),
+      'backup after import uses imported title');
+    check(!t.includes('has been created'),
+      'backup after import does not say has been created');
+    // Leave for the theme/reload checks below (reload clears the gate).
 
     // Fresh loads boot the field-office theme until a POST applies the
     // saved profile theme, so re-enter the landing that way to measure

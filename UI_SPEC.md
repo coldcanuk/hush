@@ -148,16 +148,17 @@ not want your password manager to keep it." Key names are plain words
 with the code in brackets: help "Your public key (npub) is safe to
 share. Your secret key (nsec) is the account." and "If you already have
 a secret key (nsec), choose Use an existing key."; import "Paste your
-secret key (nsec). Nothing is saved before the next step." (r4 claim
-trace: was "We show the matching public key (npub) before anything is
-saved.", but only the header badge prefix shows, and not at all at
-≤480px), label "Secret key (nsec)" (the `nsec1…` placeholder
-stays as an example), preview "Looks like a secret key (nsec)." (r4: dropped "Import to see
-its public key (npub)."); never-share "Never share your secret key.
+secret key (nsec). We show the matching public key (npub) before anything
+is saved." (#234), label "Secret key (nsec)" (the `nsec1…` placeholder
+stays as an example), preview shows the **full** matching npub via
+`POST /api/identity {action:"preview"}` (no login) as
+"Matching public key (npub): npub1…". Backup title after **create** is
+"Your unique identity key has been created"; after **import** it is
+"Your identity key has been imported". never-share "Never share your secret key.
 Anyone with it can impersonate you." The restart note ("starts with
 nsec1") and the `pass_error` line are unchanged. `check_restart_ui.cjs`
-asserts the new reason, the dimmed label, the details line and the
-plain labels. Elsewhere: the profile has no Picture row. Nothing reads
+asserts the import promise, full-npub preview, create vs import titles,
+the dimmed label, the details line and the plain labels. Elsewhere: the profile has no Picture row. Nothing reads
 its file input and Save profile sends no picture, so r5 (Ops FAIL-2)
 hides the whole row (`#prof-avatar-row[hidden]`: out of the layout, the
 tab order and the accessibility tree), replacing r4's disabled field
@@ -326,7 +327,9 @@ and a pencil to edit it again.
 - pass checkbox default-on, same plain words as the backup step (pre-walk
   r3): `Checked to save its key in your password manager.` The
   retrieve command sits behind a closed details line (`#agent-pass-howto`,
-  "How to find it later"): `pass show hush/agents/<robot-id>/nsec`. r4 (Gauge
+  "How to find it later"): `pass ls hush/agents` then `pass show` on the
+  path you need (Ops F5 / #253: the UI no longer shows a robot id, so the
+  howto must not invent `<robot-id>`). r4 (Gauge
   B1): both show only on Raise (the create path saves the key) while
   `pass_available` is not false; every Edit path (Major, locked, plain)
   saves no key, so they are hidden there, and hidden or with pass
@@ -617,7 +620,7 @@ demo). No Raylib dependency on the main hush-relay.
 | Route | Role |
 |---|---|
 | `GET /api/session` | existing + `profile`, `theme`, `agents[]`, `members[]`, `pass_available` (false when `pass` is missing), `restart_lost_login` (true only when boot restore left a vibe without a login) |
-| `POST /api/identity` | `create` \| `import` \| `ack_backup` \| **`logout`** |
+| `POST /api/identity` | `create` \| `import` \| `preview` (npub only, no login) \| `ack_backup` \| **`logout`** |
 | `POST /api/profile` | first/last/email/org/theme; optional avatar b64 |
 | `POST /api/agent` | create agent + context |
 | `POST /api/member` | add human (npub) |
@@ -1337,10 +1340,12 @@ drawer's visible bottom (r5, Ops FAIL-1): the top of the fixed
 `#quick-bar` where it overlays the drawer (phones; the drawer's 64px
 bottom padding lets the last row scroll clear of it), else the client
 box bottom. So the cue, its flex row gap and the bottom padding never
-count, any row reaching past that edge (even 1px) sets the class, and
-`--fade-bottom` lifts the sticky fade to end at the quick-bar top so no
-row shows crisp and cut there. The class drops as soon as every row
-fits (r3, Gauge P2-1), and padding-only overflow (r3 set the class at
+count; a row must reach past that edge by more than the fade height
+(~12px) to set the class (#237: smaller overflow was empty padding with
+the fade painted over blank paper). `--fade-bottom` lifts the sticky fade
+to end at the quick-bar top so no row shows crisp and cut there when the
+cue is on. The class drops as soon as overflow is within the fade band
+(r3, Gauge P2-1), and padding-only overflow (r3 set the class at
 1440 h 900-908 and 375 h 778-792 on Ops's fixture) shows none;
 `check_restart_ui.cjs` drives the drawer height across that edge, sweeps
 the window through that padding band, checks 1440x883 at the edge and
