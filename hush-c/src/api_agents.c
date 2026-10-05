@@ -38,11 +38,10 @@
     "Context files must be plain text or Markdown, at most %d bytes each."
 #define HUSH_AGENT_WHY_FULL "Robot roster is full (%d robots)."
 #define HUSH_AGENT_WHY_SLUG "Robot id is required."
-#define HUSH_AGENT_WHY_MISSING "No robot with id %s."
+#define HUSH_AGENT_WHY_MISSING "That robot is already gone."
 #define HUSH_AGENT_WHY_MAJOR "Major cannot be deleted or cloned."
 #define HUSH_AGENT_WHY_CLONE_LONG \
-    "Cannot clone %s: the name plus \" copy\" would be over %d bytes; " \
-    "shorten the name first."
+    "That name would be too long after adding \" copy\". Shorten the name first."
 
 /* Room for one byte past the limit: a context text longer than
  * HUSH_ROSTER_CONTEXT_BYTES reads as CONTEXT_BYTES + 1 bytes, so the
@@ -809,7 +808,7 @@ static void hush_http_slug_why(char *why, size_t whysz, hush_status_t st,
     if (st == HUSH_ERR_DENIED)
         (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_MAJOR);
     else if (st == HUSH_ERR_NOT_FOUND)
-        hush_http_why_id(why, whysz, HUSH_AGENT_WHY_MISSING, slug);
+        (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_MISSING);
     else if (st == HUSH_ERR_ARG && slug[0] == '\0')
         (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_SLUG);
     else if (st == HUSH_ERR_FULL &&
@@ -823,7 +822,6 @@ static void hush_http_clone_why(char *why, size_t whysz, hush_status_t st,
 {
     const hush_roster_agent_t *src = hush_http_find_robot(slug);
     char copy[HUSH_ROSTER_NAME_MAX * 2] = {0};
-    char safe[HUSH_ROSTER_NAME_MAX] = {0};
     int n = 0;
 
     assert(why != NULL && whysz > 0 && slug != NULL);
@@ -838,9 +836,7 @@ static void hush_http_clone_why(char *why, size_t whysz, hush_status_t st,
     if (n < 0)
         return;
     if ((size_t)n >= (size_t)HUSH_ROSTER_NAME_MAX) {
-        hush_http_safe_name(safe, sizeof(safe), src->name);
-        (void)snprintf(why, whysz, HUSH_AGENT_WHY_CLONE_LONG, safe,
-                       (int)HUSH_ROSTER_NAME_MAX - 1);
+        (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_CLONE_LONG);
         return;
     }
     if (hush_http_launch()->roster.nagents >= (size_t)HUSH_ROSTER_AGENTS_MAX) {

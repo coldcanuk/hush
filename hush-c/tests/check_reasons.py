@@ -47,10 +47,9 @@ UI_DEEPSEEK = ('value="deepseek-api"> DeepSeek API</label>',
 FILES = "Context files must be plain text or Markdown, at most 4096 bytes each."
 FULL = "Robot roster is full (16 robots)."
 SLUG = "Robot id is required."
-MISSING = "No robot with id ghost."
+MISSING = "That robot is already gone."
 MAJOR = "Major cannot be deleted or cloned."
-CLONE_LONG = ('Cannot clone {}: the name plus " copy" would be over 63 bytes; '
-              "shorten the name first.")
+CLONE_LONG = 'That name would be too long after adding " copy". Shorten the name first.'
 FAV_ACTION = "Loadout action must be save, list, load or delete."
 FAV_ROBOT = "Robot id must use a-z, 0-9, - or _ (1-63 characters)."
 FAV_NAME = ("Favorite names use letters, digits, spaces, - or _ "
@@ -359,7 +358,7 @@ def check_robot_clones(relay):
     long_slug = "long-" + "x" * 54
     relay.ok("/api/agent", robot("Long " + "x" * 54))  # 59 bytes: copy is 64
     expect(relay, "clone name too long", "/api/agent",
-           {"action": "clone", "slug": long_slug}, CLONE_LONG.format("Long " + "x" * 54))
+           {"action": "clone", "slug": long_slug}, CLONE_LONG)
     relay.ok("/api/agent", robot("Twin"))
     relay.ok("/api/agent", {"action": "clone", "slug": "twin"})
     expect(relay, "clone twice", "/api/agent", {"action": "clone", "slug": "twin"},
@@ -1187,7 +1186,7 @@ def check_robot_full(relay):
     # Clone checks run in roster order: name too long first, then full.
     long_slug = "long-" + "x" * 54
     expect(relay, "clone too long while full", "/api/agent",
-           {"action": "clone", "slug": long_slug}, CLONE_LONG.format("Long " + "x" * 54))
+           {"action": "clone", "slug": long_slug}, CLONE_LONG)
     expect(relay, "clone while full", "/api/agent",
            {"action": "clone", "slug": "walkbot-one"}, FULL)
 
@@ -1371,6 +1370,22 @@ def check_ui(relay):
                         f"({len(words)} strings read)")
     else:
         print(f"reasons: ok no reason or help line says slug ({len(words)} strings)")
+    # Ops LOOK #262 F2/F3: stale gone-robot and clone-too-long copy.
+    agents_c = (ROOT / "src" / "api_agents.c").read_text()
+    if MISSING != "That robot is already gone.":
+        FAILURES.append(f"MISSING must stay human with no robot id: {MISSING!r}")
+    elif re.search(r"\bid\b", MISSING, re.IGNORECASE):
+        FAILURES.append(f"MISSING must not say id: {MISSING!r}")
+    elif "No robot with id" in agents_c:
+        FAILURES.append("api_agents.c still has the old No robot with id string")
+    elif "bytes" in CLONE_LONG.lower() or "cannot clone" in CLONE_LONG.lower():
+        FAILURES.append(f"CLONE_LONG must avoid jargon and name dump: {CLONE_LONG!r}")
+    elif "over %d bytes" in agents_c or "Cannot clone %s" in agents_c:
+        FAILURES.append("api_agents.c still has the old clone-too-long jargon")
+    elif MISSING not in agents_c or "That name would be too long after adding" not in agents_c:
+        FAILURES.append("MISSING/CLONE_LONG text missing from api_agents.c")
+    else:
+        print("reasons: ok MISSING/CLONE_LONG match C and stay human")
 
 
 def main():
