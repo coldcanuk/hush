@@ -64,6 +64,11 @@ static void hush_http_take_providers(hush_roster_agent_in_t *in,
                                      const char *body);
 static void hush_http_fill_agent_skills(hush_roster_agent_in_t *in,
                                         const char *body);
+/* True when the body names skill_8 or later, or nskills above 8.
+ * The roster stores at most eight, so those used to be dropped with 200. */
+static int hush_http_skills_over_cap(const char *body);
+/* Writes the existing loadout budget reason. No new wording. */
+static void hush_http_budget_why(char *why, size_t whysz);
 /* Refuses any loadout write that leaves zero skills (PE-3 min-1 law).
  * in and robot_role are borrowed; slug may be "". Fails HUSH_ERR_DENIED
  * on an empty write, a role wall, or a cross-slug equip; why names it. */
@@ -167,6 +172,10 @@ static hush_status_t hush_http_create_agent(int fd, const char *body,
                                        HUSH_AGENT_WHY_NO_PROVIDER);
     hush_http_take_providers(&in, body);
     hush_http_fill_agent_extras(&in, body);
+    if (hush_http_skills_over_cap(body)) {
+        hush_http_budget_why(why, sizeof(why));
+        return hush_http_reply_refused(fd, HUSH_ERR_FULL, why);
+    }
     st = hush_http_check_loadout(why, sizeof(why), &in,
                                  hush_http_agent_role(NULL, &in), "");
     if (st != HUSH_OK)
@@ -258,6 +267,10 @@ static hush_status_t hush_http_update_payne(int fd, const char *body)
         return hush_http_reply_session(fd, st);
     memset(&in, 0, sizeof(in));
     hush_http_fill_agent_extras(&in, body);
+    if (hush_http_skills_over_cap(body)) {
+        hush_http_budget_why(why, sizeof(why));
+        return hush_http_reply_refused(fd, HUSH_ERR_FULL, why);
+    }
     st = hush_http_check_loadout(why, sizeof(why), &in,
                                  HUSH_ROSTER_ROLE_WORKER,
                                  HUSH_LAUNCH_PAYNE_SLUG);
@@ -285,6 +298,10 @@ static hush_status_t hush_http_update_agent(int fd, const char *body)
     (void)hush_http_json_field(body, "provider", in.provider, sizeof(in.provider));
     hush_http_take_providers(&in, body);
     hush_http_fill_agent_extras(&in, body);
+    if (hush_http_skills_over_cap(body)) {
+        hush_http_budget_why(why, sizeof(why));
+        return hush_http_reply_refused(fd, HUSH_ERR_FULL, why);
+    }
     st = hush_http_check_loadout(why, sizeof(why), &in,
                                  hush_http_agent_role(slug, &in), slug);
     if (st != HUSH_OK)
@@ -352,6 +369,96 @@ static void hush_http_fill_agent_extras(hush_roster_agent_in_t *in,
     if (hush_http_json_field(body, "intro", in->intro, sizeof(in->intro)))
         in->has_intro = 1;
     hush_http_fill_agent_skills(in, body);
+}
+
+static void hush_http_budget_why(char *why, size_t whysz)
+{
+    assert(why != NULL && whysz > 0);
+    (void)snprintf(why, whysz, HUSH_AGENT_WHY_BUDGET,
+                   (int)HUSH_SKILL_EQUIP_MAX, (int)HUSH_SKILL_CHAR_HIGH,
+                   (int)HUSH_SKILL_COMPLEX_HIGH);
+}
+
+/* A JSON number, or a quoted number, above HUSH_SKILL_EQUIP_MAX.
+ * Missing and non-numeric values are not over the cap. */
+static int hush_http_count_over_cap(const char *raw)
+{
+    const char *p;
+    char *end;
+    unsigned long n;
+
+    if (raw == NULL || raw[0] == '\0')
+        return 0;
+    p = raw;
+    if (*p == '"')
+        p++;
+    n = strtoul(p, &end, 10);
+    if (end == p)
+        return 0;
+    if (*end == '"')
+        end++;
+    if (*end != '\0')
+        return 0;
+    return n > (unsigned long)HUSH_SKILL_EQUIP_MAX;
+}
+
+/* Non-empty skill_N for N >= 8. The id is not copied into the eight slots. */
+static int hush_http_skill_index_over_cap(const char *body)
+{
+    const char *p = body;
+
+    if (body == NULL)
+        return 0;
+    while ((p = strstr(p, "\"skill_")) != NULL) {
+        const char *digits;
+        const char *end;
+        char *conv;
+        char key[60];
+        char id[HUSH_SKILL_ID_MAX];
+        unsigned long idx;
+        size_t klen;
+
+        if (p != body && p[-1] != '{' && p[-1] != ',' && p[-1] != ' ') {
+            p++;
+            continue;
+        }
+        digits = p + 7;
+        end = digits;
+        while (*end >= '0' && *end <= '9')
+            end++;
+        if (end == digits || *end != '"') {
+            p++;
+            continue;
+        }
+        idx = strtoul(digits, &conv, 10);
+        if (conv != end || idx < (unsigned long)HUSH_SKILL_EQUIP_MAX) {
+            p = end + 1;
+            continue;
+        }
+        /* Longer than the field reader can name: still past the cap. */
+        klen = (size_t)(end - (p + 1));
+        if (klen + 1 > sizeof(key))
+            return 1;
+        memcpy(key, p + 1, klen);
+        key[klen] = '\0';
+        if (hush_http_json_field(body, key, id, sizeof(id)) && id[0] != '\0')
+            return 1;
+        p = end + 1;
+    }
+    return 0;
+}
+
+static int hush_http_skills_over_cap(const char *body)
+{
+    char raw[64];
+
+    if (body == NULL)
+        return 0;
+    if (hush_http_skill_index_over_cap(body))
+        return 1;
+    if (!hush_http_json_bare_field(body, "nskills", raw, sizeof(raw)))
+        return 0;
+    return hush_http_count_over_cap(raw);
 }
 
 static void hush_http_fill_agent_skills(hush_roster_agent_in_t *in,
@@ -434,9 +541,7 @@ static void hush_http_equip_why(char *why, size_t whysz,
         return;
     }
     if (st == HUSH_ERR_FULL) {
-        (void)snprintf(why, whysz, HUSH_AGENT_WHY_BUDGET,
-                       (int)HUSH_SKILL_EQUIP_MAX, (int)HUSH_SKILL_CHAR_HIGH,
-                       (int)HUSH_SKILL_COMPLEX_HIGH);
+        hush_http_budget_why(why, whysz);
         return;
     }
     skill = hush_skill_find(cat, skill_id);
