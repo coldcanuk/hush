@@ -23,6 +23,7 @@
 /hush-c/libhush.a
 hush-c/src/*.o
 hush-c/src/hush_ui_html.h
+hush-c/src/hush_build.stamp
 hush-c/demo/*.o
 hush-c/tests/test_*
 !hush-c/tests/test_*.c
