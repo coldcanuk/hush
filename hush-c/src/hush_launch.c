@@ -791,8 +791,14 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         hush_launch_push_template_skill(&in, "system:canvas-coach");
         in.has_skills = 1;
         in.locked = 1;
-        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
-                                       launch->save_pass));
+        /* Templates: never block vibe on pass. #235 hard-refuse is API-only. */
+        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
+        if (launch->save_pass) {
+            const hush_roster_agent_t *seeded;
+
+            seeded = &launch->roster.agents[launch->roster.nagents - 1];
+            (void)hush_roster_write_agent_pass(seeded->slug, seeded->id.nsec);
+        }
     }
     if (!hush_launch_has_agent_slug(launch, "auditor")) {
         memset(&in, 0, sizeof(in));
@@ -806,8 +812,14 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         hush_launch_push_template_skill(&in, "system:hive-audit");
         in.has_skills = 1;
         in.locked = 1;
-        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
-                                       launch->save_pass));
+        /* Templates: best-effort pass write; never block vibe (#235). */
+        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
+        if (launch->save_pass) {
+            const hush_roster_agent_t *seeded;
+
+            seeded = &launch->roster.agents[launch->roster.nagents - 1];
+            (void)hush_roster_write_agent_pass(seeded->slug, seeded->id.nsec);
+        }
     }
     if (!hush_launch_has_agent_slug(launch, "marshal")) {
         memset(&in, 0, sizeof(in));
@@ -831,8 +843,13 @@ hush_status_t hush_launch_seed_templates(hush_launch_t *launch,
         hush_launch_push_template_skill(&in, "system:token-budget");
         in.has_skills = 1;
         in.locked = 1;
-        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in,
-                                       launch->save_pass));
+        HUSH_TRY(hush_roster_add_agent(&launch->roster, store, &in, 0));
+        if (launch->save_pass) {
+            const hush_roster_agent_t *seeded;
+
+            seeded = &launch->roster.agents[launch->roster.nagents - 1];
+            (void)hush_roster_write_agent_pass(seeded->slug, seeded->id.nsec);
+        }
     }
     return hush_launch_save_vibe(launch);
 }
