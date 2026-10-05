@@ -1104,11 +1104,15 @@ async function main() {
     check(!t.includes('has been created'),
       'backup after import reload Begin does not say created');
     // B1: log out so the following theme/reload flow sees landing again
-    // (reload alone does NOT clear a logged-in backup gate).
+    // (reload alone does NOT clear a logged-in backup gate). Apply the
+    // logout session through applySession so the gate routes immediately;
+    // tick() also routes logged_out→landing if the poll lands first.
     await cdp.eval(`(async () => {
-      await fetch('/api/identity', { method: 'POST',
+      const r = await fetch('/api/identity', { method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'logout' }) });
+      const s = await r.json();
+      if (typeof applySession === 'function') applySession(s);
     })()`, true);
     await cdp.waitFor(`!!document.querySelector('#create-id')`, 'landing after import-title logout');
 

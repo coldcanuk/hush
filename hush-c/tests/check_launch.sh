@@ -910,6 +910,9 @@ echo "$html" | grep -q -F 'function syncIdentityViaImport()' \
 echo "$html" | grep -q -F 'session = sess;
         syncIdentityViaImport();' \
   || fail "tick must syncIdentityViaImport after session = sess"
+# B1 / r5: tick must route logged_out → landing (API logout leaves backup otherwise).
+echo "$html" | grep -q -F 'page = "landing"' \
+  || fail "tick/applySession must route to landing when logged out"
 
 # #237: paintSkillBoard before drawer show (gem flash).
 # Extract openAgentDrawer and require paintSkillBoard line number < show line.

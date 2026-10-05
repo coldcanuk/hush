@@ -8500,6 +8500,12 @@ html[data-theme="dark"] #thread-send:active {
         syncIdentityViaImport();
         whisperReady = !!st.whisper;
         if (session.ready && page !== "payne") page = "hive";
+        else if (!session.logged_in
+            && page !== "import" && page !== "help" && page !== "splash")
+          /* API logout (or expired session) must leave backup/vibe the same
+             way applySession does. Do not auto-jump splash→backup here —
+             Begin owns that path (#234 F-B). */
+          page = "landing";
         paint();
         badge(true, session.npub ? session.npub.slice(0, 12) + "…" : "listening",
           st.port ? "Relay listening on port " + st.port : "");
