@@ -35,6 +35,8 @@ static void wipe_helpers(void)
     unsetenv("HUSH_FAKE_PASS_DIR");
     unsetenv("HUSH_FAKE_OP_DIR");
     unsetenv("HUSH_FAKE_SECRET_DIR");
+    unsetenv("HUSH_FAKE_PASS_WIPE_LOG");
+    unsetenv("HUSH_FAKE_OP_DELETE_FAIL");
 }
 
 static int mkdir_ok(const char *dir)
@@ -265,6 +267,160 @@ static void test_shape2_offer_nowhere(void)
     hush_store_destroy(store);
 }
 
+
+/* O1: wipe runs while vibe still lists the slug (before favorites/roster/vibe). */
+static void test_wipe_before_vibe(void)
+{
+    static hush_launch_t launch;
+    hush_store_t *store = NULL;
+    hush_roster_agent_in_t in;
+    const hush_roster_agent_t *a;
+    char home[128];
+    char pass_dir[128];
+    char wipe_log[128];
+    char slug[HUSH_ROSTER_NAME_MAX];
+    char line[256];
+    FILE *fp;
+
+    wipe_helpers();
+    snprintf(pass_dir, sizeof(pass_dir), "/tmp/hush-kc-o1-pass-%d", (int)getpid());
+    snprintf(wipe_log, sizeof(wipe_log), "/tmp/hush-kc-o1-wipe-%d.json", (int)getpid());
+    unlink(wipe_log);
+    expect(arm_pass(pass_dir), "o1 arm pass");
+    expect(setenv("HUSH_FAKE_PASS_WIPE_LOG", wipe_log, 1) == 0, "o1 wipe log env");
+    if (!raise_hive("o1", &launch, home, sizeof(home))) {
+        expect(0, "o1 hive");
+        return;
+    }
+    expect(hush_store_create(&store) == HUSH_OK, "o1 store");
+    fill_agent(&in, "Sentry");
+    expect(hush_launch_add_agent(&launch, store, &in, 1) == HUSH_OK, "o1 add");
+    a = find_named(&launch, "Sentry");
+    expect(a != NULL, "o1 A present");
+    if (a == NULL)
+        return;
+    snprintf(slug, sizeof(slug), "%s", a->slug);
+    expect(hush_launch_remove_agent(&launch, slug) == HUSH_OK, "o1 delete");
+    expect(find_named(&launch, "Sentry") == NULL, "o1 roster dropped A");
+    fp = fopen(wipe_log, "r");
+    expect(fp != NULL, "o1 wipe log written");
+    if (fp == NULL)
+        return;
+    if (fgets(line, sizeof(line), fp) == NULL)
+        line[0] = '\0';
+    fclose(fp);
+    expect(strstr(line, "\"agent_in_vibe\":1") != NULL,
+           "o1 wipe ran before vibe forgot the slug");
+    hush_store_destroy(store);
+}
+
+/* R2+R3: one hard store failure continues; first hard error is returned. */
+static void test_remove_partial_continue(void)
+{
+    hush_identity_t a;
+    hush_identity_t b;
+    hush_identity_t c;
+    char pass_dir[128];
+    char op_dir[128];
+    char secret_dir[128];
+    char path[] = "agents/partialbot/nsec";
+    char out[HUSH_PASS_SECRET_MAX];
+    hush_status_t st;
+
+    wipe_helpers();
+    snprintf(pass_dir, sizeof(pass_dir), "/tmp/hush-kc-r23-pass-%d", (int)getpid());
+    snprintf(op_dir, sizeof(op_dir), "/tmp/hush-kc-r23-op-%d", (int)getpid());
+    snprintf(secret_dir, sizeof(secret_dir), "/tmp/hush-kc-r23-sec-%d",
+             (int)getpid());
+    expect(arm_pass(pass_dir), "r23 arm pass");
+    expect(arm_op(op_dir), "r23 arm op");
+    expect(mkdir_ok(secret_dir), "r23 secret dir");
+    expect(setenv("HUSH_FAKE_SECRET_DIR", secret_dir, 1) == 0, "r23 secret env");
+    expect(setenv("HUSH_SECRET_TOOL_HELPER", "tests/fake-secret-tool.py", 1) == 0,
+           "r23 secret helper");
+    expect(setenv("HUSH_FAKE_OP_DELETE_FAIL", "1", 1) == 0, "r23 op fail");
+
+    expect(hush_identity_generate(&a) == HUSH_OK, "r23 gen A");
+    expect(hush_identity_generate(&b) == HUSH_OK, "r23 gen B");
+    expect(hush_identity_generate(&c) == HUSH_OK, "r23 gen C");
+    expect(hush_keystore_save(HUSH_KEYSTORE_PASS, path, a.nsec) == HUSH_OK,
+           "r23 save pass");
+    expect(hush_keystore_save(HUSH_KEYSTORE_OP, path, b.nsec) == HUSH_OK,
+           "r23 save op");
+    expect(hush_keystore_save(HUSH_KEYSTORE_SECRET, path, c.nsec) == HUSH_OK,
+           "r23 save secret");
+
+    st = hush_keystore_remove(path);
+    expect(st == HUSH_ERR_IO, "r23 remove reports first hard error");
+    expect(hush_keystore_load_kind(HUSH_KEYSTORE_PASS, out, sizeof(out), path) ==
+               HUSH_ERR_NOT_FOUND,
+           "r23 continued: pass cleared");
+    expect(hush_keystore_load_kind(HUSH_KEYSTORE_OP, out, sizeof(out), path) ==
+               HUSH_OK,
+           "r23 op still present after failed delete");
+    expect(strcmp(out, b.nsec) == 0, "r23 op still holds B");
+    expect(hush_keystore_load_kind(HUSH_KEYSTORE_SECRET, out, sizeof(out),
+                                   path) == HUSH_ERR_NOT_FOUND,
+           "r23 continued: secret cleared after op failure");
+}
+
+/* O2: launch delete returns wipe status; roster still drops the robot. */
+static void test_launch_reports_wipe_status(void)
+{
+    static hush_launch_t launch;
+    hush_store_t *store = NULL;
+    hush_roster_agent_in_t in;
+    const hush_roster_agent_t *a;
+    char home[128];
+    char pass_dir[128];
+    char op_dir[128];
+    char path[HUSH_PASS_PATH_MAX];
+    char loaded[HUSH_PASS_SECRET_MAX];
+    char slug[HUSH_ROSTER_NAME_MAX];
+    hush_status_t st;
+
+    wipe_helpers();
+    snprintf(pass_dir, sizeof(pass_dir), "/tmp/hush-kc-o2-pass-%d", (int)getpid());
+    snprintf(op_dir, sizeof(op_dir), "/tmp/hush-kc-o2-op-%d", (int)getpid());
+    expect(arm_pass(pass_dir), "o2 arm pass");
+    expect(arm_op(op_dir), "o2 arm op");
+    expect(setenv("HUSH_FAKE_OP_DELETE_FAIL", "1", 1) == 0, "o2 op fail");
+    if (!raise_hive("o2", &launch, home, sizeof(home))) {
+        expect(0, "o2 hive");
+        return;
+    }
+    expect(hush_store_create(&store) == HUSH_OK, "o2 store");
+    fill_agent(&in, "Sentry");
+    /* save_pass=1 lands pass; offer also writes op when ready. */
+    expect(hush_launch_add_agent(&launch, store, &in, 1) == HUSH_OK, "o2 add");
+    a = find_named(&launch, "Sentry");
+    expect(a != NULL, "o2 A present");
+    if (a == NULL)
+        return;
+    snprintf(slug, sizeof(slug), "%s", a->slug);
+    snprintf(path, sizeof(path), "agents/%s/nsec", slug);
+    expect(hush_keystore_load_kind(HUSH_KEYSTORE_PASS, loaded, sizeof(loaded),
+                                   path) == HUSH_OK,
+           "o2 pass holds A");
+    /* save_pass=1 lands pass only; seed op too so wipe hits a hard failure. */
+    expect(hush_keystore_save(HUSH_KEYSTORE_OP, path, a->id.nsec) == HUSH_OK,
+           "o2 seed op");
+    expect(hush_keystore_load_kind(HUSH_KEYSTORE_OP, loaded, sizeof(loaded),
+                                   path) == HUSH_OK,
+           "o2 op holds A");
+
+    st = hush_launch_remove_agent(&launch, slug);
+    expect(st == HUSH_ERR_IO, "o2 delete reports wipe failure");
+    expect(find_named(&launch, "Sentry") == NULL, "o2 roster still dropped A");
+    expect(hush_keystore_load_kind(HUSH_KEYSTORE_PASS, loaded, sizeof(loaded),
+                                   path) == HUSH_ERR_NOT_FOUND,
+           "o2 pass cleared despite op fail");
+    expect(hush_keystore_load_kind(HUSH_KEYSTORE_OP, loaded, sizeof(loaded),
+                                   path) == HUSH_OK,
+           "o2 op left after failed delete");
+    hush_store_destroy(store);
+}
+
 /* Direct remove clears every ready store; skip-remove mutant would fail. */
 static void test_remove_all_stores(void)
 {
@@ -315,6 +471,9 @@ static void test_remove_all_stores(void)
 int main(void)
 {
     test_remove_all_stores();
+    test_remove_partial_continue();
+    test_wipe_before_vibe();
+    test_launch_reports_wipe_status();
     test_shape1_pass_outranks_op();
     test_shape2_offer_nowhere();
     if (g_fail)
