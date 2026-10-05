@@ -1144,6 +1144,97 @@ async function main() {
     await cdp.eval(`document.querySelector('#agent-close').click()`);
     await cdp.eval(`const d = document.querySelector('#inv-expand-drawer'); if (d) d.classList.remove('show');`);
 
+    // PE-4.1 FULL1/FULL2/KEEP1 (Gauge P2-2/P2-3): seed 32 favorites on Coach,
+    // assert #fav-full next to Save; new-name refuse sends no request and keeps
+    // #fav-name; same-name save still posts and clears the field.
+    await cdp.eval(`document.querySelector('#robot-list .robot-card[data-slug="coach"] .robot-actions button').click()`);
+    await cdp.waitFor(`document.querySelector('#agent-drawer.show') && document.querySelector('#agent-title').textContent.startsWith('Edit') && document.querySelector('#agent-name').value === 'Coach'`, 'edit Coach for favorites pins');
+    const favSeed = await cdp.eval(`(async () => {
+      const skill = (equippedSkills && equippedSkills[0]) || 'system:canvas-coach';
+      for (let i = 0; i < 32; i++) {
+        await api('/api/loadout', { action: 'save', robot: editSlug,
+          name: 'Cap ' + i, skill_0: skill });
+      }
+      await refreshFavorites();
+      return { n: favList.length, slug: editSlug, first: (favList[0] && favList[0].name) || '' };
+    })()`, true);
+    check(favSeed.n === 32, `seeded 32 Coach favorites for FULL pin, got ${JSON.stringify(favSeed)}`);
+    const fullPin = await cdp.eval(`(() => {
+      const note = document.querySelector('#fav-full');
+      const save = document.querySelector('#fav-save');
+      const row = document.querySelector('#fav-strip .fav-row');
+      if (!note || !save || !row) return { err: 'missing nodes' };
+      return {
+        hidden: !!note.hidden,
+        text: (note.textContent || '').trim(),
+        inRow: row.contains(note) && row.contains(save),
+        display: getComputedStyle(note).display
+      };
+    })()`);
+    check(!fullPin.err && fullPin.inRow && !fullPin.hidden && fullPin.display !== 'none'
+      && fullPin.text.includes('FULL — 32'),
+      `FULL1 #fav-full visible next to Save at 32: ${JSON.stringify(fullPin)}`);
+    await cdp.eval(`(() => {
+      const err = document.querySelector('#agent-err');
+      if (err) err.textContent = 'Favorite saved on this relay. Save the robot to keep the loadout.';
+      const i = document.querySelector('#fav-name');
+      i.value = 'Brand New Cap';
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+      window.__favSent = null;
+      const real = window.fetch;
+      window.fetch = (u, o) => {
+        if (String(u).includes('/api/loadout') && o && o.method === 'POST') {
+          try {
+            const body = JSON.parse(String(o.body || '{}'));
+            if (body.action === 'save') window.__favSent = body;
+          } catch (e) { window.__favSent = { parse: true }; }
+        }
+        return real.call(window, u, o);
+      };
+      document.querySelector('#fav-save').click();
+      window.fetch = real;
+    })()`);
+    await sleep(200);
+    const keepPin = await cdp.eval(`({ name: document.querySelector('#fav-name').value,
+      sent: window.__favSent,
+      fullHidden: document.querySelector('#fav-full').hidden,
+      fullText: (document.querySelector('#fav-full').textContent || '').trim(),
+      agentErr: (document.querySelector('#agent-err').textContent || '') })`);
+    check(keepPin.name === 'Brand New Cap',
+      `KEEP1 fav-name kept after refused new save: ${JSON.stringify(keepPin)}`);
+    check(keepPin.sent === null,
+      `FULL2 new-name refuse at 32 sent no save request: ${JSON.stringify(keepPin)}`);
+    check(!keepPin.fullHidden && keepPin.fullText.includes('FULL — 32'),
+      `FULL2 notice still shown after refuse: ${JSON.stringify(keepPin)}`);
+    check(keepPin.agentErr === '',
+      `ERR1 refuse clears #agent-err: ${JSON.stringify(keepPin)}`);
+    await cdp.eval(`(async () => {
+      const i = document.querySelector('#fav-name');
+      i.value = 'Cap 0';
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+      window.__favSent = null;
+      const real = window.fetch;
+      window.fetch = (u, o) => {
+        if (String(u).includes('/api/loadout') && o && o.method === 'POST') {
+          try {
+            const body = JSON.parse(String(o.body || '{}'));
+            if (body.action === 'save') window.__favSent = body;
+          } catch (e) { window.__favSent = { parse: true }; }
+        }
+        return real.call(window, u, o);
+      };
+      document.querySelector('#fav-save').click();
+      await new Promise((r) => setTimeout(r, 800));
+      window.fetch = real;
+    })()`, true);
+    const samePin = await cdp.eval(`({ sent: window.__favSent,
+      name: document.querySelector('#fav-name').value })`);
+    check(samePin.sent && samePin.sent.name === 'Cap 0',
+      `same-name save at FULL still posts: ${JSON.stringify(samePin)}`);
+    check(samePin.name === '',
+      `KEEP1 success clears fav-name: ${JSON.stringify(samePin)}`);
+    await cdp.eval(`document.querySelector('#agent-close').click()`);
+
     const themeKeep = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
     const qbWant = ['Inventory', 'Character', 'New channel', 'Stop'];
     for (const [w, h] of [[375, 812], [1440, 900]]) {
