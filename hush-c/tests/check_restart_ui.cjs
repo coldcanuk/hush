@@ -608,8 +608,9 @@ async function main() {
       const pb = parseFloat(getComputedStyle(d).paddingBottom) || 0;
       const extra = d.offsetHeight - d.clientHeight; // borders (+ padding when border-box)
       const out = [];
-      // #237: overflow under ~12px (fade height) must not latch the cue.
-      for (const free of [-15, 1, -15, 6]) {
+      // Content-bottom latch (F-C): bare probe has no padding, so ±3px
+      // still flips the cue; blank row-padding alone does not.
+      for (const free of [-3, 1, -3, 6]) {
         d.style.height = (content + free + (getComputedStyle(d).boxSizing === 'border-box' ? extra : 0)) + 'px';
         await frames();
         out.push({ free, got: d.clientHeight - content, on: d.classList.contains('is-overflowing'),
@@ -664,7 +665,11 @@ async function main() {
     const fadeState = `(() => { const d = document.querySelector('#fo-drawer'); d.scrollTop = 0;
       const r = d.getBoundingClientRect(); const inner = r.top + d.clientTop; const bottom = inner + d.clientHeight; const x = Math.round(r.left + r.width / 2);
       let vis = bottom; for (let y = Math.floor(bottom) - 1; y > inner; y--) { const e = document.elementFromPoint(x, y); if (e && d.contains(e)) { vis = y + 1; break; } }
-      let last = 0; for (const c of d.children) if (c.getClientRects().length) last = Math.max(last, c.getBoundingClientRect().bottom);
+      let last = 0; for (const c of d.children) if (c.getClientRects().length) {
+        const br = c.getBoundingClientRect(); const cs = getComputedStyle(c);
+        const inset = (parseFloat(cs.paddingBottom) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+        last = Math.max(last, br.bottom - inset);
+      }
       return { sh: d.scrollHeight, ch: d.clientHeight, last: Math.round(last * 10) / 10, vis: Math.round(vis * 10) / 10, under: Math.round((bottom - vis) * 10) / 10,
         on: d.classList.contains('is-overflowing'), fade: parseFloat(getComputedStyle(d, '::after').bottom), pb: parseFloat(getComputedStyle(d).paddingBottom),
         onscreen: r.left >= -0.5 && r.right <= innerWidth + 0.5 }; })()`;
@@ -672,9 +677,8 @@ async function main() {
     const fadeRemove = () => cdp.eval(`(() => { const p = document.querySelector('#fade-band-probe'); if (p) p.remove(); })()`);
     const fadeCheck = (r, where) => {
       check(r.onscreen, `drawer is on screen for the fade check at ${where}: ${JSON.stringify(r)}`);
-      // #237: cue only when overflow exceeds about the 12px fade height.
-      const hidden = r.last > r.vis + 12;
-      check(r.on === hidden, `drawer fade is ${hidden ? 'on' : 'off'} when overflow ${hidden ? 'exceeds' : 'is within'} the fade band at ${where}: ${JSON.stringify(r)}`);
+      const hidden = r.last > r.vis + 0.5;
+      check(r.on === hidden, `drawer fade is ${hidden ? 'on' : 'off'} when ${hidden ? 'content reaches past' : 'every content edge is above'} the visible bottom at ${where}: ${JSON.stringify(r)}`);
       // The fade ends at the visible bottom (sticky, measured from the
       // content box): bottom = (px under the quick-bar) - padding-bottom.
       if (r.on)
@@ -693,8 +697,7 @@ async function main() {
       await sleep(300);
       const prep = await fadeProbe(0);
       check(prep.open && Math.abs(prep.last - prep.vis) <= 1, `fade band probe puts the last row at the visible bottom at ${bw}x${h0}: ${JSON.stringify(prep)}`);
-      // Sweep deep enough under the edge to clear the 12px fade band (#237).
-      for (let h = h0 - 20; h <= h1; h++) {
+      for (let h = h0 - 2; h <= h1; h++) {
         await cdp.send('Emulation.setDeviceMetricsOverride', { width: bw, height: h, deviceScaleFactor: 1, mobile: false });
         fadeBand.push(Object.assign({ w: bw, h }, await cdp.eval(`(async () => { await ${frames2}; return ${fadeState}; })()`, true)));
       }
@@ -704,23 +707,19 @@ async function main() {
     for (const [bw, h0] of [[1440, 900], [375, 778]]) {
       const rows = fadeBand.filter((r) => r.w === bw);
       for (const r of rows) fadeCheck(r, `${bw}x${r.h}`);
-      const shallow = rows.find((r) => r.h === h0 - 1);
-      check(shallow && !shallow.on && shallow.last > shallow.vis + 0.5 && shallow.last <= shallow.vis + 1.5,
-        `drawer fade stays off for 1px overflow (under fade height) at ${bw}x${h0 - 1}: ${JSON.stringify(shallow)}`);
-      const deep = rows.find((r) => r.h === h0 - 16);
-      check(deep && deep.on && deep.last > deep.vis + 12,
-        `drawer fade shows when overflow exceeds fade height at ${bw}x${h0 - 16}: ${JSON.stringify(deep)}`);
+      const one = rows.find((r) => r.h === h0 - 1);
+      check(one && one.on && one.last > one.vis + 0.5 && one.last <= one.vis + 1.5, `drawer fade shows when content is 1px under at ${bw}x${h0 - 1}: ${JSON.stringify(one)}`);
       const band = rows.filter((r) => r.h >= h0);
       check(band.filter((r) => r.sh > r.ch + 1).length >= 5, `padding band exercised at ${bw} (scrollHeight > clientHeight): ${JSON.stringify(band)}`);
       for (const r of band) check(!r.on, `drawer fade stays off when only padding overflows at ${bw}x${r.h}: ${JSON.stringify(r)}`);
     }
 
     // r5 (Ops 1440x883 nit): at 1440x883 a last row exactly at the edge
-    // gets no fade; 1px under stays off (#237 fade-height band); 15px under gets it.
+    // gets no fade and a row 1px under gets it (content bottom).
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 883, deviceScaleFactor: 1, mobile: false });
     await sleep(300);
     const at883 = [];
-    for (const target of [0, 1, 15]) {
+    for (const target of [0, 1]) {
       const pr = await fadeProbe(target);
       // The probe row is new and unobserved; nudge the window so the
       // drawer's ResizeObserver re-runs the overflow test.
@@ -732,17 +731,15 @@ async function main() {
     }
     console.log('drawer fade at 1440x883: ' + JSON.stringify(at883));
     check(at883[0].prep === 0 && !at883[0].on, `1440x883: last row at the edge, no fade: ${JSON.stringify(at883[0])}`);
-    check(at883[1].prep === 1 && !at883[1].on, `1440x883: 1px under stays off (fade-height band): ${JSON.stringify(at883[1])}`);
-    check(at883[2].prep >= 14 && at883[2].on, `1440x883: overflow past fade height shows cue: ${JSON.stringify(at883[2])}`);
+    check(at883[1].prep === 1 && at883[1].on, `1440x883: last content 1px under the edge, fade on: ${JSON.stringify(at883[1])}`);
     for (const r of at883) fadeCheck(r, '1440x883');
 
     // r5 (Ops FAIL-1): at phone widths the fixed #quick-bar covers the
     // drawer bottom. The probe puts the last row at the quick-bar top at
     // h 780 (field-office), then every height 700-812 at 375, 414, 480,
     // 560 and 640 (Gauge P2-1: every width that has the quick-bar),
-    // in field-office and dark, must have the fade on iff a row reaches
-    // past the quick-bar top by more than the fade height (~12px), with
-    // the fade ending at that edge. The
+    // in field-office and dark, must have the fade on iff content reaches
+    // past the quick-bar top, with the fade ending at that edge. The
     // sweep must include heights where rows hide only under the quick-bar
     // (inside the client box: r4 left the fade off there) and 375x812.
     const phone = [];
@@ -1075,7 +1072,23 @@ async function main() {
       'backup after import uses imported title');
     check(!t.includes('has been created'),
       'backup after import does not say has been created');
-    // Leave for the theme/reload checks below (reload clears the gate).
+    // F-B: provenance is in session (identity_imported), so reload keeps
+    // the imported title — not the create wording.
+    await cdp.send('Page.reload', {});
+    await cdp.waitFor(`!!document.querySelector('#save-pass')`, 'backup after import reload');
+    t = await gateText();
+    check(t.includes('Your identity key has been imported'),
+      'backup after import reload still says imported');
+    check(!t.includes('has been created'),
+      'backup after import reload does not say created');
+    // B1: log out so the following theme/reload flow sees landing again
+    // (reload alone does NOT clear a logged-in backup gate).
+    await cdp.eval(`(async () => {
+      await fetch('/api/identity', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'logout' }) });
+    })()`, true);
+    await cdp.waitFor(`!!document.querySelector('#create-id')`, 'landing after import-title logout');
 
     // Fresh loads boot the field-office theme until a POST applies the
     // saved profile theme, so re-enter the landing that way to measure

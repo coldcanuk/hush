@@ -154,7 +154,10 @@ stays as an example), preview shows the **full** matching npub via
 `POST /api/identity {action:"preview"}` (no login) as
 "Matching public key (npub): npub1…". Backup title after **create** is
 "Your unique identity key has been created"; after **import** it is
-"Your identity key has been imported". never-share "Never share your secret key.
+"Your identity key has been imported" (from session `identity_imported`,
+so a reload during backup keeps the import wording). At 375 the full npub
+wraps inside `#npub-preview` (`overflow-wrap`/`word-break`); the page must
+not scroll sideways. never-share "Never share your secret key.
 Anyone with it can impersonate you." The restart note ("starts with
 nsec1") and the `pass_error` line are unchanged. `check_restart_ui.cjs`
 asserts the import promise, full-npub preview, create vs import titles,
@@ -1340,13 +1343,11 @@ drawer's visible bottom (r5, Ops FAIL-1): the top of the fixed
 `#quick-bar` where it overlays the drawer (phones; the drawer's 64px
 bottom padding lets the last row scroll clear of it), else the client
 box bottom. So the cue, its flex row gap and the bottom padding never
-count; a row must reach past that edge by more than the fade height
-(~12px) to set the class (#237: smaller overflow was empty padding with
-the fade painted over blank paper). `--fade-bottom` lifts the sticky fade
-to end at the quick-bar top so no row shows crisp and cut there when the
-cue is on. The class drops as soon as overflow is within the fade band
-(r3, Gauge P2-1), and padding-only overflow (r3 set the class at
-1440 h 900-908 and 375 h 778-792 on Ops's fixture) shows none;
+count; the latch uses each child's **content** bottom (padding/border
+excluded), so blank row-padding does not turn the cue on, but any text
+that reaches past the visible edge does (#237 F-C: no crisp cut without
+fade). `--fade-bottom` lifts the sticky fade to end at the quick-bar top.
+Padding-only overflow (r3 at 1440 h 900-908 and 375 h 778-792) shows none;
 `check_restart_ui.cjs` drives the drawer height across that edge, sweeps
 the window through that padding band, checks 1440x883 at the edge and
 1px under, and sweeps 375/414/480/560/640 (every width with the

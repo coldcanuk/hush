@@ -400,6 +400,14 @@
       background: transparent; color: var(--fg); border: 1px solid var(--line);
     }
     .help { margin-top: 16px; font-size: 0.8rem; color: var(--faint); }
+    /* #234 F-A: full npub must wrap inside the gate card at 375 (no page sidescroll). */
+    #npub-preview {
+      overflow-wrap: anywhere;
+      word-break: break-all;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    .gate .card { max-width: min(34rem, 100%); overflow-x: hidden; box-sizing: border-box; }
     .help button { background: none; border: 0; color: var(--accent); padding: 0; font: inherit; }
     .keybox {
       font-family: var(--mono); font-size: 0.82rem; word-break: break-all;
@@ -2994,6 +3002,8 @@ html[data-theme="dark"] #thread-send:active {
 
     function applySession(s) {
       session = s || session;
+      /* Durable across reload: server session carries identity_imported. */
+      identityViaImport = !!(session.identity_imported);
       if (session.ready && page !== "payne") page = "hive";
       else if (session.logged_in && !session.backup_acked) page = "backup";
       else if (session.logged_in && session.backup_acked && !session.has_vibe) page = "vibe";
@@ -4022,9 +4032,9 @@ html[data-theme="dark"] #thread-send:active {
        the top of the fixed #quick-bar where it overlays the drawer (phone
        widths; the drawer's 64px bottom padding lets the last row scroll
        clear of it), else the client box bottom. Any part of a row past
-       that edge by more than the fade height (~12px) sets the class
-       (#237), and --fade-bottom lifts the sticky fade so it ends at that
-       edge, over the cut row. */
+       that edge (content bottom, past padding) sets the class (#237
+       F-C: no crisp text cut without fade), and --fade-bottom lifts the
+       sticky fade so it ends at that edge, over the cut row. */
     function syncDrawerOverflow() {
       const d = $("fo-drawer");
       const box = d.getBoundingClientRect();
@@ -4033,7 +4043,14 @@ html[data-theme="dark"] #thread-send:active {
       let last = 0;
       for (const c of d.children) {
         if (!c.getClientRects().length) continue;
-        last = Math.max(last, c.getBoundingClientRect().bottom - top);
+        /* Content bottom (exclude the child's own padding/border). A ~12px
+           latch on the row BOX left 1–5px of text cut with no fade (#237
+           Ops F-C). Blank drawer padding still does not count. */
+        const r = c.getBoundingClientRect();
+        const cs = getComputedStyle(c);
+        const inset = (parseFloat(cs.paddingBottom) || 0)
+          + (parseFloat(cs.borderBottomWidth) || 0);
+        last = Math.max(last, r.bottom - top - inset);
       }
       let seen = d.clientHeight;
       const qb = $("quick-bar");
@@ -4045,9 +4062,7 @@ html[data-theme="dark"] #thread-send:active {
       }
       const pad = parseFloat(getComputedStyle(d).paddingBottom) || 0;
       d.style.setProperty("--fade-bottom", (d.clientHeight - seen - pad) + "px");
-      /* #237: ignore overflow smaller than the fade (~12px) so blank
-         padding bands do not latch the cue over empty space. */
-      d.classList.toggle("is-overflowing", last > seen + 12);
+      d.classList.toggle("is-overflowing", last > seen + 0.5);
     }
     if (window.ResizeObserver) {
       const drawerRO = new ResizeObserver(syncDrawerOverflow);

@@ -116,6 +116,9 @@ typedef struct {
 typedef struct {
     int logged_in;
     int backup_acked;
+    /* True when the pending (pre-ack) identity came from import, not create.
+     * Survives page reload via session JSON; cleared on create/ack/logout. */
+    int identity_imported;
     /* Set once per boot when startup restore leaves a vibe without a
      * login. Cleared by create/import; never set by logout. */
     int restart_lost_login;

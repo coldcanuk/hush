@@ -467,6 +467,7 @@ hush_status_t hush_launch_create_identity(hush_launch_t *launch)
     hush_identity_clear(&launch->human);
     launch->logged_in = 0;
     launch->backup_acked = 0;
+    launch->identity_imported = 0;
     if (hush_identity_generate(&launch->human) != HUSH_OK)
         return HUSH_ERR_CRYPTO;
     launch->logged_in = 1;
@@ -484,12 +485,14 @@ hush_status_t hush_launch_import_identity(hush_launch_t *launch,
     hush_identity_clear(&launch->human);
     launch->logged_in = 0;
     launch->backup_acked = 0;
+    launch->identity_imported = 0;
     launch->pass_saved = 0;
     launch->pass_error[0] = '\0';
     st = hush_identity_import(&launch->human, secret);
     if (st != HUSH_OK)
         return st;
     launch->logged_in = 1;
+    launch->identity_imported = 1;
     launch->restart_lost_login = 0;
     return HUSH_OK;
 }
@@ -507,6 +510,7 @@ hush_status_t hush_launch_ack_backup(hush_launch_t *launch, int save_pass)
         hush_launch_try_save(launch, HUSH_PASS_IDENTITY_NSEC,
                              launch->human.nsec);
     launch->backup_acked = 1;
+    launch->identity_imported = 0;
     return HUSH_OK;
 }
 
@@ -614,6 +618,7 @@ hush_status_t hush_launch_logout(hush_launch_t *launch)
     hush_identity_clear(&launch->human);
     launch->logged_in = 0;
     launch->backup_acked = 0;
+    launch->identity_imported = 0;
     launch->save_pass = 0;
     launch->pass_saved = 0;
     launch->pass_error[0] = '\0';
@@ -1776,6 +1781,7 @@ static int hush_launch_write_session_open(const hush_launch_t *launch, uint16_t 
     hush_launch_json_escape(launch->vibe_about, esc_about, sizeof(esc_about));
     int n = snprintf(out, outsz,
                  "{\"ok\":true,\"logged_in\":%s,\"backup_acked\":%s,"
+                 "\"identity_imported\":%s,"
                  "\"has_vibe\":%s,\"ready\":%s,\"save_pass\":%s,"
                  "\"pass_saved\":%s,\"pass_available\":%s,\"pass_error\":\"%s\","
                  "\"restart_lost_login\":%s,\"port\":%u,"
@@ -1786,6 +1792,8 @@ static int hush_launch_write_session_open(const hush_launch_t *launch, uint16_t 
                  "\"dev_log_enabled\":%s,\"payne\":{",
                  launch->logged_in ? "true" : "false",
                  launch->backup_acked ? "true" : "false",
+                 (launch->logged_in && !launch->backup_acked
+                  && launch->identity_imported) ? "true" : "false",
                  launch->has_vibe ? "true" : "false",
                  hush_launch_is_ready(launch) ? "true" : "false",
                  launch->save_pass ? "true" : "false",
