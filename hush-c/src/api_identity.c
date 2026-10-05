@@ -7,10 +7,14 @@
 
 #include "hush_auth.h"
 #include "hush_http_internal.h"
+#include "hush_mem.h"
 #include "hush_pass.h"
 
 /* Rotates the join token and returns the new plaintext exactly once. */
 static hush_status_t hush_http_serve_vibe_rotate(int fd);
+
+/* Imports an nsec and wipes the stack copy on every return. */
+static hush_status_t hush_http_import_nsec(int fd, const char *body);
 
 int hush_http_want_save_pass(const char *body)
 {
@@ -26,7 +30,6 @@ int hush_http_want_save_pass(const char *body)
 hush_status_t hush_http_serve_identity(int fd, const char *body)
 {
     char action[32];
-    char secret[HUSH_IDENTITY_NSEC_MAX];
 
     if (hush_http_launch() == NULL || body == NULL)
         return hush_http_reply_session(fd, HUSH_ERR_ARG);
@@ -34,12 +37,8 @@ hush_status_t hush_http_serve_identity(int fd, const char *body)
         return hush_http_reply_session(fd, HUSH_ERR_PARSE);
     if (strcmp(action, "create") == 0)
         return hush_http_reply_session(fd, hush_launch_create_identity(hush_http_launch()));
-    if (strcmp(action, "import") == 0) {
-        if (!hush_http_json_field(body, "nsec", secret, sizeof(secret)))
-            return hush_http_reply_session(fd, HUSH_ERR_PARSE);
-        return hush_http_reply_session(fd,
-                                       hush_launch_import_identity(hush_http_launch(), secret));
-    }
+    if (strcmp(action, "import") == 0)
+        return hush_http_import_nsec(fd, body);
     if (strcmp(action, "ack_backup") == 0)
         return hush_http_reply_session(fd,
                                        hush_launch_ack_backup(hush_http_launch(),
@@ -117,6 +116,23 @@ hush_status_t hush_http_serve_vibe(int fd, const char *body,
     return hush_http_reply_session(fd,
                                    hush_launch_set_vibe_visibility(hush_http_launch(),
                                                                    is_public));
+}
+
+/* Imports an nsec and wipes the stack copy on every return. */
+static hush_status_t hush_http_import_nsec(int fd, const char *body)
+{
+    char secret[HUSH_IDENTITY_NSEC_MAX] = {0};
+    hush_status_t st;
+
+    assert(body != NULL);
+    assert(hush_http_launch() != NULL);
+    if (!hush_http_json_field(body, "nsec", secret, sizeof(secret))) {
+        hush_secure_zero(secret, sizeof(secret));
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    }
+    st = hush_launch_import_identity(hush_http_launch(), secret);
+    hush_secure_zero(secret, sizeof(secret));
+    return hush_http_reply_session(fd, st);
 }
 
 /* Rotates the join token and returns the new plaintext exactly once. */

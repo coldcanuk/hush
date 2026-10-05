@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "hush_bech32.h"
+#include "hush_mem.h"
 
 enum {
     HUSH_BECH32_CHARSET_LEN = 32,
@@ -50,6 +51,15 @@ static int hush_bech32_checksum_ok(const char *hrp,
 /* Maps a charset character to 0..31, or -1. */
 static int hush_bech32_value(char c);
 
+/* Wipes secret 5-bit groups from an encode and returns st. */
+static hush_status_t hush_bech32_encode_finish(unsigned char *five,
+                                               unsigned char *values,
+                                               hush_status_t st);
+
+/* Wipes secret 5-bit groups from a decode and returns st. */
+static hush_status_t hush_bech32_decode_finish(unsigned char *data,
+                                               hush_status_t st);
+
 hush_status_t hush_bech32_encode(char *out, size_t outsz,
                                  const char *hrp, const unsigned char *data32)
 {
@@ -71,16 +81,16 @@ hush_status_t hush_bech32_encode(char *out, size_t outsz,
                                 data32, HUSH_BECH32_DATA_LEN);
     hlen = hush_bech32_expand_hrp(values, sizeof(values), hrp);
     if (nfive == 0 || hlen == 0)
-        return HUSH_ERR_ARG;
+        return hush_bech32_encode_finish(five, values, HUSH_ERR_ARG);
     if (hlen + nfive > sizeof(values))
-        return HUSH_ERR_ARG;
+        return hush_bech32_encode_finish(five, values, HUSH_ERR_ARG);
     memcpy(values + hlen, five, nfive);
     nval = hlen + nfive;
     hush_bech32_checksum(sum, values, nval);
 
     need = strlen(hrp) + 1 + nfive + HUSH_BECH32_CHECKSUM_LEN + 1;
     if (outsz < need)
-        return HUSH_ERR_ARG;
+        return hush_bech32_encode_finish(five, values, HUSH_ERR_ARG);
     memcpy(out, hrp, strlen(hrp));
     out[strlen(hrp)] = '1';
     for (i = 0; i < nfive; ++i)
@@ -88,7 +98,7 @@ hush_status_t hush_bech32_encode(char *out, size_t outsz,
     for (i = 0; i < HUSH_BECH32_CHECKSUM_LEN; ++i)
         out[strlen(hrp) + 1 + nfive + i] = HUSH_BECH32_CHARSET[sum[i]];
     out[need - 1] = '\0';
-    return HUSH_OK;
+    return hush_bech32_encode_finish(five, values, HUSH_OK);
 }
 
 hush_status_t hush_bech32_decode(unsigned char *out32,
@@ -121,18 +131,18 @@ hush_status_t hush_bech32_decode(unsigned char *out32,
     for (i = 0; i < payload; ++i) {
         v = hush_bech32_value(sep[1 + i]);
         if (v < 0)
-            return HUSH_ERR_PARSE;
+            return hush_bech32_decode_finish(data, HUSH_ERR_PARSE);
         data[i] = (unsigned char)v;
     }
     memcpy(hrp_out, text, hrplen);
     hrp_out[hrplen] = '\0';
     if (!hush_bech32_checksum_ok(hrp_out, data, payload))
-        return HUSH_ERR_PARSE;
+        return hush_bech32_decode_finish(data, HUSH_ERR_PARSE);
     n8 = hush_bech32_to_eight(out32, HUSH_BECH32_DATA_LEN, data,
                               payload - HUSH_BECH32_CHECKSUM_LEN);
     if (n8 != (size_t)HUSH_BECH32_DATA_LEN)
-        return HUSH_ERR_PARSE;
-    return HUSH_OK;
+        return hush_bech32_decode_finish(data, HUSH_ERR_PARSE);
+    return hush_bech32_decode_finish(data, HUSH_OK);
 }
 
 static uint32_t hush_bech32_polymod_step(uint32_t chk, unsigned v)
@@ -256,6 +266,7 @@ static int hush_bech32_checksum_ok(const char *hrp,
     size_t hlen;
     size_t i;
     uint32_t chk = 1;
+    int ok = 0;
 
     assert(hrp != NULL);
     assert(data != NULL);
@@ -265,7 +276,9 @@ static int hush_bech32_checksum_ok(const char *hrp,
     memcpy(values + hlen, data, n);
     for (i = 0; i < hlen + n; ++i)
         chk = hush_bech32_polymod_step(chk, values[i]);
-    return chk == 1u;
+    ok = (chk == 1u);
+    hush_secure_zero(values, sizeof(values));
+    return ok;
 }
 
 static int hush_bech32_value(char c)
@@ -278,4 +291,23 @@ static int hush_bech32_value(char c)
     if (p == NULL)
         return -1;
     return (int)(p - HUSH_BECH32_CHARSET);
+}
+
+static hush_status_t hush_bech32_encode_finish(unsigned char *five,
+                                               unsigned char *values,
+                                               hush_status_t st)
+{
+    assert(five != NULL);
+    assert(values != NULL);
+    hush_secure_zero(five, (size_t)HUSH_BECH32_VALUES_MAX);
+    hush_secure_zero(values, (size_t)HUSH_BECH32_VALUES_MAX);
+    return st;
+}
+
+static hush_status_t hush_bech32_decode_finish(unsigned char *data,
+                                               hush_status_t st)
+{
+    assert(data != NULL);
+    hush_secure_zero(data, (size_t)HUSH_BECH32_VALUES_MAX);
+    return st;
 }

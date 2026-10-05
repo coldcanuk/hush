@@ -10,6 +10,7 @@
 #include <openssl/rand.h>
 
 #include "hush_identity.h"
+#include "hush_mem.h"
 
 enum {
     HUSH_IDENTITY_TRIM_MAX = 160
@@ -26,6 +27,10 @@ static void hush_identity_trim(char *out, size_t outsz, const char *text);
 
 /* Fills pubkey, nsec, npub, and hex from seckey. */
 static hush_status_t hush_identity_derive(hush_identity_t *id);
+
+/* Decodes trimmed nsec or hex into id. Does not wipe trimmed. */
+static hush_status_t hush_identity_import_trimmed(hush_identity_t *id,
+                                                  const char *trimmed);
 
 /* Writes the 32-byte x-only pubkey for seckey. */
 static hush_status_t hush_identity_pubkey_xonly(unsigned char *out32,
@@ -51,13 +56,27 @@ hush_status_t hush_identity_generate(hush_identity_t *id)
 hush_status_t hush_identity_import(hush_identity_t *id, const char *secret)
 {
     char trimmed[HUSH_IDENTITY_TRIM_MAX];
-    char hrp[HUSH_BECH32_HRP_MAX + 1];
     hush_status_t st;
 
     if (id == NULL || secret == NULL)
         return HUSH_ERR_ARG;
     memset(id, 0, sizeof(*id));
     hush_identity_trim(trimmed, sizeof(trimmed), secret);
+    st = hush_identity_import_trimmed(id, trimmed);
+    hush_secure_zero(trimmed, sizeof(trimmed));
+    if (st != HUSH_OK)
+        hush_identity_clear(id);
+    return st;
+}
+
+static hush_status_t hush_identity_import_trimmed(hush_identity_t *id,
+                                                  const char *trimmed)
+{
+    char hrp[HUSH_BECH32_HRP_MAX + 1];
+    hush_status_t st;
+
+    assert(id != NULL);
+    assert(trimmed != NULL);
     if (trimmed[0] == '\0')
         return HUSH_ERR_PARSE;
     if (strncmp(trimmed, "nsec1", 5) == 0) {
@@ -72,17 +91,14 @@ hush_status_t hush_identity_import(hush_identity_t *id, const char *secret)
     } else {
         return HUSH_ERR_PARSE;
     }
-    st = hush_identity_derive(id);
-    if (st != HUSH_OK)
-        hush_identity_clear(id);
-    return st;
+    return hush_identity_derive(id);
 }
 
 void hush_identity_clear(hush_identity_t *id)
 {
     if (id == NULL)
         return;
-    memset(id, 0, sizeof(*id));
+    hush_secure_zero(id, sizeof(*id));
 }
 
 static void hush_identity_hex_encode(char *out, const unsigned char *in, size_t n)
@@ -201,7 +217,7 @@ hush_identity_pubkey_cleanup:
     BN_free(y);
     BN_free(x);
     EC_POINT_free(pub);
-    BN_free(priv);
+    BN_clear_free(priv);
     EC_GROUP_free(group);
     return ok ? HUSH_OK : HUSH_ERR_CRYPTO;
 }
