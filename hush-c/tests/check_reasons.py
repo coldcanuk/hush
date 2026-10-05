@@ -533,6 +533,65 @@ def check_name_rule(relay):
            NAME_PRINT)
     check_names("rename to a control byte writes nothing", relay,
                 {"walkbot-two": "Quiet Hand"})
+    # Browser paste / JSON.stringify: controls arrive as \t or \u00XX, not
+    # raw bytes. The field reader must decode them so the print check sees
+    # the control and refuses — otherwise the name saves as NighttWatch /
+    # Bellu0007Bot / Escu001bBot / Nulu0000Bot.
+    escaped = (
+        ("tab short escape",
+         b'{"name":"Night\\tWatch","system_prompt":"Walk the floor.",'
+         b'"provider":"grok-build","save_pass":false}',
+         "NighttWatch"),
+        ("tab unicode escape",
+         b'{"name":"Night\\u0009Watch","system_prompt":"Walk the floor.",'
+         b'"provider":"grok-build","save_pass":false}',
+         "NighttWatch"),
+        ("bell unicode escape",
+         b'{"name":"Bell\\u0007Bot","system_prompt":"Walk the floor.",'
+         b'"provider":"grok-build","save_pass":false}',
+         "Bellu0007Bot"),
+        ("esc unicode escape",
+         b'{"name":"Esc\\u001bBot","system_prompt":"Walk the floor.",'
+         b'"provider":"grok-build","save_pass":false}',
+         "Escu001bBot"),
+        ("nul unicode escape",
+         b'{"name":"Nul\\u0000Bot","system_prompt":"Walk the floor.",'
+         b'"provider":"grok-build","save_pass":false}',
+         "Nulu0000Bot"),
+        ("del unicode escape",
+         b'{"name":"Del\\u007fBot","system_prompt":"Walk the floor.",'
+         b'"provider":"grok-build","save_pass":false}',
+         "Delu007fBot"),
+    )
+    for label, body, mangled in escaped:
+        expect(relay, f"create with JSON-escaped control: {label}",
+               "/api/agent", body, NAME_PRINT)
+    status, _, raw = relay.call("GET", "/api/session")
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(f"GET /api/session after JSON-escaped controls "
+                        f"is not JSON: {err}; HTTP {status} {raw[:120]!r}")
+        session = None
+    if session is not None:
+        names = [a.get("name") for a in session.get("agents", [])]
+        bad = [n for n in names if n in (
+            "NighttWatch", "Bellu0007Bot", "Escu001bBot", "Nulu0000Bot",
+            "Delu007fBot", "Night\tWatch")]
+        if status != 200 or bad:
+            FAILURES.append(f"JSON-escaped controls must not be saved; "
+                            f"HTTP {status} names {names} bad {bad}")
+        else:
+            print("reasons: ok JSON-escaped controls refused; session JSON ok")
+    for label, create_body, mangled in escaped:
+        # Same escapes on rename of walkbot-two.
+        name_part = create_body.split(b'"name":"', 1)[1].split(b'","system_prompt"', 1)[0]
+        rename = (b'{"action":"update","slug":"walkbot-two","name":"' +
+                  name_part + b'"}')
+        expect(relay, f"rename with JSON-escaped control: {label}",
+               "/api/agent", rename, NAME_PRINT)
+    check_names("JSON-escaped rename writes nothing", relay,
+                {"walkbot-two": "Quiet Hand"})
     check_name_key(relay)
     check_rename_ids(relay)
     check_suffixed_favorites(relay)
