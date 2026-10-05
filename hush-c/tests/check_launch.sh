@@ -725,6 +725,20 @@ echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", last
   || fail "overflow toggle must compare last > seen + 0.5 (UI-M12d #229 W8)"
 
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
+# #241 walk nits: no harness jargon; favorites plural; default theme is paper.
+echo "$html" | grep -q -F 'Provider / API priority (required)' \
+  || fail "#241 provider note must not say harness"
+if echo "$html" | grep -q -F 'Harness / API priority'; then
+  fail "#241 provider note still says harness"
+fi
+echo "$html" | grep -q -F '((fav.skills || []).length === 1) ? "1 skill"' \
+  || fail "#241 favorites must pluralize 1 skill"
+echo "$html" | grep -q -F 'new-chan-drawer' \
+  || fail "#241 new-chan drawer missing from dismiss stack check prep"
+# dismissJourneyLayer must list new-chan-drawer for Esc.
+if ! echo "$html" | grep -A6 'function dismissJourneyLayer' | grep -q 'new-chan-drawer'; then
+  fail "#241 Esc must dismiss new-chan-drawer"
+fi
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + pills"
 echo "$html" | grep -q 'id="provider-username"' || fail "HTML missing provider username"
 echo "$html" | grep -q 'id="provider-password"' || fail "HTML missing provider password"
@@ -879,7 +893,7 @@ echo "$vibe" | grep -q '"name":"Sgt Major Payne"' && fail "old Payne display nam
 echo "$vibe" | grep -q 'Sgt. Maj. Payne' && fail "old Payne display name must not ship"
 echo "$vibe" | grep -F '"providers":["grok-build"]' || fail "Payne default providers"
 echo "$vibe" | grep -q '"slug":"welcome"' || fail "welcome channel missing"
-echo "$vibe" | grep -q '"theme":"dark"' || fail "default theme missing"
+echo "$vibe" | grep -q '"theme":"field-office"' || fail "default theme missing"
 prof=$(curl -sf -X POST "http://127.0.0.1:${port}/api/profile" \
     -H 'Content-Type: application/json' \
     -d '{"first_name":"Ada","last_name":"Lovelace","email":"ada@hive.local","organization":"HQ","theme":"dracula"}')

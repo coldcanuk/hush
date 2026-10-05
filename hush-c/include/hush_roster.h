@@ -31,7 +31,7 @@ enum {
 #define HUSH_ROSTER_MIME_PLAIN "text/plain"
 #define HUSH_ROSTER_MIME_MARKDOWN "text/markdown"
 #define HUSH_ROSTER_MIME_XMARKDOWN "text/x-markdown"
-#define HUSH_ROSTER_THEME_DEFAULT "dark"
+#define HUSH_ROSTER_THEME_DEFAULT "field-office"
 #define HUSH_ROSTER_PAYNE_SLUG "sgt-major-payne"
 #define HUSH_ROSTER_ROLE_WORKER "worker"
 #define HUSH_ROSTER_ROLE_CHAPERON "chaperon"

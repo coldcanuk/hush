@@ -2230,14 +2230,14 @@ html[data-theme="dark"] #thread-send:active {
 
       <p class="help">Theme</p>
       <div class="vis" id="theme-list">
-        <label><input type="radio" name="theme" value="dark" checked> dark</label>
+        <label><input type="radio" name="theme" value="field-office" checked> field office</label>
+        <label><input type="radio" name="theme" value="dark"> dark</label>
         <label><input type="radio" name="theme" value="light"> light</label>
         <label><input type="radio" name="theme" value="color-blind"> color blind</label>
         <label><input type="radio" name="theme" value="dracula"> dracula</label>
         <label><input type="radio" name="theme" value="desert"> desert</label>
         <label><input type="radio" name="theme" value="monochrome"> monochrome</label>
         <label><input type="radio" name="theme" value="christmas"> christmas</label>
-        <label><input type="radio" name="theme" value="field-office"> field office</label>
       </div>
       <p class="help">AI voice in a call needs a speech model such as Whisper. Without it, agents can join but cannot hear.</p>
       <div class="actions">
@@ -3168,7 +3168,7 @@ html[data-theme="dark"] #thread-send:active {
           stepBar(4) +
           "<p><strong>At ease.</strong> " +
           esc(p.about || "I find the right robot — or raise one.") + "</p>" +
-          (p.npub ? "<p class=\"help\">" + esc(p.npub.slice(0, 20)) + "…</p>" : "") +
+          (p.npub ? "<p class=\"help\">Public key on file — open Profile to copy it.</p>" : "") +
           "<p>At ease. I'm Major. Tell me what you want built and I'll find — or raise — the right robot for the job.</p>" +
           errLine() +
           actions([{ id: "meet-payne", label: "Carry on." }]));
@@ -3991,12 +3991,13 @@ html[data-theme="dark"] #thread-send:active {
       if (feed) {
         const roots = channelNotes(visibleNotes(lastEvents || []));
         const lines = [
-          (st.ok ? "RELAY LIVE" : "RELAY DOWN") + " · PORT " + (st.port || "—"),
-          (st.events || 0) + " STORED · " + (st.clients || 0) + " SOCKETS",
-          roots.length + (roots.length === 1 ? " NOTE" : " NOTES") + " ON #" + channel,
-          "WHISPER " + (st.whisper ? "READY" : "OFF") + " · TURN " + (st.turn_running ? "RUNNING" : "OFF")
+          st.ok ? ("Relay listening" + (st.port ? " · port " + st.port : ""))
+            : "Relay unreachable",
+          (st.events || 0) + " messages stored · " + (st.clients || 0) + " connected",
+          roots.length + (roots.length === 1 ? " note" : " notes") + " in #" + channel,
+          "Voice " + (st.whisper ? "ready" : "off") + " · Calls " + (st.turn_running ? "on" : "off")
         ];
-        const jobs = jobsAfterFailure(st.thinking).map((t) => (t.name || "robot") + " THINKING").slice(0, 4);
+        const jobs = jobsAfterFailure(st.thinking).map((t) => (t.name || "robot") + " is thinking").slice(0, 4);
         feed.innerHTML = "";
         lines.concat(jobs).forEach((line) => {
           const p = document.createElement("div");
@@ -4173,6 +4174,15 @@ html[data-theme="dark"] #thread-send:active {
       $("new-chan").focus();
     }));
     $("new-chan-close").addEventListener("click", () => $("new-chan-drawer").classList.remove("show"));
+    /* #241: Esc is in dismissJourneyLayer; outside click closes too. */
+    document.addEventListener("pointerdown", (ev) => {
+      const d = $("new-chan-drawer");
+      if (!d || !d.classList.contains("show")) return;
+      if (d.contains(ev.target)) return;
+      if (ev.target && ev.target.closest && ev.target.closest("#nav-new-channel"))
+        return;
+      d.classList.remove("show");
+    });
     $("new-chan-save").addEventListener("click", async () => {
       const name = $("new-chan").value.trim();
       if (!name) {
@@ -4256,7 +4266,7 @@ html[data-theme="dark"] #thread-send:active {
       if ($("agent-name-help")) $("agent-name-help").hidden = false;
       syncAgentPassBox();
       if ($("payne-provider-pills")) $("payne-provider-pills").hidden = true;
-      if ($("agent-provider-help")) $("agent-provider-help").textContent = "Harness / API priority (required)";
+      if ($("agent-provider-help")) $("agent-provider-help").textContent = "Provider / API priority (required)";
       paintFilePills();
       paintPayneOrder();
       draftPicture = "";
@@ -5017,7 +5027,7 @@ html[data-theme="dark"] #thread-send:active {
     $("agent-save").addEventListener("click", async () => {
       $("agent-err").textContent = "";
       if (!equippedSkills.length) {
-        $("agent-err").textContent = "Keep at least one skill equipped.";
+        skillNotice("Keep at least one skill equipped.");
         return;
       }
       const typedName = ($("agent-name") && $("agent-name").value || "").trim();
@@ -5578,7 +5588,8 @@ html[data-theme="dark"] #thread-send:active {
        untouched: they guard the i/c/1-4 shortcuts, not Escape. */
     function dismissJourneyLayer() {
       const order = ["avatar-drawer", "forge-drawer", "skill-drawer",
-        "agent-drawer", "inv-expand-drawer", "profile"];
+        "new-chan-drawer", "agent-drawer", "inv-expand-drawer", "profile",
+        "settings"];
       for (let k = 0; k < order.length; k++) {
         const el = $(order[k]);
         if (el && el.classList.contains("show")) {
@@ -5740,6 +5751,9 @@ html[data-theme="dark"] #thread-send:active {
       el.addEventListener("change", async () => {
         if (!el.checked) return;
         applyTheme(el.value);
+        /* #241: /api/profile needs a logged-in session; gate/splash theme
+           stays local until identity exists (was an unexplained 400). */
+        if (!session.logged_in) return;
         try {
           applySession(await api("/api/profile", { theme: el.value }));
         } catch (e) {}
@@ -7750,7 +7764,11 @@ html[data-theme="dark"] #thread-send:active {
       return "";
     }
     function skillNotice(msg) {
-      if ($("agent-err")) $("agent-err").textContent = msg;
+      const err = $("agent-err");
+      if (!err) return;
+      err.textContent = msg;
+      /* #241 C01: keep the notice on screen when the doll is scrolled up. */
+      try { err.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (e) {}
     }
     let skillSheetView = "robot";
     function paintSkillSheet() {
@@ -8220,7 +8238,7 @@ html[data-theme="dark"] #thread-send:active {
         row.appendChild(nm);
         const ct = document.createElement("span");
         ct.className = "ct";
-        ct.textContent = (fav.skills || []).length + " skills";
+        ct.textContent = ((fav.skills || []).length === 1) ? "1 skill" : ((fav.skills || []).length + " skills");
         row.appendChild(ct);
         if (activeFavorite === fav.name) {
           const tag = document.createElement("span");
@@ -8525,7 +8543,7 @@ html[data-theme="dark"] #thread-send:active {
              Begin owns that path (#234 F-B). */
           page = "landing";
         paint();
-        badge(true, session.npub ? session.npub.slice(0, 12) + "…" : "listening",
+        badge(true, "listening",
           st.port ? "Relay listening on port " + st.port : "");
         let ev = null;
         try { ev = await evRes.json(); } catch (parseErr) { ev = null; }
@@ -8542,8 +8560,11 @@ html[data-theme="dark"] #thread-send:active {
         } else if (st && st.thinking && !st.thinking.length)
           localThink = [];
       } catch (err) {
+        /* E10 / #241: do not leave a stale RELAY LIVE line beside the badge. */
+        lastStatus = { ok: false };
         badge(false, "relay unreachable");
         $("stats").textContent = "start hush-relay";
+        paintRosterPane(lastStatus);
       }
     }
 
