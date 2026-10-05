@@ -798,8 +798,10 @@ async function main() {
         const inset = (parseFloat(cs.paddingBottom) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
         last = Math.max(last, br.bottom - inset); };
       for (const c of d.children) visit(c);
+      const after = getComputedStyle(d, '::after');
       return { sh: d.scrollHeight, ch: d.clientHeight, last: Math.round(last * 10) / 10, vis: Math.round(vis * 10) / 10, under: Math.round((bottom - vis) * 10) / 10,
-        on: d.classList.contains('is-overflowing'), fade: parseFloat(getComputedStyle(d, '::after').bottom), pb: parseFloat(getComputedStyle(d).paddingBottom),
+        on: d.classList.contains('is-overflowing'), fade: parseFloat(after.bottom), pb: parseFloat(getComputedStyle(d).paddingBottom),
+        cueDisp: after.display, cueBg: after.backgroundImage || after.background,
         onscreen: r.left >= -0.5 && r.right <= innerWidth + 0.5 }; })()`;
     const frames2 = `new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 40))))`;
     const fadeRemove = () => cdp.eval(`(() => { const p = document.querySelector('#fade-band-probe'); if (p) p.remove(); })()`);
@@ -807,6 +809,11 @@ async function main() {
       check(r.onscreen, `drawer is on screen for the fade check at ${where}: ${JSON.stringify(r)}`);
       const hidden = r.last > r.vis + 0.5;
       check(r.on === hidden, `drawer fade is ${hidden ? 'on' : 'off'} when ${hidden ? 'content reaches past' : 'every content edge is above'} the visible bottom at ${where}: ${JSON.stringify(r)}`);
+      // #229 W6/W9: when the cue class is on, ::after must stay visible (not display:none / background:none).
+      if (r.on) {
+        check(r.cueDisp !== 'none', `drawer fade ::after display when overflowing at ${where}: ${JSON.stringify(r)}`);
+        check(r.cueBg && r.cueBg !== 'none', `drawer fade ::after background when overflowing at ${where}: ${JSON.stringify(r)}`);
+      }
       // The fade ends at the visible bottom (sticky, measured from the
       // content box): bottom = (px under the quick-bar) - padding-bottom.
       if (r.on)
