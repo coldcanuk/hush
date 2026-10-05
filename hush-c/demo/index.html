@@ -8543,7 +8543,10 @@ html[data-theme="dark"] #thread-send:active {
              Begin owns that path (#234 F-B). */
           page = "landing";
         paint();
-        badge(true, "listening",
+        /* #241 nit2: Meet Major no longer shows raw npub. Badge keeps a
+           truncated npub preview after login (gate pin + not the full key);
+           port stays in title/aria. Before login / no npub → listening. */
+        badge(true, session.npub ? session.npub.slice(0, 12) + "…" : "listening",
           st.port ? "Relay listening on port " + st.port : "");
         let ev = null;
         try { ev = await evRes.json(); } catch (parseErr) { ev = null; }
