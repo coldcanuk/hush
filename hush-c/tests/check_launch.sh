@@ -941,4 +941,27 @@ awk '
   END { if (!ok) { print "paintSkillBoard must precede agent-drawer show" > "/dev/stderr"; exit 1 } }
 ' demo/index.html || fail "paintSkillBoard must precede agent-drawer show in openAgentDrawer"
 
+# #210 PE-4.1: drawer trusts API list order (no localeCompare re-sort); FULL cue.
+echo "$html" | grep -q -F 'id="fav-full"'   || fail "PE-4.1 #fav-full missing next to Save"
+echo "$html" | grep -q -F 'function paintFavFull()'   || fail "PE-4.1 paintFavFull missing"
+if echo "$html" | grep -A12 'function refreshFavorites' | grep -E '\.sort\(.*localeCompare' >/dev/null; then
+  fail "PE-4.1 drawer must not localeCompare-sort favorites"
+fi
+# list_json must stay under write-legible-c 40-line hard cap.
+awk '
+  /^hush_status_t hush_favorite_list_json\(/ { start=NR; depth=0; next }
+  start {
+    depth += gsub(/\{/, "{") - gsub(/\}/, "}")
+    if (depth <= 0) {
+      n = NR - start + 1
+      if (n > 40) {
+        print "hush_favorite_list_json is " n " lines (cap 40)" > "/dev/stderr"
+        exit 1
+      }
+      exit 0
+    }
+  }
+  END { if (start && depth > 0) { print "list_json unclosed" > "/dev/stderr"; exit 1 } }
+' src/hush_favorite.c || fail "PE-4.1 list_json must be <=40 lines"
+
 echo "launch routes ok"

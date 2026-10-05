@@ -41,9 +41,15 @@ grep -q 'nids == 0' "$fav_c" || fail "favorite save must refuse the empty set"
 # 3. Drawer strip: save refuses empty name / 0 skills; load is atomic;
 #    unload clears the highlight only; delete never touches the doll.
 for id in 'id="fav-strip"' 'id="fav-name"' 'id="fav-save"' \
-    'id="fav-unload"' 'id="fav-list"'; do
+    'id="fav-unload"' 'id="fav-list"' 'id="fav-full"'; do
     grep -q "$id" "$html" || fail "drawer missing $id"
 done
+# Drawer trusts API order (strcasecmp); must not re-sort with localeCompare.
+# Comment may still name localeCompare; only a live .sort(...localeCompare) fails.
+if grep -A12 'function refreshFavorites' "$html" | grep -E '\.sort\(.*localeCompare' >/dev/null; then
+    fail "drawer must not localeCompare-sort favorites (must match API order)"
+fi
+grep -q 'function paintFavFull' "$html" || fail "paintFavFull missing for FULL near Save"
 grep -q 'Name the favorite before saving' "$html" \
     || fail "save must refuse an empty name"
 grep -q 'equippedSkills = valid.slice()' "$html" \
@@ -151,7 +157,9 @@ grep -q 'nm.title = fav.name' "$html" || fail "row names need a title"
 grep -q 'tabIndex' "$html" || fail "row names must be focusable"
 grep -q 'Use letters, digits, spaces, - or _ (max 47)' "$html" \
     || fail "name-rule copy missing or wrong max"
-grep -q 'already has 32 favorites' "$html" || fail "cap copy missing"
+grep -q 'FULL — ' "$html" || fail "cap copy missing (FULL notice near Save)"
+grep -q 'favorites. Delete one to save another' "$html" \
+    || fail "cap copy must tell operator to delete one"
 grep -q 'Favorites hold 1–8 skills' "$html" || fail "skill-count copy missing"
 grep -q 'function favNameError' "$html" || fail "client validator missing"
 grep -q 'A-Za-z0-9 _-' "$html" || fail "client allowlist missing"

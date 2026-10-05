@@ -8251,9 +8251,9 @@ html[data-theme="dark"] #thread-send:active {
       if (!editSlug) { paintFavorites(); return; }
       try {
         const data = await api("/api/loadout", { action: "list", robot: editSlug });
+        /* Trust API order (hush_favorite_emit_sorted / strcasecmp). Do not
+           re-sort here — localeCompare disagrees with C on '_' vs letters. */
         favList = (data && data.favorites) ? data.favorites.slice() : [];
-        favList.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""),
-          undefined, { sensitivity: "base" }));
       } catch (e) {
         favList = [];
         favLoadError = true;
@@ -8273,14 +8273,9 @@ html[data-theme="dark"] #thread-send:active {
       const clash = favList.some((f) => f.name !== name && favSlug(f.name) === favSlug(name));
       if (clash) { skillNotice("That name clashes with a saved favorite. Rename it, or delete the old one first."); return; }
       if (favList.length >= FAV_COUNT_MAX && !favList.some((f) => f.name === name)) {
+        /* FULL sits next to Save (#fav-full); keep typed name for retry. */
+        if ($("agent-err")) $("agent-err").textContent = "";
         paintFavFull();
-        const note = $("fav-full");
-        if (note) {
-          note.hidden = false;
-          note.textContent = "FULL — " + FAV_COUNT_MAX
-            + " favorites. Delete one to save another.";
-        }
-        /* Keep the typed name so the operator can delete one and retry. */
         return;
       }
       const body = { action: "save", robot: editSlug, name: name };
