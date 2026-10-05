@@ -62,7 +62,10 @@ enum {
     HUSH_HTTP_COMPLETE_BURST = 12,
     HUSH_HTTP_FIXUP_PER_MIN = 12,
     HUSH_HTTP_FIXUP_BURST = 12,
-    HUSH_HTTP_SECONDS_PER_MIN = 60
+    HUSH_HTTP_SECONDS_PER_MIN = 60,
+    /* JSON \uXXXX is four hex digits; a C string cannot hold a decoded NUL. */
+    HUSH_HTTP_JSON_HEX_DIGITS = 4,
+    HUSH_HTTP_JSON_NUL_STANDIN = 0x01
 };
 
 #define HUSH_HTTP_CLOSE_JSON "{\"ok\":true,\"action\":\"close\"}\n"
@@ -128,6 +131,13 @@ const char *hush_http_event_channel(const hush_event_t *event);
 void hush_http_reply(int fd, const char *status, const char *ctype,
                             const char *body, size_t blen);
 void hush_http_json_unescape_copy(const char *src, char *dst, size_t dstsz);
+/* Hex value of one ASCII hex digit, or -1 when the byte is not hex. */
+static int hush_http_json_hex_value(unsigned char ch);
+/* True when the next four bytes are hex; writes the 16-bit code into *out. */
+static int hush_http_json_take_u(const char *src, unsigned *out);
+/* Writes one decoded escape from *src into dst; advances *src past it. */
+static size_t hush_http_json_put_escape(char *dst, size_t dstsz, size_t off,
+                                        const char **src);
 int hush_http_json_field(const char *body, const char *key, char *out, size_t outsz);
 int hush_http_json_has_key(const char *body, const char *key);
 int hush_http_json_bare_field(const char *body, const char *key,
@@ -747,14 +757,144 @@ void hush_http_json_unescape_copy(const char *src, char *dst, size_t dstsz)
 {
     size_t i = 0;
 
-    if (dstsz == 0)
+    if (dst == NULL || dstsz == 0)
         return;
+    if (src == NULL) {
+        dst[0] = '\0';
+        return;
+    }
+    /* RFC 8259 escapes become the real bytes so a pasted Tab or BEL is
+     * the control the print check refuses, not the letters u0009. */
     while (*src != '\0' && *src != '"' && i + 1 < dstsz) {
-        if (*src == '\\' && src[1] != '\0')
+        if (*src == '\\' && src[1] != '\0') {
             src++;
+            i = hush_http_json_put_escape(dst, dstsz, i, &src);
+            continue;
+        }
         dst[i++] = *src++;
     }
     dst[i] = '\0';
+}
+
+static int hush_http_json_hex_value(unsigned char ch)
+{
+    if (ch >= '0' && ch <= '9')
+        return (int)(ch - '0');
+    if (ch >= 'a' && ch <= 'f')
+        return (int)(ch - 'a') + 10;
+    if (ch >= 'A' && ch <= 'F')
+        return (int)(ch - 'A') + 10;
+    return -1;
+}
+
+static int hush_http_json_take_u(const char *src, unsigned *out)
+{
+    unsigned code = 0;
+    size_t i = 0;
+    int digit = 0;
+
+    assert(src != NULL && out != NULL);
+    for (i = 0; i < (size_t)HUSH_HTTP_JSON_HEX_DIGITS; i++) {
+        digit = hush_http_json_hex_value((unsigned char)src[i]);
+        if (digit < 0)
+            return 0;
+        code = (code << 4) | (unsigned)digit;
+    }
+    *out = code;
+    return 1;
+}
+
+static size_t hush_http_json_put_escape(char *dst, size_t dstsz, size_t off,
+                                        const char **src)
+{
+    unsigned code = 0;
+    const char *p = NULL;
+    unsigned char ch = 0;
+
+    assert(dst != NULL && src != NULL && *src != NULL);
+    p = *src;
+    ch = (unsigned char)*p;
+    if (ch == '"' || ch == '\\' || ch == '/') {
+        if (off + 1 >= dstsz)
+            return off;
+        dst[off] = (char)ch;
+        *src = p + 1;
+        return off + 1;
+    }
+    if (ch == 'n' || ch == 'r' || ch == 't' || ch == 'b' || ch == 'f') {
+        if (off + 1 >= dstsz)
+            return off;
+        if (ch == 'n')
+            dst[off] = '\n';
+        else if (ch == 'r')
+            dst[off] = '\r';
+        else if (ch == 't')
+            dst[off] = '\t';
+        else if (ch == 'b')
+            dst[off] = '\b';
+        else
+            dst[off] = '\f';
+        *src = p + 1;
+        return off + 1;
+    }
+    if (ch == 'u' && hush_http_json_take_u(p + 1, &code)) {
+        *src = p + 1 + (size_t)HUSH_HTTP_JSON_HEX_DIGITS;
+        /* UTF-16 surrogates: join a high+low pair into one code point.
+         * Lone halves are rejected (consumed, not written) so we never
+         * emit CESU-8 or other invalid UTF-8. */
+        if (code >= 0xD800u && code <= 0xDBFFu) {
+            const char *q = *src;
+            unsigned lo = 0;
+
+            if (q[0] == '\\' && q[1] == 'u'
+                && hush_http_json_take_u(q + 2, &lo)
+                && lo >= 0xDC00u && lo <= 0xDFFFu) {
+                unsigned cp = 0x10000u
+                    + ((code - 0xD800u) << 10)
+                    + (lo - 0xDC00u);
+
+                *src = q + 2 + (size_t)HUSH_HTTP_JSON_HEX_DIGITS;
+                if (off + 4 >= dstsz)
+                    return off;
+                dst[off] = (char)(0xF0u | (cp >> 18));
+                dst[off + 1] = (char)(0x80u | ((cp >> 12) & 0x3Fu));
+                dst[off + 2] = (char)(0x80u | ((cp >> 6) & 0x3Fu));
+                dst[off + 3] = (char)(0x80u | (cp & 0x3Fu));
+                return off + 4;
+            }
+            return off;
+        }
+        if (code >= 0xDC00u && code <= 0xDFFFu)
+            return off;
+        /* A decoded NUL would truncate the C string and hide trailing
+         * letters. Keep a non-zero control so the print check refuses. */
+        if (code == 0)
+            code = (unsigned)HUSH_HTTP_JSON_NUL_STANDIN;
+        if (code <= 0x7Fu) {
+            if (off + 1 >= dstsz)
+                return off;
+            dst[off] = (char)code;
+            return off + 1;
+        }
+        if (code <= 0x7FFu) {
+            if (off + 2 >= dstsz)
+                return off;
+            dst[off] = (char)(0xC0u | (code >> 6));
+            dst[off + 1] = (char)(0x80u | (code & 0x3Fu));
+            return off + 2;
+        }
+        if (off + 3 >= dstsz)
+            return off;
+        dst[off] = (char)(0xE0u | (code >> 12));
+        dst[off + 1] = (char)(0x80u | ((code >> 6) & 0x3Fu));
+        dst[off + 2] = (char)(0x80u | (code & 0x3Fu));
+        return off + 3;
+    }
+    if (off + 1 >= dstsz)
+        return off;
+    dst[off] = (char)ch;
+    *src = p + 1;
+    return off + 1;
 }
 
 int hush_http_json_field(const char *body, const char *key, char *out, size_t outsz)

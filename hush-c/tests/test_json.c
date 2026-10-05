@@ -36,6 +36,45 @@ int main(void)
     expect(hush_json_escape(NULL, out, sizeof(out)) == 0, "null in");
     expect(out[0] == '\0', "null empty");
     expect(hush_json_escape("x", NULL, 8) == 0, "null out");
+
+    /* UTF-8 boundary copy: drop incomplete trailer; invalid → U+FFFD. */
+    {
+        char buf[8];
+        const char *e_acute = "\xC3\xA9"; /* é */
+        char long_e[64];
+        size_t n;
+        int i;
+
+        n = hush_json_copy_bounded(buf, 2, e_acute); /* room for 1 data byte */
+        expect(n == 0 && buf[0] == '\0', "copy drops incomplete é");
+        n = hush_json_copy_bounded(buf, 3, e_acute);
+        expect(n == 2 && (unsigned char)buf[0] == 0xC3
+               && (unsigned char)buf[1] == 0xA9, "copy fits é");
+        long_e[0] = (char)0xFF;
+        long_e[1] = 'Z';
+        long_e[2] = '\0';
+        n = hush_json_copy_bounded(buf, sizeof(buf), long_e);
+        expect(n == 4 && (unsigned char)buf[0] == 0xEF
+               && (unsigned char)buf[1] == 0xBF
+               && (unsigned char)buf[2] == 0xBD
+               && buf[3] == 'Z',
+               "copy replaces 0xFF with U+FFFD");
+        /* Surrogate / overlong / OOR leads rejected by scalar helper. */
+        expect(hush_json_utf8_scalar("\xED\xA0\x80", 3) == 0, "scalar rejects ED A0");
+        expect(hush_json_utf8_scalar("\xE0\x80\x80", 3) == 0, "scalar rejects overlong");
+        expect(hush_json_utf8_scalar("\xF4\x90\x80\x80", 4) == 0, "scalar rejects F4 90");
+        for (i = 0; i < 30; i++) {
+            long_e[i * 2] = (char)0xC3;
+            long_e[i * 2 + 1] = (char)0xA9;
+        }
+        long_e[60] = '\0';
+        n = hush_json_copy_bounded(buf, 5, long_e); /* room for 4 data + NUL */
+        expect(n == 4, "copy caps on é boundary");
+        expect((unsigned char)buf[0] == 0xC3 && (unsigned char)buf[2] == 0xC3,
+               "copy two full é");
+    }
+
+
     if (g_fail)
         return 1;
     printf("test_json ok\n");

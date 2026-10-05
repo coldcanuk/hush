@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "hush_event.h"
+#include "hush_json.h"
 #include "hush_keystore.h"
 #include "hush_pass.h"
 #include "hush_provider.h"
@@ -639,7 +640,7 @@ static hush_status_t hush_roster_format_profile(const hush_roster_t *roster,
                                                 char *out, size_t outsz,
                                                 size_t *off)
 {
-    char esc[HUSH_ROSTER_EMAIL_MAX * 2];
+    char esc[HUSH_ROSTER_EMAIL_MAX * HUSH_JSON_U_LEN];
     int n;
 
     assert(roster != NULL);
@@ -663,9 +664,14 @@ static hush_status_t hush_roster_format_profile(const hush_roster_t *roster,
         return HUSH_ERR_FULL;
     *off += (size_t)n;
     hush_roster_json_escape(roster->profile.organization, esc, sizeof(esc));
-    n = snprintf(out + *off, outsz - *off,
-                 ",\"organization\":\"%s\",\"picture\":\"%s\"},\"agents\":[",
-                 esc, roster->profile.picture);
+    {
+        char esc_pic[HUSH_ROSTER_PATH_MAX * HUSH_JSON_U_LEN];
+
+        hush_roster_json_escape(roster->profile.picture, esc_pic, sizeof(esc_pic));
+        n = snprintf(out + *off, outsz - *off,
+                     ",\"organization\":\"%s\",\"picture\":\"%s\"},\"agents\":[",
+                     esc, esc_pic);
+    }
     if (n < 0 || *off + (size_t)n >= outsz)
         return HUSH_ERR_FULL;
     *off += (size_t)n;
@@ -693,7 +699,7 @@ static hush_status_t hush_roster_format_members(const hush_roster_t *roster,
                                                 char *out, size_t outsz,
                                                 size_t *off)
 {
-    char esc[HUSH_ROSTER_NAME_MAX * 2];
+    char esc[HUSH_ROSTER_NAME_MAX * HUSH_JSON_U_LEN];
     size_t i;
     int n;
 
@@ -725,22 +731,22 @@ static hush_status_t hush_roster_format_members(const hush_roster_t *roster,
 static void hush_roster_copy_text(char *dst, size_t dstsz,
                                   const char *text, const char *fallback)
 {
-    size_t i = 0;
+    size_t n = 0;
 
     assert(dst != NULL);
     assert(dstsz > 0);
     assert(fallback != NULL);
+    dst[0] = '\0';
     if (text != NULL) {
-        while (text[i] != '\0' && isspace((unsigned char)text[i]))
+        while (*text != '\0' && isspace((unsigned char)*text))
             text++;
-        while (text[i] != '\0' && i + 1 < dstsz) {
-            dst[i] = text[i];
-            i++;
-        }
-        while (i > 0 && isspace((unsigned char)dst[i - 1]))
-            i--;
+        /* Cap on a UTF-8 character boundary so vibe reload cannot see a
+         * mid-character cut and erase the field on strict decode. */
+        n = hush_json_copy_bounded(dst, dstsz, text);
+        while (n > 0 && isspace((unsigned char)dst[n - 1]))
+            n--;
+        dst[n] = '\0';
     }
-    dst[i] = '\0';
     if (dst[0] == '\0' && fallback[0] != '\0') {
         strncpy(dst, fallback, dstsz - 1);
         dst[dstsz - 1] = '\0';
@@ -878,8 +884,8 @@ static hush_status_t hush_roster_store_agent_profile(hush_store_t *store,
 {
     hush_event_t ev;
     char content[HUSH_EVENT_MAX_CONTENT];
-    char esc_name[HUSH_ROSTER_NAME_MAX * 2];
-    char esc_about[HUSH_ROSTER_PROMPT_MAX * 2];
+    char esc_name[HUSH_ROSTER_NAME_MAX * HUSH_JSON_U_LEN];
+    char esc_about[HUSH_ROSTER_PROMPT_MAX * HUSH_JSON_U_LEN];
 
     assert(store != NULL);
     assert(agent != NULL);
@@ -899,7 +905,7 @@ static hush_status_t hush_roster_store_agent_note(hush_store_t *store,
 {
     hush_event_t ev;
     char content[HUSH_EVENT_MAX_CONTENT];
-    char esc_name[HUSH_ROSTER_NAME_MAX * 2];
+    char esc_name[HUSH_ROSTER_NAME_MAX * HUSH_JSON_U_LEN];
 
     assert(store != NULL);
     assert(agent != NULL);
@@ -935,26 +941,12 @@ static void hush_roster_fill_event(hush_event_t *ev, const char *pubkey_hex,
 
 static size_t hush_roster_json_escape(const char *src, char *dst, size_t dstsz)
 {
-    size_t o = 0;
-
+    /* Same RFC 8259 escape as the rest of the hive: quote, backslash,
+     * short forms for newline/return/tab, and \u00XX for every other
+     * control below space. Decoded prompt/profile fields stay valid JSON. */
     assert(dst != NULL);
     assert(dstsz > 0);
-    if (src == NULL)
-        src = "";
-    while (*src != '\0' && o + 2 < dstsz) {
-        if (*src == '"' || *src == '\\') {
-            dst[o++] = '\\';
-            dst[o++] = *src++;
-        } else if (*src == '\n') {
-            dst[o++] = '\\';
-            dst[o++] = 'n';
-            src++;
-        } else {
-            dst[o++] = *src++;
-        }
-    }
-    dst[o] = '\0';
-    return o;
+    return hush_json_escape(src, dst, dstsz);
 }
 
 static void hush_roster_keep_agent_key(const char *slug, const char *secret,
@@ -1024,21 +1016,17 @@ static void hush_roster_hex_encode(char *out65, const unsigned char *raw)
 static void hush_roster_preview_prompt(char *dst, size_t dstsz,
                                        const char *prompt)
 {
-    size_t i = 0;
     size_t cap;
 
     assert(dst != NULL);
     assert(dstsz > 0);
     if (prompt == NULL)
         prompt = "";
-    cap = dstsz - 1;
-    if (cap > (size_t)HUSH_ROSTER_PROMPT_PREVIEW)
-        cap = (size_t)HUSH_ROSTER_PROMPT_PREVIEW;
-    while (prompt[i] != '\0' && i < cap) {
-        dst[i] = prompt[i];
-        i++;
-    }
-    dst[i] = '\0';
+    cap = dstsz;
+    if (cap > (size_t)HUSH_ROSTER_PROMPT_PREVIEW + 1)
+        cap = (size_t)HUSH_ROSTER_PROMPT_PREVIEW + 1;
+    /* Cap on a UTF-8 character boundary so session JSON stays valid. */
+    (void)hush_json_copy_bounded(dst, cap, prompt);
 }
 
 static int hush_roster_is_payne_slug(const char *slug)
@@ -1211,9 +1199,10 @@ static hush_status_t hush_roster_format_one_agent(const hush_roster_agent_t *age
                                                   char *out, size_t outsz,
                                                   size_t *off, int first)
 {
-    char esc[HUSH_ROSTER_NAME_MAX * 2];
+    char esc[HUSH_ROSTER_NAME_MAX * HUSH_JSON_U_LEN];
     char preview[HUSH_ROSTER_PROMPT_PREVIEW + 1];
-    char esc_prompt[HUSH_ROSTER_PROMPT_PREVIEW * 2];
+    char esc_prompt[HUSH_ROSTER_PROMPT_PREVIEW * HUSH_JSON_U_LEN];
+    char esc_picture[HUSH_ROSTER_PATH_MAX * HUSH_JSON_U_LEN];
     char prov[HUSH_ROSTER_PROVIDERS_MAX * (HUSH_ROSTER_PROVIDER_MAX + 3)];
     size_t poff = 0;
     size_t i;
@@ -1225,6 +1214,7 @@ static hush_status_t hush_roster_format_one_agent(const hush_roster_agent_t *age
     hush_roster_json_escape(agent->name, esc, sizeof(esc));
     hush_roster_preview_prompt(preview, sizeof(preview), agent->prompt);
     hush_roster_json_escape(preview, esc_prompt, sizeof(esc_prompt));
+    hush_roster_json_escape(agent->picture, esc_picture, sizeof(esc_picture));
     for (i = 0; i < agent->nproviders; i++) {
         n = snprintf(prov + poff, sizeof(prov) - poff, "%s\"%s\"",
                      i == 0 ? "" : ",", agent->providers[i]);
@@ -1240,7 +1230,7 @@ static hush_status_t hush_roster_format_one_agent(const hush_roster_agent_t *age
                  "\"ncontext\":%zu,\"skills\":",
                  first ? "" : ",",
                  esc, agent->slug, agent->id.npub, agent->id.pubkey_hex,
-                 agent->provider, prov, esc_prompt, agent->picture, agent->voice,
+                 agent->provider, prov, esc_prompt, esc_picture, agent->voice,
                  agent->enabled ? "true" : "false",
                  agent->locked ? "true" : "false",
                  agent->role[0] ? agent->role : HUSH_ROSTER_ROLE_WORKER,
@@ -1283,7 +1273,7 @@ static hush_status_t hush_roster_format_intro(const hush_roster_agent_t *agent,
                                               char *out, size_t outsz,
                                               size_t *off)
 {
-    char esc[HUSH_ROSTER_INTRO_MAX * 2];
+    char esc[HUSH_ROSTER_INTRO_MAX * HUSH_JSON_U_LEN];
     const char *line;
     int n;
 

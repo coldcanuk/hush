@@ -533,6 +533,65 @@ def check_name_rule(relay):
            NAME_PRINT)
     check_names("rename to a control byte writes nothing", relay,
                 {"walkbot-two": "Quiet Hand"})
+    # Browser paste / JSON.stringify: controls arrive as \t or \u00XX, not
+    # raw bytes. The field reader must decode them so the print check sees
+    # the control and refuses — otherwise the name saves as NighttWatch /
+    # Bellu0007Bot / Escu001bBot / Nulu0000Bot.
+    escaped = (
+        ("tab short escape",
+         b'{"name":"Night\\tWatch","system_prompt":"Walk the floor.",'
+         b'"provider":"grok-build","save_pass":false}',
+         "NighttWatch"),
+        ("tab unicode escape",
+         b'{"name":"Night\\u0009Watch","system_prompt":"Walk the floor.",'
+         b'"provider":"grok-build","save_pass":false}',
+         "NighttWatch"),
+        ("bell unicode escape",
+         b'{"name":"Bell\\u0007Bot","system_prompt":"Walk the floor.",'
+         b'"provider":"grok-build","save_pass":false}',
+         "Bellu0007Bot"),
+        ("esc unicode escape",
+         b'{"name":"Esc\\u001bBot","system_prompt":"Walk the floor.",'
+         b'"provider":"grok-build","save_pass":false}',
+         "Escu001bBot"),
+        ("nul unicode escape",
+         b'{"name":"Nul\\u0000Bot","system_prompt":"Walk the floor.",'
+         b'"provider":"grok-build","save_pass":false}',
+         "Nulu0000Bot"),
+        ("del unicode escape",
+         b'{"name":"Del\\u007fBot","system_prompt":"Walk the floor.",'
+         b'"provider":"grok-build","save_pass":false}',
+         "Delu007fBot"),
+    )
+    for label, body, mangled in escaped:
+        expect(relay, f"create with JSON-escaped control: {label}",
+               "/api/agent", body, NAME_PRINT)
+    status, _, raw = relay.call("GET", "/api/session")
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(f"GET /api/session after JSON-escaped controls "
+                        f"is not JSON: {err}; HTTP {status} {raw[:120]!r}")
+        session = None
+    if session is not None:
+        names = [a.get("name") for a in session.get("agents", [])]
+        bad = [n for n in names if n in (
+            "NighttWatch", "Bellu0007Bot", "Escu001bBot", "Nulu0000Bot",
+            "Delu007fBot", "Night\tWatch")]
+        if status != 200 or bad:
+            FAILURES.append(f"JSON-escaped controls must not be saved; "
+                            f"HTTP {status} names {names} bad {bad}")
+        else:
+            print("reasons: ok JSON-escaped controls refused; session JSON ok")
+    for label, create_body, mangled in escaped:
+        # Same escapes on rename of walkbot-two.
+        name_part = create_body.split(b'"name":"', 1)[1].split(b'","system_prompt"', 1)[0]
+        rename = (b'{"action":"update","slug":"walkbot-two","name":"' +
+                  name_part + b'"}')
+        expect(relay, f"rename with JSON-escaped control: {label}",
+               "/api/agent", rename, NAME_PRINT)
+    check_names("JSON-escaped rename writes nothing", relay,
+                {"walkbot-two": "Quiet Hand"})
     check_name_key(relay)
     check_rename_ids(relay)
     check_suffixed_favorites(relay)
@@ -618,6 +677,18 @@ def check_restart():
             relay.ok("/api/agent", robot("Walkbot Two"))
             relay.ok("/api/agent", {"action": "update", "slug": "walkbot-two",
                                     "name": "Quiet Hand"})
+            # Controls in prompt/intro must reload as bytes, not letter garble.
+            ctrl_prompt = (
+                b'{"action":"update","slug":"walkbot-two",'
+                b'"system_prompt":"Keep\\tA\\rB\\u001bC\\bD\\fE say \\"hi\\""}'
+            )
+            status, _, raw = relay.call("POST", "/api/agent", ctrl_prompt)
+            try:
+                json.loads(raw)
+            except json.JSONDecodeError as err:
+                FAILURES.append(f"pre-restart control prompt not JSON: {err}")
+            if status != 200:
+                FAILURES.append(f"pre-restart control prompt: HTTP {status}")
             relay.ok("/api/agent", robot("Walkbot Two"))
             relay.ok("/api/loadout", fav("save", robot="walkbot-two-2", name="Keep Fav",
                                          skill_0="system:hive-patterns"))
@@ -631,6 +702,23 @@ def check_restart():
             relay.start()
             check_names("restart keeps ids and names", relay,
                         {"walkbot-two": "Quiet Hand", "walkbot-two-2": "Walkbot Two"})
+            status, _, raw = relay.call("GET", "/api/session")
+            try:
+                session = json.loads(raw)
+            except json.JSONDecodeError as err:
+                FAILURES.append(f"GET session after restart not JSON: {err}")
+                session = None
+            if session is not None:
+                agents = [a for a in session.get("agents", [])
+                          if a.get("slug") == "walkbot-two"]
+                prompt = agents[0].get("prompt") if agents else ""
+                want = "Keep\tA\rB\x1bC\bD\fE say \"hi\""
+                if prompt != want:
+                    FAILURES.append(
+                        f"restart must reload decoded prompt controls "
+                        f"incl backspace/formfeed/escaped quote; got {prompt!r}")
+                else:
+                    print("reasons: ok restart keeps b/f/quote/tab/esc controls")
             kept = favorite_names(relay, "walkbot-two-2")
             if kept != ["Keep Fav"]:
                 FAILURES.append(f"restart must keep walkbot-two-2's favorite; got {kept}")
@@ -658,6 +746,421 @@ def check_restart():
                    robot("Quiet Hand"), "A robot named Quiet Hand already exists.")
         finally:
             relay.stop()
+
+
+
+def check_prompt_control_roundtrip(relay):
+    """Controls in system_prompt must round-trip as valid JSON.
+
+    Unescape decodes every HTTP JSON field; the session serializer must
+    escape all controls below space so POST /api/agent and GET /api/session
+    still parse. Names still refuse the same controls (checked earlier).
+    """
+    create = (
+        b'{"name":"Prompt Ctrl",'
+        b'"system_prompt":"Line\\tTwo\\rThree\\bX\\u001bY\\fZ",'
+        b'"provider":"grok-build","save_pass":false}'
+    )
+    status, ctype, raw = relay.call("POST", "/api/agent", create)
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(
+            f"POST /api/agent with control prompt is not JSON: {err}; "
+            f"HTTP {status} {raw[:160]!r}")
+        return
+    if status != 200 or not ctype.startswith("application/json"):
+        FAILURES.append(
+            f"create with control prompt: want 200 application/json; "
+            f"got HTTP {status} {ctype} {raw[:160]!r}")
+        return
+    agents = [a for a in session.get("agents", [])
+              if a.get("name") == "Prompt Ctrl"]
+    if not agents:
+        FAILURES.append("Prompt Ctrl missing from create session reply")
+        return
+    prompt = agents[0].get("prompt") or ""
+    want_chars = (
+        ("tab", "\t"),
+        ("cr", "\r"),
+        ("bs", "\b"),
+        ("esc", "\x1b"),
+        ("ff", "\f"),
+    )
+    missing = [label for label, ch in want_chars if ch not in prompt]
+    if missing:
+        FAILURES.append(
+            f"create session prompt missing decoded controls {missing}; "
+            f"got {prompt!r}")
+    else:
+        print("reasons: ok create session JSON with control prompt parses")
+
+    status, ctype, raw = relay.call("GET", "/api/session")
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(
+            f"GET /api/session after control prompt is not JSON: {err}; "
+            f"HTTP {status} {raw[:160]!r}")
+        return
+    if status != 200:
+        FAILURES.append(f"GET /api/session after control prompt: HTTP {status}")
+        return
+    agents = [a for a in session.get("agents", [])
+              if a.get("name") == "Prompt Ctrl"]
+    if not agents:
+        FAILURES.append("Prompt Ctrl missing from GET /api/session")
+        return
+    prompt = agents[0].get("prompt") or ""
+    missing = [label for label, ch in want_chars if ch not in prompt]
+    if missing:
+        FAILURES.append(
+            f"GET session prompt missing decoded controls {missing}; "
+            f"got {prompt!r}")
+    else:
+        print("reasons: ok GET /api/session JSON with control prompt parses")
+
+    # Edit the same robot with more escaped controls; reply must stay JSON.
+    edit = (
+        b'{"action":"update","slug":"prompt-ctrl",'
+        b'"system_prompt":"Edit\\u0009A\\nB\\u001BY"}'
+    )
+    status, ctype, raw = relay.call("POST", "/api/agent", edit)
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(
+            f"edit with control prompt is not JSON: {err}; "
+            f"HTTP {status} {raw[:160]!r}")
+        return
+    if status != 200:
+        FAILURES.append(
+            f"edit with control prompt: want 200; got HTTP {status} "
+            f"{raw[:160]!r}")
+        return
+    agents = [a for a in session.get("agents", [])
+              if a.get("slug") == "prompt-ctrl"]
+    if not agents:
+        FAILURES.append("prompt-ctrl missing after edit")
+        return
+    prompt = agents[0].get("prompt") or ""
+    if "\t" not in prompt or "\n" not in prompt or "\x1b" not in prompt:
+        FAILURES.append(f"edit session prompt missing controls; got {prompt!r}")
+    else:
+        print("reasons: ok edit session JSON with control prompt parses")
+    relay.ok("/api/agent", {"action": "delete", "slug": "prompt-ctrl"})
+
+    # M20: prompt preview is 160 chars; each BS escapes to \u0008 (6 bytes).
+    # esc_prompt must be PREVIEW * HUSH_JSON_U_LEN — a *2 buffer cannot hold
+    # 80 backspaces (480 escaped bytes > 320).
+    n_bs = 80
+    create_bs = (
+        b'{"name":"Buf Pin",'
+        b'"system_prompt":"' + b'\\b' * n_bs + b'",'
+        b'"provider":"grok-build","save_pass":false}'
+    )
+    status, _, raw = relay.call("POST", "/api/agent", create_bs)
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(f"POST with {n_bs} BS prompt is not JSON: {err}")
+        return
+    agents = [a for a in session.get("agents", []) if a.get("name") == "Buf Pin"]
+    if not agents:
+        FAILURES.append("Buf Pin missing after create")
+    else:
+        got = (agents[0].get("prompt") or "").count("\b")
+        if got < n_bs:
+            FAILURES.append(
+                f"esc_prompt must hold {n_bs} backspaces (needs HUSH_JSON_U_LEN); "
+                f"got {got} — a *2 buffer would cap near 53")
+        else:
+            print(f"reasons: ok esc_prompt holds {got} backspaces (HUSH_JSON_U_LEN)")
+    relay.ok("/api/agent", {"action": "delete", "slug": "buf-pin"})
+
+
+def check_picture_json_escape(relay):
+    """Robot, profile, and Major picture fields must be JSON-escaped.
+
+    A quote or control in picture must not break session/POST JSON, and the
+    decoded value must round-trip (including escaped quotes).
+    """
+    # Robot picture: quote + tab.
+    pic = (
+        b'{"action":"update","slug":"walkbot-one",'
+        b'"picture":"x\\"y\\tz"}'
+    )
+    status, _, raw = relay.call("POST", "/api/agent", pic)
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(f"robot picture with quote/tab is not JSON: {err}; "
+                        f"{raw[:160]!r}")
+        return
+    if status != 200:
+        FAILURES.append(f"robot picture update: HTTP {status} {raw[:160]!r}")
+        return
+    agents = [a for a in session.get("agents", [])
+              if a.get("slug") == "walkbot-one"]
+    want_pic = 'x"y\tz'
+    got_pic = agents[0].get("picture") if agents else None
+    if got_pic != want_pic:
+        FAILURES.append(f"robot picture round-trip failed; got {got_pic!r}")
+    else:
+        print("reasons: ok robot picture quote/tab round-trips in session JSON")
+
+    # Profile picture.
+    prof = (
+        b'{"picture":"p\\"q\\u001br"}'
+    )
+    status, _, raw = relay.call("POST", "/api/profile", prof)
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(f"profile picture with quote/ESC is not JSON: {err}; "
+                        f"{raw[:160]!r}")
+        return
+    if status != 200:
+        FAILURES.append(f"profile picture update: HTTP {status} {raw[:160]!r}")
+        return
+    got = (session.get("profile") or {}).get("picture")
+    if got != 'p"q\x1br':
+        FAILURES.append(f"profile picture round-trip failed; got {got!r}")
+    else:
+        print("reasons: ok profile picture quote/ESC round-trips in session JSON")
+
+    # Major (Payne) picture via /api/agent with payne slug.
+    major = (
+        b'{"action":"update","slug":"sgt-major-payne",'
+        b'"picture":"m\\"n\\tb"}'
+    )
+    status, _, raw = relay.call("POST", "/api/agent", major)
+    try:
+        session = json.loads(raw)
+    except json.JSONDecodeError as err:
+        FAILURES.append(f"Major picture with quote/tab is not JSON: {err}; "
+                        f"{raw[:160]!r}")
+        return
+    if status != 200:
+        FAILURES.append(f"Major picture update: HTTP {status} {raw[:160]!r}")
+        return
+    got = (session.get("payne") or {}).get("picture")
+    if got != 'm"n\tb':
+        FAILURES.append(f"Major picture round-trip failed; got {got!r}")
+    else:
+        print("reasons: ok Major picture quote/tab round-trips in session JSON")
+
+
+
+
+
+def inject_mid_utf8_cut(relay, slug):
+    """Simulate an older build that cut a prompt mid-character in vibe.json."""
+    path = relay.directory / "config" / "vibe.json"
+    raw = path.read_bytes()
+    vibe = json.loads(raw.decode("utf-8", errors="surrogateescape"))
+    idx = None
+    for i in range(int(vibe.get("nagents", 0))):
+        if vibe.get(f"agent_slug_{i}") == slug:
+            idx = i
+            break
+    if idx is None:
+        raise AssertionError(f"inject: {slug} missing from vibe")
+    vibe[f"agent_prompt_{idx}"] = "UpgradeKeepé"
+    encoded = json.dumps(vibe, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8", errors="surrogateescape")
+    needle = "UpgradeKeepé".encode()
+    pos = encoded.find(needle)
+    if pos < 0:
+        raise AssertionError("inject: prompt needle missing")
+    patched = encoded[: pos + len(needle) - 1] + encoded[pos + len(needle) :]
+    path.write_bytes(patched)
+
+
+def check_no_silent_erase():
+    """Truncation and decode failure must not erase prompts/intros/robots.
+
+    Uses its own relay with pass saved so restart keeps login (same as
+    check_restart).
+    """
+    with tempfile.TemporaryDirectory(prefix="hush-reasons-erase-") as raw:
+        relay = Relay(Path(raw))
+        relay.start()
+        try:
+            relay.ok("/api/identity", {"action": "create"})
+            relay.ok("/api/identity", {"action": "ack_backup", "save_pass": True})
+            relay.ok("/api/vibe", {"name": "HQ", "about": "erase"})
+            long_prompt = "é" * 600
+            long_intro = "日本語" * 40
+            made = relay.ok("/api/agent", robot("Erase Guard",
+                                               system_prompt=long_prompt,
+                                               intro=long_intro))
+            agents = [a for a in made.get("agents", [])
+                      if a.get("slug") == "erase-guard"]
+            if not agents:
+                FAILURES.append("Erase Guard missing after create")
+                return
+            disk = agent_on_disk(relay, "erase-guard")
+            prompt = disk.get("agent_prompt") or ""
+            intro = disk.get("agent_intro") or ""
+            plen = len(prompt.encode("utf-8"))
+            ilen = len(intro.encode("utf-8"))
+            if "é" not in prompt or plen > 1024 or plen < 1000:
+                FAILURES.append(
+                    f"long é prompt must keep ~1024 UTF-8 bytes on boundary; "
+                    f"got bytes={plen} {prompt[:20]!r}")
+            elif prompt.encode("utf-8").endswith(b"\xc3"):
+                FAILURES.append(
+                    f"long é prompt ends mid-character: {prompt[-4:]!r}")
+            else:
+                print(f"reasons: ok long é prompt kept ({len(prompt)} chars, "
+                      f"{plen} bytes)")
+            if "日" not in intro or ilen > 240 or ilen < 200:
+                FAILURES.append(
+                    f"long 日本語 intro must keep ~240 UTF-8 bytes on boundary; "
+                    f"got bytes={ilen} {intro[:20]!r}")
+            else:
+                print(f"reasons: ok long 日本語 intro kept ({len(intro)} chars, "
+                      f"{ilen} bytes)")
+
+            # Preview must cut on a UTF-8 boundary (session stores ~160-byte prompt).
+            preview_prompt = "x" + ("é" * 600)
+            made_prev = relay.ok("/api/agent", robot(
+                "Preview Guard", system_prompt=preview_prompt, intro="hi"))
+            prev_agents = [a for a in made_prev.get("agents", [])
+                           if a.get("slug") == "preview-guard"]
+            if not prev_agents:
+                FAILURES.append("Preview Guard missing after create")
+            else:
+                try:
+                    json.dumps(made_prev, ensure_ascii=False).encode("utf-8")
+                    live_ok = True
+                except (TypeError, UnicodeEncodeError) as err:
+                    live_ok = False
+                    FAILURES.append(f"create reply not UTF-8 after long preview: {err}")
+                # Re-fetch session for live validity of preview field.
+                status, _, sbody = relay.call("GET", "/api/session")
+                try:
+                    session = json.loads(sbody.decode("utf-8"))
+                    pagents = [a for a in session.get("agents", [])
+                               if a.get("slug") == "preview-guard"]
+                    if not pagents:
+                        FAILURES.append("Preview Guard missing from live session")
+                    else:
+                        pp = pagents[0].get("prompt") or ""
+                        pb = pp.encode("utf-8")
+                        if len(pb) > 160:
+                            FAILURES.append(
+                                f"preview prompt longer than 160 bytes: {len(pb)}")
+                        elif pb.endswith(b"\xc3"):
+                            FAILURES.append(
+                                f"preview ends mid-character: {pp[-4:]!r}")
+                        else:
+                            print(f"reasons: ok preview boundary "
+                                  f"({len(pp)} chars, {len(pb)} bytes)")
+                except (UnicodeDecodeError, json.JSONDecodeError) as err:
+                    FAILURES.append(
+                        f"live session INVALID after long non-ASCII preview: {err}")
+
+            # Launch copy_name (vibe name/about) must stay on UTF-8 boundary.
+            long_about = "é" * 200
+            long_vibe_name = "x" + ("日" * 30)
+            vibe = relay.ok("/api/vibe", {"name": long_vibe_name, "about": long_about})
+            try:
+                json.dumps(vibe, ensure_ascii=False).encode("utf-8")
+                status, _, sbody = relay.call("GET", "/api/session")
+                session = json.loads(sbody.decode("utf-8"))
+                about = (session.get("vibe") or {}).get("about") or ""
+                vname = (session.get("vibe") or {}).get("name") or ""
+                if about.encode("utf-8").endswith(b"\xc3"):
+                    FAILURES.append(f"vibe about mid-character: {about[-4:]!r}")
+                elif vname.encode("utf-8").endswith((b"\xe6", b"\xe6\x97")):
+                    FAILURES.append(f"vibe name mid-character: {vname[-4:]!r}")
+                else:
+                    print("reasons: ok vibe name/about UTF-8 boundary (launch copy)")
+            except (UnicodeDecodeError, json.JSONDecodeError, TypeError) as err:
+                FAILURES.append(f"vibe/session INVALID after long vibe fields: {err}")
+
+            raw_name = (
+                b'{"name":"Raw\xffBot","system_prompt":"Walk the floor.",'
+                b'"provider":"grok-build","save_pass":false}'
+            )
+            status, _, body = relay.call("POST", "/api/agent", raw_name)
+            if status != 200 or b"raw-bot" not in body:
+                FAILURES.append(
+                    f"0xFF name create: HTTP {status} {body[:160]!r}")
+            else:
+                print("reasons: ok 0xFF name create returned 200 with raw-bot id")
+            # Live POST reply and session must be valid UTF-8 (invalid → U+FFFD on save).
+            try:
+                body.decode("utf-8")
+                json.loads(body)
+            except (UnicodeDecodeError, json.JSONDecodeError) as err:
+                FAILURES.append(f"0xFF create reply not valid UTF-8 JSON: {err}")
+            else:
+                print("reasons: ok 0xFF create reply is valid UTF-8 JSON")
+            status, _, sbody = relay.call("GET", "/api/session")
+            try:
+                sbody.decode("utf-8")
+                session = json.loads(sbody)
+                raw_agents = [a for a in session.get("agents", [])
+                              if a.get("slug") == "raw-bot"]
+                if not raw_agents:
+                    FAILURES.append("raw-bot missing from live session after 0xFF create")
+                else:
+                    print("reasons: ok live session lists raw-bot after 0xFF create")
+            except (UnicodeDecodeError, json.JSONDecodeError) as err:
+                FAILURES.append(f"live session INVALID after 0xFF create: {err}")
+
+            relay.stop()
+            vibe_path = relay.directory / "config" / "vibe.json"
+            # On save, 0xFF becomes U+FFFD (escaped in JSON), not raw 0xFF.
+            vibe_bytes = vibe_path.read_bytes()
+            if b"\xff" in vibe_bytes:
+                FAILURES.append("vibe.json still contains raw 0xFF after save")
+            elif b"raw-bot" not in vibe_bytes and b"Raw" not in vibe_bytes:
+                FAILURES.append("0xFF-named robot not written into vibe.json")
+            else:
+                print("reasons: ok 0xFF name saved as repaired UTF-8 in vibe.json")
+            inject_mid_utf8_cut(relay, "erase-guard")
+            relay.start()
+            status, _, body = relay.call("GET", "/api/session")
+            try:
+                session = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as err:
+                FAILURES.append(f"session after mid-cut vibe not JSON: {err}")
+                return
+            # M45: repaired-name robot must still be listed after load/restart.
+            raw_agents = [a for a in session.get("agents", [])
+                          if a.get("slug") == "raw-bot"]
+            if not raw_agents:
+                FAILURES.append(
+                    "0xFF-named robot (raw-bot) wiped from session on restart")
+            else:
+                print("reasons: ok raw-bot still listed in session after restart")
+
+            agents = [a for a in session.get("agents", [])
+                      if a.get("slug") == "erase-guard"]
+            if not agents:
+                FAILURES.append(
+                    "mid-character vibe cut wiped Erase Guard on reload")
+            else:
+                p = agents[0].get("prompt") or ""
+                if "UpgradeKeep" not in p:
+                    FAILURES.append(
+                        f"mid-cut reload blanked prompt; got {p!r}")
+                else:
+                    print("reasons: ok mid-character vibe cut kept agent + "
+                          "prompt prefix")
+                if "日" not in (agents[0].get("intro") or ""):
+                    FAILURES.append(
+                        f"日本語 intro lost across mid-cut restart; "
+                        f"got {agents[0].get('intro')!r}")
+                else:
+                    print("reasons: ok 日本語 intro survives mid-cut restart")
+        finally:
+            relay.stop()
+
 
 
 def check_context_size(relay):
@@ -883,6 +1386,8 @@ def main():
             check_robot_slugs(relay)
             check_robot_rename(relay)
             check_name_rule(relay)
+            check_prompt_control_roundtrip(relay)
+            check_picture_json_escape(relay)
             check_context_size(relay)
             check_favorite_inputs(relay, owned)
             check_favorite_store(relay)
@@ -891,6 +1396,7 @@ def main():
         finally:
             relay.stop()
     check_restart()
+    check_no_silent_erase()
     if FAILURES:
         for line in FAILURES:
             print(f"reasons check failed: {line}", file=sys.stderr)
