@@ -2948,7 +2948,9 @@ static hush_status_t hush_launch_import_wiped(hush_identity_t *id, char *secret,
 
 /* Imports a stored secret. A miss mints a new in-memory key.
  * That key is not the old public id. A plain file is never written.
- * A leftover home file is not a store. */
+ * A leftover home file is not a store. hush_vault reads
+ * vault.onerelay.app for the ntfy credential and does not replace this key.
+ */
 static hush_status_t hush_launch_restore_stored_id(hush_launch_t *launch,
                                                    hush_identity_t *id,
                                                    const char *slug,
