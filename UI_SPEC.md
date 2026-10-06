@@ -1422,7 +1422,7 @@ switch (empty composer) is 0.8 opacity with its dashed edge; dialog
 password fields and selects use the paper slip (`--surface-2`, 2px
 `--line`); radios and checkboxes are drawn on paper (`--line` edge,
 `--surface-2` face, checked mark in `--accent`) instead of the
-browser's white disc; placeholders use `--muted`. All themes: `:root {
+browser's white disc; placeholders use `--muted`. All 8 themes: `:root {
 accent-color: var(--accent) }`, so native radios and checkboxes (the
 Settings theme radios) take each theme's own accent instead of the
 browser blue. `#vibe-name` and `#new-chan` carry `type="text"`.
@@ -1430,13 +1430,15 @@ Gates in `make test`: `tests/check_palette_tokens.py` (S1 no literal
 in field-office rules, S2 token values, S3 no old manila literal, S4
 stamp rules present) and `tests/check_palette.sh` (headless Chrome,
 field-office, 1440 and 390, real signup: C1 every visible text run and
-placeholder >= 4.5:1, C2 control edge / fill / state bar >= 3:1 (radios and checkboxes
-included), C3
-keyboard ring >= 2px and >= 3:1, C4 no near-white, R1 radio
+placeholder >= 4.5:1, C2 control edge / fill / state bar >= 3:1
+(radios and checkboxes included), C3 keyboard ring >= 2px and >= 3:1
+on 18 named controls at each width, C4 no near-white, R1 radio
 `accent-color` == theme `--accent` in all 8 themes, B1 stamps 20-24px
 with a 44px touch hit at 390) over gate cards, main thread, thread
-pane, Settings, Kit menu, Profile, New channel, every other hive dialog
-and the BOARDS drawer.
+pane, Kit menu, Settings and the other 15 `.drawer` dialogs (Profile,
+New channel, Manage Channel, robot, invite, providers hub, provider,
+relay, leave, dev log, seed, avatar, skill, forge, inventory) and the
+BOARDS drawer. Not measured: the Conference stage and the code canvas.
 
 ### 16. Mention + manage pills
 
