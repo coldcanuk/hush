@@ -47,6 +47,8 @@ static hush_agent_loop_verdict_t hush_agent_loop_read_verdict(const char *body, 
 static int hush_agent_loop_is_control(const char *line, size_t len, size_t *body_at);
 /* Replaces CR, LF, tab, and (when quotes) double quotes in place. */
 static void hush_agent_loop_flatten(char *text, int quotes);
+/* Appends one character to a folded note. Stops at the last free byte. */
+static void hush_agent_loop_put(char *out, size_t *used, size_t outsz, char ch);
 
 static int hush_agent_loop_is_decor(const char *line, size_t i, int marks)
 {
@@ -126,6 +128,42 @@ hush_agent_loop_verdict_t hush_agent_loop_take_control(char *text)
     text[out] = '\0';
     hush_agent_trim(text);
     return verdict;
+}
+
+static void hush_agent_loop_put(char *out, size_t *used, size_t outsz, char ch)
+{
+    assert(out != NULL && used != NULL);
+    if (*used + 1 >= outsz)
+        return;
+    out[*used] = ch;
+    *used += 1;
+    out[*used] = '\0';
+}
+
+int hush_agent_loop_fold(char *out, size_t outsz, const char *text)
+{
+    size_t used = 0;
+    size_t i = 0;
+    int gap = 1;
+
+    assert(out != NULL && outsz > 0);
+    out[0] = '\0';
+    if (text == NULL)
+        return 0;
+    /* Bound: a stored note is at most HUSH_EVENT_MAX_CONTENT bytes. */
+    for (i = 0; text[i] != '\0' && i < (size_t)HUSH_EVENT_MAX_CONTENT; i++) {
+        unsigned char ch = (unsigned char)text[i];
+
+        if (isspace(ch)) {
+            gap = 1;
+            continue;
+        }
+        if (gap && used > 0)
+            hush_agent_loop_put(out, &used, outsz, ' ');
+        hush_agent_loop_put(out, &used, outsz, (char)ch);
+        gap = 0;
+    }
+    return used >= (size_t)HUSH_AGENT_LOOP_REPEAT_MIN;
 }
 
 hush_agent_loop_answer_t hush_agent_loop_parse_answer(const char *content)

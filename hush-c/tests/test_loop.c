@@ -38,6 +38,13 @@ enum {
 #define TEST_LOOP_ASK_COPY "Continue this loop? Reply Yes or No in this thread."
 #define TEST_LOOP_LIMIT_COPY "Loop limit reached. Ask again to start a new loop."
 #define TEST_LOOP_STOPPED_COPY "Loop stopped."
+#define TEST_LOOP_REPEAT_COPY \
+    "This loop stopped because a note repeated an earlier one."
+/* note_no_runtime's exact text. %s is the robot's name. */
+#define TEST_LOOP_NO_RUNTIME \
+    "No selected provider is ready for %s. " \
+    "Open Configure Providers to check its harness " \
+    "login or API model and credentials."
 
 /* A well-formed pubkey that is neither the owner nor any robot. */
 #define TEST_LOOP_STRANGER_PUB \
@@ -123,9 +130,13 @@ static void check_answers(void)
            "R1 the limit line gives the next step");
     expect(strcmp(HUSH_AGENT_LOOP_STOPPED_LINE, TEST_LOOP_STOPPED_COPY) == 0,
            "R1 the stopped line is unchanged");
+    expect(strcmp(HUSH_AGENT_LOOP_REPEAT_LINE, TEST_LOOP_REPEAT_COPY) == 0,
+           "R1 the repeat line names the repeated note");
     expect(!hush_agent_is_work_note(HUSH_AGENT_LOOP_ASK_LINE), "prompt is not a turn");
     expect(!hush_agent_is_work_note(HUSH_AGENT_LOOP_LIMIT_LINE), "limit is not a turn");
     expect(!hush_agent_is_work_note(HUSH_AGENT_LOOP_STOPPED_LINE), "stopped is not a turn");
+    expect(!hush_agent_is_work_note(HUSH_AGENT_LOOP_REPEAT_LINE),
+           "a repeat notice is not a turn");
     expect(hush_agent_is_work_note("lead turn 1."), "a robot answer is a turn");
 }
 
@@ -178,6 +189,25 @@ static size_t count_all(hush_store_t *store)
     static hush_event_t evs[TEST_LOOP_SCAN_MAX];
 
     return hush_store_query(store, NULL, 0, evs, TEST_LOOP_SCAN_MAX);
+}
+
+/* Counts every stored note whose content equals line, past the query window. */
+static size_t count_exact(hush_store_t *store, const char *line)
+{
+    size_t n = 0;
+    size_t hits = 0;
+    size_t i = 0;
+
+    n = hush_store_count(store);
+    for (i = 0; i < n && i < (size_t)HUSH_STORE_CAPACITY; i++) {
+        hush_event_t ev = {0};
+
+        if (hush_store_get(store, i, &ev) != HUSH_OK)
+            break;
+        if (strcmp(ev.content, line) == 0)
+            hits++;
+    }
+    return hits;
 }
 
 /* One owner-only run: launch, store, two robots, the pair note, scratch dir. */
@@ -267,6 +297,9 @@ static void open_hive(test_loop_fixture_t *fx)
     hush_launch_policy_t policy = {0};
 
     make_scratch(fx);
+    /* Provider homes follow HOME. The scratch dir has none. */
+    expect(setenv("HOME", fx->dir, 1) == 0, "hide home");
+    expect(setenv("XDG_CONFIG_HOME", fx->dir, 1) == 0, "hide xdg");
     hush_intel_init();
     hush_agent_init();
     hush_launch_init(&fx->launch);
@@ -356,12 +389,236 @@ static void check_owner_only(void)
            "scratch cleanup");
 }
 
+/* A lead that posts nothing still reaches the queued partner. */
+static void check_skip_advances(void)
+{
+    static test_loop_fixture_t fx;
+    hush_launch_policy_t policy = {0};
+    char happy[HUSH_EVENT_MAX_CONTENT];
+    char scout[HUSH_EVENT_MAX_CONTENT];
+
+    open_hive(&fx);
+    hush_agent_copy(policy.kind, sizeof(policy.kind), HUSH_LAUNCH_KIND_OPEN);
+    hush_agent_copy(policy.robot_reply, sizeof(policy.robot_reply),
+                    HUSH_LAUNCH_REPLY_MENTION);
+    policy.burst_ms = HUSH_LAUNCH_BURST_MS_DEFAULT;
+    policy.max_jobs = HUSH_LAUNCH_MAX_JOBS_DEFAULT;
+    policy.max_robot_turns = HUSH_LAUNCH_TURNS_DEFAULT;
+    expect(hush_launch_set_channel_policy(&fx.launch, TEST_LOOP_CHANNEL,
+                                          &policy) == HUSH_OK, "cap 4");
+    post_pair_note(&fx);
+    for (size_t i = 0; i < fx.root.tag_count; i++) {
+        if (strcmp(fx.root.tags[i][0], "p") == 0)
+            hush_agent_handle_mention(fx.store, &fx.launch, &fx.root,
+                                      fx.root.tags[i][1]);
+    }
+    expect(snprintf(happy, sizeof(happy), TEST_LOOP_NO_RUNTIME, "Happy") > 0,
+           "happy line");
+    expect(snprintf(scout, sizeof(scout), TEST_LOOP_NO_RUNTIME, "Scout") > 0,
+           "scout line");
+    expect(count_line(fx.store, happy) == 1, "the lead reports no runtime");
+    expect(count_line(fx.store, scout) == 1, "the partner still gets a turn");
+    expect(count_line(fx.store, HUSH_AGENT_LOOP_ASK_LINE) == 0,
+           "no continue question before a loop turn");
+    hush_store_destroy(fx.store);
+    expect(nftw(fx.dir, remove_entry, TEST_LOOP_FTW_FDS, FTW_DEPTH | FTW_PHYS) == 0,
+           "scratch cleanup");
+}
+
+/* Sets the test channel's robot-turn cap. */
+static void set_cap(test_loop_fixture_t *fx, int cap)
+{
+    hush_launch_policy_t policy = {0};
+
+    hush_agent_copy(policy.kind, sizeof(policy.kind), HUSH_LAUNCH_KIND_OPEN);
+    hush_agent_copy(policy.robot_reply, sizeof(policy.robot_reply),
+                    HUSH_LAUNCH_REPLY_MENTION);
+    policy.burst_ms = HUSH_LAUNCH_BURST_MS_DEFAULT;
+    policy.max_jobs = HUSH_LAUNCH_MAX_JOBS_DEFAULT;
+    policy.max_robot_turns = cap;
+    expect(hush_launch_set_channel_policy(&fx->launch, TEST_LOOP_CHANNEL,
+                                          &policy) == HUSH_OK, "set cap");
+}
+
+/* Runs the mention path so the pair note arms the loop. */
+static void arm_pair(test_loop_fixture_t *fx)
+{
+    size_t i = 0;
+
+    for (i = 0; i < fx->root.tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; i++) {
+        if (strcmp(fx->root.tags[i][0], "p") == 0)
+            hush_agent_handle_mention(fx->store, &fx->launch, &fx->root,
+                                      fx->root.tags[i][1]);
+    }
+}
+
+/* Publishes one synthetic loop turn. text may still hold a LOOP line. */
+static void finish_role(test_loop_fixture_t *fx, const hush_roster_agent_t *bot,
+                        int role, const char *text)
+{
+    static hush_agent_job_t job;
+
+    memset(&job, 0, sizeof(job));
+    job.fd = -1;
+    job.busy = 1;
+    job.launch = &fx->launch;
+    job.loop_role = role;
+    hush_agent_copy(job.parent_id, sizeof(job.parent_id), fx->root.id);
+    hush_agent_copy(job.trigger_id, sizeof(job.trigger_id), fx->root.id);
+    hush_agent_copy(job.channel, sizeof(job.channel), TEST_LOOP_CHANNEL);
+    hush_agent_copy(job.human_pub, sizeof(job.human_pub), fx->root.pubkey);
+    hush_agent_copy(job.robot_pub, sizeof(job.robot_pub), bot->id.pubkey_hex);
+    hush_agent_copy(job.robot_name, sizeof(job.robot_name), bot->name);
+    hush_agent_copy(job.out, sizeof(job.out), text);
+    hush_agent_finish_job(fx->store, &job, 1);
+}
+
+/* Drops the hive store and the scratch directory. */
+static void close_hive(test_loop_fixture_t *fx)
+{
+    hush_store_destroy(fx->store);
+    expect(nftw(fx->dir, remove_entry, TEST_LOOP_FTW_FDS, FTW_DEPTH | FTW_PHYS) == 0,
+           "scratch cleanup");
+}
+
+/* Folded whitespace matches. A short note does not. Case is preserved. */
+static void check_fold(void)
+{
+    char out[64] = {0};
+
+    expect(!hush_agent_loop_fold(out, sizeof(out), NULL), "a missing note is skipped");
+    expect(!hush_agent_loop_fold(out, sizeof(out), "42."), "a short answer is skipped");
+    expect(strcmp(out, "42.") == 0, "a short answer is still folded");
+    expect(hush_agent_loop_fold(out, sizeof(out), "The   castle\nhas two doors."),
+           "a spaced note is long enough");
+    expect(strcmp(out, "The castle has two doors.") == 0, "whitespace collapses");
+    expect(hush_agent_loop_fold(out, sizeof(out), "the castle has two doors."),
+           "a case change is long enough");
+    expect(strcmp(out, "the castle has two doors.") == 0, "folded case stays as written");
+}
+
+/* Default cap: fresh notes do not ask. Spacing matches. Case does not. */
+static void check_repeat_stops(void)
+{
+    static test_loop_fixture_t fx;
+    int active = 0;
+
+    open_hive(&fx);
+    set_cap(&fx, HUSH_LAUNCH_TURNS_DEFAULT);
+    post_pair_note(&fx);
+    arm_pair(&fx);
+    finish_role(&fx, fx.lead, HUSH_AGENT_LOOP_ROLE_LEAD,
+                "The castle has two doors.\nLOOP: continue");
+    finish_role(&fx, fx.partner, HUSH_AGENT_LOOP_ROLE_PARTNER, "42.");
+    finish_role(&fx, fx.lead, HUSH_AGENT_LOOP_ROLE_LEAD,
+                "A second riddle, still new.\nLOOP: continue");
+    finish_role(&fx, fx.partner, HUSH_AGENT_LOOP_ROLE_PARTNER, "42.");
+    expect(count_exact(fx.store, HUSH_AGENT_LOOP_ASK_LINE) == 0,
+           "fresh notes do not ask to continue");
+    expect(count_exact(fx.store, HUSH_AGENT_LOOP_REPEAT_LINE) == 0,
+           "a short answer is not a repeat");
+    expect(hush_agent_follow_peek(fx.root.id, &active) == 0 && active == 1,
+           "the loop stays live after new notes");
+    finish_role(&fx, fx.lead, HUSH_AGENT_LOOP_ROLE_LEAD,
+                "the castle has two doors.\nLOOP: continue");
+    expect(count_exact(fx.store, HUSH_AGENT_LOOP_REPEAT_LINE) == 0,
+           "case-only difference is not a repeat");
+    finish_role(&fx, fx.lead, HUSH_AGENT_LOOP_ROLE_LEAD,
+                "The   castle\nhas two doors.\nLOOP: continue");
+    expect(count_exact(fx.store, HUSH_AGENT_LOOP_REPEAT_LINE) == 1,
+           "collapsed whitespace matches an earlier note");
+    expect(hush_agent_follow_peek(fx.root.id, &active) == 0 && active == 0,
+           "a repeat ends the loop");
+    close_hive(&fx);
+}
+
+/* A partner who copies the lead's note ends the loop at the max cap. */
+static void check_partner_copy(void)
+{
+    static test_loop_fixture_t fx;
+    int active = 1;
+
+    open_hive(&fx);
+    set_cap(&fx, HUSH_LAUNCH_TURNS_MAX);
+    post_pair_note(&fx);
+    arm_pair(&fx);
+    finish_role(&fx, fx.lead, HUSH_AGENT_LOOP_ROLE_LEAD,
+                "Bring a lantern to the gate.\nLOOP: continue");
+    finish_role(&fx, fx.partner, HUSH_AGENT_LOOP_ROLE_PARTNER,
+                "Bring a lantern to the gate.");
+    expect(count_exact(fx.store, HUSH_AGENT_LOOP_REPEAT_LINE) == 1,
+           "a copied partner note ends the loop");
+    expect(count_exact(fx.store, HUSH_AGENT_LOOP_ASK_LINE) == 0,
+           "a copy does not ask to continue");
+    expect(hush_agent_follow_peek(fx.root.id, &active) == 0 && active == 0,
+           "a copy clears the live loop");
+    close_hive(&fx);
+}
+
+/* Posts one fresh lead continue whose body includes n. */
+static void post_fresh(test_loop_fixture_t *fx, int n)
+{
+    char text[HUSH_EVENT_MAX_CONTENT] = {0};
+
+    expect(snprintf(text, sizeof(text),
+                    "Fresh riddle number %d stays distinct.\nLOOP: continue", n) > 0,
+           "fresh line");
+    finish_role(fx, fx->lead, HUSH_AGENT_LOOP_ROLE_LEAD, text);
+}
+
+/* Cap 8 stays live past the old eight-turn prompt. */
+static void check_cap_max(void)
+{
+    static test_loop_fixture_t fx;
+    int n = 0;
+    int active = 0;
+
+    open_hive(&fx);
+    set_cap(&fx, HUSH_LAUNCH_TURNS_MAX);
+    post_pair_note(&fx);
+    arm_pair(&fx);
+    for (n = 0; n < HUSH_LAUNCH_TURNS_MAX + 1; n++)
+        post_fresh(&fx, n);
+    expect(count_exact(fx.store, HUSH_AGENT_LOOP_ASK_LINE) == 0,
+           "cap 8 does not ask after fresh notes");
+    expect(hush_agent_follow_peek(fx.root.id, &active) == 0 && active == 1,
+           "cap 8 stays live past the old leash");
+    close_hive(&fx);
+}
+
+/* Twenty distinct turns post the limit line, not the Yes prompt. */
+static void check_quiet_ceiling(void)
+{
+    static test_loop_fixture_t fx;
+    int n = 0;
+
+    open_hive(&fx);
+    set_cap(&fx, HUSH_LAUNCH_TURNS_DEFAULT);
+    post_pair_note(&fx);
+    arm_pair(&fx);
+    for (n = 0; n < HUSH_AGENT_LOOP_QUIET_MAX; n++)
+        post_fresh(&fx, n);
+    expect(count_exact(fx.store, HUSH_AGENT_LOOP_LIMIT_LINE) == 1,
+           "the quiet ceiling posts the limit line");
+    expect(count_exact(fx.store, HUSH_AGENT_LOOP_ASK_LINE) == 0,
+           "the quiet ceiling does not ask");
+    expect(count_exact(fx.store, HUSH_AGENT_LOOP_REPEAT_LINE) == 0,
+           "distinct notes are not repeats");
+    close_hive(&fx);
+}
+
 int main(void)
 {
     check_control_lines();
     check_answers();
     check_one_line();
+    check_fold();
     check_owner_only();
+    check_skip_advances();
+    check_repeat_stops();
+    check_partner_copy();
+    check_cap_max();
+    check_quiet_ceiling();
     if (g_fail)
         return 1;
     printf("loop ok\n");
