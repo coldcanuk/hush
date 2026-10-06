@@ -1117,7 +1117,7 @@ async function main() {
         `#241 B1 inside-panel click keeps new-chan open: ${JSON.stringify(nc)}`);
     }
 
-        // #241 r4 F3: Settings — focus enters dialog, Tab stays inside, Esc returns to Kit.
+    // #241 r4 F3: Settings — focus enters dialog, Tab stays inside, Esc returns to Kit.
     {
       const sf = await cdp.eval(`(() => {
         const kit = document.getElementById('rail-toggle');
@@ -1173,7 +1173,59 @@ async function main() {
         `#241 F3 Close returns focus to Kit: ${JSON.stringify(sf)}`);
     }
 
-// Pre-walk r4 (Gauge B1), no pass installed: the robot editor never
+    // #241 r5 B4: the real user path. Real CDP mouse clicks on the Kit stamp
+    // and then on Settings inside #kit-menu (so the opener is #settings-btn,
+    // which the Kit menu hides), then a real Escape key, then the same with a
+    // real click on Close. Focus must land on #rail-toggle each time.
+    {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+      const realClick = async (sel) => {
+        const pt = await cdp.eval(`(() => { const e = document.querySelector('${sel}');
+          if (!e) return null; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect();
+          if (!r.width || !r.height) return null;
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+        check(!!pt, `#241 B4 ${sel} is visible for a real click`);
+        if (!pt) return;
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pt.x, y: pt.y });
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', clickCount: 1, buttons: 1 });
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt.x, y: pt.y, button: 'left', clickCount: 1, buttons: 0 });
+        await sleep(250);
+      };
+      const realEsc = async () => {
+        await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+        await sleep(250);
+      };
+      const state = () => cdp.eval(`(() => { const a = document.activeElement;
+        return { show: document.getElementById('settings').classList.contains('show'),
+          kitHidden: document.getElementById('kit-menu').hidden,
+          ae: a ? (a.id || a.tagName) : null,
+          inDialog: !!(a && document.getElementById('settings').contains(a)) }; })()`);
+      const runs = {};
+      for (const how of ['esc', 'close']) {
+        await realClick('#rail-toggle');
+        const kitOpen = await state();
+        await realClick('#settings-btn');
+        const opened = await state();
+        if (how === 'esc') await realEsc();
+        else await realClick('#settings-close');
+        const after = await state();
+        runs[how] = { kitOpen, opened, after };
+      }
+      console.log('settings real path: ' + JSON.stringify(runs));
+      for (const how of ['esc', 'close']) {
+        const r = runs[how];
+        check(r.kitOpen.kitHidden === false,
+          `#241 B4 (${how}) real click on #rail-toggle opens the Kit menu: ${JSON.stringify(r)}`);
+        check(r.opened.show === true && r.opened.inDialog === true,
+          `#241 B4 (${how}) real click on #settings-btn opens Settings with focus inside: ${JSON.stringify(r)}`);
+        check(r.after.show === false && r.after.ae === 'rail-toggle',
+          `#241 B4 (${how}) Settings closes and focus returns to #rail-toggle on the Kit-menu path: ${JSON.stringify(r)}`);
+      }
+    }
+
+    // Pre-walk r4 (Gauge B1), no pass installed: the robot editor never
     // claims to save the key, on Raise or any Edit path.
     await cdp.waitFor(`!!document.querySelector('#robot-list .robot-card[data-slug="coach"]')`, 'robot cards');
     check((await sess(port, R.headers)).pass_available === false, 'phase A relay reports no pass');

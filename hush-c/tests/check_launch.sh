@@ -739,8 +739,10 @@ echo "$html" | grep -q -F '((fav.skills || []).length === 1) ? "1 skill"' \
 if ! echo "$html" | grep -A8 'function dismissJourneyLayer' | grep -q 'new-chan-drawer'; then
   fail "#241 Esc must dismiss new-chan-drawer"
 fi
-if ! echo "$html" | grep -A8 'function dismissJourneyLayer' | grep -q '"settings"'; then
-  fail "#241 Esc must dismiss settings"
+# The Esc order array itself must end with "settings" (the later
+# order[k] === "settings" branch must not satisfy this pin).
+if ! echo "$html" | grep -A3 'const order = \["avatar-drawer"' | grep -q -F '"settings"];'; then
+  fail "#241 Esc order array must include settings"
 fi
 # B3 / Gauge: claimed #241 UI bytes whose revert must FAIL this gate.
 echo "$html" | grep -q -F 'value="field-office" checked' \
@@ -751,9 +753,22 @@ if echo "$html" | grep -q -F 'Public key on file'; then
 fi
 echo "$html" | grep -q -F "<p><strong>At ease.</strong> I'm Major. Tell me what you want built and I'll find — or raise — the right robot for the job.</p>" \
   || fail "#241 F2 Meet Major must ship the single At ease intro"
-# Exactly one visible At ease (strong) in the payne card; no p.npub.
-at_ease_n=$(echo "$html" | sed -n '/page === "payne"/,/meet-payne/p' | grep -c '<strong>At ease.</strong>' || true)
-test "$at_ease_n" -eq 1 || fail "#241 F2 Meet Major must say At ease exactly once (got $at_ease_n)"
+# F2: the Meet Major card source (page === "payne" .. meet-payne) holds
+# exactly one "At ease", one "I'm Major" and one find/raise phrase, in any
+# tag form (strong or plain <p>, literal or about-text line); no p.npub.
+payne_src=$(echo "$html" | sed -n '/page === "payne"/,/meet-payne/p')
+at_ease_n=$(echo "$payne_src" | grep -o 'At ease' | wc -l)
+test "$at_ease_n" -eq 1 \
+  || fail "#241 F2 Meet Major card source must contain 'At ease' exactly once (got $at_ease_n)"
+major_n=$(echo "$payne_src" | grep -o "I'm Major" | wc -l)
+test "$major_n" -eq 1 \
+  || fail "#241 F2 Meet Major card source must contain 'I'm Major' exactly once (got $major_n)"
+raise_n=$(echo "$payne_src" | grep -o 'find — or raise' | wc -l)
+test "$raise_n" -eq 1 \
+  || fail "#241 F2 Meet Major card source must contain 'find — or raise' exactly once (got $raise_n)"
+if echo "$payne_src" | grep -q '\.about'; then
+  fail "#241 F2 Meet Major card no longer renders Major's about text (disclosed); found .about"
+fi
 if echo "$html" | sed -n '/page === "payne"/,/meet-payne/p' | grep -q 'p.npub'; then
   fail "#241 Meet Major must not reference p.npub on the gate card"
 fi

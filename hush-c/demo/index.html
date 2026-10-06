@@ -3164,8 +3164,10 @@ html[data-theme="dark"] #thread-send:active {
       }
       if (page === "payne") {
         /* #241 r4 F1/F2: no false Profile pointer (Profile is the user, not
-           Major); one At ease + one find/raise line. Major's key is not on
-           this gate card — no raw npub. */
+           Major). One greeting paragraph only: the old first paragraph
+           (greeting + Major's configured about text) and the repeated
+           greeting line were merged into this single line, so the gate card
+           no longer shows Major's configured about text. No raw npub here. */
         return card("Major",
           stepBar(4) +
           "<p><strong>At ease.</strong> I'm Major. Tell me what you want built and I'll find — or raise — the right robot for the job.</p>" +
