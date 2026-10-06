@@ -205,9 +205,8 @@
       padding: 0 16px 8px; flex: 0 0 auto;
     }
     #thread-desk input, #milestone-form input {
-      flex: 1; min-width: 0; font: inherit; color: inherit;
-      background: var(--surface-2, transparent);
-      border: 1px solid var(--line, currentColor);
+      flex: 1; min-width: 0; font: inherit; color: var(--fg);
+      background: var(--bg); border: 1px solid var(--line);
       border-radius: 4px; padding: 4px 6px;
     }
     #thread-desk button, #milestone-form button { flex: 0 0 auto; }
@@ -2278,7 +2277,7 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       <form id="milestone-form">
         <input id="milestone-name" maxlength="64" placeholder="New milestone" aria-label="New milestone name">
         <input id="milestone-category" maxlength="64" placeholder="Category" aria-label="New milestone category">
-        <button type="submit">Open</button>
+        <button class="btn" type="submit">Open</button>
       </form>
       <form class="composer" id="form">
         <div class="mention-box" id="mention-box" hidden></div>
@@ -2413,8 +2412,8 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
         <input id="thread-desk-name" maxlength="64" placeholder="Milestone name" aria-label="Milestone name">
         <input id="thread-desk-category" maxlength="64" placeholder="Category" aria-label="Milestone category">
         <input id="thread-desk-project" maxlength="64" placeholder="Project" aria-label="Milestone project">
-        <button id="thread-desk-save" type="submit">Save</button>
-        <button id="thread-desk-archive" type="button">Archive</button>
+        <button class="btn" id="thread-desk-save" type="submit">Save</button>
+        <button class="btn ghost" id="thread-desk-archive" type="button">Archive</button>
       </form>
       <div id="thread-stream"></div>
       <div id="thread-think" aria-live="polite"></div>
