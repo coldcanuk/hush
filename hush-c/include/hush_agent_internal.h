@@ -68,6 +68,9 @@ enum {
     HUSH_AGENT_LOOP_EXTENSIONS_MAX = 4,
     /* Robot turns that may wait for the owner's approval at once (#279). */
     HUSH_AGENT_APPROVAL_MAX = 8,
+    /* Of those, at most this many may be asked for by anyone but the hive
+     * owner, so other people can never fill the table (#279 r2). */
+    HUSH_AGENT_APPROVAL_GUEST_MAX = 4,
     /* One approval line: the fixed copy plus a robot name. */
     HUSH_AGENT_APPROVAL_LINE_MAX = 256
 };
@@ -293,6 +296,8 @@ typedef struct {
     char loop_note[HUSH_EVENT_MAX_CONTENT + 1];
     char prompt_override[HUSH_ROSTER_PROMPT_MAX];
     char trigger[HUSH_EVENT_ID_HEX_LEN + 1];
+    /* True when someone other than the hive owner asked for this turn. */
+    int guest;
     hush_agent_job_in_t in;
 } hush_agent_held_t;
 
@@ -475,8 +480,13 @@ int hush_agent_approval_needed(const hush_agent_job_in_t *in);
 
 /* Holds the turn and posts the approval line in its thread. Returns
  * HUSH_AGENT_WORK_HELD, or HUSH_AGENT_WORK_NONE (with a notice) when
- * HUSH_AGENT_APPROVAL_MAX turns already wait. */
+ * HUSH_AGENT_APPROVAL_MAX turns already wait, or when someone other than the
+ * hive owner asked for it and HUSH_AGENT_APPROVAL_GUEST_MAX such turns wait. */
 int hush_agent_approval_hold(const hush_agent_job_in_t *in);
+
+/* True when content is one of the approval lines (ask, decline, full).
+ * These are notices to the owner, never thread context for a robot. */
+int hush_agent_is_approval_line(const char *content);
 
 /* Drops every turn waiting in root; returns how many counted in a follow
  * slot's inflight. Posts nothing. */
@@ -488,6 +498,11 @@ int hush_agent_begin_approved(hush_agent_job_in_t *in);
 /* agent_dispatch.c: a held turn ended without a job. Gives back its
  * inflight count when counted, and stops the thread's loop when end_loop. */
 void hush_agent_follow_release(const hush_event_t *ev, int counted, int end_loop);
+
+/* agent_dispatch.c: read-only view of root's follow slot. Returns its
+ * in-flight turn count, or -1 when no live slot holds root; writes the loop
+ * flag to *loop_active when not NULL. Used by tests (#279 r2). */
+int hush_agent_follow_peek(const char *root, int *loop_active);
 
 /* agent_dispatch.c: posts one line from the channel chaperon (Payne by
  * default) on ev's root. */

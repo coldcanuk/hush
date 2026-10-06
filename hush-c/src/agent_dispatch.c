@@ -1324,6 +1324,19 @@ int hush_agent_begin_approved(hush_agent_job_in_t *in)
     return started;
 }
 
+int hush_agent_follow_peek(const char *root, int *loop_active)
+{
+    const hush_agent_follow_t *slot = NULL;
+
+    assert(root != NULL);
+    slot = hush_agent_follow_find(root);
+    if (slot == NULL)
+        return -1;
+    if (loop_active != NULL)
+        *loop_active = slot->loop.active;
+    return slot->inflight;
+}
+
 void hush_agent_follow_release(const hush_event_t *ev, int counted, int end_loop)
 {
     char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};

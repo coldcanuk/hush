@@ -20,6 +20,8 @@ static unsigned long g_held_seq;
 static hush_agent_held_t g_taken;
 
 static hush_agent_held_t *hush_agent_held_free(void);
+static int hush_agent_held_by_owner(const hush_agent_job_in_t *in);
+static size_t hush_agent_held_guests(void);
 static hush_agent_held_t *hush_agent_held_oldest(const char *root);
 static void hush_agent_held_fill(hush_agent_held_t *held, const hush_agent_job_in_t *in);
 static void hush_agent_held_point(hush_agent_held_t *held, hush_store_t *store,
@@ -47,15 +49,20 @@ int hush_agent_approval_needed(const hush_agent_job_in_t *in)
 int hush_agent_approval_hold(const hush_agent_job_in_t *in)
 {
     hush_agent_held_t *held = NULL;
+    int guest = 0;
 
     assert(in != NULL && in->store != NULL && in->bot != NULL && in->parent != NULL);
+    guest = !hush_agent_held_by_owner(in);
     held = hush_agent_held_free();
-    if (held == NULL) {
+    /* Other people share HUSH_AGENT_APPROVAL_GUEST_MAX entries, so the owner
+     * always keeps the rest for their own turns. */
+    if (held == NULL || (guest && hush_agent_held_guests() >= HUSH_AGENT_APPROVAL_GUEST_MAX)) {
         hush_agent_chaperon_say(in->store, in->launch, in->parent,
                                 HUSH_AGENT_APPROVAL_FULL_LINE);
         return HUSH_AGENT_WORK_NONE;
     }
     hush_agent_held_fill(held, in);
+    held->guest = guest;
     hush_agent_approval_say(in->store, in->launch, held,
                             in->elect ? HUSH_AGENT_APPROVAL_ELECT_FMT
                                       : HUSH_AGENT_APPROVAL_ASK_FMT);
@@ -104,6 +111,56 @@ int hush_agent_approval_answer(hush_store_t *store, const hush_launch_t *launch,
     else
         hush_agent_approval_decline(store, launch);
     return 1;
+}
+
+int hush_agent_is_approval_line(const char *content)
+{
+    static const char *const heads[] = {
+        HUSH_AGENT_APPROVAL_ASK_HEAD,
+        HUSH_AGENT_APPROVAL_NO_HEAD,
+        HUSH_AGENT_APPROVAL_FULL_LINE
+    };
+    size_t i = 0;
+
+    if (content == NULL)
+        return 0;
+    for (i = 0; i < sizeof(heads) / sizeof(heads[0]); i++) {
+        if (strncmp(content, heads[i], strlen(heads[i])) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+/* True when the hive owner asked for this turn: the note it answers is the
+ * owner's, or a robot's note in a thread the owner opened (follow waves,
+ * loop turns, the plan pass). Any other human's note, or a robot's note in
+ * their thread, is a guest's ask. */
+static int hush_agent_held_by_owner(const hush_agent_job_in_t *in)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    hush_event_t opening = {0};
+    hush_agent_robot_t bot = {0};
+
+    assert(in != NULL && in->parent != NULL && in->store != NULL);
+    if (hush_agent_is_human(in->launch, in->parent->pubkey))
+        return 1;
+    if (!hush_agent_lookup_robot(&bot, in->launch, in->parent->pubkey))
+        return 0;
+    hush_agent_event_root(root, sizeof(root), in->parent);
+    return hush_store_find(in->store, &opening, root) == HUSH_OK &&
+           hush_agent_is_human(in->launch, opening.pubkey);
+}
+
+static size_t hush_agent_held_guests(void)
+{
+    size_t n = 0;
+    size_t i = 0;
+
+    for (i = 0; i < (size_t)HUSH_AGENT_APPROVAL_MAX; i++) {
+        if (g_held[i].used && g_held[i].guest)
+            n++;
+    }
+    return n;
 }
 
 static hush_agent_held_t *hush_agent_held_free(void)

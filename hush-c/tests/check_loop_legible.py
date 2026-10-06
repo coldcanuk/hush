@@ -17,9 +17,11 @@ FILES = {
     "src/agent_loop.c": None,
     "src/agent_dispatch.c": re.compile(
         r"hush_agent_(follow_kick|follow_wave|loop_\w+|chaperon_say|turn_cap|turns_full"
-        r"|begin_work|begin_approved|follow_release|reset_follow|is_work_note)$"),
+        r"|begin_work|begin_approved|follow_release|reset_follow|is_work_note"
+        r"|plan_parent|plan_trigger|start_plan_from_slot|follow_peek)$"),
     "src/agent_prompt.c": re.compile(r"hush_agent_append_loop_lead$"),
     "src/agent_approve.c": None,
+    "src/agent_thread.c": re.compile(r"hush_agent_backfill_wants$"),
     "src/hush_roster.c": re.compile(r"hush_roster_(approval_parse|approval_id|format_profile)$"),
     "src/hush_launch.c": re.compile(
         r"hush_launch_(set_approval|take_approval|take_roster|put_roster)$"),
@@ -30,8 +32,8 @@ FILES = {
 # Functions in tests/test_loop.c today. The scan must still find all of
 # them, so no test function can drop out of the caps unnoticed.
 TEST_LOOP_FUNCTIONS = 18
-# Functions in tests/test_approve.c today (#279), held to the same rule.
-TEST_APPROVE_FUNCTIONS = 24
+# Functions in tests/test_approve.c today (#279 r2), held to the same rule.
+TEST_APPROVE_FUNCTIONS = 38
 TEST_COUNTS = {
     "tests/test_loop.c": TEST_LOOP_FUNCTIONS,
     "tests/test_approve.c": TEST_APPROVE_FUNCTIONS,
@@ -40,9 +42,10 @@ TEST_COUNTS = {
 # counts), so a rename, move or new layout cannot silently shrink the scan.
 MIN_SEEN = {
     "src/agent_loop.c": 9,
-    "src/agent_dispatch.c": 18,
+    "src/agent_dispatch.c": 22,
     "src/agent_prompt.c": 1,
-    "src/agent_approve.c": 12,
+    "src/agent_approve.c": 15,
+    "src/agent_thread.c": 1,
     "src/hush_roster.c": 3,
     "src/hush_launch.c": 4,
     "src/api_identity.c": 1,

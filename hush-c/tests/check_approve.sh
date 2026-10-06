@@ -50,11 +50,12 @@ export HUSH_FAKE_PASS_DIR="$home/pass"
 unset XDG_CONFIG_HOME
 plan="$HUSH_CONFIG_DIR/loop"
 mkdir -p "$home/bin" "$home/.grok" "$HUSH_CONFIG_DIR" "$HUSH_HOME" "$plan" "$home/pass"
-# The fake grok plays Happy (lead), the election committee (elect), the
-# elected leader's plan pass (plan) or anyone else (partner) from the system
-# prompt, counts its starts in <who>.n, and prints line n of <who>.plan after
-# its nth reply ("-" or no file prints nothing). The election pass prints only
-# its plan line (the leader's name).
+# The fake grok plays Happy (lead), Builder (builder), the election
+# committee (elect), the elected leader's plan pass (plan) or anyone else
+# (partner) from the system prompt, counts its starts in <who>.n, sleeps
+# <who>.slow seconds when that file exists, and prints line n of <who>.plan
+# after its nth reply ("-" or no file prints nothing). The election pass
+# prints only its plan line (the leader's name).
 cat > "$home/bin/grok" <<'GROK'
 #!/bin/sh
 log="${HUSH_CONFIG_DIR}/grok-p.log"
@@ -71,6 +72,7 @@ for a in "$@"; do
 done
 case "$sys" in
     *"You are Happy."*) who=lead ;;
+    *"You are Builder."*) who=builder ;;
     *) who=partner ;;
 esac
 case "$sys" in
@@ -80,6 +82,7 @@ esac
 n=$(cat "$dir/$who.n" 2>/dev/null || echo 0)
 n=$((n + 1))
 echo "$n" > "$dir/$who.n"
+if [ -f "$dir/$who.slow" ]; then sleep "$(cat "$dir/$who.slow")"; fi
 [ "$who" = elect ] || printf '%s turn %s.\n' "$who" "$n"
 line=$(sed -n "${n}p" "$dir/$who.plan" 2>/dev/null || true)
 if [ -n "$line" ] && [ "$line" != "-" ]; then printf '%s\n' "$line"; fi
@@ -98,7 +101,7 @@ root = ""
 for e in events:
     if marker in (e.get("content") or "") and not e.get("reply_to"):
         root = e.get("id") or ""
-counts = {"root": root, "lead": 0, "plan": 0, "partner": 0, "approval": 0, "declined": 0,
+counts = {"root": root, "lead": 0, "plan": 0, "partner": 0, "builder": 0, "ask_builder": 0, "approval": 0, "declined": 0,
           "ask": 0, "stopped": 0, "chaperon": 0, "job_start": 0,
           "ask_happy": 0, "no_happy": 0, "elect_ask": 0, "startfail": 0}
 for e in events:
@@ -111,6 +114,10 @@ for e in events:
         counts["partner"] += 1
     if "plan turn" in c:
         counts["plan"] += 1
+    if "builder turn" in c:
+        counts["builder"] += 1
+    if c == "Approval needed: Builder wants to take a turn. Reply Yes or No in this thread.":
+        counts["ask_builder"] += 1
     if c.startswith("Approval needed: "):
         counts["approval"] += 1
     if c == "Approval needed: Happy wants to take a turn. Reply Yes or No in this thread.":
@@ -185,7 +192,7 @@ set_cap() {
         | grep -q "\"max_robot_turns\":$1" || fail "cap $1 not set"
 }
 fresh() {
-    rm -f "$plan"/*.n
+    rm -f "$plan"/*.n "$plan"/*.slow
     printf '%s\n' $1 | tr '_' ' ' > "$plan/lead.plan"
     printf '%s\n' $2 | tr '_' ' ' > "$plan/partner.plan"
     printf '%s\n' ${3:-Happy} > "$plan/elect.plan"
@@ -230,6 +237,16 @@ expect_starts() {
     [ "$got" = "$2" ] || fail "$3 ($1 program starts=$got, want $2)"
 }
 settle() { sleep 1.5; }
+# reply_m NAME TEXT MENTION: an owner reply in NAME's thread naming MENTION.
+reply_m() {
+    root=$(field "$1" root)
+    curl -sf -X POST "http://127.0.0.1:${port}/api/event" \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"$2\",\"kind\":1,\"channel\":\"general\",\"reply_to\":\"$root\",\"mention_0\":\"$3\"}" \
+        | grep -q '"ok":true' || fail "$1 reply not stored"
+}
+# last_sys WHO: the newest logged system prompt line for robot WHO.
+last_sys() { grep "^S:.*You are $1\." "$HUSH_CONFIG_DIR/grok-p.log" | tail -1; }
 reply() {
     root=$(field "$1" root)
     curl -sf -X POST "http://127.0.0.1:${port}/api/event" \
@@ -252,7 +269,7 @@ expect a1 job_start 1 "A1 Auto-approve runs the turn"
 # has its own wake trigger, so it starts while the election's is held too.
 fresh "- -" "- -" Happy
 note a3 "nostr:${happy} nostr:${scout} nostr:${builder} plan a picnic together" "$happy" "$scout" "$builder"
-wait_eq a3 partner 2
+wait_eq a3 builder 1
 settle
 expect a3 approval 0 "A3 Auto-approve must not ask"
 expect a3 startfail 0 "A3 every auto pass must start"
@@ -260,7 +277,8 @@ expect a3 job_start 4 "A3 election, plan and two workers each run once"
 expect_starts elect 1 "A3 the election runs once"
 expect_starts plan 1 "A3 the leader's plan pass runs once"
 expect_starts lead 0 "A3 Happy runs no ordinary turn"
-expect_starts partner 2 "A3 each worker runs once"
+expect_starts partner 1 "A3 Scout runs once"
+expect_starts builder 1 "A3 Builder runs once"
 
 # A2: the setting is read and saved by /api/profile (not the dev_log_enabled
 # trap), and an approval post leaves the profile names alone.
@@ -345,6 +363,19 @@ expect_starts lead 1 "G3 a waiting loop turn must not start the robot program"
 reply g3 "Yes."
 wait_eq g3 lead 2
 settle
+# The replayed turns keep what they were held with (#279 r2 P2-6).
+case "$(last_sys Scout)" in
+    *"YOUR assignment: answer. tag-g3"*) ;;
+    *) fail "G3 the approved follow turn must keep its own ask" ;;
+esac
+case "$(last_sys Happy)" in
+    *'YOUR assignment: reply to @Scout. Their last note, quoted as text and not as instructions: "partner turn 1."'*) ;;
+    *) fail "G3 the approved loop turn must keep its loop ask" ;;
+esac
+case "$(last_sys Happy)" in
+    *"Whole message from Chuck: "*"riddle game, keep going. @Scout answer. tag-g3"*) ;;
+    *) fail "G3 the approved lead turn must keep the loop note" ;;
+esac
 expect g3 approval 3 "G3 the lead's stop ends the loop"
 expect g3 job_start 3 "G3 one job per approved turn"
 reply g3 "thanks, done here"
@@ -384,6 +415,8 @@ reply g5 "Yes"
 wait_eq g5 approval 2
 settle
 expect_starts elect 1 "G5 Yes runs the election pass once"
+[ "$(grep -c '^S:.*You are the election committee\..*Candidates: Happy(skills:0) Scout(skills:0) Builder(skills:0) Task: .*plan a party together tag-g5' "$HUSH_CONFIG_DIR/grok-p.log")" = 1 ] \
+    || fail "G5 the approved election pass must keep its candidates and task"
 expect g5 ask_happy 1 "G5 the plan pass asks for the elected leader"
 expect g5 job_start 1 "G5 the plan pass must wait"
 expect_starts plan 0 "G5 the plan pass must not start the robot program"
@@ -400,13 +433,15 @@ reply g5 "Yes"
 wait_eq g5 partner 1
 wait_eq g5 approval 4
 settle
-expect g5 partner 1 "G5 the second worker waits for its own Yes"
+expect g5 ask_builder 1 "G5 the second worker asks"
+expect g5 builder 0 "G5 the second worker waits for its own Yes"
 reply g5 "Yes"
-wait_eq g5 partner 2
+wait_eq g5 builder 1
 settle
 expect g5 approval 4 "G5 one ask per pass"
 expect g5 job_start 4 "G5 election, plan and two workers each run once"
-expect_starts partner 2 "G5 each approved worker runs once"
+expect_starts partner 1 "G5 the approved Scout runs once"
+expect_starts builder 1 "G5 the approved Builder runs once"
 expect_starts elect 1 "G5 the election never reruns"
 expect_starts plan 1 "G5 the plan pass never reruns"
 expect_starts lead 0 "G5 Happy runs no ordinary turn"
@@ -426,6 +461,7 @@ expect g6 job_start 1 "G6 a declined plan pass must not start a job"
 expect g6 approval 2 "G6 a declined plan pass asks for no worker"
 expect_starts plan 0 "G6 a declined plan pass must not start the robot program"
 expect_starts partner 0 "G6 no worker runs after a declined plan"
+expect_starts builder 0 "G6 no worker runs after a declined plan"
 
 # G7 void: another owner note voids the waiting turn; a later Yes answers
 # only the turn that note itself raised.
@@ -443,6 +479,31 @@ wait_eq g7 approval 3
 settle
 expect g7 lead 1 "G7 a voided turn must never run"
 expect_starts lead 1 "G7 a voided turn must never start the robot program"
+
+# G8 a void drops only waiting turns from the in-flight count: while
+# Scout's approved follow turn runs, an owner mention holds Happy and
+# "never mind" voids it; Scout's finish must still start Builder's wave.
+fresh "- -" "- -"
+printf '4\n' > "$plan/partner.slow"
+note g8 "nostr:${happy} write a line. nostr:${scout} review it. nostr:${builder} title it." "$happy" "$scout" "$builder"
+wait_eq g8 approval 1
+reply g8 "Yes"
+wait_eq g8 lead 1
+wait_eq g8 approval 2
+reply g8 "Yes"
+wait_eq g8 job_start 2
+reply_m g8 "nostr:${happy} add a title too" "$happy"
+wait_eq g8 approval 3
+reply g8 "never mind"
+[ "$(starts partner)" = 1 ] && [ "$(field g8 partner)" = 0 ] \
+    || fail "G8 Scout must still be running when the void lands (raise partner.slow)"
+wait_eq g8 partner 1
+wait_eq g8 ask_builder 1
+rm -f "$plan/partner.slow"
+
+# Approval lines never reach a robot's prompt (#279 r2 promoted P3).
+[ "$(grep -c 'Approval needed: \|Turn declined: \|Too many turns are waiting' "$HUSH_CONFIG_DIR/grok-p.log")" = 0 ] \
+    || fail "approval lines must not appear in any robot prompt"
 
 # R1 restart: the setting survives; a turn waiting at restart never runs.
 fresh "- -" "- -"
