@@ -73,3 +73,26 @@ Count `nostr:<npub>` tokens that are each followed by a substantive clause
 (4+ characters, so connectors like "and" are ignored). Every robot having its
 own clause is **explicit** (strict per-robot scoping). Anything less certain
 goes through the LLM (cooperate or leader).
+
+### Two-robot loop (#280)
+
+A human note that mentions exactly two robots may become a loop
+("take turns until one of you is stumped"). Hush drives every turn;
+robots never chain by mentioning each other, and `robot_hops` stays `0`.
+
+1. **Lead.** The first robot mentioned leads. It sees the whole human
+   note in its prompt and decides: a final line `LOOP: continue` keeps
+   the exchange going, `LOOP: stop <reason>` ends it. No line, or any
+   other `LOOP:` text, means stop.
+2. **Partner.** The second robot keeps only its own clause (strict
+   scope, as in explicit mode). A partner's `LOOP:` line is ignored.
+3. **Strip.** The relay removes every `LOOP:` line before store.
+4. **Turns.** After the queued pass, the relay alternates partner and
+   lead, each turn through the normal dispatch path. The partner is
+   asked to reply to the lead's last note; the lead to the partner's.
+5. **Cap.** Loop turns count toward the channel `max_robot_turns`
+   (default 4). At the cap the chaperon asks "Continue this loop?
+   Yes/No". A typed "Yes" resumes the stopped turn; "No" posts
+   "Loop stopped.". After four Yes answers the next cap posts
+   "Loop limit reached." and the loop ends.
+6. **Human interrupt.** Any other human note in the thread ends the loop.

@@ -87,6 +87,8 @@ static hush_status_t hush_agent_add_instruction(hush_agent_job_t *job, const cha
 static void hush_agent_append_peers(hush_agent_job_t *job);
 /* Prepends LAST_RULE to prompt (and appends to rules) when job->last. */
 static void hush_agent_append_last(hush_agent_job_t *job);
+/* Gives the loop lead its loop rule and the whole human note (#280 D2). */
+static void hush_agent_append_loop_lead(hush_agent_job_t *job, const hush_agent_job_in_t *in);
 
 static void hush_agent_fill_prompt(char *out, size_t outsz,
                                   const hush_agent_robot_t *bot,
@@ -154,6 +156,7 @@ static void hush_agent_init_job(hush_agent_job_t *job, const hush_agent_job_in_t
     job->started = time(NULL);
     job->launch = in->launch;
     job->last = in->last;
+    job->loop_role = in->loop_role;
     hush_agent_event_root(job->parent_id, sizeof(job->parent_id), parent);
     hush_agent_copy(job->trigger_id, sizeof(job->trigger_id),
                     parent->id[0] ? parent->id : job->parent_id);
@@ -228,7 +231,21 @@ static void hush_agent_fill_worker(hush_agent_job_t *job, const hush_agent_job_i
     if (!in->scoped && in->mode == HUSH_AGENT_MODE_BROADCAST && job->n_co_robots == 1 &&
         strlen(job->prompt) + strlen(HUSH_AGENT_COOPERATE) < sizeof(job->prompt))
         strcat(job->prompt, HUSH_AGENT_COOPERATE);
+    hush_agent_append_loop_lead(job, in);
     hush_agent_append_peers(job);
+}
+
+static void hush_agent_append_loop_lead(hush_agent_job_t *job, const hush_agent_job_in_t *in)
+{
+    char note[HUSH_EVENT_MAX_CONTENT + 1];
+
+    assert(job != NULL && in != NULL);
+    if (in->loop_role != HUSH_AGENT_LOOP_ROLE_LEAD || in->loop_note == NULL ||
+        in->loop_note[0] == '\0')
+        return;
+    hush_agent_copy(note, sizeof(note), in->loop_note);
+    hush_agent_humanize_ask(note, sizeof(note), in->launch, in->bot->hex);
+    hush_agent_loop_append_lead(job->prompt, sizeof(job->prompt), job->human_name, note);
 }
 
 static hush_status_t hush_agent_fill_directive(hush_agent_job_t *job,

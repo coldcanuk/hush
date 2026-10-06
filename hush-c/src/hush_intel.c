@@ -168,6 +168,8 @@ void hush_intel_consider(hush_store_t *store, hush_launch_t *launch,
     ch = hush_intel_channel(launch, ev);
     if (ch == NULL)
         return;
+    if (hush_agent_loop_answer(store, launch, ev))
+        return;
     if (hush_intel_is_human(launch, ev->pubkey))
         hush_agent_reset_follow(launch, ev);
     for (i = 0; i < ev->tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; i++) {

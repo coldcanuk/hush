@@ -29,6 +29,12 @@ void hush_agent_shutdown(void);
 void hush_agent_reset_follow(const hush_launch_t *launch,
                              const hush_event_t *ev);
 
+/* Handles a human "Yes"/"No" reply to a waiting "Continue this loop?"
+ * prompt in ev's thread. Returns 1 when ev was consumed as the answer;
+ * 0 leaves ev to the normal path (which ends any loop in that thread). */
+int hush_agent_loop_answer(hush_store_t *store, const hush_launch_t *launch,
+                           const hush_event_t *ev);
+
 /* Dispatches one mention. Later co-mentions wait for the previous robot. */
 void hush_agent_mention(hush_store_t *store, hush_launch_t *launch,
                         const hush_event_t *ev, const char *mention);

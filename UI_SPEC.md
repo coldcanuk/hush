@@ -1482,6 +1482,7 @@ one. The marker list lives in `LEASH_MARKS` next to `paintThink`.
 | `max_jobs` | `1` `2` `4` | `2` |
 | `cooldown_s` | `0` `10` `30` | `10` |
 | `robot_hops` | `0` `1` | `0` |
+| `max_robot_turns` | `1`–`8` | `4` |
 
 `#manage-policy` radios (Fitts ≥44px):
 
@@ -1498,6 +1499,31 @@ notes post a recap and wait for `yes` / `y` / `confirm` / `go` /
 `do it` / `1`… or a correction. `robot_reply=confirm` always recaps
 first. Duplicate content <1s is dropped. In-flight Grok is not killed
 when policy flips; new considers honor the new leash.
+
+Delta 2026-10-05 (#280 two-robot loop): a human note that mentions
+exactly two robots arms a loop. The **lead** is the first robot
+mentioned; only the lead also sees the whole human note ("Whole message
+from <name>: …") and may end its reply with one control line,
+`LOOP: continue` or `LOOP: stop <reason>`. The relay strips every
+`LOOP:` line before the note is stored, so it never shows in chat. The
+partner keeps only its own clause and its control lines are ignored.
+While the lead keeps saying `continue`, the relay alternates the two
+robots; every turn is an ordinary dispatch (same leash, same
+`max_robot_turns` count, `robot_hops` stays `0`). No control line, a
+garbled one, or `stop` ends the loop after the current turn. Chaperon
+lines (posted by the channel `chaperon`, Major by default):
+
+- At `max_robot_turns` while a loop is live: "Continue this loop?
+  Yes/No" **instead of** "That's enough robot talk. Standing by for the
+  human." (the cap without a loop is unchanged). A typed thread reply
+  "Yes" (case-insensitive, trailing `.`/`!` allowed) runs up to
+  `max_robot_turns` more turns; "No" posts "Loop stopped.".
+- After four Yes answers, the next cap posts "Loop limit reached." and
+  the loop ends.
+- Any other human note in the thread ends the loop, even mid-turn; that
+  note is then handled as a normal reply.
+
+None of these three lines counts as a robot turn.
 
 ## Visual language
 - Dark default tokens stay. Themes override CSS variables on `html[data-theme]`.

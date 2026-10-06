@@ -432,14 +432,26 @@ if not payne_last:
     sys.exit(1)
 ' "$HUSH_CONFIG_DIR/grok-p.log" \
     || fail "only the last robot stops"
+# #280 D2: the lead (first robot mentioned) also sees the whole human note;
+# the partner still receives only its own clause, never the full ask.
 grep '^S:' "$HUSH_CONFIG_DIR/grok-p.log" | python3 -c '
 import sys
-bad = 0
+partner_bad = 0
+lead_whole = 0
 for line in sys.stdin:
-    if "tell a joke." in line and "was it funny" in line:
-        bad = 1
-sys.exit(bad)
-' || fail "a robot received the full ask instead of its own clause"
+    if "YOUR assignment: was it funny" in line:
+        if "tell a joke." in line or "Whole message from" in line:
+            partner_bad = 1
+    if "YOUR assignment: tell a joke." in line:
+        if "Whole message from" in line and "was it funny" in line:
+            lead_whole = 1
+if partner_bad:
+    print("PARTNER_GOT_FULL_ASK")
+    sys.exit(1)
+if not lead_whole:
+    print("LEAD_MISSING_WHOLE_NOTE")
+    sys.exit(1)
+' || fail "the partner received the full ask, or the lead lost the whole note"
 
 # Delegation phrasing: "generate a riddle and ask @Major to solve it" must give
 # Happy a complete assignment that names the peer, never a key or itself.
