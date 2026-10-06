@@ -837,9 +837,8 @@ turns[]}` (`turns` = newest 32 oldest-first with `id/pubkey/at/content`;
 unknown roots return an honest empty object; malformed roots are 400).
 Opening a thread fetches it once per root; saved turns not already live
 paint inline above the live replies under the line `Thread memory ·
-Saved on this relay · N saved turns`, each with a `· saved` meta suffix,
-plus a `Saved brief on this relay: …` excerpt when the M1 rolling brief
-is non-empty. A thread whose root left the live ring still opens from
+Saved on this relay · N saved turns`, each with a `· saved` meta suffix.
+The raw `Saved brief on this relay:` line is not shown. A thread whose root left the live ring still opens from
 relay memory as `Thread · saved` with the subline `Saved thread · N
 saved turns on this relay · reopened from relay memory`. The browser
 remembers only the open root id (`localStorage.hush-thread-open`); on

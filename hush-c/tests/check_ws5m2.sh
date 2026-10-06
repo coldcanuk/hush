@@ -13,7 +13,14 @@ grep -q '"/api/thread?root="' demo/index.html || fail "UI never fetches /api/thr
 grep -q 'Thread memory' demo/index.html || fail "UI has no memory line"
 grep -q 'Saved on this relay' demo/index.html || fail "UI has no honest saved labels"
 grep -q 'hush-thread-open' demo/index.html || fail "UI never remembers the open thread"
-grep -q 'Saved brief on this relay' demo/index.html || fail "UI never shows the saved brief"
+if grep -q 'Saved brief on this relay' demo/index.html; then
+  fail "raw saved brief must stay out of the thread"
+fi
+grep -q 'function isHiveOwner' demo/index.html || fail "loop answers must be owner only"
+grep -q 'className = "loop-stamp loop-yes"' demo/index.html || fail "missing Yes stamp"
+grep -q 'className = "loop-stamp loop-no"' demo/index.html || fail "missing No stamp"
+grep -q '· Decision' demo/index.html || fail "feed card missing the waiting cue"
+grep -q 'function pinThreadNewest' demo/index.html || fail "thread open never pins to the newest note"
 
 # No localStorage content phantoms: only the root id is remembered.
 grep -q 'localStorage.setItem("hush-thread-open", rootId)' demo/index.html || fail "resume stores more than the id"
