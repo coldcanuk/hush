@@ -3017,9 +3017,21 @@ html[data-theme="dark"] #thread-send:active {
       identityViaImport = !!(session && session.identity_imported);
     }
 
-    function applySession(s) {
-      session = s || session;
+    /* #279: true while a Settings approval post is in flight, so the 1 s
+       tick cannot flip the radio back to the old saved value mid-post. */
+    let approvalPosting = false;
+
+    /* Every session assign goes through here, so the Settings radio mirrors
+       the saved approval_mode on page load and every 1 s tick, not only
+       after a Settings post (#279 r2). */
+    function setSession(s) {
+      session = s;
       syncIdentityViaImport();
+      syncApproval();
+    }
+
+    function applySession(s) {
+      setSession(s || session);
       if (session.ready && page !== "payne") page = "hive";
       else if (session.logged_in && !session.backup_acked) page = "backup";
       else if (session.logged_in && session.backup_acked && !session.has_vibe) page = "vibe";
@@ -3028,12 +3040,12 @@ html[data-theme="dark"] #thread-send:active {
       if (session.nsec) pendingNsec = session.nsec;
       if (session.backup_acked) pendingNsec = "";
       applyTheme((session.profile && session.profile.theme) || session.theme);
-      syncApproval();
       paint();
     }
 
     /* #279: the radio mirrors the server's saved approval_mode. */
     function syncApproval() {
+      if (approvalPosting) return;
       const mode = session.approval_mode === "approve_every_action"
         ? "approve_every_action" : "auto_approve";
       document.querySelectorAll("input[name='approval']").forEach((el) => {
@@ -5765,9 +5777,14 @@ html[data-theme="dark"] #thread-send:active {
     document.querySelectorAll("input[name='approval']").forEach((el) => {
       el.addEventListener("change", async () => {
         if (!el.checked) return;
+        approvalPosting = true;
+        let saved = null;
         try {
-          applySession(await api("/api/profile", { approval_mode: el.value }));
-        } catch (e) { syncApproval(); }
+          saved = await api("/api/profile", { approval_mode: el.value });
+        } catch (e) { saved = null; }
+        approvalPosting = false;
+        if (saved) applySession(saved);
+        else syncApproval();
       });
     });
     $("call-btn").addEventListener("click", () => {
@@ -8539,8 +8556,7 @@ html[data-theme="dark"] #thread-send:active {
         ]);
         if (pres && pres.lines)
           lastPresence = pres.lines;
-        session = sess;
-        syncIdentityViaImport();
+        setSession(sess);
         whisperReady = !!st.whisper;
         if (session.ready && page !== "payne") page = "hive";
         else if (!session.logged_in

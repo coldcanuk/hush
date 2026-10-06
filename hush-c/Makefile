@@ -203,6 +203,7 @@ test: check-deps $(TEST_BINS) hush-relay
 	sh tests/check_agent.sh || exit 1; \
 	sh tests/check_loop.sh || exit 1; \
 	sh tests/check_approve.sh || exit 1; \
+	sh tests/check_approve_ui.sh || exit 1; \
 	sh tests/check_codex.sh || exit 1; \
 	sh tests/check_ollama.sh || exit 1; \
 	sh tests/check_failover.sh || exit 1; \
