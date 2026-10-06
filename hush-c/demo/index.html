@@ -200,17 +200,17 @@
       flex: 0 0 auto; min-height: 1.4rem; padding: 0 16px 6px;
     }
     #thread-form { position: relative; flex: 0 0 auto; }
-    #thread-desk {
+    #thread-desk, #milestone-form {
       display: flex; gap: 6px; align-items: center;
       padding: 0 16px 8px; flex: 0 0 auto;
     }
-    #thread-desk input {
+    #thread-desk input, #milestone-form input {
       flex: 1; min-width: 0; font: inherit; color: inherit;
       background: var(--surface-2, transparent);
       border: 1px solid var(--line, currentColor);
       border-radius: 4px; padding: 4px 6px;
     }
-    #thread-desk button { flex: 0 0 auto; }
+    #thread-desk button, #milestone-form button { flex: 0 0 auto; }
     #thread-resize {
       position: absolute; right: 2px; bottom: 2px; width: 24px; height: 24px;
       cursor: nwse-resize; touch-action: none;
@@ -2275,6 +2275,11 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
         <div id="stream"></div>
       </div>
       <p id="send-error" class="warn send-error" role="status"></p>
+      <form id="milestone-form">
+        <input id="milestone-name" maxlength="64" placeholder="New milestone" aria-label="New milestone name">
+        <input id="milestone-category" maxlength="64" placeholder="Category" aria-label="New milestone category">
+        <button type="submit">Open</button>
+      </form>
       <form class="composer" id="form">
         <div class="mention-box" id="mention-box" hidden></div>
         <div class="composer-box">
@@ -2407,6 +2412,7 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       <form id="thread-desk">
         <input id="thread-desk-name" maxlength="64" placeholder="Milestone name" aria-label="Milestone name">
         <input id="thread-desk-category" maxlength="64" placeholder="Category" aria-label="Milestone category">
+        <input id="thread-desk-project" maxlength="64" placeholder="Project" aria-label="Milestone project">
         <button id="thread-desk-save" type="submit">Save</button>
         <button id="thread-desk-archive" type="button">Archive</button>
       </form>
@@ -5575,6 +5581,7 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
         root: openThread,
         name: $("thread-desk-name").value.trim(),
         category: $("thread-desk-category").value.trim(),
+        project: $("thread-desk-project").value.trim(),
         archived: archived ? 1 : 0
       });
       rememberDesk(openThread, mem);
@@ -5601,6 +5608,28 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
         await saveThreadDesk(!deskOf(openThread).archived);
       } catch (err) {
         $("thread-send-error").textContent = "Milestone was not saved.";
+      }
+    });
+
+    $("milestone-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = $("milestone-name").value.trim();
+      const category = $("milestone-category").value.trim();
+      if (!name) return;
+      $("send-error").textContent = "";
+      try {
+        const posted = await api("/api/event", { content: name, kind: 1, channel: channel });
+        if (posted && posted.id) {
+          const mem = await api("/api/thread", {
+            root: posted.id, name: name, category: category, archived: 0
+          });
+          rememberDesk(posted.id, mem);
+        }
+        $("milestone-name").value = "";
+        $("milestone-category").value = "";
+        await tick();
+      } catch (err) {
+        $("send-error").textContent = "Milestone was not opened.";
       }
     });
 
@@ -7338,12 +7367,13 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       threadDesk[rootId] = {
         name: typeof mem.name === "string" ? mem.name : "",
         category: typeof mem.category === "string" ? mem.category : "",
+        project: typeof mem.project === "string" ? mem.project : "",
         archived: mem.archived === true
       };
     }
 
     function deskOf(rootId) {
-      return threadDesk[rootId] || { name: "", category: "", archived: false };
+      return threadDesk[rootId] || { name: "", category: "", project: "", archived: false };
     }
 
     /* Loads a desk once. A desk already stored, including a save, wins. */
@@ -7442,8 +7472,10 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
         $("thread-help").textContent += " · " + desk.category;
       const nameBox = $("thread-desk-name");
       const catBox = $("thread-desk-category");
+      const projBox = $("thread-desk-project");
       if (nameBox && document.activeElement !== nameBox) nameBox.value = desk.name;
       if (catBox && document.activeElement !== catBox) catBox.value = desk.category;
+      if (projBox && document.activeElement !== projBox) projBox.value = desk.project || "";
       $("thread-desk-archive").textContent = desk.archived ? "Restore" : "Archive";
       const jobs = thinkingFor(root.id, lastStatus);
       const failure = providerFailureSentence(failureSources(rootId, kids));

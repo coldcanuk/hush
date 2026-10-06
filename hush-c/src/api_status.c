@@ -51,6 +51,9 @@ static int hush_http_desk_flag(int *out, const char *body);
 static hush_status_t hush_http_desk_label(char *out, size_t outsz,
                                          const char *body, const char *key);
 
+/* True when slug is empty or names a launch project. */
+static int hush_http_project_known(const char *slug);
+
 void hush_http_serve_status(int fd, const hush_store_t *store)
 {
     char body[HUSH_HTTP_STATUS_MAX];
@@ -275,9 +278,29 @@ static hush_status_t hush_http_read_thread_desk(hush_thread_desk_t *desk,
     if (hush_http_desk_label(desk->category, sizeof(desk->category), body,
                             "category") != HUSH_OK)
         return HUSH_ERR_ARG;
+    if (hush_http_desk_label(desk->project, sizeof(desk->project), body,
+                            "project") != HUSH_OK)
+        return HUSH_ERR_ARG;
+    if (desk->project[0] != '\0' && !hush_http_project_known(desk->project))
+        return HUSH_ERR_ARG;
     if (!hush_http_desk_flag(&desk->archived, body))
         return HUSH_ERR_ARG;
     return HUSH_OK;
+}
+
+static int hush_http_project_known(const char *slug)
+{
+    const hush_launch_t *launch = hush_http_launch();
+    size_t i;
+
+    assert(slug != NULL);
+    if (launch == NULL)
+        return 0;
+    for (i = 0; i < launch->nprojects && i < (size_t)HUSH_LAUNCH_PROJECTS_MAX; ++i) {
+        if (strcmp(launch->projects[i].slug, slug) == 0)
+            return 1;
+    }
+    return 0;
 }
 
 hush_status_t hush_http_serve_thread_post(int fd, const char *body)

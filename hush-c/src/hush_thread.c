@@ -29,8 +29,8 @@ enum {
     HUSH_THREAD_NUMBER_MAX = 32,
     /* Count/truncated/turns framing past the escaped brief. */
     HUSH_THREAD_COUNTS_MAX = 64,
-    /* On-disk desk: two escaped labels plus the archived token. */
-    HUSH_THREAD_DESK_FILE_MAX = HUSH_THREAD_DESK_ESC_MAX * 2 + 96
+    /* On-disk desk: three escaped labels plus the archived token. */
+    HUSH_THREAD_DESK_FILE_MAX = HUSH_THREAD_DESK_ESC_MAX * HUSH_THREAD_DESK_FIELDS + 160
 };
 
 /* True when root is a 64-character lowercase hex event id. */
@@ -726,6 +726,8 @@ hush_status_t hush_thread_desk_set(const char *root, const hush_thread_desk_t *d
         return HUSH_ERR_ARG;
     if (!hush_thread_desk_text_ok(desk->category))
         return HUSH_ERR_ARG;
+    if (!hush_thread_desk_text_ok(desk->project))
+        return HUSH_ERR_ARG;
     if (hush_thread_file(root, HUSH_THREAD_DESK_SUFFIX, path, sizeof(path)) !=
         HUSH_OK)
         return HUSH_ERR_IO;
@@ -763,7 +765,7 @@ static int hush_thread_desk_is_blank(const hush_thread_desk_t *desk)
     assert(desk != NULL);
     assert(desk->archived == 0 || desk->archived == 1);
     return desk->name[0] == '\0' && desk->category[0] == '\0' &&
-        desk->archived == 0;
+        desk->project[0] == '\0' && desk->archived == 0;
 }
 
 static hush_status_t hush_thread_desk_take_text(char *out, size_t outsz,
@@ -820,9 +822,14 @@ static hush_status_t hush_thread_desk_parse(const char *json,
         return HUSH_ERR_PARSE;
     if (hush_thread_desk_take_flag(&out->archived, json) != HUSH_OK)
         return HUSH_ERR_PARSE;
+    if (hush_thread_desk_take_text(out->project, sizeof(out->project), json,
+                                  "/project") != HUSH_OK)
+        out->project[0] = '\0';
     if (!hush_thread_desk_text_ok(out->name))
         return HUSH_ERR_PARSE;
     if (!hush_thread_desk_text_ok(out->category))
+        return HUSH_ERR_PARSE;
+    if (!hush_thread_desk_text_ok(out->project))
         return HUSH_ERR_PARSE;
     return HUSH_OK;
 }
@@ -862,6 +869,7 @@ static hush_status_t hush_thread_desk_format(char *out, size_t outsz,
 {
     char name[HUSH_THREAD_DESK_ESC_MAX + 1];
     char category[HUSH_THREAD_DESK_ESC_MAX + 1];
+    char project[HUSH_THREAD_DESK_ESC_MAX + 1];
     int n;
 
     assert(out != NULL);
@@ -873,9 +881,13 @@ static hush_status_t hush_thread_desk_format(char *out, size_t outsz,
     if (hush_json_escape(desk->category, category, sizeof(category)) == 0 &&
         desk->category[0] != '\0')
         return HUSH_ERR_FULL;
+    if (hush_json_escape(desk->project, project, sizeof(project)) == 0 &&
+        desk->project[0] != '\0')
+        return HUSH_ERR_FULL;
     n = snprintf(out, outsz,
-                 "{\"name\":\"%s\",\"category\":\"%s\",\"archived\":%s}\n",
-                 name, category,
+                 "{\"name\":\"%s\",\"category\":\"%s\",\"project\":\"%s\","
+                 "\"archived\":%s}\n",
+                 name, category, project,
                  desk->archived ? HUSH_THREAD_JSON_TRUE : HUSH_THREAD_JSON_FALSE);
     if (n <= 0 || (size_t)n >= outsz)
         return HUSH_ERR_FULL;
@@ -888,6 +900,7 @@ static hush_status_t hush_thread_json_append_desk(char *out, size_t outsz,
 {
     char name[HUSH_THREAD_DESK_ESC_MAX + 1];
     char category[HUSH_THREAD_DESK_ESC_MAX + 1];
+    char project[HUSH_THREAD_DESK_ESC_MAX + 1];
     char frame[HUSH_THREAD_DESK_FILE_MAX];
     int n;
 
@@ -901,9 +914,13 @@ static hush_status_t hush_thread_json_append_desk(char *out, size_t outsz,
     if (hush_json_escape(desk->category, category, sizeof(category)) == 0 &&
         desk->category[0] != '\0')
         return HUSH_ERR_FULL;
+    if (hush_json_escape(desk->project, project, sizeof(project)) == 0 &&
+        desk->project[0] != '\0')
+        return HUSH_ERR_FULL;
     n = snprintf(frame, sizeof(frame),
-                 ",\"name\":\"%s\",\"category\":\"%s\",\"archived\":%s",
-                 name, category,
+                 ",\"name\":\"%s\",\"category\":\"%s\",\"project\":\"%s\","
+                 "\"archived\":%s",
+                 name, category, project,
                  desk->archived ? HUSH_THREAD_JSON_TRUE : HUSH_THREAD_JSON_FALSE);
     if (n <= 0 || (size_t)n >= sizeof(frame))
         return HUSH_ERR_FULL;

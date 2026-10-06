@@ -170,6 +170,8 @@ void hush_intel_consider(hush_store_t *store, hush_launch_t *launch,
         return;
     if (hush_agent_approval_answer(store, launch, ev))
         return;
+    if (hush_agent_team_answer(store, launch, ev))
+        return;
     if (hush_agent_loop_answer(store, launch, ev))
         return;
     if (hush_intel_is_human(launch, ev->pubkey))

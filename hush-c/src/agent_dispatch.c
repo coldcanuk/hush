@@ -61,7 +61,7 @@ static void hush_agent_finish_election(hush_store_t *store, const hush_agent_job
 static void hush_agent_select_leader(char *out, size_t outsz, const hush_agent_job_t *job,
                                      const hush_agent_follow_t *slot);
 /* Posts the required worker result before dispatching the next handoff. */
-static hush_status_t hush_agent_publish_reply(hush_store_t *store, const hush_agent_job_t *job);
+static hush_status_t hush_agent_publish_reply(hush_store_t *store, hush_agent_job_t *job);
 /* Fills borrowed note inputs for a required completed job. */
 static void hush_agent_fill_reply(hush_agent_note_in_t *out, const hush_agent_job_t *job);
 /* Reads one chunk into required job; more indicates immediately available progress. */
@@ -392,11 +392,16 @@ static void hush_agent_brief_update(const hush_event_t *posted, const char *answ
     hush_thread_brief_roll(root, answer);
 }
 
-static hush_status_t hush_agent_publish_reply(hush_store_t *store, const hush_agent_job_t *job)
+static hush_status_t hush_agent_publish_reply(hush_store_t *store, hush_agent_job_t *job)
 {
+    char hop_root[HUSH_EVENT_ID_HEX_LEN + 1];
+
     assert(store != NULL && job != NULL);
     hush_agent_note_in_t note = {0};
+    hush_agent_chief_prepare(job, store, hop_root, sizeof(hop_root));
     hush_agent_fill_reply(&note, job);
+    if (hop_root[0] != '\0')
+        note.parent_id = hop_root;
     hush_event_t posted = {0};
     hush_agent_fill_note(&posted, &note);
     HUSH_TRY(hush_store_insert(store, &posted));

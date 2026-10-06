@@ -37,12 +37,14 @@ enum {
     HUSH_THREAD_TURNS_MAX = 32,
     /* One turns[] frame: escaped content plus id/pubkey/at framing. */
     HUSH_THREAD_TURN_JSON = HUSH_THREAD_CONTENT_MAX * HUSH_JSON_U_LEN + 256,
-    /* Escaped desk name or category. */
+    /* Escaped desk name, category, or project slug. */
     HUSH_THREAD_DESK_ESC_MAX = HUSH_THREAD_DESK_TEXT_MAX * HUSH_JSON_U_LEN,
+    /* name, category, project. */
+    HUSH_THREAD_DESK_FIELDS = 3,
     /* Largest thread-memory body: turns, brief, desk, and framing. */
     HUSH_THREAD_JSON_MAX = HUSH_THREAD_TURNS_MAX * HUSH_THREAD_TURN_JSON +
         HUSH_THREAD_BRIEF_MAX * HUSH_JSON_U_LEN +
-        HUSH_THREAD_DESK_ESC_MAX * 2 + 640
+        HUSH_THREAD_DESK_ESC_MAX * HUSH_THREAD_DESK_FIELDS + 640
 };
 
 typedef struct {
@@ -57,6 +59,8 @@ typedef struct {
 typedef struct {
     char name[HUSH_THREAD_DESK_TEXT_MAX + 1];
     char category[HUSH_THREAD_DESK_TEXT_MAX + 1];
+    /* Launch project slug. Empty when this milestone is not bound. */
+    char project[HUSH_THREAD_DESK_TEXT_MAX + 1];
     int archived;
 } hush_thread_desk_t;
 

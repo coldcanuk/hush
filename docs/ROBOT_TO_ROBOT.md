@@ -204,3 +204,37 @@ robots never chain by mentioning each other, and `robot_hops` stays `0`.
    (possibly a different robot) and runs nothing until that is answered.
    Approving a turn lets the robot's runtime use its usual tools for that
    turn (no per-tool approval).
+
+## Chief of Staff
+
+Major, on a solo turn, may end a note with one `team` fence or one `hop`
+fence.
+
+```
+```team
+Mail | grok-build | Answer the inbox
+```
+```
+
+```
+```hop
+Mail desk
+```
+```
+
+A valid team is held until the hive owner types Yes or No in that thread.
+Auto-approve does not skip that Yes. A robot Yes is ignored. No raises
+nobody. Yes calls the same roster add used by `POST /api/agent`, with
+pass save off. Over the roster cap, a clashing name, or an unknown
+provider refuses the whole team.
+
+A hop posts that note, fence removed, as a reply to the named milestone
+in the same channel. The prompt for that turn lists at most eight active
+milestones as name, category, and a short brief. It does not include
+their turn bodies. An archived or unknown name posts "Hop refused."
+
+A milestone may name an existing project slug. Workers on that milestone
+then use the project directory as their working directory, and Grok may
+read and edit files there. Shell, web, task, and Agent stay denied.
+Codex stays read-only. An unbound milestone keeps the private temp
+directory and the full denylist.

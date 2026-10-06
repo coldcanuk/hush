@@ -25,6 +25,8 @@
 #define HUSH_AGENT_DEVNULL "/dev/null"
 #define HUSH_AGENT_DISALLOWED \
     "run_terminal_cmd,web_search,web_fetch,read_file,search_replace,list_dir,grep,todo_write,task,Agent"
+#define HUSH_AGENT_PROJECT_TOOLS \
+    "run_terminal_cmd,web_search,web_fetch,todo_write,task,Agent"
 #define HUSH_AGENT_COPILOT_BIN "copilot"
 #define HUSH_AGENT_CODEX_BIN "codex"
 #define HUSH_AGENT_GOOSE_BIN "goose"
@@ -356,6 +358,13 @@ static void hush_agent_exec_cline(const hush_agent_job_t *job)
     _exit(HUSH_AGENT_EXEC_FAILURE);
 }
 
+const char *hush_agent_tool_denylist(int project_tools)
+{
+    if (project_tools)
+        return HUSH_AGENT_PROJECT_TOOLS;
+    return HUSH_AGENT_DISALLOWED;
+}
+
 static void hush_agent_exec_grok(const hush_agent_job_t *job)
 {
     char *argv[HUSH_AGENT_ARGV_MAX];
@@ -380,7 +389,7 @@ static void hush_agent_exec_grok(const hush_agent_job_t *job)
     argv[15] = (char *)"--cwd";
     argv[16] = (char *)job->cwd;
     argv[17] = (char *)"--disallowed-tools";
-    argv[18] = (char *)HUSH_AGENT_DISALLOWED;
+    argv[18] = (char *)hush_agent_tool_denylist(job->project_tools);
     argv[19] = (char *)"--rules";
     argv[20] = (char *)job->rules;
     argv[21] = (char *)HUSH_AGENT_GROK_NOMEM;
