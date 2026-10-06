@@ -156,8 +156,8 @@ void hush_intel_init(void)
 void hush_intel_consider(hush_store_t *store, hush_launch_t *launch,
                          const hush_event_t *ev)
 {
-    const hush_launch_channel_t *ch;
-    size_t i;
+    const hush_launch_channel_t *ch = NULL;
+    size_t i = 0;
 
     if (store == NULL || launch == NULL || ev == NULL)
         return;
@@ -167,6 +167,8 @@ void hush_intel_consider(hush_store_t *store, hush_launch_t *launch,
         return;
     ch = hush_intel_channel(launch, ev);
     if (ch == NULL)
+        return;
+    if (hush_agent_loop_answer(store, launch, ev))
         return;
     if (hush_intel_is_human(launch, ev->pubkey))
         hush_agent_reset_follow(launch, ev);

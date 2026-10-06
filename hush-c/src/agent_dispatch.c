@@ -118,6 +118,41 @@ static void hush_agent_emit(const char *type, const char *channel,
 static int hush_agent_begin_work(const hush_agent_job_in_t *in);
 static void hush_agent_push_hex(char hexes[][HUSH_EVENT_PUBKEY_HEX_LEN + 1],
                                 size_t *n, size_t maxn, const char *hex);
+/* One loop turn to start: who goes next, on which note, with what ask. */
+typedef struct {
+    hush_store_t *store;
+    const hush_launch_t *launch;
+    const hush_event_t *parent;
+    const char *hex;
+    const char *ask;
+} hush_agent_loop_turn_t;
+
+/* Starts one follow wave: every queued task sharing the next group number. */
+static void hush_agent_follow_wave(hush_store_t *store, const hush_launch_t *launch,
+                                   hush_agent_follow_t *slot, const hush_event_t *ev);
+/* Arms the root's loop when a human note mentions exactly two robots. */
+static void hush_agent_loop_arm(hush_agent_job_in_t *job, const hush_agent_mentions_t *mentions,
+                                size_t idx);
+/* Returns hex's hush_agent_loop_role_t in slot's loop. */
+static int hush_agent_loop_role(const hush_agent_follow_t *slot, const char *hex);
+/* Counts a posted loop turn on its root; only the lead's verdict steers. */
+static void hush_agent_loop_record(const hush_agent_job_t *job);
+/* After the queue drains, starts the other loop robot's turn on ev. */
+static void hush_agent_loop_next(hush_store_t *store, const hush_launch_t *launch,
+                                 hush_agent_follow_t *slot, const hush_event_t *ev);
+/* Starts one loop turn through hush_agent_begin_work (#280 L11). */
+static void hush_agent_loop_dispatch(hush_agent_follow_t *slot,
+                                     const hush_agent_loop_turn_t *turn);
+/* True when in is a live loop's turn and the loop already used the cap. */
+static int hush_agent_loop_turns_full(const hush_agent_job_in_t *in);
+/* At the turn cap with a live loop, asks the human or ends the loop. Returns
+ * 0 when no loop is live, so the caller posts the chaperon line instead. */
+static int hush_agent_loop_pause(const hush_agent_job_in_t *in);
+/* Returns the channel's robot turn cap for ev (max_robot_turns or default). */
+static int hush_agent_turn_cap(const hush_launch_t *launch, const hush_event_t *ev);
+/* Posts one line from the channel chaperon (Payne by default) on ev's root. */
+static void hush_agent_chaperon_say(hush_store_t *store, const hush_launch_t *launch,
+                                    const hush_event_t *ev, const char *line);
 /* Counts only work notes since the latest human message in this thread. */
 static size_t hush_agent_count_turns(hush_store_t *store,
                                      const hush_launch_t *launch,
@@ -256,6 +291,8 @@ void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job, int ok)
 {
     assert(job != NULL);
     hush_agent_trim(job->out);
+    if (job->loop_role != HUSH_AGENT_LOOP_ROLE_NONE)
+        job->loop_verdict = (int)hush_agent_loop_take_control(job->out);
     hush_agent_rewrite_mentions(job);
     if (job->kind == HUSH_AGENT_KIND_FIXUP) {
         job->ok = ok && job->out[0] != '\0';
@@ -352,6 +389,7 @@ static hush_status_t hush_agent_publish_reply(hush_store_t *store, const hush_ag
         if (slot != NULL) hush_agent_parse_plan(job->launch, job->out, slot);
     }
     hush_agent_emit(HUSH_CEVENT_JOB_DONE, job->channel, job->parent_id, job->robot_pub, "job_done");
+    hush_agent_loop_record(job);
     hush_agent_on_posted(store, job->launch, &posted);
     return HUSH_OK;
 }
@@ -498,6 +536,7 @@ static int hush_agent_prepare_human_job(hush_agent_job_in_t *job, hush_agent_men
         size_t start = idx > 0 ? idx : 1;
         if (!hush_agent_follow_push(job, mentions, start))
             return 0;
+        hush_agent_loop_arm(job, mentions, idx);
     }
     if (idx > 0 && idx < mentions->count)
         return 0;
@@ -1236,16 +1275,18 @@ int hush_agent_job_enabled(const hush_agent_job_t *job)
 
 static int hush_agent_begin_work(const hush_agent_job_in_t *in)
 {
-    char root[HUSH_EVENT_ID_HEX_LEN + 1];
-    char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
-    hush_agent_job_in_t job;
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    char channel[HUSH_EVENT_MAX_TAG_LEN + 1] = {0};
+    hush_agent_job_in_t job = {0};
 
     assert(in != NULL);
     assert(in->store != NULL);
     assert(in->bot != NULL);
     assert(in->parent != NULL);
-    if (hush_agent_turns_full(in->store, in->launch, in->parent)) {
-        hush_agent_nudge_chaperon(in->store, in->launch, in->parent);
+    if (hush_agent_turns_full(in->store, in->launch, in->parent) ||
+        hush_agent_loop_turns_full(in)) {
+        if (!hush_agent_loop_pause(in))
+            hush_agent_nudge_chaperon(in->store, in->launch, in->parent);
         return 0;
     }
     hush_agent_on_deck(in->store, in->bot, in->parent,
@@ -1391,12 +1432,8 @@ void hush_agent_follow_kick(hush_store_t *store,
                                    const hush_launch_t *launch,
                                    const hush_event_t *ev)
 {
-    hush_agent_follow_t *slot;
-    hush_agent_robot_t bot;
-    hush_agent_job_in_t in;
-    char root[HUSH_EVENT_ID_HEX_LEN + 1];
-    const char *hex;
-    int cur_group;
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    hush_agent_follow_t *slot = NULL;
 
     assert(store != NULL);
     assert(launch != NULL);
@@ -1413,39 +1450,40 @@ void hush_agent_follow_kick(hush_store_t *store,
         if (slot->inflight > 0)
             return;
     }
-    if (slot->at >= slot->nnext)
+    if (slot->at >= slot->nnext) {
+        hush_agent_loop_next(store, launch, slot, ev);
         return;
+    }
+    hush_agent_follow_wave(store, launch, slot, ev);
+}
 
-    /* Dispatch the next wave: every task sharing this group number. Tasks in
-     * a wave run in parallel; waves run in order. */
+static void hush_agent_follow_wave(hush_store_t *store, const hush_launch_t *launch,
+                                   hush_agent_follow_t *slot, const hush_event_t *ev)
+{
+    hush_agent_robot_t bot = {0};
+    hush_agent_job_in_t in = {0};
+    int cur_group = 0;
+    int last_wave = 0;
+
+    assert(store != NULL && launch != NULL);
+    assert(slot != NULL && ev != NULL && slot->at < slot->nnext);
+    /* Tasks in a wave run in parallel; waves run in order. */
     cur_group = slot->group[slot->at];
-    {
-        int last_wave = hush_agent_follow_last_wave(slot);
-
-        while (slot->at < slot->nnext && slot->group[slot->at] == cur_group) {
-            size_t at = slot->at;
-            hex = slot->next[at];
-            slot->at++;
-            if (!hush_agent_lookup_robot(&bot, launch, hex))
-                continue;
-            if (!hush_agent_is_work_ok(launch, &bot))
-                continue;
-            hush_agent_emit(HUSH_CEVENT_FOLLOW, slot->channel, root, bot.hex,
-                            "follow");
-            memset(&in, 0, sizeof(in));
-            in.store = store;
-            in.launch = launch;
-            in.bot = &bot;
-            in.parent = ev;
-            in.ask = (slot->scoped && slot->next_ask[at][0] != '\0')
-                ? slot->next_ask[at]
-                : (slot->ask[0] ? slot->ask : ev->content);
-            in.scoped = slot->scoped;
-            in.mode = slot->mode;
-            in.last = last_wave;
-            if (hush_agent_begin_work(&in))
-                slot->inflight++;
-        }
+    last_wave = hush_agent_follow_last_wave(slot);
+    while (slot->at < slot->nnext && slot->group[slot->at] == cur_group) {
+        size_t at = slot->at++;
+        if (!hush_agent_lookup_robot(&bot, launch, slot->next[at]) ||
+            !hush_agent_is_work_ok(launch, &bot))
+            continue;
+        hush_agent_emit(HUSH_CEVENT_FOLLOW, slot->channel, slot->root, bot.hex, "follow");
+        in = (hush_agent_job_in_t){.store = store, .launch = launch, .bot = &bot,
+            .parent = ev, .scoped = slot->scoped, .mode = slot->mode, .last = last_wave};
+        in.ask = (slot->scoped && slot->next_ask[at][0] != '\0')
+            ? slot->next_ask[at]
+            : (slot->ask[0] ? slot->ask : ev->content);
+        in.loop_role = hush_agent_loop_role(slot, bot.hex);
+        if (hush_agent_begin_work(&in))
+            slot->inflight++;
     }
 }
 
@@ -1542,7 +1580,13 @@ void hush_agent_reset_follow(const hush_launch_t *launch,
     char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
     hush_agent_event_root(root, sizeof(root), event);
     hush_agent_follow_t *slot = hush_agent_follow_find(root);
-    if (slot != NULL && slot->inflight == 0)
+    if (slot == NULL)
+        return;
+    /* Any hive-owner note in the thread ends its loop, even mid-turn (#280 L7). */
+    slot->loop.active = 0;
+    slot->loop.awaiting = 0;
+    slot->loop.closed = 1;
+    if (slot->inflight == 0)
         memset(slot, 0, sizeof(*slot));
 }
 
@@ -1571,6 +1615,9 @@ int hush_agent_is_work_note(const char *content)
         HUSH_AGENT_INTRO_PREFIX,
         HUSH_AGENT_ACK_LINE,
         HUSH_AGENT_CHAPERON_LINE,
+        HUSH_AGENT_LOOP_ASK_LINE,
+        HUSH_AGENT_LOOP_LIMIT_LINE,
+        HUSH_AGENT_LOOP_STOPPED_LINE,
         "Holding.",
         "Robots do not chain",
         "Not on this channel.",
@@ -1578,8 +1625,8 @@ int hush_agent_is_work_note(const char *content)
         "I heard:",
         "This channel is humans talking"
     };
-    size_t i;
-    size_t n;
+    size_t i = 0;
+    size_t n = 0;
 
     if (content == NULL || content[0] == '\0')
         return 0;
@@ -1591,26 +1638,32 @@ int hush_agent_is_work_note(const char *content)
     return 1;
 }
 
+static int hush_agent_turn_cap(const hush_launch_t *launch, const hush_event_t *ev)
+{
+    const hush_launch_channel_t *ch = NULL;
+    char channel[HUSH_EVENT_MAX_TAG_LEN + 1] = {0};
+
+    assert(launch != NULL && ev != NULL);
+    hush_agent_event_channel(channel, sizeof(channel), ev);
+    ch = hush_agent_channel(launch, channel);
+    if (ch != NULL && ch->max_robot_turns > 0)
+        return ch->max_robot_turns;
+    return HUSH_LAUNCH_TURNS_DEFAULT;
+}
+
 static int hush_agent_turns_full(hush_store_t *store,
                                  const hush_launch_t *launch,
                                  const hush_event_t *ev)
 {
-    const hush_launch_channel_t *ch;
-    char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
-    char root[HUSH_EVENT_ID_HEX_LEN + 1];
-    int cap;
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
 
     assert(store != NULL);
     assert(ev != NULL);
     if (launch == NULL)
         return 0;
-    hush_agent_event_channel(channel, sizeof(channel), ev);
-    ch = hush_agent_channel(launch, channel);
-    cap = HUSH_LAUNCH_TURNS_DEFAULT;
-    if (ch != NULL && ch->max_robot_turns > 0)
-        cap = ch->max_robot_turns;
     hush_agent_event_root(root, sizeof(root), ev);
-    return hush_agent_count_turns(store, launch, root) >= (size_t)cap;
+    return hush_agent_count_turns(store, launch, root) >=
+           (size_t)hush_agent_turn_cap(launch, ev);
 }
 
 static int hush_agent_lookup_slug(hush_agent_robot_t *out,
@@ -1638,31 +1691,209 @@ static void hush_agent_nudge_chaperon(hush_store_t *store,
                                       const hush_launch_t *launch,
                                       const hush_event_t *ev)
 {
-    const hush_launch_channel_t *ch;
-    hush_agent_robot_t bot;
-    hush_agent_note_in_t in;
-    char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
-    char root[HUSH_EVENT_ID_HEX_LEN + 1];
-    const char *slug;
+    hush_agent_chaperon_say(store, launch, ev, HUSH_AGENT_CHAPERON_LINE);
+}
+
+static void hush_agent_chaperon_say(hush_store_t *store, const hush_launch_t *launch,
+                                    const hush_event_t *ev, const char *line)
+{
+    const hush_launch_channel_t *ch = NULL;
+    hush_agent_robot_t bot = {0};
+    hush_agent_note_in_t in = {0};
+    char channel[HUSH_EVENT_MAX_TAG_LEN + 1] = {0};
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    const char *slug = HUSH_LAUNCH_PAYNE_SLUG;
 
     assert(store != NULL);
-    assert(ev != NULL);
+    assert(ev != NULL && line != NULL);
     hush_agent_event_channel(channel, sizeof(channel), ev);
     hush_agent_event_root(root, sizeof(root), ev);
     ch = hush_agent_channel(launch, channel);
-    slug = HUSH_LAUNCH_PAYNE_SLUG;
     if (ch != NULL && ch->chaperon[0] != '\0')
         slug = ch->chaperon;
-    hush_agent_emit(HUSH_CEVENT_CHAPERON, channel, root, slug,
-                    HUSH_AGENT_CHAPERON_LINE);
+    hush_agent_emit(HUSH_CEVENT_CHAPERON, channel, root, slug, line);
     if (launch == NULL || !hush_agent_lookup_slug(&bot, launch, slug))
         return;
-    memset(&in, 0, sizeof(in));
     in.pubkey = bot.hex != NULL ? bot.hex : "";
-    in.content = HUSH_AGENT_CHAPERON_LINE;
+    in.content = line;
     in.channel = channel;
     in.parent_id = root;
     in.human_pub = ev->pubkey;
     (void)hush_agent_insert_note(store, &in);
+}
+
+static void hush_agent_loop_arm(hush_agent_job_in_t *job, const hush_agent_mentions_t *mentions,
+                                size_t idx)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    hush_agent_follow_t *slot = NULL;
+
+    assert(job != NULL && mentions != NULL);
+    if (mentions->count != (size_t)HUSH_AGENT_PAIR_COUNT)
+        return;
+    hush_agent_event_root(root, sizeof(root), job->parent);
+    slot = hush_agent_follow_find(root);
+    if (slot == NULL)
+        return;
+    if (strcmp(slot->loop.note_id, job->parent->id) != 0) {
+        memset(&slot->loop, 0, sizeof(slot->loop));
+        hush_agent_copy(slot->loop.note_id, sizeof(slot->loop.note_id), job->parent->id);
+        hush_agent_copy(slot->loop.lead, sizeof(slot->loop.lead), mentions->hexes[0]);
+        hush_agent_copy(slot->loop.partner, sizeof(slot->loop.partner), mentions->hexes[1]);
+    }
+    if (idx == 0) {
+        job->loop_role = HUSH_AGENT_LOOP_ROLE_LEAD;
+        job->loop_note = job->parent->content;
+    }
+}
+
+static int hush_agent_loop_role(const hush_agent_follow_t *slot, const char *hex)
+{
+    assert(slot != NULL);
+    if (hex == NULL || hex[0] == '\0' || slot->loop.lead[0] == '\0')
+        return HUSH_AGENT_LOOP_ROLE_NONE;
+    if (strcmp(slot->loop.lead, hex) == 0)
+        return HUSH_AGENT_LOOP_ROLE_LEAD;
+    if (strcmp(slot->loop.partner, hex) == 0)
+        return HUSH_AGENT_LOOP_ROLE_PARTNER;
+    return HUSH_AGENT_LOOP_ROLE_NONE;
+}
+
+static void hush_agent_loop_record(const hush_agent_job_t *job)
+{
+    hush_agent_follow_t *slot = NULL;
+
+    assert(job != NULL);
+    if (job->loop_role == HUSH_AGENT_LOOP_ROLE_NONE)
+        return;
+    slot = hush_agent_follow_find(job->parent_id);
+    if (slot == NULL || slot->loop.closed)
+        return;
+    /* Counted here, not by note text, so no reply prefix can dodge the cap. */
+    slot->loop.turns++;
+    /* Only the lead decides (D1); a partner's control line is ignored. */
+    if (job->loop_role == HUSH_AGENT_LOOP_ROLE_LEAD)
+        slot->loop.active = job->loop_verdict == HUSH_AGENT_LOOP_CONTINUE;
+}
+
+static void hush_agent_loop_next(hush_store_t *store, const hush_launch_t *launch,
+                                 hush_agent_follow_t *slot, const hush_event_t *ev)
+{
+    hush_agent_robot_t from = {0};
+    hush_agent_loop_turn_t turn = {.store = store, .launch = launch, .parent = ev};
+    char ask[HUSH_AGENT_TASK_MAX] = {0};
+    char said[HUSH_AGENT_SNIP_MAX + 1] = {0};
+
+    assert(store != NULL && launch != NULL);
+    assert(slot != NULL && ev != NULL);
+    /* loop_record is the only writer of active and skips closed loops. */
+    if (!slot->loop.active || slot->loop.awaiting)
+        return;
+    if (strcmp(ev->pubkey, slot->loop.lead) == 0)
+        turn.hex = slot->loop.partner;
+    else if (strcmp(ev->pubkey, slot->loop.partner) == 0)
+        turn.hex = slot->loop.lead;
+    else
+        return;
+    if (!hush_agent_lookup_robot(&from, launch, ev->pubkey))
+        return;
+    hush_agent_snip_line(said, sizeof(said), ev->content);
+    hush_agent_loop_fill_ask(ask, sizeof(ask), from.name, said);
+    turn.ask = ask;
+    hush_agent_loop_dispatch(slot, &turn);
+}
+
+static void hush_agent_loop_dispatch(hush_agent_follow_t *slot,
+                                     const hush_agent_loop_turn_t *turn)
+{
+    hush_agent_robot_t bot = {0};
+    hush_agent_job_in_t in = {0};
+
+    assert(slot != NULL && turn != NULL);
+    assert(turn->store != NULL && turn->launch != NULL && turn->parent != NULL);
+    assert(turn->hex != NULL && turn->ask != NULL);
+    if (!hush_agent_lookup_robot(&bot, turn->launch, turn->hex) ||
+        !hush_agent_is_work_ok(turn->launch, &bot)) {
+        slot->loop.active = 0;
+        return;
+    }
+    in = (hush_agent_job_in_t){.store = turn->store, .launch = turn->launch, .bot = &bot,
+        .parent = turn->parent, .ask = turn->ask, .scoped = 1, .mode = slot->mode, .last = 1};
+    in.loop_role = hush_agent_loop_role(slot, turn->hex);
+    in.loop_note = in.loop_role == HUSH_AGENT_LOOP_ROLE_LEAD ? slot->ask : NULL;
+    if (hush_agent_begin_work(&in))
+        slot->inflight++;
+}
+
+static int hush_agent_loop_turns_full(const hush_agent_job_in_t *in)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    const hush_agent_follow_t *slot = NULL;
+
+    assert(in != NULL && in->parent != NULL);
+    if (in->loop_role == HUSH_AGENT_LOOP_ROLE_NONE || in->launch == NULL)
+        return 0;
+    hush_agent_event_root(root, sizeof(root), in->parent);
+    slot = hush_agent_follow_find(root);
+    if (slot == NULL || !slot->loop.active || slot->loop.closed)
+        return 0;
+    return slot->loop.turns >= hush_agent_turn_cap(in->launch, in->parent);
+}
+
+static int hush_agent_loop_pause(const hush_agent_job_in_t *in)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    hush_agent_follow_t *slot = NULL;
+
+    assert(in != NULL && in->parent != NULL && in->bot != NULL);
+    hush_agent_event_root(root, sizeof(root), in->parent);
+    slot = hush_agent_follow_find(root);
+    if (slot == NULL || !slot->loop.active || slot->loop.closed)
+        return 0;
+    if (slot->loop.extensions >= HUSH_AGENT_LOOP_EXTENSIONS_MAX) {
+        slot->loop.active = 0;
+        slot->loop.awaiting = 0;
+        hush_agent_chaperon_say(in->store, in->launch, in->parent, HUSH_AGENT_LOOP_LIMIT_LINE);
+        return 1;
+    }
+    hush_agent_copy(slot->loop.pending, sizeof(slot->loop.pending), in->bot->hex);
+    hush_agent_copy(slot->loop.pending_ask, sizeof(slot->loop.pending_ask),
+                    in->ask != NULL ? in->ask : "");
+    slot->loop.awaiting = 1;
+    hush_agent_chaperon_say(in->store, in->launch, in->parent, HUSH_AGENT_LOOP_ASK_LINE);
+    return 1;
+}
+
+int hush_agent_loop_answer(hush_store_t *store, const hush_launch_t *launch,
+                           const hush_event_t *ev)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    hush_agent_follow_t *slot = NULL;
+    hush_agent_loop_answer_t answer = HUSH_AGENT_LOOP_ANSWER_NONE;
+    hush_agent_loop_turn_t turn = {.store = store, .launch = launch, .parent = ev};
+
+    /* Only the hive owner answers; robots and other humans cannot extend it. */
+    if (store == NULL || launch == NULL || ev == NULL ||
+        !hush_agent_is_human(launch, ev->pubkey))
+        return 0;
+    hush_agent_event_root(root, sizeof(root), ev);
+    slot = hush_agent_follow_find(root);
+    if (slot == NULL || !slot->loop.awaiting)
+        return 0;
+    answer = hush_agent_loop_parse_answer(ev->content);
+    if (answer == HUSH_AGENT_LOOP_ANSWER_NONE)
+        return 0;
+    slot->loop.awaiting = 0;
+    if (answer == HUSH_AGENT_LOOP_ANSWER_NO) {
+        slot->loop.active = 0;
+        hush_agent_chaperon_say(store, launch, ev, HUSH_AGENT_LOOP_STOPPED_LINE);
+        return 1;
+    }
+    slot->loop.extensions++;
+    slot->loop.turns = 0;
+    turn.hex = slot->loop.pending;
+    turn.ask = slot->loop.pending_ask;
+    hush_agent_loop_dispatch(slot, &turn);
+    return 1;
 }
 

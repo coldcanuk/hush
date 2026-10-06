@@ -63,8 +63,32 @@ enum {
     /* In-stream prefix a dying worker writes before its failure reason. */
     HUSH_AGENT_ERR_MARK_LEN = 13,
     HUSH_AGENT_WAIT_MAX = 8,
-    HUSH_AGENT_FOLLOW_ROBOTS = 8
+    HUSH_AGENT_FOLLOW_ROBOTS = 8,
+    /* Human "Yes" answers one loop may receive before it ends (#280 D4). */
+    HUSH_AGENT_LOOP_EXTENSIONS_MAX = 4
 };
+
+/* A robot's role in a two-robot loop (#280). The lead is the first robot
+ * the human mentioned (D1); the partner is the second. */
+typedef enum {
+    HUSH_AGENT_LOOP_ROLE_NONE = 0,
+    HUSH_AGENT_LOOP_ROLE_LEAD = 1,
+    HUSH_AGENT_LOOP_ROLE_PARTNER = 2
+} hush_agent_loop_role_t;
+
+/* What the lead's trailing "LOOP:" control line asked for. */
+typedef enum {
+    HUSH_AGENT_LOOP_NONE = 0,
+    HUSH_AGENT_LOOP_CONTINUE = 1,
+    HUSH_AGENT_LOOP_STOP = 2
+} hush_agent_loop_verdict_t;
+
+/* A human reply to the "Continue this loop?" prompt (HUSH_AGENT_LOOP_ASK_LINE). */
+typedef enum {
+    HUSH_AGENT_LOOP_ANSWER_NONE = 0,
+    HUSH_AGENT_LOOP_ANSWER_YES = 1,
+    HUSH_AGENT_LOOP_ANSWER_NO = 2
+} hush_agent_loop_answer_t;
 
 typedef struct {
     int busy;
@@ -105,7 +129,29 @@ typedef struct {
     /* Worker failure reason, carried from the provider process when it
      * exits without a usable reply. Empty while the job is healthy. */
     char diag[HUSH_AGENT_DIAG_MAX];
+    /* hush_agent_loop_role_t of this robot in a two-robot loop. */
+    int loop_role;
+    /* hush_agent_loop_verdict_t parsed from (and stripped out of) out. */
+    int loop_verdict;
 } hush_agent_job_t;
+
+/* Loop state for one thread root (#280). Hush drives every turn; robots
+ * never mention each other to continue (robot_hops stays 0). Lives in
+ * memory only: a relay restart drops it, and a later Yes does nothing. */
+typedef struct {
+    /* Human note id that armed this loop; a new note re-arms it. */
+    char note_id[HUSH_EVENT_ID_HEX_LEN + 1];
+    char lead[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+    char partner[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+    int active;     /* the lead's last control line said "continue" */
+    int closed;     /* a human note ended the loop; later verdicts are ignored */
+    int awaiting;   /* HUSH_AGENT_LOOP_ASK_LINE is waiting for the human */
+    int extensions; /* Yes answers granted, 0..HUSH_AGENT_LOOP_EXTENSIONS_MAX */
+    int turns;      /* loop turns posted since arming or the last Yes */
+    /* The turn the cap stopped; a Yes resumes it. */
+    char pending[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+    char pending_ask[HUSH_AGENT_TASK_MAX];
+} hush_agent_loop_t;
 
 typedef struct {
     int live;
@@ -129,6 +175,7 @@ typedef struct {
     int inflight; /* tasks dispatched in the current group not yet finished */
     int electing; /* 1 while waiting for the leader election to finish */
     char convener[HUSH_EVENT_PUBKEY_HEX_LEN + 1]; /* runs election + fallback */
+    hush_agent_loop_t loop; /* two-robot loop state for this root (#280) */
 } hush_agent_follow_t;
 
 /* How a human note is interpreted for the tagged robot group. */
@@ -207,6 +254,10 @@ typedef struct {
     const char *prompt_override;
     /* True when this robot is in the last follow wave (or is solo). */
     int last;
+    /* hush_agent_loop_role_t; the lead also receives loop_note (D2). */
+    int loop_role;
+    /* The whole human note shown to the loop lead. NULL for everyone else. */
+    const char *loop_note;
 } hush_agent_job_in_t;
 
 typedef struct {
@@ -331,6 +382,33 @@ const hush_launch_channel_t *hush_agent_channel(
 /* Kicks the next follow wave for a newly posted human event. */
 void hush_agent_follow_kick(hush_store_t *store, const hush_launch_t *launch,
                             const hush_event_t *ev);
+
+/* ---- agent_loop.c: pure text helpers for the robot loop (#280) ---- */
+
+#define HUSH_AGENT_LOOP_ASK_LINE "Continue this loop? Reply Yes or No in this thread."
+#define HUSH_AGENT_LOOP_LIMIT_LINE "Loop limit reached. Ask again to start a new loop."
+#define HUSH_AGENT_LOOP_STOPPED_LINE "Loop stopped."
+
+/* Strips every control line from text in place; returns the last one's
+ * verdict. A control line is "LOOP:" in any case, after optional blanks or
+ * markdown marks (* _ ` > - + ~ #). Verdict: NONE without a line, CONTINUE
+ * only for "continue" (any case, optional ".", "!", or closing marks), STOP
+ * for "stop <reason>" or anything garbled. */
+hush_agent_loop_verdict_t hush_agent_loop_take_control(char *text);
+
+/* Reads a human reply as Yes or No (case-insensitive, trailing "." or "!"
+ * allowed). NONE for anything else, which ends a waiting loop. */
+hush_agent_loop_answer_t hush_agent_loop_parse_answer(const char *content);
+
+/* Appends the lead's loop rule plus the whole human note, on one line. */
+void hush_agent_loop_append_lead(char *prompt, size_t promptsz,
+                                 const char *human, const char *note);
+
+/* Writes the next loop ask: reply to @name, with said quoted on one line.
+ * Double quotes inside said become single quotes so it cannot close the
+ * quote; the ask marks it as text, not instructions. */
+void hush_agent_loop_fill_ask(char *out, size_t outsz, const char *name,
+                              const char *said);
 
 /* ---- hush_agent.c helpers shared with the per-cluster modules ---- */
 

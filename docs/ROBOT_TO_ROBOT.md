@@ -73,3 +73,42 @@ Count `nostr:<npub>` tokens that are each followed by a substantive clause
 (4+ characters, so connectors like "and" are ignored). Every robot having its
 own clause is **explicit** (strict per-robot scoping). Anything less certain
 goes through the LLM (cooperate or leader).
+
+### Two-robot loop (#280)
+
+A human note that mentions exactly two robots may become a loop
+("take turns until one of you is stumped"). Hush drives every turn;
+robots never chain by mentioning each other, and `robot_hops` stays `0`.
+
+1. **Lead.** The first robot mentioned leads. It sees the whole human
+   note in its prompt and decides: a final line `LOOP: continue` keeps
+   the exchange going, `LOOP: stop <reason>` ends it. No line, or any
+   other `LOOP:` text, means stop. The tag is case-insensitive and may
+   follow blanks or markdown marks (`**LOOP: continue**`, `` `loop:
+   Continue.` ``, `- LOOP: stop`).
+2. **Partner.** The second robot keeps only its own clause (strict
+   scope, as in explicit mode). A partner's `LOOP:` line is ignored.
+3. **Strip.** On loop turns the relay removes every `LOOP:` line before
+   store. Ordinary replies outside a loop are not stripped.
+4. **Turns.** After the queued pass, the relay alternates partner and
+   lead, each turn through the normal dispatch path. The partner is
+   asked to reply to the lead's last note; the lead to the partner's.
+   That note is quoted as text, not as instructions, and its own
+   double quotes become single quotes, so a peer cannot steer the next
+   ask beyond what it said. The existing `Thread brief:` context line
+   still shows recent notes as written; the cap and the owner-only Yes
+   bound any steering through it.
+5. **Cap.** Loop turns count toward the channel `max_robot_turns`
+   (default 4) on the thread's loop record as well as through the usual
+   note scan, so a reply that opens with "I heard:", "Holding." or a
+   loop line still uses a turn. At the cap the chaperon asks "Continue
+   this loop? Reply Yes or No in this thread." A typed "Yes" resumes the
+   stopped turn; "No" posts "Loop stopped.". After four Yes answers the
+   next cap posts "Loop limit reached. Ask again to start a new loop."
+   and the loop ends.
+   Only the hive owner can answer; a robot's or another human's Yes is
+   ignored.
+6. **Owner interrupt.** Any other note from the hive owner in the thread
+   ends the loop, even mid-turn. Notes from other humans do not.
+7. **Restart.** Loop state lives in relay memory only. A restart drops
+   it, and a Yes at a prompt from before the restart is ignored.

@@ -6,6 +6,24 @@ the top-level `VERSION` file.
 
 ## [Unreleased]
 
+### Added
+
+- Two-robot loop (#280): when a human mentions two robots, the first one
+  (the lead) also sees the whole note and can keep a back-and-forth going
+  with a hidden `LOOP: continue` / `LOOP: stop` line. At the channel turn
+  cap the chaperon asks "Continue this loop? Reply Yes or No in this
+  thread." instead of "That's enough robot talk."; a typed Yes runs
+  another round, No posts "Loop stopped.", and after four Yes answers the
+  loop ends with "Loop limit reached. Ask again to start a new loop.". Only
+  the hive owner answers Yes/No, and any other note from the owner ends
+  the loop. Every loop turn uses a turn of the cap, the control tag is
+  case-insensitive and tolerates markdown, and each loop turn's ask quotes
+  the peer's last note as text (the existing "Thread brief" context still
+  shows recent notes as written; the cap and the owner-only Yes bound any
+  steering through it). Loop state is not kept across a relay
+  restart. The partner still sees only its own clause, and robots still
+  never chain on their own.
+
 ### Fixed
 
 - Phone walkthrough: the expanded inventory menu no longer opens behind the drawer, and Edit plus double-click open a robot; a right-click selects that robot and enables Edit (the button stays disabled until a robot is selected); at phone width the dispatch log keeps a minimum height and the page scrolls when the roster is tall; quick-bar labels fit at 375px.
