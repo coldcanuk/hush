@@ -274,6 +274,10 @@ typedef struct {
     int follow;
     /* True once the owner approved this turn (#279); skips the gate. */
     int approved;
+    /* Wake/delivery trigger for this turn; NULL or "" uses parent->id. The
+     * leader's plan pass sets its own so it never reuses the election
+     * pass's (robot, trigger) claim (#279 P1-1). */
+    const char *trigger;
 } hush_agent_job_in_t;
 
 /* One robot turn waiting for the owner's Yes or No (#279). Owns copies of
@@ -288,6 +292,7 @@ typedef struct {
     char ask[HUSH_EVENT_MAX_CONTENT + 1];
     char loop_note[HUSH_EVENT_MAX_CONTENT + 1];
     char prompt_override[HUSH_ROSTER_PROMPT_MAX];
+    char trigger[HUSH_EVENT_ID_HEX_LEN + 1];
     hush_agent_job_in_t in;
 } hush_agent_held_t;
 
@@ -441,11 +446,21 @@ void hush_agent_loop_append_lead(char *prompt, size_t promptsz,
 void hush_agent_loop_fill_ask(char *out, size_t outsz, const char *name,
                               const char *said);
 
+/* Domain-separation prefix for the plan pass's wake trigger (#279 P1-1). */
+#define HUSH_AGENT_PLAN_TRIGGER_SALT "hush-plan-pass:"
+
+/* Writes the leader plan pass's wake trigger for root: lowercase hex
+ * sha256(HUSH_AGENT_PLAN_TRIGGER_SALT + root), never equal to root itself.
+ * Writes "" on failure, which falls back to the root (the old trigger). */
+void hush_agent_plan_trigger(char *out, size_t outsz, const char *root);
+
 /* ---- agent_approve.c: the owner approves each robot turn (#279) ---- */
 
 #define HUSH_AGENT_APPROVAL_ASK_HEAD "Approval needed: "
 #define HUSH_AGENT_APPROVAL_ASK_FMT \
     HUSH_AGENT_APPROVAL_ASK_HEAD "%s wants to take a turn. Reply Yes or No in this thread."
+#define HUSH_AGENT_APPROVAL_ELECT_FMT \
+    HUSH_AGENT_APPROVAL_ASK_HEAD "%s wants to run the leader election. Reply Yes or No in this thread."
 #define HUSH_AGENT_APPROVAL_NO_HEAD "Turn declined: "
 #define HUSH_AGENT_APPROVAL_NO_FMT HUSH_AGENT_APPROVAL_NO_HEAD "%s stood down."
 #define HUSH_AGENT_APPROVAL_FULL_LINE \

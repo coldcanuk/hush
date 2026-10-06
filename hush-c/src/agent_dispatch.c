@@ -13,6 +13,7 @@
 
 #include "hush_agent.h"
 #include "hush_agent_internal.h"
+#include "hush_auth.h"
 #include "hush_cevent.h"
 #include "hush_provider.h"
 #include "hush_thread.h"
@@ -1405,48 +1406,66 @@ static void hush_agent_begin_elect(
     (void)hush_agent_begin_work(&in);
 }
 
+/* Rebuilds the parent note for the plan pass from slot state: the thread
+ * root as id, the human as author, the ask as content, the channel tag, and
+ * one "p" tag per remaining worker. */
+static void hush_agent_plan_parent(hush_event_t *parent, const hush_launch_t *launch,
+                                   const hush_agent_follow_t *slot)
+{
+    size_t i = 0;
+
+    assert(parent != NULL && launch != NULL && slot != NULL);
+    memset(parent, 0, sizeof(*parent));
+    hush_agent_copy(parent->id, sizeof(parent->id), slot->root);
+    hush_agent_copy(parent->pubkey, sizeof(parent->pubkey), slot->human_pub);
+    hush_agent_copy(parent->content, sizeof(parent->content), slot->ask);
+    parent->kind = (uint32_t)HUSH_AGENT_KIND_NOTE;
+    parent->tag_count = 1;
+    memcpy(parent->tags[0][0], "h", 2);
+    hush_agent_copy(parent->tags[0][1], sizeof(parent->tags[0][1]), slot->channel);
+    for (i = 0; i < slot->nnext && parent->tag_count < HUSH_EVENT_MAX_TAGS; i++) {
+        hush_agent_robot_t w = {0};
+        if (slot->next[i][0] == '\0' || !hush_agent_lookup_robot(&w, launch, slot->next[i]) ||
+            w.npub == NULL || w.npub[0] == '\0')
+            continue;
+        memcpy(parent->tags[parent->tag_count][0], "p", 2);
+        hush_agent_copy(parent->tags[parent->tag_count][1],
+                        sizeof(parent->tags[parent->tag_count][1]), w.npub);
+        parent->tag_count++;
+    }
+}
+
+void hush_agent_plan_trigger(char *out, size_t outsz, const char *root)
+{
+    char text[sizeof(HUSH_AGENT_PLAN_TRIGGER_SALT) + HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+
+    assert(out != NULL && outsz > 0 && root != NULL);
+    out[0] = '\0';
+    (void)snprintf(text, sizeof(text), "%s%s", HUSH_AGENT_PLAN_TRIGGER_SALT, root);
+    if (hush_auth_sha256_hex(text, out, outsz) != HUSH_OK)
+        out[0] = '\0';
+}
+
 /* Starts the leader's planning pass from the follow slot (used after an
- * election, where we reconstruct the parent note from slot state). */
+ * election, where we reconstruct the parent note from slot state). The pass
+ * gets its own wake trigger: the election pass already claimed (robot, root)
+ * with the root as trigger, and the convener is often the leader (#279 P1-1). */
 static void hush_agent_start_plan_from_slot(
     hush_store_t *store, const hush_launch_t *launch,
     hush_agent_follow_t *slot, const char *leader_hex)
 {
-    hush_agent_robot_t leader;
-    hush_event_t parent;
-    hush_agent_job_in_t in;
-    size_t i;
+    hush_agent_robot_t leader = {0};
+    hush_event_t parent = {0};
+    hush_agent_job_in_t in = {0};
+    char trigger[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
 
     assert(store != NULL);
     assert(launch != NULL);
     assert(slot != NULL);
     if (!hush_agent_lookup_robot(&leader, launch, leader_hex))
         return;
-
-    memset(&parent, 0, sizeof(parent));
-    hush_agent_copy(parent.id, sizeof(parent.id), slot->root);
-    hush_agent_copy(parent.pubkey, sizeof(parent.pubkey), slot->human_pub);
-    hush_agent_copy(parent.content, sizeof(parent.content), slot->ask);
-    parent.kind = (uint32_t)HUSH_AGENT_KIND_NOTE;
-    parent.tag_count = 1;
-    memcpy(parent.tags[0][0], "h", 2);
-    hush_agent_copy(parent.tags[0][1], sizeof(parent.tags[0][1]),
-                    slot->channel);
-    for (i = 0; i < slot->nnext && parent.tag_count < HUSH_EVENT_MAX_TAGS;
-         i++) {
-        hush_agent_robot_t w;
-        if (slot->next[i][0] == '\0')
-            continue;
-        if (!hush_agent_lookup_robot(&w, launch, slot->next[i]))
-            continue;
-        if (w.npub == NULL || w.npub[0] == '\0')
-            continue;
-        memcpy(parent.tags[parent.tag_count][0], "p", 2);
-        hush_agent_copy(parent.tags[parent.tag_count][1],
-                        sizeof(parent.tags[parent.tag_count][1]), w.npub);
-        parent.tag_count++;
-    }
-
-    memset(&in, 0, sizeof(in));
+    hush_agent_plan_parent(&parent, launch, slot);
+    hush_agent_plan_trigger(trigger, sizeof(trigger), slot->root);
     in.store = store;
     in.launch = launch;
     in.bot = &leader;
@@ -1454,6 +1473,7 @@ static void hush_agent_start_plan_from_slot(
     in.ask = slot->ask;
     in.mode = slot->mode;
     in.leader = 1;
+    in.trigger = trigger;
     hush_agent_begin_plan(&in);
 }
 

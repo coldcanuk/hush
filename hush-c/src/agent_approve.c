@@ -56,7 +56,9 @@ int hush_agent_approval_hold(const hush_agent_job_in_t *in)
         return HUSH_AGENT_WORK_NONE;
     }
     hush_agent_held_fill(held, in);
-    hush_agent_approval_say(in->store, in->launch, held, HUSH_AGENT_APPROVAL_ASK_FMT);
+    hush_agent_approval_say(in->store, in->launch, held,
+                            in->elect ? HUSH_AGENT_APPROVAL_ELECT_FMT
+                                      : HUSH_AGENT_APPROVAL_ASK_FMT);
     return HUSH_AGENT_WORK_HELD;
 }
 
@@ -146,6 +148,7 @@ static void hush_agent_held_fill(hush_agent_held_t *held, const hush_agent_job_i
     hush_agent_copy(held->loop_note, sizeof(held->loop_note), in->loop_note);
     hush_agent_copy(held->prompt_override, sizeof(held->prompt_override),
                     in->prompt_override);
+    hush_agent_copy(held->trigger, sizeof(held->trigger), in->trigger);
 }
 
 /* Re-points the copied input at the owned copies and the live robot. */
@@ -161,6 +164,7 @@ static void hush_agent_held_point(hush_agent_held_t *held, hush_store_t *store,
     held->in.loop_note = held->in.loop_note != NULL ? held->loop_note : NULL;
     held->in.prompt_override =
         held->in.prompt_override != NULL ? held->prompt_override : NULL;
+    held->in.trigger = held->in.trigger != NULL ? held->trigger : NULL;
 }
 
 static void hush_agent_approval_say(hush_store_t *store, const hush_launch_t *launch,
