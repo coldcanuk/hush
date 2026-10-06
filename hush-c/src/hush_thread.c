@@ -1,4 +1,4 @@
-/* hush_thread.c: owns durable thread transcripts and rolling briefs. */
+/* hush_thread.c: owns durable thread transcripts, rolling briefs, and desks. */
 
 #define _POSIX_C_SOURCE 200809L
 
@@ -19,6 +19,7 @@
 #define HUSH_THREAD_DIR "threads"
 #define HUSH_THREAD_LOG_SUFFIX ".log"
 #define HUSH_THREAD_BRIEF_SUFFIX ".brief"
+#define HUSH_THREAD_DESK_SUFFIX ".desk"
 #define HUSH_THREAD_BRIEF_SEP " | "
 
 enum {
@@ -27,7 +28,9 @@ enum {
     HUSH_THREAD_FILE_MODE = 0600,
     HUSH_THREAD_NUMBER_MAX = 32,
     /* Count/truncated/turns framing past the escaped brief. */
-    HUSH_THREAD_COUNTS_MAX = 64
+    HUSH_THREAD_COUNTS_MAX = 64,
+    /* On-disk desk: three escaped labels plus the archived token. */
+    HUSH_THREAD_DESK_FILE_MAX = HUSH_THREAD_DESK_ESC_MAX * HUSH_THREAD_DESK_FIELDS + 160
 };
 
 /* True when root is a 64-character lowercase hex event id. */
@@ -76,18 +79,52 @@ static const char *hush_thread_kept_tail(const char *text, const char *start);
 static hush_status_t hush_thread_json_append(char *out, size_t outsz,
                                              size_t *off, const char *text);
 
-/* Appends the object head through the turns array opener, with the escaped
- * brief and the count/truncated pair inline. FULL on overflow. */
+/* Appends the object head through the brief field. FULL on overflow. */
 static hush_status_t hush_thread_json_append_head(char *out, size_t outsz,
                                                   size_t *off, const char *root,
-                                                  const char *brief, size_t total,
-                                                  size_t returned);
+                                                  const char *brief);
 
 /* Appends one turn frame, comma-first past the first turn. FULL on overflow. */
 static hush_status_t hush_thread_json_append_turn(char *out, size_t outsz,
                                                   size_t *off,
                                                   const hush_thread_turn_t *turn,
                                                   int first);
+
+/* True when text fits the desk and has no ASCII control byte. */
+static int hush_thread_desk_text_ok(const char *text);
+
+/* True when the desk matches a missing file. */
+static int hush_thread_desk_is_blank(const hush_thread_desk_t *desk);
+
+/* Decodes one desk string. PARSE when the field is missing or not a string. */
+static hush_status_t hush_thread_desk_take_text(char *out, size_t outsz,
+                                               const char *json,
+                                               const char *path);
+
+/* Reads archived as true or false. PARSE when the field is anything else. */
+static hush_status_t hush_thread_desk_take_flag(int *out, const char *json);
+
+/* Fills out from one desk object. PARSE when a field is unfit. */
+static hush_status_t hush_thread_desk_parse(const char *json,
+                                           hush_thread_desk_t *out);
+
+/* Reads path into out. OK plus a zeroed out when the file is absent. */
+static hush_status_t hush_thread_desk_read(const char *path,
+                                          hush_thread_desk_t *out);
+
+/* Writes one desk object into out. FULL when out cannot hold it. */
+static hush_status_t hush_thread_desk_format(char *out, size_t outsz,
+                                            const hush_thread_desk_t *desk);
+
+/* Appends the desk fields. FULL on overflow. */
+static hush_status_t hush_thread_json_append_desk(char *out, size_t outsz,
+                                                 size_t *off,
+                                                 const hush_thread_desk_t *desk);
+
+/* Appends count, then truncated, then the turns opener. FULL on overflow. */
+static hush_status_t hush_thread_json_append_counts(char *out, size_t outsz,
+                                                   size_t *off, size_t total,
+                                                   size_t returned);
 
 void hush_thread_record(const hush_event_t *ev)
 {
@@ -298,21 +335,29 @@ hush_status_t hush_thread_format_json(const char *root, char *out,
                                       size_t outsz, size_t *out_len)
 {
     hush_thread_turn_t turns[HUSH_THREAD_TURNS_MAX];
+    hush_thread_desk_t desk;
     char brief[HUSH_THREAD_BRIEF_MAX + 1];
     size_t total;
     size_t got;
     size_t i;
     size_t off = 0;
+    hush_status_t st;
 
     if (root == NULL || out == NULL || outsz == 0 || out_len == NULL)
         return HUSH_ERR_ARG;
     if (!hush_thread_root_is_valid(root))
         return HUSH_ERR_ARG;
+    st = hush_thread_desk_get(root, &desk);
+    if (st != HUSH_OK)
+        return st;
     total = hush_thread_count(root);
     got = hush_thread_read(root, turns, HUSH_THREAD_TURNS_MAX);
     hush_thread_brief_get(root, brief, sizeof(brief));
-    if (hush_thread_json_append_head(out, outsz, &off, root, brief, total,
-                                     got) != HUSH_OK)
+    if (hush_thread_json_append_head(out, outsz, &off, root, brief) != HUSH_OK)
+        return HUSH_ERR_FULL;
+    if (hush_thread_json_append_desk(out, outsz, &off, &desk) != HUSH_OK)
+        return HUSH_ERR_FULL;
+    if (hush_thread_json_append_counts(out, outsz, &off, total, got) != HUSH_OK)
         return HUSH_ERR_FULL;
     for (i = 0; i < got; ++i) {
         if (hush_thread_json_append_turn(out, outsz, &off, &turns[i],
@@ -601,12 +646,9 @@ static hush_status_t hush_thread_json_append(char *out, size_t outsz,
 
 static hush_status_t hush_thread_json_append_head(char *out, size_t outsz,
                                                   size_t *off, const char *root,
-                                                  const char *brief, size_t total,
-                                                  size_t returned)
+                                                  const char *brief)
 {
     char escaped[HUSH_THREAD_BRIEF_MAX * HUSH_JSON_U_LEN + 1];
-    char counts[HUSH_THREAD_COUNTS_MAX];
-    int n;
 
     assert(out != NULL);
     assert(off != NULL);
@@ -624,11 +666,7 @@ static hush_status_t hush_thread_json_append_head(char *out, size_t outsz,
         return HUSH_ERR_FULL;
     if (hush_thread_json_append(out, outsz, off, escaped) != HUSH_OK)
         return HUSH_ERR_FULL;
-    n = snprintf(counts, sizeof(counts), "\",\"count\":%zu,\"truncated\":%s,"
-                 "\"turns\":[", total, returned < total ? "true" : "false");
-    if (n <= 0 || (size_t)n >= sizeof(counts))
-        return HUSH_ERR_FULL;
-    return hush_thread_json_append(out, outsz, off, counts);
+    return hush_thread_json_append(out, outsz, off, "\"");
 }
 
 static hush_status_t hush_thread_json_append_turn(char *out, size_t outsz,
@@ -654,4 +692,255 @@ static hush_status_t hush_thread_json_append_turn(char *out, size_t outsz,
     if (n <= 0 || (size_t)n >= sizeof(frame))
         return HUSH_ERR_FULL;
     return hush_thread_json_append(out, outsz, off, frame);
+}
+
+enum {
+    HUSH_THREAD_DESK_SPACE = 0x20,
+    HUSH_THREAD_DESK_DEL = 0x7f
+};
+
+hush_status_t hush_thread_desk_get(const char *root, hush_thread_desk_t *out)
+{
+    char path[HUSH_HOME_PATH_MAX];
+
+    if (out == NULL || !hush_thread_root_is_valid(root))
+        return HUSH_ERR_ARG;
+    memset(out, 0, sizeof(*out));
+    if (hush_thread_file(root, HUSH_THREAD_DESK_SUFFIX, path, sizeof(path)) !=
+        HUSH_OK)
+        return HUSH_OK;
+    return hush_thread_desk_read(path, out);
+}
+
+hush_status_t hush_thread_desk_set(const char *root, const hush_thread_desk_t *desk)
+{
+    char path[HUSH_HOME_PATH_MAX];
+    char body[HUSH_THREAD_DESK_FILE_MAX];
+    hush_status_t st;
+
+    if (desk == NULL || !hush_thread_root_is_valid(root))
+        return HUSH_ERR_ARG;
+    if (desk->archived != 0 && desk->archived != 1)
+        return HUSH_ERR_ARG;
+    if (!hush_thread_desk_text_ok(desk->name))
+        return HUSH_ERR_ARG;
+    if (!hush_thread_desk_text_ok(desk->category))
+        return HUSH_ERR_ARG;
+    if (!hush_thread_desk_text_ok(desk->project))
+        return HUSH_ERR_ARG;
+    if (hush_thread_file(root, HUSH_THREAD_DESK_SUFFIX, path, sizeof(path)) !=
+        HUSH_OK)
+        return HUSH_ERR_IO;
+    if (hush_thread_desk_is_blank(desk)) {
+        if (unlink(path) != 0 && errno != ENOENT)
+            return HUSH_ERR_IO;
+        return HUSH_OK;
+    }
+    if (hush_thread_ensure_dir() != HUSH_OK)
+        return HUSH_ERR_IO;
+    st = hush_thread_desk_format(body, sizeof(body), desk);
+    if (st != HUSH_OK)
+        return st;
+    return hush_thread_write_file(path, body);
+}
+
+static int hush_thread_desk_text_ok(const char *text)
+{
+    size_t i;
+
+    assert(text != NULL);
+    for (i = 0; i < (size_t)HUSH_THREAD_DESK_TEXT_MAX; ++i) {
+        unsigned char ch = (unsigned char)text[i];
+
+        if (ch == 0)
+            return 1;
+        if (ch < HUSH_THREAD_DESK_SPACE || ch == HUSH_THREAD_DESK_DEL)
+            return 0;
+    }
+    return text[HUSH_THREAD_DESK_TEXT_MAX] == '\0';
+}
+
+static int hush_thread_desk_is_blank(const hush_thread_desk_t *desk)
+{
+    assert(desk != NULL);
+    assert(desk->archived == 0 || desk->archived == 1);
+    return desk->name[0] == '\0' && desk->category[0] == '\0' &&
+        desk->project[0] == '\0' && desk->archived == 0;
+}
+
+static hush_status_t hush_thread_desk_take_text(char *out, size_t outsz,
+                                               const char *json,
+                                               const char *path)
+{
+    hush_json_value_t value;
+    hush_status_t st;
+
+    assert(out != NULL);
+    assert(json != NULL);
+    assert(path != NULL);
+    st = hush_json_lookup(&value, json, path);
+    if (st == HUSH_ERR_NOT_FOUND)
+        return HUSH_ERR_PARSE;
+    if (st != HUSH_OK)
+        return st;
+    return hush_json_decode(out, outsz, &value);
+}
+
+static hush_status_t hush_thread_desk_take_flag(int *out, const char *json)
+{
+    hush_json_value_t value;
+    hush_status_t st;
+
+    assert(out != NULL);
+    assert(json != NULL);
+    st = hush_json_lookup(&value, json, "/archived");
+    if (st != HUSH_OK)
+        return HUSH_ERR_PARSE;
+    if (value.len == sizeof(HUSH_THREAD_JSON_TRUE) - 1 &&
+        memcmp(value.start, HUSH_THREAD_JSON_TRUE, value.len) == 0) {
+        *out = 1;
+        return HUSH_OK;
+    }
+    if (value.len == sizeof(HUSH_THREAD_JSON_FALSE) - 1 &&
+        memcmp(value.start, HUSH_THREAD_JSON_FALSE, value.len) == 0) {
+        *out = 0;
+        return HUSH_OK;
+    }
+    return HUSH_ERR_PARSE;
+}
+
+static hush_status_t hush_thread_desk_parse(const char *json,
+                                           hush_thread_desk_t *out)
+{
+    assert(json != NULL);
+    assert(out != NULL);
+    if (hush_thread_desk_take_text(out->name, sizeof(out->name), json,
+                                  "/name") != HUSH_OK)
+        return HUSH_ERR_PARSE;
+    if (hush_thread_desk_take_text(out->category, sizeof(out->category), json,
+                                  "/category") != HUSH_OK)
+        return HUSH_ERR_PARSE;
+    if (hush_thread_desk_take_flag(&out->archived, json) != HUSH_OK)
+        return HUSH_ERR_PARSE;
+    if (hush_thread_desk_take_text(out->project, sizeof(out->project), json,
+                                  "/project") != HUSH_OK)
+        out->project[0] = '\0';
+    if (!hush_thread_desk_text_ok(out->name))
+        return HUSH_ERR_PARSE;
+    if (!hush_thread_desk_text_ok(out->category))
+        return HUSH_ERR_PARSE;
+    if (!hush_thread_desk_text_ok(out->project))
+        return HUSH_ERR_PARSE;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_thread_desk_read(const char *path,
+                                          hush_thread_desk_t *out)
+{
+    char body[HUSH_THREAD_DESK_FILE_MAX];
+    hush_thread_desk_t loaded;
+    FILE *fp;
+    size_t n;
+    int saved;
+
+    assert(path != NULL);
+    assert(out != NULL);
+    fp = hush_thread_open_read(path);
+    if (fp == NULL) {
+        saved = errno;
+        return saved == ENOENT ? HUSH_OK : HUSH_ERR_IO;
+    }
+    n = fread(body, 1, sizeof(body) - 1, fp);
+    body[n] = '\0';
+    if (fclose(fp) != 0)
+        return HUSH_ERR_IO;
+    if (n == sizeof(body) - 1)
+        return HUSH_ERR_FULL;
+    memset(&loaded, 0, sizeof(loaded));
+    if (hush_thread_desk_parse(body, &loaded) != HUSH_OK)
+        return HUSH_ERR_PARSE;
+    *out = loaded;
+    assert(out->archived == 0 || out->archived == 1);
+    return HUSH_OK;
+}
+
+static hush_status_t hush_thread_desk_format(char *out, size_t outsz,
+                                            const hush_thread_desk_t *desk)
+{
+    char name[HUSH_THREAD_DESK_ESC_MAX + 1];
+    char category[HUSH_THREAD_DESK_ESC_MAX + 1];
+    char project[HUSH_THREAD_DESK_ESC_MAX + 1];
+    int n;
+
+    assert(out != NULL);
+    assert(desk != NULL);
+    assert(desk->archived == 0 || desk->archived == 1);
+    if (hush_json_escape(desk->name, name, sizeof(name)) == 0 &&
+        desk->name[0] != '\0')
+        return HUSH_ERR_FULL;
+    if (hush_json_escape(desk->category, category, sizeof(category)) == 0 &&
+        desk->category[0] != '\0')
+        return HUSH_ERR_FULL;
+    if (hush_json_escape(desk->project, project, sizeof(project)) == 0 &&
+        desk->project[0] != '\0')
+        return HUSH_ERR_FULL;
+    n = snprintf(out, outsz,
+                 "{\"name\":\"%s\",\"category\":\"%s\",\"project\":\"%s\","
+                 "\"archived\":%s}\n",
+                 name, category, project,
+                 desk->archived ? HUSH_THREAD_JSON_TRUE : HUSH_THREAD_JSON_FALSE);
+    if (n <= 0 || (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_thread_json_append_desk(char *out, size_t outsz,
+                                                 size_t *off,
+                                                 const hush_thread_desk_t *desk)
+{
+    char name[HUSH_THREAD_DESK_ESC_MAX + 1];
+    char category[HUSH_THREAD_DESK_ESC_MAX + 1];
+    char project[HUSH_THREAD_DESK_ESC_MAX + 1];
+    char frame[HUSH_THREAD_DESK_FILE_MAX];
+    int n;
+
+    assert(out != NULL);
+    assert(off != NULL);
+    assert(desk != NULL);
+    assert(desk->archived == 0 || desk->archived == 1);
+    if (hush_json_escape(desk->name, name, sizeof(name)) == 0 &&
+        desk->name[0] != '\0')
+        return HUSH_ERR_FULL;
+    if (hush_json_escape(desk->category, category, sizeof(category)) == 0 &&
+        desk->category[0] != '\0')
+        return HUSH_ERR_FULL;
+    if (hush_json_escape(desk->project, project, sizeof(project)) == 0 &&
+        desk->project[0] != '\0')
+        return HUSH_ERR_FULL;
+    n = snprintf(frame, sizeof(frame),
+                 ",\"name\":\"%s\",\"category\":\"%s\",\"project\":\"%s\","
+                 "\"archived\":%s",
+                 name, category, project,
+                 desk->archived ? HUSH_THREAD_JSON_TRUE : HUSH_THREAD_JSON_FALSE);
+    if (n <= 0 || (size_t)n >= sizeof(frame))
+        return HUSH_ERR_FULL;
+    return hush_thread_json_append(out, outsz, off, frame);
+}
+
+static hush_status_t hush_thread_json_append_counts(char *out, size_t outsz,
+                                                   size_t *off, size_t total,
+                                                   size_t returned)
+{
+    char counts[HUSH_THREAD_COUNTS_MAX];
+    int n;
+
+    assert(out != NULL);
+    assert(off != NULL);
+    n = snprintf(counts, sizeof(counts),
+                 ",\"count\":%zu,\"truncated\":%s,\"turns\":[",
+                 total, returned < total ? HUSH_THREAD_JSON_TRUE :
+                 HUSH_THREAD_JSON_FALSE);
+    if (n <= 0 || (size_t)n >= sizeof(counts))
+        return HUSH_ERR_FULL;
+    return hush_thread_json_append(out, outsz, off, counts);
 }

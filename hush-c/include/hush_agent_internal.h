@@ -156,6 +156,8 @@ typedef struct {
     int loop_role;
     /* hush_agent_loop_verdict_t parsed from (and stripped out of) out. */
     int loop_verdict;
+    /* 1 when cwd is a milestone project and file tools are allowed. */
+    int project_tools;
 } hush_agent_job_t;
 
 /* Loop state for one thread root (#280). Hush drives every turn; robots
@@ -529,6 +531,16 @@ int hush_agent_follow_peek(const char *root, int *loop_active);
  * default) on ev's root. */
 void hush_agent_chaperon_say(hush_store_t *store, const hush_launch_t *launch,
                              const hush_event_t *ev, const char *line);
+
+/* Solo Major: strip a team or hop fence, hold a valid team, retarget a hop. */
+void hush_agent_chief_prepare(hush_agent_job_t *job, const hush_store_t *store,
+                              char *hop_root, size_t hopsz);
+
+/* Solo Major: append the milestone index to the job note. */
+void hush_agent_chief_equip(hush_agent_job_t *job, const hush_store_t *store);
+
+/* Uses the milestone project path as cwd when the owner bound one. */
+void hush_agent_apply_project_cwd(hush_agent_job_t *job);
 
 /* ---- hush_agent.c helpers shared with the per-cluster modules ---- */
 

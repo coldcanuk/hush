@@ -141,7 +141,9 @@ hush_status_t hush_agent_fill_job(hush_agent_job_t *job,
     hush_agent_fill_rules(job->rules, sizeof(job->rules), job->human_name);
     hush_agent_append_last(job);
     hush_agent_prepare_cwd(job->cwd, sizeof(job->cwd));
+    hush_agent_apply_project_cwd(job);
     hush_agent_fill_job_note(job, in);
+    hush_agent_chief_equip(job, in->store);
     return HUSH_OK;
 }
 

@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "hush_event.h"
+#include "hush_home.h"
 #include "hush_thread.h"
 #include "hush_agent_internal.h"
 #include "hush_store.h"
@@ -537,6 +538,81 @@ static void test_format_json(void)
     expect(hush_thread_format_json(fresh, tiny, sizeof(tiny), &n) ==
                HUSH_ERR_FULL,
            "tiny buffer overflows");
+    expect(strstr(body, "\"name\":\"\"") != NULL, "empty desk name");
+    expect(strstr(body, "\"archived\":false") != NULL, "empty desk flag");
+}
+
+static void test_desk(const char *home)
+{
+    hush_thread_desk_t desk;
+    hush_thread_desk_t got;
+    hush_event_t ev;
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+    char path[HUSH_HOME_PATH_MAX];
+    struct stat st;
+    static char body[HUSH_THREAD_JSON_MAX];
+    FILE *fp;
+    size_t n = 0;
+    int written;
+
+    id_for(root, 970);
+    make_note(&ev, root, "DESK-OPEN");
+    hush_thread_record(&ev);
+    memset(&desk, 0, sizeof(desk));
+    written = snprintf(desk.name, sizeof(desk.name), "Mail desk");
+    expect(written > 0, "desk name fits");
+    written = snprintf(desk.category, sizeof(desk.category), "ops");
+    expect(written > 0, "desk category fits");
+    desk.archived = 1;
+    expect(hush_thread_desk_set(root, &desk) == HUSH_OK, "desk set");
+    expect(hush_thread_desk_get(root, &got) == HUSH_OK, "desk get");
+    expect(strcmp(got.name, "Mail desk") == 0, "desk name round trip");
+    expect(strcmp(got.category, "ops") == 0, "desk category round trip");
+    expect(got.archived == 1, "desk archived");
+    expect(hush_thread_count(root) == 1, "archive keeps the transcript");
+    written = snprintf(path, sizeof(path), "%s/threads/%s.desk", home, root);
+    expect(written > 0 && (size_t)written < sizeof(path), "desk path fits");
+    expect(stat(path, &st) == 0, "desk file exists");
+    expect((st.st_mode & 0777) == 0600, "desk file is private");
+    expect(hush_thread_format_json(root, body, sizeof(body), &n) == HUSH_OK,
+           "desk formats");
+    expect(strstr(body, "\"name\":\"Mail desk\"") != NULL, "json name");
+    expect(strstr(body, "\"category\":\"ops\"") != NULL, "json category");
+    expect(strstr(body, "\"archived\":true") != NULL, "json archived");
+    expect(strstr(body, "DESK-OPEN") != NULL, "json keeps the turn");
+
+    desk.archived = 2;
+    expect(hush_thread_desk_set(root, &desk) == HUSH_ERR_ARG, "bad archive flag");
+    desk.archived = 1;
+    desk.name[0] = '\n';
+    desk.name[1] = '\0';
+    expect(hush_thread_desk_set(root, &desk) == HUSH_ERR_ARG, "control name");
+    expect(hush_thread_desk_get(root, &got) == HUSH_OK, "rejected set still reads");
+    expect(got.archived == 1, "rejected set keeps the archive");
+    expect(strcmp(got.name, "Mail desk") == 0, "rejected set keeps the name");
+
+    memset(&desk, 0, sizeof(desk));
+    expect(hush_thread_desk_set(root, &desk) == HUSH_OK, "blank desk clears");
+    expect(stat(path, &st) != 0, "blank desk removes the file");
+    expect(hush_thread_count(root) == 1, "clear keeps the transcript");
+    expect(hush_thread_desk_get(root, &got) == HUSH_OK, "missing desk reads");
+    expect(got.name[0] == '\0', "missing desk has no name");
+    expect(got.archived == 0, "missing desk is active");
+    expect(hush_thread_desk_set("../escape", &desk) == HUSH_ERR_ARG,
+           "bad root rejected");
+    expect(hush_thread_desk_get(NULL, &got) == HUSH_ERR_ARG, "NULL root rejected");
+    expect(hush_thread_desk_set(root, NULL) == HUSH_ERR_ARG, "NULL desk rejected");
+
+    fp = fopen(path, "w");
+    expect(fp != NULL, "corrupt fixture opens");
+    if (fp != NULL) {
+        expect(fputs("nope\n", fp) >= 0, "corrupt fixture writes");
+        expect(fclose(fp) == 0, "corrupt fixture closes");
+    }
+    expect(hush_thread_desk_get(root, &got) == HUSH_ERR_PARSE, "corrupt desk");
+    expect(hush_thread_format_json(root, body, sizeof(body), &n) ==
+               HUSH_ERR_PARSE,
+           "corrupt desk blocks json");
 }
 
 int main(void)
@@ -563,6 +639,7 @@ int main(void)
     test_fill_partial();
     test_nonadjacent_duplicate();
     test_format_json();
+    test_desk(home);
     test_bad_roots();
     test_ignored();
     test_privacy_and_symlink(home);

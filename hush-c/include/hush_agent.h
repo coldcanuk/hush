@@ -14,8 +14,21 @@ enum {
     HUSH_AGENT_TIMEOUT_S = 90,
     /* Global concurrent job cap; the overload gate refuses new dispatches
      * when every slot is busy. */
-    HUSH_AGENT_JOBS_MAX = 4
+    HUSH_AGENT_JOBS_MAX = 4,
+    /* Robots one ```team fence may name. */
+    HUSH_AGENT_TEAM_MAX = 8
 };
+
+typedef struct {
+    char name[HUSH_ROSTER_NAME_MAX];
+    char provider[HUSH_ROSTER_PROVIDER_MAX];
+    char prompt[HUSH_ROSTER_PROMPT_MAX];
+} hush_agent_team_member_t;
+
+typedef struct {
+    hush_agent_team_member_t member[HUSH_AGENT_TEAM_MAX];
+    size_t count;
+} hush_agent_team_t;
 
 /* Zeros the job table and reloads the wake ledger. Safe to call twice.
  * Does not wipe wake.ledger or device.id. */
@@ -60,6 +73,26 @@ int hush_agent_channel_busy(const char *channel);
 
 /* Number of busy jobs across all channels. */
 int hush_agent_jobs_active(void);
+
+/* Parses one ```team fence. NOT_FOUND when the fence is absent. PARSE when
+ * a line is unfit. A parsed team is not raised until the owner answers Yes. */
+hush_status_t hush_agent_team_parse(hush_agent_team_t *out, const char *text);
+
+/* FULL when the roster cannot hold the team. PARSE on a name clash or a
+ * provider the roster refuses. */
+hush_status_t hush_agent_team_check(const hush_launch_t *launch,
+                                    const hush_agent_team_t *team);
+
+/* Remembers a team for root. A later offer for the same root replaces it. */
+int hush_agent_team_offer(const char *root, const hush_agent_team_t *team);
+
+/* Owner Yes raises the offered team. Owner No drops it. Returns 1 when ev
+ * was that answer. A robot Yes is left for the normal path. */
+int hush_agent_team_answer(hush_store_t *store, hush_launch_t *launch,
+                           const hush_event_t *ev);
+
+/* Grok tool denylist. project_tools 1 drops the file tools only. */
+const char *hush_agent_tool_denylist(int project_tools);
 
 /* Cancels the live job for robot on root. root is the thread's root event id;
  * robot matches the robot's hex pubkey or roster name. Sends SIGTERM to the

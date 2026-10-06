@@ -39,6 +39,21 @@ static hush_status_t hush_http_send_event(int fd, const hush_event_t *event,
 static int hush_http_take_thread_root(const char *req, char *out,
                                       size_t outsz);
 
+/* Fills root and desk from a POST body. ARG when a field is unfit. */
+static hush_status_t hush_http_read_thread_desk(hush_thread_desk_t *desk,
+                                               char *root, size_t rootsz,
+                                               const char *body);
+
+/* Reads archived as 0, 1, false, or true. 0 when the field is unfit. */
+static int hush_http_desk_flag(int *out, const char *body);
+
+/* Copies one desk label. ARG when it is longer than the desk allows. */
+static hush_status_t hush_http_desk_label(char *out, size_t outsz,
+                                         const char *body, const char *key);
+
+/* True when slug is empty or names a launch project. */
+static int hush_http_project_known(const char *slug);
+
 void hush_http_serve_status(int fd, const hush_store_t *store)
 {
     char body[HUSH_HTTP_STATUS_MAX];
@@ -98,6 +113,7 @@ void hush_http_serve_thread(int fd, const char *req)
     static char body[HUSH_THREAD_JSON_MAX];
     char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
     size_t n = 0;
+    hush_status_t st;
 
     if (req == NULL ||
         !hush_http_take_thread_root(req, root, sizeof(root))) {
@@ -107,11 +123,19 @@ void hush_http_serve_thread(int fd, const char *req)
                         strlen(error));
         return;
     }
-    if (hush_thread_format_json(root, body, sizeof(body), &n) != HUSH_OK) {
+    st = hush_thread_format_json(root, body, sizeof(body), &n);
+    if (st == HUSH_ERR_FULL) {
         const char *failed = "{\"ok\":false,\"error\":\"thread too large\"}\n";
 
         hush_http_reply(fd, "507 Insufficient Storage", "application/json",
                         failed, strlen(failed));
+        return;
+    }
+    if (st != HUSH_OK) {
+        const char *bad = "{\"ok\":false,\"error\":\"bad desk\"}\n";
+
+        hush_http_reply(fd, "400 Bad Request", "application/json", bad,
+                        strlen(bad));
         return;
     }
     hush_http_reply(fd, "200 OK", "application/json", body, n);
@@ -197,6 +221,134 @@ static int hush_http_take_thread_root(const char *req, char *out,
     memcpy(out, hit, HUSH_EVENT_ID_HEX_LEN);
     out[HUSH_EVENT_ID_HEX_LEN] = '\0';
     return 1;
+}
+
+static hush_status_t hush_http_desk_label(char *out, size_t outsz,
+                                         const char *body, const char *key)
+{
+    char probe[HUSH_THREAD_DESK_PROBE];
+
+    assert(out != NULL);
+    assert(body != NULL);
+    assert(key != NULL);
+    assert(outsz > (size_t)HUSH_THREAD_DESK_TEXT_MAX);
+    out[0] = '\0';
+    if (!hush_http_json_has_key(body, key))
+        return HUSH_OK;
+    (void)hush_http_json_field(body, key, probe, sizeof(probe));
+    if (strlen(probe) > (size_t)HUSH_THREAD_DESK_TEXT_MAX)
+        return HUSH_ERR_ARG;
+    memcpy(out, probe, strlen(probe) + 1);
+    return HUSH_OK;
+}
+
+static int hush_http_desk_flag(int *out, const char *body)
+{
+    char flag[HUSH_THREAD_DESK_PROBE];
+
+    assert(out != NULL);
+    assert(body != NULL);
+    if (!hush_http_json_bare_field(body, "archived", flag, sizeof(flag)))
+        return 0;
+    if (strcmp(flag, "0") == 0 || strcmp(flag, HUSH_THREAD_JSON_FALSE) == 0) {
+        *out = 0;
+        return 1;
+    }
+    if (strcmp(flag, "1") == 0 || strcmp(flag, HUSH_THREAD_JSON_TRUE) == 0) {
+        *out = 1;
+        return 1;
+    }
+    return 0;
+}
+
+static hush_status_t hush_http_read_thread_desk(hush_thread_desk_t *desk,
+                                               char *root, size_t rootsz,
+                                               const char *body)
+{
+    assert(desk != NULL);
+    assert(root != NULL);
+    assert(body != NULL);
+    if (!hush_http_json_field(body, "root", root, rootsz))
+        return HUSH_ERR_ARG;
+    if (strlen(root) != (size_t)HUSH_EVENT_ID_HEX_LEN)
+        return HUSH_ERR_ARG;
+    if (hush_http_desk_label(desk->name, sizeof(desk->name), body, "name") !=
+        HUSH_OK)
+        return HUSH_ERR_ARG;
+    if (hush_http_desk_label(desk->category, sizeof(desk->category), body,
+                            "category") != HUSH_OK)
+        return HUSH_ERR_ARG;
+    if (hush_http_desk_label(desk->project, sizeof(desk->project), body,
+                            "project") != HUSH_OK)
+        return HUSH_ERR_ARG;
+    if (desk->project[0] != '\0' && !hush_http_project_known(desk->project))
+        return HUSH_ERR_ARG;
+    if (!hush_http_desk_flag(&desk->archived, body))
+        return HUSH_ERR_ARG;
+    return HUSH_OK;
+}
+
+static int hush_http_project_known(const char *slug)
+{
+    const hush_launch_t *launch = hush_http_launch();
+    size_t i;
+
+    assert(slug != NULL);
+    if (launch == NULL)
+        return 0;
+    for (i = 0; i < launch->nprojects && i < (size_t)HUSH_LAUNCH_PROJECTS_MAX; ++i) {
+        if (strcmp(launch->projects[i].slug, slug) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+hush_status_t hush_http_serve_thread_post(int fd, const char *body)
+{
+    hush_thread_desk_t desk;
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+    static char saved[HUSH_THREAD_JSON_MAX];
+    const hush_launch_t *launch;
+    size_t n = 0;
+    hush_status_t st;
+    const char *bad = "{\"ok\":false,\"error\":\"bad desk\"}\n";
+    const char *vibe = "{\"ok\":false,\"error\":\"vibe required\"}\n";
+
+    launch = hush_http_launch();
+    if (body == NULL || launch == NULL || !launch->logged_in ||
+        !launch->has_vibe) {
+        hush_http_reply(fd, "400 Bad Request", "application/json", vibe,
+                        strlen(vibe));
+        return HUSH_ERR_ARG;
+    }
+    memset(&desk, 0, sizeof(desk));
+    root[0] = '\0';
+    if (hush_http_read_thread_desk(&desk, root, sizeof(root), body) != HUSH_OK) {
+        hush_http_reply(fd, "400 Bad Request", "application/json", bad,
+                        strlen(bad));
+        return HUSH_ERR_ARG;
+    }
+    st = hush_thread_desk_set(root, &desk);
+    if (st == HUSH_ERR_IO) {
+        const char *io = "{\"ok\":false,\"error\":\"desk write failed\"}\n";
+
+        hush_http_reply(fd, "500 Internal Server Error", "application/json",
+                        io, strlen(io));
+        return st;
+    }
+    if (st != HUSH_OK) {
+        hush_http_reply(fd, "400 Bad Request", "application/json", bad,
+                        strlen(bad));
+        return st;
+    }
+    st = hush_thread_format_json(root, saved, sizeof(saved), &n);
+    if (st != HUSH_OK) {
+        hush_http_reply(fd, "400 Bad Request", "application/json", bad,
+                        strlen(bad));
+        return st;
+    }
+    hush_http_reply(fd, "200 OK", "application/json", saved, n);
+    return HUSH_OK;
 }
 
 /* The relay's existing HTTP callback signature includes both transport and event outputs. */

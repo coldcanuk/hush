@@ -993,6 +993,8 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_vibe(fd, hush_http_body(req, len), store);
     if (strcmp(path, "/api/channel") == 0)
         return hush_http_serve_channel(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/thread") == 0)
+        return hush_http_serve_thread_post(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/group") == 0)
         return hush_http_serve_group(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/project") == 0)

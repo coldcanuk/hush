@@ -72,8 +72,15 @@ hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
     hush_thread_record(out);
     hush_intel_consider(store, hush_http_launch(), out);
     hush_http_note_presence(store, out);
-    const char *success = "{\"ok\":true}\n";
-    hush_http_reply(fd, "200 OK", "application/json", success, strlen(success));
+    {
+        char success[HUSH_EVENT_ID_HEX_LEN + 32];
+        int n = snprintf(success, sizeof(success),
+                         "{\"ok\":true,\"id\":\"%s\"}\n", out->id);
+
+        if (n < 0 || (size_t)n >= sizeof(success))
+            return HUSH_ERR_FULL;
+        hush_http_reply(fd, "200 OK", "application/json", success, (size_t)n);
+    }
     return HUSH_OK;
 }
 

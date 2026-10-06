@@ -200,6 +200,17 @@
       flex: 0 0 auto; min-height: 1.4rem; padding: 0 16px 6px;
     }
     #thread-form { position: relative; flex: 0 0 auto; }
+    #thread-desk, #milestone-form {
+      display: flex; gap: 6px; align-items: center;
+      padding: 0 16px 8px; flex: 0 0 auto;
+    }
+    #thread-desk input, #milestone-form input {
+      flex: 1; min-width: 0; font: inherit; color: inherit;
+      background: var(--surface-2, transparent);
+      border: 1px solid var(--line, currentColor);
+      border-radius: 4px; padding: 4px 6px;
+    }
+    #thread-desk button, #milestone-form button { flex: 0 0 auto; }
     #thread-resize {
       position: absolute; right: 2px; bottom: 2px; width: 24px; height: 24px;
       cursor: nwse-resize; touch-action: none;
@@ -2264,6 +2275,11 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
         <div id="stream"></div>
       </div>
       <p id="send-error" class="warn send-error" role="status"></p>
+      <form id="milestone-form">
+        <input id="milestone-name" maxlength="64" placeholder="New milestone" aria-label="New milestone name">
+        <input id="milestone-category" maxlength="64" placeholder="Category" aria-label="New milestone category">
+        <button type="submit">Open</button>
+      </form>
       <form class="composer" id="form">
         <div class="mention-box" id="mention-box" hidden></div>
         <div class="composer-box">
@@ -2393,6 +2409,13 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
         <button class="drawer-x" id="thread-close" type="button" aria-label="Close thread">×</button>
       </div>
       <p class="help" id="thread-help">1:1 thread</p>
+      <form id="thread-desk">
+        <input id="thread-desk-name" maxlength="64" placeholder="Milestone name" aria-label="Milestone name">
+        <input id="thread-desk-category" maxlength="64" placeholder="Category" aria-label="Milestone category">
+        <input id="thread-desk-project" maxlength="64" placeholder="Project" aria-label="Milestone project">
+        <button id="thread-desk-save" type="submit">Save</button>
+        <button id="thread-desk-archive" type="button">Archive</button>
+      </form>
       <div id="thread-stream"></div>
       <div id="thread-think" aria-live="polite"></div>
       <form class="composer" id="thread-form">
@@ -3026,6 +3049,8 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
     /* WS5 M2 thread memory: durable turns cached per root id. The cache holds
        relay responses only; the browser remembers just the open root id. */
     const threadMem = {};
+    const threadDesk = {};
+    const threadDeskWait = {};
     let resumeTried = false;
     let threadPills = [];
     let threadMentionOpen = false;
@@ -5550,6 +5575,64 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
         closeThreadPane();
       }
     });
+    async function saveThreadDesk(archived) {
+      if (!isThreadRoot(openThread)) return;
+      const mem = await api("/api/thread", {
+        root: openThread,
+        name: $("thread-desk-name").value.trim(),
+        category: $("thread-desk-category").value.trim(),
+        project: $("thread-desk-project").value.trim(),
+        archived: archived ? 1 : 0
+      });
+      rememberDesk(openThread, mem);
+      if (archived) {
+        try { localStorage.removeItem("hush-thread-open"); } catch (err) {}
+      }
+      paintThreadStream(openThread, false);
+      render(lastEvents, lastStatus);
+    }
+
+    $("thread-desk").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("thread-send-error").textContent = "";
+      try {
+        await saveThreadDesk(deskOf(openThread).archived);
+      } catch (err) {
+        $("thread-send-error").textContent = "Milestone was not saved.";
+      }
+    });
+
+    $("thread-desk-archive").addEventListener("click", async () => {
+      $("thread-send-error").textContent = "";
+      try {
+        await saveThreadDesk(!deskOf(openThread).archived);
+      } catch (err) {
+        $("thread-send-error").textContent = "Milestone was not saved.";
+      }
+    });
+
+    $("milestone-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = $("milestone-name").value.trim();
+      const category = $("milestone-category").value.trim();
+      if (!name) return;
+      $("send-error").textContent = "";
+      try {
+        const posted = await api("/api/event", { content: name, kind: 1, channel: channel });
+        if (posted && posted.id) {
+          const mem = await api("/api/thread", {
+            root: posted.id, name: name, category: category, archived: 0
+          });
+          rememberDesk(posted.id, mem);
+        }
+        $("milestone-name").value = "";
+        $("milestone-category").value = "";
+        await tick();
+      } catch (err) {
+        $("send-error").textContent = "Milestone was not opened.";
+      }
+    });
+
     $("thread-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       if (!openThread || threadMentionOpen || sendingThread) return;
@@ -7278,6 +7361,33 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       return typeof id === "string" && /^[0-9a-f]{64}$/.test(id);
     }
 
+    /* Keeps the milestone label from one /api/thread object. */
+    function rememberDesk(rootId, mem) {
+      if (!isThreadRoot(rootId) || !mem) return;
+      threadDesk[rootId] = {
+        name: typeof mem.name === "string" ? mem.name : "",
+        category: typeof mem.category === "string" ? mem.category : "",
+        project: typeof mem.project === "string" ? mem.project : "",
+        archived: mem.archived === true
+      };
+    }
+
+    function deskOf(rootId) {
+      return threadDesk[rootId] || { name: "", category: "", project: "", archived: false };
+    }
+
+    /* Loads a desk once. A desk already stored, including a save, wins. */
+    function ensureDesk(rootId) {
+      if (!isThreadRoot(rootId) || threadDesk[rootId] || threadDeskWait[rootId])
+        return;
+      threadDeskWait[rootId] = 1;
+      fetch(API + "/api/thread?root=" + rootId).then((r) => r.json()).then((mem) => {
+        delete threadDeskWait[rootId];
+        if (!mem || mem.root !== rootId || threadDesk[rootId]) return;
+        rememberDesk(rootId, mem);
+      }).catch(() => { delete threadDeskWait[rootId]; });
+    }
+
     /* Fetches durable memory once per root; repaints the pane on arrival.
        A failed fetch leaves an empty marker so the 1 s tick never storms. */
     function fetchThreadMemory(rootId) {
@@ -7293,6 +7403,7 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
           brief: typeof mem.brief === "string" ? mem.brief : "",
           count: typeof mem.count === "number" ? mem.count : mem.turns.length
         };
+        rememberDesk(rootId, mem);
         if (openThread === rootId && $("thread-pane").classList.contains("show"))
           paintThreadStream(rootId, false);
       }).catch(() => { threadMem[rootId] = { turns: [], brief: "", count: 0 }; });
@@ -7309,11 +7420,17 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
           try { localStorage.removeItem("hush-thread-open"); } catch (e) {}
           return;
         }
+        if (mem.archived === true) {
+          rememberDesk(rootId, mem);
+          try { localStorage.removeItem("hush-thread-open"); } catch (e2) {}
+          return;
+        }
         threadMem[rootId] = {
           turns: mem.turns,
           brief: typeof mem.brief === "string" ? mem.brief : "",
           count: typeof mem.count === "number" ? mem.count : mem.turns.length
         };
+        rememberDesk(rootId, mem);
         openThreadPane(rootId);
       }).catch(() => {});
     }
@@ -7349,6 +7466,17 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
         ("#" + root.channel + " · Started by " +
         ((owner && owner.name) || "a teammate") + (lead ? " · Lead: " + lead.name : "") +
         (names.length === 1 ? " · Follow-ups go to " + names[0] : " · @ a robot to direct its next turn"));
+      const desk = deskOf(rootId);
+      if (desk.name) $("thread-title").textContent = desk.name;
+      if (desk.category)
+        $("thread-help").textContent += " · " + desk.category;
+      const nameBox = $("thread-desk-name");
+      const catBox = $("thread-desk-category");
+      const projBox = $("thread-desk-project");
+      if (nameBox && document.activeElement !== nameBox) nameBox.value = desk.name;
+      if (catBox && document.activeElement !== catBox) catBox.value = desk.category;
+      if (projBox && document.activeElement !== projBox) projBox.value = desk.project || "";
+      $("thread-desk-archive").textContent = desk.archived ? "Restore" : "Archive";
       const jobs = thinkingFor(root.id, lastStatus);
       const failure = providerFailureSentence(failureSources(rootId, kids));
       const quiet = providerFailureRobot(failure);
@@ -7469,7 +7597,9 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       });
       const filtered = visibleNotes(lastEvents);
       const mine = channelNotes(filtered);
-      const roots = mine.filter((e) => !e.reply_to);
+      mine.forEach((e) => { if (!e.reply_to) ensureDesk(e.id); });
+      const roots = mine.filter((e) => !e.reply_to && !deskOf(e.id).archived);
+      const archived = mine.filter((e) => !e.reply_to && deskOf(e.id).archived);
       $("count").textContent = roots.length + (roots.length === 1 ? " note" : " notes");
       const projN = (session.projects || []).length;
       // r4 (Ops F2): one inline item per stat, wrapped, so the drawer fits.
@@ -7499,8 +7629,13 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       paintRosterPane(status);
       const thinkKey = ((status.thinking || []).map((t) => t.parent + ":" + t.name).join(","));
       const ackKey = roots.map((e) => ackStampFor(e, thinkingFor(e.id, status))).join("");
+      const deskKey = mine.filter((e) => !e.reply_to).map((e) => {
+        const d = deskOf(e.id);
+        return e.id + ":" + d.name + ":" + (d.archived ? "1" : "0");
+      }).join(",");
       const key = roots.map((e) => e.id).join(",") + "|" +
-        mine.filter((e) => e.reply_to).map((e) => e.id).join(",") + "|" + thinkKey + "|" + ackKey;
+        mine.filter((e) => e.reply_to).map((e) => e.id).join(",") + "|" +
+        thinkKey + "|" + ackKey + "|" + deskKey;
       if (key !== seen) {
         seen = key;
         const s = $("stream");
@@ -7525,7 +7660,8 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
                 const btn = document.createElement("button");
                 btn.type = "button";
                 btn.className = "thread-btn";
-                btn.textContent = "Thread · " + (kids.length || "live");
+                btn.textContent = deskOf(e.id).name ||
+                  ("Thread · " + (kids.length || "live"));
                 btn.addEventListener("click", () => openThreadPane(e.id));
                 node.appendChild(btn);
               }
@@ -7538,6 +7674,14 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
               n.appendChild(line);
             }
             s.appendChild(n);
+          });
+          archived.forEach((e) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "thread-btn";
+            btn.textContent = "Archived · " + (deskOf(e.id).name || "thread");
+            btn.addEventListener("click", () => openThreadPane(e.id));
+            s.appendChild(btn);
           });
           s.scrollTop = s.scrollHeight;
         }
