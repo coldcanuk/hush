@@ -740,9 +740,13 @@ if ! echo "$html" | grep -A8 'function dismissJourneyLayer' | grep -q 'new-chan-
   fail "#241 Esc must dismiss new-chan-drawer"
 fi
 # The Esc order array itself must end with "settings" (the later
-# order[k] === "settings" branch must not satisfy this pin).
-if ! echo "$html" | grep -A3 'const order = \["avatar-drawer"' | grep -q -F '"settings"];'; then
-  fail "#241 Esc order array must include settings"
+# LAYER_IDS branch must not satisfy this pin). #283: it starts with the
+# Developer Log, which opens over Settings, and lists Manage Channel.
+if ! echo "$html" | grep -A3 'const order = \["dev-log-drawer", "avatar-drawer"' | grep -q -F '"settings"];'; then
+  fail "#241/#283 Esc order array must start with dev-log-drawer and include settings"
+fi
+if ! echo "$html" | grep -A3 'const order = \["dev-log-drawer"' | grep -q -F '"manage-chan"'; then
+  fail "#283 Esc order array must include manage-chan"
 fi
 # B3 / Gauge: claimed #241 UI bytes whose revert must FAIL this gate.
 echo "$html" | grep -q -F 'value="field-office" checked' \
@@ -777,12 +781,16 @@ echo "$html" | grep -q -F 'function openSettings()' \
   || fail "#241 F3 openSettings missing"
 echo "$html" | grep -q -F 'function closeSettings()' \
   || fail "#241 F3 closeSettings missing"
-echo "$html" | grep -q -F 'settingsReturnFocus' \
-  || fail "#241 F3 settingsReturnFocus missing"
+# #283: the Settings return target now lives in the shared layer helper
+# (openLayer records it, closeLayer hands focus back).
+echo "$html" | grep -q -F 'openLayer("settings", back,' \
+  || fail "#241 F3/#283 openSettings must record its return target via openLayer"
+echo "$html" | grep -A2 'function closeSettings()' | grep -q -F 'closeLayer("settings");' \
+  || fail "#241 F3/#283 closeSettings must close through closeLayer (return focus)"
 echo "$html" | grep -q -F 'function settingsFocusables()' \
   || fail "#241 F3 settingsFocusables missing"
-if ! echo "$html" | grep -A20 'function dismissJourneyLayer' | grep -q 'closeSettings()'; then
-  fail "#241 F3 Esc must close Settings via closeSettings (return focus)"
+if ! echo "$html" | grep -A20 'function dismissJourneyLayer' | grep -q -F 'if (LAYER_IDS.indexOf(order[k]) >= 0) closeLayer(order[k]);'; then
+  fail "#241 F3/#283 Esc must close Settings and the shared layers via closeLayer (return focus)"
 fi
 echo "$html" | grep -q -F 'lastStatus = { ok: false };' \
   || fail "#241 M5 tick catch must clear lastStatus"
