@@ -136,7 +136,8 @@ typedef struct {
 } hush_agent_job_t;
 
 /* Loop state for one thread root (#280). Hush drives every turn; robots
- * never mention each other to continue (robot_hops stays 0). */
+ * never mention each other to continue (robot_hops stays 0). Lives in
+ * memory only: a relay restart drops it, and a later Yes does nothing. */
 typedef struct {
     /* Human note id that armed this loop; a new note re-arms it. */
     char note_id[HUSH_EVENT_ID_HEX_LEN + 1];
@@ -146,6 +147,7 @@ typedef struct {
     int closed;     /* a human note ended the loop; later verdicts are ignored */
     int awaiting;   /* "Continue this loop? Yes/No" is waiting for the human */
     int extensions; /* Yes answers granted, 0..HUSH_AGENT_LOOP_EXTENSIONS_MAX */
+    int turns;      /* loop turns posted since arming or the last Yes */
     /* The turn the cap stopped; a Yes resumes it. */
     char pending[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
     char pending_ask[HUSH_AGENT_TASK_MAX];
@@ -387,18 +389,26 @@ void hush_agent_follow_kick(hush_store_t *store, const hush_launch_t *launch,
 #define HUSH_AGENT_LOOP_LIMIT_LINE "Loop limit reached."
 #define HUSH_AGENT_LOOP_STOPPED_LINE "Loop stopped."
 
-/* Removes every "LOOP:" control line from text in place and returns the
- * last one's verdict: NONE without a line, CONTINUE only for an exact
- * "LOOP: continue", STOP for "LOOP: stop <reason>" or anything garbled. */
+/* Strips every control line from text in place; returns the last one's
+ * verdict. A control line is "LOOP:" in any case, after optional blanks or
+ * markdown marks (* _ ` > - + ~ #). Verdict: NONE without a line, CONTINUE
+ * only for "continue" (any case, optional ".", "!", or closing marks), STOP
+ * for "stop <reason>" or anything garbled. */
 hush_agent_loop_verdict_t hush_agent_loop_take_control(char *text);
 
 /* Reads a human reply as Yes or No (case-insensitive, trailing "." or "!"
  * allowed). NONE for anything else, which ends a waiting loop. */
 hush_agent_loop_answer_t hush_agent_loop_parse_answer(const char *content);
 
-/* Appends the lead's loop rule and the whole human note, on one line. */
+/* Appends the lead's loop rule plus the whole human note, on one line. */
 void hush_agent_loop_append_lead(char *prompt, size_t promptsz,
                                  const char *human, const char *note);
+
+/* Writes the next loop ask: reply to @name, with said quoted on one line.
+ * Double quotes inside said become single quotes so it cannot close the
+ * quote; the ask marks it as text, not instructions. */
+void hush_agent_loop_fill_ask(char *out, size_t outsz, const char *name,
+                              const char *said);
 
 /* ---- hush_agent.c helpers shared with the per-cluster modules ---- */
 

@@ -13,9 +13,13 @@ the top-level `VERSION` file.
   with a hidden `LOOP: continue` / `LOOP: stop` line. At the channel turn
   cap the chaperon asks "Continue this loop? Yes/No" instead of "That's
   enough robot talk."; a typed Yes runs another round, No stops it, and
-  after four Yes answers the loop ends with "Loop limit reached.". Any
-  other human note ends the loop. The partner still sees only its own
-  clause, and robots still never chain on their own.
+  after four Yes answers the loop ends with "Loop limit reached.". Only
+  the hive owner answers Yes/No, and any other note from the owner ends
+  the loop. Every loop turn uses a turn of the cap, the control tag is
+  case-insensitive and tolerates markdown, and each robot sees its peer's
+  last note only as quoted text. Loop state is not kept across a relay
+  restart. The partner still sees only its own clause, and robots still
+  never chain on their own.
 
 ### Fixed
 

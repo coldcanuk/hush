@@ -237,7 +237,7 @@ static void hush_agent_fill_worker(hush_agent_job_t *job, const hush_agent_job_i
 
 static void hush_agent_append_loop_lead(hush_agent_job_t *job, const hush_agent_job_in_t *in)
 {
-    char note[HUSH_EVENT_MAX_CONTENT + 1];
+    char note[HUSH_EVENT_MAX_CONTENT + 1] = {0};
 
     assert(job != NULL && in != NULL);
     if (in->loop_role != HUSH_AGENT_LOOP_ROLE_LEAD || in->loop_note == NULL ||
