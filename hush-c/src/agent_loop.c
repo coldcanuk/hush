@@ -32,7 +32,9 @@
 
 enum {
     HUSH_AGENT_LOOP_TAG_LEN = 4,
-    HUSH_AGENT_LOOP_ANSWER_MAX = 8
+    HUSH_AGENT_LOOP_ANSWER_MAX = 8,
+    /* Room the ask keeps after the quote: the closing '"' and the NUL. */
+    HUSH_AGENT_LOOP_ASK_TAIL = 2
 };
 
 /* True when line[i] is a blank or a markdown mark. */
@@ -201,8 +203,11 @@ void hush_agent_loop_fill_ask(char *out, size_t outsz, const char *name,
     hush_agent_loop_flatten(quoted, 1);
     /* Trim the quote, not the closing mark, when the ask is full. */
     head = strlen(HUSH_AGENT_LOOP_ASK_HEAD) + strlen(who) + strlen(HUSH_AGENT_LOOP_ASK_QUOTE);
-    if (outsz > head + 1)
-        room = (int)(outsz - head - 2 < sizeof(quoted) ? outsz - head - 2 : sizeof(quoted));
+    if (outsz >= head + (size_t)HUSH_AGENT_LOOP_ASK_TAIL) {
+        size_t fit = outsz - head - (size_t)HUSH_AGENT_LOOP_ASK_TAIL;
+
+        room = (int)(fit < sizeof(quoted) ? fit : sizeof(quoted));
+    }
     n = snprintf(out, outsz, "%s%s%s%.*s\"", HUSH_AGENT_LOOP_ASK_HEAD, who,
                  HUSH_AGENT_LOOP_ASK_QUOTE, room, quoted);
     if (n < 0)

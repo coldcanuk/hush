@@ -16,8 +16,10 @@ the top-level `VERSION` file.
   after four Yes answers the loop ends with "Loop limit reached.". Only
   the hive owner answers Yes/No, and any other note from the owner ends
   the loop. Every loop turn uses a turn of the cap, the control tag is
-  case-insensitive and tolerates markdown, and each robot sees its peer's
-  last note only as quoted text. Loop state is not kept across a relay
+  case-insensitive and tolerates markdown, and each loop turn's ask quotes
+  the peer's last note as text (the existing "Thread brief" context still
+  shows recent notes as written; the cap and the owner-only Yes bound any
+  steering through it). Loop state is not kept across a relay
   restart. The partner still sees only its own clause, and robots still
   never chain on their own.
 

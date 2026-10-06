@@ -399,6 +399,21 @@ expect s13 partner 2 "req_p3 markdown/lowercase control lines must be honoured"
 expect s13 loopline 0 "req_p3 markdown/lowercase control lines must be stripped"
 release s13
 
+# N3 / D3: cap 1, a two-robot note, and a lead reply with no LOOP line that
+# opens with a skip-list prefix (so the channel scan does not count it). The
+# slot counted that turn, but no loop is live, so the partner still answers
+# and no chaperon line or prompt appears (the active guard in
+# hush_agent_loop_turns_full).
+start s14 1 "- -" "- -"
+printf '%s' 'I heard: ' > "$plan/lead.prefix"
+wait_eq s14 partner 1
+settle
+expect s14 lead 1 "N3 a non-loop pass runs once"
+expect s14 partner 1 "N3 a non-loop lead turn must not use up the partner's turn"
+expect s14 chaperon 0 "N3 a non-loop pass under the channel cap posts no chaperon line"
+expect s14 ask 0 "N3 a non-loop pass never asks to continue"
+release s14
+
 # B6: a note that mentions three robots arms no loop.
 rm -f "$plan"/*.n "$plan"/*.prefix "$plan/slow" "$plan/slowlead"
 printf '%s\n' "$C" "$C" "$C" | tr '_' ' ' > "$plan/lead.plan"

@@ -95,7 +95,9 @@ robots never chain by mentioning each other, and `robot_hops` stays `0`.
    asked to reply to the lead's last note; the lead to the partner's.
    That note is quoted as text, not as instructions, and its own
    double quotes become single quotes, so a peer cannot steer the next
-   ask beyond what it said.
+   ask beyond what it said. The existing `Thread brief:` context line
+   still shows recent notes as written; the cap and the owner-only Yes
+   bound any steering through it.
 5. **Cap.** Loop turns count toward the channel `max_robot_turns`
    (default 4) on the thread's loop record as well as through the usual
    note scan, so a reply that opens with "I heard:", "Holding." or a

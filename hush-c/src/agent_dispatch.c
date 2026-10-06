@@ -1625,8 +1625,8 @@ int hush_agent_is_work_note(const char *content)
         "I heard:",
         "This channel is humans talking"
     };
-    size_t i;
-    size_t n;
+    size_t i = 0;
+    size_t n = 0;
 
     if (content == NULL || content[0] == '\0')
         return 0;
@@ -1697,25 +1697,23 @@ static void hush_agent_nudge_chaperon(hush_store_t *store,
 static void hush_agent_chaperon_say(hush_store_t *store, const hush_launch_t *launch,
                                     const hush_event_t *ev, const char *line)
 {
-    const hush_launch_channel_t *ch;
-    hush_agent_robot_t bot;
-    hush_agent_note_in_t in;
-    char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
-    char root[HUSH_EVENT_ID_HEX_LEN + 1];
-    const char *slug;
+    const hush_launch_channel_t *ch = NULL;
+    hush_agent_robot_t bot = {0};
+    hush_agent_note_in_t in = {0};
+    char channel[HUSH_EVENT_MAX_TAG_LEN + 1] = {0};
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    const char *slug = HUSH_LAUNCH_PAYNE_SLUG;
 
     assert(store != NULL);
     assert(ev != NULL && line != NULL);
     hush_agent_event_channel(channel, sizeof(channel), ev);
     hush_agent_event_root(root, sizeof(root), ev);
     ch = hush_agent_channel(launch, channel);
-    slug = HUSH_LAUNCH_PAYNE_SLUG;
     if (ch != NULL && ch->chaperon[0] != '\0')
         slug = ch->chaperon;
     hush_agent_emit(HUSH_CEVENT_CHAPERON, channel, root, slug, line);
     if (launch == NULL || !hush_agent_lookup_slug(&bot, launch, slug))
         return;
-    memset(&in, 0, sizeof(in));
     in.pubkey = bot.hex != NULL ? bot.hex : "";
     in.content = line;
     in.channel = channel;

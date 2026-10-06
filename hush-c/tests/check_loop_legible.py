@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """#280 write-legible-c pin: the loop's functions (and the follow_kick path
-they touch) stay at most 40 lines, signature to closing brace, with at most
-four parameters (c-standard.md caps)."""
+they touch) plus every function in the loop's C test stay at most 40 lines,
+signature to closing brace, with at most four parameters (c-standard.md
+caps; write-legible-c applies them to test code written in C too)."""
 import re
 import sys
 
@@ -12,8 +13,17 @@ FILES = {
     "src/agent_dispatch.c": re.compile(
         r"hush_agent_(follow_kick|follow_wave|loop_\w+|chaperon_say|turn_cap|turns_full)$"),
     "src/agent_prompt.c": re.compile(r"hush_agent_append_loop_lead$"),
+    "tests/test_loop.c": None,
 }
-SIG = re.compile(r"^(?:static\s+)?[A-Za-z_][\w\s\*]*?\b(hush_agent_\w+)\(")
+# Each scanned file must still yield at least this many functions, so a
+# rename or move cannot silently empty the scan.
+MIN_SEEN = {
+    "src/agent_loop.c": 8,
+    "src/agent_dispatch.c": 12,
+    "src/agent_prompt.c": 1,
+    "tests/test_loop.c": 12,
+}
+SIG = re.compile(r"^(?:static\s+)?[A-Za-z_][\w\s\*]*?\b([A-Za-z_]\w*)\(")
 
 
 def functions(path):
@@ -43,8 +53,8 @@ def functions(path):
 
 def main():
     bad = []
-    seen = 0
     for path, pattern in FILES.items():
+        seen = 0
         for name, at, count, params in functions(path):
             if pattern is not None and not pattern.search(name):
                 continue
@@ -53,8 +63,8 @@ def main():
                 bad.append(f"{path}:{at} {name} is {count} lines (cap {LINE_CAP})")
             if params > PARAM_CAP:
                 bad.append(f"{path}:{at} {name} takes {params} params (cap {PARAM_CAP})")
-    if seen < 20:
-        bad.append(f"only {seen} functions matched; the pattern list is stale")
+        if seen < MIN_SEEN[path]:
+            bad.append(f"{path}: only {seen} functions matched; the pattern list is stale")
     for line in bad:
         print("LEGIBLE " + line)
     return 1 if bad else 0
