@@ -66,6 +66,13 @@ enum {
     HUSH_AGENT_FOLLOW_ROBOTS = 8,
     /* Human "Yes" answers one loop may receive before it ends (#280 D4). */
     HUSH_AGENT_LOOP_EXTENSIONS_MAX = 4,
+    /* Folded notes shorter than this never count as a repeat. */
+    HUSH_AGENT_LOOP_REPEAT_MIN = 8,
+    /* Default-cap loops post this many turns, then the limit line. */
+    HUSH_AGENT_LOOP_QUIET_MAX =
+        HUSH_LAUNCH_TURNS_DEFAULT * (1 + HUSH_AGENT_LOOP_EXTENSIONS_MAX),
+    /* sha256 slots kept for one loop. One slot per quiet-ceiling turn. */
+    HUSH_AGENT_LOOP_SEEN_MAX = HUSH_AGENT_LOOP_QUIET_MAX,
     /* Robot turns that may wait for the owner's approval at once (#279). */
     HUSH_AGENT_APPROVAL_MAX = 8,
     /* Of those, at most this many may be asked for by anyone but the hive
@@ -164,6 +171,9 @@ typedef struct {
     int awaiting;   /* HUSH_AGENT_LOOP_ASK_LINE is waiting for the human */
     int extensions; /* Yes answers granted, 0..HUSH_AGENT_LOOP_EXTENSIONS_MAX */
     int turns;      /* loop turns posted since arming or the last Yes */
+    int nseen;      /* filled slots in seen */
+    /* sha256 hex of each folded note from this loop. A later copy ends it. */
+    char seen[HUSH_AGENT_LOOP_SEEN_MAX][HUSH_EVENT_ID_HEX_LEN + 1];
     /* The turn the cap stopped; a Yes resumes it. */
     char pending[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
     char pending_ask[HUSH_AGENT_TASK_MAX];
@@ -430,6 +440,8 @@ void hush_agent_follow_kick(hush_store_t *store, const hush_launch_t *launch,
 #define HUSH_AGENT_LOOP_ASK_LINE "Continue this loop? Reply Yes or No in this thread."
 #define HUSH_AGENT_LOOP_LIMIT_LINE "Loop limit reached. Ask again to start a new loop."
 #define HUSH_AGENT_LOOP_STOPPED_LINE "Loop stopped."
+#define HUSH_AGENT_LOOP_REPEAT_LINE \
+    "This loop stopped because a note repeated an earlier one."
 
 /* Strips every control line from text in place; returns the last one's
  * verdict. A control line is "LOOP:" in any case, after optional blanks or
@@ -437,6 +449,10 @@ void hush_agent_follow_kick(hush_store_t *store, const hush_launch_t *launch,
  * only for "continue" (any case, optional ".", "!", or closing marks), STOP
  * for "stop <reason>" or anything garbled. */
 hush_agent_loop_verdict_t hush_agent_loop_take_control(char *text);
+
+/* Collapses each whitespace run in text into one space in out.
+ * Returns 1 when the folded note is long enough to remember. */
+int hush_agent_loop_fold(char *out, size_t outsz, const char *text);
 
 /* Reads a human reply as Yes or No (case-insensitive, trailing "." or "!"
  * allowed). NONE for anything else, which ends a waiting loop. */

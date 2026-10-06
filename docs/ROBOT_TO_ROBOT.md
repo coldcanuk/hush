@@ -96,18 +96,27 @@ robots never chain by mentioning each other, and `robot_hops` stays `0`.
    That note is quoted as text, not as instructions, and its own
    double quotes become single quotes, so a peer cannot steer the next
    ask beyond what it said. The existing `Thread brief:` context line
-   still shows recent notes as written; the cap and the owner-only Yes
-   bound any steering through it.
+   still shows recent notes as written. A short leash, the owner, a
+   repeated note, or the 20-turn ceiling bounds steering through it.
 5. **Cap.** Loop turns count toward the channel `max_robot_turns`
-   (default 4) on the thread's loop record as well as through the usual
-   note scan, so a reply that opens with "I heard:", "Holding." or a
-   loop line still uses a turn. At the cap the chaperon asks "Continue
-   this loop? Reply Yes or No in this thread." A typed "Yes" resumes the
-   stopped turn; "No" posts "Loop stopped.". After four Yes answers the
-   next cap posts "Loop limit reached. Ask again to start a new loop."
-   and the loop ends.
-   Only the hive owner can answer; a robot's or another human's Yes is
-   ignored.
+   (1, 2, 4, or 8; default 4) on the thread's loop record as well as
+   through the usual note scan, so a reply that opens with "I heard:",
+   "Holding." or a loop line still uses a turn.
+   A cap of 1 or 2 is a short leash. At that cap the chaperon asks
+   "Continue this loop? Reply Yes or No in this thread." A typed "Yes"
+   resumes the stopped turn. "No" posts "Loop stopped." After four Yes
+   answers the next cap posts "Loop limit reached. Ask again to start a
+   new loop." Only the hive owner can answer. A robot's Yes is ignored.
+   Another human's Yes is ignored.
+   The default cap of 4 and the max cap of 8 do not ask while each note
+   is new. The loop runs until the lead writes `LOOP: stop`, omits the
+   line, the owner posts another note, a note repeats an earlier one in
+   this loop, or 20 loop turns have been posted. A repeat is the same
+   text after the `LOOP` line is removed and whitespace is collapsed,
+   including a copy of the partner's note. A folded note shorter than 8
+   characters, such as "42.", is not a repeat. The repeat posts "This
+   loop stopped because a note repeated an earlier one." Turn 20 is
+   posted. The next turn posts the limit line, with no Yes or No.
 6. **Owner interrupt.** Any other note from the hive owner in the thread
    ends the loop, even mid-turn. Notes from other humans do not.
 7. **Restart.** Loop state lives in relay memory only. A restart drops
@@ -170,9 +179,12 @@ robots never chain by mentioning each other, and `robot_hops` stays `0`.
    under Auto-approve, so the plan pass never asks.
 5. **Loop and cap.** A waiting loop turn does not run, and the loop stays
    paused until the owner answers. Approval lines are not robot turns, so
-   the cap counts exactly as before; at the cap the loop still asks
-   "Continue this loop? Reply Yes or No in this thread.", and a Yes there
-   resumes the loop, whose next turn then asks for approval as usual. Each
+   the cap counts exactly as before. On a short leash (cap 1 or 2) the
+   loop still asks "Continue this loop? Reply Yes or No in this thread."
+   at the cap. A Yes there resumes the loop. Its next turn then asks for
+   approval as usual. On the default cap and the max cap the loop does
+   not ask that question while its notes are new. Each of those turns
+   still stops for approval before it runs. Each
    owner Yes is an owner note, so like any owner note it restarts the
    channel's robot-turn count; outside a two-robot loop the channel cap
    therefore does not stop an approved chain (every turn in it was

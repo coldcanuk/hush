@@ -1,8 +1,8 @@
 #!/bin/sh
-# Two-robot loop (#280): the lead's "LOOP:" control line, the turn-cap
-# "Continue this loop? Reply Yes or No in this thread." prompt, the four-Yes
-# limit ("Loop limit reached. Ask again to start a new loop."), and the pins that
-# keep non-loop pairs unchanged. A scripted fake grok plays both robots.
+# Two-robot loop (#280): the lead's "LOOP:" control line, the short-leash
+# (cap 1 or 2) "Continue this loop?" prompt, the four-Yes limit, and the
+# pins that keep non-loop pairs unchanged. Cap 4 stays quiet while notes
+# are new (s15). A scripted fake grok plays both robots.
 set -eu
 cd "$(dirname "$0")/.."
 . ./tests/hush_free_port.sh
@@ -415,6 +415,17 @@ expect s14 partner 1 "N3 a non-loop lead turn must not use up the partner's turn
 expect s14 chaperon 0 "N3 a non-loop pass under the channel cap posts no chaperon line"
 expect s14 ask 0 "N3 a non-loop pass never asks to continue"
 release s14
+
+# Quiet default cap: distinct notes run past four turns, with no Yes prompt.
+# The sixth lead line stops, so the loop ends on that turn.
+start s15 4 "$C $C $C $C $C LOOP:_stop_done" "- - - - - -"
+wait_eq s15 lead 6
+settle
+expect s15 lead 6 "quiet cap runs past four fresh notes"
+expect s15 partner 5 "quiet cap runs the partner past four"
+expect s15 ask 0 "quiet cap does not ask while notes are new"
+expect s15 limit 0 "eleven loop turns stay under the ceiling"
+release s15
 
 # B6: a note that mentions three robots arms no loop.
 rm -f "$plan"/*.n "$plan"/*.prefix "$plan/slow" "$plan/slowlead"

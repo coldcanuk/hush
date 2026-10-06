@@ -32,7 +32,7 @@ FILES = {
 }
 # Functions in tests/test_loop.c today. The scan must still find all of
 # them, so no test function can drop out of the caps unnoticed.
-TEST_LOOP_FUNCTIONS = 19
+TEST_LOOP_FUNCTIONS = 30
 # Functions in tests/test_approve.c today (#279 r2), held to the same rule.
 TEST_APPROVE_FUNCTIONS = 40
 TEST_COUNTS = {
