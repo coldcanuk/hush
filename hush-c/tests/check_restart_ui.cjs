@@ -1386,6 +1386,73 @@ async function main() {
       }
     }
 
+    // #241 r8 (Gauge B6): forced-state sweep over every .panel input,
+    // textarea and select in the page (all drawers, open or not), on all 8
+    // themes. CDP forces :focus and :focus-visible on each one (as Gauge's
+    // sweep does), then the computed ring must be the same one the Tab pin
+    // checks: solid, >= 2px, outside the control, and >= 3:1 against its
+    // effective background. Covers controls Tab never reaches in this test,
+    // e.g. untyped #new-chan and the file inputs.
+    {
+      const SWEEP_SEL = '.panel input:not([type="hidden"]), .panel textarea, .panel select';
+      const MUST = ['new-chan', 'prof-avatar', 'agent-file', 'turn-host'];
+      const themes = await cdp.eval(`Array.prototype.map.call(document.querySelectorAll("#settings input[name='theme']"), (i) => i.value)`);
+      await cdp.send('DOM.enable');
+      await cdp.send('CSS.enable');
+      const sweepEval = `(() => {
+        const px = (c) => { const cv = document.createElement('canvas'); cv.width = 1; cv.height = 1;
+          const x = cv.getContext('2d'); x.clearRect(0, 0, 1, 1); x.fillStyle = c; x.fillRect(0, 0, 1, 1);
+          const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
+        const over = (top, bot) => [0, 1, 2].map((i) => top[i] * top[3] + bot[i] * (1 - top[3]));
+        const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+          return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+        const ratio = (p, q) => { const a1 = lum(p), b1 = lum(q); return (Math.max(a1, b1) + 0.05) / (Math.min(a1, b1) + 0.05); };
+        const effBg = (el) => { const layers = []; let images = 0; let from = null;
+          for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+            const cs = getComputedStyle(n); const c = px(cs.backgroundColor);
+            if (cs.backgroundImage !== 'none') images++;
+            if (c[3] > 0) { layers.push(c); if (c[3] >= 1) { from = n.id ? '#' + n.id : (n.className || n.tagName); break; } } }
+          let bg = [255, 255, 255];
+          for (let i = layers.length - 1; i >= 0; i--) bg = over(layers[i], bg);
+          return { bg: bg.map(Math.round), from, images }; };
+        return Array.prototype.map.call(document.querySelectorAll(${JSON.stringify(SWEEP_SEL)}), (el) => {
+          const cs = getComputedStyle(el); const e = effBg(el.parentElement); const rc = px(cs.outlineColor);
+          const host = el.closest('.drawer, .stage');
+          return { id: el.id || null, name: el.name || null, type: el.getAttribute('type'), tag: el.tagName.toLowerCase(),
+            host: host ? host.id : null, fv: el.matches(':focus-visible'), style: cs.outlineStyle,
+            width: parseFloat(cs.outlineWidth) || 0, offset: parseFloat(cs.outlineOffset) || 0,
+            from: e.from, images: e.images, ratio: Math.round(ratio(over(rc, e.bg).map(Math.round), e.bg) * 100) / 100 }; }); })()`;
+      const sweep = {};
+      const keepTheme8 = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
+      for (const th of themes) {
+        await cdp.eval(`applyTheme(${JSON.stringify(th)})`);
+        await sleep(150);
+        const doc = await cdp.send('DOM.getDocument', { depth: -1 });
+        const q = doc.root ? await cdp.send('DOM.querySelectorAll', { nodeId: doc.root.nodeId, selector: SWEEP_SEL }) : {};
+        const ids = q.nodeIds || [];
+        for (const nodeId of ids)
+          await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['focus', 'focus-visible'] });
+        const rows = await cdp.eval(sweepEval);
+        for (const nodeId of ids)
+          await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] });
+        const bad = rows.filter((r) => !(r.fv && r.style === 'solid' && r.width >= 2 && r.offset >= 0 && r.images === 0 && r.from && r.ratio >= 3));
+        sweep[th] = { total: rows.length, nodes: ids.length, ringed: rows.length - bad.length,
+          min: rows.length ? Math.min.apply(null, rows.map((r) => r.ratio)) : null,
+          seen: MUST.filter((id) => rows.some((r) => r.id === id)), bad };
+      }
+      await cdp.eval(`applyTheme(${JSON.stringify(keepTheme8 || 'field-office')})`);
+      console.log('panel field sweep: ' + JSON.stringify(Object.fromEntries(Object.entries(sweep).map(([k, v]) =>
+        [k, { total: v.total, ringed: v.ringed, min: v.min, bad: v.bad.map((b) => (b.id || b.name || b.tag) + ':' + b.style + ' ' + b.width + 'px off ' + b.offset + ' r ' + b.ratio) }]))));
+      check(themes.length === 8, `#241 r8 sweep runs on the 8 shipped themes: ${JSON.stringify(themes)}`);
+      for (const th of themes) {
+        const v = sweep[th];
+        check(v.total > 0 && v.total === v.nodes && v.seen.length === MUST.length,
+          `#241 r8 sweep found every .panel field incl ${MUST.join(', ')} (${th}): ${JSON.stringify({ total: v.total, nodes: v.nodes, seen: v.seen })}`);
+        check(v.bad.length === 0,
+          `#241 r8 every .panel input, textarea and select gets the solid >=2px --fg ring outside it at >= 3:1 under forced :focus-visible (${th}): ${v.ringed}/${v.total}; ${JSON.stringify(v.bad)}`);
+      }
+    }
+
     // #241 r6: at 390px, a keyboard open of Settings (Kit, then Enter on
     // Settings) leaves the panel at its title: heading on screen, scrollTop 0.
     // First a real keyboard visit in dark: open, Shift+Tab wraps to Close

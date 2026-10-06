@@ -545,14 +545,16 @@
       border-radius: 12px; padding: 10px 12px; font: inherit; outline: none;
     }
     .panel textarea { min-height: 88px; resize: vertical; }
-    /* #241 r7: the rule above drops the outline on .panel fields, so every
-       focusable .panel control gets the keyboard ring (same token as
-       button:focus-visible). Radios and plain checkboxes too, so the ring
-       is --fg on every theme rather than the native one. */
+    /* #241 r7/r8: the rule above drops the outline on .panel fields, so every
+       .panel input, textarea and select gets the keyboard ring (same token
+       as button:focus-visible). Radios, checkboxes, untyped inputs (a text
+       field by default, e.g. #new-chan) and file inputs too, so the ring is
+       --fg on every theme rather than the native one. */
     .panel input[type="text"]:focus-visible, .panel input[type="email"]:focus-visible,
     .panel input[type="password"]:focus-visible, .panel textarea:focus-visible,
     .panel select:focus-visible, .panel input[type="radio"]:focus-visible,
-    .panel input[type="checkbox"]:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+    .panel input[type="checkbox"]:focus-visible, .panel input:not([type]):focus-visible,
+    .panel input[type="file"]:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
     .iconbtn {
       background: var(--bg); color: var(--fg); border: 1px solid var(--line);
       border-radius: 12px; padding: 4px 8px; font-size: 0.78rem; font-weight: 650;
