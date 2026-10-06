@@ -1313,10 +1313,17 @@ async function main() {
       const t390 = await cdp.eval(`(() => { const d = document.getElementById('settings'); const p = d.querySelector('.panel');
         const h = p.querySelector('h2'); const hr = h.getBoundingClientRect(); const pr = p.getBoundingClientRect();
         return { show: d.classList.contains('show'), ae: document.activeElement && document.activeElement.id,
-          scrollTop: p.scrollTop, drawerScroll: d.scrollTop, hTop: hr.top, hBottom: hr.bottom, pTop: pr.top, vh: innerHeight }; })()`);
+          scrollTop: p.scrollTop, drawerScroll: d.scrollTop, hTop: hr.top, hBottom: hr.bottom, pTop: pr.top, vh: innerHeight,
+          ring: (() => { const a = document.activeElement; const sl = a && a.nextElementSibling;
+            if (!sl || !sl.classList.contains('slider')) return null;
+            const cs = getComputedStyle(sl); const r = sl.getBoundingClientRect();
+            return { fv: a.matches(':focus-visible'), style: cs.outlineStyle, width: parseFloat(cs.outlineWidth) || 0,
+              w: r.width, h: r.height, inView: r.top >= 0 && r.bottom <= innerHeight }; })() }; })()`);
       console.log('settings 390 open: ' + JSON.stringify(t390));
       check(t390.show && t390.ae === 'turn-on',
         `#241 r6 keyboard open at 390 shows Settings with focus on #turn-on: ${JSON.stringify(t390)}`);
+      check(!!t390.ring && t390.ring.fv && t390.ring.style !== 'none' && t390.ring.width >= 2 && t390.ring.w > 0 && t390.ring.h > 0 && t390.ring.inView,
+        `#241 r6 keyboard open lands on #turn-on with a visible ring on its track (dark, 390): ${JSON.stringify(t390)}`);
       check(t390.scrollTop === 0 && t390.drawerScroll === 0 && t390.hTop >= t390.pTop - 1 && t390.hTop >= 0 && t390.hBottom <= t390.vh,
         `#241 r6 Settings opens at its title at 390 (heading in view, not scrolled): ${JSON.stringify(t390)}`);
       await realEsc();
