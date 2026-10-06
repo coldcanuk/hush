@@ -361,6 +361,9 @@
       white-space: pre-wrap; word-break: break-word;
     }
     .composer-box:focus-within { border-color: var(--accent-dim); }
+    /* #241 r7: the thread composer drops its outline above; give it the
+       same keyboard ring as the .panel fields (inside the box padding). */
+    #thread-msg:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
     #send, #thread-send {
       background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 12px;
       padding: 0 18px; font-weight: 650; min-width: 88px; min-height: 44px;
@@ -542,6 +545,17 @@
       border-radius: 12px; padding: 10px 12px; font: inherit; outline: none;
     }
     .panel textarea { min-height: 88px; resize: vertical; }
+    /* #241 r7/r8: the rule above drops the outline on .panel fields, so every
+       .panel input, textarea and select gets the keyboard ring (same token
+       as button:focus-visible). Radios, checkboxes, untyped inputs (a text
+       field by default, e.g. #new-chan), file inputs and <summary> toggles
+       too, so the ring is --fg on every theme rather than the native one.
+       Buttons keep the site-wide button:focus-visible ring. */
+    .panel input[type="text"]:focus-visible, .panel input[type="email"]:focus-visible,
+    .panel input[type="password"]:focus-visible, .panel textarea:focus-visible,
+    .panel select:focus-visible, .panel input[type="radio"]:focus-visible,
+    .panel input[type="checkbox"]:focus-visible, .panel input:not([type]):focus-visible,
+    .panel input[type="file"]:focus-visible, .panel summary:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
     .iconbtn {
       background: var(--bg); color: var(--fg); border: 1px solid var(--line);
       border-radius: 12px; padding: 4px 8px; font-size: 0.78rem; font-weight: 650;
@@ -600,6 +614,9 @@
     }
     .switch input:checked + .slider { background: var(--accent-dim); }
     .switch input:checked + .slider:before { transform: translateX(18px); background: var(--accent); }
+    /* #241 r6: the switch input is a 0x0, opacity:0 box, so its own focus
+       ring never shows. Draw the keyboard ring on the visible track. */
+    .switch input:focus-visible + .slider { outline: 2px solid var(--fg); outline-offset: 2px; }
     .vis { display: flex; gap: 8px; margin: 10px 0 0; }
     .vis label {
       flex: 1; border: 1px solid var(--line); border-radius: 12px; padding: 10px;
@@ -2237,14 +2254,14 @@ html[data-theme="dark"] #thread-send:active {
 
       <p class="help">Theme</p>
       <div class="vis" id="theme-list">
-        <label><input type="radio" name="theme" value="dark" checked> dark</label>
+        <label><input type="radio" name="theme" value="field-office" checked> field office</label>
+        <label><input type="radio" name="theme" value="dark"> dark</label>
         <label><input type="radio" name="theme" value="light"> light</label>
         <label><input type="radio" name="theme" value="color-blind"> color blind</label>
         <label><input type="radio" name="theme" value="dracula"> dracula</label>
         <label><input type="radio" name="theme" value="desert"> desert</label>
         <label><input type="radio" name="theme" value="monochrome"> monochrome</label>
         <label><input type="radio" name="theme" value="christmas"> christmas</label>
-        <label><input type="radio" name="theme" value="field-office"> field office</label>
       </div>
       <p class="help">AI voice in a call needs a speech model such as Whisper. Without it, agents can join but cannot hear.</p>
       <div class="actions">
@@ -3193,13 +3210,14 @@ html[data-theme="dark"] #thread-send:active {
           actions([{ id: "do-vibe", label: "Stand up the hive" }]));
       }
       if (page === "payne") {
-        const p = session.payne || {};
+        /* #241 r4 F1/F2: no false Profile pointer (Profile is the user, not
+           Major). One greeting paragraph only: the old first paragraph
+           (greeting + Major's configured about text) and the repeated
+           greeting line were merged into this single line, so the gate card
+           no longer shows Major's configured about text. No raw npub here. */
         return card("Major",
           stepBar(4) +
-          "<p><strong>At ease.</strong> " +
-          esc(p.about || "I find the right robot — or raise one.") + "</p>" +
-          (p.npub ? "<p class=\"help\">" + esc(p.npub.slice(0, 20)) + "…</p>" : "") +
-          "<p>At ease. I'm Major. Tell me what you want built and I'll find — or raise — the right robot for the job.</p>" +
+          "<p><strong>At ease.</strong> I'm Major. Tell me what you want built and I'll find — or raise — the right robot for the job.</p>" +
           errLine() +
           actions([{ id: "meet-payne", label: "Carry on." }]));
       }
@@ -4021,12 +4039,13 @@ html[data-theme="dark"] #thread-send:active {
       if (feed) {
         const roots = channelNotes(visibleNotes(lastEvents || []));
         const lines = [
-          (st.ok ? "RELAY LIVE" : "RELAY DOWN") + " · PORT " + (st.port || "—"),
-          (st.events || 0) + " STORED · " + (st.clients || 0) + " SOCKETS",
-          roots.length + (roots.length === 1 ? " NOTE" : " NOTES") + " ON #" + channel,
-          "WHISPER " + (st.whisper ? "READY" : "OFF") + " · TURN " + (st.turn_running ? "RUNNING" : "OFF")
+          st.ok ? ("Relay listening" + (st.port ? " · port " + st.port : ""))
+            : "Relay unreachable",
+          (st.events || 0) + " messages stored · " + (st.clients || 0) + " connected",
+          roots.length + (roots.length === 1 ? " note" : " notes") + " in #" + channel,
+          "Voice " + (st.whisper ? "ready" : "off") + " · Calls " + (st.turn_running ? "on" : "off")
         ];
-        const jobs = jobsAfterFailure(st.thinking).map((t) => (t.name || "robot") + " THINKING").slice(0, 4);
+        const jobs = jobsAfterFailure(st.thinking).map((t) => (t.name || "robot") + " is thinking").slice(0, 4);
         feed.innerHTML = "";
         lines.concat(jobs).forEach((line) => {
           const p = document.createElement("div");
@@ -4203,6 +4222,20 @@ html[data-theme="dark"] #thread-send:active {
       $("new-chan").focus();
     }));
     $("new-chan-close").addEventListener("click", () => $("new-chan-drawer").classList.remove("show"));
+    /* #241 B1: Esc is in dismissJourneyLayer. Outside/backdrop click closes.
+       .drawer is position:fixed; inset:0 — the dimmed area IS the drawer, so
+       d.contains(ev.target) is always true and must not be used. Close when
+       the target is the drawer itself or outside its .panel. */
+    document.addEventListener("pointerdown", (ev) => {
+      const d = $("new-chan-drawer");
+      if (!d || !d.classList.contains("show")) return;
+      const panel = d.querySelector(".panel");
+      if (panel && panel.contains(ev.target)) return;
+      if (ev.target && ev.target.closest &&
+          (ev.target.closest("#nav-new-channel") || ev.target.closest("#add-chan")))
+        return;
+      d.classList.remove("show");
+    });
     $("new-chan-save").addEventListener("click", async () => {
       const name = $("new-chan").value.trim();
       if (!name) {
@@ -4286,7 +4319,7 @@ html[data-theme="dark"] #thread-send:active {
       if ($("agent-name-help")) $("agent-name-help").hidden = false;
       syncAgentPassBox();
       if ($("payne-provider-pills")) $("payne-provider-pills").hidden = true;
-      if ($("agent-provider-help")) $("agent-provider-help").textContent = "Harness / API priority (required)";
+      if ($("agent-provider-help")) $("agent-provider-help").textContent = "Provider / API priority (required)";
       paintFilePills();
       paintPayneOrder();
       draftPicture = "";
@@ -5047,7 +5080,7 @@ html[data-theme="dark"] #thread-send:active {
     $("agent-save").addEventListener("click", async () => {
       $("agent-err").textContent = "";
       if (!equippedSkills.length) {
-        $("agent-err").textContent = "Keep at least one skill equipped.";
+        skillNotice("Keep at least one skill equipped.");
         return;
       }
       const typedName = ($("agent-name") && $("agent-name").value || "").trim();
@@ -5474,11 +5507,74 @@ html[data-theme="dark"] #thread-send:active {
     const peers = {};
     const seenSig = {};
 
-    $("settings-btn").addEventListener("click", () => {
-      $("settings").classList.add("show");
+    /* #241 r4 F3: Settings a11y — focus enters the dialog, Tab stays inside,
+       Esc/Close returns focus to the Kit opener (rail-toggle), not BODY. */
+    let settingsReturnFocus = null;
+    function settingsFocusables() {
+      const d = $("settings");
+      if (!d) return [];
+      return Array.prototype.slice.call(d.querySelectorAll(
+        "button, [href], input, select, textarea, [tabindex]:not([tabindex=\"-1\"])"
+      )).filter((el) => !el.disabled && el.getAttribute("aria-hidden") !== "true"
+        && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
+    }
+    function openSettings() {
+      const d = $("settings");
+      if (!d) return;
+      const ae = document.activeElement;
+      const kit = $("kit-menu");
+      /* settings-btn lives in #kit-menu; kit hide removes it from the tree,
+         so remember the Kit stamp (#rail-toggle) as the return target. */
+      if (ae && kit && kit.contains(ae))
+        settingsReturnFocus = $("rail-toggle") || ae;
+      else
+        settingsReturnFocus = ae || $("rail-toggle");
+      d.classList.add("show");
+      d.setAttribute("aria-modal", "true");
       syncSettings();
-    });
-    $("settings-close").addEventListener("click", () => $("settings").classList.remove("show"));
+      const list = settingsFocusables();
+      const first = list[0] || d;
+      try { first.focus(); } catch (e) {}
+      /* #241 r6/r7: the panel keeps its scroll while hidden, so park it at
+         its title after focus moves in (heading on screen at phone widths).
+         The drawer itself never scrolls (overflow visible), so only the
+         panel is reset. */
+      const settingsPanel = d.querySelector(".panel");
+      if (settingsPanel) settingsPanel.scrollTop = 0;
+    }
+    function closeSettings() {
+      const d = $("settings");
+      if (!d) return;
+      d.classList.remove("show");
+      d.removeAttribute("aria-modal");
+      const back = settingsReturnFocus || $("rail-toggle");
+      settingsReturnFocus = null;
+      if (back && typeof back.focus === "function") {
+        try { back.focus(); } catch (e) {}
+      }
+    }
+    $("settings-btn").addEventListener("click", () => { openSettings(); });
+    $("settings-close").addEventListener("click", () => { closeSettings(); });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Tab") return;
+      const d = $("settings");
+      if (!d || !d.classList.contains("show")) return;
+      const list = settingsFocusables();
+      if (!list.length) return;
+      const first = list[0], last = list[list.length - 1];
+      if (!d.contains(document.activeElement)) {
+        ev.preventDefault();
+        first.focus();
+        return;
+      }
+      if (ev.shiftKey && document.activeElement === first) {
+        ev.preventDefault();
+        last.focus();
+      } else if (!ev.shiftKey && document.activeElement === last) {
+        ev.preventDefault();
+        first.focus();
+      }
+    }, true);
     /* UI-M1: Character sheet (Profile drawer) shared by rail button, quick tab, and `c`.
        UI-M4: taking the character journey hides the inventory layers, so
        the sheet never stacks over (or under) them. */
@@ -5601,18 +5697,21 @@ html[data-theme="dark"] #thread-send:active {
         if (id !== except && $(id)) $(id).classList.remove("show");
       });
     }
-    /* UI-M4: single-dismiss Escape contract. Exactly one layer per press,
-       topmost first: held skill gem, leave chooser, robot editor and its
-       sub-panels, expanded inventory, character sheet, quick-slot picker,
-       phone overflow nav. Typing guards (navTyping / quickbarTyping) are
-       untouched: they guard the i/c/1-4 shortcuts, not Escape. */
+    /* UI-M4 / #241: single-dismiss Escape contract. Exactly one layer per
+       press, topmost first: held skill gem, leave chooser, robot editor and
+       its sub-panels, new-channel drawer, expanded inventory, character
+       sheet, Settings, quick-slot picker, phone overflow nav. Typing guards
+       (navTyping / quickbarTyping) are untouched: they guard the i/c/1-4
+       shortcuts, not Escape. */
     function dismissJourneyLayer() {
       const order = ["avatar-drawer", "forge-drawer", "skill-drawer",
-        "agent-drawer", "inv-expand-drawer", "profile"];
+        "new-chan-drawer", "agent-drawer", "inv-expand-drawer", "profile",
+        "settings"];
       for (let k = 0; k < order.length; k++) {
         const el = $(order[k]);
         if (el && el.classList.contains("show")) {
-          el.classList.remove("show");
+          if (order[k] === "settings") closeSettings();
+          else el.classList.remove("show");
           return true;
         }
       }
@@ -5770,6 +5869,9 @@ html[data-theme="dark"] #thread-send:active {
       el.addEventListener("change", async () => {
         if (!el.checked) return;
         applyTheme(el.value);
+        /* #241: /api/profile needs a logged-in session; gate/splash theme
+           stays local until identity exists (was an unexplained 400). */
+        if (!session.logged_in) return;
         try {
           applySession(await api("/api/profile", { theme: el.value }));
         } catch (e) {}
@@ -7793,7 +7895,11 @@ html[data-theme="dark"] #thread-send:active {
       return "";
     }
     function skillNotice(msg) {
-      if ($("agent-err")) $("agent-err").textContent = msg;
+      const err = $("agent-err");
+      if (!err) return;
+      err.textContent = msg;
+      /* #241 C01: keep the notice on screen when the doll is scrolled up. */
+      try { err.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (e) {}
     }
     let skillSheetView = "robot";
     function paintSkillSheet() {
@@ -8263,7 +8369,7 @@ html[data-theme="dark"] #thread-send:active {
         row.appendChild(nm);
         const ct = document.createElement("span");
         ct.className = "ct";
-        ct.textContent = (fav.skills || []).length + " skills";
+        ct.textContent = ((fav.skills || []).length === 1) ? "1 skill" : ((fav.skills || []).length + " skills");
         row.appendChild(ct);
         if (activeFavorite === fav.name) {
           const tag = document.createElement("span");
@@ -8569,6 +8675,9 @@ html[data-theme="dark"] #thread-send:active {
              Begin owns that path (#234 F-B). */
           page = "landing";
         paint();
+        /* #241 nit2: Meet Major no longer shows raw npub. Badge keeps a
+           truncated npub preview after login (gate pin + not the full key);
+           port stays in title/aria. Before login / no npub → listening. */
         badge(true, session.npub ? session.npub.slice(0, 12) + "…" : "listening",
           st.port ? "Relay listening on port " + st.port : "");
         let ev = null;
@@ -8586,8 +8695,11 @@ html[data-theme="dark"] #thread-send:active {
         } else if (st && st.thinking && !st.thinking.length)
           localThink = [];
       } catch (err) {
+        /* E10 / #241: do not leave a stale RELAY LIVE line beside the badge. */
+        lastStatus = { ok: false };
         badge(false, "relay unreachable");
         $("stats").textContent = "start hush-relay";
+        paintRosterPane(lastStatus);
       }
     }
 

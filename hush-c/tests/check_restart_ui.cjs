@@ -1076,6 +1076,448 @@ async function main() {
     await cdp.shot('hive-fo');
     if (VIEW_W === 1440) await badgeFit('after login', 'npub1');
 
+    // #241 B1: New channel — backdrop (drawer itself) closes; inside .panel stays open.
+    {
+      const nc = await cdp.eval(`(() => {
+        const d = document.getElementById('new-chan-drawer');
+        if (!d) return { err: 'missing drawer' };
+        d.classList.add('show');
+        const panel = d.querySelector('.panel');
+        const pr = panel.getBoundingClientRect();
+        // Backdrop: top-left of the fixed inset drawer (outside the panel).
+        let bx = 20, by = Math.min(800, Math.floor(window.innerHeight - 20));
+        let hit = document.elementFromPoint(bx, by);
+        if (hit && panel.contains(hit)) {
+          bx = 20; by = 20;
+          hit = document.elementFromPoint(bx, by);
+        }
+        if (hit) hit.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true, clientX: bx, clientY: by, pointerId: 1
+        }));
+        const afterBackdrop = d.classList.contains('show');
+        d.classList.add('show');
+        const ix = pr.left + pr.width / 2, iy = pr.top + 40;
+        const hitIn = document.elementFromPoint(ix, iy);
+        if (hitIn) hitIn.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true, clientX: ix, clientY: iy, pointerId: 2
+        }));
+        const afterInside = d.classList.contains('show');
+        d.classList.remove('show');
+        return {
+          hitId: hit && hit.id, hitClass: hit && hit.className,
+          afterBackdrop, afterInside,
+          hitIn: hitIn && (hitIn.id || hitIn.tagName)
+        };
+      })()`);
+      console.log('new-chan outside click: ' + JSON.stringify(nc));
+      check(!nc.err, `new-chan drawer present for outside-click pin: ${JSON.stringify(nc)}`);
+      check(nc.afterBackdrop === false,
+        `#241 B1 backdrop click closes new-chan drawer: ${JSON.stringify(nc)}`);
+      check(nc.afterInside === true,
+        `#241 B1 inside-panel click keeps new-chan open: ${JSON.stringify(nc)}`);
+    }
+
+    // #241 r4 F3: Settings — focus enters dialog, Tab stays inside, Esc returns to Kit.
+    {
+      const sf = await cdp.eval(`(() => {
+        const kit = document.getElementById('rail-toggle');
+        const settings = document.getElementById('settings');
+        if (!kit || !settings || typeof openSettings !== 'function' || typeof closeSettings !== 'function'
+            || typeof settingsFocusables !== 'function')
+          return { err: 'missing settings a11y helpers' };
+        kit.focus();
+        openSettings();
+        const afterOpen = {
+          show: settings.classList.contains('show'),
+          inDialog: !!(document.activeElement && settings.contains(document.activeElement)),
+          ae: document.activeElement && (document.activeElement.id || document.activeElement.tagName)
+        };
+        const list = settingsFocusables();
+        let wrapForward = false, wrapBack = false;
+        if (list.length >= 2) {
+          list[list.length - 1].focus();
+          document.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Tab', code: 'Tab', bubbles: true, cancelable: true
+          }));
+          wrapForward = document.activeElement === list[0];
+          list[0].focus();
+          document.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Tab', code: 'Tab', bubbles: true, cancelable: true, shiftKey: true
+          }));
+          wrapBack = document.activeElement === list[list.length - 1];
+        }
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        const afterEsc = {
+          show: settings.classList.contains('show'),
+          backOnKit: document.activeElement === kit,
+          ae: document.activeElement && (document.activeElement.id || document.activeElement.tagName)
+        };
+        openSettings();
+        const closeBtn = document.getElementById('settings-close');
+        if (closeBtn) closeBtn.click();
+        const afterClose = {
+          show: settings.classList.contains('show'),
+          backOnKit: document.activeElement === kit
+        };
+        return { afterOpen, wrapForward, wrapBack, afterEsc, afterClose, nFocusable: list.length };
+      })()`);
+      console.log('settings a11y: ' + JSON.stringify(sf));
+      check(!sf.err, `#241 F3 settings helpers present: ${JSON.stringify(sf)}`);
+      check(sf.afterOpen && sf.afterOpen.show && sf.afterOpen.inDialog,
+        `#241 F3 openSettings moves focus into dialog: ${JSON.stringify(sf)}`);
+      check(sf.wrapForward === true && sf.wrapBack === true,
+        `#241 F3 Tab trap wraps inside Settings: ${JSON.stringify(sf)}`);
+      check(sf.afterEsc && sf.afterEsc.show === false && sf.afterEsc.backOnKit,
+        `#241 F3 Esc closes Settings and returns focus to Kit: ${JSON.stringify(sf)}`);
+      check(sf.afterClose && sf.afterClose.show === false && sf.afterClose.backOnKit,
+        `#241 F3 Close returns focus to Kit: ${JSON.stringify(sf)}`);
+    }
+
+    // #241 r5/r6: real CDP mouse click and Escape key helpers.
+    const realClick = async (sel) => {
+      const pt = await cdp.eval(`(() => { const e = document.querySelector('${sel}');
+        if (!e) return null; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect();
+        if (!r.width || !r.height) return null;
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+      check(!!pt, `#241 ${sel} is visible for a real click`);
+      if (!pt) return;
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pt.x, y: pt.y });
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', clickCount: 1, buttons: 1 });
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt.x, y: pt.y, button: 'left', clickCount: 1, buttons: 0 });
+      await sleep(250);
+    };
+    const realEsc = async () => {
+      await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+      await sleep(250);
+    };
+
+    // #241 r5 B4: the real user path. Real CDP mouse clicks on the Kit stamp
+    // and then on Settings inside #kit-menu (so the opener is #settings-btn,
+    // which the Kit menu hides), then a real Escape key, then the same with a
+    // real click on Close. Focus must land on #rail-toggle each time.
+    {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+      const state = () => cdp.eval(`(() => { const a = document.activeElement;
+        return { show: document.getElementById('settings').classList.contains('show'),
+          kitHidden: document.getElementById('kit-menu').hidden,
+          ae: a ? (a.id || a.tagName) : null,
+          inDialog: !!(a && document.getElementById('settings').contains(a)) }; })()`);
+      const runs = {};
+      for (const how of ['esc', 'close']) {
+        await realClick('#rail-toggle');
+        const kitOpen = await state();
+        await realClick('#settings-btn');
+        const opened = await state();
+        if (how === 'esc') await realEsc();
+        else await realClick('#settings-close');
+        const after = await state();
+        runs[how] = { kitOpen, opened, after };
+      }
+      console.log('settings real path: ' + JSON.stringify(runs));
+      for (const how of ['esc', 'close']) {
+        const r = runs[how];
+        check(r.kitOpen.kitHidden === false,
+          `#241 B4 (${how}) real click on #rail-toggle opens the Kit menu: ${JSON.stringify(r)}`);
+        check(r.opened.show === true && r.opened.inDialog === true,
+          `#241 B4 (${how}) real click on #settings-btn opens Settings with focus inside: ${JSON.stringify(r)}`);
+        check(r.after.show === false && r.after.ae === 'rail-toggle',
+          `#241 B4 (${how}) Settings closes and focus returns to #rail-toggle on the Kit-menu path: ${JSON.stringify(r)}`);
+      }
+    }
+
+    // #241 r6/r7: every Settings Tab stop shows a visible keyboard ring
+    // when reached with a real Tab, on every shipped theme (the Settings
+    // radios). The ring is drawn on the control itself, or on the visible
+    // track (.slider) for a switch. r7 (Gauge B5, Ops F3 #turn-host): the
+    // ring colour, resolved to sRGB and composited, must reach WCAG 1.4.11
+    // 3:1 against the effective background it sits on (first opaque
+    // ancestor, .panel), and must sit outside the control (offset >= 0) so
+    // that is the background it is drawn on. Only the focused switch track
+    // is ringed, and a real mouse click on a switch or a radio shows no ring.
+    {
+      const tabKey = async (shift) => {
+        const mod = shift ? 8 : 0;
+        await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9, modifiers: mod });
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9, modifiers: mod });
+        await sleep(120);
+      };
+      const SWITCHES = ['turn-on', 'turn-daemon', 'vibe-public', 'dev-log'];
+      const STOPS = ['turn-on', 'turn-daemon', 'turn-host', 'vibe-public', 'vibe-rotate', 'dev-log', 'theme', 'settings-close'];
+      const THEMES = await cdp.eval(`Array.prototype.map.call(document.querySelectorAll("#settings input[name='theme']"), (i) => i.value)`);
+      check(JSON.stringify(THEMES.slice().sort()) === JSON.stringify(['christmas', 'color-blind', 'dark', 'desert', 'dracula', 'field-office', 'light', 'monochrome']),
+        `#241 r7 Settings offers the 8 shipped themes: ${JSON.stringify(THEMES)}`);
+      const ringState = `(() => { const a = document.activeElement;
+        const px = (c) => { const cv = document.createElement('canvas'); cv.width = 1; cv.height = 1;
+          const x = cv.getContext('2d'); x.clearRect(0, 0, 1, 1); x.fillStyle = c; x.fillRect(0, 0, 1, 1);
+          const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
+        const over = (top, bot) => [0, 1, 2].map((i) => top[i] * top[3] + bot[i] * (1 - top[3]));
+        const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+          return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+        const ratio = (p, q) => { const a1 = lum(p), b1 = lum(q); return (Math.max(a1, b1) + 0.05) / (Math.min(a1, b1) + 0.05); };
+        const effBg = (el) => { const layers = []; const images = []; let from = null;
+          for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+            const cs = getComputedStyle(n); const c = px(cs.backgroundColor);
+            if (cs.backgroundImage !== 'none') images.push((n.id ? '#' + n.id : n.className || n.tagName) + ':' + cs.backgroundImage.slice(0, 40));
+            if (c[3] > 0) { layers.push(c); if (c[3] >= 1) { from = n.id ? '#' + n.id : (n.className || n.tagName); break; } } }
+          let bg = [255, 255, 255];
+          for (let i = layers.length - 1; i >= 0; i--) bg = over(layers[i], bg);
+          return { bg: bg.map(Math.round), from, images }; };
+        const ring = (el) => { const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
+          return { style: cs.outlineStyle, width: parseFloat(cs.outlineWidth) || 0, offset: parseFloat(cs.outlineOffset) || 0,
+            color: cs.outlineColor, w: r.width, h: r.height }; };
+        const isSwitch = !!(a && a.nextElementSibling && a.nextElementSibling.classList.contains('slider'));
+        const target = a && a !== document.body ? (isSwitch ? a.nextElementSibling : a) : null;
+        const id = !a ? null : (a.name === 'theme' ? 'theme' : a.id);
+        let contrast = null;
+        if (target) { const cs = getComputedStyle(target); const e = effBg(target.parentElement); const rc = px(cs.outlineColor);
+          const seen = over(rc, e.bg).map(Math.round);
+          contrast = { ring: rc.slice(0, 3).concat([Math.round(rc[3] * 100) / 100]), bg: e.bg, from: e.from, images: e.images,
+            ratio: Math.round(ratio(seen, e.bg) * 100) / 100 }; }
+        const others = Array.prototype.map.call(document.querySelectorAll('#settings .switch .slider'), (s) => s === target ? null : ring(s).style).filter((x) => x);
+        return { id, value: a && a.name === 'theme' ? a.value : undefined, inSettings: !!(a && document.getElementById('settings').contains(a)),
+          fv: !!(a && a.matches(':focus-visible')), isSwitch, ring: target ? ring(target) : null, contrast, othersStyles: others }; })()`;
+      const ringRuns = {};
+      const mouseRuns = {};
+      const threadRuns = {};
+      const threadMouse = {};
+      const keepTheme = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
+      for (const th of THEMES) {
+        await cdp.eval(`applyTheme(${JSON.stringify(th)})`);
+        await realClick('#rail-toggle');
+        await realClick('#settings-btn');
+        const seen = {};
+        const order = [];
+        for (let i = 0; i < 20; i++) {
+          await tabKey(false);
+          const s = await cdp.eval(ringState);
+          order.push(s.id);
+          if (!seen[s.id]) seen[s.id] = s;
+        }
+        ringRuns[th] = { seen, order };
+        if (th === 'field-office' || th === 'dark') {
+          // Real mouse clicks: the Public vibe track (twice, so the setting
+          // ends where it started) and the checked theme radio (no change).
+          // The vibe save repaints from the session, which re-applies the
+          // profile theme, so the theme under test is set again before reading.
+          const before = await cdp.eval(`document.getElementById('vibe-public').checked`);
+          const clicks = [];
+          for (const sel of ['#vibe-public + .slider', '#vibe-public + .slider', `#settings input[name="theme"][value="${th}"]`]) {
+            await realClick(sel);
+            await sleep(300);
+            await cdp.eval(`applyTheme(${JSON.stringify(th)})`);
+            await sleep(100);
+            const c = await cdp.eval(ringState);
+            c.theme = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
+            c.clicked = sel;
+            clicks.push(c);
+          }
+          const after = await cdp.eval(`document.getElementById('vibe-public').checked`);
+          mouseRuns[th] = { before, after, clicks };
+        }
+        await realEsc();
+        // #241 r7 (Ops #281): the thread composer #thread-msg, reached with
+        // real Tab keys from the thread's Close button, shows the same ring.
+        await cdp.eval(`(() => { const ev = (lastEvents || []).find((e) => !e.reply_to);
+          openThreadPane(ev ? ev.id : 'r7-ring-probe'); document.getElementById('thread-close').focus(); })()`);
+        await sleep(200);
+        let tm = null;
+        const tpath = [];
+        for (let i = 0; i < 12 && !tm; i++) {
+          await tabKey(false);
+          const s = await cdp.eval(ringState);
+          tpath.push(s.id);
+          if (s.id === 'thread-msg') tm = s;
+        }
+        threadRuns[th] = { tm, tpath };
+        if (th === 'field-office' || th === 'dark') {
+          await cdp.eval(`document.getElementById('thread-close').focus()`);
+          await realClick('#thread-msg');
+          const c = await cdp.eval(ringState);
+          c.theme = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
+          threadMouse[th] = c;
+        }
+        await cdp.eval(`closeThreadPane()`);
+        await sleep(150);
+      }
+      await cdp.eval(`applyTheme(${JSON.stringify(keepTheme || 'field-office')})`);
+      console.log('settings focus rings: ' + JSON.stringify(ringRuns));
+      console.log('thread composer rings: ' + JSON.stringify(threadRuns));
+      console.log('thread composer mouse (text field: browsers show focus-visible on any focus): ' + JSON.stringify(threadMouse));
+      const table = {};
+      for (const th of THEMES) {
+        const { seen, order } = ringRuns[th];
+        table[th] = {};
+        const stopIds = Object.keys(seen);
+        check(JSON.stringify(stopIds.slice().sort()) === JSON.stringify(STOPS.slice().sort()) && order.every((x) => STOPS.includes(x)),
+          `#241 r7 Settings Tab stops are the 8 known controls (${th}): ${JSON.stringify(order)}`);
+        for (const id of STOPS) {
+          const s = seen[id];
+          if (s && s.contrast) table[th][id] = s.contrast.ratio;
+          check(!!s && s.inSettings && s.fv && s.ring && s.ring.style !== 'none' && s.ring.width >= 2 && s.ring.w > 0 && s.ring.h > 0,
+            `#241 r7 real Tab to ${id} shows a visible ring (${th}): ${JSON.stringify(s)}`);
+          check(!!s && s.ring && s.ring.offset >= 0,
+            `#241 r7 the ring on ${id} sits outside the control, on the panel background (${th}): ${JSON.stringify(s)}`);
+          check(!!s && s.contrast && s.contrast.images.length === 0 && !!s.contrast.from,
+            `#241 r7 ${id} ring background is a plain colour, so the contrast is computable (${th}): ${JSON.stringify(s)}`);
+          check(!!s && s.contrast && s.contrast.ratio >= 3,
+            `#241 r7 ${id} ring contrast vs its background is at least 3:1 (${th}): ${JSON.stringify(s)}`);
+          check(!!s && s.othersStyles.every((x) => x === 'none'),
+            `#241 r6 no other switch track is ringed while ${id} has focus (${th}): ${JSON.stringify(s)}`);
+        }
+        const t = threadRuns[th].tm;
+        if (t && t.contrast) table[th]['thread-msg'] = t.contrast.ratio;
+        check(!!t && t.fv && t.ring && t.ring.style !== 'none' && t.ring.width >= 2 && t.ring.w > 0 && t.ring.h > 0 && t.ring.offset >= 0,
+          `#241 r7 real Tab to #thread-msg shows a visible ring outside the field (${th}): ${JSON.stringify(threadRuns[th])}`);
+        check(!!t && t.contrast && t.contrast.images.length === 0 && !!t.contrast.from && t.contrast.ratio >= 3,
+          `#241 r7 #thread-msg ring contrast vs its background is at least 3:1 (${th}): ${JSON.stringify(threadRuns[th])}`);
+        if (seen.theme) check(seen.theme.value === th, `#241 r7 the theme Tab stop is the checked radio (${th}): ${JSON.stringify(seen.theme)}`);
+      }
+      console.log('settings ring contrast: ' + JSON.stringify(table));
+      console.log('settings focus mouse: ' + JSON.stringify(mouseRuns));
+      for (const th of ['field-office', 'dark']) {
+        const m = mouseRuns[th];
+        check(!!m && m.clicks.length === 3 && m.clicks.every((c) => c.theme === th && c.inSettings && !c.fv && c.ring && c.ring.style === 'none')
+          && m.clicks[0].id === 'vibe-public' && m.clicks[1].id === 'vibe-public' && m.clicks[2].id === 'theme',
+          `#241 r7 a real mouse click on a switch or a radio focuses it with no ring (${th}): ${JSON.stringify(m)}`);
+        check(!!m && m.after === m.before,
+          `#241 r7 the two mouse clicks leave Public vibe as it was (${th}): ${JSON.stringify(m)}`);
+      }
+    }
+
+    // #241 r8 (Gauge B6): forced-state sweep over every focusable .panel
+    // element in the page (all drawers, open or not): input, textarea,
+    // select, summary, button, a[href] and [tabindex >= 0], on all 8 themes.
+    // CDP forces :focus and :focus-visible on each one (as Gauge's sweep
+    // does), then the computed ring must be one of exactly two variants:
+    // buttons get the site-wide button ring (solid 2px, offset 3px); every
+    // other element gets the .panel ring (solid 2px, offset 2px). Both must
+    // be the theme's --fg, outside the element, and >= 3:1 against its
+    // effective background. Covers elements Tab never reaches in this test,
+    // e.g. untyped #new-chan, the file inputs and the <summary> toggles.
+    {
+      const SWEEP_SEL = '.panel input:not([type="hidden"]), .panel textarea, .panel select, .panel summary, .panel button, .panel a[href], .panel [tabindex]:not([tabindex^="-"])';
+      const KIND_MIN = { summary: 2, button: 1 };
+      const MUST = ['new-chan', 'prof-avatar', 'agent-file', 'turn-host'];
+      const themes = await cdp.eval(`Array.prototype.map.call(document.querySelectorAll("#settings input[name='theme']"), (i) => i.value)`);
+      await cdp.send('DOM.enable');
+      await cdp.send('CSS.enable');
+      const sweepEval = `(() => {
+        const px = (c) => { const cv = document.createElement('canvas'); cv.width = 1; cv.height = 1;
+          const x = cv.getContext('2d'); x.clearRect(0, 0, 1, 1); x.fillStyle = c; x.fillRect(0, 0, 1, 1);
+          const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
+        const over = (top, bot) => [0, 1, 2].map((i) => top[i] * top[3] + bot[i] * (1 - top[3]));
+        const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+          return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+        const ratio = (p, q) => { const a1 = lum(p), b1 = lum(q); return (Math.max(a1, b1) + 0.05) / (Math.min(a1, b1) + 0.05); };
+        const effBg = (el) => { const layers = []; let images = 0; let from = null;
+          for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+            const cs = getComputedStyle(n); const c = px(cs.backgroundColor);
+            if (cs.backgroundImage !== 'none') images++;
+            if (c[3] > 0) { layers.push(c); if (c[3] >= 1) { from = n.id ? '#' + n.id : (n.className || n.tagName); break; } } }
+          let bg = [255, 255, 255];
+          for (let i = layers.length - 1; i >= 0; i--) bg = over(layers[i], bg);
+          return { bg: bg.map(Math.round), from, images }; };
+        return Array.prototype.map.call(document.querySelectorAll(${JSON.stringify(SWEEP_SEL)}), (el) => {
+          const cs = getComputedStyle(el); const e = effBg(el.parentElement); const rc = px(cs.outlineColor);
+          const fg = px(cs.getPropertyValue('--fg').trim());
+          const host = el.closest('.drawer, .stage');
+          const tag = el.tagName.toLowerCase();
+          const kind = ['input', 'textarea', 'select', 'summary', 'button', 'a'].includes(tag) ? tag : 'tabindex';
+          return { kind, id: el.id || null, name: el.name || null, type: el.getAttribute('type'), tag: el.tagName.toLowerCase(),
+            host: host ? host.id : null, fv: el.matches(':focus-visible'), style: cs.outlineStyle,
+            width: parseFloat(cs.outlineWidth) || 0, offset: parseFloat(cs.outlineOffset) || 0,
+            fgRing: rc.every((v, i) => v === fg[i]), rgb: rc.slice(0, 3).join(','),
+            from: e.from, images: e.images, ratio: Math.round(ratio(over(rc, e.bg).map(Math.round), e.bg) * 100) / 100 }; }); })()`;
+      const sweep = {};
+      const keepTheme8 = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
+      for (const th of themes) {
+        await cdp.eval(`applyTheme(${JSON.stringify(th)})`);
+        await sleep(150);
+        const doc = await cdp.send('DOM.getDocument', { depth: -1 });
+        const q = doc.root ? await cdp.send('DOM.querySelectorAll', { nodeId: doc.root.nodeId, selector: SWEEP_SEL }) : {};
+        const ids = q.nodeIds || [];
+        for (const nodeId of ids)
+          await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['focus', 'focus-visible'] });
+        const rows = await cdp.eval(sweepEval);
+        for (const nodeId of ids)
+          await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] });
+        const bad = rows.filter((r) => !(r.fv && r.style === 'solid' && r.width === 2 && r.offset === (r.kind === 'button' ? 3 : 2) && r.fgRing && r.images === 0 && r.from && r.ratio >= 3));
+        sweep[th] = { total: rows.length, nodes: ids.length, ringed: rows.length - bad.length,
+          min: rows.length ? Math.min.apply(null, rows.map((r) => r.ratio)) : null,
+          seen: MUST.filter((id) => rows.some((r) => r.id === id)), bad,
+          kinds: rows.reduce((o, r) => { o[r.kind] = (o[r.kind] || 0) + 1; return o; }, {}) };
+      }
+      await cdp.eval(`applyTheme(${JSON.stringify(keepTheme8 || 'field-office')})`);
+      console.log('panel field sweep: ' + JSON.stringify(Object.fromEntries(Object.entries(sweep).map(([k, v]) =>
+        [k, { total: v.total, ringed: v.ringed, kinds: v.kinds, min: v.min, bad: v.bad.map((b) => b.kind + ' ' + (b.id || b.name || b.tag) + ':' + b.style + ' ' + b.width + 'px off ' + b.offset + (b.fgRing ? ' fg' : ' rgb(' + b.rgb + ')') + ' r ' + b.ratio) }]))));
+      check(themes.length === 8, `#241 r8 sweep runs on the 8 shipped themes: ${JSON.stringify(themes)}`);
+      for (const th of themes) {
+        const v = sweep[th];
+        check(v.total > 0 && v.total === v.nodes && v.seen.length === MUST.length &&
+          Object.keys(KIND_MIN).every((k) => (v.kinds[k] || 0) >= KIND_MIN[k]),
+          `#241 r8 sweep found every focusable .panel element incl ${MUST.join(', ')}, >= 2 summary, >= 1 button (${th}): ${JSON.stringify({ total: v.total, nodes: v.nodes, seen: v.seen, kinds: v.kinds })}`);
+        check(v.bad.length === 0,
+          `#241 r8 every focusable .panel element gets its ring under forced :focus-visible: buttons the site ring (solid 2px --fg, offset 3px), all others the .panel ring (solid 2px --fg, offset 2px), >= 3:1 (${th}): ${v.ringed}/${v.total}; ${JSON.stringify(v.bad)}`);
+      }
+    }
+
+    // #241 r6: at 390px, a keyboard open of Settings (Kit, then Enter on
+    // Settings) leaves the panel at its title: heading on screen, scrollTop 0.
+    // First a real keyboard visit in dark: open, Shift+Tab wraps to Close
+    // (which scrolls the panel down to it), Enter closes. Chrome keeps the
+    // panel's scroll offset while it is hidden, so without a reset the next
+    // open lands scrolled with the title above the view (the Ops path).
+    {
+      const keepTheme390 = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
+      await cdp.eval(`document.documentElement.setAttribute('data-theme', 'dark')`);
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+      await sleep(400);
+      const key390 = async (key, code, vk, mod, text) => {
+        const down = { type: text ? 'keyDown' : 'rawKeyDown', key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers: mod || 0 };
+        if (text) { down.text = text; down.unmodifiedText = text; }
+        await cdp.send('Input.dispatchKeyEvent', down);
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers: mod || 0 });
+        await sleep(400);
+      };
+      const kbOpen390 = async () => {
+        await realClick('#rail-toggle');
+        await cdp.eval(`document.getElementById('settings-btn').focus()`);
+        await key390('Enter', 'Enter', 13, 0, '\r');
+      };
+      await kbOpen390();
+      await key390('Tab', 'Tab', 9, 8);
+      const preScroll = await cdp.eval(`(() => { const d = document.getElementById('settings'); const p = d.querySelector('.panel');
+        return { ae: document.activeElement && document.activeElement.id, panel: p.scrollTop, drawer: d.scrollTop }; })()`);
+      await key390('Enter', 'Enter', 13, 0, '\r');
+      const preClosed = await cdp.eval(`!document.getElementById('settings').classList.contains('show')`);
+      console.log('settings 390 pre-scroll: ' + JSON.stringify(Object.assign({ closed: preClosed }, preScroll)));
+      check(preScroll.ae === 'settings-close' && (preScroll.panel > 0 || preScroll.drawer > 0) && preClosed,
+        `#241 r6 at 390 Shift+Tab reaches Close with the panel scrolled to it, and Enter closes: ${JSON.stringify(preScroll)}`);
+      await kbOpen390();
+      const t390 = await cdp.eval(`(() => { const d = document.getElementById('settings'); const p = d.querySelector('.panel');
+        const h = p.querySelector('h2'); const hr = h.getBoundingClientRect(); const pr = p.getBoundingClientRect();
+        return { show: d.classList.contains('show'), ae: document.activeElement && document.activeElement.id,
+          scrollTop: p.scrollTop, drawerScroll: d.scrollTop, hTop: hr.top, hBottom: hr.bottom, pTop: pr.top, vh: innerHeight,
+          ring: (() => { const a = document.activeElement; const sl = a && a.nextElementSibling;
+            if (!sl || !sl.classList.contains('slider')) return null;
+            const cs = getComputedStyle(sl); const r = sl.getBoundingClientRect();
+            return { fv: a.matches(':focus-visible'), style: cs.outlineStyle, width: parseFloat(cs.outlineWidth) || 0,
+              w: r.width, h: r.height, inView: r.top >= 0 && r.bottom <= innerHeight }; })() }; })()`);
+      console.log('settings 390 open: ' + JSON.stringify(t390));
+      check(t390.show && t390.ae === 'turn-on',
+        `#241 r6 keyboard open at 390 shows Settings with focus on #turn-on: ${JSON.stringify(t390)}`);
+      check(!!t390.ring && t390.ring.fv && t390.ring.style !== 'none' && t390.ring.width >= 2 && t390.ring.w > 0 && t390.ring.h > 0 && t390.ring.inView,
+        `#241 r6 keyboard open lands on #turn-on with a visible ring on its track (dark, 390): ${JSON.stringify(t390)}`);
+      check(t390.scrollTop === 0 && t390.drawerScroll === 0 && t390.hTop >= t390.pTop - 1 && t390.hTop >= 0 && t390.hBottom <= t390.vh,
+        `#241 r6 Settings opens at its title at 390 (heading in view, not scrolled): ${JSON.stringify(t390)}`);
+      await realEsc();
+      await cdp.eval(`document.documentElement.setAttribute('data-theme', ${JSON.stringify(keepTheme390 || 'field-office')})`);
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+    }
+
     // Pre-walk r4 (Gauge B1), no pass installed: the robot editor never
     // claims to save the key, on Raise or any Edit path.
     await cdp.waitFor(`!!document.querySelector('#robot-list .robot-card[data-slug="coach"]')`, 'robot cards');

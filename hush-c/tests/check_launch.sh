@@ -725,6 +725,94 @@ echo "$html" | grep -q -x -F -e '      d.classList.toggle("is-overflowing", last
   || fail "overflow toggle must compare last > seen + 0.5 (UI-M12d #229 W8)"
 
 echo "$html" | grep -q 'contextmenu' || fail "HTML missing channel contextmenu"
+# #241 walk nits: provider note, favorites plural, Esc stack, B3 claim pins.
+# (Server default theme field-office is pinned later via vibe JSON.)
+echo "$html" | grep -q -F 'Provider / API priority (required)' \
+  || fail "#241 provider note must not say harness"
+if echo "$html" | grep -q -F 'Harness / API priority'; then
+  fail "#241 provider note still says harness"
+fi
+echo "$html" | grep -q -F '((fav.skills || []).length === 1) ? "1 skill"' \
+  || fail "#241 favorites must pluralize 1 skill"
+# dismissJourneyLayer must list new-chan-drawer and settings for Esc (not a
+# vacuous whole-file id grep — id="new-chan-drawer" always exists).
+if ! echo "$html" | grep -A8 'function dismissJourneyLayer' | grep -q 'new-chan-drawer'; then
+  fail "#241 Esc must dismiss new-chan-drawer"
+fi
+# The Esc order array itself must end with "settings" (the later
+# order[k] === "settings" branch must not satisfy this pin).
+if ! echo "$html" | grep -A3 'const order = \["avatar-drawer"' | grep -q -F '"settings"];'; then
+  fail "#241 Esc order array must include settings"
+fi
+# B3 / Gauge: claimed #241 UI bytes whose revert must FAIL this gate.
+echo "$html" | grep -q -F 'value="field-office" checked' \
+  || fail "#241 M1b theme radio default must be field-office"
+# #241 r4 F1/F2: Meet Major — no false Profile pointer; one At ease line.
+if echo "$html" | grep -q -F 'Public key on file'; then
+  fail "#241 F1 Meet Major must not point at Profile for Major's key"
+fi
+echo "$html" | grep -q -F "<p><strong>At ease.</strong> I'm Major. Tell me what you want built and I'll find — or raise — the right robot for the job.</p>" \
+  || fail "#241 F2 Meet Major must ship the single At ease intro"
+# F2: the Meet Major card source (page === "payne" .. meet-payne) holds
+# exactly one "At ease", one "I'm Major" and one find/raise phrase, in any
+# tag form (strong or plain <p>, literal or about-text line); no p.npub.
+payne_src=$(echo "$html" | sed -n '/page === "payne"/,/meet-payne/p')
+at_ease_n=$(echo "$payne_src" | grep -o 'At ease' | wc -l)
+test "$at_ease_n" -eq 1 \
+  || fail "#241 F2 Meet Major card source must contain 'At ease' exactly once (got $at_ease_n)"
+major_n=$(echo "$payne_src" | grep -o "I'm Major" | wc -l)
+test "$major_n" -eq 1 \
+  || fail "#241 F2 Meet Major card source must contain 'I'm Major' exactly once (got $major_n)"
+raise_n=$(echo "$payne_src" | grep -o 'find — or raise' | wc -l)
+test "$raise_n" -eq 1 \
+  || fail "#241 F2 Meet Major card source must contain 'find — or raise' exactly once (got $raise_n)"
+if echo "$payne_src" | grep -q '\.about'; then
+  fail "#241 F2 Meet Major card no longer renders Major's about text (disclosed); found .about"
+fi
+if echo "$html" | sed -n '/page === "payne"/,/meet-payne/p' | grep -q 'p.npub'; then
+  fail "#241 Meet Major must not reference p.npub on the gate card"
+fi
+# F3 Settings a11y helpers present.
+echo "$html" | grep -q -F 'function openSettings()' \
+  || fail "#241 F3 openSettings missing"
+echo "$html" | grep -q -F 'function closeSettings()' \
+  || fail "#241 F3 closeSettings missing"
+echo "$html" | grep -q -F 'settingsReturnFocus' \
+  || fail "#241 F3 settingsReturnFocus missing"
+echo "$html" | grep -q -F 'function settingsFocusables()' \
+  || fail "#241 F3 settingsFocusables missing"
+if ! echo "$html" | grep -A20 'function dismissJourneyLayer' | grep -q 'closeSettings()'; then
+  fail "#241 F3 Esc must close Settings via closeSettings (return focus)"
+fi
+echo "$html" | grep -q -F 'lastStatus = { ok: false };' \
+  || fail "#241 M5 tick catch must clear lastStatus"
+echo "$html" | grep -q -F 'paintRosterPane(lastStatus);' \
+  || fail "#241 M5 tick catch must repaint roster/feed"
+echo "$html" | grep -q -F 'err.scrollIntoView({ block: "nearest", behavior: "smooth" })' \
+  || fail "#241 M7a skillNotice must scrollIntoView"
+# M7b: agent-save path must call skillNotice (other keep-one sites exist).
+if ! echo "$html" | grep -A25 '\$("agent-save").addEventListener("click"' \
+    | grep -q -F 'skillNotice("Keep at least one skill equipped.")'; then
+  fail "#241 M7b agent-save path must use skillNotice"
+fi
+echo "$html" | grep -q -F 'st.ok ? ("Relay listening"' \
+  || fail "#241 M9a status feed must use plain Relay listening copy"
+if echo "$html" | grep -q -F '"RELAY LIVE"'; then
+  fail "#241 M9a status feed must not say RELAY LIVE"
+fi
+# M10: theme change posts /api/profile only when logged in.
+if ! echo "$html" | grep -A12 "input\[name='theme'\]" | grep -q 'if (!session.logged_in) return;'; then
+  # fallback: nearby comment + guard
+  if ! echo "$html" | grep -B2 -A6 'api("/api/profile", { theme:' | grep -q 'if (!session.logged_in) return;'; then
+    fail "#241 M10 theme POST must guard session.logged_in"
+  fi
+fi
+# B1: outside/backdrop click must test panel containment (not drawer.contains).
+echo "$html" | grep -q -F 'panel.contains(ev.target)' \
+  || fail "#241 B1 outside click must use panel.contains (not drawer.contains)"
+if echo "$html" | grep -A8 'const d = \$("new-chan-drawer");' | grep -q 'd.contains(ev.target)'; then
+  fail "#241 B1 must not use drawer.contains for outside click"
+fi
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + pills"
 echo "$html" | grep -q 'id="provider-username"' || fail "HTML missing provider username"
 echo "$html" | grep -q 'id="provider-password"' || fail "HTML missing provider password"
@@ -879,7 +967,7 @@ echo "$vibe" | grep -q '"name":"Sgt Major Payne"' && fail "old Payne display nam
 echo "$vibe" | grep -q 'Sgt. Maj. Payne' && fail "old Payne display name must not ship"
 echo "$vibe" | grep -F '"providers":["grok-build"]' || fail "Payne default providers"
 echo "$vibe" | grep -q '"slug":"welcome"' || fail "welcome channel missing"
-echo "$vibe" | grep -q '"theme":"dark"' || fail "default theme missing"
+echo "$vibe" | grep -q '"theme":"field-office"' || fail "default theme missing"
 prof=$(curl -sf -X POST "http://127.0.0.1:${port}/api/profile" \
     -H 'Content-Type: application/json' \
     -d '{"first_name":"Ada","last_name":"Lovelace","email":"ada@hive.local","organization":"HQ","theme":"dracula"}')

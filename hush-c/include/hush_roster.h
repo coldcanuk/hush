@@ -31,7 +31,7 @@ enum {
 #define HUSH_ROSTER_MIME_PLAIN "text/plain"
 #define HUSH_ROSTER_MIME_MARKDOWN "text/markdown"
 #define HUSH_ROSTER_MIME_XMARKDOWN "text/x-markdown"
-#define HUSH_ROSTER_THEME_DEFAULT "dark"
+#define HUSH_ROSTER_THEME_DEFAULT "field-office"
 /* #279 approval setting ids, as stored in vibe.json and sent on /api/profile. */
 #define HUSH_ROSTER_APPROVAL_AUTO_ID "auto_approve"
 #define HUSH_ROSTER_APPROVAL_EVERY_ID "approve_every_action"
