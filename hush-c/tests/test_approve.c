@@ -214,11 +214,14 @@ static void stub_runtime(const test_approve_fixture_t *fx)
     expect(setenv("HOME", fx->dir, 1) == 0, "scratch HOME");
 }
 
-/* Points config and the fake pass store at fresh dirs under a mkdtemp root. */
+/* Points config and the fake pass store at fresh dirs under a mkdtemp root.
+ * HUSH_HOME is dropped so nothing (wake claims included) lands in a caller's
+ * hush home; the fixed note ids would otherwise collide across runs. */
 static void make_scratch(test_approve_fixture_t *fx)
 {
     char sub[TEST_APPROVE_PATH_MAX + sizeof("/config")] = {0};
 
+    expect(unsetenv("HUSH_HOME") == 0, "no caller HUSH_HOME");
     hush_agent_copy(fx->dir, sizeof(fx->dir), TEST_APPROVE_DIR_TEMPLATE);
     expect(mkdtemp(fx->dir) != NULL, "mkdtemp scratch");
     stub_runtime(fx);
