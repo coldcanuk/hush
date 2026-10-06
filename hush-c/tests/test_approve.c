@@ -166,6 +166,11 @@ static void check_not_turns(void)
     expect(!hush_agent_is_work_note(TEST_APPROVE_FULL_COPY), "the full notice is not a turn");
     expect(hush_agent_is_work_note("Approve the plan first, then build."),
            "an ordinary reply is still a turn");
+    expect(hush_agent_is_approval_line(TEST_APPROVE_ASK_COPY), "the ask is an approval line");
+    expect(hush_agent_is_approval_line(TEST_APPROVE_NO_COPY), "the decline is an approval line");
+    expect(hush_agent_is_approval_line(TEST_APPROVE_FULL_COPY), "the notice is an approval line");
+    expect(!hush_agent_is_approval_line("Approve the plan first, then build."),
+           "an ordinary reply is not an approval line");
 }
 
 /* Fills a kind-1 note on the test channel, replying to root when given. */
@@ -543,8 +548,20 @@ static void check_threads(void)
     close_hive(&fx);
 }
 
+/* Opens an owner pair thread, runs Happy's turn (Yes; no runtime), and
+ * finishes it with out, so Scout's follow-wave turn waits. */
+static void pair_to_scout(test_approve_fixture_t *fx, int role, const char *out)
+{
+    open_thread(fx, &fx->root, fx->launch.human.pubkey_hex, fx->scout);
+    answer(fx, fx->launch.human.pubkey_hex, "Yes");
+    finish_turn(fx, fx->happy, role, out);
+    expect(count_line(fx->store, TEST_APPROVE_ASK_SCOUT) >= 1, "Scout's follow turn waits");
+    expect(hush_agent_follow_peek(fx->root.id, NULL) == 1, "a held follow turn counts in flight");
+}
+
 /* Promoted P3: other people share at most 4 entries; the owner keeps the
- * rest, and an answered guest turn frees its entry. */
+ * rest (a robot turn in the owner's thread is the owner's), and an
+ * answered guest turn frees its entry. */
 static void check_guest_share(void)
 {
     static test_approve_fixture_t fx;
@@ -557,10 +574,12 @@ static void check_guest_share(void)
     expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == TEST_APPROVE_GUESTS,
            "other people hold at most 4 entries");
     expect(count_line(fx.store, TEST_APPROVE_FULL_COPY) == 1, "the fifth guest turn is refused");
-    for (int i = 0; i < TEST_APPROVE_TABLE - TEST_APPROVE_GUESTS + 1; i++) {
+    pair_to_scout(&fx, HUSH_AGENT_LOOP_ROLE_NONE, "A line.");
+    for (int i = 0; i < TEST_APPROVE_TABLE - TEST_APPROVE_GUESTS; i++) {
         snprintf(text, sizeof(text), "owner joke %d", i);
         mention_happy(&fx, text);
     }
+    /* 4 guests + Scout + 3 owner turns fill the 8; the 4th owner turn is refused. */
     expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == TEST_APPROVE_TABLE,
            "the owner still fills the other 4");
     expect(count_line(fx.store, TEST_APPROVE_FULL_COPY) == 2, "the table is full at 8");
@@ -569,17 +588,6 @@ static void check_guest_share(void)
     expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == TEST_APPROVE_TABLE + 1,
            "an answered guest turn frees its entry");
     close_hive(&fx);
-}
-
-/* Opens an owner pair thread, runs Happy's turn (Yes; no runtime), and
- * finishes it with out, so Scout's follow-wave turn waits. */
-static void pair_to_scout(test_approve_fixture_t *fx, int role, const char *out)
-{
-    open_thread(fx, &fx->root, fx->launch.human.pubkey_hex, fx->scout);
-    answer(fx, fx->launch.human.pubkey_hex, "Yes");
-    finish_turn(fx, fx->happy, role, out);
-    expect(count_line(fx->store, TEST_APPROVE_ASK_SCOUT) >= 1, "Scout's follow turn waits");
-    expect(hush_agent_follow_peek(fx->root.id, NULL) == 1, "a held follow turn counts in flight");
 }
 
 /* P2-7: a void, a No, a Yes with no runtime, and a removed robot each give
