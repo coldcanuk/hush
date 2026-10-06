@@ -158,8 +158,11 @@ static void hush_agent_init_job(hush_agent_job_t *job, const hush_agent_job_in_t
     job->last = in->last;
     job->loop_role = in->loop_role;
     hush_agent_event_root(job->parent_id, sizeof(job->parent_id), parent);
-    hush_agent_copy(job->trigger_id, sizeof(job->trigger_id),
-                    parent->id[0] ? parent->id : job->parent_id);
+    if (in->trigger != NULL && in->trigger[0] != '\0')
+        hush_agent_copy(job->trigger_id, sizeof(job->trigger_id), in->trigger);
+    else
+        hush_agent_copy(job->trigger_id, sizeof(job->trigger_id),
+                        parent->id[0] ? parent->id : job->parent_id);
     hush_agent_event_channel(job->channel, sizeof(job->channel), parent);
     hush_agent_copy(job->ask, sizeof(job->ask),
                     in->ask != NULL && in->ask[0] ? in->ask : parent->content);

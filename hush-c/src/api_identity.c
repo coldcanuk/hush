@@ -55,11 +55,24 @@ hush_status_t hush_http_serve_identity(int fd, const char *body)
 
 hush_status_t hush_http_serve_profile(int fd, const char *body)
 {
-    hush_roster_profile_t profile;
+    hush_roster_profile_t profile = {0};
+    char approval[HUSH_ROSTER_NAME_MAX] = {0};
+    hush_status_t st = HUSH_OK;
 
     if (hush_http_launch() == NULL || body == NULL)
         return hush_http_reply_session(fd, HUSH_ERR_ARG);
-    memset(&profile, 0, sizeof(profile));
+    /* #279: the approval setting is posted on its own, so it never clears
+     * the name fields below (a body without them would). A body naming the
+     * key in compact form ("approval_mode":) takes this branch; an empty,
+     * non-string or space-after-colon value stays "" and is refused. The
+     * flat reader does not see "approval_mode" : (space before the colon,
+     * #289), so such a body falls through to the profile save below (#288). */
+    if (hush_http_json_has_key(body, "approval_mode")) {
+        (void)hush_http_json_field(body, "approval_mode", approval, sizeof(approval));
+        st = hush_launch_set_approval(hush_http_launch(), approval);
+        return hush_http_reply_refused(fd, st,
+                                       st == HUSH_ERR_PARSE ? HUSH_HTTP_APPROVAL_WHY : NULL);
+    }
     (void)hush_http_json_field(body, "first_name", profile.first_name,
                           sizeof(profile.first_name));
     (void)hush_http_json_field(body, "last_name", profile.last_name,

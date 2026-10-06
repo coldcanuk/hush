@@ -65,8 +65,23 @@ enum {
     HUSH_AGENT_WAIT_MAX = 8,
     HUSH_AGENT_FOLLOW_ROBOTS = 8,
     /* Human "Yes" answers one loop may receive before it ends (#280 D4). */
-    HUSH_AGENT_LOOP_EXTENSIONS_MAX = 4
+    HUSH_AGENT_LOOP_EXTENSIONS_MAX = 4,
+    /* Robot turns that may wait for the owner's approval at once (#279). */
+    HUSH_AGENT_APPROVAL_MAX = 8,
+    /* Of those, at most this many may be asked for by anyone but the hive
+     * owner, so other people can never fill the table (#279 r2). */
+    HUSH_AGENT_APPROVAL_GUEST_MAX = 4,
+    /* One approval line: the fixed copy plus a robot name. */
+    HUSH_AGENT_APPROVAL_LINE_MAX = 256
 };
+
+/* What hush_agent_begin_work did with a turn. Callers that count a
+ * follow wave treat STARTED and HELD alike: both are nonzero. */
+typedef enum {
+    HUSH_AGENT_WORK_NONE = 0,
+    HUSH_AGENT_WORK_STARTED = 1,
+    HUSH_AGENT_WORK_HELD = 2
+} hush_agent_work_t;
 
 /* A robot's role in a two-robot loop (#280). The lead is the first robot
  * the human mentioned (D1); the partner is the second. */
@@ -258,7 +273,33 @@ typedef struct {
     int loop_role;
     /* The whole human note shown to the loop lead. NULL for everyone else. */
     const char *loop_note;
+    /* True when the caller counts this turn in its follow slot's inflight. */
+    int follow;
+    /* True once the owner approved this turn (#279); skips the gate. */
+    int approved;
+    /* Wake/delivery trigger for this turn; NULL or "" uses parent->id. The
+     * leader's plan pass sets its own so it never reuses the election
+     * pass's (robot, trigger) claim (#279 P1-1). */
+    const char *trigger;
 } hush_agent_job_in_t;
+
+/* One robot turn waiting for the owner's Yes or No (#279). Owns copies of
+ * everything the borrowed pointers in `in` referred to. Memory only. */
+typedef struct {
+    int used;
+    unsigned long seq;
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+    char hex[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
+    char name[HUSH_ROSTER_NAME_MAX];
+    hush_event_t parent;
+    char ask[HUSH_EVENT_MAX_CONTENT + 1];
+    char loop_note[HUSH_EVENT_MAX_CONTENT + 1];
+    char prompt_override[HUSH_ROSTER_PROMPT_MAX];
+    char trigger[HUSH_EVENT_ID_HEX_LEN + 1];
+    /* True when someone other than the hive owner asked for this turn. */
+    int guest;
+    hush_agent_job_in_t in;
+} hush_agent_held_t;
 
 typedef struct {
     const char *name;
@@ -409,6 +450,68 @@ void hush_agent_loop_append_lead(char *prompt, size_t promptsz,
  * quote; the ask marks it as text, not instructions. */
 void hush_agent_loop_fill_ask(char *out, size_t outsz, const char *name,
                               const char *said);
+
+/* Domain-separation prefix for the plan pass's wake trigger (#279 P1-1). */
+#define HUSH_AGENT_PLAN_TRIGGER_SALT "hush-plan-pass:"
+
+/* Writes the leader plan pass's wake trigger for root: lowercase hex
+ * sha256(HUSH_AGENT_PLAN_TRIGGER_SALT + root), never equal to root itself.
+ * Writes "" on failure, which falls back to the root (the old trigger). */
+void hush_agent_plan_trigger(char *out, size_t outsz, const char *root);
+
+/* ---- agent_approve.c: the owner approves each robot turn (#279) ---- */
+
+#define HUSH_AGENT_APPROVAL_ASK_HEAD "Approval needed: "
+#define HUSH_AGENT_APPROVAL_ASK_FMT \
+    HUSH_AGENT_APPROVAL_ASK_HEAD "%s wants to take a turn. Reply Yes or No in this thread."
+#define HUSH_AGENT_APPROVAL_ELECT_FMT \
+    HUSH_AGENT_APPROVAL_ASK_HEAD "%s wants to run the leader election. Reply Yes or No in this thread."
+#define HUSH_AGENT_APPROVAL_NO_HEAD "Turn declined: "
+#define HUSH_AGENT_APPROVAL_NO_FMT HUSH_AGENT_APPROVAL_NO_HEAD "%s stood down."
+#define HUSH_AGENT_APPROVAL_FULL_LINE \
+    "Too many turns are waiting for approval. Answer one first."
+/* Said instead of the full line when the refused turn was asked for by
+ * someone other than the hive owner (r3): it is addressed to them. */
+#define HUSH_AGENT_APPROVAL_GUEST_LINE \
+    "Too many requests from other people are waiting for the owner. Try again later."
+
+/* Empties the table of waiting turns. */
+void hush_agent_approval_init(void);
+
+/* True when the owner chose "Approve every action" and the turn is not
+ * already approved. */
+int hush_agent_approval_needed(const hush_agent_job_in_t *in);
+
+/* Holds the turn and posts the approval line in its thread. Returns
+ * HUSH_AGENT_WORK_HELD, or HUSH_AGENT_WORK_NONE (with a notice) when
+ * HUSH_AGENT_APPROVAL_MAX turns already wait, or when someone other than the
+ * hive owner asked for it and HUSH_AGENT_APPROVAL_GUEST_MAX such turns wait. */
+int hush_agent_approval_hold(const hush_agent_job_in_t *in);
+
+/* True when content is one of the approval lines (ask, decline, full).
+ * These are notices to the owner, never thread context for a robot. */
+int hush_agent_is_approval_line(const char *content);
+
+/* Drops every turn waiting in root; returns how many counted in a follow
+ * slot's inflight. Posts nothing. */
+size_t hush_agent_approval_void(const char *root);
+
+/* agent_dispatch.c: runs an approved turn through hush_agent_begin_work. */
+int hush_agent_begin_approved(hush_agent_job_in_t *in);
+
+/* agent_dispatch.c: a held turn ended without a job. Gives back its
+ * inflight count when counted, and stops the thread's loop when end_loop. */
+void hush_agent_follow_release(const hush_event_t *ev, int counted, int end_loop);
+
+/* agent_dispatch.c: read-only view of root's follow slot. Returns its
+ * in-flight turn count, or -1 when no live slot holds root; writes the loop
+ * flag to *loop_active when not NULL. Used by tests (#279 r2). */
+int hush_agent_follow_peek(const char *root, int *loop_active);
+
+/* agent_dispatch.c: posts one line from the channel chaperon (Payne by
+ * default) on ev's root. */
+void hush_agent_chaperon_say(hush_store_t *store, const hush_launch_t *launch,
+                             const hush_event_t *ev, const char *line);
 
 /* ---- hush_agent.c helpers shared with the per-cluster modules ---- */
 

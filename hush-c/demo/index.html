@@ -2245,6 +2245,13 @@ html[data-theme="dark"] #thread-send:active {
       </div>
       <p class="help">When enabled, logs go to separate Developer Log drawer (not main chat).</p>
 
+      <p class="help" id="approval-label">Robot turns</p>
+      <div class="vis" id="approval-list" role="radiogroup" aria-labelledby="approval-label">
+        <label><input type="radio" id="approval-auto" name="approval" value="auto_approve" checked> Auto-approve</label>
+        <label><input type="radio" id="approval-every" name="approval" value="approve_every_action"> Approve every action</label>
+      </div>
+      <p class="help">Approve every action: before each robot turn, Hush asks in the thread and waits for your Yes or No there.</p>
+
       <p class="help">Theme</p>
       <div class="vis" id="theme-list">
         <label><input type="radio" name="theme" value="field-office" checked> field office</label>
@@ -3027,9 +3034,22 @@ html[data-theme="dark"] #thread-send:active {
       identityViaImport = !!(session && session.identity_imported);
     }
 
-    function applySession(s) {
-      session = s || session;
+    /* #279: true while a Settings approval post is in flight, so the 1 s
+       tick cannot flip the radio back to the old saved value mid-post. */
+    let approvalPosting = false;
+
+    /* applySession assigns through here; tick() spells the same three
+       lines out (the #234 check_launch guard reads them there). Either way
+       the Settings radio mirrors the saved approval_mode on page load and
+       every 1 s tick, not only after a Settings post (#279 r2). */
+    function setSession(s) {
+      session = s;
       syncIdentityViaImport();
+      syncApproval();
+    }
+
+    function applySession(s) {
+      setSession(s || session);
       if (session.ready && page !== "payne") page = "hive";
       else if (session.logged_in && !session.backup_acked) page = "backup";
       else if (session.logged_in && session.backup_acked && !session.has_vibe) page = "vibe";
@@ -3039,6 +3059,16 @@ html[data-theme="dark"] #thread-send:active {
       if (session.backup_acked) pendingNsec = "";
       applyTheme((session.profile && session.profile.theme) || session.theme);
       paint();
+    }
+
+    /* #279: the radio mirrors the server's saved approval_mode. */
+    function syncApproval() {
+      if (approvalPosting) return;
+      const mode = session.approval_mode === "approve_every_action"
+        ? "approve_every_action" : "auto_approve";
+      document.querySelectorAll("input[name='approval']").forEach((el) => {
+        el.checked = el.value === mode;
+      });
     }
 
     /* tick() paints every 1s. Replacing an unchanged gate destroys #nsec-in
@@ -5847,6 +5877,19 @@ html[data-theme="dark"] #thread-send:active {
         } catch (e) {}
       });
     });
+    document.querySelectorAll("input[name='approval']").forEach((el) => {
+      el.addEventListener("change", async () => {
+        if (!el.checked) return;
+        approvalPosting = true;
+        let saved = null;
+        try {
+          saved = await api("/api/profile", { approval_mode: el.value });
+        } catch (e) { saved = null; }
+        approvalPosting = false;
+        if (saved) applySession(saved);
+        else syncApproval();
+      });
+    });
     $("call-btn").addEventListener("click", () => {
       openStage(
         "Conference · #" + channel,
@@ -8622,6 +8665,7 @@ html[data-theme="dark"] #thread-send:active {
           lastPresence = pres.lines;
         session = sess;
         syncIdentityViaImport();
+        syncApproval();
         whisperReady = !!st.whisper;
         if (session.ready && page !== "payne") page = "hive";
         else if (!session.logged_in

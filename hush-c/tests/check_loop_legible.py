@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""#280 write-legible-c pin: the loop's functions (and the follow_kick path
-they touch) plus every function in the loop's C test stay at most 40 lines,
-signature to closing brace, with at most four parameters (c-standard.md
-caps; write-legible-c applies them to test code written in C too).
+"""#280 / #279 write-legible-c pin: the loop's functions (and the follow_kick
+path they touch), the approval gate and setting (#279), and every function
+in the loop's and the approval's C tests stay at most 40 lines, signature to
+closing brace, with at most four parameters (c-standard.md caps;
+write-legible-c applies them to test code written in C too).
 Definitions are read with the return type on the name line or alone on the
 line above, and with "{" on its own line or ending the signature. A built-in
 self-test proves both layouts, each cap, the staleness guard, and that
-MIN_SEEN for tests/test_loop.c equals its real function count."""
+MIN_SEEN for each C test equals its real function count."""
 import re
 import sys
 
@@ -15,20 +16,41 @@ PARAM_CAP = 4
 FILES = {
     "src/agent_loop.c": None,
     "src/agent_dispatch.c": re.compile(
-        r"hush_agent_(follow_kick|follow_wave|loop_\w+|chaperon_say|turn_cap|turns_full)$"),
+        r"hush_agent_(follow_kick|follow_wave|loop_\w+|chaperon_say|turn_cap|turns_full"
+        r"|begin_work|begin_approved|follow_release|reset_follow|is_work_note"
+        r"|plan_parent|plan_trigger|start_plan_from_slot|follow_peek)$"),
     "src/agent_prompt.c": re.compile(r"hush_agent_append_loop_lead$"),
+    "src/agent_approve.c": None,
+    "src/agent_thread.c": re.compile(r"hush_agent_backfill_wants$"),
+    "src/hush_roster.c": re.compile(r"hush_roster_(approval_parse|approval_id|format_profile)$"),
+    "src/hush_launch.c": re.compile(
+        r"hush_launch_(set_approval|take_approval|take_roster|put_roster)$"),
+    "src/api_identity.c": re.compile(r"hush_http_serve_profile$"),
     "tests/test_loop.c": None,
+    "tests/test_approve.c": None,
 }
 # Functions in tests/test_loop.c today. The scan must still find all of
 # them, so no test function can drop out of the caps unnoticed.
 TEST_LOOP_FUNCTIONS = 18
+# Functions in tests/test_approve.c today (#279 r2), held to the same rule.
+TEST_APPROVE_FUNCTIONS = 40
+TEST_COUNTS = {
+    "tests/test_loop.c": TEST_LOOP_FUNCTIONS,
+    "tests/test_approve.c": TEST_APPROVE_FUNCTIONS,
+}
 # Each scanned file must still yield at least this many functions (today's
 # counts), so a rename, move or new layout cannot silently shrink the scan.
 MIN_SEEN = {
     "src/agent_loop.c": 9,
-    "src/agent_dispatch.c": 13,
+    "src/agent_dispatch.c": 22,
     "src/agent_prompt.c": 1,
+    "src/agent_approve.c": 15,
+    "src/agent_thread.c": 1,
+    "src/hush_roster.c": 3,
+    "src/hush_launch.c": 4,
+    "src/api_identity.c": 1,
     "tests/test_loop.c": TEST_LOOP_FUNCTIONS,
+    "tests/test_approve.c": TEST_APPROVE_FUNCTIONS,
 }
 # A definition's name line: optional storage class and return type, then
 # "name(". The return type may also sit alone on the line above (K&R).
@@ -121,7 +143,7 @@ SELF_CASES = {
 
 def self_test():
     """Proves the scan reads both layouts, flags each cap, keeps the
-    staleness guard, and that MIN_SEEN has no slack for test_loop.c."""
+    staleness guard, and that MIN_SEEN has no slack for either C test."""
     import os
     import tempfile
     errors = []
@@ -136,9 +158,10 @@ def self_test():
                 errors.append(f"{name}: seen {seen} (want {want_seen}), flags {bad}")
             if not any("stale" in b for b in scan({path: None}, {path: want_seen + 1})):
                 errors.append(f"{name}: staleness guard did not fire")
-    actual = sum(1 for _ in functions("tests/test_loop.c"))
-    if MIN_SEEN["tests/test_loop.c"] != actual or TEST_LOOP_FUNCTIONS != actual:
-        errors.append(f"test_loop.c has {actual} functions; MIN_SEEN must match it")
+    for path, named in TEST_COUNTS.items():
+        actual = sum(1 for _ in functions(path))
+        if MIN_SEEN[path] != actual or named != actual:
+            errors.append(f"{path.split('/')[-1]} has {actual} functions; MIN_SEEN must match it")
     return ["self-test " + line for line in errors]
 
 

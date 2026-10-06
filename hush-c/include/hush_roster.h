@@ -32,6 +32,9 @@ enum {
 #define HUSH_ROSTER_MIME_MARKDOWN "text/markdown"
 #define HUSH_ROSTER_MIME_XMARKDOWN "text/x-markdown"
 #define HUSH_ROSTER_THEME_DEFAULT "field-office"
+/* #279 approval setting ids, as stored in vibe.json and sent on /api/profile. */
+#define HUSH_ROSTER_APPROVAL_AUTO_ID "auto_approve"
+#define HUSH_ROSTER_APPROVAL_EVERY_ID "approve_every_action"
 #define HUSH_ROSTER_PAYNE_SLUG "sgt-major-payne"
 #define HUSH_ROSTER_ROLE_WORKER "worker"
 #define HUSH_ROSTER_ROLE_CHAPERON "chaperon"
@@ -87,6 +90,13 @@ typedef struct {
     char name[HUSH_ROSTER_NAME_MAX];
 } hush_roster_member_t;
 
+/* #279: whether the owner approves each robot turn before Hush starts the
+ * robot's runtime. Zero is the default, so a fresh or old vibe auto-approves. */
+typedef enum {
+    HUSH_ROSTER_APPROVAL_AUTO = 0,
+    HUSH_ROSTER_APPROVAL_EVERY = 1
+} hush_roster_approval_t;
+
 typedef struct {
     char first_name[HUSH_ROSTER_NAME_MAX];
     char last_name[HUSH_ROSTER_NAME_MAX];
@@ -94,6 +104,8 @@ typedef struct {
     char organization[HUSH_ROSTER_NAME_MAX];
     char theme[HUSH_ROSTER_NAME_MAX];
     char picture[HUSH_ROSTER_PATH_MAX];
+    /* Set only by hush_launch_set_approval; hush_roster_set_profile keeps it. */
+    hush_roster_approval_t approval;
 } hush_roster_profile_t;
 
 typedef struct {
@@ -112,6 +124,11 @@ int hush_roster_is_context_mime(const char *mime, const char *filename);
 
 /* True when theme is one of the eight named palettes. */
 int hush_roster_is_theme(const char *theme);
+/* Reads an approval id. Returns 1 and sets *out for a known id; returns 0
+ * and sets *out to HUSH_ROSTER_APPROVAL_AUTO for anything else. */
+int hush_roster_approval_parse(const char *id, hush_roster_approval_t *out);
+/* The stored id for mode; an unknown value reads as auto-approve. */
+const char *hush_roster_approval_id(hush_roster_approval_t mode);
 
 /* True when provider is one of the known named runtimes. */
 int hush_roster_is_provider(const char *provider);

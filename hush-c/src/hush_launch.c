@@ -636,6 +636,20 @@ hush_status_t hush_launch_set_profile(hush_launch_t *launch,
     return hush_launch_save_vibe(launch);
 }
 
+hush_status_t hush_launch_set_approval(hush_launch_t *launch, const char *id)
+{
+    hush_roster_approval_t mode = HUSH_ROSTER_APPROVAL_AUTO;
+
+    if (launch == NULL || id == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->logged_in)
+        return HUSH_ERR_ARG;
+    if (!hush_roster_approval_parse(id, &mode))
+        return HUSH_ERR_PARSE;
+    launch->roster.profile.approval = mode;
+    return hush_launch_save_vibe(launch);
+}
+
 hush_status_t hush_launch_add_member(hush_launch_t *launch,
                                      const char *key,
                                      const char *name)
@@ -2801,11 +2815,13 @@ static hush_status_t hush_launch_put_roster(const hush_launch_t *launch,
                                             char *out, size_t outsz,
                                             size_t *off)
 {
-    const hush_roster_profile_t *profile;
+    const hush_roster_profile_t *profile = NULL;
 
     assert(launch != NULL);
     profile = &launch->roster.profile;
     HUSH_TRY(hush_launch_put_field(out, outsz, off, "theme", profile->theme));
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "approval_mode",
+                                   hush_roster_approval_id(profile->approval)));
     HUSH_TRY(hush_launch_put_field(out, outsz, off, "first_name",
                                    profile->first_name));
     HUSH_TRY(hush_launch_put_field(out, outsz, off, "last_name",
@@ -3246,15 +3262,25 @@ static hush_status_t hush_launch_take_members(hush_launch_t *launch,
     return HUSH_OK;
 }
 
+/* #279: read apart from the theme-gated profile above, so the setting
+ * survives a vibe with no theme. Missing or unknown reads as auto-approve. */
+static void hush_launch_take_approval(hush_launch_t *launch, const char *json)
+{
+    char id[HUSH_ROSTER_NAME_MAX] = {0};
+
+    assert(launch != NULL && json != NULL);
+    (void)hush_launch_json_string(json, "approval_mode", id, sizeof(id));
+    (void)hush_roster_approval_parse(id, &launch->roster.profile.approval);
+}
+
 static hush_status_t hush_launch_take_roster(hush_launch_t *launch,
                                              const char *json)
 {
-    hush_roster_profile_t profile;
-    size_t n;
-    size_t i;
+    hush_roster_profile_t profile = {0};
+    size_t n = 0;
+    size_t i = 0;
 
     assert(launch != NULL);
-    memset(&profile, 0, sizeof(profile));
     (void)hush_launch_json_string(json, "theme", profile.theme,
                                   sizeof(profile.theme));
     (void)hush_launch_json_string(json, "first_name", profile.first_name,
@@ -3267,6 +3293,7 @@ static hush_status_t hush_launch_take_roster(hush_launch_t *launch,
                                   sizeof(profile.picture));
     if (profile.theme[0] != '\0')
         (void)hush_roster_set_profile(&launch->roster, &profile);
+    hush_launch_take_approval(launch, json);
     n = hush_launch_json_count(json, "nagents", (size_t)HUSH_ROSTER_AGENTS_MAX);
     for (i = 0; i < n; ++i)
         HUSH_TRY(hush_launch_take_agent(launch, json, i));
