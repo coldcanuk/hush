@@ -3021,9 +3021,10 @@ html[data-theme="dark"] #thread-send:active {
        tick cannot flip the radio back to the old saved value mid-post. */
     let approvalPosting = false;
 
-    /* Every session assign goes through here, so the Settings radio mirrors
-       the saved approval_mode on page load and every 1 s tick, not only
-       after a Settings post (#279 r2). */
+    /* applySession assigns through here; tick() spells the same three
+       lines out (the #234 check_launch guard reads them there). Either way
+       the Settings radio mirrors the saved approval_mode on page load and
+       every 1 s tick, not only after a Settings post (#279 r2). */
     function setSession(s) {
       session = s;
       syncIdentityViaImport();
@@ -8556,7 +8557,9 @@ html[data-theme="dark"] #thread-send:active {
         ]);
         if (pres && pres.lines)
           lastPresence = pres.lines;
-        setSession(sess);
+        session = sess;
+        syncIdentityViaImport();
+        syncApproval();
         whisperReady = !!st.whisper;
         if (session.ready && page !== "payne") page = "hive";
         else if (!session.logged_in
