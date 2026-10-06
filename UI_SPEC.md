@@ -363,8 +363,9 @@ Every robot, including Major, has an Enable/Disable switch
 (`#agent-enabled`). Disabled robots use `.inv-item.disabled`
 (greyscale) and do not answer mentions. Raise and Edit also have
 `#agent-intro-enabled` (on by default) and `#agent-intro` (default
-“I am on deck. Standing orders are noted.”). The intro posts once per
-thread. Major’s intro switch and text are locked. Ranked providers remain.
+“I am on deck. Standing orders are noted.”). The default on-deck line is not a chat note.
+A different intro posts once per thread when the switch is on. Major posts no in-thread intro.
+Major’s intro switch and text stay locked. Ranked providers remain.
 Skills live only in Raise / Edit (`#agent-drawer`), never on the hive nav.
 Edit is the inventory: `i` toggles it for the selected or hovered robot
 tile. Cycle `#skill-cycle`; armory groups **System** (application-wide) and
@@ -632,7 +633,7 @@ built if raylib present; copies user atlases from ~/Pictures for
 demo). No Raylib dependency on the main hush-relay.
 
 ## M2 Architecture Decisions (locked for this feature)
-- **Mention fidelity & UX**: Composer keeps `@Name` in the typed sentence (pills list who is in the bubble). Stored content uses `nostr:` at those offsets. Render turns those tokens into in-sentence pills (do not run `prettyMentions` first). Progressive states ("thinking" → "reacting" → emoji); notes older than 2s skip to emoji unless a live job exists. One short intro per robot+thread is chat; repeats are not posted. "Mention received" is a developer log only.
+- **Mention fidelity & UX**: Composer keeps `@Name` in the typed sentence (pills list who is in the bubble). Stored content uses `nostr:` at those offsets. Render turns those tokens into in-sentence pills (do not run `prettyMentions` first). Progressive states ("thinking" → "reacting" → emoji); notes older than 2s skip to emoji unless a live job exists. The default on-deck line is not a chat note. A custom intro posts once per robot and thread; repeats are not posted. "Mention received" is a developer log only.
 - **Developer Logging**: Dedicated toggle (default off) + separate panel. Syslog format. Log notes never appear in main chat or threads, even when the toggle is on.
 - **Multi-robot deliberation**: Co-mention prompt + hygiene + peer p-mention support. Robots decide strategy (individual/coop/split/convo).
 - **Channel topics**: `about` string injected as "Channel topic: ..." quick pointer. Pills in UI.
@@ -737,9 +738,10 @@ on a note stops after its assignment and does not p-tag peers.
    "Mention received." text is **never** a visible chat note (see
    Developer Logging).
 
-Robot intros ("At ease...") appear at most once per robot per session
-or thread root (single on-deck guard). Subsequent mentions use only
-emoji ack + normal reply.
+A custom robot intro appears at most once per robot per thread root
+when the intro switch is on and the text is not the default on-deck line.
+The default on-deck line is not a chat note. Major posts none.
+Subsequent mentions use only emoji ack + normal reply.
 
 Mentioning a robot starts a thread. The channel `#stream` lists **root**
 notes only (empty `reply_to`), except a reply that opens with
@@ -1616,8 +1618,8 @@ turns need approval.
 2. **One approval per robot turn.** Under `Approve every action`, every
    robot turn stops at one gate in `hush_agent_begin_work`, after the
    turn-cap check and before the robot's runtime starts. (The existing
-   mention greetings, "Mention received." and "At ease. I am on deck…",
-   still appear first; see #278.) That covers the first turn after a mention, each
+   mention greetings still run first. The default on-deck line is not a chat note
+   (#278).) That covers the first turn after a mention, each
    follow wave, each two-robot loop turn, the leader election pass, the
    leader's plan pass, and an owner reply that goes to the thread's robot.
    The chaperon posts "Approval needed: <Robot> wants to take a turn. Reply
