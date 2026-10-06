@@ -190,6 +190,11 @@ hush_status_t hush_launch_restore_vibe(hush_launch_t *launch);
 /* Clears the human login. Vibe and roster stay. */
 hush_status_t hush_launch_logout(hush_launch_t *launch);
 
+/* #279: sets the owner's approval setting from its id and saves vibe.json.
+ * An unknown id returns HUSH_ERR_PARSE and changes nothing. Other profile
+ * fields are untouched. */
+hush_status_t hush_launch_set_approval(hush_launch_t *launch, const char *id);
+
 /* Copies profile fields onto the roster. Rejects a bad theme. */
 hush_status_t hush_launch_set_profile(hush_launch_t *launch,
                                       const hush_roster_profile_t *in);

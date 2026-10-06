@@ -192,6 +192,7 @@ test: check-deps $(TEST_BINS) hush-relay
 	sh tests/check_restart_ui_deps.sh || exit 1; \
 	sh tests/check_restart_ui_chrome_wait.sh || exit 1; \
 	sh tests/check_restart_ui.sh || exit 1; \
+	sh tests/check_layer_ui.sh || exit 1; \
 	python3 tests/check_palette_tokens.py || exit 1; \
 	sh tests/check_palette.sh || exit 1; \
 	CC="$(CC)" python3 tests/check_win.py || exit 1; \
@@ -204,6 +205,8 @@ test: check-deps $(TEST_BINS) hush-relay
 	sh tests/check_provider.sh || exit 1; \
 	sh tests/check_agent.sh || exit 1; \
 	sh tests/check_loop.sh || exit 1; \
+	sh tests/check_approve.sh || exit 1; \
+	sh tests/check_approve_ui.sh || exit 1; \
 	sh tests/check_codex.sh || exit 1; \
 	sh tests/check_ollama.sh || exit 1; \
 	sh tests/check_failover.sh || exit 1; \

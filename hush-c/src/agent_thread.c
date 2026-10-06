@@ -195,6 +195,9 @@ static int hush_agent_backfill_wants(const hush_agent_backfill_t *fill,
     assert(turn != NULL);
     if (strcmp(turn->id, fill->parent_id) == 0)
         return 0;
+    /* Approval lines are notices to the owner, not thread context (#279). */
+    if (hush_agent_is_approval_line(turn->content))
+        return 0;
     if (fill->owner_shown && strcmp(turn->id, fill->root) == 0)
         return 0;
     for (i = 0; i < fill->nring; ++i) {

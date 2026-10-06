@@ -29,6 +29,12 @@ void hush_agent_shutdown(void);
 void hush_agent_reset_follow(const hush_launch_t *launch,
                              const hush_event_t *ev);
 
+/* #279: the owner's Yes runs the oldest turn waiting for approval in the
+ * thread; No declines it. Returns 1 when ev answered one (it is consumed);
+ * 0 for anyone else, no waiting turn, or any other text. */
+int hush_agent_approval_answer(hush_store_t *store, const hush_launch_t *launch,
+                               const hush_event_t *ev);
+
 /* Handles a human "Yes"/"No" reply to a waiting "Continue this loop?"
  * prompt in ev's thread. Returns 1 when ev was consumed as the answer;
  * 0 leaves ev to the normal path (which ends any loop in that thread). */
