@@ -1279,14 +1279,37 @@ async function main() {
 
     // #241 r6: at 390px, a keyboard open of Settings (Kit, then Enter on
     // Settings) leaves the panel at its title: heading on screen, scrollTop 0.
+    // First a real keyboard visit in dark: open, Shift+Tab wraps to Close
+    // (which scrolls the panel down to it), Enter closes. Chrome keeps the
+    // panel's scroll offset while it is hidden, so without a reset the next
+    // open lands scrolled with the title above the view (the Ops path).
     {
+      const keepTheme390 = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
+      await cdp.eval(`document.documentElement.setAttribute('data-theme', 'dark')`);
       await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
       await sleep(400);
-      await realClick('#rail-toggle');
-      await cdp.eval(`document.getElementById('settings-btn').focus()`);
-      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' });
-      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
-      await sleep(500);
+      const key390 = async (key, code, vk, mod, text) => {
+        const down = { type: text ? 'keyDown' : 'rawKeyDown', key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers: mod || 0 };
+        if (text) { down.text = text; down.unmodifiedText = text; }
+        await cdp.send('Input.dispatchKeyEvent', down);
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk, modifiers: mod || 0 });
+        await sleep(400);
+      };
+      const kbOpen390 = async () => {
+        await realClick('#rail-toggle');
+        await cdp.eval(`document.getElementById('settings-btn').focus()`);
+        await key390('Enter', 'Enter', 13, 0, '\r');
+      };
+      await kbOpen390();
+      await key390('Tab', 'Tab', 9, 8);
+      const preScroll = await cdp.eval(`(() => { const d = document.getElementById('settings'); const p = d.querySelector('.panel');
+        return { ae: document.activeElement && document.activeElement.id, panel: p.scrollTop, drawer: d.scrollTop }; })()`);
+      await key390('Enter', 'Enter', 13, 0, '\r');
+      const preClosed = await cdp.eval(`!document.getElementById('settings').classList.contains('show')`);
+      console.log('settings 390 pre-scroll: ' + JSON.stringify(Object.assign({ closed: preClosed }, preScroll)));
+      check(preScroll.ae === 'settings-close' && (preScroll.panel > 0 || preScroll.drawer > 0) && preClosed,
+        `#241 r6 at 390 Shift+Tab reaches Close with the panel scrolled to it, and Enter closes: ${JSON.stringify(preScroll)}`);
+      await kbOpen390();
       const t390 = await cdp.eval(`(() => { const d = document.getElementById('settings'); const p = d.querySelector('.panel');
         const h = p.querySelector('h2'); const hr = h.getBoundingClientRect(); const pr = p.getBoundingClientRect();
         return { show: d.classList.contains('show'), ae: document.activeElement && document.activeElement.id,
@@ -1297,6 +1320,7 @@ async function main() {
       check(t390.scrollTop === 0 && t390.drawerScroll === 0 && t390.hTop >= t390.pTop - 1 && t390.hTop >= 0 && t390.hBottom <= t390.vh,
         `#241 r6 Settings opens at its title at 390 (heading in view, not scrolled): ${JSON.stringify(t390)}`);
       await realEsc();
+      await cdp.eval(`document.documentElement.setAttribute('data-theme', ${JSON.stringify(keepTheme390 || 'field-office')})`);
       await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
       await sleep(300);
     }
