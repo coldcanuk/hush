@@ -89,6 +89,7 @@ int hush_http_serve_asset(int fd, const char *path);
 void hush_http_serve_status(int fd, const hush_store_t *store);
 void hush_http_serve_events(int fd, const hush_store_t *store);
 void hush_http_serve_thread(int fd, const char *req);
+hush_status_t hush_http_serve_thread_post(int fd, const char *body);
 void hush_http_serve_session(int fd);
 void hush_http_serve_chan_events(int fd, const char *req);
 void hush_http_serve_presence_get(int fd);
