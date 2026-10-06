@@ -47,6 +47,8 @@ enum {
     "Approval needed: Happy wants to take a turn. Reply Yes or No in this thread."
 #define TEST_APPROVE_NO_COPY "Turn declined: Happy stood down."
 #define TEST_APPROVE_FULL_COPY "Too many turns are waiting for approval. Answer one first."
+#define TEST_APPROVE_GUEST_COPY \
+    "Too many requests from other people are waiting for the owner. Try again later."
 /* The stub runtime: first on PATH, exits without a word. */
 #define TEST_APPROVE_STUB "#!/bin/sh\nexit 0\n"
 #define TEST_APPROVE_SYS_PATH "/usr/bin:/bin"
@@ -164,11 +166,14 @@ static void check_not_turns(void)
     expect(!hush_agent_is_work_note(TEST_APPROVE_ASK_COPY), "the approval line is not a turn");
     expect(!hush_agent_is_work_note(TEST_APPROVE_NO_COPY), "the decline line is not a turn");
     expect(!hush_agent_is_work_note(TEST_APPROVE_FULL_COPY), "the full notice is not a turn");
+    expect(!hush_agent_is_work_note(TEST_APPROVE_GUEST_COPY), "the guest notice is not a turn");
     expect(hush_agent_is_work_note("Approve the plan first, then build."),
            "an ordinary reply is still a turn");
     expect(hush_agent_is_approval_line(TEST_APPROVE_ASK_COPY), "the ask is an approval line");
     expect(hush_agent_is_approval_line(TEST_APPROVE_NO_COPY), "the decline is an approval line");
     expect(hush_agent_is_approval_line(TEST_APPROVE_FULL_COPY), "the notice is an approval line");
+    expect(hush_agent_is_approval_line(TEST_APPROVE_GUEST_COPY),
+           "the guest notice is an approval line");
     expect(!hush_agent_is_approval_line("Approve the plan first, then build."),
            "an ordinary reply is not an approval line");
 }
@@ -576,7 +581,9 @@ static void check_guest_share(void)
         open_thread(&fx, &guest[i], TEST_APPROVE_STRANGER_PUB, NULL);
     expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == TEST_APPROVE_GUESTS,
            "other people hold at most 4 entries");
-    expect(count_line(fx.store, TEST_APPROVE_FULL_COPY) == 1, "the fifth guest turn is refused");
+    expect(count_line(fx.store, TEST_APPROVE_GUEST_COPY) == 1 &&
+           count_line(fx.store, TEST_APPROVE_FULL_COPY) == 0,
+           "the fifth guest turn is refused in the guest's terms");
     pair_to_scout(&fx, HUSH_AGENT_LOOP_ROLE_NONE, "A line.");
     for (int i = 0; i < TEST_APPROVE_TABLE - TEST_APPROVE_GUESTS; i++) {
         snprintf(text, sizeof(text), "owner joke %d", i);
@@ -585,11 +592,45 @@ static void check_guest_share(void)
     /* 4 guests + Scout + 3 owner turns fill the 8; the 4th owner turn is refused. */
     expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == TEST_APPROVE_TABLE,
            "the owner still fills the other 4");
-    expect(count_line(fx.store, TEST_APPROVE_FULL_COPY) == 2, "the table is full at 8");
+    expect(count_line(fx.store, TEST_APPROVE_FULL_COPY) == 1 &&
+           count_line(fx.store, TEST_APPROVE_GUEST_COPY) == 1,
+           "the table is full at 8 and the owner is told to answer one");
     answer_in(&fx, guest[0].id, fx.launch.human.pubkey_hex, "No");
     open_thread(&fx, &guest[TEST_APPROVE_GUESTS + 1], TEST_APPROVE_STRANGER_PUB, NULL);
     expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == TEST_APPROVE_TABLE + 1,
            "an answered guest turn frees its entry");
+    close_hive(&fx);
+}
+
+/* r3 (Gauge's pin): in a guest's thread, a robot's note that mentions
+ * another robot (the robot-to-robot path) asks a guest turn, so it uses
+ * the guest share: 4 more guest threads get 3 asks and one guest notice. */
+static void check_guest_robot_turn(void)
+{
+    static test_approve_fixture_t fx;
+    static hush_event_t guest[TEST_APPROVE_GUESTS];
+    static hush_event_t g;
+    static hush_event_t robo;
+    char out[HUSH_EVENT_MAX_CONTENT] = {0};
+    size_t base = 0;
+
+    open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+    open_thread(&fx, &g, TEST_APPROVE_STRANGER_PUB, NULL);
+    answer_in(&fx, g.id, fx.launch.human.pubkey_hex, "Yes");
+    snprintf(out, sizeof(out), "nostr:%s please check this line.", fx.scout->id.npub);
+    fill_note(&robo, fx.happy->id.pubkey_hex, out, g.id);
+    hush_agent_copy(robo.tags[robo.tag_count][0], sizeof(robo.tags[0][0]), "p");
+    hush_agent_copy(robo.tags[robo.tag_count][1], sizeof(robo.tags[0][1]), fx.scout->id.npub);
+    robo.tag_count++;
+    expect(hush_store_insert(fx.store, &robo) == HUSH_OK, "robot note insert");
+    hush_agent_handle_mention(fx.store, &fx.launch, &robo, fx.scout->id.npub);
+    expect(count_line(fx.store, TEST_APPROVE_ASK_SCOUT) == 1, "Scout's turn waits");
+    base = count_line(fx.store, TEST_APPROVE_ASK_COPY);
+    for (int i = 0; i < TEST_APPROVE_GUESTS; i++)
+        open_thread(&fx, &guest[i], TEST_APPROVE_STRANGER_PUB, NULL);
+    expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == base + TEST_APPROVE_GUESTS - 1 &&
+           count_line(fx.store, TEST_APPROVE_GUEST_COPY) == 1,
+           "a robot turn in a guest's thread uses the guest share");
     close_hive(&fx);
 }
 
@@ -719,6 +760,7 @@ int main(void)
     check_fifo();
     check_threads();
     check_guest_share();
+    check_guest_robot_turn();
     check_release();
     check_loop_release();
     check_many_voids();

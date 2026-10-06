@@ -55,10 +55,12 @@ int hush_agent_approval_hold(const hush_agent_job_in_t *in)
     guest = !hush_agent_held_by_owner(in);
     held = hush_agent_held_free();
     /* Other people share HUSH_AGENT_APPROVAL_GUEST_MAX entries, so the owner
-     * always keeps the rest for their own turns. */
+     * always keeps the rest for their own turns. A refused guest is told so
+     * in their own terms; the owner is told to answer one. */
     if (held == NULL || (guest && hush_agent_held_guests() >= HUSH_AGENT_APPROVAL_GUEST_MAX)) {
         hush_agent_chaperon_say(in->store, in->launch, in->parent,
-                                HUSH_AGENT_APPROVAL_FULL_LINE);
+                                guest ? HUSH_AGENT_APPROVAL_GUEST_LINE
+                                      : HUSH_AGENT_APPROVAL_FULL_LINE);
         return HUSH_AGENT_WORK_NONE;
     }
     hush_agent_held_fill(held, in);
@@ -118,7 +120,8 @@ int hush_agent_is_approval_line(const char *content)
     static const char *const heads[] = {
         HUSH_AGENT_APPROVAL_ASK_HEAD,
         HUSH_AGENT_APPROVAL_NO_HEAD,
-        HUSH_AGENT_APPROVAL_FULL_LINE
+        HUSH_AGENT_APPROVAL_FULL_LINE,
+        HUSH_AGENT_APPROVAL_GUEST_LINE
     };
     size_t i = 0;
 

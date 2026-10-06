@@ -1687,6 +1687,7 @@ int hush_agent_is_work_note(const char *content)
         HUSH_AGENT_APPROVAL_ASK_HEAD,
         HUSH_AGENT_APPROVAL_NO_HEAD,
         HUSH_AGENT_APPROVAL_FULL_LINE,
+        HUSH_AGENT_APPROVAL_GUEST_LINE,
         "Holding.",
         "Robots do not chain",
         "Not on this channel.",

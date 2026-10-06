@@ -62,9 +62,11 @@ hush_status_t hush_http_serve_profile(int fd, const char *body)
     if (hush_http_launch() == NULL || body == NULL)
         return hush_http_reply_session(fd, HUSH_ERR_ARG);
     /* #279: the approval setting is posted on its own, so it never clears
-     * the name fields below (a body without them would). Any body naming the
-     * key takes this branch; an empty or non-string value stays "" and is
-     * refused, never read as a profile save. */
+     * the name fields below (a body without them would). A body naming the
+     * key in compact form ("approval_mode":) takes this branch; an empty,
+     * non-string or space-after-colon value stays "" and is refused. The
+     * flat reader does not see "approval_mode" : (space before the colon,
+     * #289), so such a body falls through to the profile save below (#288). */
     if (hush_http_json_has_key(body, "approval_mode")) {
         (void)hush_http_json_field(body, "approval_mode", approval, sizeof(approval));
         st = hush_launch_set_approval(hush_http_launch(), approval);

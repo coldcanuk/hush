@@ -120,12 +120,16 @@ robots never chain by mentioning each other, and `robot_hops` stays `0`.
    logged-in owner's profile, is saved in `vibe.json` next to the theme as
    `approval_mode` (`auto_approve` | `approve_every_action`), and is read
    back on every relay start. A missing or unknown stored value reads as
-   `auto_approve`. Any `POST /api/profile` body that names `approval_mode`
-   sets only the approval setting and never touches the profile names.
-   A value other than those two ids (including `""`, `null`, a number, or
-   a spaced `"approval_mode": "…"`, which the relay's flat parser does not
-   read) is refused (400, "approval_mode must be auto_approve or
-   approve_every_action.") and changes nothing. The Settings radio shows
+   `auto_approve`. A `POST /api/profile` body that names the key in the
+   compact form the app sends (`"approval_mode":`, no space before the
+   colon) sets only the approval setting and never touches the profile
+   names. A value other than those two ids (including `""`, `null`, a
+   number, or `"approval_mode": "…"` with a space after the colon) is
+   refused (400, "approval_mode must be auto_approve or
+   approve_every_action.") and changes nothing. The relay reads compact
+   JSON only (#289): with a space before the colon (`"approval_mode" :`)
+   the key is not seen, so the body is an ordinary profile save, which
+   clears the name fields it leaves out (#288). The Settings radio shows
    the saved value on page load, on every 1 s session refresh, and after
    a post (a refused post snaps it back).
 2. **One approval per robot turn.** Under `Approve every action`, every
@@ -158,7 +162,9 @@ robots never chain by mentioning each other, and `robot_hops` stays `0`.
    still waiting there, and only there (silently). The note itself is
    handled as usual, so it may raise its own approval line. Turns already
    running are not affected; a follow wave behind a running turn still
-   starts when it finishes.
+   starts when it finishes. An owner note while the leader election pass
+   runs (a second, double-tapped Yes included) ends the chain, as it does
+   under Auto-approve, so the plan pass never asks.
 5. **Loop and cap.** A waiting loop turn does not run, and the loop stays
    paused until the owner answers. Approval lines are not robot turns, so
    the cap counts exactly as before; at the cap the loop still asks
@@ -172,8 +178,11 @@ robots never chain by mentioning each other, and `robot_hops` stays `0`.
 6. **Limits and restart.** At most 8 turns wait at once, and at most 4 of
    them may be asked for by anyone other than the hive owner (another
    person's mention, or a robot turn in a thread that person opened), so
-   the owner always keeps 4 for their own turns. One more gets "Too many
-   turns are waiting for approval. Answer one first." and does not run.
+   the owner always keeps 4 for their own turns. When the owner's turn
+   does not fit, the chaperon posts "Too many turns are waiting for
+   approval. Answer one first."; when someone else's does not fit, it
+   posts "Too many requests from other people are waiting for the owner.
+   Try again later." Neither turn runs.
    Waiting turns live in relay memory only: after a restart the old
    waiting turn is gone, and a Yes at its approval line is an ordinary
    owner note, so it raises a fresh approval line for the thread's robot

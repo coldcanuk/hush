@@ -470,6 +470,10 @@ void hush_agent_plan_trigger(char *out, size_t outsz, const char *root);
 #define HUSH_AGENT_APPROVAL_NO_FMT HUSH_AGENT_APPROVAL_NO_HEAD "%s stood down."
 #define HUSH_AGENT_APPROVAL_FULL_LINE \
     "Too many turns are waiting for approval. Answer one first."
+/* Said instead of the full line when the refused turn was asked for by
+ * someone other than the hive owner (r3): it is addressed to them. */
+#define HUSH_AGENT_APPROVAL_GUEST_LINE \
+    "Too many requests from other people are waiting for the owner. Try again later."
 
 /* Empties the table of waiting turns. */
 void hush_agent_approval_init(void);

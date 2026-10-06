@@ -19,7 +19,7 @@ the top-level `VERSION` file.
   the turn cap, at most 8 turns wait at once, and waiting turns are not
   kept across a relay restart. The setting is saved per owner in
   `vibe.json` as `approval_mode`, read back on start, and set with
-  `POST /api/profile {"approval_mode": ...}` (an unknown value is refused
+  `POST /api/profile {"approval_mode":"..."}` (an unknown value is refused
   and a garbled stored value reads as `auto_approve`).
   r2 (Gauge review of f87770a7): approving the leader's plan pass now runs
   it when the convener is the elected leader (the plan pass has its own
@@ -28,6 +28,13 @@ the top-level `VERSION` file.
   after a page load and on every refresh; the election ask names the
   leader election; other people share at most 4 of the 8 waiting entries;
   approval lines no longer reach robot prompts.
+  r3 (Gauge review of f93bf0a7): a refused turn someone other than the
+  owner asked for gets "Too many requests from other people are waiting
+  for the owner. Try again later." instead of the owner's "Answer one
+  first." line; the docs now say the approval post must use the compact
+  `"approval_mode":` form, because the relay's flat JSON reader does not
+  see the key with a space before the colon (#289) and such a body is
+  saved as a profile instead (#288).
 
 - Two-robot loop (#280): when a human mentions two robots, the first one
   (the lead) also sees the whole note and can keep a back-and-forth going
