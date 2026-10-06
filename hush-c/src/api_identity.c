@@ -53,38 +53,99 @@ hush_status_t hush_http_serve_identity(int fd, const char *body)
     return hush_http_reply_session(fd, HUSH_ERR_PARSE);
 }
 
+static unsigned hush_http_profile_mask(const char *body)
+{
+    unsigned mask = 0;
+
+    assert(body != NULL);
+    if (hush_http_json_has_key(body, "first_name"))
+        mask |= HUSH_PROFILE_FIRST;
+    if (hush_http_json_has_key(body, "last_name"))
+        mask |= HUSH_PROFILE_LAST;
+    if (hush_http_json_has_key(body, "email"))
+        mask |= HUSH_PROFILE_EMAIL;
+    if (hush_http_json_has_key(body, "organization"))
+        mask |= HUSH_PROFILE_ORG;
+    if (hush_http_json_has_key(body, "theme"))
+        mask |= HUSH_PROFILE_THEME;
+    if (hush_http_json_has_key(body, "picture"))
+        mask |= HUSH_PROFILE_PICTURE;
+    if (hush_http_json_has_key(body, "dev_log_enabled"))
+        mask |= HUSH_PROFILE_DEVLOG;
+    return mask;
+}
+
+static int hush_http_read_dev_log(const char *body, int *out)
+{
+    char flag[8] = {0};
+
+    assert(body != NULL && out != NULL);
+    if (!hush_http_json_bare_field(body, "dev_log_enabled", flag, sizeof(flag)) &&
+        !hush_http_json_field(body, "dev_log_enabled", flag, sizeof(flag)))
+        return 0;
+    if (strcmp(flag, "1") == 0 || strcmp(flag, "true") == 0) {
+        *out = 1;
+        return 1;
+    }
+    if (strcmp(flag, "0") == 0 || strcmp(flag, "false") == 0) {
+        *out = 0;
+        return 1;
+    }
+    return 0;
+}
+
+static void hush_http_read_profile(hush_roster_profile_t *profile,
+                                  const char *body, unsigned mask)
+{
+    assert(profile != NULL && body != NULL);
+    if ((mask & HUSH_PROFILE_FIRST) != 0)
+        (void)hush_http_json_field(body, "first_name", profile->first_name,
+                                   sizeof(profile->first_name));
+    if ((mask & HUSH_PROFILE_LAST) != 0)
+        (void)hush_http_json_field(body, "last_name", profile->last_name,
+                                   sizeof(profile->last_name));
+    if ((mask & HUSH_PROFILE_EMAIL) != 0)
+        (void)hush_http_json_field(body, "email", profile->email,
+                                   sizeof(profile->email));
+    if ((mask & HUSH_PROFILE_ORG) != 0)
+        (void)hush_http_json_field(body, "organization", profile->organization,
+                                   sizeof(profile->organization));
+    if ((mask & HUSH_PROFILE_THEME) != 0)
+        (void)hush_http_json_field(body, "theme", profile->theme,
+                                   sizeof(profile->theme));
+    if ((mask & HUSH_PROFILE_PICTURE) != 0)
+        (void)hush_http_json_field(body, "picture", profile->picture,
+                                   sizeof(profile->picture));
+}
+
 hush_status_t hush_http_serve_profile(int fd, const char *body)
 {
     hush_roster_profile_t profile = {0};
     char approval[HUSH_ROSTER_NAME_MAX] = {0};
+    unsigned mask = 0;
+    int dev_log = 0;
     hush_status_t st = HUSH_OK;
 
     if (hush_http_launch() == NULL || body == NULL)
         return hush_http_reply_session(fd, HUSH_ERR_ARG);
-    /* #279: the approval setting is posted on its own, so it never clears
-     * the name fields below (a body without them would). A body naming the
-     * key in compact form ("approval_mode":) takes this branch; an empty,
-     * non-string or space-after-colon value stays "" and is refused. The
-     * flat reader does not see "approval_mode" : (space before the colon,
-     * #289), so such a body falls through to the profile save below (#288). */
+    /* Approval is its own post and never rewrites the name fields. */
     if (hush_http_json_has_key(body, "approval_mode")) {
         (void)hush_http_json_field(body, "approval_mode", approval, sizeof(approval));
         st = hush_launch_set_approval(hush_http_launch(), approval);
         return hush_http_reply_refused(fd, st,
                                        st == HUSH_ERR_PARSE ? HUSH_HTTP_APPROVAL_WHY : NULL);
     }
-    (void)hush_http_json_field(body, "first_name", profile.first_name,
-                          sizeof(profile.first_name));
-    (void)hush_http_json_field(body, "last_name", profile.last_name,
-                          sizeof(profile.last_name));
-    (void)hush_http_json_field(body, "email", profile.email, sizeof(profile.email));
-    (void)hush_http_json_field(body, "organization", profile.organization,
-                          sizeof(profile.organization));
-    (void)hush_http_json_field(body, "theme", profile.theme, sizeof(profile.theme));
-    (void)hush_http_json_field(body, "picture", profile.picture,
-                          sizeof(profile.picture));
+    mask = hush_http_profile_mask(body);
+    if (mask == 0)
+        return hush_http_reply_refused(fd, HUSH_ERR_PARSE, HUSH_HTTP_PROFILE_WHY);
+    if ((mask & HUSH_PROFILE_DEVLOG) != 0 &&
+        !hush_http_read_dev_log(body, &dev_log))
+        return hush_http_reply_session(fd, HUSH_ERR_PARSE);
+    hush_http_read_profile(&profile, body, mask);
     return hush_http_reply_session(fd,
-                                   hush_launch_set_profile(hush_http_launch(), &profile));
+                                   hush_launch_patch_profile(hush_http_launch(),
+                                                             &profile, mask,
+                                                             dev_log));
 }
 
 hush_status_t hush_http_serve_member(int fd, const char *body)

@@ -23,6 +23,7 @@ enum {
 #define HUSH_HTTP_WHY_OWNED "Skill %s belongs to another robot."
 /* #279: POST /api/profile with an approval_mode that is not a known id. */
 #define HUSH_HTTP_APPROVAL_WHY "approval_mode must be auto_approve or approve_every_action."
+#define HUSH_HTTP_PROFILE_WHY "no profile field"
 
 #include "hush_status.h"
 #include "hush_store.h"

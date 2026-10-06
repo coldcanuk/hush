@@ -636,6 +636,58 @@ hush_status_t hush_launch_set_profile(hush_launch_t *launch,
     return hush_launch_save_vibe(launch);
 }
 
+static void hush_launch_copy_field(char *dst, size_t dstsz, const char *src)
+{
+    size_t n;
+
+    assert(dst != NULL && dstsz > 0);
+    if (src == NULL)
+        src = "";
+    n = strlen(src);
+    if (n >= dstsz)
+        n = dstsz - 1;
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
+hush_status_t hush_launch_patch_profile(hush_launch_t *launch,
+                                       const hush_roster_profile_t *in,
+                                       unsigned mask, int dev_log)
+{
+    hush_roster_profile_t next;
+
+    if (launch == NULL || in == NULL)
+        return HUSH_ERR_ARG;
+    if (!launch->logged_in)
+        return HUSH_ERR_ARG;
+    if (mask == 0)
+        return HUSH_ERR_PARSE;
+    if ((mask & HUSH_PROFILE_THEME) != 0 && !hush_roster_is_theme(in->theme))
+        return HUSH_ERR_PARSE;
+    if ((mask & HUSH_PROFILE_DEVLOG) != 0 && dev_log != 0 && dev_log != 1)
+        return HUSH_ERR_ARG;
+    next = launch->roster.profile;
+    if ((mask & HUSH_PROFILE_FIRST) != 0)
+        hush_launch_copy_field(next.first_name, sizeof(next.first_name),
+                               in->first_name);
+    if ((mask & HUSH_PROFILE_LAST) != 0)
+        hush_launch_copy_field(next.last_name, sizeof(next.last_name),
+                               in->last_name);
+    if ((mask & HUSH_PROFILE_EMAIL) != 0)
+        hush_launch_copy_field(next.email, sizeof(next.email), in->email);
+    if ((mask & HUSH_PROFILE_ORG) != 0)
+        hush_launch_copy_field(next.organization, sizeof(next.organization),
+                               in->organization);
+    if ((mask & HUSH_PROFILE_THEME) != 0)
+        hush_launch_copy_field(next.theme, sizeof(next.theme), in->theme);
+    if ((mask & HUSH_PROFILE_PICTURE) != 0 && in->picture[0] != '\0')
+        hush_launch_copy_field(next.picture, sizeof(next.picture), in->picture);
+    if ((mask & HUSH_PROFILE_DEVLOG) != 0)
+        launch->dev_log_enabled = dev_log;
+    HUSH_TRY(hush_roster_set_profile(&launch->roster, &next));
+    return hush_launch_save_vibe(launch);
+}
+
 hush_status_t hush_launch_set_approval(hush_launch_t *launch, const char *id)
 {
     hush_roster_approval_t mode = HUSH_ROSTER_APPROVAL_AUTO;
@@ -2826,6 +2878,8 @@ static hush_status_t hush_launch_put_roster(const hush_launch_t *launch,
                                    profile->first_name));
     HUSH_TRY(hush_launch_put_field(out, outsz, off, "last_name",
                                    profile->last_name));
+    HUSH_TRY(hush_launch_put_field(out, outsz, off, "email",
+                                   profile->email));
     HUSH_TRY(hush_launch_put_field(out, outsz, off, "organization",
                                    profile->organization));
     HUSH_TRY(hush_launch_put_field(out, outsz, off, "picture",
@@ -3287,6 +3341,8 @@ static hush_status_t hush_launch_take_roster(hush_launch_t *launch,
                                   sizeof(profile.first_name));
     (void)hush_launch_json_string(json, "last_name", profile.last_name,
                                   sizeof(profile.last_name));
+    (void)hush_launch_json_string(json, "email", profile.email,
+                                  sizeof(profile.email));
     (void)hush_launch_json_string(json, "organization", profile.organization,
                                   sizeof(profile.organization));
     (void)hush_launch_json_string(json, "picture", profile.picture,
