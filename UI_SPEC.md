@@ -286,8 +286,10 @@ Kind 0 for the human:
 - Persist `localStorage.hush-theme` immediately and `POST /api/profile {theme}`.
 - **Robot turns** radios (#279, §20): `Auto-approve` (default) |
   `Approve every action`. A change posts `POST /api/profile
-  {approval_mode}` on its own and repaints from the reply; the radio
-  mirrors `session.approval_mode` on every session refresh.
+  {approval_mode}` on its own and repaints from the reply (a refused post
+  snaps it back); the radio mirrors `session.approval_mode` on page load
+  and on every 1 s session refresh, except while its own post is in
+  flight.
 - **Developer Logging** switch (default: off/disabled).
   When enabled: opens a separate "Developer Log" drawer/panel (syslog format: `timestamp [robot-or-system] message`).
   All "Mention received.", on-deck intros, debug/ack lines, internal notes route exclusively here.
@@ -645,7 +647,7 @@ demo). No Raylib dependency on the main hush-relay.
 |---|---|
 | `GET /api/session` | existing + `profile`, `theme`, `approval_mode` (`auto_approve` \| `approve_every_action`, #279), `agents[]`, `members[]`, `pass_available` (false when `pass` is missing), `restart_lost_login` (true only when boot restore left a vibe without a login) |
 | `POST /api/identity` | `create` \| `import` \| `preview` (npub only, no login) \| `ack_backup` \| **`logout`** |
-| `POST /api/profile` | first/last/email/org/theme; optional avatar b64. Or `{approval_mode}` alone (#279): sets only that, 400 with a named reason for an unknown value |
+| `POST /api/profile` | first/last/email/org/theme; optional avatar b64. Or any body naming `approval_mode` (#279): sets only that and never the names; 400 with a named reason for any value but the two ids |
 | `POST /api/agent` | create agent + context |
 | `POST /api/member` | add human (npub) |
 | `POST /api/close` | acknowledge Close; does **not** stop the process |
@@ -1554,10 +1556,14 @@ turns need approval.
    logged-in owner's profile, is saved in `vibe.json` next to the theme as
    `approval_mode` (`auto_approve` | `approve_every_action`), and is read
    back on every relay start. A missing or unknown stored value reads as
-   `auto_approve`. `POST /api/profile {"approval_mode": ...}` with any
-   other value is refused (400, "approval_mode must be auto_approve or
-   approve_every_action.") and changes nothing. That post sets only the
-   approval setting; it never clears the profile names.
+   `auto_approve`. Any `POST /api/profile` body that names `approval_mode`
+   sets only the approval setting and never touches the profile names.
+   A value other than those two ids (including `""`, `null`, a number, or
+   a spaced `"approval_mode": "…"`, which the relay's flat parser does not
+   read) is refused (400, "approval_mode must be auto_approve or
+   approve_every_action.") and changes nothing. The Settings radio shows
+   the saved value on page load, on every 1 s session refresh, and after
+   a post (a refused post snaps it back).
 2. **One approval per robot turn.** Under `Approve every action`, every
    robot turn stops at one gate in `hush_agent_begin_work`, after the
    turn-cap check and before the robot's runtime starts. (The existing
@@ -1566,28 +1572,50 @@ turns need approval.
    follow wave, each two-robot loop turn, the leader election pass, the
    leader's plan pass, and an owner reply that goes to the thread's robot.
    The chaperon posts "Approval needed: <Robot> wants to take a turn. Reply
-   Yes or No in this thread."
+   Yes or No in this thread."; for the election pass it posts "Approval
+   needed: <Robot> wants to run the leader election. Reply Yes or No in
+   this thread." The plan pass claims its own wake slot (trigger
+   sha256("hush-plan-pass:" + root)), so approving it runs it even when
+   the convener that ran the election is also the elected leader.
+   Owner-initiated tools are not robot turns and are not gated: canvas
+   fill-in (`POST /api/complete`) and fixup (`POST /api/fixup`), both
+   behind the session token.
 3. **Answer.** Only the hive owner answers, by typing Yes or No in the
    thread (the same parse as the loop prompt). Yes runs that turn exactly
-   once through the normal path. No posts "Turn declined: <Robot> stood
-   down." and starts nothing; it also stops a live loop in that thread,
-   and robots queued behind the declined turn do not start on their own.
-   A Yes or No from a robot or another human is ignored. With several
-   turns waiting in one thread, each Yes or No settles the oldest.
+   once through the normal path, with the ask, prompt and loop note it was
+   held with. No posts "Turn declined: <Robot> stood down." and starts
+   nothing; it also stops a live loop in that thread, and robots queued
+   behind the declined turn do not start on their own. A Yes or No from a
+   robot or another human is ignored. With several turns waiting in one
+   thread, each Yes or No settles the oldest; it never answers a turn
+   waiting in another thread. An answer settles a waiting turn before a
+   paused loop's "Continue this loop?" question in the same thread.
 4. **Void.** Any other note from the owner in that thread drops every turn
-   still waiting there (silently). The note itself is handled as usual,
-   so it may raise its own approval line.
+   still waiting there, and only there (silently). The note itself is
+   handled as usual, so it may raise its own approval line. Turns already
+   running are not affected; a follow wave behind a running turn still
+   starts when it finishes.
 5. **Loop and cap.** A waiting loop turn does not run, and the loop stays
    paused until the owner answers. Approval lines are not robot turns, so
    the cap counts exactly as before; at the cap the loop still asks
    "Continue this loop? Reply Yes or No in this thread.", and a Yes there
-   resumes the loop, whose next turn then asks for approval as usual.
-6. **Limits and restart.** At most 8 turns wait at once; one more gets
-   "Too many turns are waiting for approval. Answer one first." and does
-   not run. Waiting turns live in relay memory only: after a restart a Yes
-   at an old approval line runs nothing (it is handled as an ordinary owner
-   note). Approving a turn lets the robot's runtime use its usual tools for
-   that turn (no per-tool approval).
+   resumes the loop, whose next turn then asks for approval as usual. Each
+   owner Yes is an owner note, so like any owner note it restarts the
+   channel's robot-turn count; outside a two-robot loop the channel cap
+   therefore does not stop an approved chain (every turn in it was
+   approved one by one). Approval lines are never shown to a robot as
+   thread context.
+6. **Limits and restart.** At most 8 turns wait at once, and at most 4 of
+   them may be asked for by anyone other than the hive owner (another
+   person's mention, or a robot turn in a thread that person opened), so
+   the owner always keeps 4 for their own turns. One more gets "Too many
+   turns are waiting for approval. Answer one first." and does not run.
+   Waiting turns live in relay memory only: after a restart the old
+   waiting turn is gone, and a Yes at its approval line is an ordinary
+   owner note, so it raises a fresh approval line for the thread's robot
+   (possibly a different robot) and runs nothing until that is answered.
+   Approving a turn lets the robot's runtime use its usual tools for that
+   turn (no per-tool approval).
 
 None of the three approval lines counts as a robot turn. The UI change is
 the Settings radio pair only (§6); answers are typed thread replies, with

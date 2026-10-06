@@ -21,6 +21,13 @@ the top-level `VERSION` file.
   `vibe.json` as `approval_mode`, read back on start, and set with
   `POST /api/profile {"approval_mode": ...}` (an unknown value is refused
   and a garbled stored value reads as `auto_approve`).
+  r2 (Gauge review of f87770a7): approving the leader's plan pass now runs
+  it when the convener is the elected leader (the plan pass has its own
+  wake slot); an empty or non-string `approval_mode` is refused instead of
+  clearing the profile names; the Settings radio shows the saved value
+  after a page load and on every refresh; the election ask names the
+  leader election; other people share at most 4 of the 8 waiting entries;
+  approval lines no longer reach robot prompts.
 
 - Two-robot loop (#280): when a human mentions two robots, the first one
   (the lead) also sees the whole note and can keep a back-and-forth going
