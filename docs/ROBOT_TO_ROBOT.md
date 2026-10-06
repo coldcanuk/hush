@@ -101,10 +101,11 @@ robots never chain by mentioning each other, and `robot_hops` stays `0`.
 5. **Cap.** Loop turns count toward the channel `max_robot_turns`
    (default 4) on the thread's loop record as well as through the usual
    note scan, so a reply that opens with "I heard:", "Holding." or a
-   loop line still uses a turn. At the cap the chaperon asks "Continue this loop?
-   Yes/No". A typed "Yes" resumes the stopped turn; "No" posts
-   "Loop stopped.". After four Yes answers the next cap posts
-   "Loop limit reached." and the loop ends.
+   loop line still uses a turn. At the cap the chaperon asks "Continue
+   this loop? Reply Yes or No in this thread." A typed "Yes" resumes the
+   stopped turn; "No" posts "Loop stopped.". After four Yes answers the
+   next cap posts "Loop limit reached. Ask again to start a new loop."
+   and the loop ends.
    Only the hive owner can answer; a robot's or another human's Yes is
    ignored.
 6. **Owner interrupt.** Any other note from the hive owner in the thread

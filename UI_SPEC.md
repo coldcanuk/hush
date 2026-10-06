@@ -1524,12 +1524,14 @@ garbled one, or `stop` ends the loop after the current turn. Chaperon
 lines (posted by the channel `chaperon`, Major by default):
 
 - At `max_robot_turns` while a loop is live: "Continue this loop?
-  Yes/No" **instead of** "That's enough robot talk. Standing by for the
-  human." (the cap without a loop is unchanged). A typed thread reply
+  Reply Yes or No in this thread." **instead of** "That's enough robot
+  talk. Standing by for the human." (the cap without a loop is
+  unchanged). It is a plain chat line; there are no Yes/No buttons. A typed thread reply
   "Yes" (case-insensitive, trailing `.`/`!` allowed) runs up to
   `max_robot_turns` more turns; "No" posts "Loop stopped.".
-- After four Yes answers, the next cap posts "Loop limit reached." and
-  the loop ends.
+- After four Yes answers, the next cap posts "Loop limit reached. Ask
+  again to start a new loop." and the loop ends; a new note that mentions
+  the two robots starts a fresh loop.
 - Only the hive owner answers Yes/No; a Yes or No from a robot or from
   another human is ignored and the prompt keeps waiting.
 - Any other note from the hive owner in the thread ends the loop, even

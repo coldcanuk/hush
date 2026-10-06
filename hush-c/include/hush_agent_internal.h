@@ -83,7 +83,7 @@ typedef enum {
     HUSH_AGENT_LOOP_STOP = 2
 } hush_agent_loop_verdict_t;
 
-/* A human reply to "Continue this loop? Yes/No". */
+/* A human reply to the "Continue this loop?" prompt (HUSH_AGENT_LOOP_ASK_LINE). */
 typedef enum {
     HUSH_AGENT_LOOP_ANSWER_NONE = 0,
     HUSH_AGENT_LOOP_ANSWER_YES = 1,
@@ -145,7 +145,7 @@ typedef struct {
     char partner[HUSH_EVENT_PUBKEY_HEX_LEN + 1];
     int active;     /* the lead's last control line said "continue" */
     int closed;     /* a human note ended the loop; later verdicts are ignored */
-    int awaiting;   /* "Continue this loop? Yes/No" is waiting for the human */
+    int awaiting;   /* HUSH_AGENT_LOOP_ASK_LINE is waiting for the human */
     int extensions; /* Yes answers granted, 0..HUSH_AGENT_LOOP_EXTENSIONS_MAX */
     int turns;      /* loop turns posted since arming or the last Yes */
     /* The turn the cap stopped; a Yes resumes it. */
@@ -385,8 +385,8 @@ void hush_agent_follow_kick(hush_store_t *store, const hush_launch_t *launch,
 
 /* ---- agent_loop.c: pure text helpers for the robot loop (#280) ---- */
 
-#define HUSH_AGENT_LOOP_ASK_LINE "Continue this loop? Yes/No"
-#define HUSH_AGENT_LOOP_LIMIT_LINE "Loop limit reached."
+#define HUSH_AGENT_LOOP_ASK_LINE "Continue this loop? Reply Yes or No in this thread."
+#define HUSH_AGENT_LOOP_LIMIT_LINE "Loop limit reached. Ask again to start a new loop."
 #define HUSH_AGENT_LOOP_STOPPED_LINE "Loop stopped."
 
 /* Strips every control line from text in place; returns the last one's

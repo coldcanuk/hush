@@ -1,6 +1,7 @@
 #!/bin/sh
 # Two-robot loop (#280): the lead's "LOOP:" control line, the turn-cap
-# "Continue this loop? Yes/No" prompt, the four-Yes limit, and the pins that
+# "Continue this loop? Reply Yes or No in this thread." prompt, the four-Yes
+# limit ("Loop limit reached. Ask again to start a new loop."), and the pins that
 # keep non-loop pairs unchanged. A scripted fake grok plays both robots.
 set -eu
 cd "$(dirname "$0")/.."
@@ -97,9 +98,10 @@ for e in events:
         counts["lead"] += 1
     if "partner turn" in c:
         counts["partner"] += 1
-    if c == "Continue this loop? Yes/No":
+    # R1: exact chaperon copy; the r3 wording no longer counts.
+    if c == "Continue this loop? Reply Yes or No in this thread.":
         counts["ask"] += 1
-    if c == "Loop limit reached.":
+    if c == "Loop limit reached. Ask again to start a new loop.":
         counts["limit"] += 1
     if c == "Loop stopped.":
         counts["stopped"] += 1
@@ -383,7 +385,7 @@ release s11
 # B1 runaway with this PR's own notice lines as reply prefixes.
 start s12 2 "$C $C $C $C" "- - - -"
 printf '%s' 'Loop stopped. ' > "$plan/lead.prefix"
-printf '%s' 'Continue this loop? Yes/No ' > "$plan/partner.prefix"
+printf '%s' 'Continue this loop? Reply Yes or No in this thread. ' > "$plan/partner.prefix"
 wait_eq s12 ask 1
 settle
 expect s12 lead 1 "B1 notice-prefix replies must still hit the cap"

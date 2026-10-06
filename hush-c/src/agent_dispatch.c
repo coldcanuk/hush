@@ -1275,9 +1275,9 @@ int hush_agent_job_enabled(const hush_agent_job_t *job)
 
 static int hush_agent_begin_work(const hush_agent_job_in_t *in)
 {
-    char root[HUSH_EVENT_ID_HEX_LEN + 1];
-    char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
-    hush_agent_job_in_t job;
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    char channel[HUSH_EVENT_MAX_TAG_LEN + 1] = {0};
+    hush_agent_job_in_t job = {0};
 
     assert(in != NULL);
     assert(in->store != NULL);

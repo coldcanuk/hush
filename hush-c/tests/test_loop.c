@@ -32,6 +32,13 @@ enum {
 /* Scratch root for the owner-only fixture; mkdtemp fills the X's. */
 #define TEST_LOOP_DIR_TEMPLATE "/tmp/hush-loop-XXXXXX"
 #define TEST_LOOP_CHANNEL "general"
+/* The base prompt plus the start of the lead's loop rule. */
+#define TEST_LOOP_LEAD_HEAD "Base. Loop: "
+/* R1 (#281 r4): the exact chaperon copy the human reads. */
+#define TEST_LOOP_ASK_COPY "Continue this loop? Reply Yes or No in this thread."
+#define TEST_LOOP_LIMIT_COPY "Loop limit reached. Ask again to start a new loop."
+#define TEST_LOOP_STOPPED_COPY "Loop stopped."
+
 /* A well-formed pubkey that is neither the owner nor any robot. */
 #define TEST_LOOP_STRANGER_PUB \
     "abababababababababababababababababababababababababababababababab"
@@ -110,6 +117,12 @@ static void check_answers(void)
     expect(hush_agent_loop_parse_answer("nope") == HUSH_AGENT_LOOP_ANSWER_NONE, "nope");
     expect(hush_agent_loop_parse_answer("") == HUSH_AGENT_LOOP_ANSWER_NONE, "empty");
     expect(hush_agent_loop_parse_answer(NULL) == HUSH_AGENT_LOOP_ANSWER_NONE, "NULL");
+    expect(strcmp(HUSH_AGENT_LOOP_ASK_LINE, TEST_LOOP_ASK_COPY) == 0,
+           "R1 the prompt says to reply Yes or No in this thread");
+    expect(strcmp(HUSH_AGENT_LOOP_LIMIT_LINE, TEST_LOOP_LIMIT_COPY) == 0,
+           "R1 the limit line gives the next step");
+    expect(strcmp(HUSH_AGENT_LOOP_STOPPED_LINE, TEST_LOOP_STOPPED_COPY) == 0,
+           "R1 the stopped line is unchanged");
     expect(!hush_agent_is_work_note(HUSH_AGENT_LOOP_ASK_LINE), "prompt is not a turn");
     expect(!hush_agent_is_work_note(HUSH_AGENT_LOOP_LIMIT_LINE), "limit is not a turn");
     expect(!hush_agent_is_work_note(HUSH_AGENT_LOOP_STOPPED_LINE), "stopped is not a turn");
@@ -124,7 +137,8 @@ static void check_one_line(void)
     char long_said[HUSH_EVENT_MAX_CONTENT] = {0};
 
     hush_agent_loop_append_lead(prompt, sizeof(prompt), "Chuck", "line one\nline two\tend");
-    expect(strncmp(prompt, "Base. Loop: ", 12) == 0, "lead block appends the loop rule");
+    expect(strncmp(prompt, TEST_LOOP_LEAD_HEAD, strlen(TEST_LOOP_LEAD_HEAD)) == 0,
+           "lead block appends the loop rule");
     expect(strstr(prompt, "Whole message from Chuck: line one line two end") != NULL,
            "lead block carries the whole note, flattened");
     expect(strchr(prompt, '\n') == NULL && strchr(prompt, '\t') == NULL,
@@ -285,7 +299,7 @@ static void post_pair_note(test_loop_fixture_t *fx)
 }
 
 /* Arms the loop, finishes the lead's "LOOP: continue" turn, and lets cap 1
- * stop the partner, so "Continue this loop? Yes/No" waits. */
+ * stop the partner, so the "Continue this loop?" prompt waits. */
 static void wait_at_cap(test_loop_fixture_t *fx)
 {
     static hush_agent_job_t job;

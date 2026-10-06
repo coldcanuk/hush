@@ -11,9 +11,10 @@ the top-level `VERSION` file.
 - Two-robot loop (#280): when a human mentions two robots, the first one
   (the lead) also sees the whole note and can keep a back-and-forth going
   with a hidden `LOOP: continue` / `LOOP: stop` line. At the channel turn
-  cap the chaperon asks "Continue this loop? Yes/No" instead of "That's
-  enough robot talk."; a typed Yes runs another round, No stops it, and
-  after four Yes answers the loop ends with "Loop limit reached.". Only
+  cap the chaperon asks "Continue this loop? Reply Yes or No in this
+  thread." instead of "That's enough robot talk."; a typed Yes runs
+  another round, No posts "Loop stopped.", and after four Yes answers the
+  loop ends with "Loop limit reached. Ask again to start a new loop.". Only
   the hive owner answers Yes/No, and any other note from the owner ends
   the loop. Every loop turn uses a turn of the cap, the control tag is
   case-insensitive and tolerates markdown, and each loop turn's ask quotes
