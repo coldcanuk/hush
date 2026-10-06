@@ -1131,12 +1131,33 @@ button.fo-person:hover { background: var(--surface-2); }
   #roster-pane { grid-column: auto; border-left: 0; border-top: 1px solid var(--line); display: flex; }
   .fo-hq > span, .fo-edition { display: none; }
 }
-/* Field-office paper theme: manila + typewriter ribbon. Sharp offset
-   shadows only (2px 2px 0); no gradients, blur glow, or large radii. */
+/* Field-office theme, Medal of Honor dossier-khaki palette (#282).
+   Aged khaki paper (no white), olive-ink rules, oxblood stamp. Sharp offset
+   shadows only (2px 2px 0); no gradients, blur glow, or large radii.
+   The palette lives here only: field-office rules below use these tokens,
+   never literal colours (tests/check_palette_tokens.py). Every text pair is
+   >= 4.5:1 and every border / ring / track >= 3:1 on these surfaces
+   (tests/check_palette.sh measures the painted page). */
 html[data-theme="field-office"] {
-  --bg: #d4c5a3; --surface: #e2d5b8; --surface-2: #ebdcb9; --line: #5c4a3d;
-  --fg: #2a241e; --muted: #5c4a3d; --faint: #7a6752; --accent: #a3352c;
-  --accent-ink: #e2d5b8; --accent-dim: #c86a5a; --warn: #a3352c;
+  --bg: #c2b185;          /* log and thread pane paper */
+  --surface: #cdbd92;     /* chrome: header, nav, roster, composer, drawers */
+  --surface-2: #d6c79d;   /* slips: notes, cards, inputs */
+  --line: #4b4a2c;        /* olive-ink rules, borders, offset shadows */
+  --fg: #1f1c12;          /* typewriter ink */
+  --muted: #433f27;
+  --faint: #4a452f;
+  --accent: #7c241d;      /* oxblood stamp */
+  --accent-ink: #ddcea4;  /* text on an accent or ink plate */
+  --accent-dim: #9a5a40;
+  --warn: #7c241d;
+  --fo-scrim: rgb(31 28 18 / 0.72);     /* dialog and stage backdrop */
+  --fo-danger-ink: #ddcea4;             /* text on the KIT Exit danger plate */
+  --fo-danger-line: #5a1a14;
+  --fo-plate: #b8a67a;                  /* Send switch: brass screw plates */
+  --fo-boss: #8a8374;                   /* Send switch: steel boss */
+  --fo-boss-shade: #5c574c;
+  --fo-lever: #d8d0bc;                  /* Send switch: lever face */
+  --fo-lever-shade: #9c927c;
   --sans: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
   --mono: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
   --display: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
@@ -1147,46 +1168,41 @@ html[data-theme="field-office"] body::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
 }
 html[data-theme="field-office"] header {
-  background: #e2d5b8; border-bottom: 3px double #5c4a3d; box-shadow: none;
+  background: var(--surface); border-bottom: 3px double var(--line); box-shadow: none;
 }
 html[data-theme="field-office"] .title { text-transform: uppercase; letter-spacing: 0.12em; }
 html[data-theme="field-office"] #badge {
-  border: 2px solid #5c4a3d; border-radius: 3px; background: #ebdcb9;
-  box-shadow: 2px 2px 0 #5c4a3d; text-transform: uppercase;
+  border: 2px solid var(--line); border-radius: 3px; background: var(--surface-2);
+  box-shadow: 2px 2px 0 var(--line); text-transform: uppercase;
 }
 html[data-theme="field-office"] #kit-menu,
 html[data-theme="field-office"] nav,
-html[data-theme="field-office"] #roster-pane { background: #e2d5b8; }
+html[data-theme="field-office"] #roster-pane { background: var(--surface); }
 html[data-theme="field-office"] .lbl,
 html[data-theme="field-office"] .inv-title,
 html[data-theme="field-office"] .group-lbl {
-  color: #5c4a3d; letter-spacing: 0.2em;
+  color: var(--muted); letter-spacing: 0.2em;
 }
-html[data-theme="field-office"] .room { border-bottom: 3px double #5c4a3d; background: #e2d5b8; }
+html[data-theme="field-office"] .room { border-bottom: 3px double var(--line); background: var(--surface); }
 html[data-theme="field-office"] .room h1 { text-transform: uppercase; letter-spacing: 0.1em; }
-html[data-theme="field-office"] #stream { background: #d4c5a3; }
+html[data-theme="field-office"] #stream { background: var(--bg); }
 html[data-theme="field-office"] .note {
-  background: #ebdcb9; border: 2px solid #5c4a3d; border-radius: 3px;
-  box-shadow: 2px 2px 0 #5c4a3d;
+  background: var(--surface-2); border: 2px solid var(--line); border-radius: 3px;
+  box-shadow: 2px 2px 0 var(--line);
 }
-html[data-theme="field-office"] .note .meta { color: #5c4a3d; text-transform: uppercase; }
-html[data-theme="field-office"] .thread-btn {
-  border: 2px solid #a3352c; color: #a3352c; border-radius: 3px;
-  text-transform: uppercase; letter-spacing: 0.1em; transform: rotate(-1deg);
-  background: transparent;
-}
-html[data-theme="field-office"] .composer { background: #e2d5b8; border-top: 3px double #5c4a3d; }
+html[data-theme="field-office"] .note .meta { color: var(--muted); text-transform: uppercase; }
+html[data-theme="field-office"] .composer { background: var(--surface); border-top: 3px double var(--line); }
 html[data-theme="field-office"] .composer-box {
-  background: #ebdcb9; border: 2px solid #5c4a3d; border-radius: 3px; box-shadow: none;
+  background: var(--surface-2); border: 2px solid var(--line); border-radius: 3px; box-shadow: none;
 }
-html[data-theme="field-office"] .composer-box:focus-within { box-shadow: 2px 2px 0 #5c4a3d; }
+html[data-theme="field-office"] .composer-box:focus-within { box-shadow: 2px 2px 0 var(--line); }
 html[data-theme="field-office"] #send.fo-switch {
-  background: #e2d5b8; color: #2a241e; border: 2px solid #5c4a3d; border-radius: 3px;
-  box-shadow: 2px 2px 0 #5c4a3d;
+  background: var(--surface); color: var(--fg); border: 2px solid var(--line); border-radius: 3px;
+  box-shadow: 2px 2px 0 var(--line);
 }
 html[data-theme="field-office"] .chan { border-radius: 3px; }
 html[data-theme="field-office"] .chan.on {
-  background: #ebdcb9; box-shadow: inset 2px 0 0 #a3352c; border-radius: 0 3px 3px 0;
+  background: var(--surface-2); box-shadow: inset 2px 0 0 var(--accent); border-radius: 0 3px 3px 0;
 }
 html[data-theme="field-office"] .inv-btn,
 html[data-theme="field-office"] .quick-tab,
@@ -1195,10 +1211,10 @@ html[data-theme="field-office"] .qb-gear,
 html[data-theme="field-office"] #nav-toggle,
 html[data-theme="field-office"] #rail-toggle {
   border-radius: 3px; text-transform: uppercase; letter-spacing: 0.06em;
-  box-shadow: 2px 2px 0 #5c4a3d;
+  box-shadow: 2px 2px 0 var(--line);
 }
 html[data-theme="field-office"] #quick-bar {
-  background: #e2d5b8; border-top: 3px double #5c4a3d; box-shadow: none;
+  background: var(--surface); border-top: 3px double var(--line); box-shadow: none;
 }
 html[data-theme="field-office"] .inv-item.has-pic,
 html[data-theme="field-office"] .agent-pic-cell,
@@ -1227,15 +1243,15 @@ html[data-theme="field-office"] body::after {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.012 0.09' numOctaves='2'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23f)' opacity='0.5'/%3E%3C/svg%3E");
 }
 /* Masthead: ink rule over the header, edition strip bolder, HQ as a stamp. */
-html[data-theme="field-office"] header { border-top: 3px solid #2a241e; }
-html[data-theme="field-office"] .fo-edition { letter-spacing: 0.22em; font-weight: 700; color: #2a241e; }
+html[data-theme="field-office"] header { border-top: 3px solid var(--fg); }
+html[data-theme="field-office"] .fo-edition { letter-spacing: 0.22em; font-weight: 700; color: var(--fg); }
 html[data-theme="field-office"] .fo-hq > span {
-  color: #2a241e; border: 2px solid #5c4a3d; border-radius: 3px;
-  padding: 2px 8px; transform: rotate(1deg); box-shadow: 2px 2px 0 #5c4a3d;
-  background: #ebdcb9;
+  color: var(--fg); border: 2px solid var(--line); border-radius: 3px;
+  padding: 2px 8px; transform: rotate(1deg); box-shadow: 2px 2px 0 var(--line);
+  background: var(--surface-2);
 }
 html[data-theme="field-office"] .fo-log-eyebrow {
-  border-bottom: 1px solid #5c4a3d; padding-bottom: 6px;
+  border-bottom: 1px solid var(--line); padding-bottom: 6px;
 }
 html[data-theme="field-office"] .fo-log-eyebrow > span:first-child { letter-spacing: 0.24em; font-weight: 700; }
 /* Denser typewriter type: note slips, meta kickers, composer ribbon. */
@@ -1372,51 +1388,51 @@ html[data-theme="field-office"] .mention-box,
 html[data-theme="field-office"] .qb-editor,
 html[data-theme="field-office"] #canvas-k,
 html[data-theme="field-office"] .code-block {
-  box-shadow: 2px 2px 0 #5c4a3d;
+  box-shadow: 2px 2px 0 var(--line);
 }
-html[data-theme="field-office"] #badge { box-shadow: 2px 2px 0 #5c4a3d; }
+html[data-theme="field-office"] #badge { box-shadow: 2px 2px 0 var(--line); }
 html[data-theme="field-office"] #send:hover, html[data-theme="field-office"] #thread-send:hover { filter: none; }
 /* Gradient kill: flat paper under field-office. */
 html[data-theme="field-office"] header,
 html[data-theme="field-office"] #quick-bar,
-html[data-theme="field-office"] .composer { background: #e2d5b8; }
-html[data-theme="field-office"] #kit-menu { border: 2px solid #5c4a3d; background: #e2d5b8; }
+html[data-theme="field-office"] .composer { background: var(--surface); }
+html[data-theme="field-office"] #kit-menu { border: 2px solid var(--line); background: var(--surface); }
 html[data-theme="field-office"] #thread-resize { border: 0; background: transparent; }
 /* Carved dossier frames: double rules on the big paper surfaces. */
 html[data-theme="field-office"] .panel,
 html[data-theme="field-office"] .card,
 html[data-theme="field-office"] dialog.secret,
 html[data-theme="field-office"] #thread-pane {
-  border: 2px solid #5c4a3d; outline: 1px solid #5c4a3d; outline-offset: 2px;
+  border: 2px solid var(--line); outline: 1px solid var(--line); outline-offset: 2px;
 }
 html[data-theme="field-office"] .menu,
 html[data-theme="field-office"] .mention-box,
 html[data-theme="field-office"] .qb-editor,
-html[data-theme="field-office"] #canvas-k { border: 2px solid #5c4a3d; }
+html[data-theme="field-office"] #canvas-k { border: 2px solid var(--line); }
 /* Thread slips: no sided chat bubbles; every note is a square paper slip. */
 html[data-theme="field-office"] #thread-stream .note,
 html[data-theme="field-office"] #thread-stream .note.mine {
-  max-width: none; background: #ebdcb9; border: 2px solid #5c4a3d;
+  max-width: none; background: var(--surface-2); border: 2px solid var(--line);
   align-self: stretch;
 }
 html[data-theme="field-office"] #thread-stream .note.reply {
-  margin-left: 0; border: 2px solid #5c4a3d; padding-left: 12px;
+  margin-left: 0; border: 2px solid var(--line); padding-left: 12px;
 }
 html[data-theme="field-office"] .note.reply {
-  box-shadow: inset 4px 0 0 #a3352c, 2px 2px 0 #5c4a3d;
+  box-shadow: inset 4px 0 0 var(--accent), 2px 2px 0 var(--line);
 }
 /* Ink density: leash notes read as red-stamped relay traffic. */
-html[data-theme="field-office"] .note.leash { border: 2px dashed #a3352c; }
-html[data-theme="field-office"] .note.leash .meta { color: #a3352c; letter-spacing: 0.14em; font-weight: 700; }
+html[data-theme="field-office"] .note.leash { border: 2px dashed var(--accent); }
+html[data-theme="field-office"] .note.leash .meta { color: var(--accent); letter-spacing: 0.14em; font-weight: 700; }
 html[data-theme="field-office"] .robot-ack,
 html[data-theme="field-office"] .mention-pill,
 html[data-theme="field-office"] .pill {
-  border: 1px solid #5c4a3d; text-transform: uppercase; letter-spacing: 0.06em;
+  border: 1px solid var(--line); text-transform: uppercase; letter-spacing: 0.06em;
 }
 html[data-theme="field-office"] .think-stop {
-  border: 2px solid #a3352c; color: #a3352c; text-transform: uppercase; letter-spacing: 0.08em;
+  border: 2px solid var(--accent); color: var(--accent); text-transform: uppercase; letter-spacing: 0.08em;
 }
-html[data-theme="field-office"] .partial { border-left: 3px solid #a3352c; }
+html[data-theme="field-office"] .partial { border-left: 3px solid var(--accent); }
 /* Buttons/inputs: 2px ink borders, telegram caps, no glow hovers. */
 html[data-theme="field-office"] .btn,
 html[data-theme="field-office"] .mini,
@@ -1441,63 +1457,63 @@ html[data-theme="field-office"] #canvas-file,
 html[data-theme="field-office"] #canvas-k-ask,
 html[data-theme="field-office"] #code-canvas-hi,
 html[data-theme="field-office"] #code-canvas-edit {
-  border: 2px solid #5c4a3d; background: #ebdcb9;
+  border: 2px solid var(--line); background: var(--surface-2);
 }
 /* Paper-flattened buttons keep dark ink text. The block above overrides
  * background without touching color, which left cream text on tan. */
 html[data-theme="field-office"] .btn,
-html[data-theme="field-office"] .iconbtn.danger { color: #2a241e; }
+html[data-theme="field-office"] .iconbtn.danger { color: var(--fg); }
 html[data-theme="field-office"] .btn,
 html[data-theme="field-office"] .thread-btn,
 html[data-theme="field-office"] #thread-send { text-transform: uppercase; letter-spacing: 0.1em; }
-html[data-theme="field-office"] .btn.ghost { background: #ebdcb9; }
-html[data-theme="field-office"] .btn.danger { border: 2px solid #a3352c; transform: rotate(-1deg); }
+html[data-theme="field-office"] .btn.ghost { background: var(--surface-2); }
+html[data-theme="field-office"] .btn.danger { border: 2px solid var(--accent); transform: rotate(-1deg); }
 /* Pre-walk (F7): KIT Exit stops the whole hive, so it gets a red danger
    plate instead of the same tan plate as Close. Behaviour is unchanged. */
-html[data-theme="field-office"] #kit-menu .iconbtn.danger { background: #a3352c; color: #f4ead2; border-color: #7a2720; }
-html[data-theme="field-office"] .prov-row.ready { background: #ebdcb9; border-color: #a3352c; }
-html[data-theme="field-office"] .iconbtn.on { border-color: #a3352c; color: #a3352c; }
+html[data-theme="field-office"] #kit-menu .iconbtn.danger { background: var(--accent); color: var(--fo-danger-ink); border-color: var(--fo-danger-line); }
+html[data-theme="field-office"] .prov-row.ready { background: var(--surface-2); border-color: var(--accent); }
+html[data-theme="field-office"] .iconbtn.on { border-color: var(--accent); color: var(--accent); }
 /* Boards/channels/rails: carved plates, red spine stays. */
-html[data-theme="field-office"] #kit-menu { border: 2px solid #5c4a3d; box-shadow: 2px 2px 0 #5c4a3d; }
-html[data-theme="field-office"] nav { border-right: 2px solid #5c4a3d; }
-html[data-theme="field-office"] #roster-pane { border-left: 2px solid #5c4a3d; }
-html[data-theme="field-office"] .chan:hover { background: #ebdcb9; }
-html[data-theme="field-office"] .fo-person:hover { background: #ebdcb9; }
+html[data-theme="field-office"] #kit-menu { border: 2px solid var(--line); box-shadow: 2px 2px 0 var(--line); }
+html[data-theme="field-office"] nav { border-right: 2px solid var(--line); }
+html[data-theme="field-office"] #roster-pane { border-left: 2px solid var(--line); }
+html[data-theme="field-office"] .chan:hover { background: var(--surface-2); }
+html[data-theme="field-office"] .fo-person:hover { background: var(--surface-2); }
 html[data-theme="field-office"] .fo-person { border-radius: 3px; }
-html[data-theme="field-office"] .fo-feed-line { border-left: 3px solid #a3352c; color: #2a241e; }
-html[data-theme="field-office"] .stats:hover, html[data-theme="field-office"] .stats:focus { background: #ebdcb9; }
-html[data-theme="field-office"] .robot-head:hover { background: #ebdcb9; }
+html[data-theme="field-office"] .fo-feed-line { border-left: 3px solid var(--accent); color: var(--fg); }
+html[data-theme="field-office"] .stats:hover, html[data-theme="field-office"] .stats:focus { background: var(--surface-2); }
+html[data-theme="field-office"] .robot-head:hover { background: var(--surface-2); }
 html[data-theme="field-office"] .robot-card,
-html[data-theme="field-office"] .agent { border: 2px solid #5c4a3d; background: #ebdcb9; border-radius: 3px; }
-html[data-theme="field-office"] .robot-copy strong { color: #a3352c; }
-html[data-theme="field-office"] .keybox { border: 2px solid #5c4a3d; }
+html[data-theme="field-office"] .agent { border: 2px solid var(--line); background: var(--surface-2); border-radius: 3px; }
+html[data-theme="field-office"] .robot-copy strong { color: var(--accent); }
+html[data-theme="field-office"] .keybox { border: 2px solid var(--line); }
 /* Avatars + media: sepia prints pinned with ink borders. */
 html[data-theme="field-office"] .inv-item.has-pic,
 html[data-theme="field-office"] .agent-pic-cell,
 html[data-theme="field-office"] .avatar-cell,
 html[data-theme="field-office"] .avatar-preview {
-  border: 2px solid #5c4a3d; box-shadow: 2px 2px 0 #5c4a3d;
+  border: 2px solid var(--line); box-shadow: 2px 2px 0 var(--line);
 }
 html[data-theme="field-office"] .avatar-cell.on,
-html[data-theme="field-office"] .agent-pic-cell.on { border-color: #a3352c; box-shadow: 2px 2px 0 #a3352c; }
-html[data-theme="field-office"] .tile { border: 2px solid #5c4a3d; }
+html[data-theme="field-office"] .agent-pic-cell.on { border-color: var(--accent); box-shadow: 2px 2px 0 var(--accent); }
+html[data-theme="field-office"] .tile { border: 2px solid var(--line); }
 html[data-theme="field-office"] .tile span,
-html[data-theme="field-office"] .tile-mute { border: 1px solid #5c4a3d; }
-html[data-theme="field-office"] .feather { border: 2px solid #5c4a3d; box-shadow: 2px 2px 0 #5c4a3d; }
+html[data-theme="field-office"] .tile-mute { border: 1px solid var(--line); }
+html[data-theme="field-office"] .feather { border: 2px solid var(--line); box-shadow: 2px 2px 0 var(--line); }
 /* Canvas/code: paper slips, typewriter caret blink without the glow. */
-html[data-theme="field-office"] #code-canvas { border-left: 2px solid #5c4a3d; box-shadow: none; }
+html[data-theme="field-office"] #code-canvas { border-left: 2px solid var(--line); box-shadow: none; }
 html[data-theme="field-office"] #code-canvas-hi .fim-caret {
-  background: #a3352c; box-shadow: none; animation: fo-caret 0.7s steps(1) infinite;
+  background: var(--accent); box-shadow: none; animation: fo-caret 0.7s steps(1) infinite;
 }
 @keyframes fo-caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
-html[data-theme="field-office"] .inv-item.dragging { opacity: 1; border-color: #a3352c; box-shadow: 2px 2px 0 #a3352c; }
+html[data-theme="field-office"] .inv-item.dragging { opacity: 1; border-color: var(--accent); box-shadow: 2px 2px 0 var(--accent); }
 html[data-theme="field-office"] .skill-gem[data-scope="system"],
 html[data-theme="field-office"] .skill-gem[data-scope="user"],
-html[data-theme="field-office"] .skill-gem[data-scope="robot"] { border-color: #5c4a3d; }
+html[data-theme="field-office"] .skill-gem[data-scope="robot"] { border-color: var(--line); }
 /* Warm dim for overlays instead of cold black. */
 html[data-theme="field-office"] .drawer,
-html[data-theme="field-office"] .stage { background: rgba(42, 36, 30, 0.72); }
-html[data-theme="field-office"] dialog.secret::backdrop { background: rgba(42, 36, 30, 0.72); }
+html[data-theme="field-office"] .stage { background: var(--fo-scrim); }
+html[data-theme="field-office"] dialog.secret::backdrop { background: var(--fo-scrim); }
 /* ===== UI-M8 overlay drawer + typewriter paperfeel =====
    Left nav (#fo-drawer) is an animated overlay strip over the dispatch
    log, not a permanent width column: closed = full-width messaging +
@@ -1552,12 +1568,12 @@ html[data-theme="field-office"] body::before {
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.012' numOctaves='4'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23b)' opacity='0.5'/%3E%3C/svg%3E");
 }
 html[data-theme="field-office"] #stream {
-  background-color: #d4c5a3;
-  background-image: repeating-linear-gradient(transparent 0 27px, rgb(92 74 61 / 0.1) 27px 28px);
+  background-color: var(--bg);
+  background-image: repeating-linear-gradient(transparent 0 27px, color-mix(in srgb, var(--line) 10%, transparent) 27px 28px);
 }
 html[data-theme="field-office"] .note {
-  box-shadow: 3px 3px 0 #5c4a3d; outline: 1px solid rgb(92 74 61 / 0.4); outline-offset: -4px;
-  background-image: repeating-linear-gradient(transparent 0 21px, rgb(92 74 61 / 0.14) 21px 22px);
+  box-shadow: 3px 3px 0 var(--line); outline: 1px solid color-mix(in srgb, var(--line) 40%, transparent); outline-offset: -4px;
+  background-image: repeating-linear-gradient(transparent 0 21px, color-mix(in srgb, var(--line) 14%, transparent) 21px 22px);
 }
 html[data-theme="field-office"] .note .body,
 html[data-theme="field-office"] .room h1,
@@ -1567,7 +1583,7 @@ html[data-theme="field-office"] #msg {
   text-shadow: 0 0 0.5px currentColor; letter-spacing: 0.01em;
 }
 html[data-theme="field-office"] .hive > nav {
-  box-shadow: 4px 4px 0 #5c4a3d; border-color: #5c4a3d;
+  box-shadow: 4px 4px 0 var(--line); border-color: var(--line);
 }
 /* ===== UI-M9 folder tabs + no tool rail =====
    Bottom bar: the 4 quick slots are thin overlapping manila folder tabs
@@ -1577,23 +1593,23 @@ html[data-theme="field-office"] .hive > nav {
    vertical tool rail is deleted: #kit-menu is a header-KIT overlay only.
    fo-chrome-hard / fo-caret surfaces from M7 are unchanged. */
 .qb-slots.folder-tabs .qb-gear { margin-left: 10px; }
-html[data-theme="field-office"] #quick-bar { border-top: 3px double #5c4a3d; }
+html[data-theme="field-office"] #quick-bar { border-top: 3px double var(--line); }
 html[data-theme="field-office"] .qb-slot.folder-tab {
-  background: #d4c5a3; color: #2a241e;
-  border: 2px solid #5c4a3d; border-bottom: 0; border-radius: 6px 8px 0 0;
-  box-shadow: 2px -2px 0 #5c4a3d;
+  background: var(--bg); color: var(--fg);
+  border: 2px solid var(--line); border-bottom: 0; border-radius: 6px 8px 0 0;
+  box-shadow: 2px -2px 0 var(--line);
   font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
   text-transform: uppercase; letter-spacing: 0.1em;
 }
 html[data-theme="field-office"] .qb-slot.folder-tab:hover,
 html[data-theme="field-office"] .qb-slot.folder-tab:focus-visible {
-  background: #ebdcb9; border-color: #5c4a3d;
+  background: var(--surface-2); border-color: var(--line);
 }
 html[data-theme="field-office"] .qb-slot.folder-tab kbd {
-  border: 1px solid #5c4a3d; color: #5c4a3d; background: #ebdcb9;
+  border: 1px solid var(--line); color: var(--muted); background: var(--surface-2);
 }
 html[data-theme="field-office"] #kit-menu {
-  background: #e2d5b8; border: 2px solid #5c4a3d; box-shadow: 3px 3px 0 #5c4a3d;
+  background: var(--surface); border: 2px solid var(--line); box-shadow: 3px 3px 0 var(--line);
 }
 /* ===== UI-M11 volume-dial scroll control =====
    Supersedes the UI-M10 scrollbar-in-message-column: the dispatch log
@@ -1636,15 +1652,15 @@ html[data-theme="field-office"] #kit-menu {
   width: 4px; height: 12px; background: var(--accent); transform: translateX(-50%);
 }
 html[data-theme="field-office"] #fo-dial {
-  background: #e2d5b8; color: #2a241e; border: 2px solid #5c4a3d;
-  border-radius: 3px; box-shadow: 2px 2px 0 #5c4a3d;
+  background: var(--surface); color: var(--fg); border: 2px solid var(--line);
+  border-radius: 3px; box-shadow: 2px 2px 0 var(--line);
 }
 html[data-theme="field-office"] #fo-dial-caption,
-html[data-theme="field-office"] #fo-dial-sub { color: #5c4a3d; }
+html[data-theme="field-office"] #fo-dial-sub { color: var(--muted); }
 html[data-theme="field-office"] #fo-dial-knob {
-  background: #2a241e; border: 2px solid #5c4a3d; box-shadow: none;
+  background: var(--fg); border: 2px solid var(--line); box-shadow: none;
 }
-html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; }
+html[data-theme="field-office"] #fo-dial-pointer::before { background: var(--surface); }
 /* ===== UI-M12c spring-return Send switch =====
    #send stays the composer's real submit <button> (accessible name
    "Send") but reads as a small metal toggle on a stamped plate
@@ -1703,12 +1719,12 @@ html[data-theme="field-office"] #fo-dial-pointer::before { background: #e2d5b8; 
   opacity: 0.5; border-style: dashed; cursor: default;
 }
 #send.fo-switch:disabled:not(.fo-flick) { opacity: 0.5; cursor: not-allowed; }
-html[data-theme="field-office"] .fo-switch-plate { background: #2a241e; border-color: #5c4a3d; }
+html[data-theme="field-office"] .fo-switch-plate { background: var(--fg); border-color: var(--line); }
 html[data-theme="field-office"] .fo-switch-plate::before,
-html[data-theme="field-office"] .fo-switch-plate::after { background: #b8a67a; }
-html[data-theme="field-office"] .fo-switch-boss { background: #8a8374; box-shadow: inset -2px -2px 0 #5c574c; }
-html[data-theme="field-office"] .fo-switch-lever { background: #d8d0bc; box-shadow: inset -2px 0 0 #9c927c; }
-html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2px -2px 0 #9c927c; }
+html[data-theme="field-office"] .fo-switch-plate::after { background: var(--fo-plate); }
+html[data-theme="field-office"] .fo-switch-boss { background: var(--fo-boss); box-shadow: inset -2px -2px 0 var(--fo-boss-shade); }
+html[data-theme="field-office"] .fo-switch-lever { background: var(--fo-lever); box-shadow: inset -2px 0 0 var(--fo-lever-shade); }
+html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2px -2px 0 var(--fo-lever-shade); }
 @media (prefers-reduced-motion: reduce) {
   .fo-switch-lever, #send.fo-switch.fo-flick .fo-switch-lever { transition: none; transform: rotate(-32deg); }
 }
@@ -1958,44 +1974,44 @@ button.fo-person { min-height: var(--btn-h-sm); }
 /* Office paper + thread corner grip.
    The resize handle had been a filled square beside Send, so it read as
    a stray button. It is an ink crop-mark in the pane corner now.
-   The sheet stays on the locked manila tokens: chrome #e2d5b8, the big
-   log and thread pane #d4c5a3, slips and the composer ribbon #ebdcb9.
-   Ink is #2a241e, stamp red #a3352c, borders #5c4a3d. No soft blur. */
+   The sheet uses the field-office tokens: chrome --surface, the big log
+   and thread pane --bg, slips and the composer ribbon --surface-2. Ink is
+   --fg, stamp --accent, borders --line (#282). No soft blur. */
 html[data-theme="field-office"] {
-  background-color: #d4c5a3;
-  color: #2a241e;
+  background-color: var(--bg);
+  color: var(--fg);
 }
 html[data-theme="field-office"] body {
-  background-color: #d4c5a3;
-  color: #2a241e;
+  background-color: var(--bg);
+  color: var(--fg);
 }
 html[data-theme="field-office"] header,
 html[data-theme="field-office"] .room,
 html[data-theme="field-office"] .composer,
 html[data-theme="field-office"] nav,
 html[data-theme="field-office"] #roster-pane {
-  background-color: #e2d5b8;
-  color: #2a241e;
+  background-color: var(--surface);
+  color: var(--fg);
 }
 html[data-theme="field-office"] #stream,
 html[data-theme="field-office"] #thread-pane,
 html[data-theme="field-office"] #thread-stream {
-  background-color: #d4c5a3;
-  color: #2a241e;
+  background-color: var(--bg);
+  color: var(--fg);
 }
 html[data-theme="field-office"] #thread-stream {
-  background-image: repeating-linear-gradient(transparent 0 27px, rgb(92 74 61 / 0.18) 27px 28px);
+  background-image: repeating-linear-gradient(transparent 0 27px, color-mix(in srgb, var(--line) 18%, transparent) 27px 28px);
 }
 html[data-theme="field-office"] .note,
 html[data-theme="field-office"] #thread-stream .note,
 html[data-theme="field-office"] #thread-stream .note.mine,
 html[data-theme="field-office"] .composer-box {
-  background-color: #ebdcb9;
-  color: #2a241e;
+  background-color: var(--surface-2);
+  color: var(--fg);
 }
 html[data-theme="field-office"] #msg,
 html[data-theme="field-office"] #thread-msg {
-  color: #2a241e;
+  color: var(--fg);
   font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
 }
 html[data-theme="field-office"] #thread-form {
@@ -2010,15 +2026,15 @@ html[data-theme="field-office"] #thread-resize {
   border: 0;
   box-sizing: border-box;
   background-color: transparent;
-  background-image: linear-gradient(135deg, transparent 0 42%, #5c4a3d 42% 52%, transparent 52% 64%, #5c4a3d 64% 74%, transparent 74%);
+  background-image: linear-gradient(135deg, transparent 0 42%, var(--line) 42% 52%, transparent 52% 64%, var(--line) 64% 74%, transparent 74%);
   box-shadow: none;
 }
 html[data-theme="field-office"] #thread-send {
-  background: #a3352c;
-  color: #e2d5b8;
-  border: 2px solid #5c4a3d;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 2px solid var(--line);
   border-radius: 3px;
-  box-shadow: 2px 2px 0 #5c4a3d;
+  box-shadow: 2px 2px 0 var(--line);
   font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -2057,6 +2073,94 @@ html[data-theme="dark"] #thread-send:active {
   background: var(--surface-2);
   color: var(--fg);
   box-shadow: 2px 2px 0 #000;
+}
+/* ===== #282 ink-stamp message actions (field-office) =====
+   Thread, Download / Canvas and Stop are one family: a small rubber stamp
+   (22px box, double ink rule, telegram caps, slight tilt) in place of the
+   33px plate. Hover inks the stamp; keyboard focus keeps the 2px --fg ring.
+   At <= 640px or on a coarse pointer each keeps an invisible hit area of
+   --btn-hit-touch (44px); the visual box does not grow. */
+html[data-theme="field-office"] .thread-btn,
+html[data-theme="field-office"] .note-files button,
+html[data-theme="field-office"] .think-stop {
+  box-sizing: border-box; min-height: 22px; height: 22px; padding: 0 7px; margin-top: 0;
+  border: 1px solid var(--accent); border-radius: 2px;
+  box-shadow: inset 0 0 0 1px var(--surface-2), inset 0 0 0 2px var(--accent);
+  background: transparent; color: var(--accent);
+  font: 700 0.62rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.16em;
+  transform: rotate(-1.2deg);
+}
+html[data-theme="field-office"] .thread-btn { margin-top: 6px; }
+html[data-theme="field-office"] .think-stop {
+  border-color: var(--warn); color: var(--warn);
+  box-shadow: inset 0 0 0 1px var(--surface-2), inset 0 0 0 2px var(--warn);
+}
+html[data-theme="field-office"] .thread-btn:hover,
+html[data-theme="field-office"] .note-files button:hover {
+  background: var(--accent); color: var(--accent-ink);
+}
+html[data-theme="field-office"] .think-stop:hover:not(:disabled) {
+  background: var(--warn); color: var(--accent-ink);
+}
+html[data-theme="field-office"] .thread-btn:focus-visible,
+html[data-theme="field-office"] .note-files button:focus-visible,
+html[data-theme="field-office"] .think-stop:focus-visible {
+  outline: 2px solid var(--fg); outline-offset: 3px;
+}
+@media (max-width: 640px), (pointer: coarse) {
+  html[data-theme="field-office"] .thread-btn,
+  html[data-theme="field-office"] .note-files button,
+  html[data-theme="field-office"] .think-stop { position: relative; }
+  html[data-theme="field-office"] .thread-btn::before,
+  html[data-theme="field-office"] .note-files button::before,
+  html[data-theme="field-office"] .think-stop::before {
+    content: ""; position: absolute; left: 0; right: 0;
+    top: min(0px, calc(50% - var(--btn-hit-touch) / 2));
+    bottom: min(0px, calc(50% - var(--btn-hit-touch) / 2));
+    background: transparent; pointer-events: auto;
+  }
+  /* Stacked stamps (Download / Canvas above Thread) sit a full hit area
+     apart, so the 44px targets do not overlap. */
+  html[data-theme="field-office"] .note-files ~ .thread-btn { margin-top: calc(var(--btn-hit-touch) - 22px); }
+  html[data-theme="field-office"] .note-files { row-gap: calc(var(--btn-hit-touch) - 22px); }
+}
+/* #282: placeholders are ink, not the browser's grey (2.75:1 on a slip). */
+html[data-theme="field-office"] input::placeholder,
+html[data-theme="field-office"] textarea::placeholder { color: var(--muted); opacity: 1; }
+/* #282: native radios and checkboxes take the theme's own accent, not
+   the browser's blue. Set once on :root and inherited, so every
+   html[data-theme] --accent applies with no per-theme literal. */
+:root { accent-color: var(--accent); }
+/* #282: field-office switches: oxblood track when on, paper knob both ways,
+   so the track clears 3:1 on every khaki surface (accent-dim was 2.89). */
+html[data-theme="field-office"] .slider:before { background: var(--accent-ink); }
+html[data-theme="field-office"] .switch input:checked + .slider { background: var(--accent); }
+html[data-theme="field-office"] .switch input:checked + .slider:before { background: var(--accent-ink); }
+/* #282: the idle Send switch (empty composer) stays readable: the dashed
+   border marks it idle, and 0.8 keeps the SEND cap >= 4.5:1 (0.5 was 2.78). */
+html[data-theme="field-office"] .composer:has(#msg:placeholder-shown) #send.fo-switch:not(.fo-flick) { opacity: 0.8; }
+/* #282: password fields and selects in dialogs (provider keys, seed team)
+   were native white boxes with a 2.4:1 grey edge; give them the paper slip. */
+html[data-theme="field-office"] .panel input[type="password"],
+html[data-theme="field-office"] .panel select {
+  background: var(--surface-2); color: var(--fg); border: 2px solid var(--line); border-radius: 3px;
+  padding: 8px 10px; font: inherit;
+}
+/* #282: field-office radios and checkboxes are drawn on paper, not as the
+   browser's white disc: --line edge, --surface-2 face, and the checked mark
+   in --accent (the same token accent-color carries for the other themes). */
+html[data-theme="field-office"] input[type="radio"],
+html[data-theme="field-office"] input[type="checkbox"]:not(.switch input) {
+  appearance: none; -webkit-appearance: none; box-sizing: border-box; flex: 0 0 auto;
+  width: 14px; height: 14px; vertical-align: -2px;
+  background: var(--surface-2); border: 2px solid var(--line); border-radius: 50%;
+}
+html[data-theme="field-office"] input[type="checkbox"]:not(.switch input) { border-radius: 2px; }
+html[data-theme="field-office"] input[type="radio"]:checked {
+  border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 3px, var(--surface-2) 3.5px);
+}
+html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checked {
+  border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2px var(--surface-2);
 }
 </style>
 </head>
@@ -2330,7 +2434,7 @@ html[data-theme="dark"] #thread-send:active {
     <div class="panel">
       <h2>Create channel</h2>
             <label for="new-chan">Channel name</label>
-            <input id="new-chan" maxlength="48" placeholder="new channel">
+            <input id="new-chan" type="text" maxlength="48" placeholder="new channel">
             <label for="new-chan-prompt">Room system prompt</label>
             <textarea id="new-chan-prompt" rows="3" placeholder="What should agents help accomplish here?"></textarea>
             <p class="help" id="new-chan-count">0 / 500 characters · Blank uses shared collaboration guidance.</p>
@@ -3200,7 +3304,7 @@ html[data-theme="dark"] #thread-send:active {
           stepBar(3) +
           "<p>A vibe is the main server — this Hush relay. It is your community’s primary endpoint.</p>" +
           "<label for=\"vibe-name\">Vibe name</label>" +
-          "<input id=\"vibe-name\" maxlength=\"48\" value=\"local hive\" placeholder=\"local hive\">" +
+          "<input id=\"vibe-name\" type=\"text\" maxlength=\"48\" value=\"local hive\" placeholder=\"local hive\">" +
           "<label for=\"vibe-about\">About</label>" +
           "<textarea id=\"vibe-about\" maxlength=\"200\" placeholder=\"Primary Hush endpoint.\"></textarea>" +
           "<div class=\"vis\">" +
