@@ -1279,7 +1279,8 @@ async function main() {
           contrast = { ring: rc.slice(0, 3).concat([Math.round(rc[3] * 100) / 100]), bg: e.bg, from: e.from, images: e.images,
             ratio: Math.round(ratio(seen, e.bg) * 100) / 100 }; }
         const others = Array.prototype.map.call(document.querySelectorAll('#settings .switch .slider'), (s) => s === target ? null : ring(s).style).filter((x) => x);
-        return { id, value: a && ${JSON.stringify(RADIO_GROUPS)}.includes(a.name) ? a.value : undefined, inSettings: !!(a && document.getElementById('settings').contains(a)),
+        const label = !a ? '' : ((a.labels && a.labels[0] ? a.labels[0].textContent : a.getAttribute('aria-label')) || '').trim();
+        return { id, label, value: a && ${JSON.stringify(RADIO_GROUPS)}.includes(a.name) ? a.value : undefined, inSettings: !!(a && document.getElementById('settings').contains(a)),
           fv: !!(a && a.matches(':focus-visible')), isSwitch, ring: target ? ring(target) : null, contrast, othersStyles: others }; })()`;
       const ringRuns = {};
       const mouseRuns = {};
@@ -1355,6 +1356,11 @@ async function main() {
         const stopIds = Object.keys(seen);
         check(JSON.stringify(stopIds.slice().sort()) === JSON.stringify(STOPS.slice().sort()) && order.every((x) => STOPS.includes(x)),
           `#241 r7 Settings Tab stops are the ${STOPS.length} known controls (${th}): ${JSON.stringify(order)}`);
+        // #279: the Robot turns stop is the checked radio (Auto-approve by
+        // default here), recorded under its group name like the theme radios
+        // and named by its label.
+        check(!!seen.approval && seen.approval.label === 'Auto-approve' && order.includes('approval') && !order.includes(''),
+          `#279 the Robot turns Tab stop is named "Auto-approve" and no stop is unnamed (${th}): ${JSON.stringify(seen.approval)} ${JSON.stringify(order)}`);
         for (const id of STOPS) {
           const s = seen[id];
           if (s && s.contrast) table[th][id] = s.contrast.ratio;
