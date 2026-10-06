@@ -1565,7 +1565,10 @@ turns need approval.
    approve_every_action.") and changes nothing. The relay reads compact
    JSON only (#289): with a space before the colon (`"approval_mode" :`)
    the key is not seen, so the body is an ordinary profile save, which
-   clears the name fields it leaves out (#288). The Settings radio shows
+   clears the name, email and organization fields it leaves out (#288).
+   The same happens with a tab or newline directly before the key
+   (`{\t"approval_mode":…}`, `{\n"approval_mode":…}`; #289, #288).
+   The Settings radio shows
    the saved value on page load, on every 1 s session refresh, and after
    a post (a refused post snaps it back).
 2. **One approval per robot turn.** Under `Approve every action`, every

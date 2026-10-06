@@ -634,6 +634,31 @@ static void check_guest_robot_turn(void)
     close_hive(&fx);
 }
 
+/* Gauge r3 ready pin (P2-C): a guest refused because the whole table is
+ * full (the owner holds all 8) gets the guest line, not the owner line.
+ * Passes on a5e32573; FAILS under GUESTLINEFULL (guest line only when the
+ * guest share is full). Wire into main() after check_guest_robot_turn and
+ * bump TEST_APPROVE_FUNCTIONS in tests/check_loop_legible.py by one. */
+static void check_guest_table_full(void)
+{
+    static test_approve_fixture_t fx;
+    static hush_event_t g;
+    char text[TEST_APPROVE_PATH_MAX] = {0};
+
+    open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+    for (int i = 0; i < TEST_APPROVE_TABLE; i++) {
+        snprintf(text, sizeof(text), "owner joke %d", i);
+        mention_happy(&fx, text);
+    }
+    expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == TEST_APPROVE_TABLE,
+           "the owner fills all 8 entries");
+    open_thread(&fx, &g, TEST_APPROVE_STRANGER_PUB, NULL);
+    expect(count_line(fx.store, TEST_APPROVE_GUEST_COPY) == 1 &&
+           count_line(fx.store, TEST_APPROVE_FULL_COPY) == 0,
+           "a guest refused at a full table is told in the guest's terms");
+    close_hive(&fx);
+}
+
 /* P2-7: a void, a No, a Yes with no runtime, and a removed robot each give
  * back the held follow turn's in-flight count. */
 static void check_release(void)
@@ -761,6 +786,7 @@ int main(void)
     check_threads();
     check_guest_share();
     check_guest_robot_turn();
+    check_guest_table_full();
     check_release();
     check_loop_release();
     check_many_voids();
