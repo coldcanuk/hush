@@ -2905,6 +2905,7 @@ html[data-theme="dark"] #thread-send:active {
     let pendingMentions = [];
     let composerPills = [];
     let menuSlug = "";
+    let chanMenuOpener = null;
     let manageSlug = "";
     let manageHumanPills = [];
     let manageRobotPills = [];
@@ -3366,6 +3367,13 @@ html[data-theme="dark"] #thread-send:active {
 
     function paintChannels() {
       const box = $("chan-list");
+      /* #283: tick() repaints this list every second. Keep focus on the
+         same row control, marked data-chan-ctl (the channel button, its
+         ⋯, or its voice button). focus({preventScroll:true}) so that
+         repaint does not scroll the BOARDS drawer back to the row. */
+      const fa = document.activeElement;
+      const keep = fa && fa !== box && box.contains(fa)
+        ? fa.getAttribute("data-chan-ctl") : null;
       const chans = session.channels && session.channels.length
         ? session.channels
         : [{ name: "general", slug: "general", id: "", group_id: "" }];
@@ -3391,6 +3399,13 @@ html[data-theme="dark"] #thread-send:active {
       }
       loose.forEach((c) => box.appendChild(channelRow(c)));
       $("room").textContent = "#" + channel;
+      if (keep) {
+        const again = Array.prototype.find.call(box.querySelectorAll("[data-chan-ctl]"), (el) =>
+          el.getAttribute("data-chan-ctl") === keep);
+        if (again) {
+          try { again.focus({ preventScroll: true }); } catch (e) {}
+        }
+      }
     }
 
     function channelRow(c) {
@@ -3399,6 +3414,7 @@ html[data-theme="dark"] #thread-send:active {
       const b = document.createElement("button");
       b.className = "chan" + (c.slug === channel ? " on" : "");
       b.type = "button";
+      b.setAttribute("data-chan-ctl", "chan:" + c.slug);
       b.innerHTML = "<span class=\"dot\"></span>#" + esc(c.slug);
       b.addEventListener("click", () => {
         channel = c.slug;
@@ -3416,6 +3432,7 @@ html[data-theme="dark"] #thread-send:active {
         const voice = document.createElement("button");
         voice.className = "chan-voice";
         voice.type = "button";
+        voice.setAttribute("data-chan-ctl", "voice:" + c.slug);
         voice.setAttribute("aria-label", "Voice in #" + c.slug);
         voice.textContent = "♫";
         voice.title = "Talk on this channel";
@@ -3428,10 +3445,12 @@ html[data-theme="dark"] #thread-send:active {
       const del = document.createElement("button");
       del.className = "chan-options";
       del.type = "button";
+      del.setAttribute("data-chan-ctl", "opts:" + c.slug);
       del.setAttribute("aria-label", "Options for #" + c.slug);
       del.textContent = "⋯";
       del.addEventListener("click", (ev) => {
         ev.stopPropagation();
+        chanMenuOpener = del;
         const rect = del.getBoundingClientRect();
         openChanMenu(c.slug, rect.left, rect.bottom);
       });
@@ -3656,7 +3675,11 @@ html[data-theme="dark"] #thread-send:active {
       fillManageTopics(ch.about || "");
       $("manage-prompt").value = ch.system_prompt || "";
       updateRoomPromptCount("manage-prompt", "manage-prompt-count");
-      $("manage-chan").classList.add("show");
+      /* #283: modal layer; focus returns to the ⋯ that opened the menu
+         (looked up again by slug if the channel list repainted). */
+      openLayer("manage-chan", chanMenuOpener, () => Array.prototype.find.call(
+        document.querySelectorAll(".chan-options"),
+        (b) => b.getAttribute("aria-label") === "Options for #" + slug));
     }
 
     function fillManageTopics(about) {
@@ -4216,26 +4239,15 @@ html[data-theme="dark"] #thread-send:active {
     window.addEventListener("resize", syncFoDial);
     new MutationObserver(syncFoDial).observe($("stream"), {childList: true, subtree: true});
     syncFoDial();
+    /* #283: New channel is a modal layer (focus in on open, Tab trap, Esc,
+       backdrop close, focus back to the opener). Its first control is
+       #new-chan. */
     ["add-chan", "nav-new-channel"].forEach((id) => $(id).addEventListener("click", () => {
+      const opener = document.activeElement;
       closeNavigation();
-      $("new-chan-drawer").classList.add("show");
-      $("new-chan").focus();
+      openLayer("new-chan-drawer", opener);
     }));
-    $("new-chan-close").addEventListener("click", () => $("new-chan-drawer").classList.remove("show"));
-    /* #241 B1: Esc is in dismissJourneyLayer. Outside/backdrop click closes.
-       .drawer is position:fixed; inset:0 — the dimmed area IS the drawer, so
-       d.contains(ev.target) is always true and must not be used. Close when
-       the target is the drawer itself or outside its .panel. */
-    document.addEventListener("pointerdown", (ev) => {
-      const d = $("new-chan-drawer");
-      if (!d || !d.classList.contains("show")) return;
-      const panel = d.querySelector(".panel");
-      if (panel && panel.contains(ev.target)) return;
-      if (ev.target && ev.target.closest &&
-          (ev.target.closest("#nav-new-channel") || ev.target.closest("#add-chan")))
-        return;
-      d.classList.remove("show");
-    });
+    $("new-chan-close").addEventListener("click", () => closeLayer("new-chan-drawer"));
     $("new-chan-save").addEventListener("click", async () => {
       const name = $("new-chan").value.trim();
       if (!name) {
@@ -4249,7 +4261,7 @@ html[data-theme="dark"] #thread-send:active {
         $("new-chan").value = "";
         $("new-chan-prompt").value = "";
         $("new-chan-error").textContent = "";
-        $("new-chan-drawer").classList.remove("show");
+        closeLayer("new-chan-drawer");
         updateRoomPromptCount("new-chan-prompt", "new-chan-count");
       } catch (error) {
         $("new-chan-error").textContent = "Channel was not created. Your draft is saved here; try again.";
@@ -5507,17 +5519,73 @@ html[data-theme="dark"] #thread-send:active {
     const peers = {};
     const seenSig = {};
 
-    /* #241 r4 F3: Settings a11y — focus enters the dialog, Tab stays inside,
-       Esc/Close returns focus to the Kit opener (rail-toggle), not BODY. */
-    let settingsReturnFocus = null;
-    function settingsFocusables() {
-      const d = $("settings");
+    /* #283: one shared modal-layer helper, grown from the #241 r4 F3
+       Settings trap. openLayer() shows the layer, marks it aria-modal and
+       moves focus to its first control; closeLayer() hides it and returns
+       focus to the opener. The keydown handler below keeps Tab and
+       Shift-Tab inside the topmost open layer, and the pointerdown handler
+       closes it on a backdrop click (not Settings). Esc goes through
+       dismissJourneyLayer(). LAYER_IDS is topmost first: the Developer Log
+       opens over Settings. */
+    const LAYER_IDS = ["dev-log-drawer", "new-chan-drawer", "manage-chan", "settings"];
+    const LAYER_BACKDROP = ["dev-log-drawer", "new-chan-drawer", "manage-chan"];
+    const layerBack = {};
+    function layerFocusables(d) {
       if (!d) return [];
       return Array.prototype.slice.call(d.querySelectorAll(
         "button, [href], input, select, textarea, [tabindex]:not([tabindex=\"-1\"])"
       )).filter((el) => !el.disabled && el.getAttribute("aria-hidden") !== "true"
         && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
     }
+    function settingsFocusables() {
+      return layerFocusables($("settings"));
+    }
+    function topLayer() {
+      for (let k = 0; k < LAYER_IDS.length; k++) {
+        const d = $(LAYER_IDS[k]);
+        if (d && d.classList.contains("show")) return d;
+      }
+      return null;
+    }
+    /* The opener may be gone by close time: Kit menu items hide on click
+       (back to the Kit stamp), the boards drawer closes (back to BOARDS),
+       or a list repaint replaced it (refind() looks it up again). */
+    function layerReturnTarget(rec) {
+      if (!rec) return null;
+      let el = rec.el;
+      if ((!el || !el.isConnected) && rec.refind) el = rec.refind();
+      if (!el || el === document.body) return null;
+      const shown = el.isConnected && el.getClientRects().length > 0
+        && getComputedStyle(el).visibility !== "hidden";
+      if (shown) return el;
+      if (el.closest && el.closest("#kit-menu")) return $("rail-toggle");
+      if (el.closest && el.closest("#hive > nav")) return $("nav-toggle");
+      return null;
+    }
+    function openLayer(id, opener, refind, prepare) {
+      const d = $(id);
+      if (!d) return;
+      layerBack[id] = { el: opener || null, refind: refind || null };
+      d.classList.add("show");
+      d.setAttribute("aria-modal", "true");
+      if (prepare) prepare();
+      const list = layerFocusables(d);
+      const first = list[0] || d;
+      try { first.focus(); } catch (e) {}
+    }
+    function closeLayer(id) {
+      const d = $(id);
+      if (!d || !d.classList.contains("show")) return;
+      d.classList.remove("show");
+      d.removeAttribute("aria-modal");
+      const back = layerReturnTarget(layerBack[id]);
+      layerBack[id] = null;
+      if (back && typeof back.focus === "function") {
+        try { back.focus(); } catch (e) {}
+      }
+    }
+    /* #241 r4 F3: Settings a11y — focus enters the dialog, Tab stays inside,
+       Esc/Close returns focus to the Kit opener (rail-toggle), not BODY. */
     function openSettings() {
       const d = $("settings");
       if (!d) return;
@@ -5525,16 +5593,8 @@ html[data-theme="dark"] #thread-send:active {
       const kit = $("kit-menu");
       /* settings-btn lives in #kit-menu; kit hide removes it from the tree,
          so remember the Kit stamp (#rail-toggle) as the return target. */
-      if (ae && kit && kit.contains(ae))
-        settingsReturnFocus = $("rail-toggle") || ae;
-      else
-        settingsReturnFocus = ae || $("rail-toggle");
-      d.classList.add("show");
-      d.setAttribute("aria-modal", "true");
-      syncSettings();
-      const list = settingsFocusables();
-      const first = list[0] || d;
-      try { first.focus(); } catch (e) {}
+      const back = (ae && kit && kit.contains(ae)) ? ($("rail-toggle") || ae) : (ae || $("rail-toggle"));
+      openLayer("settings", back, () => $("rail-toggle"), syncSettings);
       /* #241 r6/r7: the panel keeps its scroll while hidden, so park it at
          its title after focus moves in (heading on screen at phone widths).
          The drawer itself never scrolls (overflow visible), so only the
@@ -5543,23 +5603,15 @@ html[data-theme="dark"] #thread-send:active {
       if (settingsPanel) settingsPanel.scrollTop = 0;
     }
     function closeSettings() {
-      const d = $("settings");
-      if (!d) return;
-      d.classList.remove("show");
-      d.removeAttribute("aria-modal");
-      const back = settingsReturnFocus || $("rail-toggle");
-      settingsReturnFocus = null;
-      if (back && typeof back.focus === "function") {
-        try { back.focus(); } catch (e) {}
-      }
+      closeLayer("settings");
     }
     $("settings-btn").addEventListener("click", () => { openSettings(); });
     $("settings-close").addEventListener("click", () => { closeSettings(); });
     document.addEventListener("keydown", (ev) => {
       if (ev.key !== "Tab") return;
-      const d = $("settings");
-      if (!d || !d.classList.contains("show")) return;
-      const list = settingsFocusables();
+      const d = topLayer();
+      if (!d) return;
+      const list = layerFocusables(d);
       if (!list.length) return;
       const first = list[0], last = list[list.length - 1];
       if (!d.contains(document.activeElement)) {
@@ -5575,6 +5627,19 @@ html[data-theme="dark"] #thread-send:active {
         first.focus();
       }
     }, true);
+    /* #283 (from #241 B1): backdrop click closes the topmost layer.
+       .drawer is position:fixed; inset:0 — the dimmed area IS the drawer, so
+       d.contains(ev.target) is always true and must not be used. Close when
+       the target is outside its .panel. preventDefault keeps the press from
+       moving focus off the opener that closeLayer() just focused. */
+    document.addEventListener("pointerdown", (ev) => {
+      const d = topLayer();
+      if (!d || LAYER_BACKDROP.indexOf(d.id) < 0) return;
+      const panel = d.querySelector(".panel");
+      if (panel && panel.contains(ev.target)) return;
+      ev.preventDefault();
+      closeLayer(d.id);
+    });
     /* UI-M1: Character sheet (Profile drawer) shared by rail button, quick tab, and `c`.
        UI-M4: taking the character journey hides the inventory layers, so
        the sheet never stacks over (or under) them. */
@@ -5698,19 +5763,22 @@ html[data-theme="dark"] #thread-send:active {
       });
     }
     /* UI-M4 / #241: single-dismiss Escape contract. Exactly one layer per
-       press, topmost first: held skill gem, leave chooser, robot editor and
-       its sub-panels, new-channel drawer, expanded inventory, character
-       sheet, Settings, quick-slot picker, phone overflow nav. Typing guards
+       press, topmost first: held skill gem, leave chooser, Developer Log
+       (#283: it opens over Settings), robot editor and its sub-panels,
+       new-channel drawer, Manage Channel, expanded inventory, character
+       sheet, Settings, quick-slot picker, phone overflow nav. Shared modal
+       layers (LAYER_IDS) close through closeLayer() so focus goes back to
+       their opener. Typing guards
        (navTyping / quickbarTyping) are untouched: they guard the i/c/1-4
        shortcuts, not Escape. */
     function dismissJourneyLayer() {
-      const order = ["avatar-drawer", "forge-drawer", "skill-drawer",
-        "new-chan-drawer", "agent-drawer", "inv-expand-drawer", "profile",
+      const order = ["dev-log-drawer", "avatar-drawer", "forge-drawer", "skill-drawer",
+        "new-chan-drawer", "manage-chan", "agent-drawer", "inv-expand-drawer", "profile",
         "settings"];
       for (let k = 0; k < order.length; k++) {
         const el = $(order[k]);
         if (el && el.classList.contains("show")) {
-          if (order[k] === "settings") closeSettings();
+          if (LAYER_IDS.indexOf(order[k]) >= 0) closeLayer(order[k]);
           else el.classList.remove("show");
           return true;
         }
@@ -7494,9 +7562,11 @@ html[data-theme="dark"] #thread-send:active {
       return events.filter((e) => (e.kind === 1 || e.kind === 9) && !isDevLogNote(e));
     }
 
+    /* #283: the Developer Log opens as a modal layer over Settings (which
+       stays open underneath); every close returns focus to the #dev-log
+       switch. */
     function openDevLog() {
-      const d = $("dev-log-drawer");
-      if (d) d.classList.add("show");
+      openLayer("dev-log-drawer", $("dev-log"));
       const pre = $("dev-log-body");
       if (pre) {
         pre.textContent = devLogLines.join("\n");
@@ -7504,8 +7574,7 @@ html[data-theme="dark"] #thread-send:active {
       }
     }
     function closeDevLog() {
-      const d = $("dev-log-drawer");
-      if (d) d.classList.remove("show");
+      closeLayer("dev-log-drawer");
     }
 
     /* ========== Inventory: live roster on compact 4x3, expand 8x5 ========== */
@@ -8729,7 +8798,7 @@ html[data-theme="dark"] #thread-send:active {
       if (ev.target.closest && ev.target.closest(".inv-item")) return;
       if ($("inv-menu") && !$("inv-menu").contains(ev.target)) hideInvMenu();
     });
-    $("manage-close").addEventListener("click", () => $("manage-chan").classList.remove("show"));
+    $("manage-close").addEventListener("click", () => closeLayer("manage-chan"));
     $("manage-invite-add").addEventListener("click", () => {
       const extra = ($("manage-invite").value || "").trim();
       if (!extra) return;
@@ -8770,7 +8839,7 @@ html[data-theme="dark"] #thread-send:active {
       }
       try {
         applySession(await api("/api/channel", body));
-        $("manage-chan").classList.remove("show");
+        closeLayer("manage-chan");
       } catch (e) {
         $("manage-err").textContent = "Could not save that roster.";
       }

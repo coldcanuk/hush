@@ -192,6 +192,7 @@ test: check-deps $(TEST_BINS) hush-relay
 	sh tests/check_restart_ui_deps.sh || exit 1; \
 	sh tests/check_restart_ui_chrome_wait.sh || exit 1; \
 	sh tests/check_restart_ui.sh || exit 1; \
+	sh tests/check_layer_ui.sh || exit 1; \
 	CC="$(CC)" python3 tests/check_win.py || exit 1; \
 	python3 tests/check_browser_launch.py || exit 1; \
 	sh tests/check_exit.sh || exit 1; \
