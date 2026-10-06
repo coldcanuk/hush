@@ -361,6 +361,9 @@
       white-space: pre-wrap; word-break: break-word;
     }
     .composer-box:focus-within { border-color: var(--accent-dim); }
+    /* #241 r7: the thread composer drops its outline above; give it the
+       same keyboard ring as the .panel fields (inside the box padding). */
+    #thread-msg:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
     #send, #thread-send {
       background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 12px;
       padding: 0 18px; font-weight: 650; min-width: 88px; min-height: 44px;
