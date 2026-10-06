@@ -34,7 +34,7 @@ int main(void)
         return 1;
     hush_pass_set_helper("tests/fake-pass.sh");
     hush_roster_init(&roster);
-    expect(strcmp(roster.profile.theme, "dark") == 0, "default theme");
+    expect(strcmp(roster.profile.theme, "field-office") == 0, "default theme");
     expect(hush_roster_is_theme("dracula"), "dracula ok");
     expect(hush_roster_is_theme("color-blind"), "color-blind ok");
     expect(!hush_roster_is_theme("neon"), "neon rejected");

@@ -521,7 +521,8 @@ if ((normAsk.textContent || "").indexOf(FAIL) >= 0)
 if ((document.getElementById("thread-think").textContent || "").indexOf("is thinking") < 0)
   fail("a thread with no failure sentence lost its thinking chip");
 
-/* Roster and status feed drop THINKING only for the failed job. */
+/* Roster and status feed drop "is thinking" only for the failed job.
+   #241 B2: feed copy is plain English ("<name> is thinking"), not THINKING. */
 try {
   render(events, {
     ok: true, version: "0.0.1", events: 5, clients: 1,
@@ -535,8 +536,8 @@ const roster = document.getElementById("fo-roster-list");
 const feed = document.getElementById("fo-status-feed");
 if ((roster.textContent || "").toLowerCase().indexOf("thinking") >= 0)
   fail("personnel list still says thinking when that robot's only job already failed for no provider");
-if ((feed.textContent || "").indexOf("THINKING") >= 0)
-  fail("status feed still says THINKING when that robot's only job already failed for no provider");
+if ((feed.textContent || "").indexOf("is thinking") >= 0)
+  fail("status feed still says is thinking when that robot's only job already failed for no provider");
 cards = freshCards();
 if (!cards.failed || cards.failed.textContent.indexOf(FAIL) < 0)
   fail("main-log red failure sentence disappeared");
