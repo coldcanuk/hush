@@ -264,7 +264,7 @@ expect_starts partner 2 "A3 each worker runs once"
 
 # A2: the setting is read and saved by /api/profile (not the dev_log_enabled
 # trap), and an approval post leaves the profile names alone.
-[ "$(profile '{"first_name":"Chuck","last_name":"P","email":"","organization":"","theme":"dark"}')" = 200 ] \
+[ "$(profile '{"first_name":"Chuck","last_name":"P","email":"c@example.com","organization":"Hush","theme":"dark"}')" = 200 ] \
     || fail "A2 profile save failed"
 [ "$(profile '{"approval_mode":"approve_every_action"}')" = 200 ] || fail "A2 approval post refused"
 grep -q '"approval_mode":"approve_every_action"' "$home/profile.out" \
@@ -273,7 +273,7 @@ grep -q '"approval_mode":"approve_every_action"' "$home/profile.out" \
 session | grep -q '"first_name":"Chuck"' || fail "A2 an approval post must keep first_name"
 grep -q '"approval_mode":"approve_every_action"' "$HUSH_CONFIG_DIR/vibe.json" \
     || fail "A2 vibe.json must store approval_mode"
-[ "$(profile '{"first_name":"Chuck","last_name":"P","email":"","organization":"","theme":"light"}')" = 200 ] \
+[ "$(profile '{"first_name":"Chuck","last_name":"P","email":"c@example.com","organization":"Hush","theme":"light"}')" = 200 ] \
     || fail "A2 second profile save failed"
 [ "$(mode)" = approve_every_action ] || fail "A2 a profile save must keep approval_mode"
 # A4: an unknown value is refused with a named reason; the setting is unchanged.
@@ -281,6 +281,19 @@ grep -q '"approval_mode":"approve_every_action"' "$HUSH_CONFIG_DIR/vibe.json" \
 grep -q 'approval_mode must be auto_approve or approve_every_action' "$home/profile.out" \
     || fail "A4 the refusal must name the allowed values"
 [ "$(mode)" = approve_every_action ] || fail "A4 a refused value must not change the setting"
+# A4b an empty or non-string value is refused too, and never read as a
+# profile save: the names stay (#279 r2 P2-1).
+for bad in '{"approval_mode":""}' '{"approval_mode":null}' '{"approval_mode":1}' \
+           '{"theme":"dark","approval_mode":""}'; do
+    [ "$(profile "$bad")" = 400 ] || fail "A4b $bad must be refused"
+    grep -q 'approval_mode must be auto_approve or approve_every_action' "$home/profile.out" \
+        || fail "A4b the refusal for $bad must name the allowed values"
+    [ "$(mode)" = approve_every_action ] || fail "A4b $bad must not change the setting"
+    session | grep -q '"first_name":"Chuck"' || fail "A4b $bad must keep first_name"
+    session | grep -q '"last_name":"P"' || fail "A4b $bad must keep last_name"
+    session | grep -q '"email":"c@example.com"' || fail "A4b $bad must keep email"
+    session | grep -q '"organization":"Hush"' || fail "A4b $bad must keep organization"
+done
 
 # G1 first turn: the mention waits; the owner's Yes runs it exactly once.
 fresh "- -" "- -"
