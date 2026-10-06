@@ -1,11 +1,12 @@
-// check_layer_ui.cjs: #283 layer pins D1-D10 for the Developer Log drawer,
+// check_layer_ui.cjs: #283 layer pins D1-D13 for the Developer Log drawer,
 // the New channel dialog and Manage Channel. Drives headless system Chrome
 // over CDP with the Node standard library only (no npm packages). Every
 // pin uses real CDP input (mouse clicks, Tab / Shift-Tab / Escape / Space
-// keys) and reads rendered state: which layers show, where focus is, and
-// what the Kit menu does. Each pin runs at 1440 light, 1440 field-office
-// and 390 dark. All pins run before the verdict, so a failing build lists
-// every failing pin, then exits 1.
+// keys, and a mouse wheel for D13) and reads rendered state: which layers
+// show, where focus is, and what the Kit menu does. Each pin runs at 1440
+// light, 1440 field-office and 390 dark. All pins run before the verdict,
+// so a failing build lists every failing pin, then exits 1. Chrome profiles
+// and relay scratch dirs are removed on the way out.
 //
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
 // HUSH_TEST_WAIT_S (Chrome DevTools ready deadline, default 30),
@@ -27,13 +28,30 @@ const CONFIGS = [
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const liveProcs = [];
-function fail(msg) {
+const tempDirs = [];
+function noteTemp(dir) {
+  tempDirs.push(dir);
+  return dir;
+}
+function rmTemps() {
+  while (tempDirs.length) {
+    const dir = tempDirs.pop();
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* best effort */ }
+  }
+}
+function stopAll() {
   for (const p of liveProcs.splice(0)) {
     try { p.kill('SIGTERM'); } catch (e) { /* gone */ }
   }
+  rmTemps();
+}
+function fail(msg) {
+  stopAll();
   console.error('layer UI check failed: ' + msg);
   process.exit(1);
 }
+process.on('SIGINT', () => fail('interrupted'));
+process.on('SIGTERM', () => fail('terminated'));
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -79,7 +97,7 @@ async function launchChrome(chrome) {
   const deadline = waitMs();
   for (let attempt = 1; attempt <= 2; attempt++) {
     const port = await freePort();
-    const userDir = fs.mkdtempSync(path.join(os.tmpdir(), 'l283-chrome-'));
+    const userDir = noteTemp(fs.mkdtempSync(path.join(os.tmpdir(), 'l283-chrome-')));
     const env = Object.assign({}, process.env);
     delete env.DBUS_SESSION_BUS_ADDRESS;
     const proc = spawn(chrome,
@@ -141,7 +159,15 @@ class Cdp {
     });
   }
   async eval(expr) {
-    const r = await this.send('Runtime.evaluate', { expression: expr, returnByValue: true });
+    return this.evaluate(expr, false);
+  }
+  async evalAsync(expr) {
+    return this.evaluate(expr, true);
+  }
+  async evaluate(expr, awaitPromise) {
+    const r = await this.send('Runtime.evaluate', {
+      expression: expr, returnByValue: true, awaitPromise: !!awaitPromise
+    });
     if (r.exceptionDetails)
       throw new Error('page eval threw: ' + expr.slice(0, 120));
     return r.result ? r.result.value : null;
@@ -196,8 +222,8 @@ async function main() {
   await cdp.connect();
   await cdp.send('Page.enable', {});
 
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'l283-home-'));
-  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'l283-cfg-'));
+  const home = noteTemp(fs.mkdtempSync(path.join(os.tmpdir(), 'l283-home-')));
+  const cfg = noteTemp(fs.mkdtempSync(path.join(os.tmpdir(), 'l283-cfg-')));
   const port = await freePort();
   const relay = spawn(RELAY, ['--no-open', String(port)], {
     env: Object.assign({}, process.env, {
@@ -370,6 +396,52 @@ async function main() {
     const s = await state();
     return { ok: typeof want === 'function' ? want(s.ae) : s.ae === want, ae: s.ae };
   };
+  // Compact JSON on purpose: the relay parser rejects a space after ':'.
+  // Creates are idempotent across configs; a duplicate name is a 400.
+  const seedChannels = async (n) => {
+    const posted = await cdp.evalAsync(`(async () => {
+      let made = 0;
+      for (let i = 1; i <= ${n}; i++) {
+        const name = 'pin' + String(i).padStart(2, '0');
+        const r = await fetch('/api/channel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name })
+        });
+        if (r.ok) made++;
+        else if (r.status !== 400) return -1;
+      }
+      return made;
+    })()`);
+    const listed = await cdp.tryWait(
+      `document.querySelectorAll('#chan-list .chan-row').length >= ${n}`, 8000);
+    return posted >= 0 && listed;
+  };
+  // D13 fills the 16-channel table. Later configs would then fail D7's
+  // create. Drop the pinNN channels before each config.
+  const dropSeedChannels = async () => {
+    await cdp.evalAsync(`(async () => {
+      const slugs = (session.channels || []).map((ch) => ch.slug).filter((s) => /^pin\\d\\d$/.test(s));
+      for (const slug of slugs) {
+        await fetch('/api/channel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'delete', slug: slug })
+        });
+      }
+    })()`);
+  };
+  const focusCtl = async (ctl) => cdp.eval(`(() => {
+    const el = Array.prototype.find.call(document.querySelectorAll('[data-chan-ctl]'),
+      (n) => n.getAttribute('data-chan-ctl') === ${JSON.stringify(ctl)});
+    if (!el) return null;
+    el.focus();
+    return document.activeElement && document.activeElement.getAttribute('data-chan-ctl');
+  })()`);
+  const activeCtl = () => cdp.eval(`(() => {
+    const a = document.activeElement;
+    return a ? a.getAttribute('data-chan-ctl') : null;
+  })()`);
 
   const results = [];
   const record = (pin, c, variant, ok, detail) => {
@@ -579,9 +651,99 @@ async function main() {
           { opened, on, esc1: { devlog: e1.devlog, settings: e1.settings, ae: e1.ae }, did, second: { devlog: e2.devlog, settings: e2.settings, ae: e2.ae } });
       }
     },
+    // D11: Developer Log traps Tab the same way New channel does. Tab from
+    // the last control lands on the first, Shift-Tab from the first lands
+    // on the last, and a full cycle never stops outside the drawer.
+    D11: async (c) => {
+      await reset(c);
+      const opened = await openSettingsReal();
+      const on = await devlogOn('mouse');
+      const n = await focusableCount('dev-log-drawer');
+      await cdp.eval(`document.getElementById('dev-log-close2').focus()`);
+      await press('Tab');
+      const fromLast = await state();
+      await cdp.eval(`document.getElementById('dev-log-close').focus()`);
+      await press('Tab', true);
+      const fromFirst = await state();
+      await cdp.eval(`document.getElementById('dev-log-close').focus()`);
+      const fwd = await tabWalk(n + 1, false, 'dev-log-drawer');
+      await cdp.eval(`document.getElementById('dev-log-close').focus()`);
+      const back = await tabWalk(n + 1, true, 'dev-log-drawer');
+      const outside = fwd.concat(back).filter((x) => !x.inside);
+      record('D11', c, 'tab', opened && on && n >= 3 && fromLast.ae === 'dev-log-close' && fromFirst.ae === 'dev-log-close2' && !outside.length,
+        { opened, on, focusables: n, fromLast: fromLast.ae, fromFirst: fromFirst.ae, outside: outside.length,
+          fwd: fwd.map((x) => x.ae), back: back.map((x) => x.ae) });
+    },
+    // D12: a channel button that is not the first row keeps focus across
+    // the 1 s repaint, on that same channel. An aria-label-only match would
+    // land on the first channel button, because those buttons share no label.
+    D12: async (c) => {
+      await reset(c);
+      const seeded = await seedChannels(2);
+      if (!(await realClick('#nav-toggle'))) {
+        record('D12', c, 'refocus', false, { seeded, step: 'boards' });
+        return;
+      }
+      await cdp.tryWait(`document.getElementById('hive').classList.contains('nav-open')`, 1000);
+      await sleep(300);
+      const pick = await cdp.eval(`(() => {
+        const rows = Array.prototype.map.call(document.querySelectorAll('button.chan'),
+          (el) => el.getAttribute('data-chan-ctl'));
+        return rows.length >= 2 ? rows[rows.length - 1] : null;
+      })()`);
+      const first = await cdp.eval(`(() => {
+        const el = document.querySelector('button.chan');
+        return el ? el.getAttribute('data-chan-ctl') : null;
+      })()`);
+      await cdp.eval(`window.__l283Chan = document.querySelector('[data-chan-ctl="' + ${JSON.stringify(pick)} + '"]')`);
+      const focused = pick ? await focusCtl(pick) : null;
+      await sleep(1600);
+      const after = await activeCtl();
+      const repainted = await cdp.eval(`window.__l283Chan ? !window.__l283Chan.isConnected : false`);
+      record('D12', c, 'refocus', seeded && !!pick && pick !== first && focused === pick && after === pick && repainted,
+        { seeded, first, pick, focused, after, repainted });
+    },
+    // D13: Gauge G7. All-mouse BOARDS → ⋯ → Manage → Close, then a wheel
+    // scroll of the drawer. The 1 s repaint must not pull scrollTop back
+    // to the focused ⋯ (the top row).
+    D13: async (c) => {
+      await reset(c);
+      const seeded = await seedChannels(14);
+      const opened = await openManage();
+      const closed = await realClick('#manage-close');
+      await cdp.eval(`window.__l283Opts = document.querySelector(${JSON.stringify(OPTS)})`);
+      const place = await cdp.eval(`(() => {
+        const d = document.getElementById('fo-drawer');
+        const r = d.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: Math.min(r.bottom - 24, r.top + 120), max: d.scrollHeight - d.clientHeight };
+      })()`);
+      if (place && place.max > 40) {
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: place.x, y: place.y });
+        for (let i = 0; i < 8; i++) {
+          await cdp.send('Input.dispatchMouseEvent',
+            { type: 'mouseWheel', x: place.x, y: place.y, deltaX: 0, deltaY: 180 });
+          await sleep(40);
+        }
+      }
+      const scrolled = await cdp.eval(`document.getElementById('fo-drawer').scrollTop`);
+      await sleep(1800);
+      const after = await cdp.eval(`(() => {
+        const d = document.getElementById('fo-drawer');
+        const a = document.activeElement;
+        return {
+          top: d.scrollTop,
+          ae: a ? (a.getAttribute('aria-label') || a.id || a.tagName) : null,
+          repainted: window.__l283Opts ? !window.__l283Opts.isConnected : false
+        };
+      })()`);
+      const held = scrolled >= 80 && after.top >= scrolled * 0.7;
+      record('D13', c, 'wheel', seeded && opened && closed && place && place.max > 40 && held && after.repainted && isOpts(after.ae),
+        { seeded, opened, closed, max: place && place.max, scrolled, after });
+    },
   };
 
   for (const c of CONFIGS) {
+    await dropSeedChannels();
     for (const pin of Object.keys(PINS)) {
       if (ONLY.length && !ONLY.includes(pin)) continue;
       await PINS[pin](c);
@@ -594,9 +756,7 @@ async function main() {
     pins[r.pin][r.ok ? 'pass' : 'fail']++;
   }
   console.log('L283 SUMMARY ' + JSON.stringify(pins));
-  for (const p of liveProcs.splice(0)) {
-    try { p.kill('SIGTERM'); } catch (e) { /* gone */ }
-  }
+  stopAll();
   if (!results.length)
     fail('no pin ran');
   if (bad.length) {

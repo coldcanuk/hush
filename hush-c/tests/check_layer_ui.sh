@@ -1,5 +1,5 @@
 #!/bin/sh
-# #283 layer pins D1-D10 (Developer Log over Settings, New channel, Manage
+# #283 layer pins D1-D13 (Developer Log over Settings, New channel, Manage
 # Channel): headless system Chrome over CDP, Node standard library only.
 # Needs node >= 22 (global WebSocket) and Chrome/Chromium on PATH. When
 # either is missing it prints SKIP on a dev box, but fails when CI is set,

@@ -3337,12 +3337,13 @@ html[data-theme="dark"] #thread-send:active {
 
     function paintChannels() {
       const box = $("chan-list");
-      /* #283: tick() repaints this list every second. Keep keyboard focus
-         on the same row control (the ⋯ that Manage Channel hands focus
-         back to, or a channel button) instead of dropping it to BODY. */
+      /* #283: tick() repaints this list every second. Keep focus on the
+         same row control, marked data-chan-ctl (the channel button, its
+         ⋯, or its voice button). focus({preventScroll:true}) so that
+         repaint does not scroll the BOARDS drawer back to the row. */
       const fa = document.activeElement;
       const keep = fa && fa !== box && box.contains(fa)
-        ? { tag: fa.tagName, label: fa.getAttribute("aria-label"), text: fa.textContent } : null;
+        ? fa.getAttribute("data-chan-ctl") : null;
       const chans = session.channels && session.channels.length
         ? session.channels
         : [{ name: "general", slug: "general", id: "", group_id: "" }];
@@ -3369,10 +3370,10 @@ html[data-theme="dark"] #thread-send:active {
       loose.forEach((c) => box.appendChild(channelRow(c)));
       $("room").textContent = "#" + channel;
       if (keep) {
-        const again = Array.prototype.find.call(box.querySelectorAll(keep.tag), (el) =>
-          el.getAttribute("aria-label") === keep.label && el.textContent === keep.text);
+        const again = Array.prototype.find.call(box.querySelectorAll("[data-chan-ctl]"), (el) =>
+          el.getAttribute("data-chan-ctl") === keep);
         if (again) {
-          try { again.focus(); } catch (e) {}
+          try { again.focus({ preventScroll: true }); } catch (e) {}
         }
       }
     }
@@ -3383,6 +3384,7 @@ html[data-theme="dark"] #thread-send:active {
       const b = document.createElement("button");
       b.className = "chan" + (c.slug === channel ? " on" : "");
       b.type = "button";
+      b.setAttribute("data-chan-ctl", "chan:" + c.slug);
       b.innerHTML = "<span class=\"dot\"></span>#" + esc(c.slug);
       b.addEventListener("click", () => {
         channel = c.slug;
@@ -3400,6 +3402,7 @@ html[data-theme="dark"] #thread-send:active {
         const voice = document.createElement("button");
         voice.className = "chan-voice";
         voice.type = "button";
+        voice.setAttribute("data-chan-ctl", "voice:" + c.slug);
         voice.setAttribute("aria-label", "Voice in #" + c.slug);
         voice.textContent = "♫";
         voice.title = "Talk on this channel";
@@ -3412,6 +3415,7 @@ html[data-theme="dark"] #thread-send:active {
       const del = document.createElement("button");
       del.className = "chan-options";
       del.type = "button";
+      del.setAttribute("data-chan-ctl", "opts:" + c.slug);
       del.setAttribute("aria-label", "Options for #" + c.slug);
       del.textContent = "⋯";
       del.addEventListener("click", (ev) => {
