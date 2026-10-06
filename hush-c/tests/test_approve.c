@@ -357,6 +357,36 @@ static void check_one_each(void)
     close_hive(&fx);
 }
 
+/* Caps the test channel at one robot turn per thread (HUSH_LAUNCH_TURNS_MIN). */
+static void cap_one(test_approve_fixture_t *fx)
+{
+    hush_launch_policy_t policy = {0};
+
+    hush_agent_copy(policy.kind, sizeof(policy.kind), HUSH_LAUNCH_KIND_OPEN);
+    hush_agent_copy(policy.robot_reply, sizeof(policy.robot_reply), HUSH_LAUNCH_REPLY_MENTION);
+    policy.burst_ms = HUSH_LAUNCH_BURST_MS_DEFAULT;
+    policy.max_jobs = HUSH_LAUNCH_MAX_JOBS_DEFAULT;
+    policy.max_robot_turns = HUSH_LAUNCH_TURNS_MIN;
+    expect(hush_launch_set_channel_policy(&fx->launch, TEST_APPROVE_CHANNEL, &policy) == HUSH_OK,
+           "cap 1");
+}
+
+/* With the cap at one turn, a waiting turn's approval line must not use it up:
+ * a second turn in the same thread still asks instead of hitting the cap. */
+static void check_cap_window(void)
+{
+    static test_approve_fixture_t fx;
+
+    open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+    cap_one(&fx);
+    mention_happy(&fx, "two riddles please");
+    hush_agent_handle_mention(fx.store, &fx.launch, &fx.root, fx.happy->id.npub);
+    expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == 2,
+           "an approval line does not count toward the turn cap");
+    expect(!turn_ran(fx.store), "both turns still wait");
+    close_hive(&fx);
+}
+
 /* At most HUSH_AGENT_APPROVAL_MAX turns wait; the next gets one notice. */
 static void check_full(void)
 {
@@ -384,6 +414,7 @@ int main(void)
     check_auto();
     check_void();
     check_one_each();
+    check_cap_window();
     check_full();
     if (g_fail)
         return 1;

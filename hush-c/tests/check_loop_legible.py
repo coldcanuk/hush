@@ -31,7 +31,7 @@ FILES = {
 # them, so no test function can drop out of the caps unnoticed.
 TEST_LOOP_FUNCTIONS = 18
 # Functions in tests/test_approve.c today (#279), held to the same rule.
-TEST_APPROVE_FUNCTIONS = 22
+TEST_APPROVE_FUNCTIONS = 24
 TEST_COUNTS = {
     "tests/test_loop.c": TEST_LOOP_FUNCTIONS,
     "tests/test_approve.c": TEST_APPROVE_FUNCTIONS,
