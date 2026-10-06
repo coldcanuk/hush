@@ -1301,7 +1301,7 @@ async function main() {
           // profile theme, so the theme under test is set again before reading.
           const before = await cdp.eval(`document.getElementById('vibe-public').checked`);
           const clicks = [];
-          for (const sel of ['#vibe-public + .slider', '#vibe-public + .slider', `#settings input[name='theme'][value='${th}']`]) {
+          for (const sel of ['#vibe-public + .slider', '#vibe-public + .slider', `#settings input[name="theme"][value="${th}"]`]) {
             await realClick(sel);
             await sleep(300);
             await cdp.eval(`applyTheme(${JSON.stringify(th)})`);
