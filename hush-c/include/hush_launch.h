@@ -199,6 +199,23 @@ hush_status_t hush_launch_set_approval(hush_launch_t *launch, const char *id);
 hush_status_t hush_launch_set_profile(hush_launch_t *launch,
                                       const hush_roster_profile_t *in);
 
+enum {
+    HUSH_PROFILE_FIRST = 1u,
+    HUSH_PROFILE_LAST = 2u,
+    HUSH_PROFILE_EMAIL = 4u,
+    HUSH_PROFILE_ORG = 8u,
+    HUSH_PROFILE_THEME = 16u,
+    HUSH_PROFILE_PICTURE = 32u,
+    HUSH_PROFILE_DEVLOG = 64u
+};
+
+/* Updates only the masked fields, then saves vibe.json. Mask 0 is PARSE.
+ * A theme bit with a value that is not a palette is PARSE and changes
+ * nothing. dev_log is 0 or 1 when HUSH_PROFILE_DEVLOG is set. */
+hush_status_t hush_launch_patch_profile(hush_launch_t *launch,
+                                       const hush_roster_profile_t *in,
+                                       unsigned mask, int dev_log);
+
 /* Adds a human member by npub. Requires a vibe. */
 hush_status_t hush_launch_add_member(hush_launch_t *launch,
                                      const char *key,

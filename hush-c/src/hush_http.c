@@ -897,70 +897,99 @@ static size_t hush_http_json_put_escape(char *dst, size_t dstsz, size_t off,
     return off + 1;
 }
 
+static int hush_http_json_is_ws(char ch)
+{
+    return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
+}
+
+static const char *hush_http_json_skip_ws(const char *p)
+{
+    assert(p != NULL);
+    while (hush_http_json_is_ws(*p))
+        p++;
+    return p;
+}
+
+/* True when p starts a key: body start, or only whitespace back to { or ,. */
+static int hush_http_json_at_key(const char *body, const char *p)
+{
+    const char *q;
+
+    assert(body != NULL && p != NULL);
+    if (p <= body)
+        return p == body;
+    q = p - 1;
+    while (q > body && hush_http_json_is_ws(*q))
+        q--;
+    if (q == body && hush_http_json_is_ws(*q))
+        return 1;
+    return *q == '{' || *q == ',';
+}
+
+/* Points at the value of the first key match, after the colon and whitespace. */
+static const char *hush_http_json_value_at(const char *body, const char *key)
+{
+    char needle[64];
+    const char *p;
+    size_t nlen;
+
+    if (body == NULL || key == NULL || key[0] == '\0')
+        return NULL;
+    if (snprintf(needle, sizeof(needle), "\"%s\"", key) >= (int)sizeof(needle))
+        return NULL;
+    nlen = strlen(needle);
+    p = body;
+    while ((p = strstr(p, needle)) != NULL) {
+        const char *value;
+
+        if (!hush_http_json_at_key(body, p)) {
+            p += 1;
+            continue;
+        }
+        value = hush_http_json_skip_ws(p + nlen);
+        if (*value != ':') {
+            p += 1;
+            continue;
+        }
+        return hush_http_json_skip_ws(value + 1);
+    }
+    return NULL;
+}
+
 int hush_http_json_field(const char *body, const char *key, char *out, size_t outsz)
 {
-    char quoted[64];
-    const char *p;
-    const char *hit = NULL;
+    const char *value;
 
-    out[0] = '\0';
-    if (snprintf(quoted, sizeof(quoted), "\"%s\":\"", key) >= (int)sizeof(quoted))
+    if (out == NULL || outsz == 0)
         return 0;
-    p = body;
-    while ((p = strstr(p, quoted)) != NULL) {
-        if (p == body || p[-1] == '{' || p[-1] == ',' || p[-1] == ' ') {
-            hit = p;
-            break;
-        }
-        p += 1;
-    }
-    if (hit != NULL) {
-        hush_http_json_unescape_copy(hit + strlen(quoted), out, outsz);
-        return out[0] != '\0';
-    }
-    return hush_http_json_bare_field(body, key, out, outsz);
+    out[0] = '\0';
+    value = hush_http_json_value_at(body, key);
+    if (value == NULL || *value != '"')
+        return 0;
+    hush_http_json_unescape_copy(value + 1, out, outsz);
+    return out[0] != '\0';
 }
 
 int hush_http_json_has_key(const char *body, const char *key)
 {
-    char needle[64];
-    const char *p;
-
-    if (body == NULL || key == NULL || key[0] == '\0')
-        return 0;
-    if (snprintf(needle, sizeof(needle), "\"%s\":", key) >= (int)sizeof(needle))
-        return 0;
-    p = body;
-    while ((p = strstr(p, needle)) != NULL) {
-        if (p == body || p[-1] == '{' || p[-1] == ',' || p[-1] == ' ')
-            return 1;
-        p += 1;
-    }
-    return 0;
+    return hush_http_json_value_at(body, key) != NULL;
 }
 
 int hush_http_json_bare_field(const char *body, const char *key,
                                 char *out, size_t outsz)
 {
-    char bare[64];
-    const char *p;
+    const char *value;
     size_t i = 0;
 
-    if (snprintf(bare, sizeof(bare), "\"%s\":", key) >= (int)sizeof(bare))
+    if (out == NULL || outsz == 0)
         return 0;
-    p = body;
-    while ((p = strstr(p, bare)) != NULL) {
-        if (p == body || p[-1] == '{' || p[-1] == ',' || p[-1] == ' ')
-            break;
-        p += 1;
-    }
-    if (p == NULL)
+    out[0] = '\0';
+    value = hush_http_json_value_at(body, key);
+    if (value == NULL || *value == '"')
         return 0;
-    p += strlen(bare);
-    while (*p == ' ')
-        p++;
-    while (*p != '\0' && *p != ',' && *p != '}' && *p != ' ' && i + 1 < outsz)
-        out[i++] = *p++;
+    while (*value != '\0' && !hush_http_json_is_ws(*value) &&
+           *value != ',' && *value != '}' && i + 1 < outsz)
+        out[i++] = *value++;
     out[i] = '\0';
     return out[0] != '\0';
 }

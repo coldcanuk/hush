@@ -647,7 +647,7 @@ demo). No Raylib dependency on the main hush-relay.
 |---|---|
 | `GET /api/session` | existing + `profile`, `theme`, `approval_mode` (`auto_approve` \| `approve_every_action`, #279), `agents[]`, `members[]`, `pass_available` (false when `pass` is missing), `restart_lost_login` (true only when boot restore left a vibe without a login) |
 | `POST /api/identity` | `create` \| `import` \| `preview` (npub only, no login) \| `ack_backup` \| **`logout`** |
-| `POST /api/profile` | first/last/email/org/theme; optional avatar b64. Or a body naming `approval_mode` in compact form (`"approval_mode":`, #279): sets only that and never the names (a space before the colon is not read, #289, and falls through to the profile save, #288); 400 with a named reason for any value but the two ids |
+| `POST /api/profile` | first/last/email/org/theme/dev_log_enabled; optional avatar b64. Only keys present in the body change; a theme-only or dev-log-only post leaves stored names, email, and organization in place (#288). Whitespace around `:` is read (#289). A body with no profile field is 400 "no profile field". A body naming `approval_mode` sets only that and never the names; 400 with a named reason for any value but the two ids |
 | `POST /api/agent` | create agent + context |
 | `POST /api/member` | add human (npub) |
 | `POST /api/close` | acknowledge Close; does **not** stop the process |
@@ -1602,18 +1602,14 @@ turns need approval.
    logged-in owner's profile, is saved in `vibe.json` next to the theme as
    `approval_mode` (`auto_approve` | `approve_every_action`), and is read
    back on every relay start. A missing or unknown stored value reads as
-   `auto_approve`. A `POST /api/profile` body that names the key in the
-   compact form the app sends (`"approval_mode":`, no space before the
-   colon) sets only the approval setting and never touches the profile
-   names. A value other than those two ids (including `""`, `null`, a
-   number, or `"approval_mode": "…"` with a space after the colon) is
-   refused (400, "approval_mode must be auto_approve or
-   approve_every_action.") and changes nothing. The relay reads compact
-   JSON only (#289): with a space before the colon (`"approval_mode" :`)
-   the key is not seen, so the body is an ordinary profile save, which
-   clears the name, email and organization fields it leaves out (#288).
-   The same happens with a tab or newline directly before the key
-   (`{\t"approval_mode":…}`, `{\n"approval_mode":…}`; #289, #288).
+   `auto_approve`. A `POST /api/profile` body that names `approval_mode`
+   sets only that setting and never touches the profile names. Whitespace
+   around the colon is read, including a newline or tab before the key
+   (#289). A value other than the two ids (including `""`, `null`, or a
+   number) is refused (400, "approval_mode must be auto_approve or
+   approve_every_action.") and changes nothing. A profile post that omits
+   the name fields leaves the stored names, email, and organization in
+   place (#288).
    The Settings radio shows
    the saved value on page load, on every 1 s session refresh, and after
    a post (a refused post snaps it back).
