@@ -2815,7 +2815,7 @@ static hush_status_t hush_launch_put_roster(const hush_launch_t *launch,
                                             char *out, size_t outsz,
                                             size_t *off)
 {
-    const hush_roster_profile_t *profile;
+    const hush_roster_profile_t *profile = NULL;
 
     assert(launch != NULL);
     profile = &launch->roster.profile;
@@ -3276,12 +3276,11 @@ static void hush_launch_take_approval(hush_launch_t *launch, const char *json)
 static hush_status_t hush_launch_take_roster(hush_launch_t *launch,
                                              const char *json)
 {
-    hush_roster_profile_t profile;
-    size_t n;
-    size_t i;
+    hush_roster_profile_t profile = {0};
+    size_t n = 0;
+    size_t i = 0;
 
     assert(launch != NULL);
-    memset(&profile, 0, sizeof(profile));
     (void)hush_launch_json_string(json, "theme", profile.theme,
                                   sizeof(profile.theme));
     (void)hush_launch_json_string(json, "first_name", profile.first_name,

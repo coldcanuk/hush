@@ -78,7 +78,7 @@ static void hush_agent_intro_remember(const char *hex, const char *root);
 
 void hush_agent_init(void)
 {
-    size_t i;
+    size_t i = 0;
 
     for (i = 0; i < (size_t)HUSH_AGENT_JOBS_MAX; i++) {
         memset(&g_jobs[i], 0, sizeof(g_jobs[i]));

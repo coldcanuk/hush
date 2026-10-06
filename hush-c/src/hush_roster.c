@@ -670,9 +670,9 @@ static hush_status_t hush_roster_format_profile(const hush_roster_t *roster,
                                                 char *out, size_t outsz,
                                                 size_t *off)
 {
-    char esc[HUSH_ROSTER_EMAIL_MAX * HUSH_JSON_U_LEN];
-    char esc_pic[HUSH_ROSTER_PATH_MAX * HUSH_JSON_U_LEN];
-    int n;
+    char esc[HUSH_ROSTER_EMAIL_MAX * HUSH_JSON_U_LEN] = {0};
+    char esc_pic[HUSH_ROSTER_PATH_MAX * HUSH_JSON_U_LEN] = {0};
+    int n = 0;
 
     assert(roster != NULL);
     assert(out != NULL);
