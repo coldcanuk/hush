@@ -1386,16 +1386,19 @@ async function main() {
       }
     }
 
-    // #241 r8 (Gauge B6): forced-state sweep over every .panel input,
-    // textarea and select in the page (all drawers, open or not), on all 8
-    // themes. CDP forces :focus and :focus-visible on each one (as Gauge's
-    // sweep does), then the computed ring must be the same one on every
-    // field: solid, exactly 2px, offset exactly 2px (outside the control),
-    // colour equal to the theme's --fg, and >= 3:1 against its effective
-    // background. Covers controls Tab never reaches in this test,
-    // e.g. untyped #new-chan and the file inputs.
+    // #241 r8 (Gauge B6): forced-state sweep over every focusable .panel
+    // element in the page (all drawers, open or not): input, textarea,
+    // select, summary, button, a[href] and [tabindex >= 0], on all 8 themes.
+    // CDP forces :focus and :focus-visible on each one (as Gauge's sweep
+    // does), then the computed ring must be one of exactly two variants:
+    // buttons get the site-wide button ring (solid 2px, offset 3px); every
+    // other element gets the .panel ring (solid 2px, offset 2px). Both must
+    // be the theme's --fg, outside the element, and >= 3:1 against its
+    // effective background. Covers elements Tab never reaches in this test,
+    // e.g. untyped #new-chan, the file inputs and the <summary> toggles.
     {
-      const SWEEP_SEL = '.panel input:not([type="hidden"]), .panel textarea, .panel select';
+      const SWEEP_SEL = '.panel input:not([type="hidden"]), .panel textarea, .panel select, .panel summary, .panel button, .panel a[href], .panel [tabindex]:not([tabindex^="-"])';
+      const KIND_MIN = { summary: 2, button: 1 };
       const MUST = ['new-chan', 'prof-avatar', 'agent-file', 'turn-host'];
       const themes = await cdp.eval(`Array.prototype.map.call(document.querySelectorAll("#settings input[name='theme']"), (i) => i.value)`);
       await cdp.send('DOM.enable');
@@ -1420,7 +1423,9 @@ async function main() {
           const cs = getComputedStyle(el); const e = effBg(el.parentElement); const rc = px(cs.outlineColor);
           const fg = px(cs.getPropertyValue('--fg').trim());
           const host = el.closest('.drawer, .stage');
-          return { id: el.id || null, name: el.name || null, type: el.getAttribute('type'), tag: el.tagName.toLowerCase(),
+          const tag = el.tagName.toLowerCase();
+          const kind = ['input', 'textarea', 'select', 'summary', 'button', 'a'].includes(tag) ? tag : 'tabindex';
+          return { kind, id: el.id || null, name: el.name || null, type: el.getAttribute('type'), tag: el.tagName.toLowerCase(),
             host: host ? host.id : null, fv: el.matches(':focus-visible'), style: cs.outlineStyle,
             width: parseFloat(cs.outlineWidth) || 0, offset: parseFloat(cs.outlineOffset) || 0,
             fgRing: rc.every((v, i) => v === fg[i]), rgb: rc.slice(0, 3).join(','),
@@ -1438,21 +1443,23 @@ async function main() {
         const rows = await cdp.eval(sweepEval);
         for (const nodeId of ids)
           await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] });
-        const bad = rows.filter((r) => !(r.fv && r.style === 'solid' && r.width === 2 && r.offset === 2 && r.fgRing && r.images === 0 && r.from && r.ratio >= 3));
+        const bad = rows.filter((r) => !(r.fv && r.style === 'solid' && r.width === 2 && r.offset === (r.kind === 'button' ? 3 : 2) && r.fgRing && r.images === 0 && r.from && r.ratio >= 3));
         sweep[th] = { total: rows.length, nodes: ids.length, ringed: rows.length - bad.length,
           min: rows.length ? Math.min.apply(null, rows.map((r) => r.ratio)) : null,
-          seen: MUST.filter((id) => rows.some((r) => r.id === id)), bad };
+          seen: MUST.filter((id) => rows.some((r) => r.id === id)), bad,
+          kinds: rows.reduce((o, r) => { o[r.kind] = (o[r.kind] || 0) + 1; return o; }, {}) };
       }
       await cdp.eval(`applyTheme(${JSON.stringify(keepTheme8 || 'field-office')})`);
       console.log('panel field sweep: ' + JSON.stringify(Object.fromEntries(Object.entries(sweep).map(([k, v]) =>
-        [k, { total: v.total, ringed: v.ringed, min: v.min, bad: v.bad.map((b) => (b.id || b.name || b.tag) + ':' + b.style + ' ' + b.width + 'px off ' + b.offset + (b.fgRing ? ' fg' : ' rgb(' + b.rgb + ')') + ' r ' + b.ratio) }]))));
+        [k, { total: v.total, ringed: v.ringed, kinds: v.kinds, min: v.min, bad: v.bad.map((b) => b.kind + ' ' + (b.id || b.name || b.tag) + ':' + b.style + ' ' + b.width + 'px off ' + b.offset + (b.fgRing ? ' fg' : ' rgb(' + b.rgb + ')') + ' r ' + b.ratio) }]))));
       check(themes.length === 8, `#241 r8 sweep runs on the 8 shipped themes: ${JSON.stringify(themes)}`);
       for (const th of themes) {
         const v = sweep[th];
-        check(v.total > 0 && v.total === v.nodes && v.seen.length === MUST.length,
-          `#241 r8 sweep found every .panel field incl ${MUST.join(', ')} (${th}): ${JSON.stringify({ total: v.total, nodes: v.nodes, seen: v.seen })}`);
+        check(v.total > 0 && v.total === v.nodes && v.seen.length === MUST.length &&
+          Object.keys(KIND_MIN).every((k) => (v.kinds[k] || 0) >= KIND_MIN[k]),
+          `#241 r8 sweep found every focusable .panel element incl ${MUST.join(', ')}, >= 2 summary, >= 1 button (${th}): ${JSON.stringify({ total: v.total, nodes: v.nodes, seen: v.seen, kinds: v.kinds })}`);
         check(v.bad.length === 0,
-          `#241 r8 every .panel input, textarea and select gets the same ring (solid 2px --fg, offset 2px) at >= 3:1 under forced :focus-visible (${th}): ${v.ringed}/${v.total}; ${JSON.stringify(v.bad)}`);
+          `#241 r8 every focusable .panel element gets its ring under forced :focus-visible: buttons the site ring (solid 2px --fg, offset 3px), all others the .panel ring (solid 2px --fg, offset 2px), >= 3:1 (${th}): ${v.ringed}/${v.total}; ${JSON.stringify(v.bad)}`);
       }
     }
 
