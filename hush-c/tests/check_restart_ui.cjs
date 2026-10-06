@@ -1173,6 +1173,25 @@ async function main() {
         `#241 F3 Close returns focus to Kit: ${JSON.stringify(sf)}`);
     }
 
+    // #241 r5/r6: real CDP mouse click and Escape key helpers.
+    const realClick = async (sel) => {
+      const pt = await cdp.eval(`(() => { const e = document.querySelector('${sel}');
+        if (!e) return null; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect();
+        if (!r.width || !r.height) return null;
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+      check(!!pt, `#241 ${sel} is visible for a real click`);
+      if (!pt) return;
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pt.x, y: pt.y });
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', clickCount: 1, buttons: 1 });
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt.x, y: pt.y, button: 'left', clickCount: 1, buttons: 0 });
+      await sleep(250);
+    };
+    const realEsc = async () => {
+      await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+      await sleep(250);
+    };
+
     // #241 r5 B4: the real user path. Real CDP mouse clicks on the Kit stamp
     // and then on Settings inside #kit-menu (so the opener is #settings-btn,
     // which the Kit menu hides), then a real Escape key, then the same with a
@@ -1180,23 +1199,6 @@ async function main() {
     {
       await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
       await sleep(300);
-      const realClick = async (sel) => {
-        const pt = await cdp.eval(`(() => { const e = document.querySelector('${sel}');
-          if (!e) return null; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect();
-          if (!r.width || !r.height) return null;
-          return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
-        check(!!pt, `#241 B4 ${sel} is visible for a real click`);
-        if (!pt) return;
-        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pt.x, y: pt.y });
-        await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', clickCount: 1, buttons: 1 });
-        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt.x, y: pt.y, button: 'left', clickCount: 1, buttons: 0 });
-        await sleep(250);
-      };
-      const realEsc = async () => {
-        await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
-        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
-        await sleep(250);
-      };
       const state = () => cdp.eval(`(() => { const a = document.activeElement;
         return { show: document.getElementById('settings').classList.contains('show'),
           kitHidden: document.getElementById('kit-menu').hidden,
@@ -1223,6 +1225,80 @@ async function main() {
         check(r.after.show === false && r.after.ae === 'rail-toggle',
           `#241 B4 (${how}) Settings closes and focus returns to #rail-toggle on the Kit-menu path: ${JSON.stringify(r)}`);
       }
+    }
+
+    // #241 r6: every Settings switch shows a visible keyboard ring on its
+    // track (.slider) when reached with a real Tab, in field-office and dark;
+    // no track shows a ring while focus is on a non-switch control.
+    {
+      const tabKey = async (shift) => {
+        const mod = shift ? 8 : 0;
+        await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9, modifiers: mod });
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9, modifiers: mod });
+        await sleep(120);
+      };
+      const SWITCHES = ['turn-on', 'turn-daemon', 'vibe-public', 'dev-log'];
+      const ringState = `(() => { const a = document.activeElement;
+        const ring = (sl) => { const cs = getComputedStyle(sl); const r = sl.getBoundingClientRect();
+          return { style: cs.outlineStyle, width: parseFloat(cs.outlineWidth) || 0, w: r.width, h: r.height }; };
+        const sl = a && a.nextElementSibling && a.nextElementSibling.classList.contains('slider') ? a.nextElementSibling : null;
+        const others = Array.prototype.map.call(document.querySelectorAll('#settings .switch .slider'), (s) => s === sl ? null : ring(s).style).filter((x) => x);
+        return { id: a ? a.id : null, fv: !!(a && a.matches(':focus-visible')), slider: sl ? ring(sl) : null, othersStyles: others }; })()`;
+      const ringRuns = {};
+      const keepTheme = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
+      for (const th of ['field-office', 'dark']) {
+        await cdp.eval(`document.documentElement.setAttribute('data-theme', ${JSON.stringify(th)})`);
+        await realClick('#rail-toggle');
+        await realClick('#settings-btn');
+        const seen = {};
+        let hostRing = null;
+        for (let i = 0; i < 20; i++) {
+          await tabKey(false);
+          const s = await cdp.eval(ringState);
+          if (SWITCHES.includes(s.id) && !seen[s.id]) seen[s.id] = s;
+          if (s.id === 'turn-host' && !hostRing) hostRing = s;
+        }
+        await realEsc();
+        ringRuns[th] = { seen, hostRing };
+      }
+      await cdp.eval(`document.documentElement.setAttribute('data-theme', ${JSON.stringify(keepTheme || 'field-office')})`);
+      console.log('settings switch rings: ' + JSON.stringify(ringRuns));
+      for (const th of ['field-office', 'dark']) {
+        const { seen, hostRing } = ringRuns[th];
+        for (const id of SWITCHES) {
+          const s = seen[id];
+          check(!!s && s.fv && s.slider && s.slider.style !== 'none' && s.slider.width >= 2 && s.slider.w > 0 && s.slider.h > 0,
+            `#241 r6 real Tab to #${id} shows a visible ring on its track (${th}): ${JSON.stringify(s)}`);
+          check(!!s && s.othersStyles.every((x) => x === 'none'),
+            `#241 r6 only the focused switch track is ringed (${th}, #${id}): ${JSON.stringify(s)}`);
+        }
+        check(!!hostRing && hostRing.othersStyles.length > 0 && hostRing.othersStyles.every((x) => x === 'none'),
+          `#241 r6 no switch track is ringed while focus is on #turn-host (${th}): ${JSON.stringify(hostRing)}`);
+      }
+    }
+
+    // #241 r6: at 390px, a keyboard open of Settings (Kit, then Enter on
+    // Settings) leaves the panel at its title: heading on screen, scrollTop 0.
+    {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+      await sleep(400);
+      await realClick('#rail-toggle');
+      await cdp.eval(`document.getElementById('settings-btn').focus()`);
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+      await sleep(500);
+      const t390 = await cdp.eval(`(() => { const d = document.getElementById('settings'); const p = d.querySelector('.panel');
+        const h = p.querySelector('h2'); const hr = h.getBoundingClientRect(); const pr = p.getBoundingClientRect();
+        return { show: d.classList.contains('show'), ae: document.activeElement && document.activeElement.id,
+          scrollTop: p.scrollTop, drawerScroll: d.scrollTop, hTop: hr.top, hBottom: hr.bottom, pTop: pr.top, vh: innerHeight }; })()`);
+      console.log('settings 390 open: ' + JSON.stringify(t390));
+      check(t390.show && t390.ae === 'turn-on',
+        `#241 r6 keyboard open at 390 shows Settings with focus on #turn-on: ${JSON.stringify(t390)}`);
+      check(t390.scrollTop === 0 && t390.drawerScroll === 0 && t390.hTop >= t390.pTop - 1 && t390.hTop >= 0 && t390.hBottom <= t390.vh,
+        `#241 r6 Settings opens at its title at 390 (heading in view, not scrolled): ${JSON.stringify(t390)}`);
+      await realEsc();
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: VIEW_W, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
     }
 
     // Pre-walk r4 (Gauge B1), no pass installed: the robot editor never

@@ -600,6 +600,9 @@
     }
     .switch input:checked + .slider { background: var(--accent-dim); }
     .switch input:checked + .slider:before { transform: translateX(18px); background: var(--accent); }
+    /* #241 r6: the switch input is a 0x0, opacity:0 box, so its own focus
+       ring never shows. Draw the keyboard ring on the visible track. */
+    .switch input:focus-visible + .slider { outline: 2px solid var(--fg); outline-offset: 2px; }
     .vis { display: flex; gap: 8px; margin: 10px 0 0; }
     .vis label {
       flex: 1; border: 1px solid var(--line); border-radius: 12px; padding: 10px;
@@ -5487,7 +5490,12 @@ html[data-theme="dark"] #thread-send:active {
       syncSettings();
       const list = settingsFocusables();
       const first = list[0] || d;
-      try { first.focus(); } catch (e) {}
+      /* #241 r6: focus without scrolling, then park the panel at its
+         title so the Settings heading is on screen at phone widths. */
+      try { first.focus({ preventScroll: true }); } catch (e) {}
+      const settingsPanel = d.querySelector(".panel");
+      if (settingsPanel) settingsPanel.scrollTop = 0;
+      d.scrollTop = 0;
     }
     function closeSettings() {
       const d = $("settings");
