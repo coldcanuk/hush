@@ -964,10 +964,14 @@ int hush_http_json_field(const char *body, const char *key, char *out, size_t ou
         return 0;
     out[0] = '\0';
     value = hush_http_json_value_at(body, key);
-    if (value == NULL || *value != '"')
+    if (value == NULL)
         return 0;
-    hush_http_json_unescape_copy(value + 1, out, outsz);
-    return out[0] != '\0';
+    /* Strings unescape. Bare tokens (false, 0) stay a single word. */
+    if (*value == '"') {
+        hush_http_json_unescape_copy(value + 1, out, outsz);
+        return out[0] != '\0';
+    }
+    return hush_http_json_bare_field(body, key, out, outsz);
 }
 
 int hush_http_json_has_key(const char *body, const char *key)

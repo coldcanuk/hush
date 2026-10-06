@@ -57,6 +57,10 @@ int main(void)
                                      "dev_log_enabled", out, sizeof(out)) == 1,
            "bare zero");
     expect(strcmp(out, "0") == 0, "bare zero text");
+    field_is("{\"save_pass\":false}", "save_pass", "false", "bare false");
+    field_is("{\"save_pass\": false}", "save_pass", "false",
+             "spaced bare false");
+    field_is("{\"enabled\":true}", "enabled", "true", "bare true");
     expect(hush_http_json_has_key("{\"name\":\"\"}", "name") == 1,
            "empty string is present");
     expect(hush_http_json_field("{\"name\":\"\"}", "name", out, sizeof(out)) == 0,
