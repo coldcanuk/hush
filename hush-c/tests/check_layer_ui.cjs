@@ -362,6 +362,14 @@ async function main() {
     return await cdp.tryWait(`document.getElementById('manage-chan').classList.contains('show')`, 1500);
   };
   const isOpts = (ae) => ae === 'Options for #general';
+  // tick() repaints the hive every second; focus handed back to an opener
+  // must still be there 1.5 s later.
+  const STAY_MS = 1500;
+  const stayed = async (want) => {
+    await sleep(STAY_MS);
+    const s = await state();
+    return { ok: typeof want === 'function' ? want(s.ae) : s.ae === want, ae: s.ae };
+  };
 
   const results = [];
   const record = (pin, c, variant, ok, detail) => {
@@ -424,8 +432,9 @@ async function main() {
         else did = await backdropClick('dev-log-drawer');
         const s = await state();
         const modal = open.modal.join() === 'dev-log-drawer' && !s.modal.length;
-        record('D4', c, how, opened && on && open.inDevlog && modal && did && !s.devlog && s.ae === 'dev-log',
-          { opened, on, openFocus: open.ae, inDevlog: open.inDevlog, modal: [open.modal, s.modal], did, after: { devlog: s.devlog, ae: s.ae } });
+        const st = await stayed('dev-log');
+        record('D4', c, how, opened && on && open.inDevlog && modal && did && !s.devlog && s.ae === 'dev-log' && st.ok,
+          { opened, on, openFocus: open.ae, inDevlog: open.inDevlog, modal: [open.modal, s.modal], did, after: { devlog: s.devlog, ae: s.ae }, after1500: st.ae });
       }
     },
     // D5: on -> Close -> off. Mouse: real clicks on the switch and Close
@@ -502,15 +511,17 @@ async function main() {
           }
           const s = await state();
           const modal = open.modal.join() === 'new-chan-drawer' && !s.modal.length;
-          record('D7', c, `${opener} ${how}`, opened && open.inNewchan && modal && did && !s.newchan && s.ae === BACK[opener],
-            { opened, openFocus: open.ae, modal: [open.modal, s.modal], did, after: { newchan: s.newchan, ae: s.ae }, want: BACK[opener] });
+          const st = await stayed(BACK[opener]);
+          record('D7', c, `${opener} ${how}`, opened && open.inNewchan && modal && did && !s.newchan && s.ae === BACK[opener] && st.ok,
+            { opened, openFocus: open.ae, modal: [open.modal, s.modal], did, after: { newchan: s.newchan, ae: s.ae }, after1500: st.ae, want: BACK[opener] });
         }
       }
     },
     // D8: Manage Channel closes on Esc, one layer per press (the boards
     // drawer stays open), and focus returns to the ⋯ opener.
-    // Close and Save (Save repaints the channel list, so the ⋯ that
-    // opened the menu is replaced) return focus the same way.
+    // Close and Save return focus the same way. The channel list repaints
+    // every second, so by the 1.5 s check the ⋯ that opened the menu has
+    // been replaced and focus must sit on its successor.
     D8: async (c) => {
       for (const how of ['esc', 'close', 'save']) {
         await reset(c);
@@ -525,9 +536,10 @@ async function main() {
           await sleep(300);
         }
         const s = await state();
+        const st = await stayed(isOpts);
         const repainted = await cdp.eval(`!window.__l283Opts.isConnected`);
-        record('D8', c, how, opened && did && !s.manage && s.navOpen && isOpts(s.ae) && (how !== 'save' || repainted),
-          { opened, did, repainted, after: { manage: s.manage, navOpen: s.navOpen, ae: s.ae } });
+        record('D8', c, how, opened && did && !s.manage && s.navOpen && isOpts(s.ae) && st.ok && repainted,
+          { opened, did, repainted, after: { manage: s.manage, navOpen: s.navOpen, ae: s.ae }, after1500: st.ae });
       }
     },
     // D9: Manage Channel moves focus inside on open, Tab and Shift-Tab stay
@@ -550,17 +562,22 @@ async function main() {
           outsideStops: outside.slice(0, 4).map((x) => x.ae), did, after: { manage: s.manage, ae: s.ae } });
     },
     // D10: with dev-log over Settings, the first Esc closes only dev-log
-    // and the second closes Settings (focus back on the Kit stamp).
+    // and the second closes Settings (focus back on the Kit stamp). The
+    // 'close' run ends with a real click on Settings Close instead.
     D10: async (c) => {
-      await reset(c);
-      const opened = await openSettingsReal();
-      const on = await devlogOn('mouse');
-      await press('Escape');
-      const e1 = await state();
-      await press('Escape');
-      const e2 = await state();
-      record('D10', c, 'esc-esc', opened && on && !e1.devlog && e1.settings && !e2.devlog && !e2.settings && e2.ae === 'rail-toggle',
-        { opened, on, esc1: { devlog: e1.devlog, settings: e1.settings, ae: e1.ae }, esc2: { devlog: e2.devlog, settings: e2.settings, ae: e2.ae } });
+      for (const how of ['esc', 'close']) {
+        await reset(c);
+        const opened = await openSettingsReal();
+        const on = await devlogOn('mouse');
+        await press('Escape');
+        const e1 = await state();
+        let did = true;
+        if (how === 'esc') await press('Escape');
+        else did = await realClick('#settings-close');
+        const e2 = await state();
+        record('D10', c, 'esc-then-' + how, opened && on && !e1.devlog && e1.settings && did && !e2.devlog && !e2.settings && e2.ae === 'rail-toggle',
+          { opened, on, esc1: { devlog: e1.devlog, settings: e1.settings, ae: e1.ae }, did, second: { devlog: e2.devlog, settings: e2.settings, ae: e2.ae } });
+      }
     },
   };
 

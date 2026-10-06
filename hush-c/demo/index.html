@@ -3337,6 +3337,12 @@ html[data-theme="dark"] #thread-send:active {
 
     function paintChannels() {
       const box = $("chan-list");
+      /* #283: tick() repaints this list every second. Keep keyboard focus
+         on the same row control (the ⋯ that Manage Channel hands focus
+         back to, or a channel button) instead of dropping it to BODY. */
+      const fa = document.activeElement;
+      const keep = fa && fa !== box && box.contains(fa)
+        ? { tag: fa.tagName, label: fa.getAttribute("aria-label"), text: fa.textContent } : null;
       const chans = session.channels && session.channels.length
         ? session.channels
         : [{ name: "general", slug: "general", id: "", group_id: "" }];
@@ -3362,6 +3368,13 @@ html[data-theme="dark"] #thread-send:active {
       }
       loose.forEach((c) => box.appendChild(channelRow(c)));
       $("room").textContent = "#" + channel;
+      if (keep) {
+        const again = Array.prototype.find.call(box.querySelectorAll(keep.tag), (el) =>
+          el.getAttribute("aria-label") === keep.label && el.textContent === keep.text);
+        if (again) {
+          try { again.focus(); } catch (e) {}
+        }
+      }
     }
 
     function channelRow(c) {
