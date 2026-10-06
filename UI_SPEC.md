@@ -1394,6 +1394,49 @@ create/clone/delete buttons with their full `aria-label` and split
 label, the `#fo-drawer.is-overflowing::after` fade rule after the touch
 block with its overflow toggle, and no `height`/`width`/`block-size:
 44px` from the UI-M12d marker to `</style>`.
+Delta 2026-10-06 (#282 dossier-khaki palette + ink-stamp actions):
+`field-office` keeps its theme id (default theme, #245 server allowlist
+and stored choices unchanged); its palette becomes a Medal of Honor
+briefing dossier: aged khaki paper, olive-ink rules, oxblood stamp, no
+white. Tokens (`html[data-theme="field-office"]`, supersede the M5
+ink/paper/stamp literals above): `--bg` `#c2b185` (log, thread pane),
+`--surface` `#cdbd92` (header, nav, roster, composer, drawers),
+`--surface-2` `#d6c79d` (notes, cards, inputs), `--line` `#4b4a2c`,
+`--fg` `#1f1c12`, `--muted` `#433f27`, `--faint` `#4a452f`, `--accent`
+`#7c241d`, `--accent-ink` `#ddcea4`, `--accent-dim` `#9a5a40`,
+`--warn` `#7c241d`, plus `--fo-*` material tokens (scrim, KIT Exit
+danger plate, Send switch plate / boss / lever). Field-office rules
+paint only through tokens; no literal colour outside the token block.
+Ink-stamp actions: `.thread-btn`, `.note-files button` (Download /
+Canvas) and `.think-stop` under field-office are one stamp family:
+22px box, `0 7px` padding, 1px accent border plus an inset double rule,
+2px radius, 700 0.62rem mono caps at 0.16em, rotated -1.2deg; hover
+fills `--accent` with `--accent-ink` text; Stop uses `--warn`; keyboard
+focus keeps the 2px `--fg` ring (offset 3px). At `(max-width: 640px),
+(pointer: coarse)` each keeps a transparent `::before` hit area of
+`--btn-hit-touch` (44px) with the 22px box unchanged, and stacked
+stamps (Download / Canvas above Thread, wrapped rows) sit a full hit
+area apart. Also under field-office: switches have a paper
+(`--accent-ink`) knob and an `--accent` track when on; the idle Send
+switch (empty composer) is 0.8 opacity with its dashed edge; dialog
+password fields and selects use the paper slip (`--surface-2`, 2px
+`--line`); radios and checkboxes are drawn on paper (`--line` edge,
+`--surface-2` face, checked mark in `--accent`) instead of the
+browser's white disc; placeholders use `--muted`. All themes: `:root {
+accent-color: var(--accent) }`, so native radios and checkboxes (the
+Settings theme radios) take each theme's own accent instead of the
+browser blue. `#vibe-name` and `#new-chan` carry `type="text"`.
+Gates in `make test`: `tests/check_palette_tokens.py` (S1 no literal
+in field-office rules, S2 token values, S3 no old manila literal, S4
+stamp rules present) and `tests/check_palette.sh` (headless Chrome,
+field-office, 1440 and 390, real signup: C1 every visible text run and
+placeholder >= 4.5:1, C2 control edge / fill / state bar >= 3:1 (radios and checkboxes
+included), C3
+keyboard ring >= 2px and >= 3:1, C4 no near-white, R1 radio
+`accent-color` == theme `--accent` in all 8 themes, B1 stamps 20-24px
+with a 44px touch hit at 390) over gate cards, main thread, thread
+pane, Settings, Kit menu, Profile, New channel, every other hive dialog
+and the BOARDS drawer.
 
 ### 16. Mention + manage pills
 

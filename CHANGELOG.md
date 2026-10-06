@@ -6,6 +6,19 @@ the top-level `VERSION` file.
 
 ## [Unreleased]
 
+### Changed
+
+- Field-office look (#282): the default theme is now a darker Medal of
+  Honor briefing-dossier khaki (olive-ink rules, oxblood stamp, no white
+  surfaces); the theme id and stored choices are unchanged. Every text
+  pair on every surface is at least 4.5:1 and every border, focus ring
+  and switch track at least 3:1 (main had accent on paper at 3.97:1 and
+  faint text at 3.17:1). Thread, Download / Canvas and Stop are small
+  22px ink stamps instead of the 32px plate, with a 44px touch area on
+  phones. Settings theme radios use the theme's accent instead of the
+  browser blue, in every theme. Field-office radios and checkboxes,
+  dialog password fields and selects are no longer white boxes, and the idle Send switch label is readable.
+
 ### Added
 
 - Two-robot loop (#280): when a human mentions two robots, the first one
