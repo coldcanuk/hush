@@ -1227,9 +1227,15 @@ async function main() {
       }
     }
 
-    // #241 r6: every Settings switch shows a visible keyboard ring on its
-    // track (.slider) when reached with a real Tab, in field-office and dark;
-    // no track shows a ring while focus is on a non-switch control.
+    // #241 r6/r7: every Settings Tab stop shows a visible keyboard ring
+    // when reached with a real Tab, on every shipped theme (the Settings
+    // radios). The ring is drawn on the control itself, or on the visible
+    // track (.slider) for a switch. r7 (Gauge B5, Ops F3 #turn-host): the
+    // ring colour, resolved to sRGB and composited, must reach WCAG 1.4.11
+    // 3:1 against the effective background it sits on (first opaque
+    // ancestor, .panel), and must sit outside the control (offset >= 0) so
+    // that is the background it is drawn on. Only the focused switch track
+    // is ringed, and a real mouse click on a switch or a radio shows no ring.
     {
       const tabKey = async (shift) => {
         const mod = shift ? 8 : 0;
@@ -1238,42 +1244,112 @@ async function main() {
         await sleep(120);
       };
       const SWITCHES = ['turn-on', 'turn-daemon', 'vibe-public', 'dev-log'];
+      const STOPS = ['turn-on', 'turn-daemon', 'turn-host', 'vibe-public', 'vibe-rotate', 'dev-log', 'theme', 'settings-close'];
+      const THEMES = await cdp.eval(`Array.prototype.map.call(document.querySelectorAll("#settings input[name='theme']"), (i) => i.value)`);
+      check(JSON.stringify(THEMES.slice().sort()) === JSON.stringify(['christmas', 'color-blind', 'dark', 'desert', 'dracula', 'field-office', 'light', 'monochrome']),
+        `#241 r7 Settings offers the 8 shipped themes: ${JSON.stringify(THEMES)}`);
       const ringState = `(() => { const a = document.activeElement;
-        const ring = (sl) => { const cs = getComputedStyle(sl); const r = sl.getBoundingClientRect();
-          return { style: cs.outlineStyle, width: parseFloat(cs.outlineWidth) || 0, w: r.width, h: r.height }; };
-        const sl = a && a.nextElementSibling && a.nextElementSibling.classList.contains('slider') ? a.nextElementSibling : null;
-        const others = Array.prototype.map.call(document.querySelectorAll('#settings .switch .slider'), (s) => s === sl ? null : ring(s).style).filter((x) => x);
-        return { id: a ? a.id : null, fv: !!(a && a.matches(':focus-visible')), slider: sl ? ring(sl) : null, othersStyles: others }; })()`;
+        const px = (c) => { const cv = document.createElement('canvas'); cv.width = 1; cv.height = 1;
+          const x = cv.getContext('2d'); x.clearRect(0, 0, 1, 1); x.fillStyle = c; x.fillRect(0, 0, 1, 1);
+          const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
+        const over = (top, bot) => [0, 1, 2].map((i) => top[i] * top[3] + bot[i] * (1 - top[3]));
+        const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+          return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+        const ratio = (p, q) => { const a1 = lum(p), b1 = lum(q); return (Math.max(a1, b1) + 0.05) / (Math.min(a1, b1) + 0.05); };
+        const effBg = (el) => { const layers = []; const images = []; let from = null;
+          for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+            const cs = getComputedStyle(n); const c = px(cs.backgroundColor);
+            if (cs.backgroundImage !== 'none') images.push((n.id ? '#' + n.id : n.className || n.tagName) + ':' + cs.backgroundImage.slice(0, 40));
+            if (c[3] > 0) { layers.push(c); if (c[3] >= 1) { from = n.id ? '#' + n.id : (n.className || n.tagName); break; } } }
+          let bg = [255, 255, 255];
+          for (let i = layers.length - 1; i >= 0; i--) bg = over(layers[i], bg);
+          return { bg: bg.map(Math.round), from, images }; };
+        const ring = (el) => { const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
+          return { style: cs.outlineStyle, width: parseFloat(cs.outlineWidth) || 0, offset: parseFloat(cs.outlineOffset) || 0,
+            color: cs.outlineColor, w: r.width, h: r.height }; };
+        const isSwitch = !!(a && a.nextElementSibling && a.nextElementSibling.classList.contains('slider'));
+        const target = a && a !== document.body ? (isSwitch ? a.nextElementSibling : a) : null;
+        const id = !a ? null : (a.name === 'theme' ? 'theme' : a.id);
+        let contrast = null;
+        if (target) { const cs = getComputedStyle(target); const e = effBg(target.parentElement); const rc = px(cs.outlineColor);
+          const seen = over(rc, e.bg).map(Math.round);
+          contrast = { ring: rc.slice(0, 3).concat([Math.round(rc[3] * 100) / 100]), bg: e.bg, from: e.from, images: e.images,
+            ratio: Math.round(ratio(seen, e.bg) * 100) / 100 }; }
+        const others = Array.prototype.map.call(document.querySelectorAll('#settings .switch .slider'), (s) => s === target ? null : ring(s).style).filter((x) => x);
+        return { id, value: a && a.name === 'theme' ? a.value : undefined, inSettings: !!(a && document.getElementById('settings').contains(a)),
+          fv: !!(a && a.matches(':focus-visible')), isSwitch, ring: target ? ring(target) : null, contrast, othersStyles: others }; })()`;
       const ringRuns = {};
+      const mouseRuns = {};
       const keepTheme = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
-      for (const th of ['field-office', 'dark']) {
-        await cdp.eval(`document.documentElement.setAttribute('data-theme', ${JSON.stringify(th)})`);
+      for (const th of THEMES) {
+        await cdp.eval(`applyTheme(${JSON.stringify(th)})`);
         await realClick('#rail-toggle');
         await realClick('#settings-btn');
         const seen = {};
-        let hostRing = null;
+        const order = [];
         for (let i = 0; i < 20; i++) {
           await tabKey(false);
           const s = await cdp.eval(ringState);
-          if (SWITCHES.includes(s.id) && !seen[s.id]) seen[s.id] = s;
-          if (s.id === 'turn-host' && !hostRing) hostRing = s;
+          order.push(s.id);
+          if (!seen[s.id]) seen[s.id] = s;
+        }
+        ringRuns[th] = { seen, order };
+        if (th === 'field-office' || th === 'dark') {
+          // Real mouse clicks: the Public vibe track (twice, so the setting
+          // ends where it started) and the checked theme radio (no change).
+          // The vibe save repaints from the session, which re-applies the
+          // profile theme, so the theme under test is set again before reading.
+          const before = await cdp.eval(`document.getElementById('vibe-public').checked`);
+          const clicks = [];
+          for (const sel of ['#vibe-public + .slider', '#vibe-public + .slider', `#settings input[name='theme'][value='${th}']`]) {
+            await realClick(sel);
+            await sleep(300);
+            await cdp.eval(`applyTheme(${JSON.stringify(th)})`);
+            await sleep(100);
+            const c = await cdp.eval(ringState);
+            c.theme = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
+            c.clicked = sel;
+            clicks.push(c);
+          }
+          const after = await cdp.eval(`document.getElementById('vibe-public').checked`);
+          mouseRuns[th] = { before, after, clicks };
         }
         await realEsc();
-        ringRuns[th] = { seen, hostRing };
       }
-      await cdp.eval(`document.documentElement.setAttribute('data-theme', ${JSON.stringify(keepTheme || 'field-office')})`);
-      console.log('settings switch rings: ' + JSON.stringify(ringRuns));
-      for (const th of ['field-office', 'dark']) {
-        const { seen, hostRing } = ringRuns[th];
-        for (const id of SWITCHES) {
+      await cdp.eval(`applyTheme(${JSON.stringify(keepTheme || 'field-office')})`);
+      console.log('settings focus rings: ' + JSON.stringify(ringRuns));
+      const table = {};
+      for (const th of THEMES) {
+        const { seen, order } = ringRuns[th];
+        table[th] = {};
+        const stopIds = Object.keys(seen);
+        check(JSON.stringify(stopIds.slice().sort()) === JSON.stringify(STOPS.slice().sort()) && order.every((x) => STOPS.includes(x)),
+          `#241 r7 Settings Tab stops are the 8 known controls (${th}): ${JSON.stringify(order)}`);
+        for (const id of STOPS) {
           const s = seen[id];
-          check(!!s && s.fv && s.slider && s.slider.style !== 'none' && s.slider.width >= 2 && s.slider.w > 0 && s.slider.h > 0,
-            `#241 r6 real Tab to #${id} shows a visible ring on its track (${th}): ${JSON.stringify(s)}`);
+          if (s && s.contrast) table[th][id] = s.contrast.ratio;
+          check(!!s && s.inSettings && s.fv && s.ring && s.ring.style !== 'none' && s.ring.width >= 2 && s.ring.w > 0 && s.ring.h > 0,
+            `#241 r7 real Tab to ${id} shows a visible ring (${th}): ${JSON.stringify(s)}`);
+          check(!!s && s.ring && s.ring.offset >= 0,
+            `#241 r7 the ring on ${id} sits outside the control, on the panel background (${th}): ${JSON.stringify(s)}`);
+          check(!!s && s.contrast && s.contrast.images.length === 0 && !!s.contrast.from,
+            `#241 r7 ${id} ring background is a plain colour, so the contrast is computable (${th}): ${JSON.stringify(s)}`);
+          check(!!s && s.contrast && s.contrast.ratio >= 3,
+            `#241 r7 ${id} ring contrast vs its background is at least 3:1 (${th}): ${JSON.stringify(s)}`);
           check(!!s && s.othersStyles.every((x) => x === 'none'),
-            `#241 r6 only the focused switch track is ringed (${th}, #${id}): ${JSON.stringify(s)}`);
+            `#241 r6 no other switch track is ringed while ${id} has focus (${th}): ${JSON.stringify(s)}`);
         }
-        check(!!hostRing && hostRing.othersStyles.length > 0 && hostRing.othersStyles.every((x) => x === 'none'),
-          `#241 r6 no switch track is ringed while focus is on #turn-host (${th}): ${JSON.stringify(hostRing)}`);
+        if (seen.theme) check(seen.theme.value === th, `#241 r7 the theme Tab stop is the checked radio (${th}): ${JSON.stringify(seen.theme)}`);
+      }
+      console.log('settings ring contrast: ' + JSON.stringify(table));
+      console.log('settings focus mouse: ' + JSON.stringify(mouseRuns));
+      for (const th of ['field-office', 'dark']) {
+        const m = mouseRuns[th];
+        check(!!m && m.clicks.length === 3 && m.clicks.every((c) => c.theme === th && c.inSettings && !c.fv && c.ring && c.ring.style === 'none')
+          && m.clicks[0].id === 'vibe-public' && m.clicks[1].id === 'vibe-public' && m.clicks[2].id === 'theme',
+          `#241 r7 a real mouse click on a switch or a radio focuses it with no ring (${th}): ${JSON.stringify(m)}`);
+        check(!!m && m.after === m.before,
+          `#241 r7 the two mouse clicks leave Public vibe as it was (${th}): ${JSON.stringify(m)}`);
       }
     }
 
