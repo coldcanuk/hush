@@ -338,6 +338,26 @@ int hush_roster_is_theme(const char *theme)
     return 0;
 }
 
+int hush_roster_approval_parse(const char *id, hush_roster_approval_t *out)
+{
+    assert(out != NULL);
+    *out = HUSH_ROSTER_APPROVAL_AUTO;
+    if (id == NULL)
+        return 0;
+    if (strcmp(id, HUSH_ROSTER_APPROVAL_EVERY_ID) == 0) {
+        *out = HUSH_ROSTER_APPROVAL_EVERY;
+        return 1;
+    }
+    return strcmp(id, HUSH_ROSTER_APPROVAL_AUTO_ID) == 0;
+}
+
+const char *hush_roster_approval_id(hush_roster_approval_t mode)
+{
+    if (mode == HUSH_ROSTER_APPROVAL_EVERY)
+        return HUSH_ROSTER_APPROVAL_EVERY_ID;
+    return HUSH_ROSTER_APPROVAL_AUTO_ID;
+}
+
 int hush_roster_is_provider(const char *provider)
 {
     /* Single source of truth: the provider meta table in hush_provider.c. */
@@ -651,6 +671,7 @@ static hush_status_t hush_roster_format_profile(const hush_roster_t *roster,
                                                 size_t *off)
 {
     char esc[HUSH_ROSTER_EMAIL_MAX * HUSH_JSON_U_LEN];
+    char esc_pic[HUSH_ROSTER_PATH_MAX * HUSH_JSON_U_LEN];
     int n;
 
     assert(roster != NULL);
@@ -658,8 +679,8 @@ static hush_status_t hush_roster_format_profile(const hush_roster_t *roster,
     assert(off != NULL);
     hush_roster_json_escape(roster->profile.first_name, esc, sizeof(esc));
     n = snprintf(out, outsz,
-                 ",\"theme\":\"%s\",\"profile\":{\"first_name\":\"%s\"",
-                 roster->profile.theme, esc);
+                 ",\"theme\":\"%s\",\"approval_mode\":\"%s\",\"profile\":{\"first_name\":\"%s\"",
+                 roster->profile.theme, hush_roster_approval_id(roster->profile.approval), esc);
     if (n < 0 || (size_t)n >= outsz)
         return HUSH_ERR_FULL;
     *off = (size_t)n;
@@ -674,14 +695,10 @@ static hush_status_t hush_roster_format_profile(const hush_roster_t *roster,
         return HUSH_ERR_FULL;
     *off += (size_t)n;
     hush_roster_json_escape(roster->profile.organization, esc, sizeof(esc));
-    {
-        char esc_pic[HUSH_ROSTER_PATH_MAX * HUSH_JSON_U_LEN];
-
-        hush_roster_json_escape(roster->profile.picture, esc_pic, sizeof(esc_pic));
-        n = snprintf(out + *off, outsz - *off,
-                     ",\"organization\":\"%s\",\"picture\":\"%s\"},\"agents\":[",
-                     esc, esc_pic);
-    }
+    hush_roster_json_escape(roster->profile.picture, esc_pic, sizeof(esc_pic));
+    n = snprintf(out + *off, outsz - *off,
+                 ",\"organization\":\"%s\",\"picture\":\"%s\"},\"agents\":[",
+                 esc, esc_pic);
     if (n < 0 || *off + (size_t)n >= outsz)
         return HUSH_ERR_FULL;
     *off += (size_t)n;

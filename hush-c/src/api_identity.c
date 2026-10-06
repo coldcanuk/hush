@@ -56,9 +56,18 @@ hush_status_t hush_http_serve_identity(int fd, const char *body)
 hush_status_t hush_http_serve_profile(int fd, const char *body)
 {
     hush_roster_profile_t profile;
+    char approval[HUSH_ROSTER_NAME_MAX] = {0};
+    hush_status_t st = HUSH_OK;
 
     if (hush_http_launch() == NULL || body == NULL)
         return hush_http_reply_session(fd, HUSH_ERR_ARG);
+    /* #279: the approval setting is posted on its own, so it never clears
+     * the name fields below (a body without them would). */
+    if (hush_http_json_field(body, "approval_mode", approval, sizeof(approval))) {
+        st = hush_launch_set_approval(hush_http_launch(), approval);
+        return hush_http_reply_refused(fd, st,
+                                       st == HUSH_ERR_PARSE ? HUSH_HTTP_APPROVAL_WHY : NULL);
+    }
     memset(&profile, 0, sizeof(profile));
     (void)hush_http_json_field(body, "first_name", profile.first_name,
                           sizeof(profile.first_name));

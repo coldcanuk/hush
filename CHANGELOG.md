@@ -8,6 +8,20 @@ the top-level `VERSION` file.
 
 ### Added
 
+- Approval setting (#279): Settings → Robot turns offers `Auto-approve`
+  (the default; robots run at once, as before) or `Approve every action`.
+  With the second, every robot turn (first reply, follow wave, loop turn,
+  leader election and plan) waits at one gate and the chaperon asks
+  "Approval needed: <Robot> wants to take a turn. Reply Yes or No in this
+  thread." Only the hive owner's typed Yes runs it; No posts "Turn
+  declined: <Robot> stood down." and starts nothing. Any other owner note
+  in the thread drops the waiting turn, approval lines never count toward
+  the turn cap, at most 8 turns wait at once, and waiting turns are not
+  kept across a relay restart. The setting is saved per owner in
+  `vibe.json` as `approval_mode`, read back on start, and set with
+  `POST /api/profile {"approval_mode": ...}` (an unknown value is refused
+  and a garbled stored value reads as `auto_approve`).
+
 - Two-robot loop (#280): when a human mentions two robots, the first one
   (the lead) also sees the whole note and can keep a back-and-forth going
   with a hidden `LOOP: continue` / `LOOP: stop` line. At the channel turn

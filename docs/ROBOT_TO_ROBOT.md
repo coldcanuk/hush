@@ -112,3 +112,45 @@ robots never chain by mentioning each other, and `robot_hops` stays `0`.
    ends the loop, even mid-turn. Notes from other humans do not.
 7. **Restart.** Loop state lives in relay memory only. A restart drops
    it, and a Yes at a prompt from before the restart is ignored.
+
+### Approval setting (#279)
+
+1. **Setting.** Settings → **Robot turns**: `Auto-approve` (default; robots
+   run at once, as before) or `Approve every action`. It belongs to the
+   logged-in owner's profile, is saved in `vibe.json` next to the theme as
+   `approval_mode` (`auto_approve` | `approve_every_action`), and is read
+   back on every relay start. A missing or unknown stored value reads as
+   `auto_approve`. `POST /api/profile {"approval_mode": ...}` with any
+   other value is refused (400, "approval_mode must be auto_approve or
+   approve_every_action.") and changes nothing. That post sets only the
+   approval setting; it never clears the profile names.
+2. **One approval per robot turn.** Under `Approve every action`, every
+   robot turn stops at one gate in `hush_agent_begin_work`, after the
+   turn-cap check and before the robot's runtime starts. (The existing
+   mention greetings, "Mention received." and "At ease. I am on deck…",
+   still appear first; see #278.) That covers the first turn after a mention, each
+   follow wave, each two-robot loop turn, the leader election pass, the
+   leader's plan pass, and an owner reply that goes to the thread's robot.
+   The chaperon posts "Approval needed: <Robot> wants to take a turn. Reply
+   Yes or No in this thread."
+3. **Answer.** Only the hive owner answers, by typing Yes or No in the
+   thread (the same parse as the loop prompt). Yes runs that turn exactly
+   once through the normal path. No posts "Turn declined: <Robot> stood
+   down." and starts nothing; it also stops a live loop in that thread,
+   and robots queued behind the declined turn do not start on their own.
+   A Yes or No from a robot or another human is ignored. With several
+   turns waiting in one thread, each Yes or No settles the oldest.
+4. **Void.** Any other note from the owner in that thread drops every turn
+   still waiting there (silently). The note itself is handled as usual,
+   so it may raise its own approval line.
+5. **Loop and cap.** A waiting loop turn does not run, and the loop stays
+   paused until the owner answers. Approval lines are not robot turns, so
+   the cap counts exactly as before; at the cap the loop still asks
+   "Continue this loop? Reply Yes or No in this thread.", and a Yes there
+   resumes the loop, whose next turn then asks for approval as usual.
+6. **Limits and restart.** At most 8 turns wait at once; one more gets
+   "Too many turns are waiting for approval. Answer one first." and does
+   not run. Waiting turns live in relay memory only: after a restart a Yes
+   at an old approval line runs nothing (it is handled as an ordinary owner
+   note). Approving a turn lets the robot's runtime use its usual tools for
+   that turn (no per-tool approval).

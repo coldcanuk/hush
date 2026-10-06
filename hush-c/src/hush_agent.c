@@ -85,6 +85,7 @@ void hush_agent_init(void)
         g_jobs[i].fd = HUSH_AGENT_FD_NONE;
     }
     hush_agent_follow_init();
+    hush_agent_approval_init();
     hush_cevent_init();
     hush_presence_init();
     hush_wake_init();

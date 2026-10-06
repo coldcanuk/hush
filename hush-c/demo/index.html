@@ -2228,6 +2228,13 @@ html[data-theme="dark"] #thread-send:active {
       </div>
       <p class="help">When enabled, logs go to separate Developer Log drawer (not main chat).</p>
 
+      <p class="help" id="approval-label">Robot turns</p>
+      <div class="vis" id="approval-list" role="radiogroup" aria-labelledby="approval-label">
+        <label><input type="radio" name="approval" value="auto_approve" checked> Auto-approve</label>
+        <label><input type="radio" name="approval" value="approve_every_action"> Approve every action</label>
+      </div>
+      <p class="help">Approve every action: before each robot turn, Hush asks in the thread and waits for your Yes or No there.</p>
+
       <p class="help">Theme</p>
       <div class="vis" id="theme-list">
         <label><input type="radio" name="theme" value="dark" checked> dark</label>
@@ -3021,7 +3028,17 @@ html[data-theme="dark"] #thread-send:active {
       if (session.nsec) pendingNsec = session.nsec;
       if (session.backup_acked) pendingNsec = "";
       applyTheme((session.profile && session.profile.theme) || session.theme);
+      syncApproval();
       paint();
+    }
+
+    /* #279: the radio mirrors the server's saved approval_mode. */
+    function syncApproval() {
+      const mode = session.approval_mode === "approve_every_action"
+        ? "approve_every_action" : "auto_approve";
+      document.querySelectorAll("input[name='approval']").forEach((el) => {
+        el.checked = el.value === mode;
+      });
     }
 
     /* tick() paints every 1s. Replacing an unchanged gate destroys #nsec-in
@@ -5743,6 +5760,14 @@ html[data-theme="dark"] #thread-send:active {
         try {
           applySession(await api("/api/profile", { theme: el.value }));
         } catch (e) {}
+      });
+    });
+    document.querySelectorAll("input[name='approval']").forEach((el) => {
+      el.addEventListener("change", async () => {
+        if (!el.checked) return;
+        try {
+          applySession(await api("/api/profile", { approval_mode: el.value }));
+        } catch (e) { syncApproval(); }
       });
     });
     $("call-btn").addEventListener("click", () => {
