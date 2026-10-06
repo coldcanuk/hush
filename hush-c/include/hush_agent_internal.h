@@ -75,12 +75,13 @@ enum {
     HUSH_AGENT_APPROVAL_LINE_MAX = 256
 };
 
-/* What hush_agent_begin_work did with a turn. Callers that count a
- * follow wave treat STARTED and HELD alike: both are nonzero. */
+/* Result of one hush_agent_begin_work call. A follow wave keeps
+ * STARTED or HELD in flight. NONE skips this robot. HALT stops the queue. */
 typedef enum {
     HUSH_AGENT_WORK_NONE = 0,
     HUSH_AGENT_WORK_STARTED = 1,
-    HUSH_AGENT_WORK_HELD = 2
+    HUSH_AGENT_WORK_HELD = 2,
+    HUSH_AGENT_WORK_HALT = 3
 } hush_agent_work_t;
 
 /* A robot's role in a two-robot loop (#280). The lead is the first robot

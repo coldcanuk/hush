@@ -61,7 +61,7 @@ int hush_agent_approval_hold(const hush_agent_job_in_t *in)
         hush_agent_chaperon_say(in->store, in->launch, in->parent,
                                 guest ? HUSH_AGENT_APPROVAL_GUEST_LINE
                                       : HUSH_AGENT_APPROVAL_FULL_LINE);
-        return HUSH_AGENT_WORK_NONE;
+        return HUSH_AGENT_WORK_HALT;
     }
     hush_agent_held_fill(held, in);
     held->guest = guest;

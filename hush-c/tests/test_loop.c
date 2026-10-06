@@ -38,6 +38,11 @@ enum {
 #define TEST_LOOP_ASK_COPY "Continue this loop? Reply Yes or No in this thread."
 #define TEST_LOOP_LIMIT_COPY "Loop limit reached. Ask again to start a new loop."
 #define TEST_LOOP_STOPPED_COPY "Loop stopped."
+/* note_no_runtime's exact text. %s is the robot's name. */
+#define TEST_LOOP_NO_RUNTIME \
+    "No selected provider is ready for %s. " \
+    "Open Configure Providers to check its harness " \
+    "login or API model and credentials."
 
 /* A well-formed pubkey that is neither the owner nor any robot. */
 #define TEST_LOOP_STRANGER_PUB \
@@ -267,6 +272,9 @@ static void open_hive(test_loop_fixture_t *fx)
     hush_launch_policy_t policy = {0};
 
     make_scratch(fx);
+    /* Provider homes follow HOME. The scratch dir has none. */
+    expect(setenv("HOME", fx->dir, 1) == 0, "hide home");
+    expect(setenv("XDG_CONFIG_HOME", fx->dir, 1) == 0, "hide xdg");
     hush_intel_init();
     hush_agent_init();
     hush_launch_init(&fx->launch);
@@ -356,12 +364,49 @@ static void check_owner_only(void)
            "scratch cleanup");
 }
 
+/* A lead that posts nothing still reaches the queued partner. */
+static void check_skip_advances(void)
+{
+    static test_loop_fixture_t fx;
+    hush_launch_policy_t policy = {0};
+    char happy[HUSH_EVENT_MAX_CONTENT];
+    char scout[HUSH_EVENT_MAX_CONTENT];
+
+    open_hive(&fx);
+    hush_agent_copy(policy.kind, sizeof(policy.kind), HUSH_LAUNCH_KIND_OPEN);
+    hush_agent_copy(policy.robot_reply, sizeof(policy.robot_reply),
+                    HUSH_LAUNCH_REPLY_MENTION);
+    policy.burst_ms = HUSH_LAUNCH_BURST_MS_DEFAULT;
+    policy.max_jobs = HUSH_LAUNCH_MAX_JOBS_DEFAULT;
+    policy.max_robot_turns = HUSH_LAUNCH_TURNS_DEFAULT;
+    expect(hush_launch_set_channel_policy(&fx.launch, TEST_LOOP_CHANNEL,
+                                          &policy) == HUSH_OK, "cap 4");
+    post_pair_note(&fx);
+    for (size_t i = 0; i < fx.root.tag_count; i++) {
+        if (strcmp(fx.root.tags[i][0], "p") == 0)
+            hush_agent_handle_mention(fx.store, &fx.launch, &fx.root,
+                                      fx.root.tags[i][1]);
+    }
+    expect(snprintf(happy, sizeof(happy), TEST_LOOP_NO_RUNTIME, "Happy") > 0,
+           "happy line");
+    expect(snprintf(scout, sizeof(scout), TEST_LOOP_NO_RUNTIME, "Scout") > 0,
+           "scout line");
+    expect(count_line(fx.store, happy) == 1, "the lead reports no runtime");
+    expect(count_line(fx.store, scout) == 1, "the partner still gets a turn");
+    expect(count_line(fx.store, HUSH_AGENT_LOOP_ASK_LINE) == 0,
+           "no continue question before a loop turn");
+    hush_store_destroy(fx.store);
+    expect(nftw(fx.dir, remove_entry, TEST_LOOP_FTW_FDS, FTW_DEPTH | FTW_PHYS) == 0,
+           "scratch cleanup");
+}
+
 int main(void)
 {
     check_control_lines();
     check_answers();
     check_one_line();
     check_owner_only();
+    check_skip_advances();
     if (g_fail)
         return 1;
     printf("loop ok\n");

@@ -16,9 +16,10 @@ PARAM_CAP = 4
 FILES = {
     "src/agent_loop.c": None,
     "src/agent_dispatch.c": re.compile(
-        r"hush_agent_(follow_kick|follow_wave|loop_\w+|chaperon_say|turn_cap|turns_full"
-        r"|begin_work|begin_approved|follow_release|reset_follow|is_work_note"
-        r"|plan_parent|plan_trigger|start_plan_from_slot|follow_peek)$"),
+        r"hush_agent_(follow_kick|follow_wave|follow_start|plan_wave|loop_\w+"
+        r"|chaperon_say|turn_cap|turns_full|begin_work|begin_approved"
+        r"|follow_release|reset_follow|is_work_note|plan_parent|plan_trigger"
+        r"|start_plan_from_slot|follow_peek)$"),
     "src/agent_prompt.c": re.compile(r"hush_agent_append_loop_lead$"),
     "src/agent_approve.c": None,
     "src/agent_thread.c": re.compile(r"hush_agent_backfill_wants$"),
@@ -31,7 +32,7 @@ FILES = {
 }
 # Functions in tests/test_loop.c today. The scan must still find all of
 # them, so no test function can drop out of the caps unnoticed.
-TEST_LOOP_FUNCTIONS = 18
+TEST_LOOP_FUNCTIONS = 19
 # Functions in tests/test_approve.c today (#279 r2), held to the same rule.
 TEST_APPROVE_FUNCTIONS = 40
 TEST_COUNTS = {
@@ -42,7 +43,7 @@ TEST_COUNTS = {
 # counts), so a rename, move or new layout cannot silently shrink the scan.
 MIN_SEEN = {
     "src/agent_loop.c": 9,
-    "src/agent_dispatch.c": 22,
+    "src/agent_dispatch.c": 24,
     "src/agent_prompt.c": 1,
     "src/agent_approve.c": 15,
     "src/agent_thread.c": 1,

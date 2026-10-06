@@ -21,6 +21,8 @@
 
 #define HUSH_AGENT_PLAN_FENCE "```plan"
 #define HUSH_AGENT_PLAN_END "```"
+/* A wave prefix wider than this saturates. grp + 1 must stay in range. */
+#define HUSH_AGENT_PLAN_WAVE_MAX 1000000
 #define HUSH_AGENT_ASSIGN " YOUR assignment: "
 #define HUSH_AGENT_ACK_LINE "Mention received."
 #define HUSH_AGENT_FOLLOW_FULL_LINE \
@@ -90,6 +92,8 @@ static int hush_agent_lookup_hex_by_name(const hush_launch_t *launch,
 static void hush_agent_parse_plan(const hush_launch_t *launch,
                                   const char *text,
                                   hush_agent_follow_t *slot);
+/* Reads a decimal wave prefix. Saturates at HUSH_AGENT_PLAN_WAVE_MAX. */
+static int hush_agent_plan_wave(const char **cursor);
 static void hush_agent_begin_plan(const hush_agent_job_in_t *in);
 static size_t hush_agent_leader_candidates(
     const hush_launch_t *launch,
@@ -114,8 +118,7 @@ static int hush_agent_follow_push(const hush_agent_job_in_t *job,
 static void hush_agent_emit(const char *type, const char *channel,
                             const char *root, const char *actor,
                             const char *note);
-/* Starts one robot turn. Returns 1 when a job was created, 0 when a cap, a
- * missing runtime, or a start failure stopped it (a notice is posted). */
+/* Starts one robot turn. Returns STARTED, HELD, HALT, or NONE. */
 static int hush_agent_begin_work(const hush_agent_job_in_t *in);
 static void hush_agent_push_hex(char hexes[][HUSH_EVENT_PUBKEY_HEX_LEN + 1],
                                 size_t *n, size_t maxn, const char *hex);
@@ -128,8 +131,11 @@ typedef struct {
     const char *ask;
 } hush_agent_loop_turn_t;
 
-/* Starts one follow wave: every queued task sharing the next group number. */
-static void hush_agent_follow_wave(hush_store_t *store, const hush_launch_t *launch,
+/* Starts one follow wave. Returns 1 when the queue must stop. */
+static int hush_agent_follow_wave(hush_store_t *store, const hush_launch_t *launch,
+                                  hush_agent_follow_t *slot, const hush_event_t *ev);
+/* Starts the robot at slot->at. Returns hush_agent_begin_work's result. */
+static int hush_agent_follow_start(hush_store_t *store, const hush_launch_t *launch,
                                    hush_agent_follow_t *slot, const hush_event_t *ev);
 /* Arms the root's loop when a human note mentions exactly two robots. */
 static void hush_agent_loop_arm(hush_agent_job_in_t *job, const hush_agent_mentions_t *mentions,
@@ -497,7 +503,9 @@ void hush_agent_handle_mention(hush_store_t *store, const hush_launch_t *launch,
     if (hush_agent_is_human(launch, event->pubkey) &&
         !hush_agent_prepare_human_job(&job, &mentions))
         return;
-    (void)hush_agent_begin_work(&job);
+    /* A lead that never posts leaves the queued partner with no kick. */
+    if (hush_agent_begin_work(&job) == HUSH_AGENT_WORK_NONE)
+        hush_agent_follow_kick(store, launch, event);
 }
 
 static void hush_agent_greet_mentions(const hush_agent_job_in_t *job,
@@ -828,6 +836,30 @@ static int hush_agent_lookup_hex_by_name(const hush_launch_t *launch,
     return 0;
 }
 
+static int hush_agent_plan_wave(const char **cursor)
+{
+    int wave = 0;
+    const char *s = NULL;
+    size_t left = (size_t)HUSH_AGENT_TASK_MAX;
+
+    assert(cursor != NULL && *cursor != NULL);
+    s = *cursor;
+    /* Bound: left falls from HUSH_AGENT_TASK_MAX, one digit per step. */
+    while (*s >= '0' && *s <= '9' && left > 0) {
+        int digit = (int)(*s - '0');
+
+        left--;
+        if (wave > (HUSH_AGENT_PLAN_WAVE_MAX - digit) / 10)
+            wave = HUSH_AGENT_PLAN_WAVE_MAX;
+        else
+            wave = wave * 10 + digit;
+        s++;
+    }
+    *cursor = s;
+    assert(wave >= 0 && wave <= HUSH_AGENT_PLAN_WAVE_MAX);
+    return wave;
+}
+
 /* Parses a leader's ```plan fence into slot->next[]/next_ask[]/group[]/order.
  * Each task line may carry an integer wave prefix; tasks sharing a wave run in
  * parallel and waves run in order (fifo) or reverse order (lifo). A worker in
@@ -897,10 +929,7 @@ static void hush_agent_parse_plan(const hush_launch_t *launch,
             while (*s == ' ' || *s == '\t')
                 s++;
             if (*s >= '0' && *s <= '9') {
-                while (*s >= '0' && *s <= '9') {
-                    grp = grp * 10 + (*s - '0');
-                    s++;
-                }
+                grp = hush_agent_plan_wave(&s);
                 has_grp = 1;
                 while (*s == ' ' || *s == '\t')
                     s++;
@@ -1285,7 +1314,7 @@ static int hush_agent_begin_work(const hush_agent_job_in_t *in)
         hush_agent_loop_turns_full(in)) {
         if (!hush_agent_loop_pause(in))
             hush_agent_nudge_chaperon(in->store, in->launch, in->parent);
-        return HUSH_AGENT_WORK_NONE;
+        return HUSH_AGENT_WORK_HALT;
     }
     /* #279: the single gate; no robot runtime starts before the owner's Yes. */
     if (hush_agent_approval_needed(in))
@@ -1319,7 +1348,7 @@ int hush_agent_begin_approved(hush_agent_job_in_t *in)
     in->approved = 1;
     started = hush_agent_begin_work(in);
     /* The held turn was counted in flight; give that back if nothing ran. */
-    if (started == HUSH_AGENT_WORK_NONE)
+    if (started != HUSH_AGENT_WORK_STARTED && started != HUSH_AGENT_WORK_HELD)
         hush_agent_follow_release(in->parent, in->follow, 0);
     return started;
 }
@@ -1516,38 +1545,62 @@ void hush_agent_follow_kick(hush_store_t *store,
         hush_agent_loop_next(store, launch, slot, ev);
         return;
     }
-    hush_agent_follow_wave(store, launch, slot, ev);
+    /* Bound: nnext <= HUSH_AGENT_FOLLOW_ROBOTS. Each pass advances at. */
+    while (slot->at < slot->nnext) {
+        size_t at = slot->at;
+
+        if (hush_agent_follow_wave(store, launch, slot, ev) != 0)
+            return;
+        assert(slot->at > at);
+        if (slot->inflight > 0)
+            return;
+    }
 }
 
-static void hush_agent_follow_wave(hush_store_t *store, const hush_launch_t *launch,
+static int hush_agent_follow_start(hush_store_t *store, const hush_launch_t *launch,
                                    hush_agent_follow_t *slot, const hush_event_t *ev)
 {
     hush_agent_robot_t bot = {0};
     hush_agent_job_in_t in = {0};
+    size_t at = 0;
+
+    assert(store != NULL && launch != NULL);
+    assert(slot != NULL && ev != NULL && slot->at < slot->nnext);
+    at = slot->at;
+    if (!hush_agent_lookup_robot(&bot, launch, slot->next[at]) ||
+        !hush_agent_is_work_ok(launch, &bot))
+        return HUSH_AGENT_WORK_NONE;
+    hush_agent_emit(HUSH_CEVENT_FOLLOW, slot->channel, slot->root, bot.hex, "follow");
+    in = (hush_agent_job_in_t){.store = store, .launch = launch, .bot = &bot,
+        .parent = ev, .scoped = slot->scoped, .mode = slot->mode,
+        .last = hush_agent_follow_last_wave(slot), .follow = 1};
+    in.ask = (slot->scoped && slot->next_ask[at][0] != '\0')
+        ? slot->next_ask[at]
+        : (slot->ask[0] ? slot->ask : ev->content);
+    in.loop_role = hush_agent_loop_role(slot, bot.hex);
+    return hush_agent_begin_work(&in);
+}
+
+static int hush_agent_follow_wave(hush_store_t *store, const hush_launch_t *launch,
+                                  hush_agent_follow_t *slot, const hush_event_t *ev)
+{
     int cur_group = 0;
-    int last_wave = 0;
 
     assert(store != NULL && launch != NULL);
     assert(slot != NULL && ev != NULL && slot->at < slot->nnext);
     /* Tasks in a wave run in parallel; waves run in order. */
     cur_group = slot->group[slot->at];
-    last_wave = hush_agent_follow_last_wave(slot);
+    /* Bound: nnext <= HUSH_AGENT_FOLLOW_ROBOTS. Each pass advances at. */
     while (slot->at < slot->nnext && slot->group[slot->at] == cur_group) {
-        size_t at = slot->at++;
-        if (!hush_agent_lookup_robot(&bot, launch, slot->next[at]) ||
-            !hush_agent_is_work_ok(launch, &bot))
-            continue;
-        hush_agent_emit(HUSH_CEVENT_FOLLOW, slot->channel, slot->root, bot.hex, "follow");
-        in = (hush_agent_job_in_t){.store = store, .launch = launch, .bot = &bot,
-            .parent = ev, .scoped = slot->scoped, .mode = slot->mode, .last = last_wave,
-            .follow = 1};
-        in.ask = (slot->scoped && slot->next_ask[at][0] != '\0')
-            ? slot->next_ask[at]
-            : (slot->ask[0] ? slot->ask : ev->content);
-        in.loop_role = hush_agent_loop_role(slot, bot.hex);
-        if (hush_agent_begin_work(&in))
+        int work = hush_agent_follow_start(store, launch, slot, ev);
+
+        slot->at++;
+        if (work == HUSH_AGENT_WORK_STARTED || work == HUSH_AGENT_WORK_HELD)
             slot->inflight++;
+        else if (work == HUSH_AGENT_WORK_HALT)
+            return 1;
     }
+    return 0;
 }
 
 static void hush_agent_emit(const char *type, const char *channel,
@@ -1892,8 +1945,12 @@ static void hush_agent_loop_dispatch(hush_agent_follow_t *slot,
         .follow = 1};
     in.loop_role = hush_agent_loop_role(slot, turn->hex);
     in.loop_note = in.loop_role == HUSH_AGENT_LOOP_ROLE_LEAD ? slot->ask : NULL;
-    if (hush_agent_begin_work(&in))
-        slot->inflight++;
+    {
+        int work = hush_agent_begin_work(&in);
+
+        if (work == HUSH_AGENT_WORK_STARTED || work == HUSH_AGENT_WORK_HELD)
+            slot->inflight++;
+    }
 }
 
 static int hush_agent_loop_turns_full(const hush_agent_job_in_t *in)
