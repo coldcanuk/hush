@@ -1244,7 +1244,10 @@ async function main() {
         await sleep(120);
       };
       const SWITCHES = ['turn-on', 'turn-daemon', 'vibe-public', 'dev-log'];
-      const STOPS = ['turn-on', 'turn-daemon', 'turn-host', 'vibe-public', 'vibe-rotate', 'dev-log', 'theme', 'settings-close'];
+      // #279 adds the Robot turns radio group (name="approval") between
+      // Developer Logging and Theme; like the theme radios it is one stop.
+      const STOPS = ['turn-on', 'turn-daemon', 'turn-host', 'vibe-public', 'vibe-rotate', 'dev-log', 'approval', 'theme', 'settings-close'];
+      const RADIO_GROUPS = ['theme', 'approval'];
       const THEMES = await cdp.eval(`Array.prototype.map.call(document.querySelectorAll("#settings input[name='theme']"), (i) => i.value)`);
       check(JSON.stringify(THEMES.slice().sort()) === JSON.stringify(['christmas', 'color-blind', 'dark', 'desert', 'dracula', 'field-office', 'light', 'monochrome']),
         `#241 r7 Settings offers the 8 shipped themes: ${JSON.stringify(THEMES)}`);
@@ -1269,14 +1272,14 @@ async function main() {
             color: cs.outlineColor, w: r.width, h: r.height }; };
         const isSwitch = !!(a && a.nextElementSibling && a.nextElementSibling.classList.contains('slider'));
         const target = a && a !== document.body ? (isSwitch ? a.nextElementSibling : a) : null;
-        const id = !a ? null : (a.name === 'theme' ? 'theme' : a.id);
+        const id = !a ? null : (${JSON.stringify(RADIO_GROUPS)}.includes(a.name) ? a.name : a.id);
         let contrast = null;
         if (target) { const cs = getComputedStyle(target); const e = effBg(target.parentElement); const rc = px(cs.outlineColor);
           const seen = over(rc, e.bg).map(Math.round);
           contrast = { ring: rc.slice(0, 3).concat([Math.round(rc[3] * 100) / 100]), bg: e.bg, from: e.from, images: e.images,
             ratio: Math.round(ratio(seen, e.bg) * 100) / 100 }; }
         const others = Array.prototype.map.call(document.querySelectorAll('#settings .switch .slider'), (s) => s === target ? null : ring(s).style).filter((x) => x);
-        return { id, value: a && a.name === 'theme' ? a.value : undefined, inSettings: !!(a && document.getElementById('settings').contains(a)),
+        return { id, value: a && ${JSON.stringify(RADIO_GROUPS)}.includes(a.name) ? a.value : undefined, inSettings: !!(a && document.getElementById('settings').contains(a)),
           fv: !!(a && a.matches(':focus-visible')), isSwitch, ring: target ? ring(target) : null, contrast, othersStyles: others }; })()`;
       const ringRuns = {};
       const mouseRuns = {};
@@ -1351,7 +1354,7 @@ async function main() {
         table[th] = {};
         const stopIds = Object.keys(seen);
         check(JSON.stringify(stopIds.slice().sort()) === JSON.stringify(STOPS.slice().sort()) && order.every((x) => STOPS.includes(x)),
-          `#241 r7 Settings Tab stops are the 8 known controls (${th}): ${JSON.stringify(order)}`);
+          `#241 r7 Settings Tab stops are the ${STOPS.length} known controls (${th}): ${JSON.stringify(order)}`);
         for (const id of STOPS) {
           const s = seen[id];
           if (s && s.contrast) table[th][id] = s.contrast.ratio;
