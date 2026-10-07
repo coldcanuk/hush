@@ -1,16 +1,15 @@
 #!/bin/sh
 # #287: the suite's PATH, HOME, and XDG_CONFIG_HOME must not reach a real CLI.
 # make test puts a refusing sentinel ahead of goose, grok, codex, copilot,
-# cline, and ollama. This check fails if that sentinel is missing.
+# cline, and ollama. This check runs after the other tests, which may write
+# into those scratch directories, so emptiness is not the assertion.
 set -eu
 cd "$(dirname "$0")/.."
 
 fail() { echo "hermetic path failed: $1" >&2; exit 1; }
 
-test -d "${HOME:-}" || fail "HOME is not an empty scratch directory"
-test -d "${XDG_CONFIG_HOME:-}" || fail "XDG_CONFIG_HOME is not an empty scratch directory"
-find "$HOME" -mindepth 1 -print | grep -q . && fail "HOME is not empty" || true
-find "$XDG_CONFIG_HOME" -mindepth 1 -print | grep -q . && fail "XDG_CONFIG_HOME is not empty" || true
+test -d "${HOME:-}" || fail "HOME is not a directory"
+test -d "${XDG_CONFIG_HOME:-}" || fail "XDG_CONFIG_HOME is not a directory"
 
 for name in goose grok codex copilot cline ollama; do
   bin=$(command -v "$name" || true)
