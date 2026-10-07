@@ -169,19 +169,32 @@ tests/test_vault: tests/test_vault.c tests/fake_curl_vault.c tests/fake_curl_vau
 check-deps:
 	@CC="$(CC)" sh tests/check_deps.sh
 
-# Scrub the caller's hive env, pin one umask, and point HOME and the runtime
-# dir at temp directories. Harnesses that vary HOME or XDG_RUNTIME_DIR on
-# purpose (check_exit.sh) still do so after this.
+# Scrub the caller's hive env, pin one umask, and point HOME, XDG config,
+# and the runtime dir at empty temp directories. Provider names on PATH
+# are sentinels that refuse, so a test cannot launch a real CLI (#287).
+# Harnesses that vary HOME or XDG_RUNTIME_DIR on purpose (check_exit.sh)
+# still do so after this. A harness that needs a fake provider prepends
+# its own bin directory and leaves the sentinel behind it.
 test: check-deps $(TEST_BINS) hush-relay
 	@set -eu; \
 	umask 022; \
 	ht_home=$$(mktemp -d); \
 	ht_run=$$(mktemp -d); \
-	trap 'rm -rf "$$ht_home" "$$ht_run"' EXIT; \
+	ht_xdg=$$(mktemp -d); \
+	ht_bin=$$(mktemp -d); \
+	trap 'rm -rf "$$ht_home" "$$ht_run" "$$ht_xdg" "$$ht_bin"' EXIT; \
+	printf '%s\n' '#!/bin/sh' 'name=$$(basename "$$0")' \
+	  'echo "hush test refused real $$name" >&2' 'exit 97' > "$$ht_bin/refuse"; \
+	chmod 0755 "$$ht_bin/refuse"; \
+	for name in goose grok codex copilot cline ollama; do \
+	  ln -s refuse "$$ht_bin/$$name"; \
+	done; \
 	export HOME="$$ht_home"; \
 	export XDG_RUNTIME_DIR="$$ht_run"; \
+	export XDG_CONFIG_HOME="$$ht_xdg"; \
+	export PATH="$$ht_bin:$$PATH"; \
 	export HUSH_AUTO_UPDATE=0; \
-	unset HUSH_HOME HUSH_CONFIG_DIR XDG_CONFIG_HOME; \
+	unset HUSH_HOME HUSH_CONFIG_DIR; \
 	for t in $(TEST_BINS); do echo "RUN $$t"; ./$$t || exit 1; done; \
 	sh tests/check_mem_platforms.sh || exit 1; \
 	sh tests/check_pwa.sh || exit 1; \
@@ -202,6 +215,7 @@ test: check-deps $(TEST_BINS) hush-relay
 	sh tests/check_make_guard.sh || exit 1; \
 	sh tests/check_stop_relays.sh || exit 1; \
 	sh tests/check_prefix.sh || exit 1; \
+	sh tests/check_hermetic_path.sh || exit 1; \
 	sh tests/check_provider.sh || exit 1; \
 	sh tests/check_agent.sh || exit 1; \
 	sh tests/check_loop.sh || exit 1; \
