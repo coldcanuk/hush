@@ -384,7 +384,7 @@ void hush_agent_human_name(char *out, size_t outsz, const hush_launch_t *launch)
 /* ---- shared prompt strings (core + agent_dispatch) ---- */
 
 #define HUSH_AGENT_INTRO_PREFIX "At ease."
-#define HUSH_AGENT_HUMAN_FALLBACK "you"
+#define HUSH_AGENT_HUMAN_FALLBACK "the owner"
 #define HUSH_AGENT_ELECT_PROMPT \
     " You are the election committee. Elect the single best leader for the " \
     "task below from these candidates. Consider their skills and fit. Reply " \
