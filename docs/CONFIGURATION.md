@@ -46,8 +46,8 @@ make flatpak                            # any distro (flatpak-builder; builds in
 **UNVERIFIED:** the OpenBSD and FreeBSD recipes below mirror
 `openbsd/README.md`, `freebsd/README.md` and `scripts/package-{openbsd,freebsd}.sh`,
 but nobody has run them on OpenBSD or FreeBSD at this head. The top-level
-`Makefile` uses GNU make syntax, so use `gmake` on both (`openbsd/README.md`
-still says `make openbsd`).
+`Makefile` uses GNU make syntax, so use `gmake` on both.
+`openbsd/README.md` says `gmake openbsd`.
 
 ```sh
 # OpenBSD (pkg_add gmake first):

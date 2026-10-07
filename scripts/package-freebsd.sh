@@ -39,8 +39,8 @@ echo "PREFIX=$PREFIX"
 echo "DESTROOT=$DESTROOT"
 
 ./configure --prefix="$PREFIX"
-make
-make install \
+${MAKE:-gmake}
+${MAKE:-gmake} install \
     DESTDIR="$DESTROOT" \
     PREFIX="$PREFIX" \
     BINDIR="${PREFIX}/bin" \

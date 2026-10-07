@@ -30,7 +30,7 @@ From a Hush checkout (OpenBSD, after `pkg_add gmake`):
 
 ```sh
 ./configure --prefix=/usr/local
-make openbsd
+gmake openbsd
 doas pkg_add ./dist/openbsd/hush-relay-*.tgz
 ```
 
