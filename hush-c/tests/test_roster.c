@@ -414,6 +414,26 @@ int main(void)
     memset(key, 'a', 60);
     memcpy(key + 60, "-2", 3);
     expect(strcmp(roster.agents[10].slug, key) == 0, "cut drops '-' before -2");
+    /* A 63-byte cap used to keep a split é (lone 0xC3). Store whole characters. */
+    memset(&agent, 0, sizeof(agent));
+    memcpy(agent.prompt, "Watch.", 7);
+    memcpy(agent.provider, "goose", 6);
+    memcpy(agent.name, "Cafe", 4);
+    for (n = 0; n < 29; n++) {
+        agent.name[4 + n * 2] = (char)0xC3;
+        agent.name[5 + n * 2] = (char)0xA9;
+    }
+    agent.name[4 + 29 * 2] = (char)0xC3;
+    expect(hush_roster_add_agent(&roster, store, &agent, HUSH_ROSTER_KEY_OFFER,
+                                 NULL) == HUSH_OK,
+           "name with a split é is stored");
+    {
+        const char *stored = roster.agents[roster.nagents - 1].name;
+        size_t len = strlen(stored);
+
+        expect(len == 4 + 29 * 2, "split é trailer dropped");
+        expect((unsigned char)stored[len - 1] == 0xA9, "stored name ends on é");
+    }
     hush_store_destroy(store);
     hush_pass_set_helper(NULL);
     if (g_fail)

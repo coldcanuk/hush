@@ -38,6 +38,8 @@ static void hush_http_collect_indexed(const char *body, const char *stem,
                                       size_t *out_n, size_t maxn);
 static void hush_http_add_mentions(hush_event_t *out, const char *body);
 static hush_status_t hush_http_resolve_conversation(hush_event_t *event, const hush_store_t *store);
+/* True when c may be echoed inside a refusal. Pure. */
+static int hush_http_id_char_ok(unsigned char c);
 static hush_status_t hush_http_parse_note(hush_event_t *out, const char *body);
 static void hush_http_note_presence(hush_store_t *store, const hush_event_t *event);
 static hush_status_t hush_http_channel_create(const char *body);
@@ -202,24 +204,48 @@ hush_status_t hush_http_reply_refused(int fd, hush_status_t st,
     return st;
 }
 
-void hush_http_safe_id(char *out, size_t outsz, const char *id)
+/* True when c may be echoed inside a refusal. Pure. */
+static int hush_http_id_char_ok(unsigned char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == ':' || c == '.' ||
+           c == '_' || c == '-';
+}
+
+int hush_http_safe_id(char *out, size_t outsz, const char *id)
 {
     size_t i = 0;
+    size_t n = 0;
 
     assert(out != NULL);
     assert(outsz > 0);
+    out[0] = '\0';
     if (id == NULL)
         id = "";
-    while (id[i] != '\0' && i + 1 < outsz) {
+    n = strlen(id);
+    if (n + 1 > outsz)
+        return 0;
+    while (i < n) {
         unsigned char c = (unsigned char)id[i];
-        int keep = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                   (c >= '0' && c <= '9') || c == ':' || c == '.' ||
-                   c == '_' || c == '-';
 
-        out[i] = keep ? (char)c : '?';
+        out[i] = hush_http_id_char_ok(c) ? (char)c : '?';
         i++;
     }
     out[i] = '\0';
+    return 1;
+}
+
+void hush_http_why_id(char *why, size_t whysz, const char *fmt,
+                      const char *id)
+{
+    char safe[HUSH_HTTP_WHY_ID_MAX] = {0};
+
+    assert(why != NULL && whysz > 0 && fmt != NULL);
+    if (!hush_http_safe_id(safe, sizeof safe, id)) {
+        (void)snprintf(why, whysz, "%s", HUSH_HTTP_WHY_ID_LONG);
+        return;
+    }
+    (void)snprintf(why, whysz, fmt, safe);
 }
 
 

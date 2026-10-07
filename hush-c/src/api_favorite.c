@@ -29,11 +29,20 @@
     "This robot already has %d favorites; delete one first."
 #define HUSH_LOADOUT_WHY_MISSING "No favorite with that name for this robot."
 #define HUSH_LOADOUT_WHY_CORRUPT "That saved favorite file is corrupt."
+#define HUSH_LOADOUT_WHY_BIG "That saved favorite file is too big to read."
+#define HUSH_LOADOUT_WHY_READ "That saved favorite file could not be read."
+#define HUSH_LOADOUT_WHY_LIST "Could not list favorites for this robot."
 
 enum {
     HUSH_LOADOUT_ACTION_MAX = 16,
     HUSH_LOADOUT_KEY_MAX = 12
 };
+
+/* Borrowed rows already read from the request. count is how many are set. */
+typedef struct {
+    char (*rows)[HUSH_SKILL_ID_MAX];
+    size_t count;
+} hush_loadout_id_span_t;
 
 /* Copies the decoded string at path into out. Refuses truncation. */
 static hush_status_t hush_loadout_take_text(char *out, size_t outsz,
@@ -83,24 +92,22 @@ static hush_status_t hush_loadout_refuse_name(int fd, hush_status_t st);
 static hush_status_t hush_loadout_refuse_ids(int fd, hush_status_t st,
                                              const char *body);
 
-/* Writes why for a refused save of ids by status; generic when unknown. */
-static void hush_loadout_save_why(char *why, size_t whysz, hush_status_t st,
+/* Writes why for a refused save. why is HUSH_HTTP_WHY_MAX bytes.
+ * ids is borrowed. */
+static void hush_loadout_save_why(char *why, hush_status_t st,
                                   const char *robot,
-                                  char ids[][HUSH_SKILL_ID_MAX], size_t nids);
+                                  const hush_loadout_id_span_t *ids);
 
-/* Writes why for the first unknown, cross-slug, or repeated id. 1 on match. */
-static int hush_loadout_ids_why(char *why, size_t whysz, const char *robot,
-                                char ids[][HUSH_SKILL_ID_MAX], size_t nids);
+/* Writes why for the first unknown, cross-slug, or repeated id. 1 on match.
+ * why is HUSH_HTTP_WHY_MAX bytes. ids is borrowed. */
+static int hush_loadout_ids_why(char *why, const char *robot,
+                                const hush_loadout_id_span_t *ids);
 
 /* Writes why for a refused load or delete by status. */
 static void hush_loadout_find_why(char *why, size_t whysz, hush_status_t st);
 
 /* True when ids[idx] repeats an earlier id. */
 static int hush_loadout_seen(char ids[][HUSH_SKILL_ID_MAX], size_t idx);
-
-/* Writes fmt into why with id echoed through hush_http_safe_id. */
-static void hush_loadout_why_id(char *why, size_t whysz, const char *fmt,
-                                const char *id);
 
 hush_status_t hush_http_serve_loadout(int fd, const char *body)
 {
@@ -212,7 +219,9 @@ static hush_status_t hush_loadout_save(int fd, const char *body)
         return hush_loadout_refuse_ids(fd, st, body);
     st = hush_favorite_save(robot, name, ids, nids);
     if (st != HUSH_OK) {
-        hush_loadout_save_why(why, sizeof why, st, robot, ids, nids);
+        hush_loadout_id_span_t span = {.rows = ids, .count = nids};
+
+        hush_loadout_save_why(why, st, robot, &span);
         return hush_http_reply_refused(fd, st, why);
     }
     n = snprintf(reply, sizeof reply, "{\"ok\":true,\"nskills\":%zu}\n",
@@ -236,7 +245,7 @@ static hush_status_t hush_loadout_list(int fd, const char *body)
         return hush_loadout_refuse_robot(fd, st);
     st = hush_favorite_list_json(robot, reply, sizeof reply, &n);
     if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
+        return hush_http_reply_refused(fd, st, HUSH_LOADOUT_WHY_LIST);
     hush_http_reply(fd, "200 OK", "application/json", reply, n);
     return HUSH_OK;
 }
@@ -375,50 +384,58 @@ static hush_status_t hush_loadout_refuse_ids(int fd, hush_status_t st,
     return hush_http_reply_refused(fd, st, why);
 }
 
-static void hush_loadout_save_why(char *why, size_t whysz, hush_status_t st,
+static void hush_loadout_save_why(char *why, hush_status_t st,
                                   const char *robot,
-                                  char ids[][HUSH_SKILL_ID_MAX], size_t nids)
+                                  const hush_loadout_id_span_t *ids)
 {
-    assert(why != NULL && whysz > 0);
-    assert(robot != NULL && ids != NULL);
+    assert(why != NULL);
+    assert(robot != NULL && ids != NULL && ids->rows != NULL);
     why[0] = '\0';
     /* Robot, name, and skill_8 were refused before save; what is left
      * maps one status to one save rule (see hush_favorite_save). */
-    if (st == HUSH_ERR_DENIED && nids == 0)
-        (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_EMPTY);
-    else if (st == HUSH_ERR_DENIED && !hush_loadout_ids_why(why, whysz, robot,
-                                                             ids, nids))
-        (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_CLASH);
+    if (st == HUSH_ERR_DENIED && ids->count == 0)
+        (void)snprintf(why, HUSH_HTTP_WHY_MAX, "%s", HUSH_LOADOUT_WHY_EMPTY);
+    else if (st == HUSH_ERR_DENIED && !hush_loadout_ids_why(why, robot, ids))
+        (void)snprintf(why, HUSH_HTTP_WHY_MAX, "%s", HUSH_LOADOUT_WHY_CLASH);
     else if (st == HUSH_ERR_FULL)
-        (void)snprintf(why, whysz, HUSH_LOADOUT_WHY_FULL,
+        (void)snprintf(why, HUSH_HTTP_WHY_MAX, HUSH_LOADOUT_WHY_FULL,
                        (int)HUSH_FAVORITE_COUNT_MAX);
     else if (st == HUSH_ERR_PARSE)
-        (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_CORRUPT);
+        (void)snprintf(why, HUSH_HTTP_WHY_MAX, "%s", HUSH_LOADOUT_WHY_CORRUPT);
+    else if (st == HUSH_ERR_ARG)
+        (void)snprintf(why, HUSH_HTTP_WHY_MAX, "%s", HUSH_LOADOUT_WHY_BIG);
+    else if (st == HUSH_ERR_IO)
+        (void)snprintf(why, HUSH_HTTP_WHY_MAX, "%s", HUSH_LOADOUT_WHY_READ);
 }
 
-static int hush_loadout_ids_why(char *why, size_t whysz, const char *robot,
-                                char ids[][HUSH_SKILL_ID_MAX], size_t nids)
+static int hush_loadout_ids_why(char *why, const char *robot,
+                                const hush_loadout_id_span_t *ids)
 {
     /* Heap frame like hush_favorite_check_ids: the catalog is ~120 KB. */
     hush_skill_catalog_t *cat = malloc(sizeof *cat);
     const hush_skill_t *skill = NULL;
+    size_t nids = 0;
     int hit = 0;
 
-    assert(why != NULL && robot != NULL && ids != NULL);
+    assert(why != NULL && robot != NULL && ids != NULL && ids->rows != NULL);
+    nids = ids->count;
     if (cat == NULL)
         return 0;
     hush_skill_init_catalog(cat);
     if (hush_skill_load_catalog(cat) != HUSH_OK)
         nids = 0;
     for (size_t i = 0; !hit && i < nids; i++) {
-        skill = hush_skill_find(cat, ids[i]);
+        skill = hush_skill_find(cat, ids->rows[i]);
         hit = 1;
         if (skill == NULL)
-            hush_loadout_why_id(why, whysz, HUSH_HTTP_WHY_SKILL, ids[i]);
+            hush_http_why_id(why, HUSH_HTTP_WHY_MAX, HUSH_HTTP_WHY_SKILL,
+                             ids->rows[i]);
         else if (!hush_skill_robot_ok(skill, robot))
-            hush_loadout_why_id(why, whysz, HUSH_HTTP_WHY_OWNED, ids[i]);
-        else if (i > 0 && hush_loadout_seen(ids, i))
-            hush_loadout_why_id(why, whysz, HUSH_LOADOUT_WHY_TWICE, ids[i]);
+            hush_http_why_id(why, HUSH_HTTP_WHY_MAX, HUSH_HTTP_WHY_OWNED,
+                             ids->rows[i]);
+        else if (i > 0 && hush_loadout_seen(ids->rows, i))
+            hush_http_why_id(why, HUSH_HTTP_WHY_MAX, HUSH_LOADOUT_WHY_TWICE,
+                             ids->rows[i]);
         else
             hit = 0;
     }
@@ -444,14 +461,8 @@ static void hush_loadout_find_why(char *why, size_t whysz, hush_status_t st)
         (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_MISSING);
     else if (st == HUSH_ERR_PARSE)
         (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_CORRUPT);
-}
-
-static void hush_loadout_why_id(char *why, size_t whysz, const char *fmt,
-                                const char *id)
-{
-    char safe[HUSH_HTTP_WHY_ID_MAX];
-
-    assert(why != NULL && whysz > 0 && fmt != NULL);
-    hush_http_safe_id(safe, sizeof safe, id);
-    (void)snprintf(why, whysz, fmt, safe);
+    else if (st == HUSH_ERR_ARG)
+        (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_BIG);
+    else if (st == HUSH_ERR_IO)
+        (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_READ);
 }
