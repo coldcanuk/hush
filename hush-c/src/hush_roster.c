@@ -192,9 +192,96 @@ static void hush_roster_compact_agents(hush_roster_t *roster, size_t idx);
 static hush_status_t hush_roster_fill_context(hush_roster_agent_t *agent,
                                               const hush_roster_agent_in_t *in);
 
+void hush_roster_init(hush_roster_t *roster)
+{
+    if (roster == NULL)
+        return;
+    memset(roster, 0, sizeof(*roster));
+    memcpy(roster->profile.theme, HUSH_ROSTER_THEME_DEFAULT,
+           sizeof(HUSH_ROSTER_THEME_DEFAULT));
+}
+
+int hush_roster_is_context_mime(const char *mime, const char *filename)
+{
+    const char *dot;
+
+    if (mime != NULL) {
+        if (strcmp(mime, HUSH_ROSTER_MIME_PLAIN) == 0)
+            return 1;
+        if (strcmp(mime, HUSH_ROSTER_MIME_MARKDOWN) == 0)
+            return 1;
+        if (strcmp(mime, HUSH_ROSTER_MIME_XMARKDOWN) == 0)
+            return 1;
+    }
+    if (filename == NULL)
+        return 0;
+    dot = strrchr(filename, '.');
+    if (dot == NULL)
+        return 0;
+    if (strcmp(dot, ".txt") == 0)
+        return 1;
+    if (strcmp(dot, ".md") == 0)
+        return 1;
+    if (strcmp(dot, ".markdown") == 0)
+        return 1;
+    return 0;
+}
+
+int hush_roster_is_theme(const char *theme)
+{
+    size_t i;
+
+    if (theme == NULL || theme[0] == '\0')
+        return 0;
+    for (i = 0; i < (size_t)HUSH_ROSTER_THEME_COUNT; ++i) {
+        if (strcmp(theme, hush_roster_themes[i]) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+int hush_roster_approval_parse(const char *id, hush_roster_approval_t *out)
+{
+    assert(out != NULL);
+    *out = HUSH_ROSTER_APPROVAL_AUTO;
+    if (id == NULL)
+        return 0;
+    if (strcmp(id, HUSH_ROSTER_APPROVAL_EVERY_ID) == 0) {
+        *out = HUSH_ROSTER_APPROVAL_EVERY;
+        return 1;
+    }
+    return strcmp(id, HUSH_ROSTER_APPROVAL_AUTO_ID) == 0;
+}
+
+const char *hush_roster_approval_id(hush_roster_approval_t mode)
+{
+    if (mode == HUSH_ROSTER_APPROVAL_EVERY)
+        return HUSH_ROSTER_APPROVAL_EVERY_ID;
+    return HUSH_ROSTER_APPROVAL_AUTO_ID;
+}
+
+int hush_roster_is_provider(const char *provider)
+{
+    /* Single source of truth: the provider meta table in hush_provider.c. */
+    return hush_provider_is_id(provider);
+}
+
+int hush_roster_is_role(const char *role)
+{
+    size_t i;
+
+    if (role == NULL || role[0] == '\0')
+        return 0;
+    for (i = 0; i < (size_t)HUSH_ROSTER_ROLE_COUNT; ++i) {
+        if (strcmp(role, hush_roster_roles[i]) == 0)
+            return 1;
+    }
+    return 0;
+}
+
 void hush_roster_slug_of(char *out, size_t outsz, const char *name)
 {
-    char trimmed[HUSH_ROSTER_NAME_MAX];
+    char trimmed[HUSH_ROSTER_NAME_MAX] = {0};
 
     if (out == NULL || outsz == 0)
         return;
@@ -288,93 +375,6 @@ const hush_roster_agent_t *hush_roster_agent_by_slug(const hush_roster_t *roster
         return NULL;
     i = hush_roster_agent_index(roster, slug);
     return i < roster->nagents ? &roster->agents[i] : NULL;
-}
-
-void hush_roster_init(hush_roster_t *roster)
-{
-    if (roster == NULL)
-        return;
-    memset(roster, 0, sizeof(*roster));
-    memcpy(roster->profile.theme, HUSH_ROSTER_THEME_DEFAULT,
-           sizeof(HUSH_ROSTER_THEME_DEFAULT));
-}
-
-int hush_roster_is_context_mime(const char *mime, const char *filename)
-{
-    const char *dot;
-
-    if (mime != NULL) {
-        if (strcmp(mime, HUSH_ROSTER_MIME_PLAIN) == 0)
-            return 1;
-        if (strcmp(mime, HUSH_ROSTER_MIME_MARKDOWN) == 0)
-            return 1;
-        if (strcmp(mime, HUSH_ROSTER_MIME_XMARKDOWN) == 0)
-            return 1;
-    }
-    if (filename == NULL)
-        return 0;
-    dot = strrchr(filename, '.');
-    if (dot == NULL)
-        return 0;
-    if (strcmp(dot, ".txt") == 0)
-        return 1;
-    if (strcmp(dot, ".md") == 0)
-        return 1;
-    if (strcmp(dot, ".markdown") == 0)
-        return 1;
-    return 0;
-}
-
-int hush_roster_is_theme(const char *theme)
-{
-    size_t i;
-
-    if (theme == NULL || theme[0] == '\0')
-        return 0;
-    for (i = 0; i < (size_t)HUSH_ROSTER_THEME_COUNT; ++i) {
-        if (strcmp(theme, hush_roster_themes[i]) == 0)
-            return 1;
-    }
-    return 0;
-}
-
-int hush_roster_approval_parse(const char *id, hush_roster_approval_t *out)
-{
-    assert(out != NULL);
-    *out = HUSH_ROSTER_APPROVAL_AUTO;
-    if (id == NULL)
-        return 0;
-    if (strcmp(id, HUSH_ROSTER_APPROVAL_EVERY_ID) == 0) {
-        *out = HUSH_ROSTER_APPROVAL_EVERY;
-        return 1;
-    }
-    return strcmp(id, HUSH_ROSTER_APPROVAL_AUTO_ID) == 0;
-}
-
-const char *hush_roster_approval_id(hush_roster_approval_t mode)
-{
-    if (mode == HUSH_ROSTER_APPROVAL_EVERY)
-        return HUSH_ROSTER_APPROVAL_EVERY_ID;
-    return HUSH_ROSTER_APPROVAL_AUTO_ID;
-}
-
-int hush_roster_is_provider(const char *provider)
-{
-    /* Single source of truth: the provider meta table in hush_provider.c. */
-    return hush_provider_is_id(provider);
-}
-
-int hush_roster_is_role(const char *role)
-{
-    size_t i;
-
-    if (role == NULL || role[0] == '\0')
-        return 0;
-    for (i = 0; i < (size_t)HUSH_ROSTER_ROLE_COUNT; ++i) {
-        if (strcmp(role, hush_roster_roles[i]) == 0)
-            return 1;
-    }
-    return 0;
 }
 
 hush_status_t hush_roster_set_profile(hush_roster_t *roster,
