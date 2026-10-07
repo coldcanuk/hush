@@ -9,9 +9,12 @@
 #include "hush_store.h"
 
 enum {
-    /* Wall clock for a live grok job. hush_wake lease uses the same
-     * number (HUSH_WAKE_LEASE_S). Not HUSH_PRESENCE_STALL_S. */
+    /* Wall clock for an unbound grok job. hush_wake lease uses the same
+     * number (HUSH_WAKE_LEASE_S) when lease_s is 0. Not HUSH_PRESENCE_STALL_S. */
     HUSH_AGENT_TIMEOUT_S = 90,
+    /* Wall clock for a milestone whose cwd is a launch project. The wake
+     * claim for that job passes this same number as lease_s. */
+    HUSH_AGENT_PROJECT_TIMEOUT_S = 300,
     /* Global concurrent job cap; the overload gate refuses new dispatches
      * when every slot is busy. */
     HUSH_AGENT_JOBS_MAX = 4,
@@ -93,6 +96,15 @@ int hush_agent_team_answer(hush_store_t *store, hush_launch_t *launch,
 
 /* Grok tool denylist. project_tools 1 drops the file tools only. */
 const char *hush_agent_tool_denylist(int project_tools);
+
+/* Enters cwd. Returns 0 when cwd is empty or chdir fails. */
+int hush_agent_enter_cwd(const char *cwd);
+
+/* Grok --max-turns for a note job. project_tools 1 selects the longer budget. */
+const char *hush_agent_grok_turn_budget(int project_tools);
+
+/* Kill-clock seconds. project_tools 1 selects the project clock. */
+int hush_agent_budget_seconds(int project_tools);
 
 /* Cancels the live job for robot on root. root is the thread's root event id;
  * robot matches the robot's hex pubkey or roster name. Sends SIGTERM to the

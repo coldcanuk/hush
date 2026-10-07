@@ -12,9 +12,15 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <!-- UI-M5 field office: typewriter face; offline falls back to Courier Prime / VT323 / mono. -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Special+Elite&display=swap">
+  <!-- UI-M5 field office: typewriter face served by the relay. Offline falls back to Courier Prime / VT323 / mono. -->
   <style>
+    @font-face {
+      font-family: "Special Elite";
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url("/fonts/special-elite-latin-400.woff2") format("woff2");
+    }
     :root, html[data-theme="dark"] {
       --bg: oklch(15.3% 0.006 107.1); --surface: oklch(22.8% 0.013 107.4); --surface-2: oklch(28.6% 0.016 107.4); --line: oklch(39.4% 0.023 107.4);
       --fg: oklch(98.8% 0.003 106.5); --muted: oklch(88% 0.011 106.6); --faint: oklch(73.7% 0.021 106.9); --accent: oklch(58% 0.031 107.3);
@@ -76,7 +82,7 @@
       position: relative; z-index: 5;
     }
     .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
-    .mark { width: 36px; height: 36px; flex: 0 0 auto; }
+    .mark { width: 36px; height: 36px; flex: 0 0 auto; color: var(--fg); }
     .title { font-size: 1.15rem; font-weight: 650; letter-spacing: -0.03em; line-height: 1.2; }
     .sub { font-size: 0.72rem; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
     #badge {
@@ -2200,9 +2206,8 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
     </div>
     <div class="brand">
       <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
-        <rect width="64" height="64" rx="14" fill="#064e3b"/>
-        <path d="M18 42c8-2 14-10 16-20 6 8 14 12 20 12-6 6-16 10-24 10-6 0-10-1-12-2z" fill="#34d399"/>
-        <path d="M20 40c7-10 10-20 10-28 2 6 8 14 16 18" fill="none" stroke="#ecfdf5" stroke-width="2.2" stroke-linecap="round"/>
+        <rect x="4" y="4" width="56" height="56" fill="none" stroke="currentColor" stroke-width="3"/>
+        <path fill="currentColor" d="M18 14h8v14h12V14h8v36h-8V36H26v14h-8z"/>
       </svg>
       <div>
         <div class="fo-edition">Field Office Dispatch · 1943 Edition</div>

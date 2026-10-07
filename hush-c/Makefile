@@ -75,6 +75,7 @@ OBJS := $(SRCS:.c=.o)
 .DEFAULT_GOAL := all
 ICON_PANELS := dogs cats sheep virus robots angevin
 ICON_PANEL_OBJS := $(foreach s,$(ICON_PANELS),src/hush_icon_panel_$(s).o)
+FONT_OBJS := src/hush_font_special_elite.o
 TESTS := $(wildcard tests/test_*.c)
 TEST_BINS := $(TESTS:.c=)
 
@@ -119,10 +120,13 @@ check-stamp:
 
 all: check-stamp libhush.a hush-relay
 
-libhush.a: $(OBJS) $(ICON_PANEL_OBJS)
+libhush.a: $(OBJS) $(ICON_PANEL_OBJS) $(FONT_OBJS)
 	ar rcs $@ $^
 
 src/hush_icon_panel_%.o: demo/icons/icon_panel_%.png
+	ld -r -b binary -o $@ $<
+
+src/hush_font_special_elite.o: demo/fonts/special-elite-latin-400.woff2
 	ld -r -b binary -o $@ $<
 
 hush-relay: src/hush_relay_main.o libhush.a
@@ -240,7 +244,7 @@ test: check-deps $(TEST_BINS) hush-relay
 	echo "ALL TESTS PASSED"
 
 clean:
-	rm -f $(OBJS) $(OBJS:.o=.d) $(ICON_PANEL_OBJS) libhush.a hush-relay \
+	rm -f $(OBJS) $(OBJS:.o=.d) $(ICON_PANEL_OBJS) $(FONT_OBJS) libhush.a hush-relay \
 		$(TEST_BINS) src/hush_relay_main.o src/hush_ui_html.h \
 		src/hush_build.stamp src/hush_build.stamp.tmp
 

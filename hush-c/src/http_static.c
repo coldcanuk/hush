@@ -2,12 +2,15 @@
 
 #include <string.h>
 
+#include "hush_font_face.h"
 #include "hush_http_internal.h"
 #include "hush_icon_panels.h"
 #include "hush_ui_html.h"
 
 /* Serves an embedded icon panel for path. 0 when path is not ours. */
 static int hush_http_serve_icon_panel(int fd, const char *path);
+/* Serves the vendored typewriter face. 0 when path is not ours. */
+static int hush_http_serve_font(int fd, const char *path);
 
 int hush_http_serve_asset(int fd, const char *path)
 {
@@ -44,7 +47,9 @@ int hush_http_serve_asset(int fd, const char *path)
         hush_http_reply(fd, "200 OK", assets[i].ctype, body, n);
         return 1;
     }
-    return hush_http_serve_icon_panel(fd, path);
+    if (hush_http_serve_icon_panel(fd, path))
+        return 1;
+    return hush_http_serve_font(fd, path);
 }
 
 static int hush_http_serve_icon_panel(int fd, const char *path)
@@ -88,4 +93,19 @@ static int hush_http_serve_icon_panel(int fd, const char *path)
         return 1;
     }
     return 0;
+}
+
+static int hush_http_serve_font(int fd, const char *path)
+{
+    const unsigned char *start;
+    size_t n;
+
+    if (path == NULL)
+        return 0;
+    if (strcmp(path, "/fonts/special-elite-latin-400.woff2") != 0)
+        return 0;
+    start = _binary_demo_fonts_special_elite_latin_400_woff2_start;
+    n = (size_t)(_binary_demo_fonts_special_elite_latin_400_woff2_end - start);
+    hush_http_reply(fd, "200 OK", "font/woff2", (const char *)start, n);
+    return 1;
 }

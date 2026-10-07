@@ -129,18 +129,14 @@ robots never chain by mentioning each other, and `robot_hops` stays `0`.
    logged-in owner's profile, is saved in `vibe.json` next to the theme as
    `approval_mode` (`auto_approve` | `approve_every_action`), and is read
    back on every relay start. A missing or unknown stored value reads as
-   `auto_approve`. A `POST /api/profile` body that names the key in the
-   compact form the app sends (`"approval_mode":`, no space before the
-   colon) sets only the approval setting and never touches the profile
-   names. A value other than those two ids (including `""`, `null`, a
-   number, or `"approval_mode": "…"` with a space after the colon) is
-   refused (400, "approval_mode must be auto_approve or
-   approve_every_action.") and changes nothing. The relay reads compact
-   JSON only (#289): with a space before the colon (`"approval_mode" :`)
-   the key is not seen, so the body is an ordinary profile save, which
-   clears the name, email and organization fields it leaves out (#288).
-   The same happens with a tab or newline directly before the key
-   (`{\t"approval_mode":…}`, `{\n"approval_mode":…}`; #289, #288).
+   `auto_approve`. A `POST /api/profile` body that names `approval_mode`
+   sets only the approval setting and never touches the profile
+   names. Whitespace around the colon is accepted, including a space
+   before the colon (`"approval_mode" : "auto_approve"`), a space after
+   it, and a tab or newline before the key. A value other than those
+   two ids (including `""`, `null`, a number, or `"approval_mode": "…"`)
+   is refused (400, "approval_mode must be auto_approve or
+   approve_every_action.") and changes nothing.
    The Settings radio shows
    the saved value on page load, on every 1 s session refresh, and after
    a post (a refused post snaps it back).

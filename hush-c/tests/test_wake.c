@@ -211,6 +211,58 @@ int main(void)
 
     {
         hush_event_t evs[64];
+        hush_wake_in_t proj;
+        const char *rootp =
+            "1010101010101010101010101010101010101010101010101010101010101010";
+        const char *trigp =
+            "2020202020202020202020202020202020202020202020202020202020202020";
+        char want[32];
+        size_t qn;
+        size_t qi;
+        size_t ti;
+        int found = 0;
+
+        memset(&proj, 0, sizeof(proj));
+        proj.store = store;
+        proj.robot_hex = k_pub;
+        proj.root_hex = rootp;
+        proj.trigger_id = trigp;
+        proj.channel = "general";
+        proj.now = t0;
+        proj.lease_s = HUSH_AGENT_PROJECT_TIMEOUT_S;
+        expect(hush_wake_claim(&proj) == HUSH_OK, "project lease claim");
+        snprintf(want, sizeof(want), "%lld",
+                 (long long)((int64_t)t0 + (int64_t)HUSH_AGENT_PROJECT_TIMEOUT_S));
+        qn = hush_store_query(store, NULL, 0, evs, 64);
+        for (qi = 0; qi < qn; qi++) {
+            int root_ok = 0;
+            int lease_ok = 0;
+
+            if (evs[qi].kind != (uint32_t)HUSH_WAKE_KIND_CLAIM)
+                continue;
+            for (ti = 0; ti < evs[qi].tag_count &&
+                         ti < (size_t)HUSH_EVENT_MAX_TAGS; ti++) {
+                if (strcmp(evs[qi].tags[ti][0], "e") == 0 &&
+                    strcmp(evs[qi].tags[ti][1], rootp) == 0)
+                    root_ok = 1;
+                if (strcmp(evs[qi].tags[ti][0], "lease") == 0 &&
+                    strcmp(evs[qi].tags[ti][1], want) == 0)
+                    lease_ok = 1;
+            }
+            if (root_ok && lease_ok)
+                found = 1;
+        }
+        expect(found == 1, "project lease tag is 300");
+        hush_wake_expire(store, t0 + HUSH_WAKE_LEASE_S + 1);
+        expect(hush_wake_state(k_pub, rootp) == HUSH_WAKE_ST_CLAIMED,
+               "project lease outlives 90");
+        hush_wake_expire(store, t0 + HUSH_AGENT_PROJECT_TIMEOUT_S + 1);
+        expect(hush_wake_state(k_pub, rootp) == HUSH_WAKE_ST_DONE,
+               "project lease ends at 300");
+    }
+
+    {
+        hush_event_t evs[64];
         hush_event_t gossip;
         hush_wake_in_t gin;
         const char *rg =

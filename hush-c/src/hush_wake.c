@@ -501,6 +501,14 @@ static int hush_wake_is_same_trigger(const hush_wake_slot_t *slot,
     return memcmp(slot->trigger, trigger, (size_t)HUSH_WAKE_TRIGGER_LEN) == 0;
 }
 
+static int hush_wake_lease_span(const hush_wake_in_t *in)
+{
+    assert(in != NULL);
+    if (in->lease_s > 0)
+        return in->lease_s;
+    return HUSH_WAKE_LEASE_S;
+}
+
 static void hush_wake_take_slot(hush_wake_slot_t *slot, const hush_wake_in_t *in,
                                 const unsigned char *key,
                                 const unsigned char *trigger)
@@ -517,7 +525,7 @@ static void hush_wake_take_slot(hush_wake_slot_t *slot, const hush_wake_in_t *in
     memcpy(slot->trigger, trigger, (size_t)HUSH_WAKE_TRIGGER_LEN);
     memcpy(slot->device, g_device, (size_t)HUSH_WAKE_DEVICE_LEN);
     slot->state = (uint8_t)HUSH_WAKE_ST_CLAIMED;
-    slot->lease_unix = (int64_t)now + (int64_t)HUSH_WAKE_LEASE_S;
+    slot->lease_unix = (int64_t)now + (int64_t)hush_wake_lease_span(in);
     hush_wake_copy(slot->robot, sizeof(slot->robot), in->robot_hex);
     hush_wake_copy(slot->root, sizeof(slot->root), in->root_hex);
     hush_wake_copy(slot->channel, sizeof(slot->channel),
@@ -1005,7 +1013,8 @@ static hush_status_t hush_wake_gossip_put(const hush_wake_in_t *in,
     hush_wake_put_tag(&ev, "device", hex);
     if (state == HUSH_WAKE_ST_CLAIMED)
         (void)snprintf(lease, sizeof(lease), "%lld",
-                       (long long)(ev.created_at + (int64_t)HUSH_WAKE_LEASE_S));
+                       (long long)(ev.created_at +
+                                   (int64_t)hush_wake_lease_span(in)));
     else
         (void)snprintf(lease, sizeof(lease), "0");
     hush_wake_put_tag(&ev, "lease", lease);

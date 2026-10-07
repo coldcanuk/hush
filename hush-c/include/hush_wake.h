@@ -42,6 +42,8 @@ typedef struct {
     const char *trigger_id;
     const char *channel;
     time_t now;
+    /* 0 keeps HUSH_WAKE_LEASE_S. A project claim passes its kill clock. */
+    int lease_s;
 } hush_wake_in_t;
 
 /* Loads device id and the slot file under hush home. Creates both when
