@@ -216,13 +216,13 @@ void hush_agent_poll(hush_store_t *store)
             hush_agent_finish_job(store, &g_jobs[i], 0);
             continue;
         }
-        if (store != NULL &&
+        if (hush_agent_child_is_working(&g_jobs[i], now) == 0 && store != NULL &&
             hush_presence_stall_s(g_jobs[i].robot_pub, g_jobs[i].parent_id, now)
                 >= HUSH_PRESENCE_STALL_S &&
             strcmp(g_jobs[i].presence_slug, HUSH_PRESENCE_SLUG_STUCK) != 0)
             hush_agent_presence_put(store, &g_jobs[i],
                                     HUSH_PRESENCE_SLUG_STUCK);
-        if (store != NULL &&
+        if (hush_agent_child_is_working(&g_jobs[i], now) == 0 && store != NULL &&
             hush_presence_stuck_due(g_jobs[i].robot_pub, g_jobs[i].parent_id,
                                     now)) {
             hush_agent_presence_put(store, &g_jobs[i],
@@ -822,7 +822,8 @@ static hush_status_t hush_agent_claim_job(hush_store_t *store, hush_agent_job_t 
     assert(store != NULL && job != NULL);
     hush_wake_in_t wake = {.store = store, .robot_hex = job->robot_pub,
         .root_hex = job->parent_id, .trigger_id = job->trigger_id,
-        .channel = job->channel, .now = job->started};
+        .channel = job->channel, .now = job->started,
+        .lease_s = job->project_tools ? HUSH_AGENT_PROJECT_TIMEOUT_S : 0};
     return hush_wake_claim(&wake);
 }
 

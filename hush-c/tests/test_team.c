@@ -2,6 +2,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,6 +53,94 @@ static void test_parse(void)
     expect(hush_agent_team_parse(&team, bad) == HUSH_ERR_PARSE, "bad provider");
     expect(team.count == 0, "bad parse keeps nothing");
     expect(hush_agent_team_parse(&team, plain) == HUSH_ERR_NOT_FOUND, "no fence");
+}
+
+static void test_project_clock(void)
+{
+    hush_agent_job_t job;
+    time_t t0 = 1000000;
+
+    memset(&job, 0, sizeof(job));
+    job.started = t0;
+    expect(hush_agent_job_timed_out(&job, t0 + HUSH_AGENT_TIMEOUT_S - 1) == 0,
+           "chat inside 90");
+    expect(hush_agent_job_timed_out(&job, t0 + HUSH_AGENT_TIMEOUT_S) == 1,
+           "chat ends at 90");
+    job.project_tools = 1;
+    expect(hush_agent_job_timed_out(&job, t0 + HUSH_AGENT_TIMEOUT_S) == 0,
+           "project still inside at 90");
+    expect(hush_agent_job_timed_out(&job,
+               t0 + (time_t)HUSH_AGENT_PROJECT_TIMEOUT_S - 1) == 0,
+           "project still inside at 299");
+    expect(hush_agent_job_timed_out(&job,
+               t0 + (time_t)HUSH_AGENT_PROJECT_TIMEOUT_S) == 1,
+           "project ends at 300");
+    expect(strcmp(hush_agent_grok_turn_budget(0), "2") == 0, "chat turns");
+    expect(strcmp(hush_agent_grok_turn_budget(1), "8") == 0, "project turns");
+    expect(hush_agent_budget_seconds(0) == HUSH_AGENT_TIMEOUT_S, "chat clock");
+    expect(hush_agent_budget_seconds(1) == HUSH_AGENT_PROJECT_TIMEOUT_S,
+           "project clock");
+    job.project_tools = 0;
+    job.pid = 1;
+    expect(hush_agent_child_is_working(&job, t0 + HUSH_PRESENCE_STALL_S) == 1,
+           "live child ahead of the deadline is working");
+    expect((hush_agent_child_is_working(&job, t0 + HUSH_PRESENCE_STALL_S) == 0)
+               == 0,
+           "stall stays off while the pid is live and the deadline is ahead");
+    expect(hush_agent_child_is_working(&job, t0 + HUSH_AGENT_TIMEOUT_S) == 0,
+           "timed out child is not working");
+    job.pid = 0;
+    expect(hush_agent_child_is_working(&job, t0 + HUSH_PRESENCE_STALL_S) == 0,
+           "reaped child is not working");
+}
+
+static int argv_has(char **argv, const char *word)
+{
+    size_t i;
+
+    for (i = 0; argv[i] != NULL; i++) {
+        if (strcmp(argv[i], word) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static void test_worker_cwd(void)
+{
+    hush_agent_job_t job;
+    char *argv[HUSH_AGENT_ARGV_MAX];
+    char saved[PATH_MAX];
+    char now[PATH_MAX];
+    char dir[] = "/tmp/hush-cwd-XXXXXX";
+    int n;
+
+    expect(getcwd(saved, sizeof(saved)) != NULL, "save cwd");
+    expect(hush_agent_enter_cwd(NULL) == 0, "null cwd refused");
+    expect(hush_agent_enter_cwd("") == 0, "empty cwd refused");
+    expect(getcwd(now, sizeof(now)) != NULL && strcmp(saved, now) == 0,
+           "refuse leaves cwd");
+    expect(mkdtemp(dir) != NULL, "job dir");
+    expect(hush_agent_enter_cwd(dir) == 1, "enter job cwd");
+    expect(getcwd(now, sizeof(now)) != NULL && strcmp(now, dir) == 0,
+           "cwd is the job dir");
+    expect(chdir(saved) == 0, "restore cwd");
+    expect(hush_agent_enter_cwd("/tmp/hush-cwd-missing-desk") == 0,
+           "missing cwd refused");
+
+    memset(&job, 0, sizeof(job));
+    snprintf(job.cwd, sizeof(job.cwd), "%s", dir);
+    n = hush_agent_fill_copilot_argv(&job, argv, HUSH_AGENT_ARGV_MAX, "note");
+    expect(n > 0, "copilot argv built");
+    expect(argv_has(argv, "--allow-all-tools") == 1, "copilot tools");
+    expect(argv_has(argv, "-C") == 1, "copilot -C");
+    expect(argv_has(argv, job.cwd) == 1, "copilot cwd");
+    expect(argv_has(argv, "--allow-all") == 0, "copilot not allow-all");
+    job.cwd[0] = '\0';
+    n = hush_agent_fill_copilot_argv(&job, argv, HUSH_AGENT_ARGV_MAX, "note");
+    expect(n > 0, "copilot argv without cwd");
+    expect(argv_has(argv, "-C") == 0, "no -C when cwd empty");
+    expect(argv_has(argv, "--allow-all-tools") == 1, "tools without cwd");
+    expect(argv_has(argv, "--allow-all") == 0, "still not allow-all");
 }
 
 static void test_denylist(void)
@@ -226,6 +315,8 @@ int main(void)
     if (mkdtemp(home) == NULL)
         return 1;
     test_parse();
+    test_project_clock();
+    test_worker_cwd();
     test_denylist();
     test_yes_no(home);
     {

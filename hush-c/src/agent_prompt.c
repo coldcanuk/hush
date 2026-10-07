@@ -129,6 +129,14 @@ static void hush_agent_fill_rules(char *out, size_t outsz, const char *human)
         hush_agent_copy(out, outsz, HUSH_AGENT_RULES);
 }
 
+static void hush_agent_arm_budget(hush_agent_job_t *job)
+{
+    assert(job != NULL);
+    assert(job->started > 0);
+    job->budget_deadline = job->started +
+        (time_t)hush_agent_budget_seconds(job->project_tools);
+}
+
 hush_status_t hush_agent_fill_job(hush_agent_job_t *job,
                                          const hush_agent_job_in_t *in)
 {
@@ -142,6 +150,7 @@ hush_status_t hush_agent_fill_job(hush_agent_job_t *job,
     hush_agent_append_last(job);
     hush_agent_prepare_cwd(job->cwd, sizeof(job->cwd));
     hush_agent_apply_project_cwd(job);
+    hush_agent_arm_budget(job);
     hush_agent_fill_job_note(job, in);
     hush_agent_chief_equip(job, in->store);
     return HUSH_OK;

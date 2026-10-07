@@ -472,12 +472,35 @@ static hush_status_t hush_agent_read_chunk(hush_agent_job_t *job, int *more)
     return count == 0 && closed == 0 ? HUSH_OK : HUSH_ERR_IO;
 }
 
+int hush_agent_budget_seconds(int project_tools)
+{
+    if (project_tools)
+        return HUSH_AGENT_PROJECT_TIMEOUT_S;
+    return HUSH_AGENT_TIMEOUT_S;
+}
+
 int hush_agent_job_timed_out(const hush_agent_job_t *job, time_t now)
 {
+    time_t end;
+
     assert(job != NULL);
     if (job->started <= 0)
         return 0;
-    return now >= job->started + (time_t)HUSH_AGENT_TIMEOUT_S;
+    if (job->budget_deadline > 0)
+        end = job->budget_deadline;
+    else
+        end = job->started + (time_t)hush_agent_budget_seconds(job->project_tools);
+    return now >= end;
+}
+
+int hush_agent_child_is_working(const hush_agent_job_t *job, time_t now)
+{
+    assert(job != NULL);
+    if (job->pid <= 0)
+        return 0;
+    if (hush_agent_job_timed_out(job, now))
+        return 0;
+    return 1;
 }
 
 static int hush_agent_robot_busy(const hush_agent_robot_t *bot,

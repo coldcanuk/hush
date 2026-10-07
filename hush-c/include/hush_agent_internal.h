@@ -158,6 +158,8 @@ typedef struct {
     int loop_verdict;
     /* 1 when cwd is a milestone project and file tools are allowed. */
     int project_tools;
+    /* started plus the kill clock. 0 until fill arms the job. */
+    time_t budget_deadline;
 } hush_agent_job_t;
 
 /* Loop state for one thread root (#280). Hush drives every turn; robots
@@ -407,6 +409,15 @@ void hush_agent_finish_job(hush_store_t *store, hush_agent_job_t *job, int ok);
 
 /* True when the job outlived its provider turn budget. */
 int hush_agent_job_timed_out(const hush_agent_job_t *job, time_t now);
+
+/* 1 when the child pid is live and the kill clock has not passed. */
+int hush_agent_child_is_working(const hush_agent_job_t *job, time_t now);
+
+/* Writes the Copilot argv for prompt. Adds -C when job->cwd is non-empty.
+ * Returns the slot count, including the NULL terminator, or 0 when cap
+ * is too small. Does not start the process. */
+int hush_agent_fill_copilot_argv(const hush_agent_job_t *job, char **argv,
+                                 size_t cap, const char *prompt);
 
 /* True when the job's provider/roster turn is still enabled. */
 int hush_agent_job_enabled(const hush_agent_job_t *job);
