@@ -789,10 +789,17 @@ the same root.
 While the pane is open the tool rail is forced to its collapsed KIT stamp and
 parked at the brand home (§15). It must not paint inside the pane.
 
-A Grok Build robot with `has_home` is invoked via `grok -p` in an
-empty `--cwd` (no `AGENTS.md`), `--max-turns 2`
+A Grok Build robot with `has_home` is invoked via `grok -p`.
+An unbound chat job uses the private agent directory
+(`$HUSH_CONFIG_DIR/agent-cwd`, or a private temp directory) as `--cwd`,
+`--max-turns 2`
 (named `HUSH_AGENT_GROK_TURNS`; one turn was enough for a joke and
-not enough for a multi-part ask), `--reasoning-effort low` (named
+not enough for a multi-part ask), and a denylist covering shell, web,
+files, and Agent. A milestone bound to a launch project sets `--cwd`
+to that project directory, drops only the file tools from the denylist,
+and uses `--max-turns 8` (named `HUSH_AGENT_GROK_PROJECT_TURNS`) with a
+300 second kill clock (`HUSH_AGENT_PROJECT_TIMEOUT_S`). A fixup stays
+`--max-turns 1`. `--reasoning-effort low` (named
 `HUSH_AGENT_GROK_EFFORT`; grok 1.0.4 rejects `none`), `--no-memory`,
 `--no-subagents`, `--disable-web-search`, and `--disallowed-tools`
 covering shell / web / files / Agent. The override plus `--rules`
