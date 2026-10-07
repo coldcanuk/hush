@@ -334,15 +334,47 @@ async function main() {
 
   // Fresh page for every pin run: reload, pin the theme through the app's
   // stored-choice boot path, Developer Logging off.
+  // The switch is unchecked in the HTML until Settings copies the saved
+  // flag. A profile post now keeps that flag (#288), so clearing only the
+  // DOM leaves the next click turning a saved "on" back off.
+  const devLogOff = async () => {
+    const cleared = await cdp.evalAsync(`(async () => {
+      const r = await fetch('/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dev_log_enabled: 0 })
+      });
+      if (!r.ok) return 'status ' + r.status;
+      const body = await r.json();
+      if (body.dev_log_enabled !== false) return 'still on';
+      if (session) session.dev_log_enabled = false;
+      const box = document.getElementById('dev-log');
+      if (box) box.checked = false;
+      const drawer = document.getElementById('dev-log-drawer');
+      if (drawer) {
+        drawer.classList.remove('show');
+        drawer.removeAttribute('aria-modal');
+      }
+      return 'ok';
+    })()`);
+    if (cleared !== 'ok')
+      fail('dev log reset failed: ' + cleared);
+  };
   const reset = async (c) => {
     await view(c);
     await cdp.eval(`localStorage.setItem('hush-theme', ${JSON.stringify(c.theme)})`);
     await cdp.send('Page.reload', {});
     await sleep(200);
     await cdp.waitFor(`!!document.querySelector('#hive.show') && document.documentElement.getAttribute('data-theme') === ${JSON.stringify(c.theme)}`, 'hive at ' + c.name);
-    await cdp.eval(`(() => { const s = document.getElementById('dev-log');
-      if (s.checked) { s.checked = false; s.dispatchEvent(new Event('change')); } })()`);
-    await sleep(150);
+    await devLogOff();
+    /* A session tick that started before the post can still land the old
+       "on". Give that response time to arrive, then force the flag off. */
+    await sleep(400);
+    await cdp.eval(`(() => {
+      if (session) session.dev_log_enabled = false;
+      const box = document.getElementById('dev-log');
+      if (box) box.checked = false;
+    })()`);
     await cdp.eval(`document.activeElement && document.activeElement.blur && document.activeElement.blur()`);
   };
   // Settings through the real Kit path (Kit stamp, then Settings).

@@ -3070,6 +3070,7 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
      * and robot intros are filtered from main chat/thread streams and go only
      * to the dev-log drawer (syslog style). Toggle in Settings. */
     let devLogEnabled = false;
+    let devLogPosting = false;
     const devLogLines = [];
     const devLogSeen = {};
 
@@ -6170,19 +6171,24 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
     });
     // M4.3 Developer Logging toggle (default off). Persist best-effort via profile or local.
     if ($("dev-log")) {
+      /* The track is the visible control. The input is a 0x0 box, so a
+       * key event must toggle it here or Space never opens the log. */
+      $("dev-log").addEventListener("keydown", (ev) => {
+        if (ev.key !== " " && ev.code !== "Space") return;
+        ev.preventDefault();
+        ev.target.checked = !ev.target.checked;
+        ev.target.dispatchEvent(new Event("change"));
+      });
       $("dev-log").addEventListener("change", async () => {
         devLogEnabled = !!$("dev-log").checked;
-        // Best effort persist (server carries dev_log_enabled in launch/session)
+        devLogPosting = true;
+        if (devLogEnabled) openDevLog();
+        else closeDevLog();
+        try { render(lastEvents, lastStatus); } catch (e) {}
         try {
           await api("/api/profile", { dev_log_enabled: devLogEnabled ? 1 : 0 });
         } catch (e) { /* ignore; client state still works */ }
-        if (devLogEnabled) {
-          openDevLog();
-        } else {
-          closeDevLog();
-        }
-        // Re-render streams with filter
-        try { render(lastEvents, lastStatus); } catch (e) {}
+        devLogPosting = false;
       });
     }
     if ($("dev-log-close")) $("dev-log-close").addEventListener("click", closeDevLog);
@@ -6216,11 +6222,12 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
           ? ("Join token: " + (session.vibe.join_token || "unavailable after restart — rotate to issue a new one"))
           : "Public vibes are discoverable and joinable.";
       }
-      // M4.3 dev log flag from session (persisted server side via launch)
-      if (typeof session.dev_log_enabled !== "undefined") {
+      // M4.3 dev log flag from session (persisted server side via launch).
+      // Leave the switch alone while its change handler is still saving.
+      if (!devLogPosting && typeof session.dev_log_enabled !== "undefined") {
         devLogEnabled = !!session.dev_log_enabled;
       }
-      if ($("dev-log")) $("dev-log").checked = !!devLogEnabled;
+      if (!devLogPosting && $("dev-log")) $("dev-log").checked = !!devLogEnabled;
     }
 
     async function postTurn() {
