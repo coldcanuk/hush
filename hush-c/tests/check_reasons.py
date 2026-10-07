@@ -64,7 +64,7 @@ FAV_CORRUPT = "That saved favorite file is corrupt."
 
 # UI contract: api() keeps the 400 body, and the robot drawer shows it in
 # the existing #agent-err line under the form (fallback copy unchanged).
-UI_KEEPS_REASON = 'err.reason = r.status === 400 ? (await r.text().catch(() => "")).trim() : "";'
+UI_KEEPS_REASON = 'err.reason = text === "bad request" ? "" : text;'
 UI_SHOWS_REASON = '$("agent-err").textContent = (e && e.reason) || "Could not save that robot.";'
 UI_CLONE_REASON = '$("agent-err").textContent = (e && e.reason) || "Could not clone that robot.";'
 UI_DELETE_REASON = '$("agent-err").textContent = (e && e.reason) || "Could not delete that robot.";'

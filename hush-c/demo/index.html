@@ -3156,7 +3156,8 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       if (!r.ok) {
         const err = new Error("request failed");
         // A 400 body is one plain-text refusal reason; callers may show it.
-        err.reason = r.status === 400 ? (await r.text().catch(() => "")).trim() : "";
+        const text = r.status === 400 ? (await r.text().catch(() => "")).trim() : "";
+        err.reason = text === "bad request" ? "" : text;
         throw err;
       }
       return r.json();

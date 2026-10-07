@@ -32,6 +32,7 @@
 #define HUSH_AGENT_WHY_VOICE "Unknown voice: %s."
 #define HUSH_AGENT_WHY_MIN1 "Keep at least one skill equipped."
 #define HUSH_AGENT_WHY_ROLE "Skill %s is for %s robots only."
+#define HUSH_AGENT_WHY_BAD_ROLE "Role must be worker or chaperon."
 #define HUSH_AGENT_WHY_BUDGET \
     "Loadout over budget: at most %d skills, %d characters, complexity %d."
 #define HUSH_AGENT_WHY_NO_FILES "%s cannot read context files."
@@ -162,8 +163,7 @@ static int hush_http_context_why(char *why, size_t whysz,
 /* Returns the provider id the roster would rank first for in. */
 static const char *hush_http_primary_provider(const hush_roster_agent_in_t *in);
 /* Writes fmt into why with id echoed through hush_http_safe_id. */
-static void hush_http_why_id(char *why, size_t whysz, const char *fmt,
-                             const char *id);
+
 /* True when text holds no byte but whitespace. */
 static int hush_http_is_blank(const char *text);
 /* The roster robot whose id is slug; NULL when none is. */
@@ -313,7 +313,7 @@ static hush_status_t hush_http_update_payne(int fd, const char *body)
     }
     st = hush_launch_set_payne_providers(hush_http_launch(), ptrs, n);
     if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
+        return hush_http_reply_refused(fd, st, HUSH_AGENT_WHY_PROVIDER);
     memset(&in, 0, sizeof(in));
     hush_http_fill_agent_extras(&in, body);
     if (hush_http_skills_over_cap(body)) {
@@ -327,6 +327,10 @@ static hush_status_t hush_http_update_payne(int fd, const char *body)
         return hush_http_reply_refused(fd, st, why);
     if (in.has_picture || in.has_voice || in.has_skills || in.has_enabled)
         st = hush_launch_update_payne_profile(hush_http_launch(), &in);
+    if (st != HUSH_OK && !hush_http_setup_why(why, sizeof why, &in))
+        (void)snprintf(why, sizeof why, "%s", "Could not update Major.");
+    if (st != HUSH_OK)
+        return hush_http_reply_refused(fd, st, why);
     return hush_http_reply_session(fd, st);
 }
 
@@ -603,7 +607,10 @@ static void hush_http_equip_why(char *why, size_t whysz,
     if (st != HUSH_ERR_DENIED || skill == NULL)
         return;
     /* Role wall: try_equip denies only when the skill's role differs. */
-    hush_http_safe_id(id, sizeof(id), skill_id);
+    if (!hush_http_safe_id(id, sizeof(id), skill_id)) {
+        (void)snprintf(why, whysz, "%s", HUSH_HTTP_WHY_ID_LONG);
+        return;
+    }
     (void)snprintf(why, whysz, HUSH_AGENT_WHY_ROLE, id,
                    skill->role[0] != '\0' ? skill->role : HUSH_SKILL_ROLE_ANY);
 }
@@ -814,6 +821,10 @@ static void hush_http_update_why(char *why, size_t whysz, const char *slug,
     assert(why != NULL && whysz > 0);
     assert(slug != NULL && in != NULL);
     why[0] = '\0';
+    if (in->has_role && in->role[0] != '\0' && !hush_roster_is_role(in->role)) {
+        (void)snprintf(why, whysz, "%s", HUSH_AGENT_WHY_BAD_ROLE);
+        return;
+    }
     if (hush_http_find_robot(slug) == NULL) {
         hush_http_slug_why(why, whysz, HUSH_ERR_NOT_FOUND, slug);
         return;
@@ -974,16 +985,6 @@ static const char *hush_http_primary_provider(const hush_roster_agent_in_t *in)
             return in->providers[i];
     }
     return in->provider;
-}
-
-static void hush_http_why_id(char *why, size_t whysz, const char *fmt,
-                             const char *id)
-{
-    char safe[HUSH_HTTP_WHY_ID_MAX];
-
-    assert(why != NULL && whysz > 0 && fmt != NULL);
-    hush_http_safe_id(safe, sizeof(safe), id);
-    (void)snprintf(why, whysz, fmt, safe);
 }
 
 static int hush_http_is_blank(const char *text)

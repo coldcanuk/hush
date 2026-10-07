@@ -500,11 +500,15 @@ static hush_status_t hush_favorite_clean_name(char *dst, size_t dstsz,
 
     assert(dst != NULL);
     assert(src != NULL);
+    while (*src == ' ')
+        src++;
     n = strlen(src);
-    if (n >= dstsz)
-        return HUSH_ERR_FULL;
-    memcpy(dst, src, n + 1);
-    hush_favorite_trim(dst);
+    while (n > 0 && src[n - 1] == ' ')
+        n--;
+    if (n + 1 > dstsz)
+        return HUSH_ERR_PARSE;
+    memcpy(dst, src, n);
+    dst[n] = '\0';
     if (!hush_favorite_is_name(dst))
         return HUSH_ERR_PARSE;
     return HUSH_OK;
@@ -883,7 +887,7 @@ static hush_status_t hush_favorite_read_text(char *out, size_t outsz,
     if (failed || closed != 0)
         return HUSH_ERR_IO;
     if (extra != EOF)
-        return HUSH_ERR_FULL;
+        return HUSH_ERR_ARG;
     if (memchr(out, '\0', n) != NULL)
         return HUSH_ERR_PARSE;
     return HUSH_OK;

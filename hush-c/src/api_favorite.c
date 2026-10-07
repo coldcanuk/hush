@@ -29,6 +29,9 @@
     "This robot already has %d favorites; delete one first."
 #define HUSH_LOADOUT_WHY_MISSING "No favorite with that name for this robot."
 #define HUSH_LOADOUT_WHY_CORRUPT "That saved favorite file is corrupt."
+#define HUSH_LOADOUT_WHY_BIG "That saved favorite file is too big to read."
+#define HUSH_LOADOUT_WHY_READ "That saved favorite file could not be read."
+#define HUSH_LOADOUT_WHY_LIST "Could not list favorites for this robot."
 
 enum {
     HUSH_LOADOUT_ACTION_MAX = 16,
@@ -97,10 +100,6 @@ static void hush_loadout_find_why(char *why, size_t whysz, hush_status_t st);
 
 /* True when ids[idx] repeats an earlier id. */
 static int hush_loadout_seen(char ids[][HUSH_SKILL_ID_MAX], size_t idx);
-
-/* Writes fmt into why with id echoed through hush_http_safe_id. */
-static void hush_loadout_why_id(char *why, size_t whysz, const char *fmt,
-                                const char *id);
 
 hush_status_t hush_http_serve_loadout(int fd, const char *body)
 {
@@ -236,7 +235,7 @@ static hush_status_t hush_loadout_list(int fd, const char *body)
         return hush_loadout_refuse_robot(fd, st);
     st = hush_favorite_list_json(robot, reply, sizeof reply, &n);
     if (st != HUSH_OK)
-        return hush_http_reply_session(fd, st);
+        return hush_http_reply_refused(fd, st, HUSH_LOADOUT_WHY_LIST);
     hush_http_reply(fd, "200 OK", "application/json", reply, n);
     return HUSH_OK;
 }
@@ -394,6 +393,10 @@ static void hush_loadout_save_why(char *why, size_t whysz, hush_status_t st,
                        (int)HUSH_FAVORITE_COUNT_MAX);
     else if (st == HUSH_ERR_PARSE)
         (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_CORRUPT);
+    else if (st == HUSH_ERR_ARG)
+        (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_BIG);
+    else if (st == HUSH_ERR_IO)
+        (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_READ);
 }
 
 static int hush_loadout_ids_why(char *why, size_t whysz, const char *robot,
@@ -414,11 +417,11 @@ static int hush_loadout_ids_why(char *why, size_t whysz, const char *robot,
         skill = hush_skill_find(cat, ids[i]);
         hit = 1;
         if (skill == NULL)
-            hush_loadout_why_id(why, whysz, HUSH_HTTP_WHY_SKILL, ids[i]);
+            hush_http_why_id(why, whysz, HUSH_HTTP_WHY_SKILL, ids[i]);
         else if (!hush_skill_robot_ok(skill, robot))
-            hush_loadout_why_id(why, whysz, HUSH_HTTP_WHY_OWNED, ids[i]);
+            hush_http_why_id(why, whysz, HUSH_HTTP_WHY_OWNED, ids[i]);
         else if (i > 0 && hush_loadout_seen(ids, i))
-            hush_loadout_why_id(why, whysz, HUSH_LOADOUT_WHY_TWICE, ids[i]);
+            hush_http_why_id(why, whysz, HUSH_LOADOUT_WHY_TWICE, ids[i]);
         else
             hit = 0;
     }
@@ -444,14 +447,8 @@ static void hush_loadout_find_why(char *why, size_t whysz, hush_status_t st)
         (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_MISSING);
     else if (st == HUSH_ERR_PARSE)
         (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_CORRUPT);
-}
-
-static void hush_loadout_why_id(char *why, size_t whysz, const char *fmt,
-                                const char *id)
-{
-    char safe[HUSH_HTTP_WHY_ID_MAX];
-
-    assert(why != NULL && whysz > 0 && fmt != NULL);
-    hush_http_safe_id(safe, sizeof safe, id);
-    (void)snprintf(why, whysz, fmt, safe);
+    else if (st == HUSH_ERR_ARG)
+        (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_BIG);
+    else if (st == HUSH_ERR_IO)
+        (void)snprintf(why, whysz, "%s", HUSH_LOADOUT_WHY_READ);
 }

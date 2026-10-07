@@ -53,8 +53,16 @@ hush_status_t hush_http_reply_refused(int fd, hush_status_t st,
                                       const char *why);
 
 /* Copies id into out for echoing in a refusal: keeps A-Z a-z 0-9 : . _ -,
- * shows any other byte as '?', and cuts at outsz - 1 bytes. */
-void hush_http_safe_id(char *out, size_t outsz, const char *id);
+ * shows any other byte as '?'. Returns 0 and leaves out empty when id
+ * does not fit, so a reason never quotes a cut-off id. */
+int hush_http_safe_id(char *out, size_t outsz, const char *id);
+
+/* Writes fmt into why with id echoed through hush_http_safe_id.
+ * An id that does not fit becomes HUSH_HTTP_WHY_ID_LONG. */
+void hush_http_why_id(char *why, size_t whysz, const char *fmt,
+                      const char *id);
+
+#define HUSH_HTTP_WHY_ID_LONG "That id is too long to show."
 
 /* Writes required bytes with bounded backpressure; IO on a stalled reader. */
 hush_status_t hush_http_write_all(int fd, const char *buf, size_t len);

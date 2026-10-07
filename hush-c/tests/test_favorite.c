@@ -11,6 +11,7 @@
 
 #include "hush_favorite.h"
 #include "hush_home.h"
+#include "hush_http_internal.h"
 #include "hush_skill.h"
 
 enum {
@@ -195,7 +196,29 @@ static void check_save_refusals(fav_fixture_t *fx)
            == HUSH_ERR_ARG, "long robot refused");
     memset(long_name, 'n', sizeof long_name - 1);
     expect(hush_favorite_save("sentry", long_name, fx->ids, 1)
-           == HUSH_ERR_FULL, "long name refused");
+           == HUSH_ERR_PARSE, "long name refused");
+    {
+        char padded[HUSH_FAVORITE_NAME_MAX + 2] = {0};
+        char echo[HUSH_HTTP_WHY_ID_MAX] = {0};
+        char wide_id[80] = {0};
+
+        memset(padded, 'p', HUSH_FAVORITE_NAME_LEN);
+        padded[HUSH_FAVORITE_NAME_LEN] = ' ';
+        expect(hush_favorite_name_ok(padded) == 1,
+               "trailing space is outside the 47-character count");
+        memset(fx->ids, 0, sizeof fx->ids);
+        take_str(fx->ids[0], sizeof fx->ids[0], "system:forge-skill",
+                 "id fits");
+        expect(hush_favorite_save("sentry", padded, fx->ids, 1) == HUSH_OK,
+               "padded name saves");
+        memset(wide_id, 'k', 70);
+        expect(hush_http_safe_id(echo, sizeof echo, "ab:c") == 1,
+               "short id fits");
+        expect(strcmp(echo, "ab:c") == 0, "short id text");
+        expect(hush_http_safe_id(echo, sizeof echo, wide_id) == 0,
+               "long id is not cut at 63 bytes");
+        expect(echo[0] == '\0', "long id leaves the echo empty");
+    }
 }
 
 /* Clashes refuse; exact overwrites land; aliases read stored state. */
@@ -694,8 +717,8 @@ static void check_file_max(fav_fixture_t *fx)
                == (size_t)HUSH_FAVORITE_FILE_MAX - 1, "wrote core");
     expect(fputc(' ', fp) == ' ', "pad byte");
     fclose(fp);
-    expect(hush_favorite_load("bound", "Edge", &fav) == HUSH_ERR_FULL,
-           "load FILE_MAX FULL");
+    expect(hush_favorite_load("bound", "Edge", &fav) == HUSH_ERR_ARG,
+           "load FILE_MAX is too big, not the favorite cap");
     expect(unlink(file) == 0, "bound cleanup");
 }
 
