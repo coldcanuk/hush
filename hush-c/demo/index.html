@@ -7734,7 +7734,7 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
               ? jobs.filter((j) => j && j.name !== quiet)
               : jobs;
             const lastKid = kids.length ? kids[kids.length - 1] : null;
-            const waiting = !!(lastKid && isLoopAsk(lastKid.content));
+            const waiting = isHiveOwner() && !!(lastKid && isLoopAsk(lastKid.content));
             const n = paintNote(e, (node) => {
               paintThink(node, cardJobs);
               if (kids.length || jobs.length) {

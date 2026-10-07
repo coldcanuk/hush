@@ -1582,9 +1582,9 @@ lines (posted by the channel `chaperon`, Major by default):
   unchanged). It is a plain chat line; there are no Yes/No buttons. A typed thread reply
   "Yes" (case-insensitive, trailing `.`/`!` allowed) runs up to
   `max_robot_turns` more turns; "No" posts "Loop stopped.".
-- After four Yes answers, the next cap posts "Loop limit reached. Ask
-  again to start a new loop." and the loop ends; a new note that mentions
-  the two robots starts a fresh loop.
+- After four Yes answers, the next cap posts "Loop limit reached. Mention
+  both robots again to start a new loop." and the loop ends; a new note that
+  mentions exactly those two robots starts a fresh loop.
 - Only the hive owner answers Yes/No; a Yes or No from a robot or from
   another human is ignored and the prompt keeps waiting.
 - Any other note from the hive owner in the thread ends the loop, even

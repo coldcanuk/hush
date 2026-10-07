@@ -101,7 +101,7 @@ for e in events:
     # R1: exact chaperon copy; the r3 wording no longer counts.
     if c == "Continue this loop? Reply Yes or No in this thread.":
         counts["ask"] += 1
-    if c == "Loop limit reached. Ask again to start a new loop.":
+    if c == "Loop limit reached. Mention both robots again to start a new loop.":
         counts["limit"] += 1
     if c == "Loop stopped.":
         counts["stopped"] += 1

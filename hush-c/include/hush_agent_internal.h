@@ -440,7 +440,8 @@ void hush_agent_follow_kick(hush_store_t *store, const hush_launch_t *launch,
 /* ---- agent_loop.c: pure text helpers for the robot loop (#280) ---- */
 
 #define HUSH_AGENT_LOOP_ASK_LINE "Continue this loop? Reply Yes or No in this thread."
-#define HUSH_AGENT_LOOP_LIMIT_LINE "Loop limit reached. Ask again to start a new loop."
+#define HUSH_AGENT_LOOP_LIMIT_LINE \
+    "Loop limit reached. Mention both robots again to start a new loop."
 #define HUSH_AGENT_LOOP_STOPPED_LINE "Loop stopped."
 #define HUSH_AGENT_LOOP_REPEAT_LINE \
     "This loop stopped because a note repeated an earlier one."

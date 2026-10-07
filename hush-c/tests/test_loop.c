@@ -36,7 +36,8 @@ enum {
 #define TEST_LOOP_LEAD_HEAD "Base. Loop: "
 /* R1 (#281 r4): the exact chaperon copy the human reads. */
 #define TEST_LOOP_ASK_COPY "Continue this loop? Reply Yes or No in this thread."
-#define TEST_LOOP_LIMIT_COPY "Loop limit reached. Ask again to start a new loop."
+#define TEST_LOOP_LIMIT_COPY \
+    "Loop limit reached. Mention both robots again to start a new loop."
 #define TEST_LOOP_STOPPED_COPY "Loop stopped."
 #define TEST_LOOP_REPEAT_COPY \
     "This loop stopped because a note repeated an earlier one."

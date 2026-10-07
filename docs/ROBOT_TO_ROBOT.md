@@ -105,8 +105,8 @@ robots never chain by mentioning each other, and `robot_hops` stays `0`.
    A cap of 1 or 2 is a short leash. At that cap the chaperon asks
    "Continue this loop? Reply Yes or No in this thread." A typed "Yes"
    resumes the stopped turn. "No" posts "Loop stopped." After four Yes
-   answers the next cap posts "Loop limit reached. Ask again to start a
-   new loop." Only the hive owner can answer. A robot's Yes is ignored.
+   answers the next cap posts "Loop limit reached. Mention both robots
+   again to start a new loop." Only the hive owner can answer. A robot's Yes is ignored.
    Another human's Yes is ignored.
    The default cap of 4 and the max cap of 8 do not ask while each note
    is new. The loop runs until the lead writes `LOOP: stop`, omits the
