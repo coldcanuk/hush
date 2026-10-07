@@ -55,7 +55,7 @@ Run it:
 ~/.local/bin/hush-relay --no-open 10555   # default port 10555
 ```
 
-Then open `http://127.0.0.1:10555/` in a Chromium-family browser. First launch walks Identity → Backup (save to `pass` checked by default; unchecked and disabled, with an inline reason, when `pass` is missing) → Vibe → Meet Major. `Close` dismisses the window and leaves the hive standing; `Exit` stops the relay and the children it forked (`hush-relay --quit [port]` on Linux, default port 10555: exit 0 stopped, 1 nothing to stop, 2 stop failed or refused; off Linux, including OpenBSD/FreeBSD, `--quit` never signals and refuses a live relay with exit 2 — use `POST /api/exit`). Details: [Close vs Exit](docs/OPERATIONS.md#close-vs-exit).
+Then open `http://127.0.0.1:10555/` in a Chromium-family browser. First launch walks Identity → Backup (save to `pass` checked by default; unchecked and disabled, with an inline reason, when `pass` is missing) → Vibe → Meet Major. `Close` dismisses the window and leaves the hive standing; `Exit` stops the relay and the children it forked (`hush-relay --quit [port]`, default port 10555: exit 0 stopped, 1 nothing to stop, 2 stop failed or refused. Linux, FreeBSD, and OpenBSD check process identity before signalling. Other platforms refuse a live relay with exit 2 — use `POST /api/exit`). Details: [Close vs Exit](docs/OPERATIONS.md#close-vs-exit).
 
 Isolated demo run (how the screenshot above was produced):
 
@@ -124,7 +124,7 @@ Provider secrets live in `pass` (plus foreign homes Hush never copies: `~/.confi
 In `pass`, 1Password (`op`), the Pop!_OS keyring (`secret-tool`), or `$HUSH_HOME/keys.vault` when `HUSH_KEY_PASS` is set. Without one of those, Hush cannot remember the key. It does not mint a new identity and call it the old one.
 
 **How do Close and Exit differ?**
-Close dismisses the window; the hive keeps listening (re-attach from the launcher). Exit stops the relay and the children it forked (`--quit [port]` on Linux, default port 10555; off Linux, including OpenBSD/FreeBSD, `--quit` never signals and refuses a live relay with exit 2 — use `POST /api/exit`). Full table in [`docs/OPERATIONS.md`](docs/OPERATIONS.md#close-vs-exit).
+Close dismisses the window; the hive keeps listening (re-attach from the launcher). Exit stops the relay and the children it forked (`--quit [port]`, default port 10555. Linux, FreeBSD, and OpenBSD check process identity before signalling. Other platforms refuse a live relay with exit 2 — use `POST /api/exit`). Full table in [`docs/OPERATIONS.md`](docs/OPERATIONS.md#close-vs-exit).
 
 **Where is the operator manual?**
 [`docs/OPERATIONS.md`](docs/OPERATIONS.md) (run, stop, rebuild guard, install/clean stops, threads, STUN/TURN, calls) and [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) (install per distro, env vars, file layout, providers).

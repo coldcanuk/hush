@@ -120,7 +120,7 @@ static void hush_print_close_hint(uint16_t port)
 {
     printf("GUI closed. Relay still running on http://127.0.0.1:%u/.\n",
            (unsigned)port);
-    printf("Click the launcher to re-attach. Use Exit (or --quit on Linux) to stop.\n");
+    printf("Click the launcher to re-attach. Use Exit or --quit to stop.\n");
 }
 
 static void hush_print_help(void)
@@ -134,8 +134,9 @@ static void hush_print_help(void)
     printf("  --no-open  do not open a window (even on a graphical session)\n");
     printf("  --close    detach the GUI; the relay stays up (exit 0)\n");
     printf("  --quit     stop the relay on [port] (default %u;\n", (unsigned)HUSH_DEFAULT_PORT);
-    printf("             exit 0 stopped, 1 nothing to stop, 2 stop failed or refused)\n");
-    printf("             off Linux, --quit refuses (exit 2); use POST /api/exit\n");
+    printf("             exit 0 stopped, 1 nothing to stop, 2 stop failed or refused;\n");
+    printf("             Linux, FreeBSD, and OpenBSD check identity before signalling)\n");
+    printf("             other platforms refuse; use POST /api/exit\n");
     printf("Close vs Exit:\n");
     printf("  Close dismisses the window. The hive keeps listening.\n");
     printf("  Exit / --quit stops the relay on that port and the children it forked.\n");

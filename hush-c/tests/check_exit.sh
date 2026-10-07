@@ -155,8 +155,10 @@ wait_down() {
 
 "$bin" --help | grep -q -- '--quit' || fail "help missing --quit"
 "$bin" --help | grep -q -- '--close' || fail "help missing --close"
+"$bin" --help | grep -q -- 'Linux, FreeBSD, and OpenBSD check identity' \
+    || fail "help missing identity check"
 "$bin" --help | grep -q -- 'off Linux, --quit refuses' \
-    || fail "help missing non-Linux refusal"
+    && fail "help still says non-Linux --quit only refuses"
 "$bin" --help | grep -q -- 'POST /api/exit' \
     || fail "help missing POST /api/exit pointer"
 # The non-Linux --quit refusal cannot execute on this Linux harness, so the

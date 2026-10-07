@@ -20,6 +20,12 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#if defined(__FreeBSD__)
+#include <sys/sysctl.h>
+#include <sys/user.h>
+#elif defined(__OpenBSD__)
+#include <sys/sysctl.h>
+#endif
 
 #include "hush_agent.h"
 #include "hush_auth.h"
@@ -378,17 +384,47 @@ static int hush_pid_starttime(unsigned long long *out_start, pid_t pid);
 /* True when pid's /proc starttime equals expect. False covers dead and
  * unreadable processes, so reuse never verifies. */
 static int hush_starttime_matches(pid_t pid, unsigned long long expect);
-/* Own /proc starttime, 0 when unreadable (non-Linux always reads 0 and the
- * pidfile falls back to pid-only, which --quit then refuses). */
+/* Own start token, 0 when unreadable. Linux reads /proc starttime. */
+static unsigned long long hush_own_starttime(void);
+#elif defined(__FreeBSD__) || defined(__OpenBSD__)
+enum {
+    HUSH_QUIT_COMM_MAX = 32
+};
+
+/* Identity read from the kernel process table. comm is NUL-terminated. */
+typedef struct hush_bsd_id {
+    unsigned long long start;
+    unsigned long uid;
+    char comm[HUSH_QUIT_COMM_MAX];
+    int path_ok;
+} hush_bsd_id_t;
+
+/* True when name starts with hush-relay. */
+static int hush_comm_is_relay(const char *name);
+
+/* Copies a possibly unterminated comm into dst. */
+static void hush_comm_copy(char *dst, size_t dstsz, const char *src, size_t srcsz);
+
+/* True when the path basename starts with hush-relay. */
+static int hush_base_is_relay(const char *path);
+
+/* Fills id from the kernel process table. 0 when pid cannot be read. */
+static int hush_bsd_fill(hush_bsd_id_t *id, pid_t pid);
+
+/* True when pid matches the recorded relay identity. */
+static int hush_bsd_identity_ok(pid_t pid, unsigned long long expect);
+
+/* Own start token from the kernel process table. 0 when unreadable. */
 static unsigned long long hush_own_starttime(void);
 #else
-/* No /proc identity off Linux: self start time is always unknown. */
+/* No process identity here: self start time is always unknown. */
 static unsigned long long hush_own_starttime(void);
 #endif
 /* Checks pid may be signalled for a quit on port: positive, unreserved, not
- * this process, live, and matching the recorded start time and port (Linux;
- * off Linux any live pid is refused). OK, NOT_FOUND when already gone,
- * DENIED otherwise. */
+ * this process, live, and matching the recorded identity. Linux matches
+ * start time and port. FreeBSD and OpenBSD also match uid and the
+ * executable name. Other platforms refuse every live pid. OK, NOT_FOUND
+ * when already gone, DENIED otherwise. */
 static hush_status_t hush_quit_verify_owner(uint16_t port, pid_t pid,
                                             unsigned long long start,
                                             uint16_t fileport);
@@ -405,7 +441,7 @@ static void hush_quit_report_io(uint16_t port, pid_t pid);
  * message, other pids get the refusal. */
 static void hush_quit_report_denied(uint16_t port, pid_t pid,
                                     unsigned long long start);
-#ifndef __linux__
+#if !defined(__linux__) && !defined(__FreeBSD__) && !defined(__OpenBSD__)
 /* Resolves the session-token path ($HUSH_HOME, else $HOME/.hush). Empty when
  * neither is configured. */
 static void hush_quit_token_path(char *out, size_t outsz);
@@ -530,7 +566,7 @@ static void hush_quit_report(uint16_t port, pid_t pid,
                 (unsigned)port);
         break;
     case HUSH_ERR_DENIED:
-#ifdef __linux__
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__)
         hush_quit_report_denied(port, pid, start);
 #else
         hush_quit_report_unverified(port);
@@ -569,7 +605,7 @@ static void hush_quit_report_denied(uint16_t port, pid_t pid,
                 (long)pid, (unsigned)port);
 }
 
-#ifndef __linux__
+#if !defined(__linux__) && !defined(__FreeBSD__) && !defined(__OpenBSD__)
 static void hush_quit_token_path(char *out, size_t outsz)
 {
     char root[HUSH_HOME_PATH_MAX];
@@ -605,7 +641,7 @@ static hush_status_t hush_quit_verify_owner(uint16_t port, pid_t pid,
         return HUSH_ERR_DENIED;
     if (!hush_pid_is_alive(pid))
         return HUSH_ERR_NOT_FOUND;
-#ifdef __linux__
+#if defined(__linux__)
     /* Identity is the (pid, starttime) pair plus the recorded port: only the
      * relay that wrote this pidfile can match all three, so pid reuse can
      * never verify. No exe check: it breaks when the binary is replaced
@@ -615,10 +651,17 @@ static hush_status_t hush_quit_verify_owner(uint16_t port, pid_t pid,
     if (!hush_starttime_matches(pid, start))
         return HUSH_ERR_DENIED;
     return HUSH_OK;
+#elif defined(__FreeBSD__) || defined(__OpenBSD__)
+    /* Start time, owning uid, and executable name. A reused pid fails at
+     * least one of them. Never reached for pid <= 1 (checked above). */
+    if (start == 0 || fileport == 0 || fileport != port)
+        return HUSH_ERR_DENIED;
+    if (!hush_bsd_identity_ok(pid, start))
+        return HUSH_ERR_DENIED;
+    return HUSH_OK;
 #else
-    /* No /proc identity off Linux: never verified, so --quit always refuses
-     * rather than risk signalling a reused pid. Stop those relays with
-     * POST /api/exit. */
+    /* No process identity on this platform: never verified, so --quit
+     * always refuses rather than risk signalling a reused pid. */
     (void)start;
     (void)fileport;
     (void)port;
@@ -709,11 +752,144 @@ static unsigned long long hush_own_starttime(void)
         return 0;
     return start;
 }
+#elif defined(__FreeBSD__) || defined(__OpenBSD__)
+#define HUSH_QUIT_RELAY_NAME "hush-relay"
+#define HUSH_QUIT_DELETED " (deleted)"
+
+static int hush_comm_is_relay(const char *name)
+{
+    size_t n = 0;
+
+    assert(name != NULL);
+    n = strlen(HUSH_QUIT_RELAY_NAME);
+    return strncmp(name, HUSH_QUIT_RELAY_NAME, n) == 0;
+}
+
+static void hush_comm_copy(char *dst, size_t dstsz, const char *src, size_t srcsz)
+{
+    size_t n = 0;
+
+    assert(dst != NULL && dstsz > 1 && src != NULL);
+    while (n + 1 < dstsz && n < srcsz && src[n] != '\0')
+        n++;
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
+static int hush_base_is_relay(const char *path)
+{
+    const char *base = NULL;
+    const char *cut = NULL;
+    char name[HUSH_QUIT_COMM_MAX] = {0};
+    size_t n = 0;
+
+    assert(path != NULL);
+    base = strrchr(path, '/');
+    base = (base == NULL) ? path : base + 1;
+    cut = strstr(base, HUSH_QUIT_DELETED);
+    n = (cut == NULL) ? strlen(base) : (size_t)(cut - base);
+    hush_comm_copy(name, sizeof(name), base, n);
+    return hush_comm_is_relay(name);
+}
+
+#if defined(__FreeBSD__)
+static int hush_bsd_path_is_relay(pid_t pid)
+{
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, 0 };
+    char path[PATH_MAX] = {0};
+    size_t len = sizeof(path);
+
+    assert(pid > HUSH_PID_RESERVED_MAX);
+    mib[3] = (int)pid;
+    if (sysctl(mib, 4, path, &len, NULL, 0) != 0)
+        return 0;
+    if (path[0] == '\0')
+        return 0;
+    return hush_base_is_relay(path);
+}
+
+static int hush_bsd_fill(hush_bsd_id_t *id, pid_t pid)
+{
+    struct kinfo_proc kp;
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, 0 };
+    size_t len = sizeof(kp);
+
+    assert(id != NULL);
+    assert(pid > HUSH_PID_RESERVED_MAX);
+    mib[3] = (int)pid;
+    memset(&kp, 0, sizeof(kp));
+    if (sysctl(mib, 4, &kp, &len, NULL, 0) != 0)
+        return 0;
+    if (len == 0 || (pid_t)kp.ki_pid != pid)
+        return 0;
+    if (kp.ki_start.tv_sec <= 0)
+        return 0;
+    id->start = (unsigned long long)kp.ki_start.tv_sec;
+    id->uid = (unsigned long)kp.ki_uid;
+    hush_comm_copy(id->comm, sizeof(id->comm), kp.ki_comm, sizeof(kp.ki_comm));
+    id->path_ok = hush_bsd_path_is_relay(pid);
+    return 1;
+}
+#elif defined(__OpenBSD__)
+static int hush_bsd_fill(hush_bsd_id_t *id, pid_t pid)
+{
+    struct kinfo_proc kp;
+    int mib[6];
+    size_t len = sizeof(kp);
+
+    assert(id != NULL);
+    assert(pid > HUSH_PID_RESERVED_MAX);
+    memset(&kp, 0, sizeof(kp));
+    mib[0] = CTL_KERN;
+    mib[1] = KERN_PROC;
+    mib[2] = KERN_PROC_PID;
+    mib[3] = (int)pid;
+    mib[4] = (int)sizeof(kp);
+    mib[5] = 1;
+    if (sysctl(mib, 6, &kp, &len, NULL, 0) != 0)
+        return 0;
+    if (len == 0 || (pid_t)kp.p_pid != pid)
+        return 0;
+    if (kp.p_ustart_sec == 0)
+        return 0;
+    id->start = (unsigned long long)kp.p_ustart_sec;
+    id->uid = (unsigned long)kp.p_uid;
+    hush_comm_copy(id->comm, sizeof(id->comm), kp.p_comm, sizeof(kp.p_comm));
+    id->path_ok = 0;
+    return 1;
+}
+#endif
+
+static int hush_bsd_identity_ok(pid_t pid, unsigned long long expect)
+{
+    hush_bsd_id_t id = {0};
+
+    assert(pid > HUSH_PID_RESERVED_MAX);
+    assert(expect != 0);
+    if (!hush_bsd_fill(&id, pid))
+        return 0;
+    if (id.start != expect)
+        return 0;
+    if (id.uid != (unsigned long)getuid())
+        return 0;
+    if (hush_comm_is_relay(id.comm))
+        return 1;
+    return id.path_ok;
+}
+
+static unsigned long long hush_own_starttime(void)
+{
+    hush_bsd_id_t id = {0};
+
+    if (!hush_bsd_fill(&id, getpid()))
+        return 0;
+    return id.start;
+}
 #else
 static unsigned long long hush_own_starttime(void)
 {
-    /* No /proc identity off Linux: self start time is always unknown, so the
-     * pidfile stays pid-only and --quit refuses it (see verify above). */
+    /* No process identity on this platform: the pidfile stays pid-only and
+     * --quit refuses it (see verify above). */
     return 0;
 }
 #endif
