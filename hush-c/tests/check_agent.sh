@@ -125,11 +125,11 @@ n = 0
 for e in (data.get("events") or []):
     if (e.get("pubkey") or "") == hexp and "Standing orders are noted." in (e.get("content") or ""):
         n += 1
-if n == 1:
+if n == 0:
     sys.exit(0)
 print("INTRO_COUNT", n)
 sys.exit(1)
-' "${hex}" || fail "robot must emit exactly one on-deck intro in chat"
+' "${hex}" || fail "stock on-deck intro must not be a chat note"
 
 got=""
 i=0
@@ -215,11 +215,11 @@ n = 0
 for e in (data.get("events") or []):
     if (e.get("pubkey") or "") == hexp and "Standing orders are noted." in (e.get("content") or ""):
         n += 1
-if n == 1:
+if n == 0:
     sys.exit(0)
 print("INTRO_COUNT_AFTER_FOLLOWUP", n)
 sys.exit(1)
-' "${hex}" || fail "follow-up must not emit a second intro"
+' "${hex}" || fail "follow-up must not emit a stock intro"
 
 sess=$(curl -sf "http://127.0.0.1:${port}/api/session")
 payne_npub=$(printf '%s' "$sess" | python3 -c 'import json,sys; p=json.loads(sys.stdin.read()).get("payne") or {}; print(p.get("npub") or "")')
@@ -246,27 +246,33 @@ for e in (data.get("events") or []):
         break
 if not root:
     sys.exit(1)
-h = m = 0
+h = m = wh = wm = 0
 hold = 0
 for e in (data.get("events") or []):
     rt = e.get("reply_to") or ""
     if rt != root and e.get("id") != root:
         continue
     c = e.get("content") or ""
+    pub = e.get("pubkey") or ""
     if "Holding" in c:
         hold += 1
-    if "Standing orders are noted." not in c:
-        continue
-    if (e.get("pubkey") or "") == happy:
+    if "Standing orders are noted." in c and pub == happy:
         h += 1
-    if (e.get("pubkey") or "") == payne:
+    if "Standing orders are noted." in c and pub == payne:
         m += 1
+    if "Byte me" in c and pub == happy:
+        wh += 1
+    if "Byte me" in c and pub == payne:
+        wm += 1
 if hold:
     print("HOLDING", hold)
     sys.exit(2)
-if h == 1 and m == 1:
+if h or m:
+    print("PAIR_INTRO", h, m)
+    sys.exit(1)
+if wh >= 1 and wm >= 1:
     sys.exit(0)
-print("PAIR_INTRO", h, m)
+print("PAIR_WORK", wh, wm)
 sys.exit(1)
 ' "${hex}" "${payne_hex}" && break
     i=$((i + 1))
@@ -281,21 +287,25 @@ for e in (data.get("events") or []):
     if "analyze the joke" in (e.get("content") or ""):
         root = e.get("id")
         break
-h = m = 0
+h = m = wh = wm = 0
 for e in (data.get("events") or []):
     if (e.get("reply_to") or "") != root:
         continue
-    if "Standing orders are noted." not in (e.get("content") or ""):
-        continue
-    if (e.get("pubkey") or "") == happy:
+    c = e.get("content") or ""
+    pub = e.get("pubkey") or ""
+    if "Standing orders are noted." in c and pub == happy:
         h += 1
-    if (e.get("pubkey") or "") == payne:
+    if "Standing orders are noted." in c and pub == payne:
         m += 1
-print("PAIR_INTRO", h, m)
-if h == 1 and m == 1:
+    if "Byte me" in c and pub == happy:
+        wh += 1
+    if "Byte me" in c and pub == payne:
+        wm += 1
+print("PAIR", h, m, wh, wm)
+if h == 0 and m == 0 and wh >= 1 and wm >= 1:
     sys.exit(0)
 sys.exit(1)
-' "${hex}" "${payne_hex}" || fail "co-mention must intro Happy then Major once each"
+' "${hex}" "${payne_hex}" || fail "co-mention must post work and no stock intro"
 printf '%s' "$pair_got" | grep -q "Holding" && fail "co-mention must not post Holding"
 ce=$(curl -sf "http://127.0.0.1:${port}/api/chan-events")
 printf '%s' "$ce" | grep -q '"ok":true' || fail "chan-events missing ok"

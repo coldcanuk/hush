@@ -15,9 +15,9 @@ Follow-up to PR #99. Land via PR only.
 2. Developer Logging never un-hides log notes in the stream. `visibleNotes`
    always drops `isDevLogNote`.
 3. `isDevLogNote` is `"Mention received."` (and similar receipts) only.
-   `"At ease…"` intros are chat.
-4. C posts **one** intro per `(robot hex, thread root)` even when grok starts
-   and even when dest log is off.
+   The default on-deck line is not a chat note. A custom intro is one chat note.
+4. A custom intro posts once per `(robot hex, thread root)` even when grok starts
+   and even when dest log is off. The default line does not.
 5. Ack gradient skips to emoji when the parent note is older than 2s
    (unless a live thinking job exists). Stream/thread keys include an ack
    stamp so the 1s tick can advance thinking → reacting → emoji.

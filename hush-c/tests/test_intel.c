@@ -245,10 +245,10 @@ int main(void)
         expect(hush_store_insert(store, &ev) == HUSH_OK, "pair insert");
         hush_intel_consider(store, &launch, &ev);
         expect(!store_has(store, "Holding."), "no jobs-held chat");
-        expect(count_pub_needle(store, happy_hex, "Standing orders") == 1,
-               "happy intro once");
-        expect(count_pub_needle(store, payne_hex, "Standing orders") == 1,
-               "major intro on first co-mention");
+        expect(count_pub_needle(store, happy_hex, "Standing orders") == 0,
+               "happy posts no stock intro");
+        expect(count_pub_needle(store, payne_hex, "Standing orders") == 0,
+               "major posts no stock intro");
         fill_note(&joke,
                   "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
                   happy_hex, "Why did the robot laugh? Byte me.", "general",
@@ -258,13 +258,13 @@ int main(void)
         joke.tag_count = 2;
         expect(hush_store_insert(store, &joke) == HUSH_OK, "joke insert");
         hush_agent_on_posted(store, &launch, &joke);
-        expect(count_pub_needle(store, happy_hex, "Standing orders") == 1,
-               "happy intro stays one");
-        expect(count_pub_needle(store, payne_hex, "Standing orders") == 1,
-               "major intro not delayed or repeated");
+        expect(count_pub_needle(store, happy_hex, "Standing orders") == 0,
+               "happy stock intro stays absent");
+        expect(count_pub_needle(store, payne_hex, "Standing orders") == 0,
+               "major stock intro stays absent");
         hush_agent_on_posted(store, &launch, &joke);
-        expect(count_pub_needle(store, payne_hex, "Standing orders") == 1,
-               "major intro not twice");
+        expect(count_pub_needle(store, payne_hex, "Standing orders") == 0,
+               "major stock intro not posted later");
     }
 
     {

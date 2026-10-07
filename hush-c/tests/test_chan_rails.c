@@ -238,6 +238,9 @@ static void hush_rails_test_major_dual(hush_launch_t *launch, hush_store_t *stor
     hush_launch_policy_t policy;
     hush_event_t ev;
     char ask[256];
+    char json[HUSH_RAILS_JSON_MAX];
+    size_t n = 0;
+    uint32_t seq;
 
     memset(&policy, 0, sizeof(policy));
     memcpy(policy.kind, HUSH_LAUNCH_KIND_OPEN, sizeof(HUSH_LAUNCH_KIND_OPEN));
@@ -259,10 +262,14 @@ static void hush_rails_test_major_dual(hush_launch_t *launch, hush_store_t *stor
     hush_rails_fill_note(&ev, HUSH_RAILS_ID_MAJ, launch->human.pubkey_hex, ask,
                          "general", launch->payne.npub);
     expect(hush_store_insert(store, &ev) == HUSH_OK, "major insert");
+    seq = hush_cevent_last_seq();
     hush_intel_consider(store, launch, &ev);
     expect(hush_rails_count(store, launch->payne.pubkey_hex, HUSH_RAILS_INTRO)
-               == 1,
-           "major chaperon still works");
+               == 0,
+           "major posts no stock intro");
+    expect(hush_cevent_format_json_since(json, sizeof(json), &n, seq) == HUSH_OK,
+           "major cevent");
+    expect(strstr(json, "\"type\":\"intro\"") != NULL, "major still emits intro");
 }
 
 static void hush_rails_bind_yard(hush_launch_t *launch)
@@ -315,8 +322,8 @@ static void hush_rails_test_turns(hush_launch_t *launch, hush_store_t *store)
                          ask, HUSH_RAILS_CHAN_YARD, happy->id.npub);
     expect(hush_store_insert(store, &human) == HUSH_OK, "yard human");
     hush_intel_consider(store, launch, &human);
-    expect(hush_rails_count(store, happy->id.pubkey_hex, HUSH_RAILS_INTRO) == 1,
-           "happy intros on yard");
+    expect(hush_rails_count(store, happy->id.pubkey_hex, HUSH_RAILS_INTRO) == 0,
+           "happy posts no stock intro on yard");
     hush_rails_fill_note(&joke, HUSH_RAILS_ID_JOKE, happy->id.pubkey_hex,
                          "Why did the robot laugh? Byte me.",
                          HUSH_RAILS_CHAN_YARD, launch->payne.npub);

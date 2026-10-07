@@ -194,6 +194,10 @@ echo "$isdev" | grep -q 'Mention received' || fail "isDevLogNote must filter Men
 if echo "$isdev" | grep -q 'At ease'; then
     fail "isDevLogNote must not hide At ease intros"
 fi
+grep -q 'default on-deck line is not a chat note' ../UI_SPEC.md \
+    || fail "spec must say the default intro is not a chat note"
+grep -q 'A custom intro is one chat note' ../docs/plan/PLAN_CHAT_PILLS_INTRO_ACKS.md \
+    || fail "plan must say a custom intro is one chat note"
 echo "$html" | grep -q 'is reacting' || fail "HTML missing reacting ack phase"
 echo "$html" | grep -q 'mentionAckPhase' || fail "HTML missing progressive ack"
 echo "$html" | grep -q 'id="manage-topic-pills"' || fail "HTML missing channel topic pills"

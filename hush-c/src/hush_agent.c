@@ -540,50 +540,100 @@ static void hush_agent_intro_remember(const char *hex, const char *root)
     (void)hush_wake_mark_intro(&in);
 }
 
-void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bot,
-                               const hush_event_t *parent, const char *why)
+static int hush_agent_intro_is_ws(char ch)
+{
+    return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
+}
+
+/* True when trimmed text is the default on-deck line, or only whitespace. */
+static int hush_agent_intro_is_stock(const char *line)
+{
+    const char *start;
+    const char *end;
+    size_t n;
+    size_t stock_n;
+
+    if (line == NULL)
+        return 1;
+    start = line;
+    while (hush_agent_intro_is_ws(*start))
+        start++;
+    end = start + strlen(start);
+    while (end > start && hush_agent_intro_is_ws(*(end - 1)))
+        end--;
+    n = (size_t)(end - start);
+    if (n == 0)
+        return 1;
+    stock_n = strlen(HUSH_ROSTER_INTRO_DEFAULT);
+    if (n != stock_n)
+        return 0;
+    return memcmp(start, HUSH_ROSTER_INTRO_DEFAULT, n) == 0;
+}
+
+static int hush_agent_intro_is_major(const hush_agent_robot_t *bot)
+{
+    assert(bot != NULL);
+    return bot->slug != NULL && strcmp(bot->slug, HUSH_LAUNCH_PAYNE_SLUG) == 0;
+}
+
+static const char *hush_agent_intro_line(const hush_agent_robot_t *bot,
+                                        const char *why)
+{
+    assert(bot != NULL);
+    if (bot->intro != NULL && bot->intro[0] != '\0')
+        return bot->intro;
+    if (why != NULL && why[0] != '\0')
+        return why;
+    return HUSH_ROSTER_INTRO_DEFAULT;
+}
+
+static void hush_agent_post_intro(hush_store_t *store,
+                                 const hush_agent_robot_t *bot,
+                                 const hush_event_t *parent,
+                                 const char *line)
 {
     char content[HUSH_EVENT_MAX_CONTENT];
     char channel[HUSH_EVENT_MAX_TAG_LEN + 1];
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
     const char *name;
+    hush_agent_note_in_t in;
+
+    assert(store != NULL && bot != NULL && parent != NULL && line != NULL);
+    name = (bot->name != NULL && bot->name[0] != '\0') ? bot->name : "robot";
+    if (snprintf(content, sizeof(content),
+                 "%s %s — %s", HUSH_AGENT_INTRO_PREFIX, line, name)
+        >= (int)sizeof(content))
+        hush_agent_copy(content, sizeof(content), line);
+    hush_agent_event_root(root, sizeof(root), parent);
+    hush_agent_event_channel(channel, sizeof(channel), parent);
+    memset(&in, 0, sizeof(in));
+    in.pubkey = bot->hex != NULL ? bot->hex : "";
+    in.content = content;
+    in.channel = channel;
+    in.parent_id = root;
+    in.human_pub = parent->pubkey;
+    (void)hush_agent_insert_note(store, &in);
+}
+
+void hush_agent_on_deck(hush_store_t *store, const hush_agent_robot_t *bot,
+                               const hush_event_t *parent, const char *why)
+{
     const char *line;
     char root[HUSH_EVENT_ID_HEX_LEN + 1];
 
     assert(store != NULL);
     assert(bot != NULL);
     assert(parent != NULL);
-    name = (bot->name != NULL && bot->name[0] != '\0') ? bot->name : "robot";
-    if (!bot->intro_enabled)
+    if (!bot->intro_enabled || hush_agent_intro_is_major(bot))
         return;
-    if (bot->intro != NULL && bot->intro[0] != '\0')
-        line = bot->intro;
-    else if (why != NULL && why[0] != '\0')
-        line = why;
-    else
-        line = HUSH_ROSTER_INTRO_DEFAULT;
-
-    /* One intro per (robot hex, thread root). Table, not a single last-pair. */
+    line = hush_agent_intro_line(bot, why);
+    if (hush_agent_intro_is_stock(line))
+        return;
     hush_agent_event_root(root, sizeof(root), parent);
     if (hush_agent_intro_seen(bot->hex, root))
         return;
     hush_agent_intro_remember(bot->hex, root);
-
-    if (snprintf(content, sizeof(content),
-                 "%s %s — %s", HUSH_AGENT_INTRO_PREFIX, line, name)
-        >= (int)sizeof(content))
-        hush_agent_copy(content, sizeof(content), line);
-    hush_agent_event_channel(channel, sizeof(channel), parent);
-    {
-        hush_agent_note_in_t in;
-
-        memset(&in, 0, sizeof(in));
-        in.pubkey = bot->hex != NULL ? bot->hex : "";
-        in.content = content;
-        in.channel = channel;
-        in.parent_id = root;
-        in.human_pub = parent->pubkey;
-        (void)hush_agent_insert_note(store, &in);
-    }
+    hush_agent_post_intro(store, bot, parent, line);
 }
 
 /* Posts one diagnostic note when a mentioned robot cannot run a turn because
