@@ -8,7 +8,7 @@
 # Elsewhere:
 #   leave destroot + metadata; do not emit a fake .tgz (wrong ABI).
 #
-# Usage (from repo root, or via make openbsd):
+# Usage (from repo root, or via gmake openbsd):
 #   ./scripts/package-openbsd.sh
 
 set -eu
@@ -39,8 +39,8 @@ echo "PREFIX=$PREFIX"
 echo "DESTROOT=$DESTROOT"
 
 ./configure --prefix="$PREFIX"
-make
-make install \
+${MAKE:-gmake}
+${MAKE:-gmake} install \
     DESTDIR="$DESTROOT" \
     PREFIX="$PREFIX" \
     BINDIR="${PREFIX}/bin" \
@@ -112,6 +112,6 @@ echo "  plist:    $META/PLIST"
 echo "  descr:    $META/DESCR"
 echo
 echo "On OpenBSD, either:"
-echo "  1. ./configure --prefix=/usr/local && make openbsd && doas pkg_add ./dist/openbsd/${PKGFILE}"
+echo "  1. ./configure --prefix=/usr/local && gmake openbsd && doas pkg_add ./dist/openbsd/${PKGFILE}"
 echo "  2. Copy openbsd/net/hush-relay to /usr/ports/net/hush-relay && make package"
 exit 0
