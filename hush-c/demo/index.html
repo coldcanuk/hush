@@ -3385,7 +3385,7 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
     function restartNote() {
       if (!session.restart_lost_login) return "";
       return "<p class=\"warn\">The hive is still on this machine, but the login did not survive the restart. " +
-        "Re-import your identity key (starts with nsec1) to continue.</p>";
+        "Re-import your identity key (starts with nsec1), or start again with the same unlock phrase, to continue.</p>";
     }
 
     function card(title, inner) {

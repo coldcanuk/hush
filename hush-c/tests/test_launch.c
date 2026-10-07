@@ -408,6 +408,8 @@ int main(void)
     const char *gitdir = "/tmp/hush-launch-proj";
     size_t n = 0;
 
+    unsetenv("HUSH_KEY_PASS");
+
     if (setenv("HUSH_FAKE_PASS_DIR", "/tmp/hush-launch-pass-store", 1) != 0)
         return 1;
     {

@@ -80,7 +80,7 @@ Build packages (Debian/Ubuntu names, same list CI installs): `gcc`, `make`, `pkg
 
 ## Open-source Nostr relay in C11 (self-hosted Slack alternative)
 
-Single binary, set-and-forget self-hosting: `./configure && make && make install`, no runtime dependencies beyond libc, OpenSSL (`libcrypto`), and `libX11` for window controls when `./configure` finds it. Hive metadata persists in `~/.hush/config/vibe.json` (0600) so rebuilds and `Exit` never force a new vibe; provider secrets still live in `pass`. A restart can unlock the human, Payne, and robot private keys from `pass`, 1Password (`op`), or the Pop!_OS keyring (`secret-tool`). That unlock does not add a plaintext key file. See [How to use private keys](HowToUsePrivateKeys.md).
+Single binary, set-and-forget self-hosting: `./configure && make && make install`, no runtime dependencies beyond libc, OpenSSL (`libcrypto`), and `libX11` for window controls when `./configure` finds it. Hive metadata persists in `~/.hush/config/vibe.json` (0600) so rebuilds and `Exit` never force a new vibe; provider secrets still live in `pass`. A restart can unlock the human, Payne, and robot private keys from `pass`, 1Password (`op`), the Pop!_OS keyring (`secret-tool`), or `$HUSH_HOME/keys.vault` when `HUSH_KEY_PASS` is set. That file is ciphertext. The unlock does not add a plaintext key file. See [How to use private keys](HowToUsePrivateKeys.md).
 
 ## AI-assistant-native team chat (robots share channels with humans)
 
@@ -121,7 +121,7 @@ Yes, since PE-4 (#206): per robot, saved on the relay. See Features above.
 Provider secrets live in `pass` (plus foreign homes Hush never copies: `~/.config/goose`, `~/.grok/auth.json`, `~/.codex`). `GET` routes never return secret values. Private keys used after a restart are separate: [How to use private keys](HowToUsePrivateKeys.md).
 
 **Where does a private key live after a restart?**
-In one of three stores: `pass`, 1Password (`op`), or the Pop!_OS keyring (`secret-tool`). Hush cannot remember the key without one of those. It does not mint a new identity and call it the old one.
+In `pass`, 1Password (`op`), the Pop!_OS keyring (`secret-tool`), or `$HUSH_HOME/keys.vault` when `HUSH_KEY_PASS` is set. Without one of those, Hush cannot remember the key. It does not mint a new identity and call it the old one.
 
 **How do Close and Exit differ?**
 Close dismisses the window; the hive keeps listening (re-attach from the launcher). Exit stops the relay and the children it forked (`--quit [port]` on Linux, default port 10555; off Linux, including OpenBSD/FreeBSD, `--quit` never signals and refuses a live relay with exit 2 — use `POST /api/exit`). Full table in [`docs/OPERATIONS.md`](docs/OPERATIONS.md#close-vs-exit).

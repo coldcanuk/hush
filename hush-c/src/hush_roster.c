@@ -8,6 +8,7 @@
 
 #include "hush_event.h"
 #include "hush_json.h"
+#include "hush_keyfile.h"
 #include "hush_keystore.h"
 #include "hush_pass.h"
 #include "hush_provider.h"
@@ -996,6 +997,7 @@ static hush_status_t hush_roster_keep_agent_key(const char *slug,
     }
     if (key_mode != HUSH_ROSTER_KEY_PASS)
         return HUSH_ERR_ARG;
+    (void)hush_keyfile_save(path, secret);
     if (!hush_pass_available())
         return HUSH_ERR_DENIED;
     return hush_pass_save(path, secret);
