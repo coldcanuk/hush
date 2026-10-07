@@ -20,6 +20,8 @@ grep -q 'function isHiveOwner' demo/index.html || fail "loop answers must be own
 grep -q 'className = "loop-stamp loop-yes"' demo/index.html || fail "missing Yes stamp"
 grep -q 'className = "loop-stamp loop-no"' demo/index.html || fail "missing No stamp"
 grep -q '· Decision' demo/index.html || fail "feed card missing the waiting cue"
+grep -q 'const waiting = isHiveOwner() &&' demo/index.html \
+    || fail "decision cue must be owner only"
 grep -q 'function pinThreadNewest' demo/index.html || fail "thread open never pins to the newest note"
 
 # No localStorage content phantoms: only the root id is remembered.

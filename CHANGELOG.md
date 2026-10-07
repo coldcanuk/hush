@@ -8,6 +8,10 @@ the top-level `VERSION` file.
 
 ### Changed
 
+- A robot loop that hits its limit says "Mention both robots again to start
+  a new loop." A fresh loop arms only when the next note names exactly two
+  robots. The feed card's "Decision" cue on a waiting loop shows for the
+  hive owner only.
 - Field-office look (#282): the default theme is now a darker Medal of
   Honor briefing-dossier khaki (olive-ink rules, oxblood stamp, no white
   surfaces); the theme id and stored choices are unchanged. On the 49
@@ -58,7 +62,7 @@ the top-level `VERSION` file.
   cap the chaperon asks "Continue this loop? Reply Yes or No in this
   thread." instead of "That's enough robot talk."; a typed Yes runs
   another round, No posts "Loop stopped.", and after four Yes answers the
-  loop ends with "Loop limit reached. Ask again to start a new loop.". Only
+  loop ends with "Loop limit reached. Mention both robots again to start a new loop.". Only
   the hive owner answers Yes/No, and any other note from the owner ends
   the loop. Every loop turn uses a turn of the cap, the control tag is
   case-insensitive and tolerates markdown, and each loop turn's ask quotes
