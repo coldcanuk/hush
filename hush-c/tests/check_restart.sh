@@ -14,6 +14,7 @@ home=$(mktemp -d)
 cfg=$(mktemp -d)
 export HUSH_HOME="$home"
 export HUSH_CONFIG_DIR="$cfg"
+unset HUSH_KEY_PASS
 # No `pass` on a virgin VM: point the helper at a path that cannot run so a
 # save attempt records pass_error instead of persisting the nsec.
 export HUSH_PASS_HELPER="/nonexistent-hush-pass-helper"

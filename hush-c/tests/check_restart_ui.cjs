@@ -380,6 +380,7 @@ async function main() {
     const env = Object.assign({}, process.env, {
       HUSH_HOME: home, HUSH_CONFIG_DIR: cfg, HUSH_PASS_HELPER: passHelper,
     });
+    delete env.HUSH_KEY_PASS;
     if (fakeDir)
       env.HUSH_FAKE_PASS_DIR = fakeDir;
     const tokenFile = path.join(home, 'session.token');

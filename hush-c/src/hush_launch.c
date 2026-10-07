@@ -19,8 +19,9 @@
 #include "hush_favorite.h"
 #include "hush_home.h"
 #include "hush_json.h"
-#include "hush_launch.h"
+#include "hush_keyfile.h"
 #include "hush_keystore.h"
+#include "hush_launch.h"
 #include "hush_pass.h"
 #include "hush_skill.h"
 
@@ -509,6 +510,7 @@ hush_status_t hush_launch_ack_backup(hush_launch_t *launch, int save_pass)
     if (launch->save_pass)
         hush_launch_try_save(launch, HUSH_PASS_IDENTITY_NSEC,
                              launch->human.nsec);
+    (void)hush_keyfile_save(HUSH_PASS_IDENTITY_NSEC, launch->human.nsec);
     launch->backup_acked = 1;
     launch->identity_imported = 0;
     return HUSH_OK;
@@ -535,6 +537,11 @@ hush_status_t hush_launch_restore_identity(hush_launch_t *launch)
     memset(secret, 0, sizeof(secret));
     loaded = hush_keystore_load_from(&kind, secret, sizeof(secret),
                                     HUSH_PASS_IDENTITY_NSEC);
+    if (loaded == HUSH_ERR_CRYPTO) {
+        hush_launch_cleanse_secret(secret, sizeof(secret));
+        launch->restart_lost_login = 1;
+        return HUSH_OK;
+    }
     if (loaded != HUSH_OK) {
         hush_launch_cleanse_secret(secret, sizeof(secret));
         return HUSH_OK;
@@ -556,6 +563,8 @@ hush_status_t hush_launch_restore_identity(hush_launch_t *launch)
 void hush_launch_mark_restart(hush_launch_t *launch)
 {
     if (launch == NULL)
+        return;
+    if (launch->restart_lost_login)
         return;
     launch->restart_lost_login = (launch->has_vibe && !launch->logged_in) ? 1 : 0;
 }
@@ -2342,6 +2351,7 @@ static void hush_launch_try_save(hush_launch_t *launch, const char *path,
     assert(launch != NULL);
     assert(path != NULL);
     assert(secret != NULL);
+    (void)hush_keyfile_save(path, secret);
     if (hush_pass_save(path, secret) == HUSH_OK) {
         launch->pass_saved = 1;
         launch->pass_error[0] = '\0';
@@ -3191,6 +3201,8 @@ static hush_status_t hush_launch_restore_stored_id(hush_launch_t *launch,
         return HUSH_OK;
     }
     hush_launch_cleanse_secret(secret, sizeof(secret));
+    if (st == HUSH_ERR_CRYPTO)
+        return st;
     if (st != HUSH_ERR_NOT_FOUND)
         return st;
     if (hush_identity_generate(id) != HUSH_OK)

@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "hush_keyfile.h"
 #include "hush_keystore.h"
 #include "hush_pass.h"
 
@@ -162,14 +163,14 @@ void hush_keystore_offer(int use_pass, const char *path, const char *secret)
         return;
     if (use_pass) {
         (void)hush_keystore_save(HUSH_KEYSTORE_PASS, path, secret);
+        (void)hush_keyfile_save(path, secret);
         return;
     }
-    if (hush_keystore_ready(HUSH_KEYSTORE_OP)) {
+    if (hush_keystore_ready(HUSH_KEYSTORE_OP))
         (void)hush_keystore_save(HUSH_KEYSTORE_OP, path, secret);
-        return;
-    }
-    if (hush_keystore_ready(HUSH_KEYSTORE_SECRET))
+    else if (hush_keystore_ready(HUSH_KEYSTORE_SECRET))
         (void)hush_keystore_save(HUSH_KEYSTORE_SECRET, path, secret);
+    (void)hush_keyfile_save(path, secret);
 }
 
 hush_status_t hush_keystore_remove_kind(hush_keystore_kind kind,
@@ -267,6 +268,16 @@ hush_status_t hush_keystore_load_from(hush_keystore_kind *found, char *out,
             return HUSH_OK;
         }
         OPENSSL_cleanse(out, outsz);
+    }
+    out[0] = '\0';
+    {
+        hush_status_t st = hush_keyfile_load(out, outsz, path);
+
+        if (st == HUSH_OK)
+            return HUSH_OK;
+        OPENSSL_cleanse(out, outsz);
+        if (st == HUSH_ERR_CRYPTO)
+            return HUSH_ERR_CRYPTO;
     }
     out[0] = '\0';
     return HUSH_ERR_NOT_FOUND;
