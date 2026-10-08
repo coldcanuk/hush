@@ -39,6 +39,8 @@
 #define HUSH_AGENT_FIXUP_TURNS "1"
 #define HUSH_AGENT_COPILOT_TOOLS "--allow-all-tools"
 #define HUSH_AGENT_COPILOT_CD "-C"
+#define HUSH_AGENT_CLINE_APPROVE_ON "true"
+#define HUSH_AGENT_CLINE_APPROVE_OFF "false"
 
 enum {
     /* copilot, -p, prompt, --allow-all-tools, NULL */
@@ -366,6 +368,16 @@ int hush_agent_cline_timeout_s(int project_tools)
     return HUSH_AGENT_CLINE_TIMEOUT_S;
 }
 
+/* Headless Cline denies a tool call that still needs a person. A bound
+ * project already cleared Hush's gate, so the CLI may run its tools.
+ * Chat stays off so that job does not gain a shell. */
+const char *hush_agent_cline_approve(int project_tools)
+{
+    if (project_tools)
+        return HUSH_AGENT_CLINE_APPROVE_ON;
+    return HUSH_AGENT_CLINE_APPROVE_OFF;
+}
+
 /* Writes the decimal --timeout for this job. out is caller storage. */
 static void hush_agent_write_cline_timeout(char *out, size_t cap,
                                            int project_tools)
@@ -383,14 +395,17 @@ static void hush_agent_exec_cline(const hush_agent_job_t *job)
 {
     char combined[HUSH_AGENT_COMBINED_PROMPT_MAX] = {0};
     char timeout_text[HUSH_AGENT_TIMEOUT_TEXT] = {0};
+    const char *approve;
 
     assert(job != NULL);
     hush_agent_build_combined(combined, sizeof(combined), job);
     hush_agent_write_cline_timeout(timeout_text, sizeof(timeout_text),
                                    job->project_tools);
+    approve = hush_agent_cline_approve(job->project_tools);
+    assert(approve != NULL);
     /* POSIX exec borrows mutable argv. Non-TTY stdout selects Cline headless mode. */
     char *arguments[] = {(char *)"cline", (char *)"--json", (char *)"--cwd",
-        (char *)job->cwd, (char *)"--auto-approve", (char *)"false",
+        (char *)job->cwd, (char *)"--auto-approve", (char *)approve,
         (char *)"--timeout", timeout_text, combined, NULL};
     execvp(arguments[0], arguments);
     _exit(HUSH_AGENT_EXEC_FAILURE);

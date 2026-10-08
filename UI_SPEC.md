@@ -798,7 +798,11 @@ not enough for a multi-part ask), and a denylist covering shell, web,
 files, and Agent. A milestone bound to a launch project sets `--cwd`
 to that project directory, drops only the file tools from the denylist,
 and uses `--max-turns 8` (named `HUSH_AGENT_GROK_PROJECT_TURNS`) with a
-300 second kill clock (`HUSH_AGENT_PROJECT_TIMEOUT_S`). A fixup stays
+300 second kill clock (`HUSH_AGENT_PROJECT_TIMEOUT_S`). A project-bound
+Cline job passes `--auto-approve true`, because headless mode denies a
+tool call that still needs a person. That flag covers every Cline tool,
+including a shell. An unbound Cline job stays `--auto-approve false`.
+A fixup stays
 `--max-turns 1`. `--reasoning-effort low` (named
 `HUSH_AGENT_GROK_EFFORT`; grok 1.0.4 rejects `none`), `--no-memory`,
 `--no-subagents`, `--disable-web-search`, and `--disallowed-tools`
