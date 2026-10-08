@@ -15,6 +15,8 @@ enum {
     /* Wall clock for a milestone whose cwd is a launch project. The wake
      * claim for that job passes this same number as lease_s. */
     HUSH_AGENT_PROJECT_TIMEOUT_S = 300,
+    /* Cline --timeout for an unbound job. A project job uses the project clock. */
+    HUSH_AGENT_CLINE_TIMEOUT_S = 80,
     /* Global concurrent job cap; the overload gate refuses new dispatches
      * when every slot is busy. */
     HUSH_AGENT_JOBS_MAX = 4,
@@ -105,6 +107,9 @@ const char *hush_agent_grok_turn_budget(int project_tools);
 
 /* Kill-clock seconds. project_tools 1 selects the project clock. */
 int hush_agent_budget_seconds(int project_tools);
+
+/* Cline --timeout seconds. project_tools 1 selects the project clock. */
+int hush_agent_cline_timeout_s(int project_tools);
 
 /* Cancels the live job for robot on root. root is the thread's root event id;
  * robot matches the robot's hex pubkey or roster name. Sends SIGTERM to the

@@ -318,6 +318,10 @@ grep -q -- '--max-turns' src/agent_process.c || fail "grok argv missing --max-tu
 grep -q 'HUSH_AGENT_GROK_TURNS "2"' src/agent_process.c || fail "grok turns must be 2"
 grep -q 'HUSH_AGENT_GROK_PROJECT_TURNS "8"' src/agent_process.c || fail "project grok turns must be 8"
 grep -q 'HUSH_AGENT_FIXUP_TURNS "1"' src/agent_process.c || fail "fixup grok turns must be 1"
+grep -q 'hush_agent_cline_timeout_s' src/agent_process.c || fail "cline timeout must follow the job clock"
+if grep -q '(char \*)"80"' src/agent_process.c; then
+    fail "cline argv still hardcodes 80"
+fi
 grep -q -- '--no-memory' src/agent_process.c || fail "grok argv missing --no-memory"
 grep -q -- '--disallowed-tools' src/agent_process.c || fail "grok argv missing denylist"
 grep -q -- '--reasoning-effort' src/agent_process.c || fail "grok argv missing reasoning"

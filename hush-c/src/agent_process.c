@@ -44,13 +44,17 @@ enum {
     /* copilot, -p, prompt, --allow-all-tools, NULL */
     HUSH_AGENT_COPILOT_SLOTS = 5,
     /* those slots plus -C and the job directory */
-    HUSH_AGENT_COPILOT_CWD_SLOTS = 7
+    HUSH_AGENT_COPILOT_CWD_SLOTS = 7,
+    /* Decimal text for Cline --timeout. Holds any 32-bit second count. */
+    HUSH_AGENT_TIMEOUT_TEXT = 16
 };
 
 /* Runs the provider CLI in a forked worker. */
 static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job);
 static void hush_agent_exec_api(const hush_agent_job_t *job);
 static void hush_agent_exec_cline(const hush_agent_job_t *job);
+static void hush_agent_write_cline_timeout(char *out, size_t cap,
+                                           int project_tools);
 static void hush_agent_exec_grok(const hush_agent_job_t *job);
 static void hush_agent_exec_copilot(const hush_agent_job_t *job);
 static void hush_agent_exec_codex(const hush_agent_job_t *job);
@@ -355,15 +359,39 @@ static void hush_agent_exec_api(const hush_agent_job_t *job)
     _exit(0);
 }
 
+int hush_agent_cline_timeout_s(int project_tools)
+{
+    if (project_tools)
+        return HUSH_AGENT_PROJECT_TIMEOUT_S;
+    return HUSH_AGENT_CLINE_TIMEOUT_S;
+}
+
+/* Writes the decimal --timeout for this job. out is caller storage. */
+static void hush_agent_write_cline_timeout(char *out, size_t cap,
+                                           int project_tools)
+{
+    int wrote;
+
+    assert(out != NULL);
+    assert(cap > 1);
+    wrote = snprintf(out, cap, "%d", hush_agent_cline_timeout_s(project_tools));
+    assert(wrote > 0);
+    assert((size_t)wrote < cap);
+}
+
 static void hush_agent_exec_cline(const hush_agent_job_t *job)
 {
-    assert(job != NULL);
     char combined[HUSH_AGENT_COMBINED_PROMPT_MAX] = {0};
+    char timeout_text[HUSH_AGENT_TIMEOUT_TEXT] = {0};
+
+    assert(job != NULL);
     hush_agent_build_combined(combined, sizeof(combined), job);
+    hush_agent_write_cline_timeout(timeout_text, sizeof(timeout_text),
+                                   job->project_tools);
     /* POSIX exec borrows mutable argv. Non-TTY stdout selects Cline headless mode. */
-    char *arguments[] = {(char *)"cline", (char *)"--json", (char *)"--cwd", (char *)job->cwd,
-        (char *)"--auto-approve", (char *)"false", (char *)"--timeout",
-        (char *)"80", combined, NULL};
+    char *arguments[] = {(char *)"cline", (char *)"--json", (char *)"--cwd",
+        (char *)job->cwd, (char *)"--auto-approve", (char *)"false",
+        (char *)"--timeout", timeout_text, combined, NULL};
     execvp(arguments[0], arguments);
     _exit(HUSH_AGENT_EXEC_FAILURE);
 }

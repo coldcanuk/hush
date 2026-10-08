@@ -92,6 +92,10 @@ static void test_project_clock(void)
     job.pid = 0;
     expect(hush_agent_child_is_working(&job, t0 + HUSH_PRESENCE_STALL_S) == 0,
            "reaped child is not working");
+    expect(hush_agent_cline_timeout_s(0) == HUSH_AGENT_CLINE_TIMEOUT_S,
+           "cline chat stays at 80");
+    expect(hush_agent_cline_timeout_s(1) == HUSH_AGENT_PROJECT_TIMEOUT_S,
+           "project cline still at 80");
 }
 
 static int argv_has(char **argv, const char *word)
