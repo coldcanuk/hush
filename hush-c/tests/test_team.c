@@ -96,6 +96,10 @@ static void test_project_clock(void)
            "cline chat stays at 80");
     expect(hush_agent_cline_timeout_s(1) == HUSH_AGENT_PROJECT_TIMEOUT_S,
            "project cline still at 80");
+    expect(strcmp(hush_agent_cline_approve(0), "false") == 0,
+           "cline chat stays reviewed");
+    expect(strcmp(hush_agent_cline_approve(1), "true") == 0,
+           "project cline still denies tools");
 }
 
 static int argv_has(char **argv, const char *word)

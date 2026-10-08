@@ -111,6 +111,9 @@ int hush_agent_budget_seconds(int project_tools);
 /* Cline --timeout seconds. project_tools 1 selects the project clock. */
 int hush_agent_cline_timeout_s(int project_tools);
 
+/* Cline --auto-approve token. project_tools 1 selects "true". */
+const char *hush_agent_cline_approve(int project_tools);
+
 /* Cancels the live job for robot on root. root is the thread's root event id;
  * robot matches the robot's hex pubkey or roster name. Sends SIGTERM to the
  * job's process group and SIGKILL once the grace period passes without an

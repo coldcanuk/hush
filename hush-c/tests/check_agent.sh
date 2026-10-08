@@ -322,6 +322,10 @@ grep -q 'hush_agent_cline_timeout_s' src/agent_process.c || fail "cline timeout 
 if grep -q '(char \*)"80"' src/agent_process.c; then
     fail "cline argv still hardcodes 80"
 fi
+grep -q 'hush_agent_cline_approve' src/agent_process.c || fail "cline approve must follow the job"
+if grep -q '(char \*)"false"' src/agent_process.c; then
+    fail "cline argv still hardcodes false"
+fi
 grep -q -- '--no-memory' src/agent_process.c || fail "grok argv missing --no-memory"
 grep -q -- '--disallowed-tools' src/agent_process.c || fail "grok argv missing denylist"
 grep -q -- '--reasoning-effort' src/agent_process.c || fail "grok argv missing reasoning"
