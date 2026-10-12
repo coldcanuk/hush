@@ -24,8 +24,13 @@
 //   C4 no near-white paint: no visible text colour or opaque background with
 //      relative luminance >= 0.80.
 //   R1 the Settings theme radio's computed accent-color equals the theme's
-//      own --accent in all 8 themes (main: auto, native blue); field-office
-//      checked fill >= 3:1 against the panel.
+//      own --accent in all 8 themes (main: auto, native blue), and at both
+//      widths the checked fill (that accent) is >= 3:1 against the background
+//      behind each Settings radio (theme + approval) in all 8 themes (#309).
+//   R2 christmas: on each surface view above, re-measured with
+//      data-theme="christmas", every text run whose paint changes when
+//      --accent / --accent-ink are swapped for sentinels is >= 4.5:1, and
+//      every such control is >= 3:1 (#309).
 //   B1 Thread, Download and Stop are 20-24px tall at both widths; at 390 a
 //      point 20px above and below the centre still hits the control (44px).
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
@@ -351,7 +356,37 @@ async function main() {
       if (m.n.text < 3) failures.push(`${surface}@${w} measured only ${m.n.text} text runs (surface not on screen?)`);
       console.log(`palette ${surface}@${w}: ${m.n.text} text (min ${Math.min(...m.text.map((t) => t.ratio)).toFixed(2)}), ` +
         `${m.n.ctl} controls (min ${m.ctl.length ? Math.min(...m.ctl.map((c) => c.ratio)).toFixed(2) : '-'}), ${m.white.length} near-white, ${m.n.exempt} disabled exempt, ${m.n.hidden} covered`);
+      await accentTouch(surface, w);
     }
+  };
+
+  /* R2 (#309): the same view in christmas. Measure, swap --accent and
+   * --accent-ink for sentinels, measure again; a text run or control whose
+   * paint changed is painted from those tokens. Transitions are off while
+   * measuring so a token swap is read settled. */
+  const R2_SWAP = `(() => { const h = document.documentElement; h.setAttribute('data-theme', 'christmas');
+    let st = document.getElementById('pal-r2-still'); if (!st) { st = document.createElement('style'); st.id = 'pal-r2-still';
+      st.textContent = '*, *::before, *::after { transition: none !important; animation: none !important; }'; document.head.appendChild(st); }
+    return true; })()`;
+  const accentTouch = async (surface, w) => {
+    await cdp.eval(R2_SWAP);
+    await sleep(60);
+    const a = await cdp.eval(MEASURE);
+    await cdp.eval(`(() => { const s = document.documentElement.style; s.setProperty('--accent', '#00ff00'); s.setProperty('--accent-ink', '#ff00ff'); })()`);
+    await sleep(60);
+    const b = await cdp.eval(MEASURE);
+    await cdp.eval(`(() => { const h = document.documentElement; h.style.removeProperty('--accent'); h.style.removeProperty('--accent-ink');
+      const st = document.getElementById('pal-r2-still'); if (st) st.remove(); h.setAttribute('data-theme', 'field-office'); })()`);
+    /* Same DOM walk both times; repeated paths (e.g. several .slider) are told apart by their order. */
+    const keyed = (list) => { const n = new Map(); return list.map((x) => { const k = x.el + '|' + (x.t || ''); const i = n.get(k) || 0; n.set(k, i + 1); return [k + '#' + i, x]; }); };
+    const bt = new Map(keyed(b.text)); const bc = new Map(keyed(b.ctl));
+    const text = keyed(a.text).filter(([k, x]) => { const y = bt.get(k); return !y || y.fg !== x.fg || y.bg !== x.bg; }).map(([, x]) => x);
+    const ctl = keyed(a.ctl).filter(([k, x]) => { const y = bc.get(k); return !y || y.border !== x.border || y.fill !== x.fill || y.bar !== x.bar || y.behind !== x.behind; }).map(([, x]) => x);
+    report.push({ surface, w, r2: { text, ctl } });
+    for (const t of text) if (t.ratio < 4.5) failures.push(`R2 christmas ${surface}@${w} accent text ${t.ratio}:1 ${t.fg} on ${t.bg} ${t.el} "${t.t}"`);
+    for (const c of ctl) if (c.ratio < 3) failures.push(`R2 christmas ${surface}@${w} accent control ${c.ratio}:1 border ${c.border} fill ${c.fill} behind ${c.behind} ${c.el}`);
+    console.log(`palette R2 christmas ${surface}@${w}: ${text.length} accent text (min ${text.length ? Math.min(...text.map((t) => t.ratio)).toFixed(2) : '-'}), ` +
+      `${ctl.length} accent controls (min ${ctl.length ? Math.min(...ctl.map((c) => c.ratio)).toFixed(2) : '-'})`);
   };
 
   /* C3: keyboard ring >= 2px and >= 3:1 against what is behind it. A real Tab
@@ -469,29 +504,40 @@ async function main() {
   });
   await ringCheck('settings', ['#turn-on', '#vibe-public', '#settings input[name="theme"]:checked', '#settings-close']);
   /* R1: theme radios take the theme's own --accent (no native blue), in every
-   * theme. Both sides go through computed colour so oklch / hex compare equal. */
+   * theme. Both sides go through computed colour so oklch / hex compare equal.
+   * The checked fill is that accent; it must hold 3:1 against the background
+   * behind every Settings radio, in every theme, at both widths (#309). */
   {
     const themes = ['dark', 'light', 'color-blind', 'dracula', 'desert', 'monochrome', 'christmas', 'field-office'];
-    const r1 = await cdp.eval(`(() => { const P = window.__pal; const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
-      const probe = document.createElement('i'); document.body.appendChild(probe);
-      for (const t of ${JSON.stringify(themes)}) {
-        h.setAttribute('data-theme', t);
-        const radio = document.querySelector('#settings input[name="theme"]:checked') || document.querySelector('#settings input[name="theme"]');
-        probe.style.color = 'var(--accent)'; const want = getComputedStyle(probe).color;
-        const raw = getComputedStyle(radio).accentColor; probe.style.color = raw === 'auto' ? '' : raw;
-        const got = raw === 'auto' ? 'auto' : getComputedStyle(probe).color;
-        const behind = P.bgOf(radio.parentElement);
-        out.push({ theme: t, accentColor: raw, got, want, match: got === want,
-          ratio: got === 'auto' ? 0 : Math.round(P.ratio(P.rgba(got), behind) * 100) / 100 });
+    for (const [w, h] of WIDTHS) {
+      await view(w, h);
+      await cdp.eval(KIT);
+      const r1 = await cdp.eval(`(() => { const P = window.__pal; const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
+        const probe = document.createElement('i'); document.body.appendChild(probe);
+        const radios = [...document.querySelectorAll('#settings input[type="radio"]')].filter((r) => r.getBoundingClientRect().width > 0);
+        for (const t of ${JSON.stringify(themes)}) {
+          h.setAttribute('data-theme', t);
+          const radio = document.querySelector('#settings input[name="theme"]:checked') || document.querySelector('#settings input[name="theme"]');
+          probe.style.color = 'var(--accent)'; const want = getComputedStyle(probe).color;
+          const raw = getComputedStyle(radio).accentColor; probe.style.color = raw === 'auto' ? '' : raw;
+          const got = raw === 'auto' ? 'auto' : getComputedStyle(probe).color;
+          const fills = radios.map((r) => { const a = getComputedStyle(r).accentColor; probe.style.color = a === 'auto' ? '' : a;
+            const f = a === 'auto' ? null : P.rgba(getComputedStyle(probe).color); const behind = P.bgOf(r.parentElement);
+            return { radio: (r.name || '') + '=' + (r.value || r.id), behind: P.hex(behind), ratio: f ? Math.round(P.ratio(f, behind) * 100) / 100 : 0 }; });
+          const min = fills.reduce((m, f) => (m && m.ratio <= f.ratio ? m : f), null);
+          out.push({ theme: t, accentColor: raw, got, want, match: got === want, radios: fills.length,
+            behinds: [...new Set(fills.map((f) => f.behind))], ratio: min ? min.ratio : 0, minRadio: min ? min.radio : null });
+        }
+        probe.remove(); h.setAttribute('data-theme', was); return out; })()`);
+      for (const r of r1) {
+        console.log(`palette R1 ${r.theme}@${w}: ${JSON.stringify(r)}`);
+        report.push({ surface: 'R1:' + r.theme, w, r1: r });
+        if (w === 1440 && !r.match) failures.push(`R1 theme radio accent-color in ${r.theme} is ${r.accentColor}, want the theme's --accent ${r.want}`);
+        if (r.radios < 2) failures.push(`R1 ${r.theme}@${w} found ${r.radios} Settings radios, want the theme and approval radios`);
+        else if (r.ratio < 3) failures.push(`R1 ${r.theme}@${w} checked radio fill ${r.ratio}:1 behind ${r.minRadio} (${r.behinds.join(', ')}), want >= 3`);
       }
-      probe.remove(); h.setAttribute('data-theme', was); return out; })()`);
-    for (const r of r1) {
-      console.log(`palette R1 ${r.theme}: ${JSON.stringify(r)}`);
-      report.push({ surface: 'R1:' + r.theme, w: 1440, r1: r });
-      if (!r.match) failures.push(`R1 theme radio accent-color in ${r.theme} is ${r.accentColor}, want the theme's --accent ${r.want}`);
-      if (r.theme === 'field-office' && r.ratio < 3) failures.push(`R1 field-office checked radio fill ${r.ratio}:1 vs panel, want >= 3`);
+      if (r1.length !== 8) failures.push('R1 measured ' + r1.length + ' themes at ' + w + ', want 8');
     }
-    if (r1.length !== 8) failures.push('R1 measured ' + r1.length + ' themes, want 8');
   }
   await cdp.eval(`document.querySelector('#settings-close').click()`);
   await measure('kit-menu', async () => {
@@ -537,6 +583,7 @@ async function main() {
     for (const x of m.white) failures.push(`C4 boards-drawer@390 near-white ${x.kind} ${x.c} ${x.el}`);
     console.log(`palette boards-drawer@390: ${m.n.text} text (min ${Math.min(...m.text.map((t) => t.ratio)).toFixed(2)}), ${m.n.ctl} controls`);
   }
+  await accentTouch('boards-drawer', 390);
 
   if (process.env.PALETTE_ART) {
     fs.mkdirSync(process.env.PALETTE_ART, { recursive: true });
@@ -554,9 +601,15 @@ async function main() {
   }
   const views = report.filter((r) => r.text).length;
   const rings = report.filter((r) => r.ring).length;
-  const themes = report.filter((r) => r.r1).length;
+  const themes = new Set(report.filter((r) => r.r1).map((r) => r.r1.theme)).size;
+  const r1views = report.filter((r) => r.r1).length;
+  const r2text = report.reduce((n, r) => n + (r.r2 ? r.r2.text.length : 0), 0);
+  const r2ctl = report.reduce((n, r) => n + (r.r2 ? r.r2.ctl.length : 0), 0);
+  const r2views = report.filter((r) => r.r2).length;
   console.log(`palette check passed: ${views} surface views, ${texts} text runs >= 4.5:1, ${ctls} controls >= 3:1, ` +
     `${rings} focus rings >= 2px and >= 3:1, no near-white, theme radio accent matches in ${themes} themes, ` +
+    `checked radio fill >= 3:1 in ${r1views} theme x width views, ` +
+    `christmas accent-painted ${r2text} text runs >= 4.5:1 and ${r2ctl} controls >= 3:1 over ${r2views} surface views, ` +
     'ink-stamp actions 20-24px with 44px touch hit at 390');
 }
 
