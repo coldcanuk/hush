@@ -9,6 +9,11 @@
 //   U3 a tick during a Settings post does not flip the radio back
 //   U4 the radio shows what the server saved, not what was clicked
 //   U5 a refused post snaps the radio back to the saved setting
+//   U7 (#314) in light, field office and dark, at 1440 and 390 wide, the
+//      help line under Robot turns (and under Theme) sits at least 8 px
+//      below the pills
+//   U8 (#314) at 390 wide with the root font at 125% to 250%, no
+//      Robot turns pill clips its text or crosses the panel's content edge
 //
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN
 // (required; tests/check_approve_ui.sh resolves it), HUSH_TEST_WAIT_S
@@ -29,18 +34,31 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const procs = [];
 const dirs = [];
 
-function cleanup() {
-  for (const p of procs.splice(0)) {
-    try { p.kill('SIGTERM'); } catch (e) { /* gone */ }
-  }
+/* A child that ignores SIGTERM this long gets SIGKILL. */
+const STOP_WAIT_MS = 5000;
+
+/* Stops one child this check started and resolves once it has exited, so
+ * nothing writes into its temp dir after the dir is removed. */
+function stopProc(p) {
+  return new Promise((resolve) => {
+    if (p.exitCode !== null || p.signalCode !== null) { resolve(); return; }
+    const timer = setTimeout(() => { try { p.kill('SIGKILL'); } catch (e) { /* gone */ } },
+      STOP_WAIT_MS);
+    p.once('exit', () => { clearTimeout(timer); resolve(); });
+    try { p.kill('SIGTERM'); } catch (e) { clearTimeout(timer); resolve(); }
+  });
+}
+/* Stops every child first, then removes the temp HOME and Chrome profile. */
+async function cleanup() {
+  await Promise.all(procs.splice(0).map(stopProc));
   for (const d of dirs.splice(0)) {
     try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* best effort */ }
   }
 }
+class CheckFailed extends Error {}
+/* Ends the current step; the top level cleans up and exits 1. */
 function fail(msg) {
-  cleanup();
-  console.error('approve UI check failed: ' + msg);
-  process.exit(1);
+  throw new CheckFailed(msg);
 }
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -160,6 +178,64 @@ async function waitRadio(page, want, ms, msg) {
   }
   fail(`${msg} (radio=${got}, want ${want})`);
 }
+/* U7/U8 (#314) viewports, themes and root text sizes. */
+const WIDE_W = 1440;
+const PHONE_W = 390;
+const VIEW_H = 900;
+const MIN_HELP_GAP_PX = 8;
+const GAP_THEMES = ['light', 'field-office', 'dark'];
+/* 125% and 150% are the sizes #314 names; on headless Chrome a nowrap pill
+ * still fits there (it takes its own row), so 200% and 250% are where the
+ * old nowrap rule pushes "Approve every action" past the panel. */
+const BIG_TEXT = ['125%', '150%', '200%', '250%'];
+/* Settle time after a viewport, theme or font change before measuring. */
+const LAYOUT_MS = 200;
+
+async function settings(cdp, width, theme, fontSize) {
+  await cdp.send('Emulation.setDeviceMetricsOverride',
+    { width, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+  await cdp.evaluate(`(() => { applyTheme(${JSON.stringify(theme)});
+    document.documentElement.style.fontSize = ${JSON.stringify(fontSize)};
+    openSettings(); return true; })()`);
+  await sleep(LAYOUT_MS);
+}
+/* Pixels from the bottom of group to the top of the help line under it. */
+const GAP = (group) => `(() => { const g = document.getElementById(${JSON.stringify(group)});
+  const h = g && g.nextElementSibling;
+  if (!g || !h || !h.classList.contains('help')) return null;
+  return Math.round(h.getBoundingClientRect().top - g.getBoundingClientRect().bottom); })()`;
+
+/* U7: the help line under each Settings radio group keeps a visible gap. */
+async function checkHelpGap(cdp) {
+  for (const theme of GAP_THEMES) {
+    for (const width of [WIDE_W, PHONE_W]) {
+      await settings(cdp, width, theme, '');
+      const robot = await cdp.evaluate(GAP('approval-list'));
+      if (robot === null || robot < MIN_HELP_GAP_PX)
+        fail(`U7 help line ${robot} px under Robot turns (${theme}, ${width})`);
+      const look = await cdp.evaluate(GAP('theme-list'));
+      if (look === null || look < MIN_HELP_GAP_PX)
+        fail(`U7 help line ${look} px under Theme (${theme}, ${width})`);
+    }
+  }
+}
+/* Labels of #approval-list that clip their text or leave the panel. */
+const CLIPPED = `(() => { const panel = document.querySelector('#settings .panel');
+  const edge = panel.getBoundingClientRect().right - parseFloat(getComputedStyle(panel).paddingRight);
+  return [...document.querySelectorAll('#approval-list label')]
+    .filter((l) => l.scrollWidth > l.clientWidth || l.getBoundingClientRect().right > edge)
+    .map((l) => l.textContent.trim()); })()`;
+
+/* U8: at 390 px and large text every Robot turns pill fits. */
+async function checkFit390(cdp) {
+  for (const size of BIG_TEXT) {
+    await settings(cdp, PHONE_W, 'field-office', size);
+    const clipped = await cdp.evaluate(CLIPPED);
+    if (!Array.isArray(clipped)) fail('U8 could not measure the Robot turns pills');
+    if (clipped.length) fail(`U8 ${clipped.join(', ')} clips at 390 (root font ${size})`);
+  }
+}
+
 async function load(cdp, base) {
   await cdp.send('Page.navigate', { url: base + '/' });
   for (let i = 0; i < 120; i++) {
@@ -213,7 +289,14 @@ async function load(cdp, base) {
   await sleep(300);
   await waitRadio(cdp, AUTO, 1500, 'U5 a refused post must snap the radio back');
   if ((await relay.mode()) !== AUTO) fail('U5 a refused post must not change the setting');
-  cleanup();
+  await checkHelpGap(cdp);
+  await checkFit390(cdp);
+  await cleanup();
   console.log('approve UI checks ok');
   process.exit(0);
-})().catch((e) => fail(e && e.stack ? e.stack : String(e)));
+})().catch(async (e) => {
+  await cleanup();
+  const why = e instanceof CheckFailed ? e.message : (e && e.stack ? e.stack : String(e));
+  console.error('approve UI check failed: ' + why);
+  process.exit(1);
+});

@@ -1793,6 +1793,13 @@ html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2p
   min-height: var(--btn-h-sm); padding: 0 var(--btn-px-sm);
   font-size: var(--btn-fs-sm); line-height: var(--btn-lh);
 }
+/* #314: a help line under a Settings radio group keeps a visible gap.
+   .panel p (margin-top 0) outranks .help (16px), and .vis has no bottom
+   margin, so without this the line sits flush under the pills. */
+.panel .vis + p.help { margin-top: 8px; }
+/* #314: "Approve every action" wraps (the pill grows) instead of clipping
+   at 390 px or a larger text size. Theme pills keep nowrap. */
+#approval-list label { white-space: normal; }
 .mini {
   min-height: var(--btn-h-sm); padding: 0 var(--btn-px-sm);
   font-size: var(--btn-fs-sm); line-height: var(--btn-lh);
