@@ -8,6 +8,12 @@ the top-level `VERSION` file.
 
 ### Changed
 
+- Christmas theme: the accent is a lighter red (#ff6b7f) with dark ink (#0f1f14) on it, so a checked
+  Settings radio reads 5.77:1 against its panel (was 2.71:1) and red accent text and buttons clear
+  4.5:1 / 3:1 (#309). Other themes are unchanged. `tests/check_palette.cjs` R1 now requires a 3:1
+  checked radio fill in all 8 themes at both widths, and new R2 measures christmas accent-painted
+  text and controls on each checked surface.
+
 - A robot loop that hits its limit says "Mention both robots again to start
   a new loop." A fresh loop arms only when the next note names exactly two
   robots. The feed card's "Decision" cue on a waiting loop shows for the
