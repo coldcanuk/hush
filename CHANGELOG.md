@@ -8,6 +8,13 @@ the top-level `VERSION` file.
 
 ### Changed
 
+- Field office fixes from the Ops back-LOOK of main 900a486d: the Developer Log text box is ink on a paper
+  slip instead of a black/green terminal; robot provider pills read 6.32:1 (were 3.17:1 on --accent-dim);
+  the thread-pane milestone fields wrap at phone width so each placeholder shows whole; the 390px header
+  status light is a hollow oxblood ring / solid ink dot with no gradient or glint. All themes: robot
+  picture cells sit on --surface-2 instead of the native #efefef button grey, and the 1943 edition line
+  and HQ stamps show only in field-office. Pinned by `tests/check_palette.cjs` K1-K6.
+
 - A robot loop that hits its limit says "Mention both robots again to start
   a new loop." A fresh loop arms only when the next note names exactly two
   robots. The feed card's "Decision" cue on a waiting loop shows for the
