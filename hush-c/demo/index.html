@@ -1176,6 +1176,11 @@ html[data-theme="field-office"] {
   --fo-lever-shade: #9c927c;
   --fo-lamp-ok: #3f6b2a;                /* 390 header status lamp: listening (green, R08) */
   --fo-lamp-wait: #b07a1e;              /* 390 header status lamp: connecting / down (amber) */
+  --fo-log-bg: var(--surface-2);        /* Developer Log text box */
+  --fo-log-ink: var(--fg);
+  --fo-inv-live: var(--line);           /* robot inventory item rim + glow; drop allowed */
+  --fo-inv-locked: #6b4f12;             /* locked robot (brass) */
+  --fo-inv-bad: var(--accent);          /* drop not allowed */
   --sans: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
   --mono: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
   --display: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
@@ -2200,10 +2205,17 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
 }
 /* Ops back-LOOK 900a486d items 1-3.
    1 Developer Log: the text box is a field-office slip in ink, not a black /
-     green terminal (the inline style stays for the other themes). */
-html[data-theme="field-office"] #dev-log-body { background: var(--surface-2) !important; color: var(--fg) !important; border: 2px solid var(--line) !important; border-radius: 3px !important; }
+     green terminal. Its style moved out of the markup; the other themes keep
+     #000 / #0f0 through the token fallbacks. */
+#dev-log-body {
+  background: var(--fo-log-bg, #000); color: var(--fo-log-ink, #0f0); font: 0.78rem/1.3 ui-monospace, monospace;
+  height: 360px; overflow: auto; padding: 8px; border: 1px solid var(--line); border-radius: 12px; white-space: pre-wrap;
+}
+html[data-theme="field-office"] #dev-log-body { border: 2px solid var(--line); border-radius: 3px; }
 /* 2 Provider pills: a paper slip, not ink on --accent-dim (3.17:1). */
 html[data-theme="field-office"] .pill { background: var(--surface-2); color: var(--fg); }
+/* 7 Mention pills: same slip (they were --fg on --accent-dim, 3.17:1). */
+html[data-theme="field-office"] .mention-pill { background: var(--surface-2); color: var(--fg); }
 /* 3 Thread-pane milestone fields wrap at phone width so each placeholder
      shows whole (they were 37-47px wide at 390). */
 @media (max-width: 640px) {
@@ -2963,7 +2975,7 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
         <button class="drawer-x" id="dev-log-close" type="button" aria-label="Close dev log">×</button>
       </div>
       <p class="help">Syslog stream (mentions, intros, debug). Visible only when Developer Logging enabled in Settings.</p>
-      <pre id="dev-log-body" style="background:#000;color:#0f0;font:0.78rem/1.3 ui-monospace,monospace;height:360px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius: 12px;white-space:pre-wrap;"></pre>
+      <pre id="dev-log-body"></pre>
       <div class="actions">
         <button class="btn ghost" id="dev-log-clear" type="button">Clear</button>
         <button class="btn" id="dev-log-close2" type="button">Close</button>
@@ -3131,6 +3143,11 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
     /* M4.5 Inventory grid state (Diablo/Vein spatial). Variable sizes in cells.
      * Drag-drop with snap + occupancy collision. Cyber/steampunk neon+brass. */
     let invItems = []; /* {id, name, w, h, gx, gy, slug?, color?} */
+    /* Inventory inks: theme tokens, with the old cyan / gold / red as the
+       fallback where a theme does not set them (G291-2). */
+    const INV_INK_LIVE = "var(--fo-inv-live, #0ff)";
+    const INV_INK_LOCKED = "var(--fo-inv-locked, #d4a017)";
+    const INV_INK_BAD = "var(--fo-inv-bad, #f66)";
     const INV_COLS = 4;
     const INV_ROWS = 3;
     const INV_CELL = 40;
@@ -3231,6 +3248,7 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
       session = s;
       syncIdentityViaImport();
       syncApproval();
+      repaintPendingMentions();
     }
 
     function applySession(s) {
@@ -7869,6 +7887,11 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
      */
     function renderPreservingMentions(text, container) {
       if (!container) return;
+      /* #item7: a mention whose npub is not in the roster yet (roster not
+         loaded, or a stranger) shows a short-npub pill instead of vanishing;
+         the raw text is kept so repaintPendingMentions can name it later. */
+      container.dataset.mentionText = text || "";
+      let pending = false;
       const re = /nostr:(npub1[0-9a-z]+)|@(npub1[0-9a-z]+)/gi;
       let last = 0;
       let m;
@@ -7878,13 +7901,15 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
         }
         const npub = m[1] || m[2];
         const hit = mentionHit(npub);
-        if (!hit) {
-          last = re.lastIndex;
-          continue;
-        }
         const span = document.createElement("span");
         span.className = "mention-pill";
-        span.textContent = "@" + hit.name;
+        if (hit) {
+          span.textContent = "@" + hit.name;
+        } else {
+          span.classList.add("mention-unknown");
+          span.textContent = "@" + npub.slice(0, 10) + "\u2026";
+          pending = true;
+        }
         span.title = npub;
         container.appendChild(span);
         last = re.lastIndex;
@@ -7892,6 +7917,17 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
       if (last < (text || "").length) {
         container.appendChild(document.createTextNode(text.slice(last)));
       }
+      container.classList.toggle("mention-pending", pending);
+    }
+
+    /* Re-render note bodies that still hold a short-npub pill once the
+       roster changes (called from setSession and the 1 s tick). */
+    function repaintPendingMentions() {
+      document.querySelectorAll(".mention-pending[data-mention-text]").forEach((el) => {
+        const text = el.dataset.mentionText;
+        el.textContent = "";
+        renderPreservingMentions(text, el);
+      });
     }
 
     /* Developer log helpers. isDevLogNote is receipts only ("Mention received.").
@@ -8004,7 +8040,7 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
         w: sz.w, h: sz.h,
         gx: slot.gx, gy: slot.gy,
         slug: (bot && bot.slug) ? bot.slug : "",
-        color: (bot && bot.locked) ? "#d4a017" : "#0ff",
+        color: (bot && bot.locked) ? INV_INK_LOCKED : INV_INK_LIVE,
         enabled: !bot || bot.enabled !== false
       };
       invItems.push(item);
@@ -8046,7 +8082,7 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
           w: w, h: h, gx: gx, gy: gy,
           slug: bot.slug,
           picture: bot.picture || "",
-          color: bot.locked ? "#d4a017" : "#0ff",
+          color: bot.locked ? INV_INK_LOCKED : INV_INK_LIVE,
           enabled: bot.enabled !== false
         });
       });
@@ -8125,8 +8161,8 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
         el.style.top = (it.gy * cell + 1) + "px";
         el.style.width = ((it.w * cell) - 4) + "px";
         el.style.height = ((it.h * cell) - 4) + "px";
-        el.style.borderColor = it.color || "#0ff";
-        el.style.boxShadow = "0 0 4px " + (it.color || "#0ff");
+        el.style.borderColor = it.color || INV_INK_LIVE;
+        el.style.boxShadow = "0 0 4px " + (it.color || INV_INK_LIVE);
         el.title = it.name || "";
         const picCss = picCellStyle(it.picture, (compact ? INV_CELL : INV_EXPAND_CELL));
         if (picCss) {
@@ -8204,7 +8240,7 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
         el.style.left = (gx * cell + 1) + "px";
         el.style.top = (gy * cell + 1) + "px";
         const ok = isSpaceFree(gx, gy, invDrag.w, invDrag.h, invDrag.id, invDrag.cols, invDrag.rows);
-        el.style.borderColor = ok ? "#0ff" : "#f66";
+        el.style.borderColor = ok ? INV_INK_LIVE : INV_INK_BAD;
       }
     }
 
@@ -9101,6 +9137,7 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
         session = sess;
         syncIdentityViaImport();
         syncApproval();
+        repaintPendingMentions();
         whisperReady = !!st.whisper;
         if (session.ready && page !== "payne") page = "hive";
         else if (!session.logged_in

@@ -41,6 +41,14 @@
 //      background, not the native button grey, in 8 themes.
 //   K6 the 1943 masthead edition, HQ header stamp and dispatch-log HQ stamp
 //      show in field-office and are hidden in the other 7 themes at 1440.
+//   K7 mentions (real renderPreservingMentions in a #stream note): a known
+//      robot and an npub not in the roster both render as a pill (no leading
+//      blank); the unknown one shows a short npub and is renamed when the
+//      roster gains it (real setSession); pill text >= 4.5:1 in 8 themes at
+//      1440 and 390.
+//   K8 robot inventory items (real renderAllInventories): in field-office the
+//      rim is a field-office token >= 3:1 against the grid; in the other 7
+//      themes it is the old cyan / gold, unchanged.
 //   B1 Thread, Download and Stop are 20-24px tall at both widths; at 390 a
 //      point 20px above and below the centre still hits the control (44px).
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
@@ -475,6 +483,59 @@ async function main() {
     }
   }
 
+  /* K7: mention pills. */
+  {
+    const FAKE = 'npub1zq' + 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'.repeat(2).slice(0, 56);
+    for (const [w, h] of WIDTHS) {
+      await view(w, h); await cdp.eval(KIT);
+      const k7 = await cdp.eval(`(() => { const P = window.__pal; const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
+        const major = robotModels()[0]; const note = document.querySelector('#stream .note');
+        const tmp = document.createElement('div'); tmp.className = 'body'; note.appendChild(tmp);
+        renderPreservingMentions('nostr:' + major.npub + ' please write a one-line welcome. nostr:${FAKE} too', tmp);
+        tmp.scrollIntoView({ block: 'center' });
+        const pills = [...tmp.querySelectorAll('.mention-pill')];
+        const shape = { pills: pills.map((p) => p.textContent), first: tmp.firstChild ? (tmp.firstChild.nodeType === 1 ? 'pill' : JSON.stringify(tmp.firstChild.nodeValue.slice(0, 3))) : null };
+        for (const t of ${JSON.stringify(THEMES)}) { h.setAttribute('data-theme', t);
+          for (const p of pills) { const bg = P.bgOf(p); let fg = P.rgba(getComputedStyle(p).color); fg = P.over([fg[0], fg[1], fg[2], fg[3] * P.opacityOf(p)], bg);
+            out.push({ theme: t, pill: p.textContent, ratio: Math.round(P.ratio(fg, bg) * 100) / 100, fg: P.hex(fg), bg: P.hex(bg) }); } }
+        h.setAttribute('data-theme', was); tmp.remove(); return { shape, out }; })()`);
+      console.log(`palette K7 shape@${w}: ${JSON.stringify(k7.shape)}`);
+      report.push({ surface: 'K7', w, k7 });
+      if (k7.shape.first !== 'pill') failures.push(`K7@${w} mention line starts with ${k7.shape.first}, want the @Major pill`);
+      if (k7.shape.pills.length !== 2 || !/^@npub1zq/.test(k7.shape.pills[1] || '')) failures.push(`K7@${w} pills ${JSON.stringify(k7.shape.pills)}, want @Major and a short-npub pill`);
+      for (const r of k7.out) if (r.ratio < 4.5) failures.push(`K7 ${r.theme}@${w} mention pill "${r.pill}" text ${r.ratio}:1 ${r.fg} on ${r.bg}`);
+      console.log(`palette K7@${w}: ${k7.out.length} pill text measures (min ${k7.out.length ? Math.min(...k7.out.map((r) => r.ratio)) : '-'})`);
+    }
+    const rep7 = await cdp.eval(`(() => { const note = document.querySelector('#stream .note'); const tmp = document.createElement('div'); tmp.className = 'body'; note.appendChild(tmp);
+      renderPreservingMentions('nostr:${FAKE} please check in', tmp); const before = { pending: tmp.classList.contains('mention-pending'), pill: tmp.querySelector('.mention-pill') ? tmp.querySelector('.mention-pill').textContent : null };
+      const keep = session; setSession(Object.assign({}, session, { members: (session.members || []).concat([{ name: 'Kestrel', npub: '${FAKE}' }]) }));
+      const after = { pending: tmp.classList.contains('mention-pending'), pill: tmp.querySelector('.mention-pill') ? tmp.querySelector('.mention-pill').textContent : null };
+      setSession(keep); tmp.remove(); return { before, after }; })()`);
+    console.log(`palette K7 repaint: ${JSON.stringify(rep7)}`); report.push({ surface: 'K7r', w: 390, k7r: rep7 });
+    if (!rep7.before.pending || rep7.after.pending || rep7.after.pill !== '@Kestrel') failures.push(`K7 roster load does not rename the short-npub pill: ${JSON.stringify(rep7)}`);
+  }
+  /* K8: inventory item rims. */
+  {
+    await view(1440, 900); await cdp.eval(KIT);
+    const k8 = await cdp.eval(`(() => { const P = window.__pal; const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
+      /* All roster robots may be locked: add one unlocked item (same ink the app uses) so the live rim is measured too. */
+      let spot = null; for (let y = 0; y < INV_ROWS && !spot; y++) for (let x = 0; x < INV_COLS && !spot; x++) if (isSpaceFree(x, y, 1, 1, null)) spot = [x, y];
+      const live = (typeof INV_INK_LIVE === 'string') ? INV_INK_LIVE : '#0ff';
+      if (spot) invItems.push({ id: 'k8-live', name: 'K8 live', w: 1, h: 1, gx: spot[0], gy: spot[1], color: live });
+      renderAllInventories();
+      for (const t of ${JSON.stringify(THEMES)}) { h.setAttribute('data-theme', t); const T = P.tokens();
+        const items = [...document.querySelectorAll('#robot-inventory .inv-item')];
+        const rims = items.map((it) => { const c = P.rgba(getComputedStyle(it).borderTopColor); const behind = P.bgOf(it.parentElement);
+          return { rim: P.hex(c), token: T.get(P.hex(c)) || null, ratio: Math.round(P.ratio(P.over(c, behind), behind) * 100) / 100 }; });
+        out.push({ theme: t, items: items.length, rims: [...new Set(rims.map((r) => r.rim))], tokens: [...new Set(rims.map((r) => r.token))], min: rims.length ? Math.min(...rims.map((r) => r.ratio)) : 0 }); }
+      h.setAttribute('data-theme', was); invItems = invItems.filter((it) => it.id !== 'k8-live'); renderAllInventories(); return out; })()`);
+    for (const r of k8) {
+      console.log(`palette K8 ${r.theme}: ${JSON.stringify(r)}`); report.push({ surface: 'K8', w: 1440, k8: r });
+      if (r.items < 2) { failures.push(`K8 ${r.theme} no inventory items rendered`); continue; }
+      if (r.theme === 'field-office') { if (r.tokens.includes(null) || r.min < 3) failures.push(`K8 field-office inventory rim ${r.rims.join(',')} tokens ${r.tokens.join(',')} min ${r.min}:1`); }
+      else if (r.rims.some((c) => c !== '#00ffff' && c !== '#d4a017')) failures.push(`K8 ${r.theme} inventory rim changed to ${r.rims.join(',')} (want the old #00ffff / #d4a017)`);
+    }
+  }
   await ringCheck('main-thread', ['#stream .thread-btn', '#stream .note-files button', '#stream .think-stop', '#nav-toggle', '#rail-toggle']);
 
   await measure('thread-pane', async () => {
@@ -679,7 +740,9 @@ async function main() {
     'ink-stamp actions 20-24px with 44px touch hit at 390, ' +
     `K1 dev log on tokens, K2 ${report.filter((r) => r.k2).reduce((n, r) => n + r.k2.length, 0)} provider pill text runs, ` +
     `K3 ${report.filter((r) => r.k3 && !r.k3.hidden).length} milestone fields fit their placeholder, K4 status light 2 states on tokens, ` +
-    `K5 picture cells on tokens in ${report.filter((r) => r.k5).length} themes, K6 masthead chrome field-office only`);
+    `K5 picture cells on tokens in ${report.filter((r) => r.k5).length} themes, K6 masthead chrome field-office only, ` +
+    `K7 ${report.filter((r) => r.k7).reduce((n, r) => n + r.k7.out.length, 0)} mention pill text measures >= 4.5:1 + short-npub fallback renamed on roster load, ` +
+    `K8 inventory rims: field-office tokens, other ${report.filter((r) => r.k8 && r.k8.theme !== 'field-office').length} themes unchanged`);
 }
 
 main().catch((e) => die(e && e.stack ? e.stack : String(e)));
