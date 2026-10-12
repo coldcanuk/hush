@@ -556,6 +556,10 @@ static void hush_agent_greet_mentions(const hush_agent_job_in_t *job,
                                        const hush_agent_mentions_t *mentions)
 {
     assert(job != NULL && mentions != NULL);
+    /* #312: under Approve every action no robot greets before the owner's
+     * Yes; begin_work posts the intro once, after the gate. */
+    if (hush_agent_approval_needed(job))
+        return;
     for (size_t i = 0; i < mentions->count && i < (size_t)HUSH_AGENT_FOLLOW_ROBOTS; ++i) {
         hush_agent_robot_t peer = {0};
         if (hush_agent_lookup_robot(&peer, job->launch, mentions->hexes[i]))

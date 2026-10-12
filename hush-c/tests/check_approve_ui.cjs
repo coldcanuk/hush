@@ -9,6 +9,8 @@
 //   U3 a tick during a Settings post does not flip the radio back
 //   U4 the radio shows what the server saved, not what was clicked
 //   U5 a refused post snaps the radio back to the saved setting
+//   U6 (#312) under Approve every action the owner's mention shows no 👍
+//      for Happy while his turn waits; the 👍 shows after the owner's Yes
 //
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN
 // (required; tests/check_approve_ui.sh resolves it), HUSH_TEST_WAIT_S
@@ -25,22 +27,40 @@ const RELAY = process.env.HUSH_RELAY_BIN || path.join(ROOT, 'hush-relay');
 const CHROME = process.env.HUSH_CHROME_BIN || '';
 const EVERY = 'approve_every_action';
 const AUTO = 'auto_approve';
+/* U6: the 👍 shows 2 s after a mention; waiting past that proves it stays hidden. */
+const HELD_WAIT_MS = 3000;
+const ACK_WAIT_MS = 6000;
+const ASK_HAPPY = 'Approval needed: Happy wants to take a turn. Reply Yes or No in this thread.';
+const RAN_HAPPY = 'No selected provider is ready for Happy.';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const procs = [];
 const dirs = [];
 
-function cleanup() {
-  for (const p of procs.splice(0)) {
-    try { p.kill('SIGTERM'); } catch (e) { /* gone */ }
-  }
+/* A child that ignores SIGTERM this long gets SIGKILL. */
+const STOP_WAIT_MS = 5000;
+
+/* Stops one child this check started and resolves once it has exited, so
+ * nothing writes into its temp dir after the dir is removed. */
+function stopProc(p) {
+  return new Promise((resolve) => {
+    if (p.exitCode !== null || p.signalCode !== null) { resolve(); return; }
+    const timer = setTimeout(() => { try { p.kill('SIGKILL'); } catch (e) { /* gone */ } },
+      STOP_WAIT_MS);
+    p.once('exit', () => { clearTimeout(timer); resolve(); });
+    try { p.kill('SIGTERM'); } catch (e) { clearTimeout(timer); resolve(); }
+  });
+}
+/* Stops every child first, then removes the temp HOME and Chrome profile. */
+async function cleanup() {
+  await Promise.all(procs.splice(0).map(stopProc));
   for (const d of dirs.splice(0)) {
     try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* best effort */ }
   }
 }
+class CheckFailed extends Error {}
+/* Ends the current step; the top level cleans up and exits 1. */
 function fail(msg) {
-  cleanup();
-  console.error('approve UI check failed: ' + msg);
-  process.exit(1);
+  throw new CheckFailed(msg);
 }
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -98,7 +118,9 @@ async function startRelay() {
   await post('/api/profile', { first_name: 'Chuck', last_name: 'P', email: '', organization: '', theme: 'dark' });
   const mode = async () =>
     (await (await fetch(base + '/api/session', { headers: headers() })).json()).approval_mode;
-  return { base, post, mode };
+  const events = async () =>
+    (await (await fetch(base + '/api/events', { headers: headers() })).json()).events || [];
+  return { base, post, mode, events };
 }
 
 /* Launches headless Chrome and returns a minimal CDP client on its page. */
@@ -160,6 +182,42 @@ async function waitRadio(page, want, ms, msg) {
   }
   fail(`${msg} (radio=${got}, want ${want})`);
 }
+/* Counts 👍-phase ack pills that name Happy in the rendered page. */
+const HAPPY_EMOJI = `[...document.querySelectorAll('.robot-ack.emoji')]
+  .filter((p) => p.textContent.includes('Happy')).length`;
+
+async function waitEvent(relay, head, ms, msg) {
+  for (const t0 = Date.now(); Date.now() - t0 < ms; await sleep(100)) {
+    const hit = (await relay.events()).find((e) => String(e.content || '').startsWith(head));
+    if (hit) return hit;
+  }
+  return fail(msg);
+}
+
+/* U6 (#312): a held turn shows no 👍 until the owner's Yes settles it. */
+async function checkHeldAck(relay, cdp) {
+  await relay.post('/api/profile', { approval_mode: EVERY });
+  const raised = await relay.post('/api/agent', { name: 'Happy', system_prompt: 'Tell jokes.',
+    provider: 'grok-build', save_pass: true });
+  const happy = (raised.agents || []).find((a) => a.name === 'Happy');
+  if (!happy) fail('U6 setup: Happy was not raised');
+  await load(cdp, relay.base);
+  await relay.post('/api/event', { kind: 1, channel: 'welcome', mention_0: happy.npub,
+    content: 'nostr:' + happy.npub + ' tell a joke' });
+  const ask = await waitEvent(relay, ASK_HAPPY, ACK_WAIT_MS, 'U6 the turn must wait for approval');
+  await sleep(HELD_WAIT_MS);
+  if (!(await cdp.evaluate(`lastEvents.some((e) => e.content === ${JSON.stringify(ASK_HAPPY)})`)))
+    fail('U6 the page never saw the approval ask');
+  if (!(await cdp.evaluate(`document.getElementById('stream').textContent.includes('tell a joke')`)))
+    fail('U6 the owner\'s mention is not on screen');
+  if ((await cdp.evaluate(HAPPY_EMOJI)) !== 0) fail('U6 👍 shown while the turn waits');
+  await relay.post('/api/event', { kind: 1, channel: 'welcome', reply_to: ask.reply_to, content: 'Yes' });
+  await waitEvent(relay, RAN_HAPPY, ACK_WAIT_MS, 'U6 the Yes must run the turn');
+  for (const t0 = Date.now(); (await cdp.evaluate(HAPPY_EMOJI)) !== 1; await sleep(100)) {
+    if (Date.now() - t0 > ACK_WAIT_MS) fail('U6 the 👍 must show after the owner\'s Yes');
+  }
+}
+
 async function load(cdp, base) {
   await cdp.send('Page.navigate', { url: base + '/' });
   for (let i = 0; i < 120; i++) {
@@ -213,7 +271,13 @@ async function load(cdp, base) {
   await sleep(300);
   await waitRadio(cdp, AUTO, 1500, 'U5 a refused post must snap the radio back');
   if ((await relay.mode()) !== AUTO) fail('U5 a refused post must not change the setting');
-  cleanup();
+  await checkHeldAck(relay, cdp);
+  await cleanup();
   console.log('approve UI checks ok');
   process.exit(0);
-})().catch((e) => fail(e && e.stack ? e.stack : String(e)));
+})().catch(async (e) => {
+  await cleanup();
+  const why = e instanceof CheckFailed ? e.message : (e && e.stack ? e.stack : String(e));
+  console.error('approve UI check failed: ' + why);
+  process.exit(1);
+});

@@ -6804,12 +6804,39 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       Object.keys(partials).forEach((key) => { if (!live[key]) delete partials[key]; });
     }
 
+    /* #312: under Approve every action a robot's turn waits for the
+       owner's Yes. While it waits ("Approval needed: <Robot> ..." in the
+       thread, not yet settled by "Turn declined: <Robot> ..." or a note
+       from the robot or about its run; receipts and intros do not
+       settle it), the mention shows no 👍. */
+    const INTRO_HEAD = "At ease.";
+    function turnHeld(parentId, bot) {
+      const events = lastEvents || [];
+      const parent = events.find((e) => e && e.id === parentId);
+      const name = bot && bot.name;
+      if (!parent || !name) return false;
+      const root = parent.reply_to || parent.id;
+      const ask = "Approval needed: " + name + " wants ";
+      const settled = ["Turn declined: " + name + " ", "No selected provider is ready for " + name + "."];
+      let asks = 0;
+      let settles = 0;
+      events.forEach((e) => {
+        if (!e || isDevLogNote(e) || (e.id !== root && e.reply_to !== root)) return;
+        const text = String(e.content || "");
+        if (text.indexOf(ask) === 0) asks++;
+        else if (settled.some((head) => text.indexOf(head) === 0)) settles++;
+        else if (sameKey(bot.pubkey || bot.npub, e.pubkey) && text.indexOf(INTRO_HEAD) !== 0) settles++;
+      });
+      return asks > settles;
+    }
+
     function mentionAckPhase(parentId, bot, jobs) {
       const key = String(parentId || "") + ":" + (bot && (bot.slug || bot.npub) || "");
       const now = Date.now();
       const parent = (lastEvents || []).find((e) => e && e.id === parentId);
-      const created = parent && parent.created_at ? Number(parent.created_at) : 0;
       const live = (jobs || []).some((j) => j && bot && j.name === bot.name);
+      if (!live && turnHeld(parentId, bot)) return "held";
+      const created = parent && parent.created_at ? Number(parent.created_at) : 0;
       if (created && (now - created * 1000) > 2000 && !live)
         return "emoji";
       if (!ackClock[key]) ackClock[key] = now;
@@ -6828,6 +6855,7 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
         const p = mentionAckPhase(e.id, bot, jobs);
         if (p === "thinking") stamp = "t";
         else if (p === "reacting" && stamp !== "t") stamp = "r";
+        else if (p === "held" && stamp === "e") stamp = "h";
       });
       return stamp;
     }
@@ -7372,9 +7400,12 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
           ackBar.className = "robot-acks";
           const jobs = thinkingFor(e.id, lastStatus);
           const emojiSet = ["👍", "🎯", "🏆"];
+          let shown = 0;
           acks.forEach((bot, i) => {
-            const pill = document.createElement("span");
             let phase = mentionAckPhase(e.id, bot, jobs);
+            /* #312: no pill while the turn waits for the owner's Yes. */
+            if (phase === "held") return;
+            const pill = document.createElement("span");
             /* A missing-runtime sentence is already the answer. Do not
              * also say that robot is thinking or reacting, and do not
              * leave a title that names a phase ("is emoji" included).
@@ -7401,8 +7432,9 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
                 (line ? " · " + esc(line) : "");
             }
             ackBar.appendChild(pill);
+            shown++;
           });
-          n.appendChild(ackBar);
+          if (shown) n.appendChild(ackBar);
         }
       } catch (eAck) { /* never break render on ack */ }
 

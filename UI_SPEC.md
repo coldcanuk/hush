@@ -1627,9 +1627,13 @@ turns need approval.
    a post (a refused post snaps it back).
 2. **One approval per robot turn.** Under `Approve every action`, every
    robot turn stops at one gate in `hush_agent_begin_work`, after the
-   turn-cap check and before the robot's runtime starts. (The existing
-   mention greetings still run first. The default on-deck line is not a chat note
-   (#278).) That covers the first turn after a mention, each
+   turn-cap check and before the robot's runtime starts. (Under
+   `Approve every action` a robot's custom intro waits for the owner's Yes
+   and posts once after it; after No it never posts. While the turn
+   waits, the owner's mention shows no 👍 ack pill for that robot; the
+   pill shows once a No or the robot's run settles the turn (#312). Under
+   `Auto-approve` the mention greeting still runs first. The default on-deck
+   line is not a chat note (#278).) That covers the first turn after a mention, each
    follow wave, each two-robot loop turn, the leader election pass, the
    leader's plan pass, and an owner reply that goes to the thread's robot.
    The chaperon posts "Approval needed: <Robot> wants to take a turn. Reply
