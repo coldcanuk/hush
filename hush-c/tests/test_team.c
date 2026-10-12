@@ -95,11 +95,11 @@ static void test_project_clock(void)
     expect(hush_agent_cline_timeout_s(0) == HUSH_AGENT_CLINE_TIMEOUT_S,
            "cline chat stays at 80");
     expect(hush_agent_cline_timeout_s(1) == HUSH_AGENT_PROJECT_TIMEOUT_S,
-           "project cline still at 80");
+           "project cline runs on the 300 s clock");
     expect(strcmp(hush_agent_cline_approve(0), "false") == 0,
            "cline chat stays reviewed");
     expect(strcmp(hush_agent_cline_approve(1), "true") == 0,
-           "project cline still denies tools");
+           "project cline gets its tools");
 }
 
 static int argv_has(char **argv, const char *word)
@@ -305,6 +305,10 @@ static void test_hop_and_cwd(const char *home)
     snprintf(job.parent_id, sizeof(job.parent_id), "%s", root);
     snprintf(job.cwd, sizeof(job.cwd), "/tmp");
     hush_agent_apply_project_cwd(&job);
+    expect(job.project_tools == 0, "a bound milestone with no person gate stays private");
+    expect(strcmp(job.cwd, "/tmp") == 0, "no person gate: cwd unchanged");
+    job.person_gate = 1;
+    hush_agent_apply_project_cwd(&job);
     expect(job.project_tools == 1, "bound milestone unlocks file tools");
     expect(strcmp(job.cwd, path) == 0, "cwd is the project");
     desk.project[0] = '\0';
@@ -316,6 +320,30 @@ static void test_hop_and_cwd(const char *home)
     hush_store_destroy(store);
 }
 
+/* #311 A1 / #310 B1: the exec argv itself carries the gate's token and
+ * the job clock, not only the helpers. */
+static void test_cline_argv(void)
+{
+    static hush_agent_job_t job;
+    static char prompt[] = "PROMPT";
+    hush_agent_cline_argv_t cline = {0};
+
+    memset(&job, 0, sizeof(job));
+    snprintf(job.cwd, sizeof(job.cwd), "/tmp/proj");
+    hush_agent_cline_argv(&cline, &job, prompt);
+    expect(strcmp(cline.argv[0], "cline") == 0 && strcmp(cline.argv[2], "--cwd") == 0 &&
+           strcmp(cline.argv[3], "/tmp/proj") == 0, "cline argv runs in the job cwd");
+    expect(strcmp(cline.argv[4], "--auto-approve") == 0 && strcmp(cline.argv[5], "false") == 0,
+           "chat cline argv keeps tools off");
+    expect(strcmp(cline.argv[6], "--timeout") == 0 && strcmp(cline.argv[7], "80") == 0,
+           "chat cline argv carries the 80 s clock");
+    expect(cline.argv[8] == prompt && cline.argv[9] == NULL, "cline argv ends with the prompt");
+    job.project_tools = 1;
+    hush_agent_cline_argv(&cline, &job, prompt);
+    expect(strcmp(cline.argv[5], "true") == 0, "project cline argv turns tools on");
+    expect(strcmp(cline.argv[7], "300") == 0, "project cline argv carries the 300 s clock");
+}
+
 int main(void)
 {
     char home[] = "/tmp/hush-team-XXXXXX";
@@ -324,6 +352,7 @@ int main(void)
         return 1;
     test_parse();
     test_project_clock();
+    test_cline_argv();
     test_worker_cwd();
     test_denylist();
     test_yes_no(home);

@@ -20,7 +20,6 @@ static unsigned long g_held_seq;
 static hush_agent_held_t g_taken;
 
 static hush_agent_held_t *hush_agent_held_free(void);
-static int hush_agent_held_by_owner(const hush_agent_job_in_t *in);
 static size_t hush_agent_held_guests(void);
 static hush_agent_held_t *hush_agent_held_oldest(const char *root);
 static void hush_agent_held_fill(hush_agent_held_t *held, const hush_agent_job_in_t *in);
@@ -52,7 +51,7 @@ int hush_agent_approval_hold(const hush_agent_job_in_t *in)
     int guest = 0;
 
     assert(in != NULL && in->store != NULL && in->bot != NULL && in->parent != NULL);
-    guest = !hush_agent_held_by_owner(in);
+    guest = !hush_agent_owner_asked(in);
     held = hush_agent_held_free();
     /* Other people share HUSH_AGENT_APPROVAL_GUEST_MAX entries, so the owner
      * always keeps the rest for their own turns. A refused guest is told so
@@ -138,7 +137,7 @@ int hush_agent_is_approval_line(const char *content)
  * owner's, or a robot's note in a thread the owner opened (follow waves,
  * loop turns, the plan pass). Any other human's note, or a robot's note in
  * their thread, is a guest's ask. */
-static int hush_agent_held_by_owner(const hush_agent_job_in_t *in)
+int hush_agent_owner_asked(const hush_agent_job_in_t *in)
 {
     char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
     hush_event_t opening = {0};
