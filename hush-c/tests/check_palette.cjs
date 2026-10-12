@@ -26,6 +26,20 @@
 //   R1 the Settings theme radio's computed accent-color equals the theme's
 //      own --accent in all 8 themes (main: auto, native blue); field-office
 //      checked fill >= 3:1 against the panel.
+//   K1-K6 (Ops back-LOOK 900a486d):
+//   K1 field-office Developer Log with log lines: its text box background and
+//      text colour are field-office colour tokens (main: #000 / #0f0), and the
+//      lines pass C1.
+//   K2 field-office robot drawer with two providers (real paintAgentProviderOrder):
+//      the provider pills pass C1 (main: "primary" 3.17:1 on --accent-dim).
+//   K3 the thread-pane milestone fields and the main milestone form show their
+//      whole placeholder (text width <= content box) in 8 themes at 1440 and 390.
+//   K4 field-office 390 header status light, both states: no gradient, no
+//      shadow, fill and border are field-office tokens, >= 3:1 vs the header.
+//   K5 robot picture cells (real paintAgentPicPicker) have a theme-token
+//      background, not the native button grey, in 8 themes.
+//   K6 the 1943 masthead edition, HQ header stamp and dispatch-log HQ stamp
+//      show in field-office and are hidden in the other 7 themes at 1440.
 //   B1 Thread, Download and Stop are 20-24px tall at both widths; at 390 a
 //      point 20px above and below the centre still hits the control (44px).
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
@@ -232,7 +246,13 @@ const KIT = `(() => {
     return !!hit && (hit === el || el.contains(hit) || hit.contains(el));
   };
   const textRect = (node) => { const rg = document.createRange(); rg.selectNodeContents(node); const rs = [...rg.getClientRects()].filter((q) => q.width > 1 && q.height > 1); return rs[0] || null; };
-  window.__pal = { rgba, over, lum, ratio, bgOf, opacityOf, disabled, hex, path, onTop, textRect };
+  /* Colour tokens of the current theme: every --* custom property that parses as a colour, as hex. */
+  const tokenNames = () => { const names = new Set(); for (const sh of document.styleSheets) { let rules; try { rules = sh.cssRules; } catch (e) { continue; }
+    const walk = (rs) => { for (const r of rs) { if (r.style) for (const p of r.style) if (p.startsWith('--')) names.add(p); if (r.cssRules) walk(r.cssRules); } }; walk(rules); } return [...names]; };
+  const tokens = () => { const cs = getComputedStyle(document.documentElement); const out = new Map();
+    for (const n of tokenNames()) { const v = cs.getPropertyValue(n).trim(); if (!v || !CSS.supports('color', v)) continue; const c = rgba(v); if (c[3] >= 1) out.set(hex(c), n); }
+    return out; };
+  window.__pal = { rgba, over, lum, ratio, bgOf, opacityOf, disabled, hex, path, onTop, textRect, tokens };
   return true;
 })()`;
 
@@ -327,6 +347,7 @@ async function main() {
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: "try { localStorage.setItem('hush-theme', 'field-office'); } catch (e) {}" });
 
   const WIDTHS = [[1440, 900], [390, 844]];
+  const THEMES = ['dark', 'light', 'color-blind', 'dracula', 'desert', 'monochrome', 'christmas', 'field-office'];
   const report = [];
   const view = async (w, h) => {
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false });
@@ -460,6 +481,29 @@ async function main() {
     await cdp.waitFor(`document.querySelector('#thread-pane').classList.contains('show') && document.querySelectorAll('#thread-stream .note').length >= 2`, 'thread pane');
   });
   await ringCheck('thread-pane', ['#thread-msg', '#thread-close']);
+  /* K3: whole placeholder visible in the milestone fields, 8 themes x 2 widths. */
+  for (const [w, h] of WIDTHS) {
+    await view(w, h);
+    await cdp.eval(KIT);
+    const k3 = await cdp.eval(`(() => { const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
+      const ctx = document.createElement('canvas').getContext('2d');
+      for (const t of ${JSON.stringify(THEMES)}) { h.setAttribute('data-theme', t);
+        for (const el of document.querySelectorAll('#thread-desk input, #milestone-form input')) {
+          const r = el.getBoundingClientRect(); if (r.width < 2) { out.push({ theme: t, id: el.id || el.name, hidden: true }); continue; }
+          const ph = getComputedStyle(el, '::placeholder'); const cs = getComputedStyle(el);
+          ctx.font = ph.fontStyle + ' ' + ph.fontWeight + ' ' + ph.fontSize + ' ' + ph.fontFamily; ctx.letterSpacing = ph.letterSpacing === 'normal' ? '0px' : ph.letterSpacing;
+          let txt = el.placeholder; if (ph.textTransform === 'uppercase') txt = txt.toUpperCase();
+          const need = Math.ceil(ctx.measureText(txt).width); const room = Math.floor(el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
+          out.push({ theme: t, id: el.id || el.placeholder, need, room, fits: need <= room }); } }
+      h.setAttribute('data-theme', was); return out; })()`);
+    for (const r of k3) {
+      report.push({ surface: 'K3', w, k3: r });
+      if (r.hidden) { if (r.id.startsWith('thread-desk')) failures.push(`K3 ${r.theme}@${w} ${r.id} not on screen`); continue; }
+      if (!r.fits) failures.push(`K3 ${r.theme}@${w} ${r.id} placeholder needs ${r.need}px, field has ${r.room}px (clipped)`);
+    }
+    const shown = k3.filter((r) => !r.hidden);
+    console.log(`palette K3@${w}: ${shown.filter((r) => r.fits).length}/${shown.length} milestone fields show the whole placeholder (min room-need ${Math.min(...shown.map((r) => r.room - r.need))}px)`);
+  }
   await cdp.eval(`(() => { const x = document.querySelector('#thread-close'); if (x) x.click(); })()`);
   await sleep(300);
   await measure('settings', async () => {
@@ -518,6 +562,79 @@ async function main() {
       await sleep(150);
     });
   }
+  /* K1: Developer Log with real log lines (appendDevLog), field-office. */
+  await measure('dialog-dev-log-lines', async () => {
+    await cdp.eval(`(() => { for (const d of document.querySelectorAll('.drawer.show')) d.classList.remove('show');
+      if (!document.getElementById('dev-log-body').textContent) { appendDevLog('a0d89f7a: Mention received.'); appendDevLog('1f6a6361: Mention received.'); }
+      document.getElementById('dev-log-drawer').classList.add('show'); })()`);
+    await sleep(150);
+  });
+  {
+    await pinTheme(); await cdp.eval(KIT);
+    const k1 = await cdp.eval(`(() => { const P = window.__pal; const T = P.tokens(); const el = document.getElementById('dev-log-body'); const cs = getComputedStyle(el);
+      const bg = P.hex(P.rgba(cs.backgroundColor)), fg = P.hex(P.rgba(cs.color));
+      return { lines: el.textContent.split('\\n').filter(Boolean).length, bg, bgToken: T.get(bg) || null, fg, fgToken: T.get(fg) || null }; })()`);
+    console.log(`palette K1: ${JSON.stringify(k1)}`); report.push({ surface: 'K1', w: 390, k1 });
+    if (k1.lines < 2) failures.push(`K1 Developer Log fixture shows ${k1.lines} lines, want 2`);
+    if (!k1.bgToken || !k1.fgToken) failures.push(`K1 Developer Log text box paints ${k1.bg} / ${k1.fg}, want field-office tokens (got ${k1.bgToken} / ${k1.fgToken})`);
+  }
+  /* K2 + K5: robot drawer with two providers and the picture picker, painted by the app's own functions. */
+  const AGENT_FIXTURE = `(() => { for (const d of document.querySelectorAll('.drawer.show')) d.classList.remove('show');
+    draftProviders.splice(0, draftProviders.length, 'grok', 'claude'); paintAgentProviderOrder(); paintAgentPicPicker();
+    const d = document.getElementById('agent-drawer'); d.classList.add('show'); const p = d.querySelector('.panel'); if (p) p.scrollTop = 0;
+    const pills = document.getElementById('agent-provider-pills'); if (pills) pills.scrollIntoView({ block: 'center' }); })()`;
+  await measure('dialog-agent-pills', async () => { await cdp.eval(AGENT_FIXTURE); await sleep(150); });
+  {
+    const k2 = report.filter((r) => r.surface === 'dialog-agent-pills').map((r) => r.text.filter((t) => t.el.includes('pill')));
+    for (let i = 0; i < k2.length; i++) {
+      console.log(`palette K2@${WIDTHS[i][0]}: ${k2[i].length} provider pill text runs (min ${k2[i].length ? Math.min(...k2[i].map((t) => t.ratio)) : '-'})`);
+      report.push({ surface: 'K2', w: WIDTHS[i][0], k2: k2[i] });
+      if (k2[i].length < 2) failures.push(`K2@${WIDTHS[i][0]} measured ${k2[i].length} provider pill text runs, want >= 2 (fixture not painted?)`);
+    }
+    await view(1440, 900); await cdp.eval(AGENT_FIXTURE); await cdp.eval(KIT);
+    const k5 = await cdp.eval(`(() => { const P = window.__pal; const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
+      for (const t of ${JSON.stringify(THEMES)}) { h.setAttribute('data-theme', t); const T = P.tokens(); const cells = [...document.querySelectorAll('#agent-drawer .agent-pic-cell')];
+        const bgs = [...new Set(cells.map((c) => P.hex(P.rgba(getComputedStyle(c).backgroundColor))))];
+        out.push({ theme: t, cells: cells.length, bgs, off: bgs.filter((b) => !T.has(b)) }); }
+      h.setAttribute('data-theme', was); return out; })()`);
+    for (const r of k5) {
+      console.log(`palette K5 ${r.theme}: ${JSON.stringify(r)}`); report.push({ surface: 'K5', w: 1440, k5: r });
+      if (r.cells < 1) failures.push(`K5 ${r.theme} no robot picture cells painted`);
+      else if (r.off.length) failures.push(`K5 ${r.theme} picture cell background ${r.off.join(', ')} is not a theme token`);
+    }
+  }
+  await cdp.eval(`(() => { for (const d of document.querySelectorAll('.drawer.show')) d.classList.remove('show'); })()`);
+  /* K4: field-office header status light at 390, both states. */
+  {
+    await view(390, 844); await pinTheme(); await cdp.eval(KIT);
+    const k4 = await cdp.eval(`(() => { const P = window.__pal; const T = P.tokens(); const b = document.getElementById('badge'); const had = b.classList.contains('ok'); const out = [];
+      for (const ok of [false, true]) { b.classList.toggle('ok', ok); const cs = getComputedStyle(b); const behind = P.bgOf(b.parentElement);
+        const fc = P.rgba(cs.backgroundColor); const fill = fc[3] > 0 ? P.hex(fc) : 'transparent'; const border = P.hex(P.rgba(cs.borderTopColor));
+        out.push({ state: ok ? 'ok' : 'not-ok', w: b.offsetWidth, image: cs.backgroundImage, shadow: cs.boxShadow, fill, fillToken: fill === 'transparent' ? 'transparent' : (T.get(fill) || null), border, borderToken: T.get(border) || null,
+          ratio: Math.round(Math.max(fc[3] > 0 ? P.ratio(P.over(fc, behind), behind) : 0, parseFloat(cs.borderTopWidth) >= 1 ? P.ratio(P.over(P.rgba(cs.borderTopColor), behind), behind) : 0) * 100) / 100, behind: P.hex(behind) }); }
+      b.classList.toggle('ok', had); return out; })()`);
+    for (const r of k4) {
+      console.log(`palette K4 ${r.state}@390: ${JSON.stringify(r)}`); report.push({ surface: 'K4', w: 390, k4: r });
+      if (r.image !== 'none' || r.shadow !== 'none' || !r.fillToken || !r.borderToken || r.ratio < 3)
+        failures.push(`K4 field-office 390 status light (${r.state}) image ${r.image.slice(0, 40)} shadow ${r.shadow.slice(0, 30)} fill ${r.fill} (${r.fillToken}) border ${r.border} (${r.borderToken}) ${r.ratio}:1`);
+    }
+    if (k4[0].fill === k4[1].fill && k4[0].border === k4[1].border) failures.push('K4 status light looks the same in both states');
+  }
+  /* K6: field-office masthead chrome only in field-office (1440). */
+  {
+    await view(1440, 900); await cdp.eval(KIT);
+    const k6 = await cdp.eval(`(() => { const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
+      const sels = ['.fo-edition', '.fo-hq > span', '.fo-log-stamp'];
+      for (const t of ${JSON.stringify(THEMES)}) { h.setAttribute('data-theme', t);
+        for (const sel of sels) { const el = document.querySelector(sel); const r = el ? el.getBoundingClientRect() : null;
+          out.push({ theme: t, sel, shown: !!r && r.width > 0 && r.height > 0 && getComputedStyle(el).visibility === 'visible' }); } }
+      h.setAttribute('data-theme', was); return out; })()`);
+    for (const r of k6) {
+      report.push({ surface: 'K6', w: 1440, k6: r });
+      if (r.theme === 'field-office' ? !r.shown : r.shown) failures.push(`K6 ${r.sel} ${r.shown ? 'shows' : 'hidden'} in ${r.theme}`);
+    }
+    console.log(`palette K6@1440: ${k6.filter((r) => r.theme === 'field-office' && r.shown).length} field-office chrome items shown in field-office, ${k6.filter((r) => r.theme !== 'field-office' && r.shown).length} shown in the other 7 themes`);
+  }
   await cdp.eval(`(() => { for (const d of document.querySelectorAll('.drawer.show')) d.classList.remove('show'); })()`);
   await cdp.eval(`document.getElementById('manage-chan').classList.add('show')`);
   await ringCheck('manage-channel', ['#manage-prompt', '#manage-save', '#manage-close']);
@@ -557,7 +674,10 @@ async function main() {
   const themes = report.filter((r) => r.r1).length;
   console.log(`palette check passed: ${views} surface views, ${texts} text runs >= 4.5:1, ${ctls} controls >= 3:1, ` +
     `${rings} focus rings >= 2px and >= 3:1, no near-white, theme radio accent matches in ${themes} themes, ` +
-    'ink-stamp actions 20-24px with 44px touch hit at 390');
+    'ink-stamp actions 20-24px with 44px touch hit at 390, ' +
+    `K1 dev log on tokens, K2 ${report.filter((r) => r.k2).reduce((n, r) => n + r.k2.length, 0)} provider pill text runs, ` +
+    `K3 ${report.filter((r) => r.k3 && !r.k3.hidden).length} milestone fields fit their placeholder, K4 status light 2 states on tokens, ` +
+    `K5 picture cells on tokens in ${report.filter((r) => r.k5).length} themes, K6 masthead chrome field-office only`);
 }
 
 main().catch((e) => die(e && e.stack ? e.stack : String(e)));

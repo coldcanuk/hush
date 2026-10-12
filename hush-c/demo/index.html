@@ -2196,6 +2196,18 @@ html[data-theme="field-office"] input[type="radio"]:checked {
 html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checked {
   border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2px var(--surface-2);
 }
+/* Ops back-LOOK 900a486d items 1-3.
+   1 Developer Log: the text box is a field-office slip in ink, not a black /
+     green terminal (the inline style stays for the other themes). */
+html[data-theme="field-office"] #dev-log-body { background: var(--surface-2) !important; color: var(--fg) !important; border: 2px solid var(--line) !important; border-radius: 3px !important; }
+/* 2 Provider pills: a paper slip, not ink on --accent-dim (3.17:1). */
+html[data-theme="field-office"] .pill { background: var(--surface-2); color: var(--fg); }
+/* 3 Thread-pane milestone fields wrap at phone width so each placeholder
+     shows whole (they were 37-47px wide at 390). */
+@media (max-width: 640px) {
+  #thread-desk { flex-wrap: wrap; }
+  #thread-desk input { flex: 1 1 10rem; }
+}
 </style>
 </head>
 <body>
