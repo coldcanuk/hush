@@ -34,8 +34,9 @@
 //      the provider pills pass C1 (main: "primary" 3.17:1 on --accent-dim).
 //   K3 the thread-pane milestone fields and the main milestone form show their
 //      whole placeholder (text width <= content box) in 8 themes at 1440 and 390.
-//   K4 field-office 390 header status light, both states: no gradient, no
-//      shadow, fill and border are field-office tokens, >= 3:1 vs the header.
+//   K4 field-office 390 header status light, both states: no gradient; fill,
+//      border and glow colours are field-office tokens (no white glint); the
+//      two states differ; >= 3:1 vs the header.
 //   K5 robot picture cells (real paintAgentPicPicker) have a theme-token
 //      background, not the native button grey, in 8 themes.
 //   K6 the 1943 masthead edition, HQ header stamp and dispatch-log HQ stamp
@@ -611,12 +612,13 @@ async function main() {
       for (const ok of [false, true]) { b.classList.toggle('ok', ok); const cs = getComputedStyle(b); const behind = P.bgOf(b.parentElement);
         const fc = P.rgba(cs.backgroundColor); const fill = fc[3] > 0 ? P.hex(fc) : 'transparent'; const border = P.hex(P.rgba(cs.borderTopColor));
         out.push({ state: ok ? 'ok' : 'not-ok', w: b.offsetWidth, image: cs.backgroundImage, shadow: cs.boxShadow, fill, fillToken: fill === 'transparent' ? 'transparent' : (T.get(fill) || null), border, borderToken: T.get(border) || null,
+          shadowOff: (cs.boxShadow.match(/rgba?\\([^)]*\\)/g) || []).map((c) => P.rgba(c)).filter((c) => c[3] > 0 && (!T.has(P.hex(c)) || P.lum(c) >= 0.8)).map((c) => P.hex(c)),
           ratio: Math.round(Math.max(fc[3] > 0 ? P.ratio(P.over(fc, behind), behind) : 0, parseFloat(cs.borderTopWidth) >= 1 ? P.ratio(P.over(P.rgba(cs.borderTopColor), behind), behind) : 0) * 100) / 100, behind: P.hex(behind) }); }
       b.classList.toggle('ok', had); return out; })()`);
     for (const r of k4) {
       console.log(`palette K4 ${r.state}@390: ${JSON.stringify(r)}`); report.push({ surface: 'K4', w: 390, k4: r });
-      if (r.image !== 'none' || r.shadow !== 'none' || !r.fillToken || !r.borderToken || r.ratio < 3)
-        failures.push(`K4 field-office 390 status light (${r.state}) image ${r.image.slice(0, 40)} shadow ${r.shadow.slice(0, 30)} fill ${r.fill} (${r.fillToken}) border ${r.border} (${r.borderToken}) ${r.ratio}:1`);
+      if (r.image !== 'none' || r.shadowOff.length || !r.fillToken || !r.borderToken || r.ratio < 3)
+        failures.push(`K4 field-office 390 status light (${r.state}) image ${r.image.slice(0, 40)} off-palette glow ${r.shadowOff.join(',')} fill ${r.fill} (${r.fillToken}) border ${r.border} (${r.borderToken}) ${r.ratio}:1`);
     }
     if (k4[0].fill === k4[1].fill && k4[0].border === k4[1].border) failures.push('K4 status light looks the same in both states');
   }

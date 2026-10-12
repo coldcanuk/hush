@@ -1174,6 +1174,8 @@ html[data-theme="field-office"] {
   --fo-boss-shade: #5c574c;
   --fo-lever: #d8d0bc;                  /* Send switch: lever face */
   --fo-lever-shade: #9c927c;
+  --fo-lamp-ok: #3f6b2a;                /* 390 header status lamp: listening (green, R08) */
+  --fo-lamp-wait: #b07a1e;              /* 390 header status lamp: connecting / down (amber) */
   --sans: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
   --mono: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
   --display: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
@@ -2210,11 +2212,12 @@ html[data-theme="field-office"] .pill { background: var(--surface-2); color: var
 }
 /* Ops back-LOOK 900a486d items 4-6.
    4 Field office <= 480px: the header status light is an ink mark, not a
-     green / amber gradient with a white glint. Connecting / down: hollow
-     oxblood ring; live: solid ink dot. */
+     bright green / amber gradient with a white glint: a flat lamp in two
+     muted field-office tokens (still green when listening, amber when
+     not, per #231 R08) with an olive-ink rim and a glow of its own colour. */
 @media (max-width: 480px) {
-  html[data-theme="field-office"] header #badge { background: transparent; border: 2px solid var(--accent); box-shadow: none; }
-  html[data-theme="field-office"] header #badge.ok { background: var(--fg); border-color: var(--fg); box-shadow: none; }
+  html[data-theme="field-office"] header #badge { background: var(--fo-lamp-wait); border: 2px solid var(--line); box-shadow: 0 0 3px 1px var(--fo-lamp-wait); }
+  html[data-theme="field-office"] header #badge.ok { background: var(--fo-lamp-ok); box-shadow: 0 0 3px 1px var(--fo-lamp-ok); }
 }
 /* 5 Robot picture cells sit on the theme's slip colour, not the native
      button grey, wherever a sprite leaves the cell uncovered. */

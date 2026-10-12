@@ -11,7 +11,8 @@ the top-level `VERSION` file.
 - Field office fixes from the Ops back-LOOK of main 900a486d: the Developer Log text box is ink on a paper
   slip instead of a black/green terminal; robot provider pills read 6.32:1 (were 3.17:1 on --accent-dim);
   the thread-pane milestone fields wrap at phone width so each placeholder shows whole; the 390px header
-  status light is a hollow oxblood ring / solid ink dot with no gradient or glint. All themes: robot
+  status lamp is flat muted green / amber (two new field-office tokens) with an ink rim, no gradient and
+  no white glint. All themes: robot
   picture cells sit on --surface-2 instead of the native #efefef button grey, and the 1943 edition line
   and HQ stamps show only in field-office. Pinned by `tests/check_palette.cjs` K1-K6.
 
