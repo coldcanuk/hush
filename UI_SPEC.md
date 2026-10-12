@@ -1674,8 +1674,10 @@ turns need approval.
    the owner always keeps 4 for their own turns. When the owner's turn
    does not fit, the chaperon posts "Too many turns are waiting for
    approval. Answer one first."; when someone else's does not fit, it
-   posts "Too many requests from other people are waiting for the owner.
-   Try again later." Neither turn runs.
+   posts "Turn not started for <Robot>: too many requests from other
+   people are waiting for the owner. Try again later.", naming the robot
+   whose turn was refused (#313; the exact words are a CoS/Chuck call).
+   Neither turn runs.
    Waiting turns live in relay memory only: after a restart the old
    waiting turn is gone, and a Yes at its approval line is an ordinary
    owner note, so it raises a fresh approval line for the thread's robot
