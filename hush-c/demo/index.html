@@ -2208,6 +2208,22 @@ html[data-theme="field-office"] .pill { background: var(--surface-2); color: var
   #thread-desk { flex-wrap: wrap; }
   #thread-desk input { flex: 1 1 10rem; }
 }
+/* Ops back-LOOK 900a486d items 4-6.
+   4 Field office <= 480px: the header status light is an ink mark, not a
+     green / amber gradient with a white glint. Connecting / down: hollow
+     oxblood ring; live: solid ink dot. */
+@media (max-width: 480px) {
+  html[data-theme="field-office"] header #badge { background: transparent; border: 2px solid var(--accent); box-shadow: none; }
+  html[data-theme="field-office"] header #badge.ok { background: var(--fg); border-color: var(--fg); box-shadow: none; }
+}
+/* 5 Robot picture cells sit on the theme's slip colour, not the native
+     button grey, wherever a sprite leaves the cell uncovered. */
+.agent-pic-cell { background-color: var(--surface-2); }
+/* 6 The 1943 edition line and the HQ stamps are field-office dressing;
+     the other themes keep the layout without them. */
+html:not([data-theme="field-office"]) .fo-edition,
+html:not([data-theme="field-office"]) .fo-hq > span,
+html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
 </style>
 </head>
 <body>
