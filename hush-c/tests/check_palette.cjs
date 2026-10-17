@@ -203,7 +203,12 @@ function l1Fixture() {
   add('tile-video', mk('video', '', {}, tile), '.tile video', ['background-color'], 'fill');
   add('tile-span', mk('span', '', {}, tile, 'Major'), '.tile span', ['background-color', 'color'], 'text');
   add('tile-mute', mk('button', 'tile-mute', { type: 'button' }, tile, 'Mute'), '.tile-mute', ['background-color', 'color'], 'text');
-  const inv = document.getElementById('robot-inventory') || box;
+  /* The inventory fixtures live in their own #robot-inventory-like wrapper
+     inside #l1-fix (same --surface fill behind the rim), not in the live
+     #robot-inventory: the app's inventory re-render detached them before the
+     read and L1@390 went flaky (Gauge #325 r6 finding 2). */
+  const inv = mk('div', 'l1-inv', {}, box);
+  inv.style.cssText = 'display:block;position:relative;height:40px;padding:4px;box-sizing:border-box;background:var(--surface);border:1px solid var(--line);border-radius:8px';
   add('inv-item', mk('div', 'inv-item', { 'data-l1': '1' }, inv, 'Rx'), '.inv-item', ['color'], 'text');
   for (const [k, id] of [['inv-btn', 'inv-seed'], ['qb-gear', 'qb-config'], ['send', 'thread-send']]) {
     const el = document.getElementById(id); if (el) add(k + '-active', el, '#' + id + ':active', ['box-shadow'], 'shadow'); }
@@ -713,26 +718,31 @@ async function main() {
     console.log(`palette K7 tick: ${JSON.stringify(tick7)}`); report.push({ surface: 'K7t', w: 390, k7t: tick7 });
     if (!tick7.kept || !tick7.keptAfterChange) failures.push(`K7 tick re-renders a pending @unknown pill while the roster is unchanged: ${JSON.stringify(tick7)}`);
     if (!tick7.after || tick7.after.pending || tick7.after.pill !== '@Kestrel') failures.push(`K7 tick roster does not rename the @unknown pill: ${JSON.stringify(tick7)}`);
-    /* K7p (Gauge #325 r5 finding 1): the live robot partial preview. A
-       partial is robot output before the relay rewrites @npub1... tokens, so
-       both real paths (paintThink builds the slot, refreshPartials fills it
-       from /api/reply) must not paint "npub". fetch is wrapped for
-       /api/reply only and restored. */
+    /* K7p (Gauge #325 r5 finding 1, r6 finding 1): the live robot partial
+       preview. A partial is robot output before the relay rewrites @npub1...
+       tokens, so both real paths (paintThink builds the slot, refreshPartials
+       fills it from /api/reply) must not paint "npub". The slot is NOT blanked
+       between paths: refreshPartials polls twice into the slot paintThink drew
+       and each read must be exactly K7P_WANT with 2 pills, so a paint that
+       appends instead of replacing (paintPartial's clear reverted) fails.
+       fetch is wrapped for /api/reply only and restored. */
     const part7 = await cdp.eval(`(async () => { const job = { parent: 'k7p-root', name: 'Major' }; const key = partialKey(job.parent, job.name);
       const text = 'draft for @${FAKE} and nostr:${FAKE} done';
       partials[key] = text; const host = document.createElement('div'); document.querySelector('#stream').appendChild(host);
       paintThink(host, [job]); const slot = host.querySelector('.partial');
       const think = { text: slot ? slot.textContent : null, pills: slot ? slot.querySelectorAll('.mention-pill').length : 0 };
-      if (slot) slot.textContent = '';
-      const realFetch = window.fetch; let refresh = null;
+      const realFetch = window.fetch; let refresh = null, refresh2 = null;
+      const read = () => ({ text: slot ? slot.textContent : null, pills: slot ? slot.querySelectorAll('.mention-pill').length : 0 });
       window.fetch = (u, o) => String(u).indexOf('/api/reply') < 0 ? realFetch(u, o) : Promise.resolve(new Response(JSON.stringify({ running: true, text }), { headers: { 'content-type': 'application/json' } }));
-      try { await refreshPartials({ thinking: [job] }); refresh = { text: slot ? slot.textContent : null, pills: slot ? slot.querySelectorAll('.mention-pill').length : 0 }; }
+      try { await refreshPartials({ thinking: [job] }); refresh = read(); await refreshPartials({ thinking: [job] }); refresh2 = read(); }
       finally { window.fetch = realFetch; delete partials[key]; host.remove(); }
-      return { think, refresh }; })()`, true);
+      return { think, refresh, refresh2 }; })()`, true);
     console.log(`palette K7 partial: ${JSON.stringify(part7)}`); report.push({ surface: 'K7p', w: 390, k7p: part7 });
-    for (const [path, r] of [['paintThink', part7.think], ['refreshPartials', part7.refresh]]) {
+    const K7P_WANT = 'draft for @unknown and @unknown done';
+    for (const [path, r] of [['paintThink', part7.think], ['refreshPartials', part7.refresh], ['refreshPartials poll 2', part7.refresh2]]) {
       if (!r || r.text === null) { failures.push(`K7p ${path} drew no .partial`); continue; }
       if (/npub/i.test(r.text)) failures.push(`K7p ${path} .partial paints an npub: ${JSON.stringify(r.text)} (UI_SPEC: unresolved @npub1... tokens are not painted)`);
+      if (r.text !== K7P_WANT) failures.push(`K7p ${path} .partial reads ${JSON.stringify(r.text)}, want exactly ${JSON.stringify(K7P_WANT)} (a poll replaces the preview, it does not append)`);
       if (r.pills !== 2) failures.push(`K7p ${path} .partial has ${r.pills} mention pills, want 2 (@unknown x2)`);
     }
     /* K7k (Gauge #325 r5 finding 2): the roster key is the sorted npub=name

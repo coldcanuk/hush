@@ -81,6 +81,9 @@ M = [
     # Gauge #325 r5 (r6)
     ("P1 refreshPartials paints raw text", "              paintPartial(el, ans.text);", "              el.textContent = ans.text;", "K7p refreshPartials .partial paints an npub"),
     ("P2 paintThink paints raw text", "        if (text) paintPartial(prev, text);", "        if (text) prev.textContent = text;", "K7p paintThink .partial paints an npub"),
+    # Gauge #325 r6 finding 1 (r7): the clear in paintPartial; without it each poll appends.
+    ("P4 paintPartial clear removed", "    function paintPartial(el, text) {\n      el.textContent = \"\";\n      renderPreservingMentions(text, el);",
+     "    function paintPartial(el, text) {\n      renderPreservingMentions(text, el);", "K7p refreshPartials .partial reads"),
     ("T8 roster key not sorted", '      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).sort().join("|");',
      '      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).join("|");', "K7k roster key is order-sensitive"),
     ("T9 roster key = names only", '      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).sort().join("|");',
