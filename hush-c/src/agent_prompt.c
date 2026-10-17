@@ -149,6 +149,8 @@ hush_status_t hush_agent_fill_job(hush_agent_job_t *job,
     hush_agent_fill_rules(job->rules, sizeof(job->rules), job->human_name);
     hush_agent_append_last(job);
     hush_agent_prepare_cwd(job->cwd, sizeof(job->cwd));
+    /* #311 A3: project tools need a person gate, never the thread alone. */
+    job->person_gate = in->approved || hush_agent_owner_asked(in);
     hush_agent_apply_project_cwd(job);
     hush_agent_arm_budget(job);
     hush_agent_fill_job_note(job, in);
