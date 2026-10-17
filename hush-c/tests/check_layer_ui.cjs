@@ -265,6 +265,13 @@ async function main() {
   await jsClick('#do-vibe');
   await jsClick('#meet-payne');
   await cdp.waitFor(`!!document.querySelector('#hive.show')`, 'hive');
+  // #336 (SECURITY.md): the page drops ?pair= from its address bar on load.
+  await cdp.eval('window.__prePair = true');
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/?pair=${'0'.repeat(32)}` });
+  await cdp.waitFor(`!window.__prePair && !!document.querySelector('#hive.show')`, 'hive after ?pair= load');
+  const search = await cdp.eval('location.search');
+  if (search !== '') fail('?pair= left in the address bar: ' + JSON.stringify(search));
+  console.log('L283 PASS P1 ?pair= stripped from the address bar');
 
   // Real CDP input.
   const point = (sel) => cdp.eval(`(() => { const e = document.querySelector(${JSON.stringify(sel)});
