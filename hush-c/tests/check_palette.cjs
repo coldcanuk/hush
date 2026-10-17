@@ -71,6 +71,9 @@
 //   K10 the real skills board (paintSkillBoard) and skill sheet
 //      (paintSkillSheet) pass C1/C2/C4/W1 in field-office (Ops #325: #ffd75e
 //      lifetime ink, #d4a017 chip rim, #0ff portrait rim).
+//   K11 the channel voice button (whisper:true via a wrapped /api/status, real
+//      tick + paintChannels), BOARDS list at 1440 and 390, rest and :hover, in
+//      field-office: glyph >= 4.5:1, rim or opaque fill >= 3:1, tokens only.
 //   B1 Thread, Download and Stop are 20-24px tall at both widths; at 390 a
 //      point 20px above and below the centre still hits the control (44px).
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
@@ -662,10 +665,10 @@ async function main() {
       const k7 = await cdp.eval(`(() => { const P = window.__pal; const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
         const major = robotModels()[0]; const note = document.querySelector('#stream .note');
         const tmp = document.createElement('div'); tmp.className = 'body'; note.appendChild(tmp);
-        renderPreservingMentions('nostr:' + major.npub + ' please write a one-line welcome. nostr:${FAKE} too', tmp);
+        renderPreservingMentions('nostr:' + major.npub + ' please write a one-line welcome. nostr:${FAKE} too, and hi @${FAKE} end', tmp);
         tmp.scrollIntoView({ block: 'center' });
         const pills = [...tmp.querySelectorAll('.mention-pill')];
-        const shape = { pills: pills.map((p) => p.textContent), titles: pills.map((p) => p.title), first: tmp.firstChild ? (tmp.firstChild.nodeType === 1 ? 'pill' : JSON.stringify(tmp.firstChild.nodeValue.slice(0, 3))) : null };
+        const shape = { pills: pills.map((p) => p.textContent), titles: pills.map((p) => p.title), arias: pills.map((p) => p.getAttribute('aria-label') || ''), body: tmp.textContent, first: tmp.firstChild ? (tmp.firstChild.nodeType === 1 ? 'pill' : JSON.stringify(tmp.firstChild.nodeValue.slice(0, 3))) : null };
         for (const t of ${JSON.stringify(THEMES)}) { h.setAttribute('data-theme', t);
           for (const p of pills) { const bg = P.bgOf(p); let fg = P.rgba(getComputedStyle(p).color); fg = P.over([fg[0], fg[1], fg[2], fg[3] * P.opacityOf(p)], bg);
             out.push({ theme: t, pill: p.textContent, ratio: Math.round(P.ratio(fg, bg) * 100) / 100, fg: P.hex(fg), bg: P.hex(bg) }); } }
@@ -673,8 +676,10 @@ async function main() {
       console.log(`palette K7 shape@${w}: ${JSON.stringify(k7.shape)}`);
       report.push({ surface: 'K7', w, k7 });
       if (k7.shape.first !== 'pill') failures.push(`K7@${w} mention line starts with ${k7.shape.first}, want the @Major pill`);
+      if (/npub/i.test(k7.shape.body)) failures.push(`K7@${w} the note body text paints an npub: ${JSON.stringify(k7.shape.body)} (UI_SPEC: unresolved @npub1... tokens are not painted)`);
+      if (!/npub1zq/.test(k7.shape.arias[1] || '')) failures.push(`K7@${w} the @unknown pill aria-label ${JSON.stringify(k7.shape.arias[1])} lacks the short npub`);
       if (k7.shape.pills.some((t) => /npub/i.test(t))) failures.push(`K7@${w} a pill paints an npub ${JSON.stringify(k7.shape.pills)} (UI_SPEC: unresolved @npub1... tokens are not painted)`);
-      if (k7.shape.pills.length !== 2 || k7.shape.pills[1] !== '@unknown' || !/npub1zq/.test(k7.shape.titles[1] || '')) failures.push(`K7@${w} pills ${JSON.stringify(k7.shape.pills)} titles ${JSON.stringify(k7.shape.titles)}, want @Major and an @unknown pill with the short npub in its title`);
+      if (k7.shape.pills.length !== 3 || k7.shape.pills[1] !== '@unknown' || k7.shape.pills[2] !== '@unknown' || !/npub1zq/.test(k7.shape.titles[1] || '')) failures.push(`K7@${w} pills ${JSON.stringify(k7.shape.pills)} titles ${JSON.stringify(k7.shape.titles)}, want @Major and two @unknown pills with the short npub in their title`);
       for (const r of k7.out) if (r.ratio < 4.5) failures.push(`K7 ${r.theme}@${w} mention pill "${r.pill}" text ${r.ratio}:1 ${r.fg} on ${r.bg}`);
       console.log(`palette K7@${w}: ${k7.out.length} pill text measures (min ${k7.out.length ? Math.min(...k7.out.map((r) => r.ratio)) : '-'})`);
     }
@@ -688,8 +693,9 @@ async function main() {
     /* K7t: the live roster arrives through the real 1 s tick() (it assigns
        session directly, not via setSession). With the roster unchanged a
        pending pill is left alone (same DOM node after two ticks: no
-       per-second re-render), also after an unrelated member joins; once
-       /api/session lists the npub, one tick renames it. fetch is wrapped for /api/session only and restored. */
+       per-second re-render), also after an unrelated member joins; when that
+       member leaves as the npub joins (roster size unchanged), one tick
+       renames it. fetch is wrapped for /api/session only and restored. */
     const OTHER = 'npub1hawk' + 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'.repeat(2).slice(0, 54);
     const tick7 = await cdp.eval(`(async () => { await tick(); const note = document.querySelector('#stream .note'); const tmp = document.createElement('div'); tmp.className = 'body'; note.appendChild(tmp);
       const pill = () => tmp.querySelector('.mention-pill'); const state = () => ({ pending: tmp.classList.contains('mention-pending'), pill: pill() ? pill().textContent : null });
@@ -700,7 +706,8 @@ async function main() {
       let keptAfterChange = null, after = null;
       try {
         extra = [{ name: 'Hawk', npub: '${OTHER}' }]; await tick(); node = pill(); await tick(); await tick(); keptAfterChange = pill() === node && state().pill === '@unknown';
-        extra = extra.concat([{ name: 'Kestrel', npub: '${FAKE}' }]); await tick(); after = state();
+        /* Same-size swap: Hawk leaves as Kestrel (the mentioned npub) joins in one tick. */
+        extra = [{ name: 'Kestrel', npub: '${FAKE}' }]; await tick(); after = state();
       } finally { window.fetch = realFetch; await tick(); tmp.remove(); }
       return { kept, keptAfterChange, after }; })()`, true);
     console.log(`palette K7 tick: ${JSON.stringify(tick7)}`); report.push({ surface: 'K7t', w: 390, k7t: tick7 });
@@ -1018,6 +1025,49 @@ async function main() {
     for (const c of m.ctl) if (c.ratio < 3) failures.push(`C2 boards-drawer@390 control ${c.ratio}:1 ${c.el}`);
     for (const x of m.white) failures.push(`C4 boards-drawer@390 near-white ${x.kind} ${x.c} ${x.el}`);
     console.log(`palette boards-drawer@390: ${m.n.text} text (min ${Math.min(...m.text.map((t) => t.ratio)).toFixed(2)}), ${m.n.ctl} controls`);
+  }
+
+  /* K11 (CoS 10:54): the channel voice button (.chan-voice) exists only when
+     /api/status says whisper:true. fetch is wrapped so /api/status reports it,
+     the real tick() + paintChannels() draw it, and the BOARDS list is measured
+     at 1440 and 390, at rest and under a CDP-forced :hover, in field-office:
+     glyph >= 4.5:1, and the rim or the opaque fill >= 3:1 against the row. */
+  {
+    await cdp.eval(`(async () => { if (!window.__k11fetch) { const rf = window.fetch; window.__k11fetch = rf;
+      window.fetch = (u, o) => rf(u, o).then((r) => String(u).indexOf('/api/status') < 0 ? r : r.json().then((j) => new Response(JSON.stringify(Object.assign({}, j, { whisper: true })), { headers: { 'content-type': 'application/json' } }))); }
+      await tick(); paintChannels();
+      /* Hold the channel list still while :hover is forced (the 1 s tick repaints it, replacing the forced nodes). */
+      window.__k11paint = paintChannels; paintChannels = () => {}; })()`, true);
+    await cdp.send('DOM.enable', {}); await cdp.send('CSS.enable', {});
+    for (const [w, h] of WIDTHS) {
+      await view(w, h);
+      if (w < 641) { await cdp.eval(`(() => { if (!document.querySelector('#hive').classList.contains('nav-open')) document.querySelector('#nav-toggle').click(); })()`);
+        await cdp.waitFor(`document.querySelector('#hive').classList.contains('nav-open')`, 'boards drawer'); await sleep(400); }
+      await pinTheme(); await cdp.eval(KIT);
+      const root = (await cdp.send('DOM.getDocument', { depth: 0 })).root.nodeId;
+      const ids = (await cdp.send('DOM.querySelectorAll', { nodeId: root, selector: '.chan-voice' })).nodeIds;
+      for (const state of ['rest', 'hover']) {
+        for (const id of ids) await cdp.send('CSS.forcePseudoState', { nodeId: id, forcedPseudoClasses: state === 'hover' ? ['hover'] : [] });
+        await sleep(100);
+        const k11 = await cdp.eval(`(() => { const P = window.__pal; const T = P.tokens(); return [...document.querySelectorAll('.chan-voice')].filter((el) => el.getClientRects().length).map((el) => {
+          const cs = getComputedStyle(el); const behind = P.bgOf(el.parentElement); const fillC = P.rgba(cs.backgroundColor); const bg = P.bgOf(el);
+          const fg = P.rgba(cs.color); const rim = P.rgba(cs.borderTopColor);
+          return { text: Math.round(P.ratio(P.over(fg, bg), bg) * 100) / 100, rim: Math.round(P.ratio(P.over(rim, behind), behind) * 100) / 100,
+            fill: fillC[3] === 1 ? Math.round(P.ratio(fillC, behind) * 100) / 100 : null, fg: P.hex(fg), bg: P.hex(bg), border: P.hex(rim), behind: P.hex(behind),
+            tokens: [P.hex(fg), P.hex(rim)].concat(fillC[3] > 0 ? [P.hex(fillC)] : []).every((c) => T.has(c)) }; }); })()`);
+        console.log(`palette K11@${w} ${state}: ${k11.length} voice buttons ${JSON.stringify(k11[0] || null)} (min text ${Math.min(...k11.map((r) => r.text))}, min edge ${Math.min(...k11.map((r) => Math.max(r.rim, r.fill || 0)))})`);
+        report.push({ surface: 'K11', w, state, k11 });
+        if (!k11.length) failures.push(`K11@${w} no .chan-voice drawn with whisper:true`);
+        for (const r of k11) {
+          if (r.text < 4.5) failures.push(`K11@${w} ${state} chan-voice glyph ${r.text}:1 ${r.fg} on ${r.bg}`);
+          if (Math.max(r.rim, r.fill || 0) < 3) failures.push(`K11@${w} ${state} chan-voice edge ${r.rim}:1 rim ${r.border} / fill ${r.fill} on ${r.behind}, want >= 3:1`);
+          if (!r.tokens) failures.push(`K11@${w} ${state} chan-voice paints off-token ${r.fg}/${r.border}`);
+        }
+      }
+      for (const id of ids) await cdp.send('CSS.forcePseudoState', { nodeId: id, forcedPseudoClasses: [] });
+      await whiteCheck('K11-boards', w);
+    }
+    await cdp.eval(`(async () => { if (window.__k11paint) { paintChannels = window.__k11paint; delete window.__k11paint; } if (window.__k11fetch) { window.fetch = window.__k11fetch; delete window.__k11fetch; } await tick(); paintChannels(); })()`, true);
   }
 
   console.log(`palette W1: ${whiteViews.length} field-office views, ${whiteViews.reduce((n, v) => n + v.n, 0)} element scans, ${whiteViews.reduce((n, v) => n + v.hits, 0)} white values`);

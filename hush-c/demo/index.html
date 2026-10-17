@@ -115,8 +115,8 @@
     }
     .chan-options { width: 44px; height: 44px; border: 0; }
     .chan-options:hover { background: var(--surface-2); }
-    .chan-voice, .robot-call { color: var(--accent); border-color: var(--accent-dim); }
-    .chan-voice:hover, .robot-call:hover { background: var(--accent-dim); }
+    .chan-voice, .robot-call { color: var(--accent); border-color: var(--fo-voice-rim, var(--accent-dim)); }
+    .chan-voice:hover, .robot-call:hover { background: var(--fo-voice-hover-bg, var(--accent-dim)); color: var(--fo-voice-hover-ink, var(--accent)); }
     .group-lbl { font-size: 0.72rem; color: var(--muted); padding: 8px 8px 2px; font-weight: 650; }
     .menu {
       display: none; position: fixed; z-index: 40; min-width: 12rem;
@@ -1205,6 +1205,9 @@ html[data-theme="field-office"] {
   --fo-doll-rim: var(--line);           /* skill doll picture rim */
   --fo-life-always: #4a380c;            /* ALWAYS-ON lifetime: brass ink (>= 4.5:1 at the .life 0.9 opacity) */
   --fo-life-oncall: #22385a;            /* ON-CALL lifetime: blue ink */
+  --fo-voice-rim: var(--accent);        /* channel voice / robot call rim: --accent-dim was 2.89:1 on --surface */
+  --fo-voice-hover-bg: var(--accent);   /* hover slip; ink on --accent-dim was 1.84:1 */
+  --fo-voice-hover-ink: var(--surface-2);
   /* Shared rules a field-office rule already overrides (soft shadows, scrims, the 390 lamp);
      their literals sit behind these so the S7 baseline is empty. */
   --fo-shade: var(--line);              /* soft shadow ink (the soft-shadow kill wins) */
@@ -7965,7 +7968,9 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
        resolve, so it returns without touching the DOM (no churn, and a
        text selection in a stranger's note survives). */
     function repaintPendingMentions() {
-      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).join("|");
+      /* Content, not size: sorted npub=name pairs, so a same-size swap (one
+         member leaves as the mentioned npub joins) still repaints. */
+      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).sort().join("|");
       if (rosterKey === mentionRosterSeen) return;
       mentionRosterSeen = rosterKey;
       document.querySelectorAll(".mention-pending[data-mention-text]").forEach((el) => {
