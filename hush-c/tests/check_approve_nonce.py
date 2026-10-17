@@ -16,6 +16,7 @@ Other provider CLIs on PATH are canaries.
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -102,6 +103,9 @@ class Hive:
         assert found, head_of(raw)[:400]
         self.ui = found.group(1).decode()
         assert self.ui != self.relay.token(), "X-Hush-Nonce must not be the owner token"
+        # A session cookie (no Max-Age / Expires): the browser never writes it to disk.
+        want = f"Set-Cookie: hush_nonce={self.ui}; SameSite=Strict; Path=/\r\n"
+        assert want.encode() in head_of(raw) + b"\r\n", head_of(raw)[:400]
 
     def post(self, path, body, headers):
         raw = self.relay.send("POST", path, headers, body)
@@ -156,7 +160,13 @@ def check_mode_gate(hive):
     assert st == 200 and hive.mode() == EVERY, "the paired window sets approval_mode"
     st, _ = hive.post("/api/profile", {"approval_mode": "maybe"}, hive.paired())
     assert st == 400 and hive.mode() == EVERY, "an unknown mode is refused"
-    print("approve nonce: approval_mode token-only 403, paired 200, unknown 400 OK")
+    cookie = f"Cookie: hush_session={hive.relay.token()}"
+    for bad in (hive.ui[:-1], hive.ui[:1], hive.ui + "0", secrets.token_hex(16)):
+        st, _ = hive.post("/api/profile", {"approval_mode": AUTO},
+                          [cookie, f"X-Hush-Nonce: {bad}"])
+        assert st == 403 and hive.mode() == EVERY, ("near-miss X-Hush-Nonce", bad)
+    print("approve nonce: approval_mode token-only 403, paired 200, unknown 400, "
+          "short/one-char/long/fresh X-Hush-Nonce 403 OK")
 
 
 def check_attacker(hive, root):

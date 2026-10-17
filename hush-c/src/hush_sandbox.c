@@ -99,17 +99,20 @@ int hush_sandbox_env_allowed(const char *entry)
     return 0;
 }
 
+/* The scrubbed environ must outlive hush_sandbox_scrub_env (execvp reads
+ * it), so it is owned at file scope, not by a function static. */
+static char *g_sandbox_kept[HUSH_SANDBOX_ENV_MAX + 1];
+
 void hush_sandbox_scrub_env(void)
 {
-    static char *kept[HUSH_SANDBOX_ENV_MAX + 1];
     size_t n = 0;
 
     for (char **e = environ; e != NULL && *e != NULL; ++e) {
         if (n < (size_t)HUSH_SANDBOX_ENV_MAX && hush_sandbox_env_allowed(*e))
-            kept[n++] = *e;
+            g_sandbox_kept[n++] = *e;
     }
-    kept[n] = NULL;
-    environ = kept;
+    g_sandbox_kept[n] = NULL;
+    environ = g_sandbox_kept;
 }
 
 /* 1 when path is under root/ (or equals root). */
@@ -657,9 +660,15 @@ hush_status_t hush_sandbox_enter(const hush_sandbox_policy_t *policy)
 
 enum { HUSH_SANDBOX_BW_MAX = 128, HUSH_SANDBOX_BIND_MAX = 32 };
 
+/* One bwrap command line and every string it borrows. The caller owns it
+ * (hush_sandbox_exec_bwrap's frame, which execvp never returns from). */
 typedef struct {
-    char **argv;
+    char *argv[HUSH_SANDBOX_BW_MAX];
     int n;
+    char bind_src[HUSH_SANDBOX_BIND_MAX][HUSH_SANDBOX_PATH_MAX];
+    char bind_dst[HUSH_SANDBOX_BIND_MAX][HUSH_SANDBOX_PATH_MAX];
+    char dir[PATH_MAX];
+    char absfile[PATH_MAX];
 } hush_sandbox_bw_t;
 
 /* Pushes one word onto the bwrap argv. */
@@ -695,8 +704,6 @@ static hush_status_t hush_sandbox_bw_sys(hush_sandbox_bw_t *bw)
 static hush_status_t hush_sandbox_bw_auth(hush_sandbox_bw_t *bw,
                                           const hush_sandbox_policy_t *policy)
 {
-    static char bind_src[HUSH_SANDBOX_BIND_MAX][HUSH_SANDBOX_PATH_MAX];
-    static char bind_dst[HUSH_SANDBOX_BIND_MAX][HUSH_SANDBOX_PATH_MAX];
     int nb = 0;
 
     for (int i = 0; i < policy->nauth && nb < HUSH_SANDBOX_BIND_MAX; ++i) {
@@ -707,14 +714,15 @@ static hush_status_t hush_sandbox_bw_auth(hush_sandbox_bw_t *bw,
         if (rel[0] != '/')
             continue;
         rel++;
-        m = snprintf(bind_dst[nb], sizeof(bind_dst[nb]), "%s/%s", policy->stub_home, rel);
-        if (m <= 0 || (size_t)m >= sizeof(bind_dst[nb]))
+        m = snprintf(bw->bind_dst[nb], sizeof(bw->bind_dst[nb]), "%s/%s",
+                     policy->stub_home, rel);
+        if (m <= 0 || (size_t)m >= sizeof(bw->bind_dst[nb]))
             return HUSH_ERR_DENIED;
-        (void)unlink(bind_dst[nb]);
-        snprintf(bind_src[nb], sizeof(bind_src[nb]), "%s", src);
+        (void)unlink(bw->bind_dst[nb]);
+        snprintf(bw->bind_src[nb], sizeof(bw->bind_src[nb]), "%s", src);
         if (hush_sandbox_bw_push(bw, "--ro-bind") != 0 ||
-            hush_sandbox_bw_push(bw, bind_src[nb]) != 0 ||
-            hush_sandbox_bw_push(bw, bind_dst[nb]) != 0)
+            hush_sandbox_bw_push(bw, bw->bind_src[nb]) != 0 ||
+            hush_sandbox_bw_push(bw, bw->bind_dst[nb]) != 0)
             return HUSH_ERR_DENIED;
         nb++;
     }
@@ -782,20 +790,19 @@ static hush_status_t hush_sandbox_resolve(const char *file, char *out, size_t ou
 
 static hush_status_t hush_sandbox_bw_filedir(hush_sandbox_bw_t *bw, const char *file)
 {
-    static char dir[PATH_MAX];
-    char resolved[PATH_MAX];
+    char resolved[PATH_MAX] = {0};
     char *slash = NULL;
 
     if (realpath(file, resolved) == NULL)
         return HUSH_OK;
-    snprintf(dir, sizeof(dir), "%s", resolved);
-    slash = strrchr(dir, '/');
-    if (slash == NULL || slash == dir)
+    snprintf(bw->dir, sizeof(bw->dir), "%s", resolved);
+    slash = strrchr(bw->dir, '/');
+    if (slash == NULL || slash == bw->dir)
         return HUSH_OK;
     *slash = '\0';
     if (hush_sandbox_bw_push(bw, "--ro-bind") != 0 ||
-        hush_sandbox_bw_push(bw, dir) != 0 ||
-        hush_sandbox_bw_push(bw, dir) != 0)
+        hush_sandbox_bw_push(bw, bw->dir) != 0 ||
+        hush_sandbox_bw_push(bw, bw->dir) != 0)
         return HUSH_ERR_DENIED;
     return HUSH_OK;
 }
@@ -822,9 +829,7 @@ static hush_status_t hush_sandbox_bw_prelude(hush_sandbox_bw_t *bw, const char *
 static hush_status_t hush_sandbox_exec_bwrap(const hush_sandbox_policy_t *policy,
                                              const char *file, char **argv)
 {
-    static char *words[HUSH_SANDBOX_BW_MAX];
-    static char absfile[PATH_MAX];
-    hush_sandbox_bw_t bw = {.argv = words, .n = 0};
+    hush_sandbox_bw_t bw = {0};
 
     assert(policy != NULL && file != NULL && argv != NULL);
     if (!hush_sandbox_bwrap_ok()) {
@@ -838,19 +843,19 @@ static hush_status_t hush_sandbox_exec_bwrap(const hush_sandbox_policy_t *policy
         return HUSH_ERR_DENIED;
     }
 #endif
-    if (hush_sandbox_resolve(file, absfile, sizeof(absfile)) != HUSH_OK) {
+    if (hush_sandbox_resolve(file, bw.absfile, sizeof(bw.absfile)) != HUSH_OK) {
         hush_sandbox_set_why("agent sandbox refused: provider binary not found");
         return HUSH_ERR_DENIED;
     }
-    HUSH_TRY(hush_sandbox_bw_prelude(&bw, absfile, policy));
+    HUSH_TRY(hush_sandbox_bw_prelude(&bw, bw.absfile, policy));
     for (int i = 1; argv[i] != NULL; ++i) {
         if (hush_sandbox_bw_push(&bw, argv[i]) != 0)
             return HUSH_ERR_DENIED;
     }
-    words[bw.n] = NULL;
+    bw.argv[bw.n] = NULL;
     hush_sandbox_close_inherited();
     hush_sandbox_scrub_env();
-    execvp("bwrap", words);
+    execvp("bwrap", bw.argv);
     hush_sandbox_set_why("agent sandbox refused: bwrap exec failed");
     return HUSH_ERR_IO;
 }
