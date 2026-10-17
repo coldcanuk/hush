@@ -43,9 +43,10 @@
 //      show in field-office and are hidden in the other 7 themes at 1440.
 //   K7 mentions (real renderPreservingMentions in a #stream note): a known
 //      robot and an npub not in the roster both render as a pill (no leading
-//      blank); the unknown one shows a short npub and is renamed when the
-//      roster gains it (real setSession); pill text >= 4.5:1 in 8 themes at
-//      1440 and 390.
+//      blank); the unknown one reads "@unknown" (UI_SPEC: an unresolved
+//      @npub1... token is never painted; the short npub is only in its title),
+//      no pill text contains "npub", and it is renamed when the roster gains it
+//      (real setSession); pill text >= 4.5:1 in 8 themes at 1440 and 390.
 //   K8 robot inventory items (real renderAllInventories): in field-office the
 //      rim is a field-office token >= 3:1 against the grid; in the other 7
 //      themes it is the old cyan / gold, unchanged.
@@ -494,7 +495,7 @@ async function main() {
         renderPreservingMentions('nostr:' + major.npub + ' please write a one-line welcome. nostr:${FAKE} too', tmp);
         tmp.scrollIntoView({ block: 'center' });
         const pills = [...tmp.querySelectorAll('.mention-pill')];
-        const shape = { pills: pills.map((p) => p.textContent), first: tmp.firstChild ? (tmp.firstChild.nodeType === 1 ? 'pill' : JSON.stringify(tmp.firstChild.nodeValue.slice(0, 3))) : null };
+        const shape = { pills: pills.map((p) => p.textContent), titles: pills.map((p) => p.title), first: tmp.firstChild ? (tmp.firstChild.nodeType === 1 ? 'pill' : JSON.stringify(tmp.firstChild.nodeValue.slice(0, 3))) : null };
         for (const t of ${JSON.stringify(THEMES)}) { h.setAttribute('data-theme', t);
           for (const p of pills) { const bg = P.bgOf(p); let fg = P.rgba(getComputedStyle(p).color); fg = P.over([fg[0], fg[1], fg[2], fg[3] * P.opacityOf(p)], bg);
             out.push({ theme: t, pill: p.textContent, ratio: Math.round(P.ratio(fg, bg) * 100) / 100, fg: P.hex(fg), bg: P.hex(bg) }); } }
@@ -502,7 +503,8 @@ async function main() {
       console.log(`palette K7 shape@${w}: ${JSON.stringify(k7.shape)}`);
       report.push({ surface: 'K7', w, k7 });
       if (k7.shape.first !== 'pill') failures.push(`K7@${w} mention line starts with ${k7.shape.first}, want the @Major pill`);
-      if (k7.shape.pills.length !== 2 || !/^@npub1zq/.test(k7.shape.pills[1] || '')) failures.push(`K7@${w} pills ${JSON.stringify(k7.shape.pills)}, want @Major and a short-npub pill`);
+      if (k7.shape.pills.some((t) => /npub/i.test(t))) failures.push(`K7@${w} a pill paints an npub ${JSON.stringify(k7.shape.pills)} (UI_SPEC: unresolved @npub1... tokens are not painted)`);
+      if (k7.shape.pills.length !== 2 || k7.shape.pills[1] !== '@unknown' || !/npub1zq/.test(k7.shape.titles[1] || '')) failures.push(`K7@${w} pills ${JSON.stringify(k7.shape.pills)} titles ${JSON.stringify(k7.shape.titles)}, want @Major and an @unknown pill with the short npub in its title`);
       for (const r of k7.out) if (r.ratio < 4.5) failures.push(`K7 ${r.theme}@${w} mention pill "${r.pill}" text ${r.ratio}:1 ${r.fg} on ${r.bg}`);
       console.log(`palette K7@${w}: ${k7.out.length} pill text measures (min ${k7.out.length ? Math.min(...k7.out.map((r) => r.ratio)) : '-'})`);
     }
@@ -512,7 +514,7 @@ async function main() {
       const after = { pending: tmp.classList.contains('mention-pending'), pill: tmp.querySelector('.mention-pill') ? tmp.querySelector('.mention-pill').textContent : null };
       setSession(keep); tmp.remove(); return { before, after }; })()`);
     console.log(`palette K7 repaint: ${JSON.stringify(rep7)}`); report.push({ surface: 'K7r', w: 390, k7r: rep7 });
-    if (!rep7.before.pending || rep7.after.pending || rep7.after.pill !== '@Kestrel') failures.push(`K7 roster load does not rename the short-npub pill: ${JSON.stringify(rep7)}`);
+    if (!rep7.before.pending || rep7.after.pending || rep7.after.pill !== '@Kestrel') failures.push(`K7 roster load does not rename the @unknown pill: ${JSON.stringify(rep7)}`);
   }
   /* K8: inventory item rims. */
   {
@@ -741,7 +743,7 @@ async function main() {
     `K1 dev log on tokens, K2 ${report.filter((r) => r.k2).reduce((n, r) => n + r.k2.length, 0)} provider pill text runs, ` +
     `K3 ${report.filter((r) => r.k3 && !r.k3.hidden).length} milestone fields fit their placeholder, K4 status light 2 states on tokens, ` +
     `K5 picture cells on tokens in ${report.filter((r) => r.k5).length} themes, K6 masthead chrome field-office only, ` +
-    `K7 ${report.filter((r) => r.k7).reduce((n, r) => n + r.k7.out.length, 0)} mention pill text measures >= 4.5:1 + short-npub fallback renamed on roster load, ` +
+    `K7 ${report.filter((r) => r.k7).reduce((n, r) => n + r.k7.out.length, 0)} mention pill text measures >= 4.5:1 + @unknown fallback (no npub painted) renamed on roster load, ` +
     `K8 inventory rims: field-office tokens, other ${report.filter((r) => r.k8 && r.k8.theme !== 'field-office').length} themes unchanged`);
 }
 

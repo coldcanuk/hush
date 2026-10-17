@@ -7888,8 +7888,10 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
     function renderPreservingMentions(text, container) {
       if (!container) return;
       /* #item7: a mention whose npub is not in the roster yet (roster not
-         loaded, or a stranger) shows a short-npub pill instead of vanishing;
-         the raw text is kept so repaintPendingMentions can name it later. */
+         loaded, or a stranger) keeps its place as a neutral "@unknown" pill
+         instead of vanishing. Per UI_SPEC an unresolved @npub1... token is
+         never painted: the short key is only in title / aria-label. The raw
+         text is kept so repaintPendingMentions can name it later. */
       container.dataset.mentionText = text || "";
       let pending = false;
       const re = /nostr:(npub1[0-9a-z]+)|@(npub1[0-9a-z]+)/gi;
@@ -7903,13 +7905,17 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
         const hit = mentionHit(npub);
         const span = document.createElement("span");
         span.className = "mention-pill";
-        if (hit) {
-          span.textContent = "@" + hit.name;
-        } else {
+        if (!hit) {
           span.classList.add("mention-unknown");
-          span.textContent = "@" + npub.slice(0, 10) + "\u2026";
+          span.textContent = "@unknown";
+          span.title = "Not in this hive yet: " + npub.slice(0, 12) + "\u2026";
+          span.setAttribute("aria-label", "unknown member " + npub.slice(0, 12));
           pending = true;
+          container.appendChild(span);
+          last = re.lastIndex;
+          continue;
         }
+        span.textContent = "@" + hit.name;
         span.title = npub;
         container.appendChild(span);
         last = re.lastIndex;
@@ -7920,7 +7926,7 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
       container.classList.toggle("mention-pending", pending);
     }
 
-    /* Re-render note bodies that still hold a short-npub pill once the
+    /* Re-render note bodies that still hold an @unknown pill once the
        roster changes (called from setSession and the 1 s tick). */
     function repaintPendingMentions() {
       document.querySelectorAll(".mention-pending[data-mention-text]").forEach((el) => {

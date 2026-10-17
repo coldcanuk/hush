@@ -15,8 +15,9 @@ the top-level `VERSION` file.
   no white glint. All themes: robot
   picture cells sit on --surface-2 instead of the native #efefef button grey, and the 1943 edition line
   and HQ stamps show only in field-office. Pinned by `tests/check_palette.cjs` K1-K6.
-- A mention of someone not yet in the roster shows a short-npub pill instead of vanishing (it
-  left a leading blank), and is renamed once the roster has them. Field-office mention pills read
+- A mention of someone not yet in the roster shows a neutral "@unknown" pill instead of vanishing
+  (it left a leading blank), and is renamed once the roster has them. Per UI_SPEC the unresolved
+  @npub1… token itself is still never painted; the short key is only in the pill's tooltip. Field-office mention pills read
   6.66:1 (were 3.17:1). The Developer Log and robot inventory inks are `--fo-*` tokens (other themes
   keep #000/#0f0 and cyan/gold/red as fallbacks). `tests/check_palette_tokens.py` S5-S7 now fail on a
   literal colour in a markup inline style, a script string, or a new unscoped rule (G291-2).
