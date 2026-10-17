@@ -33,16 +33,15 @@ FILES = {
 # Functions in tests/test_loop.c today. The scan must still find all of
 # them, so no test function can drop out of the caps unnoticed.
 TEST_LOOP_FUNCTIONS = 30
-# Functions in tests/test_approve.c today (#279 r2; +check_needed, #336), held to the same rule.
-TEST_APPROVE_FUNCTIONS = 41
+# Functions in tests/test_approve.c today (#279 r2; +check_needed, #336;
+# #312 adds first_at, give_intro, check_intro_waits and check_intro_auto;
+# the #312 pair fix adds new_fixture, pair_lead_ends, check_pair_asks,
+# open_trio and check_resume_waits), held to the same rule.
+TEST_APPROVE_FUNCTIONS = 50
 TEST_COUNTS = {
     "tests/test_loop.c": TEST_LOOP_FUNCTIONS,
     "tests/test_approve.c": TEST_APPROVE_FUNCTIONS,
 }
-# #312 adds 9 functions to tests/test_approve.c: first_at, give_intro,
-# check_intro_waits, check_intro_auto, new_fixture, pair_lead_ends,
-# check_pair_asks, open_trio and check_resume_waits.
-TEST_COUNTS["tests/test_approve.c"] += 9
 # Each scanned file must still yield at least this many functions (today's
 # counts), so a rename, move or new layout cannot silently shrink the scan.
 MIN_SEEN = {
