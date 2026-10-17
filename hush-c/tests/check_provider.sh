@@ -15,7 +15,9 @@ curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session
 bin=./hush-relay
 port=$(hush_free_port) || exit 1
 log=$(mktemp)
-home=$(mktemp -d)
+base=$(mktemp -d)
+home="$base/user"
+bin_dir="$base/bin"
 pid=""
 bad_body=""
 
@@ -26,7 +28,7 @@ cleanup() {
     fi
     rm -f "$log"
     if [ -n "$bad_body" ]; then rm -f "$bad_body"; fi
-    rm -rf "$home"
+    rm -rf "${base:-$home}"
 }
 trap cleanup EXIT
 
@@ -45,12 +47,14 @@ wait_up() {
 }
 
 export HOME="$home"
+export HUSH_HOME="$base/home"
+export HUSH_CONFIG_DIR="$base/config"
 unset XDG_CONFIG_HOME
 export HUSH_PROVIDER_TERM=/bin/true
-mkdir -p "$home/.config/goose" "$home/bin"
-printf '%s\n' '#!/bin/sh' 'exit 0' > "$home/bin/grok"
-chmod 0755 "$home/bin/grok"
-PATH="$home/bin:$PATH"
+mkdir -p "$home/.config/goose" "$bin_dir"
+printf '%s\n' '#!/bin/sh' 'exit 0' > "$bin_dir/grok"
+chmod 0755 "$bin_dir/grok"
+PATH="$bin_dir:$PATH"
 export PATH
 printf '%s\n' 'active_provider: xai_oauth' > "$home/.config/goose/config.yaml"
 printf '%s\n' '  xai_oauth:' >> "$home/.config/goose/config.yaml"
