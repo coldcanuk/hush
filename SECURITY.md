@@ -56,6 +56,10 @@ per-job capability token). Credentials are accepted as:
 | `X-Hush-Token: …` | scripts and CLI clients |
 | `Authorization: Bearer …` | HTTP clients |
 
+Each carrier's value is compared whole, in constant time, against the
+token: a longer value that starts with the token, or a truncated one, is
+refused `401` (#357; `check_trust.py`).
+
 The relay never hands the token to a caller that does not already hold a
 credential (#336): no loopback request earns a cookie, and `?k=` in a URL is
 not accepted (URLs land in history, logs, and `Referer`). At start the relay

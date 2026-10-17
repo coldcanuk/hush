@@ -189,7 +189,8 @@ static int hush_http_has_ui_nonce(const char *req, size_t len);
 static void hush_http_session_cookie(char *out, size_t outsz);
 /* Writes the X-Hush-Nonce response header, or "" when none is due. */
 static void hush_http_ui_nonce_header(char *out, size_t outsz);
-/* Copies cookie name's value from a Cookie header. 0 when absent. */
+/* Copies cookie name's value from a Cookie header. 0 when absent or when
+ * the value does not fit outsz (never truncated). */
 static int hush_http_cookie_token(const char *cookie, const char *name,
                                   char *out, size_t outsz);
 /* True when any accepted credential matches the live session token. */
@@ -587,6 +588,11 @@ static int hush_http_cookie_token(const char *cookie, const char *name,
             while (*value != '\0' && *value != ';' && n + 1 < outsz)
                 out[n++] = *value++;
             out[n] = '\0';
+            /* A value that does not fit is refused, not cut to size (#357). */
+            if (*value != '\0' && *value != ';') {
+                out[0] = '\0';
+                return 0;
+            }
             return n > 0;
         }
         p = strchr(p, ';');
@@ -600,8 +606,10 @@ static int hush_http_cookie_token(const char *cookie, const char *name,
 static int hush_http_request_is_authed(const char *req, size_t len)
 {
     static const char bearer[] = "Bearer ";
-    char header[HUSH_HTTP_HDR_VALUE_MAX];
-    char value[HUSH_AUTH_TOKEN_BUF];
+    char header[HUSH_HTTP_HDR_VALUE_MAX] = {0};
+    /* Header-sized, not token-sized: a longer value is compared whole and
+     * refused, never truncated down to the live token (#357). */
+    char value[HUSH_HTTP_HDR_VALUE_MAX] = {0};
 
     assert(req != NULL);
     if (hush_http_header_value(req, len, "Cookie", header, sizeof(header)) &&
