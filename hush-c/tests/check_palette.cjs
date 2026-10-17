@@ -47,9 +47,14 @@
 //      @npub1... token is never painted; the short npub is only in its title),
 //      no pill text contains "npub", and it is renamed when the roster gains it
 //      (real setSession); pill text >= 4.5:1 in 8 themes at 1440 and 390.
+//      K7t: through the real 1 s tick(), a pending pill is not re-rendered
+//      while the roster is unchanged, and is renamed when /api/session gains
+//      the npub.
 //   K8 robot inventory items (real renderAllInventories): in field-office the
 //      rim is a field-office token >= 3:1 against the grid; in the other 7
-//      themes it is the old cyan / gold, unchanged.
+//      themes it is the old cyan / gold, unchanged. K8b: the drag-not-allowed
+//      ink INV_INK_BAD on a grid cell is a field-office token >= 3:1 against
+//      the grid, and the old #f66 in the other 7 themes.
 //   B1 Thread, Download and Stop are 20-24px tall at both widths; at 390 a
 //      point 20px above and below the centre still hits the control (44px).
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
@@ -515,6 +520,27 @@ async function main() {
       setSession(keep); tmp.remove(); return { before, after }; })()`);
     console.log(`palette K7 repaint: ${JSON.stringify(rep7)}`); report.push({ surface: 'K7r', w: 390, k7r: rep7 });
     if (!rep7.before.pending || rep7.after.pending || rep7.after.pill !== '@Kestrel') failures.push(`K7 roster load does not rename the @unknown pill: ${JSON.stringify(rep7)}`);
+    /* K7t: the live roster arrives through the real 1 s tick() (it assigns
+       session directly, not via setSession). With the roster unchanged a
+       pending pill is left alone (same DOM node after two ticks: no
+       per-second re-render), also after an unrelated member joins; once
+       /api/session lists the npub, one tick renames it. fetch is wrapped for /api/session only and restored. */
+    const OTHER = 'npub1hawk' + 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'.repeat(2).slice(0, 54);
+    const tick7 = await cdp.eval(`(async () => { await tick(); const note = document.querySelector('#stream .note'); const tmp = document.createElement('div'); tmp.className = 'body'; note.appendChild(tmp);
+      const pill = () => tmp.querySelector('.mention-pill'); const state = () => ({ pending: tmp.classList.contains('mention-pending'), pill: pill() ? pill().textContent : null });
+      renderPreservingMentions('nostr:${FAKE} please check in', tmp); let node = pill();
+      await tick(); await tick(); const kept = pill() === node;
+      const realFetch = window.fetch; let extra = [];
+      window.fetch = (u, o) => realFetch(u, o).then((r) => String(u).indexOf('/api/session') < 0 ? r : r.json().then((j) => new Response(JSON.stringify(Object.assign({}, j, { members: (j.members || []).concat(extra) })), { headers: { 'content-type': 'application/json' } })));
+      let keptAfterChange = null, after = null;
+      try {
+        extra = [{ name: 'Hawk', npub: '${OTHER}' }]; await tick(); node = pill(); await tick(); await tick(); keptAfterChange = pill() === node && state().pill === '@unknown';
+        extra = extra.concat([{ name: 'Kestrel', npub: '${FAKE}' }]); await tick(); after = state();
+      } finally { window.fetch = realFetch; await tick(); tmp.remove(); }
+      return { kept, keptAfterChange, after }; })()`, true);
+    console.log(`palette K7 tick: ${JSON.stringify(tick7)}`); report.push({ surface: 'K7t', w: 390, k7t: tick7 });
+    if (!tick7.kept || !tick7.keptAfterChange) failures.push(`K7 tick re-renders a pending @unknown pill while the roster is unchanged: ${JSON.stringify(tick7)}`);
+    if (!tick7.after || tick7.after.pending || tick7.after.pill !== '@Kestrel') failures.push(`K7 tick roster does not rename the @unknown pill: ${JSON.stringify(tick7)}`);
   }
   /* K8: inventory item rims. */
   {
@@ -530,8 +556,20 @@ async function main() {
         const rims = items.map((it) => { const c = P.rgba(getComputedStyle(it).borderTopColor); const behind = P.bgOf(it.parentElement);
           return { rim: P.hex(c), token: T.get(P.hex(c)) || null, ratio: Math.round(P.ratio(P.over(c, behind), behind) * 100) / 100 }; });
         out.push({ theme: t, items: items.length, rims: [...new Set(rims.map((r) => r.rim))], tokens: [...new Set(rims.map((r) => r.token))], min: rims.length ? Math.min(...rims.map((r) => r.ratio)) : 0 }); }
-      h.setAttribute('data-theme', was); invItems = invItems.filter((it) => it.id !== 'k8-live'); renderAllInventories(); return out; })()`);
-    for (const r of k8) {
+      /* K8b: the drag-not-allowed ink (INV_INK_BAD) as a rim on a grid cell, in every theme. */
+      const grid = document.querySelector('#robot-inventory .inv-item').parentElement; const bad = document.createElement('div'); bad.className = 'inv-item';
+      bad.style.borderColor = INV_INK_BAD; bad.style.borderStyle = 'solid'; bad.style.borderWidth = '2px'; grid.appendChild(bad);
+      const badOut = [];
+      for (const t of ${JSON.stringify(THEMES)}) { h.setAttribute('data-theme', t); const T = P.tokens(); const c = P.rgba(getComputedStyle(bad).borderTopColor); const behind = P.bgOf(grid);
+        badOut.push({ theme: t, rim: P.hex(c), token: T.get(P.hex(c)) || null, ratio: Math.round(P.ratio(P.over(c, behind), behind) * 100) / 100 }); }
+      bad.remove();
+      h.setAttribute('data-theme', was); invItems = invItems.filter((it) => it.id !== 'k8-live'); renderAllInventories(); return { out, badOut }; })()`);
+    for (const r of k8.badOut) {
+      console.log(`palette K8b ${r.theme}: ${JSON.stringify(r)}`); report.push({ surface: 'K8b', w: 1440, k8b: r });
+      if (r.theme === 'field-office') { if (!r.token || r.ratio < 3) failures.push(`K8b field-office drag-not-allowed rim ${r.rim} token ${r.token} ${r.ratio}:1`); }
+      else if (r.rim !== '#ff6666') failures.push(`K8b ${r.theme} drag-not-allowed rim changed to ${r.rim} (want the old #ff6666)`);
+    }
+    for (const r of k8.out) {
       console.log(`palette K8 ${r.theme}: ${JSON.stringify(r)}`); report.push({ surface: 'K8', w: 1440, k8: r });
       if (r.items < 2) { failures.push(`K8 ${r.theme} no inventory items rendered`); continue; }
       if (r.theme === 'field-office') { if (r.tokens.includes(null) || r.min < 3) failures.push(`K8 field-office inventory rim ${r.rims.join(',')} tokens ${r.tokens.join(',')} min ${r.min}:1`); }

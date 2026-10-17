@@ -3036,6 +3036,7 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
     let threadSeen = "";
     const THREAD_PIN_PX = 48;
     let session = { logged_in: false, ready: false, channels: [] };
+    let mentionRosterSeen = null; /* roster key repaintPendingMentions last saw */
     let page = "splash"; // splash detects, shows Payne branding, then advances to gate or hive
     let pendingNsec = "";
     let identityViaImport = false;
@@ -7927,8 +7928,14 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
     }
 
     /* Re-render note bodies that still hold an @unknown pill once the
-       roster changes (called from setSession and the 1 s tick). */
+       roster changes (called from setSession and the 1 s tick). The tick
+       calls this every second; with the roster unchanged nothing could
+       resolve, so it returns without touching the DOM (no churn, and a
+       text selection in a stranger's note survives). */
     function repaintPendingMentions() {
+      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).join("|");
+      if (rosterKey === mentionRosterSeen) return;
+      mentionRosterSeen = rosterKey;
       document.querySelectorAll(".mention-pending[data-mention-text]").forEach((el) => {
         const text = el.dataset.mentionText;
         el.textContent = "";

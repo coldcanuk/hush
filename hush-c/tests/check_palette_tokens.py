@@ -49,8 +49,9 @@ JS_COLOUR = re.compile(r"#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla)\(")
 FO_FALLBACK = re.compile(r"var\(\s*(--fo-[a-z0-9-]+)\s*,[^()]*(?:\([^()]*\)[^()]*)*\)")
 COLOUR_PROPS = re.compile(r"(?:^|-)(?:color|background|border|outline|shadow|fill|stroke|caret|decoration)", re.I)
 # (selector, property) of the unscoped literal-colour declarations already on
-# main 900a486d. Field-office overrides most of them; the rest are listed in
-# the back-LOOK report as follow-up. Do not add to this list.
+# main 900a486d, grandfathered as is. S7 does not check whether field-office
+# overrides them; several still paint in field-office (Gauge #325 finding 4)
+# and are tracked in the fo-literal-tokens follow-up. Do not add to this list.
 BASELINE_S7 = {
     ('#badge.bad', 'border-color'),
     ('.menu', 'box-shadow'),
