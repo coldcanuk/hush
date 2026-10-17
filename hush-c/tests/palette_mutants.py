@@ -84,6 +84,8 @@ M = [
     # Gauge #325 r6 finding 1 (r7): the clear in paintPartial; without it each poll appends.
     ("P4 paintPartial clear removed", "    function paintPartial(el, text) {\n      el.textContent = \"\";\n      renderPreservingMentions(text, el);",
      "    function paintPartial(el, text) {\n      renderPreservingMentions(text, el);", "K7p refreshPartials .partial reads"),
+    ("P6 refreshPartials skips the paint", "              paintPartial(el, ans.text);", "              void el;", "K7p refreshPartials .partial reads"),
+    ("U13 text after the last mention dropped", 'if (last < (text || "").length) {', "if (false) {", "K7p paintThink .partial reads"),
     ("T8 roster key not sorted", '      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).sort().join("|");',
      '      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).join("|");', "K7k roster key is order-sensitive"),
     ("T9 roster key = names only", '      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).sort().join("|");',
