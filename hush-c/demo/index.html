@@ -67,7 +67,8 @@
     html[data-theme="christmas"] {
       --bg: #0f1f14; --surface: #16261b; --surface-2: #1e3324; --line: #2d4a35;
       --fg: #f8faf8; --muted: #b7c9bb; --faint: #7a9180; --accent: #ff6b7f;
-      --accent-ink: #0f1f14; --accent-dim: #7f1d1d; --warn: #fbbf24;
+      --accent-ink: #0f1f14; --accent-dim: #5c1420; --warn: #fbbf24;
+      --accent-fill: #c41e3a;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: var(--sans); }
@@ -2196,6 +2197,20 @@ html[data-theme="field-office"] input[type="radio"]:checked {
 html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checked {
   border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2px var(--surface-2);
 }
+/* #309 r2: christmas keeps every red in one crimson hue (~350deg).
+   --accent (#ff6b7f) is the light crimson for text, rings, radios and
+   outlines on the dark greens; --accent-dim (#5c1420) is the deep crimson
+   behind accent text (hover, mine bubble, switch track); --accent-fill
+   (#c41e3a, christmas only) is the solid crimson of the primary buttons,
+   with light ink and a light-crimson edge so the control clears 3:1. */
+html[data-theme="christmas"] #install,
+html[data-theme="christmas"] #thread-send,
+html[data-theme="christmas"] .btn:not(.ghost):not(.danger) {
+  background: var(--accent-fill); color: var(--fg); border: 1px solid var(--accent);
+}
+html[data-theme="christmas"] .thread-btn,
+html[data-theme="christmas"] .chan-voice,
+html[data-theme="christmas"] .robot-call { border-color: var(--accent); }
 </style>
 </head>
 <body>

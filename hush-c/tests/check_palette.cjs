@@ -31,6 +31,11 @@
 //      data-theme="christmas", every text run whose paint changes when
 //      --accent / --accent-ink are swapped for sentinels is >= 4.5:1, and
 //      every such control is >= 3:1 (#309).
+//   R3 christmas: every visible .thread-btn / .chan-voice / .robot-call, under a
+//      real mouse hover in each R2 view, keeps its accent text >= 4.5:1 on the
+//      hover fill; at least one .thread-btn is hovered at each width (#309 r2).
+//   R4 christmas: the hovered .thread-btn (stamp) outline is >= 3:1 against
+//      what is behind it (#309 r2). R2 also swaps christmas --accent-fill.
 //   B1 Thread, Download and Stop are 20-24px tall at both widths; at 390 a
 //      point 20px above and below the centre still hits the control (44px).
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
@@ -368,14 +373,36 @@ async function main() {
     let st = document.getElementById('pal-r2-still'); if (!st) { st = document.createElement('style'); st.id = 'pal-r2-still';
       st.textContent = '*, *::before, *::after { transition: none !important; animation: none !important; }'; document.head.appendChild(st); }
     return true; })()`;
+  const r3 = [];
   const accentTouch = async (surface, w) => {
     await cdp.eval(R2_SWAP);
     await sleep(60);
     const a = await cdp.eval(MEASURE);
-    await cdp.eval(`(() => { const s = document.documentElement.style; s.setProperty('--accent', '#00ff00'); s.setProperty('--accent-ink', '#ff00ff'); })()`);
+    /* R3 (#309 r2): christmas accent-text buttons on real mouse hover. The
+     * mouse is moved to each visible one, so :hover is the browser's own; its
+     * text must hold 4.5:1 on the hover fill. R4: the stamp (.thread-btn)
+     * outline must hold 3:1 against what is behind it. */
+    const hov = await cdp.eval(`(() => { const P = window.__pal; return [...document.querySelectorAll('.thread-btn, .chan-voice, .robot-call')].map((el, i) => {
+      const r = el.getBoundingClientRect(); if (r.width < 4 || r.height < 4 || r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth) return null;
+      if (!P.onTop(el, r) || P.opacityOf(el) < 0.05) return null; return { i, x: r.left + r.width / 2, y: r.top + r.height / 2, el: P.path(el) }; }).filter(Boolean); })()`);
+    for (const t of hov) {
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: t.x, y: t.y });
+      await sleep(40);
+      const m = await cdp.eval(`(() => { const P = window.__pal; const el = [...document.querySelectorAll('.thread-btn, .chan-voice, .robot-call')][${t.i}];
+        if (!el || !el.matches(':hover')) return null; const cs = getComputedStyle(el); const bg = P.bgOf(el); const fg = P.over(P.rgba(cs.color), bg);
+        const behind = P.bgOf(el.parentElement); const bc = P.over(P.rgba(cs.borderTopColor), behind);
+        return { hover: Math.round(P.ratio(fg, bg) * 100) / 100, fg: P.hex(fg), bg: P.hex(bg), stamp: el.classList.contains('thread-btn'), outline: Math.round(P.ratio(bc, behind) * 100) / 100, border: P.hex(bc), behind: P.hex(behind) }; })()`);
+      if (!m) { failures.push(`R3 christmas ${surface}@${w} ${t.el} did not take :hover under the mouse`); continue; }
+      r3.push(Object.assign({ surface, w, el: t.el }, m));
+      if (m.hover < 4.5) failures.push(`R3 christmas ${surface}@${w} hover text ${m.hover}:1 ${m.fg} on ${m.bg} ${t.el}`);
+      if (m.stamp && m.outline < 3) failures.push(`R4 christmas ${surface}@${w} stamp outline ${m.outline}:1 ${m.border} behind ${m.behind} ${t.el}`);
+    }
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
+    if (hov.length) console.log(`palette R3/R4 christmas ${surface}@${w}: ${hov.length} hovered (min hover ${Math.min(...r3.filter((x) => x.surface === surface && x.w === w).map((x) => x.hover)).toFixed(2)}, min stamp outline ${Math.min(...r3.filter((x) => x.surface === surface && x.w === w && x.stamp).map((x) => x.outline)).toFixed(2)})`);
+    await cdp.eval(`(() => { const s = document.documentElement.style; s.setProperty('--accent', '#00ff00'); s.setProperty('--accent-ink', '#ff00ff'); s.setProperty('--accent-fill', '#0000ff'); })()`);
     await sleep(60);
     const b = await cdp.eval(MEASURE);
-    await cdp.eval(`(() => { const h = document.documentElement; h.style.removeProperty('--accent'); h.style.removeProperty('--accent-ink');
+    await cdp.eval(`(() => { const h = document.documentElement; h.style.removeProperty('--accent'); h.style.removeProperty('--accent-ink'); h.style.removeProperty('--accent-fill');
       const st = document.getElementById('pal-r2-still'); if (st) st.remove(); h.setAttribute('data-theme', 'field-office'); })()`);
     /* Same DOM walk both times; repeated paths (e.g. several .slider) are told apart by their order. */
     const keyed = (list) => { const n = new Map(); return list.map((x) => { const k = x.el + '|' + (x.t || ''); const i = n.get(k) || 0; n.set(k, i + 1); return [k + '#' + i, x]; }); };
@@ -593,6 +620,8 @@ async function main() {
   void chromeProc;
   const texts = report.reduce((n, r) => n + (r.text || []).length, 0);
   const ctls = report.reduce((n, r) => n + (r.ctl || []).length, 0);
+  const r3stamps = r3.filter((x) => x.stamp);
+  for (const w of [1440, 390]) if (!r3stamps.some((x) => x.w === w)) failures.push(`R3/R4 christmas hovered no .thread-btn at ${w} (want >= 1)`);
   if (failures.length) {
     const uniq = [...new Set(failures)];
     for (const f of uniq.slice(0, 60)) console.error('palette check failed: ' + f);
@@ -610,6 +639,7 @@ async function main() {
     `${rings} focus rings >= 2px and >= 3:1, no near-white, theme radio accent matches in ${themes} themes, ` +
     `checked radio fill >= 3:1 in ${r1views} theme x width views, ` +
     `christmas accent-painted ${r2text} text runs >= 4.5:1 and ${r2ctl} controls >= 3:1 over ${r2views} surface views, ` +
+    `${r3.length} hovered accent buttons >= 4.5:1 (${r3stamps.length} stamps, outline >= 3:1), ` +
     'ink-stamp actions 20-24px with 44px touch hit at 390');
 }
 
