@@ -11,7 +11,9 @@
 // and shoot without asserting, for before/after pairs), ID1_VIEW_W
 // (viewport width, default 1440), ID1_ART (shot/JSON dir),
 // ID1_CHROME_ONLY=1 (launch Chrome and wait for DevTools, then exit —
-// used by the #265 wait pin).
+// used by the #265 wait pin). Every temp dir it makes (Chrome profile,
+// relay homes) is removed on exit, on failure, on a thrown error and on
+// SIGINT/SIGTERM (tests/check_restart_ui_tmp.sh pins it).
 'use strict';
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -71,12 +73,70 @@ function noPassRestated(visible) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const liveProcs = [];
-function fail(msg) {
-  for (const p of liveProcs.splice(0)) {
-    try { p.kill('SIGTERM'); } catch (e) { /* gone */ }
+/* Temp dirs this run created (Chrome profiles, relay homes); removed on
+ * every exit: normal, failure, thrown error, SIGINT and SIGTERM. */
+const ownDirs = [];
+/* stopProc's wait after SIGTERM before its SIGKILL fallback (not pinned by a test). */
+const STOP_WAIT_MS = 5000;
+/* Exit codes for the signals that end a run (the pin checks only non-zero). */
+const SIGNAL_EXIT = { SIGINT: 130, SIGTERM: 143 };
+let stopping = null;
+class StopRun extends Error {}
+
+/* mkdtemp under the OS temp dir, recorded so teardown removes it. */
+function ownTmp(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  ownDirs.push(dir);
+  return dir;
+}
+/* Removes one dir this run created; drops it from the registry. */
+function removeOwnDir(dir) {
+  const idx = ownDirs.indexOf(dir);
+  if (idx >= 0)
+    ownDirs.splice(idx, 1);
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* best effort */ }
+}
+/* Stops one child this run started; resolves once it has exited. */
+function stopProc(p) {
+  return new Promise((resolve) => {
+    if (p.exitCode !== null || p.signalCode !== null) { resolve(); return; }
+    const timer = setTimeout(() => { try { p.kill('SIGKILL'); } catch (e) { /* gone */ } },
+      STOP_WAIT_MS);
+    p.once('exit', () => { clearTimeout(timer); resolve(); });
+    try { p.kill('SIGTERM'); } catch (e) { clearTimeout(timer); resolve(); }
+  });
+}
+/* Stops every child first (so none writes into a removed dir), removes
+ * every own temp dir, then exits with code. Runs once. */
+function teardown(code) {
+  if (!stopping) {
+    stopping = (async () => {
+      await Promise.all(liveProcs.splice(0).map(stopProc));
+      for (const d of ownDirs.slice())
+        removeOwnDir(d);
+      process.exit(code);
+    })();
   }
-  console.error('restart UI check failed: ' + msg);
-  process.exit(1);
+  return stopping;
+}
+for (const sig of Object.keys(SIGNAL_EXIT))
+  process.on(sig, () => { teardown(SIGNAL_EXIT[sig]); });
+process.on('uncaughtException', (e) => {
+  if (!(e instanceof StopRun))
+    console.error('restart UI check failed: ' + (e && e.stack ? e.stack : String(e)));
+  teardown(1);
+});
+process.on('unhandledRejection', (e) => {
+  if (!(e instanceof StopRun))
+    console.error('restart UI check failed: ' + (e && e.stack ? e.stack : String(e)));
+  teardown(1);
+});
+/* Reports msg, starts teardown(1) and ends the current step. */
+function fail(msg) {
+  if (!stopping)
+    console.error('restart UI check failed: ' + msg);
+  teardown(1);
+  throw new StopRun(msg);
 }
 function check(cond, msg) {
   if (!NO_ASSERT && !cond)
@@ -172,7 +232,7 @@ async function launchChromeReady(chrome, track, deadlineMs) {
   let last = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     const port = await freePort();
-    const userDir = fs.mkdtempSync(path.join(os.tmpdir(), 'id1-chrome-'));
+    const userDir = ownTmp('id1-chrome-');
     /* CI often sets a junk DBUS_SESSION_BUS_ADDRESS; Chrome then logs
      * dbus parse errors while starting. Drop it for the Chrome child. */
     const chromeEnv = Object.assign({}, process.env);
@@ -188,11 +248,11 @@ async function launchChromeReady(chrome, track, deadlineMs) {
       return { chromeProc, userDir, port, httpBase: result.httpBase, stderr: result.stderr };
     }
     last = result;
-    try { chromeProc.kill('SIGTERM'); } catch (e) { /* gone */ }
-    try { fs.rmSync(userDir, { recursive: true, force: true }); } catch (e) { /* best effort */ }
     const idx = liveProcs.indexOf(chromeProc);
     if (idx >= 0)
       liveProcs.splice(idx, 1);
+    await stopProc(chromeProc);
+    removeOwnDir(userDir);
     /* Early exit is a hard failure — retrying will not help a missing binary. */
     if (result.detail.startsWith('Chrome exited early'))
       break;
@@ -360,8 +420,7 @@ async function main() {
   if (process.env.ID1_CHROME_ONLY === '1') {
     console.log('restart UI chrome ready (' + launched.httpBase +
                 ', deadline ' + deadlineMs + 'ms)');
-    try { chromeProc.kill('SIGTERM'); } catch (e) { /* gone */ }
-    process.exit(0);
+    await teardown(0);
   }
   const httpBase = launched.httpBase;
   const targets = await (await fetch(httpBase + '/json/list')).json();
@@ -537,8 +596,8 @@ async function main() {
 
   try {
     // Phase A: pass missing the whole way.
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'id1-home-'));
-    const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'id1-cfg-'));
+    const home = ownTmp('id1-home-');
+    const cfg = ownTmp('id1-cfg-');
     const port = await freePort();
     let R = await startRelay(home, cfg, '/nonexistent-hush-pass-helper', null, port);
     let proc = R.proc;
@@ -1865,9 +1924,9 @@ async function main() {
     await stopRelay(proc);
 
     // Phase B: pass works, checkbox defaults on.
-    const home2 = fs.mkdtempSync(path.join(os.tmpdir(), 'id1-home2-'));
-    const cfg2 = fs.mkdtempSync(path.join(os.tmpdir(), 'id1-cfg2-'));
-    const fakeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'id1-fake-'));
+    const home2 = ownTmp('id1-home2-');
+    const cfg2 = ownTmp('id1-cfg2-');
+    const fakeDir = ownTmp('id1-fake-');
     const fakeHelper = path.join(__dirname, 'fake-pass.sh');
     R = await startRelay(home2, cfg2, fakeHelper, fakeDir, port);
     proc = R.proc;
@@ -1938,4 +1997,9 @@ async function main() {
   }
 }
 
-main().catch((e) => fail(e.message + '\n' + (e.stack || '').split('\n').slice(0, 4).join('\n')));
+main().then(() => teardown(0), (e) => {
+  if (!(e instanceof StopRun) && !stopping)
+    console.error('restart UI check failed: ' + e.message + '\n' +
+                  (e.stack || '').split('\n').slice(0, 4).join('\n'));
+  teardown(1);
+});
