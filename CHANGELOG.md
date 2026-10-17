@@ -72,6 +72,17 @@ the top-level `VERSION` file.
   restart. The partner still sees only its own clause, and robots still
   never chain on their own.
 
+### Security
+
+- Copilot and Goose no longer run with tool auto-approve (#333). Copilot
+  never gets `--allow-all-tools`: its shell tools are excluded and denied
+  on every turn, URL and memory tools are denied, and only a person-gated
+  project turn may write files. The child drops `COPILOT_ALLOW_ALL` and
+  the `GITHUB_COPILOT_PROMPT_MODE_*` switches. Goose always runs with
+  `GOOSE_MODE=chat` (no tools), overriding an inherited mode or
+  `config.yaml`. A turn whose mode cannot be set is refused with a
+  `HUSH_JOB_ERR` reason.
+
 ### Fixed
 
 - Phone walkthrough: the expanded inventory menu no longer opens behind the drawer, and Edit plus double-click open a robot; a right-click selects that robot and enables Edit (the button stays disabled until a robot is selected); at phone width the dispatch log keeps a minimum height and the page scrolls when the roster is tall; quick-bar labels fit at 375px.
