@@ -1633,9 +1633,26 @@ turns need approval.
    a post (a refused post snaps it back).
 2. **One approval per robot turn.** Under `Approve every action`, every
    robot turn stops at one gate in `hush_agent_begin_work`, after the
-   turn-cap check and before the robot's runtime starts. (The existing
-   mention greetings still run first. The default on-deck line is not a chat note
-   (#278).) That covers the first turn after a mention, each
+   turn-cap check and before the robot's runtime starts. (Under
+   `Approve every action` a robot's custom intro waits for the owner's Yes
+   and posts once after it; after No it never posts. While the turn
+   waits, the owner's mention shows a neutral "<Robot> · waiting for your
+   OK" pill for that robot (theme ink, dashed theme rule, no emoji). The
+   pill comes only from that robot's own ask. When one mention names two
+   robots their turns queue: while the first robot is asked the second
+   shows no pill (no ask exists for it yet). Once the first robot's turn
+   ends (its run's reply, a Yes with no runtime ready, or a No), the relay
+   asks the second robot in the same thread, and only then does its
+   waiting pill show. A No ends that robot's turn, not the other robot's.
+   The state comes from the stored notes, so a reload shows the same
+   pills. After the owner's Yes, the robot's run settles
+   the turn and the 👍 ack pill shows. After No ("Turn declined: <Robot>
+   ...") the mention shows no pill for that robot, since a 👍 would read
+   as the robot accepting or doing the work. The state is kept per
+   mention: a later mention in the same thread, and its No, do not change
+   an earlier mention's pill (#312). Under
+   `Auto-approve` the mention greeting still runs first. The default on-deck
+   line is not a chat note (#278).) That covers the first turn after a mention, each
    follow wave, each two-robot loop turn, the leader election pass, the
    leader's plan pass, and an owner reply that goes to the thread's robot.
    The chaperon posts "Approval needed: <Robot> wants to take a turn. Reply
