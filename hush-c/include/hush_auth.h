@@ -25,7 +25,7 @@ enum {
 #define HUSH_AUTH_COOKIE "hush_session"
 #define HUSH_AUTH_HEADER "X-Hush-Token"
 #define HUSH_AUTH_PAIR_PARAM "pair"
-#define HUSH_AUTH_UI_COOKIE "hush_ui"
+#define HUSH_AUTH_UI_HEADER "X-Hush-Nonce"
 
 /* Loads the session token from $HUSH_HOME/session.token, minting a 0600 file
  * when absent or malformed. Idempotent. Fails HUSH_ERR_IO when the home or

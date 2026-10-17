@@ -9,8 +9,9 @@ cd "$(dirname "$0")/.."
 . ./tests/hush_pair.sh
 # Session-token gate plus a hermetic pass store, so the harness never reads the
 # operator's real credentials. curl() adds the hive token to every call.
-# The paired window's hush_ui rides along: loop answers need it (#336).
+# The paired window's X-Hush-Nonce rides along: loop answers need it (#336).
 curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" \
+    -H "X-Hush-Nonce: $(cat "${HUSH_HOME:-/nonexistent}/ui.nonce" 2>/dev/null || true)" \
     -b "${HUSH_HOME:-/nonexistent}/ui.jar" "$@"; }
 
 bin=./hush-relay

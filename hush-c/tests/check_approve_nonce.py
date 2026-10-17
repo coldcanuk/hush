@@ -2,7 +2,7 @@
 """Approvals need the paired window, not the token (#336 part 5, Refs #322).
 
 With Approve every action on, a robot turn is held until the owner answers
-Yes. That answer, and any approval_mode write, needs the hush_ui secret the
+Yes. That answer, and any approval_mode write, needs the X-Hush-Nonce the
 relay mints in memory and hands out only on the one-time pairing link.
 session.token alone (header, Bearer, or the hush_session cookie it is) is
 refused 403. A stored approval_mode the relay does not know asks every
@@ -31,7 +31,7 @@ EVERY = "approve_every_action"
 AUTO = "auto_approve"
 ASK = "Approval needed: Happy wants to take a turn. Reply Yes or No in this thread."
 
-# The attacker: a local process with the token from disk and no hush_ui.
+# The attacker: a local process with the token from disk and no X-Hush-Nonce.
 ATTACKER = r'''
 import json, socket, sys
 port, token, root = int(sys.argv[1]), sys.argv[2], sys.argv[3]
@@ -51,7 +51,8 @@ def post(path, body, cred):
     s.close()
     return int(raw.split(b" ")[1])
 creds = [f"X-Hush-Token: {token}", f"Authorization: Bearer {token}",
-         f"Cookie: hush_session={token}", f"Cookie: hush_session={token}; hush_ui={token}"]
+         f"Cookie: hush_session={token}",
+         f"X-Hush-Token: {token}" + chr(13) + chr(10) + f"X-Hush-Nonce: {token}"]
 out = []
 for cred in creds:
     for text in ("Yes", "yes.", " YES! ", "No"):
@@ -75,7 +76,9 @@ def write_grok(bin_dir, count_file):
 class Hive:
     def __init__(self, directory):
         self.relay = Relay(directory)
-        self.count = directory / "grok.count"
+        # Count file lives under bin/: Landlock grants that tree, but not
+        # siblings of the denied $HUSH_HOME / config dirs (#336 part 1).
+        self.count = directory / "bin" / "grok.count"
         write_grok(directory / "bin", self.count)
         (directory / "user" / ".grok").mkdir(parents=True)
         (directory / "user" / ".grok" / "auth.json").write_text('{"ok":true}\n')
@@ -89,14 +92,14 @@ class Hive:
         return [f"X-Hush-Token: {self.relay.token()}"]
 
     def paired(self):
-        return [f"Cookie: hush_session={self.relay.token()}; hush_ui={self.ui}"]
+        return [f"Cookie: hush_session={self.relay.token()}", f"X-Hush-Nonce: {self.ui}"]
 
     def pair(self):
         raw = self.relay.send("GET", "/?pair=" + self.relay.pair_code(), [])
-        found = re.search(rb"Set-Cookie: hush_ui=([0-9a-f]{32});", head_of(raw))
+        found = re.search(rb"(?i)X-Hush-Nonce: ([0-9a-f]{32})", head_of(raw))
         assert found, head_of(raw)[:400]
         self.ui = found.group(1).decode()
-        assert self.ui != self.relay.token(), "hush_ui must not be the owner token"
+        assert self.ui != self.relay.token(), "X-Hush-Nonce must not be the owner token"
 
     def post(self, path, body, headers):
         raw = self.relay.send("POST", path, headers, body)
@@ -130,8 +133,8 @@ def raise_happy(hive):
 def held_root(hive, npub):
     note = {"content": f"nostr:{npub} tell a joke tag-n1", "kind": 1, "channel": "general",
             "mention_0": npub}
-    st, body = hive.post("/api/event", note, hive.token_header())
-    assert st == 200, ("a plain owner note stays a token action", body[:200])
+    st, body = hive.post("/api/event", note, hive.paired())
+    assert st == 200, ("the paired window posts the owner's note", body[:200])
     for _ in range(200):
         events = hive.events()
         roots = [e["id"] for e in events if "tag-n1" in (e.get("content") or "")
@@ -195,11 +198,11 @@ def check_stored_mode(hive):
     assert '"approval_mode"' not in vibe.read_text()
     hive.relay.start()
     assert hive.mode() == AUTO, "a vibe that never saved the key keeps the default"
-    raw = hive.relay.send("GET", "/", [f"Cookie: hush_ui={hive.ui}"])
+    raw = hive.relay.send("GET", "/", [f"X-Hush-Nonce: {hive.ui}"])
     st, _ = hive.post("/api/profile", {"approval_mode": EVERY}, hive.paired())
-    assert st == 403, "a restart ends the old hush_ui"
+    assert st == 403, "a restart ends the old X-Hush-Nonce"
     print("approve nonce: stored unknown/empty/non-string mode asks every action; "
-          "missing keeps auto; restart ends hush_ui OK")
+          "missing keeps auto; restart ends X-Hush-Nonce OK")
 
 
 def main():

@@ -72,13 +72,13 @@ async function startRelay() {
     fs.mkdirSync(d, { recursive: true });
   const port = await freePort();
   const tokenFile = path.join(env.HUSH_HOME, 'session.token');
-  // #336: approval_mode needs the paired window's hush_ui; the test pairs
+  // #336: approval_mode needs the paired window's X-Hush-Nonce; the test pairs
   // once through the printed one-time link and sends that cookie.
   const jar = {};
   const headers = () => {
     const h = { 'Content-Type': 'application/json' };
     try { h['X-Hush-Token'] = fs.readFileSync(tokenFile, 'utf8').trim(); } catch (e) { /* not yet */ }
-    if (jar.hush_ui) h.Cookie = `hush_ui=${jar.hush_ui}`;
+    if (jar.nonce) h['X-Hush-Nonce'] = jar.nonce;
     return h;
   };
   const proc = spawn(RELAY, ['--no-open', String(port)], { env, stdio: ['ignore', 'pipe', 'ignore'] });
@@ -95,11 +95,13 @@ async function startRelay() {
   }
   const code = out.match(/\?pair=([0-9a-f]+)/)[1];
   const paired = await fetch(base + '/?pair=' + code);
+  jar.nonce = paired.headers.get('X-Hush-Nonce');
   for (const c of paired.headers.getSetCookie()) {
-    const m = c.match(/^(hush_session|hush_ui)=([0-9a-f]+);/);
+    const m = c.match(/^(hush_session|hush_nonce)=([0-9a-f]+);/);
     if (m) jar[m[1]] = m[2];
   }
-  if (!jar.hush_ui || !jar.hush_session) fail('pairing gave no hush_ui / hush_session');
+  if (!jar.nonce) jar.nonce = jar.hush_nonce;
+  if (!jar.nonce || !jar.hush_session) fail('pairing gave no X-Hush-Nonce / hush_session');
   const post = async (p, body) => {
     const r = await fetch(base + p, { method: 'POST', headers: headers(), body: JSON.stringify(body) });
     if (!r.ok) fail(`POST ${p} ${JSON.stringify(body)} -> ${r.status}`);
@@ -175,11 +177,12 @@ async function waitRadio(page, want, ms, msg) {
 }
 async function load(cdp, relay) {
   const base = relay.base;
-  // #336: the relay hands its cookies only to the one-time pairing link, so
-  // seed the two cookies the paired window holds.
-  for (const name of ['hush_session', 'hush_ui'])
-    await cdp.send('Network.setCookie', { name, value: relay.jar[name],
-      url: base + '/', httpOnly: true, sameSite: 'Strict' });
+  // #336: seed the session cookie and the JS-readable nonce storage cookie
+  // the paired window holds; api() sends the latter as X-Hush-Nonce.
+  await cdp.send('Network.setCookie', { name: 'hush_session', value: relay.jar.hush_session,
+    url: base + '/', httpOnly: true, sameSite: 'Strict' });
+  await cdp.send('Network.setCookie', { name: 'hush_nonce', value: relay.jar.nonce,
+    url: base + '/', httpOnly: false, sameSite: 'Strict' });
   await cdp.send('Page.navigate', { url: base + '/' });
   for (let i = 0; i < 120; i++) {
     if (await cdp.evaluate(`typeof session !== 'undefined' && !!session.logged_in &&

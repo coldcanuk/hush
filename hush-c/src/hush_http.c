@@ -104,9 +104,9 @@ static hush_launch_t *g_launch;
 static hush_turn_t *g_turn;
 static char g_bind_addr[HUSH_HTTP_HOST_MAX];
 static int g_set_cookie;
-/* Per request: g_set_ui asks the reply to carry hush_ui (a pairing code was
- * redeemed); g_ui_proven records that the request presented the live
- * hush_ui (#336). */
+/* Per request: g_set_ui asks the reply to carry X-Hush-Nonce (a pairing
+ * code was redeemed); g_ui_proven records that the request presented the
+ * live nonce (#336). */
 static int g_set_ui;
 static int g_ui_proven;
 static hush_http_ip_limit_t g_ip_req[HUSH_HTTP_IP_LIMITS_MAX];
@@ -183,12 +183,12 @@ static int hush_http_query_value(const char *req, const char *name,
 static int hush_http_query_char(char c);
 /* Redeems a ?pair= code on this request; the reply then sets the cookie. */
 static void hush_http_take_pair(const char *req);
-/* True when the Cookie header carries the live hush_ui secret. */
-static int hush_http_has_ui_cookie(const char *req, size_t len);
+/* True when the request carries the live X-Hush-Nonce. */
+static int hush_http_has_ui_nonce(const char *req, size_t len);
 /* Writes the hush_session Set-Cookie line, or "" when none is due. */
 static void hush_http_session_cookie(char *out, size_t outsz);
-/* Writes the hush_ui Set-Cookie line, or "" when none is due. */
-static void hush_http_ui_cookie(char *out, size_t outsz);
+/* Writes the X-Hush-Nonce response header, or "" when none is due. */
+static void hush_http_ui_nonce_header(char *out, size_t outsz);
 /* Copies cookie name's value from a Cookie header. 0 when absent. */
 static int hush_http_cookie_token(const char *cookie, const char *name,
                                   char *out, size_t outsz);
@@ -302,7 +302,7 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
     memset(out_posted, 0, sizeof(*out_posted));
     g_set_cookie = 0;
     g_set_ui = 0;
-    g_ui_proven = hush_http_has_ui_cookie(req, len);
+    g_ui_proven = hush_http_has_ui_nonce(req, len);
     if (len >= 7 && memcmp(req, "OPTIONS", 7) == 0) {
         hush_http_reply(fd, "204 No Content", "text/plain", "", 0);
         return HUSH_OK;
@@ -534,18 +534,16 @@ static void hush_http_take_pair(const char *req)
     if (!hush_auth_pair_take(code))
         return;
     g_set_cookie = 1;
-    /* The new window gets a fresh hush_ui; an older window's dies. */
+    /* The new window gets a fresh X-Hush-Nonce; an older window's dies. */
     g_set_ui = hush_auth_ui_rotate() == HUSH_OK;
 }
 
-static int hush_http_has_ui_cookie(const char *req, size_t len)
+static int hush_http_has_ui_nonce(const char *req, size_t len)
 {
-    char header[HUSH_HTTP_HDR_VALUE_MAX];
     char value[HUSH_AUTH_UI_BUF];
 
     assert(req != NULL);
-    return hush_http_header_value(req, len, "Cookie", header, sizeof(header)) &&
-           hush_http_cookie_token(header, HUSH_AUTH_UI_COOKIE, value,
+    return hush_http_header_value(req, len, HUSH_AUTH_UI_HEADER, value,
                                   sizeof(value)) &&
            hush_auth_ui_matches(value);
 }
@@ -778,7 +776,7 @@ void hush_http_reply(int fd, const char *status, const char *ctype,
     int n;
 
     hush_http_session_cookie(session, sizeof(session));
-    hush_http_ui_cookie(ui, sizeof(ui));
+    hush_http_ui_nonce_header(ui, sizeof(ui));
     n = snprintf(hdr, sizeof(hdr),
                  "HTTP/1.1 %s\r\n"
                  "Content-Type: %s\r\n"
@@ -812,7 +810,7 @@ static void hush_http_session_cookie(char *out, size_t outsz)
         out[0] = '\0';
 }
 
-static void hush_http_ui_cookie(char *out, size_t outsz)
+static void hush_http_ui_nonce_header(char *out, size_t outsz)
 {
     char secret[HUSH_AUTH_UI_BUF];
     int n;
@@ -821,12 +819,15 @@ static void hush_http_ui_cookie(char *out, size_t outsz)
     out[0] = '\0';
     if (!g_set_ui || hush_auth_ui_copy(secret, sizeof(secret)) != HUSH_OK)
         return;
-    /* Max-Age keeps it across a closed and reopened window of this relay;
-     * the secret is memory only, so a relay restart ends it anyway. */
+    /* Issued only on the pairing response: the X-Hush-Nonce header (what
+     * fetch-based clients read) and a non-HttpOnly storage cookie the page
+     * reads and sends back as X-Hush-Nonce on writes (#336). A relay
+     * restart ends the secret. The Cookie alone is not accepted. */
     n = snprintf(out, outsz,
-                 "Set-Cookie: %s=%s; HttpOnly; SameSite=Strict; Path=/; "
-                 "Max-Age=%d\r\n",
-                 HUSH_AUTH_UI_COOKIE, secret, (int)HUSH_HTTP_COOKIE_MAX_AGE_S);
+                 "%s: %s\r\n"
+                 "Set-Cookie: hush_nonce=%s; SameSite=Strict; Path=/; Max-Age=%d\r\n",
+                 HUSH_AUTH_UI_HEADER, secret, secret,
+                 (int)HUSH_HTTP_COOKIE_MAX_AGE_S);
     if (n <= 0 || (size_t)n >= outsz)
         out[0] = '\0';
 }

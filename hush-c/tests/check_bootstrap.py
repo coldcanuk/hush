@@ -206,7 +206,9 @@ def check_pairing(relay):
     assert want in head, head[:400]
     raw = relay.send("GET", "/?pair=" + code, [])
     assert b"set-cookie" not in head_of(raw).lower(), "a spent code earned a second cookie"
-    cookie = [f"Cookie: hush_session={token}"]
+    ui = re.search(r"(?i)X-Hush-Nonce: ([0-9a-f]{32})", head)
+    assert ui, "pairing sets the window's X-Hush-Nonce"
+    cookie = [f"Cookie: hush_session={token}", f"X-Hush-Nonce: {ui.group(1)}"]
     assert status_of(relay.send("GET", "/api/session", cookie)) == 200
     before = note_count(relay)
     yes = {"content": "paired hello", "kind": 1, "channel": "general"}

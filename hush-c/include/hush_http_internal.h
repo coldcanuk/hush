@@ -39,11 +39,11 @@ hush_turn_t *hush_http_turn(void);
 int hush_http_client_count(void);
 uint16_t hush_http_listen_port(void);
 
-/* Writes one response with the optional hush_session and hush_ui cookies. */
+/* Writes one response with the optional hush_session cookie and X-Hush-Nonce. */
 void hush_http_reply(int fd, const char *status, const char *ctype,
                      const char *body, size_t blen);
 
-/* True when this request presented the live hush_ui browser-session
+/* True when this request presented the live X-Hush-Nonce browser-session
  * secret (#336). session.token alone never makes it true. */
 int hush_http_ui_proven(void);
 

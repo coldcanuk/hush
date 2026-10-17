@@ -50,7 +50,7 @@ static hush_status_t hush_http_channel_about(const char *body, const char *slug)
 static int hush_http_is_robot_key(const char *key);
 static void hush_http_add_reply_to(hush_event_t *out, const char *body);
 /* True when note reads as a Yes/No approval answer and the request did not
- * present the paired window's hush_ui secret (#336). */
+ * present the paired window's X-Hush-Nonce (#336). */
 static int hush_http_is_unproven_answer(const hush_event_t *note);
 
 hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
