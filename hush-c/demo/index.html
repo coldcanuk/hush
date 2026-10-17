@@ -6867,6 +6867,14 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
     /* WS4: poll POST /api/reply for every live job and paint the newest
      * partial into its preview slot. Entries for finished jobs are dropped;
      * the final note arrives through the normal events tick. */
+    /* A live partial is robot output before the relay rewrites @npub1...
+       tokens, so it goes through the same mention renderer as a note body:
+       an npub is never painted (Gauge #325 r5 finding 1). */
+    function paintPartial(el, text) {
+      el.textContent = "";
+      renderPreservingMentions(text, el);
+    }
+
     async function refreshPartials(status) {
       const jobs = (status && status.thinking) || [];
       const live = {};
@@ -6879,7 +6887,7 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
           if (ans && ans.running && ans.text) {
             partials[key] = ans.text;
             document.querySelectorAll('[data-partial="' + CSS.escape(key) + '"]').forEach((el) => {
-              el.textContent = ans.text;
+              paintPartial(el, ans.text);
             });
           } else if (partials[key]) {
             delete partials[key];
@@ -6945,7 +6953,7 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
         prev.className = "partial";
         prev.setAttribute("data-partial", partialKey(job.parent, job.name));
         const text = partials[partialKey(job.parent, job.name)];
-        if (text) prev.textContent = text;
+        if (text) paintPartial(prev, text);
         node.appendChild(prev);
       });
     }

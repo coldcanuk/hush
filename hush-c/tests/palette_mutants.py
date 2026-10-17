@@ -78,6 +78,17 @@ M = [
     ("L10 tile ink unreadable", "  --fo-tile-ink: var(--fg);", "  --fo-tile-ink: var(--accent-ink);", "L1 field-office@1440 tile-mute|color"),
     ("L11 code spine off-palette", "  --fo-lang-js: #5a4410;", "  --fo-lang-js: #f7df1e;", "L1 field-office@1440 code-js"),
     ("L12 bare #7dd3fc back", "#code-canvas-hi .tok-kw { color: var(--fo-tok-kw, #7dd3fc); }", "#code-canvas-hi .tok-kw { color: #7dd3fc; }", "S7 "),
+    # Gauge #325 r5 (r6)
+    ("P1 refreshPartials paints raw text", "              paintPartial(el, ans.text);", "              el.textContent = ans.text;", "K7p refreshPartials .partial paints an npub"),
+    ("P2 paintThink paints raw text", "        if (text) paintPartial(prev, text);", "        if (text) prev.textContent = text;", "K7p paintThink .partial paints an npub"),
+    ("T8 roster key not sorted", '      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).sort().join("|");',
+     '      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).join("|");', "K7k roster key is order-sensitive"),
+    ("T9 roster key = names only", '      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).sort().join("|");',
+     '      const rosterKey = mentionRoster().map((h) => h.name).sort().join("|");', "K7k roster key ignores the npub half"),
+    ("T10 roster key = npubs only", '      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).sort().join("|");',
+     '      const rosterKey = mentionRoster().map((h) => h.npub).sort().join("|");', "K7k roster key ignores the name half"),
+    ("V7 voice hover-ink fallback drifts", "color: var(--fo-voice-hover-ink, var(--accent)); }", "color: var(--fo-voice-hover-ink, var(--fg)); }", "K11o "),
+    ("V8 voice rim fallback drifts", "border-color: var(--fo-voice-rim, var(--accent-dim)); }", "border-color: var(--fo-voice-rim, var(--line)); }", "K11o "),
 ]
 
 

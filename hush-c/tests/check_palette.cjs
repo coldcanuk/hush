@@ -713,6 +713,53 @@ async function main() {
     console.log(`palette K7 tick: ${JSON.stringify(tick7)}`); report.push({ surface: 'K7t', w: 390, k7t: tick7 });
     if (!tick7.kept || !tick7.keptAfterChange) failures.push(`K7 tick re-renders a pending @unknown pill while the roster is unchanged: ${JSON.stringify(tick7)}`);
     if (!tick7.after || tick7.after.pending || tick7.after.pill !== '@Kestrel') failures.push(`K7 tick roster does not rename the @unknown pill: ${JSON.stringify(tick7)}`);
+    /* K7p (Gauge #325 r5 finding 1): the live robot partial preview. A
+       partial is robot output before the relay rewrites @npub1... tokens, so
+       both real paths (paintThink builds the slot, refreshPartials fills it
+       from /api/reply) must not paint "npub". fetch is wrapped for
+       /api/reply only and restored. */
+    const part7 = await cdp.eval(`(async () => { const job = { parent: 'k7p-root', name: 'Major' }; const key = partialKey(job.parent, job.name);
+      const text = 'draft for @${FAKE} and nostr:${FAKE} done';
+      partials[key] = text; const host = document.createElement('div'); document.querySelector('#stream').appendChild(host);
+      paintThink(host, [job]); const slot = host.querySelector('.partial');
+      const think = { text: slot ? slot.textContent : null, pills: slot ? slot.querySelectorAll('.mention-pill').length : 0 };
+      if (slot) slot.textContent = '';
+      const realFetch = window.fetch; let refresh = null;
+      window.fetch = (u, o) => String(u).indexOf('/api/reply') < 0 ? realFetch(u, o) : Promise.resolve(new Response(JSON.stringify({ running: true, text }), { headers: { 'content-type': 'application/json' } }));
+      try { await refreshPartials({ thinking: [job] }); refresh = { text: slot ? slot.textContent : null, pills: slot ? slot.querySelectorAll('.mention-pill').length : 0 }; }
+      finally { window.fetch = realFetch; delete partials[key]; host.remove(); }
+      return { think, refresh }; })()`, true);
+    console.log(`palette K7 partial: ${JSON.stringify(part7)}`); report.push({ surface: 'K7p', w: 390, k7p: part7 });
+    for (const [path, r] of [['paintThink', part7.think], ['refreshPartials', part7.refresh]]) {
+      if (!r || r.text === null) { failures.push(`K7p ${path} drew no .partial`); continue; }
+      if (/npub/i.test(r.text)) failures.push(`K7p ${path} .partial paints an npub: ${JSON.stringify(r.text)} (UI_SPEC: unresolved @npub1... tokens are not painted)`);
+      if (r.pills !== 2) failures.push(`K7p ${path} .partial has ${r.pills} mention pills, want 2 (@unknown x2)`);
+    }
+    /* K7k (Gauge #325 r5 finding 2): the roster key is the sorted npub=name
+       pairs. Through the real tick(), with a pending @unknown pill:
+       reordering the same members does not repaint (sort; T8); changing only
+       a member's npub repaints (npub half; T9); changing only a member's
+       name repaints (name half; T10). Repaint = the pill node is replaced. */
+    const OWL = 'npub1owl' + 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'.repeat(2).slice(0, 55);
+    const OWL2 = 'npub1owx' + 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'.repeat(2).slice(0, 55);
+    const key7 = await cdp.eval(`(async () => { await tick(); const note = document.querySelector('#stream .note'); const tmp = document.createElement('div'); tmp.className = 'body'; note.appendChild(tmp);
+      const pill = () => tmp.querySelector('.mention-pill');
+      renderPreservingMentions('nostr:${FAKE} please check in', tmp);
+      const realFetch = window.fetch; let extra = [];
+      window.fetch = (u, o) => realFetch(u, o).then((r) => String(u).indexOf('/api/session') < 0 ? r : r.json().then((j) => new Response(JSON.stringify(Object.assign({}, j, { members: (j.members || []).concat(extra) })), { headers: { 'content-type': 'application/json' } })));
+      const out = {};
+      try {
+        extra = [{ name: 'Hawk', npub: '${OTHER}' }, { name: 'Owl', npub: '${OWL}' }]; await tick(); await tick();
+        let node = pill(); extra = [{ name: 'Owl', npub: '${OWL}' }, { name: 'Hawk', npub: '${OTHER}' }]; await tick(); out.reorderKept = pill() === node;
+        node = pill(); extra = [{ name: 'Owl', npub: '${OWL2}' }, { name: 'Hawk', npub: '${OTHER}' }]; await tick(); out.npubRepaint = pill() !== node;
+        node = pill(); extra = [{ name: 'Falcon', npub: '${OWL2}' }, { name: 'Hawk', npub: '${OTHER}' }]; await tick(); out.nameRepaint = pill() !== node;
+        out.still = pill() ? pill().textContent : null;
+      } finally { window.fetch = realFetch; await tick(); tmp.remove(); }
+      return out; })()`, true);
+    console.log(`palette K7 key: ${JSON.stringify(key7)}`); report.push({ surface: 'K7k', w: 390, k7k: key7 });
+    if (!key7.reorderKept) failures.push(`K7k roster key is order-sensitive: a reordered roster repaints the pending pill ${JSON.stringify(key7)}`);
+    if (!key7.npubRepaint) failures.push(`K7k roster key ignores the npub half: an npub-only change does not repaint ${JSON.stringify(key7)}`);
+    if (!key7.nameRepaint) failures.push(`K7k roster key ignores the name half: a name-only change does not repaint ${JSON.stringify(key7)}`);
   }
   /* K8: inventory item rims. */
   {
@@ -1066,6 +1113,32 @@ async function main() {
       }
       for (const id of ids) await cdp.send('CSS.forcePseudoState', { nodeId: id, forcedPseudoClasses: [] });
       await whiteCheck('K11-boards', w);
+    }
+    /* K11o (Gauge #325 r5 finding 4): in the other 7 themes the voice button
+       keeps its pre-PR paint through the var(--fo-voice-*, <old>) fallbacks
+       (index.html:118-119): rim --accent-dim, glyph --accent; under :hover
+       fill --accent-dim, glyph --accent. */
+    {
+      const root = (await cdp.send('DOM.getDocument', { depth: 0 })).root.nodeId;
+      const ids = (await cdp.send('DOM.querySelectorAll', { nodeId: root, selector: '.chan-voice' })).nodeIds;
+      const k11o = [];
+      for (const state of ['rest', 'hover']) {
+        for (const id of ids) await cdp.send('CSS.forcePseudoState', { nodeId: id, forcedPseudoClasses: state === 'hover' ? ['hover'] : [] });
+        k11o.push(...await cdp.eval(`(() => { const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
+          const res = (v) => { const d = document.createElement('i'); d.style.color = v; document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove(); return c; };
+          for (const t of ${JSON.stringify(THEMES.filter((t) => t !== 'field-office'))}) { h.setAttribute('data-theme', t);
+            const el = document.querySelector('.chan-voice'); if (!el) { out.push({ theme: t, state: '${state}', missing: true }); continue; }
+            const cs = getComputedStyle(el); const dim = res('var(--accent-dim)'), acc = res('var(--accent)');
+            out.push({ theme: t, state: '${state}', ink: cs.color === acc, rim: cs.borderTopColor === dim, fill: '${state}' === 'hover' ? cs.backgroundColor === dim : true }); }
+          h.setAttribute('data-theme', was); return out; })()`));
+      }
+      for (const id of ids) await cdp.send('CSS.forcePseudoState', { nodeId: id, forcedPseudoClasses: [] });
+      console.log(`palette K11o: ${k11o.length} theme x state reads, ${k11o.filter((r) => !r.missing && r.ink && r.rim && r.fill).length} on the pre-PR paint`);
+      report.push({ surface: 'K11o', k11o });
+      for (const r of k11o) {
+        if (r.missing) { failures.push(`K11o ${r.theme} ${r.state} no .chan-voice`); continue; }
+        if (!r.ink || !r.rim || !r.fill) failures.push(`K11o ${r.theme} ${r.state} chan-voice off its pre-PR paint: ink(--accent)=${r.ink} rim(--accent-dim)=${r.rim} hover fill(--accent-dim)=${r.fill}`);
+      }
     }
     await cdp.eval(`(async () => { if (window.__k11paint) { paintChannels = window.__k11paint; delete window.__k11paint; } if (window.__k11fetch) { window.fetch = window.__k11fetch; delete window.__k11fetch; } await tick(); paintChannels(); })()`, true);
   }
