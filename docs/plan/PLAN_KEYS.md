@@ -268,6 +268,29 @@ warns as listed.
     key i".
   - Global keys are suspended while a capture is in progress.
 
+**Related: GUARD UI epic (Chuck 09:56).** This is a note only: no design
+detail and no KEYS milestone.
+
+- **Shared drawer.** A Guardrails table will sit next to Shortcuts & Macros in
+  the same drawer. Saved rules have match, scope, action, hits and created
+  columns, with inline edit, delete and add. Floor owns the rule engine and data
+  model.
+- **Drawer room.** The KEYS · MACROS · LOG folder-tab strip must leave room for
+  a fourth tab, GUARDRAILS. The drawer width, tab sizing and Escape/Tab handling
+  should not assume three tabs.
+- **Approval prompt.** The prompt is getting S1 stamp buttons: **Approve |
+  Always approve | Ask every time | Reject**.
+- **No clash with the premade auto-approve.** The premade (the
+  `approve_guest_turns` mode, §4.4) must not conflict with "Always approve"
+  rules:
+  - Both decide at the same relay point (`approval_needed`,
+    agent_approve.c:40-46).
+  - An explicit per-rule Reject or Ask every time wins over the mode.
+  - The mode never writes Always-approve rules.
+  - Neither path may run a guest turn without an owner decision (§7.1, #322).
+  - Whether an Always-approve rule may cover robot-chained, follow or election
+    turns (C-3) is a GUARD-epic question for Gauge.
+
 ---
 
 ## 4. Macro model
