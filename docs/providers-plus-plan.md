@@ -29,7 +29,7 @@ Tags: **V** = VERIFIED_EXTERNAL (URL given), **I** = INFERRED, **U** = UNKNOWN.
 **10:38 rulings, applied in sections 3-5:**
 
 - N-1: per-job Hermes gateway with a private `HERMES_HOME`, or refuse.
-- N-2: the exact #336 parts are listed in section 4.
+- N-2 (updated by CoS 10:43): the #336 definitive parts 1-6 plus unknown→deny are cited in section 4.
 - N-3: GUARD #335 is the target shell path; native-shell paths are INTERIM.
 - N-4: OpenClaw and NemoClaw use a tool allowlist.
 - N-5 to N-9 are fixed.
@@ -89,7 +89,7 @@ Sources: [V1] https://github.com/NousResearch/hermes-agent (README, LICENSE) ·
   1. **Private home.** Hush creates a fresh 0700 `HERMES_HOME` under the job's Hush-owned HOME. `HERMES_HOME` selects the home and its gateway [V2].
      - Hush writes that home's `.env` itself, with the provider key only.
      - Hush never points it at `~/.hermes`.
-  2. **Child env.** The child env comes from the #336 allowlist (section 4). All `HERMES_*` are dropped, then `HERMES_HOME` is set. In particular, `HERMES_TUI_GATEWAY_URL` (selects an explicit gateway [V23]) and `HERMES_YOLO_MODE` [V4] are unset.
+  2. **Child env.** The child env comes from the #336 part 2 allowlist (section 4). All `HERMES_*` are dropped, then `HERMES_HOME` is set. In particular, `HERMES_TUI_GATEWAY_URL` (selects an explicit gateway [V23]) and `HERMES_YOLO_MODE` [V4] are unset.
   3. **Gateway start.** Inside the #336 sandbox, Hush spawns `hermes gateway run --external-supervisor` as its own child, in the job's process group. `run` is the foreground gateway, and `--external-supervisor` means a wrapper owns it [V2].
      - Hush waits for `hermes gateway ensure --json --timeout 15` to exit 0. Exit 0 means ready; other codes are a refusal or a deadline [V2].
      - Only then does Hush run `hermes chat`.
@@ -247,22 +247,23 @@ The Hush clock (N-6, corrected) is 300 s for a project job, else **90 s** (`hush
 
 > Any flag, env var or config that auto-approves tools or grants shell/file write is emitted **only** when `job->project_tools == 1`. That value is set solely by `hush_agent_apply_project_cwd` behind `person_gate`. The default mode is the least-privileged one the tool offers: a **tool allowlist**, proven by a stub test with reverse mutants plus a recorded real-binary check. If that cannot be proven, the adapter refuses without `project_tools`, with a `HUSH_JOB_ERR:` reason.
 
-**#336 parts required before ANY host-shell adapter (gated Hermes, gated OpenClaw) merges (CoS 10:38 N-2):**
+**#336 definitive parts required before ANY host-shell adapter (gated Hermes, gated OpenClaw) merges (CoS 10:43; numbering is #336's, as given by CoS 10:43):**
 
-1. **Set-Cookie bootstrap closed.** An unauthenticated loopback reply must no longer carry `hush_session=<token>` (`hush_http.c:286-290`, `:732-738`; #336 §1, open Q2).
-2. **Forged owner notes closed.** An owner-stamped write (`api_channels.c:102` → `owner_asked` `agent_approve.c:140-154` → `person_gate` `agent_prompt.c:153`) needs the browser-session proof, not only the token (#336 open Q3; GUARD #335 §6).
-   - Related: a robot note in an owner-opened thread also counts as an owner ask (`agent_approve.c:140-154`). This is noted for KEYS #334 and GUARD #335.
-3. **Relay-port / loopback deny.** Agent children, and the Hermes job gateway, cannot reach the relay port on loopback (GUARD #335 §6).
-4. **Secret env scrub, as an allowlist.**
+1. **Child sandbox denies `$HUSH_HOME` and the relay port.** This covers agent children and the Hermes job gateway: no read or write of `$HUSH_HOME` (`session.token`, keys), and no connect to the relay port on loopback. Landlock or bwrap in `exec_child` (`agent_process.c:279`); GUARD #335 §6.
+2. **Child env allowlist.**
    - The child env is built from an allowlist, never inherited (`agent_process.c:65-74` today).
-   - It drops `HUSH_KEY_PASS`, `HUSH_HOME`, `HUSH_CONFIG_DIR`, `HUSH_OP_*`, every other `HUSH_*`, and any URL carrying a `?k=` token (`hush_http.c:529-554` carriers).
-   - `$HUSH_HOME` is hidden with Landlock or bwrap (#336 a; PLAN_KEYS #334 T3).
+   - It excludes `HUSH_KEY_PASS`, `HUSH_HOME`, `HUSH_CONFIG_DIR`, `HUSH_OP_*` and every other `HUSH_*`.
+   - The relay reads `HUSH_KEY_PASS` once, then unsets it (PLAN_KEYS #334 T3).
    - The same allowlist applies to ungated turns of every new adapter.
-5. **Approval UI nonce (#336 b) plus Origin/CSRF (#336 c).**
-   - A `Yes`/`No` or `approval_mode` change needs the `hush_ui` session proof.
-   - **Strict fallback:** if the nonce or the sandbox is unavailable, `approval_mode` stays at Approve every action and shell-capable turns are refused (#336 Q1).
+3. **Loopback Set-Cookie bootstrap removed.** An unauthenticated loopback reply no longer carries `hush_session=<token>` (`hush_http.c:286-290`, `:732-738`).
+4. **Child-reachable writes cannot owner-stamp notes.** `POST /api/event` stamps the owner (`api_channels.c:102`), which feeds `owner_asked` (`agent_approve.c:140-154`) and `person_gate` (`agent_prompt.c:153`). Any write reachable from a child must not produce an owner-stamped note.
+   - Related: a robot note in an owner-opened thread also counts as an owner ask (`agent_approve.c:140-154`). This is noted for KEYS #334 and GUARD #335.
+5. **One UI nonce minter.** One minter covers answers (`Yes`/`No`), `approval_mode`, macros, ntfy, team offers, loop "Continue?" and GUARD decisions. All of them need the UI session proof, not the token.
+6. **`?k=` removed, and an Origin check** on state-changing routes (`hush_http.c:529-554` carriers).
 
-#336's current fix plan (c, b, a) does not yet include items 1-3 (they are open questions or out of scope there). They must be added to #336 or tracked in follow-up issues before M1/M2 gated grants.
+**Plus: unknown mode means deny.** Any unknown or unverifiable approval/sandbox mode resolves to deny: shell-capable turns are refused and `approval_mode` stays at Approve every action.
+
+#336's posted fix plan (c, b, a, last updated 10:01 ET) does not yet spell out all six parts; for example, Set-Cookie and owner notes are open questions there. This plan cites the CoS 10:43 definitive list. No host-shell grant merges until all six parts plus unknown→deny are merged.
 
 **Target shell path: GUARD #335 (CoS 10:38 N-3).** This plan adopts GUARD (PR #335, `docs/guard-plan.md` §2 table, §6, §8 G9/G12; referenced by PR and section because #335 is being revised) as the **target** for every shell grant.
 
@@ -273,16 +274,16 @@ The Hush clock (N-6, corrected) is 300 s for a project job, else **90 s** (`hush
 
 | Path | Allowed when | Retired when |
 |---|---|---|
-| Hermes gated `--yolo` (job gateway, #336 sandbox) | #336 parts 1-5 merged, and the M1 proofs pass | GUARD G12 (Hermes P) merges |
-| OpenClaw gated `group:runtime` + `group:fs` | #336 parts 1-5 merged, and the M2 proofs pass | GUARD G9/G12 (OpenClaw M) merges |
-| NanoClaw gated container bash | #336 parts 1-5 merged; container rules (section 3) | GUARD G12 (NanoClaw M) merges, or the NanoClaw seam is UNKNOWN, so Bash is denied (#335 §2) |
-| NemoClaw gated sandbox shell | #336 parts 1-5 merged; readiness and pin checks | GUARD G12 (NemoClaw M) merges |
+| Hermes gated `--yolo` (job gateway, #336 sandbox) | #336 parts 1-6 merged, and the M1 proofs pass | GUARD G12 (Hermes P) merges |
+| OpenClaw gated `group:runtime` + `group:fs` | #336 parts 1-6 merged, and the M2 proofs pass | GUARD G9/G12 (OpenClaw M) merges |
+| NanoClaw gated container bash | #336 parts 1-6 merged; container rules (section 3) | GUARD G12 (NanoClaw M) merges, or the NanoClaw seam is UNKNOWN, so Bash is denied (#335 §2) |
+| NemoClaw gated sandbox shell | #336 parts 1-6 merged; readiness and pin checks | GUARD G12 (NemoClaw M) merges |
 
 ## 5. Milestones (one small DRAFT PR each, CoS order 10:12)
 
 | Order | PR | Scope | Open (U) |
 |---|---|---|---|
-| 0 | **#336 fix** | All five parts in section 4 (Set-Cookie bootstrap, forged owner notes, relay-port deny, env allowlist scrub, UI nonce + Origin/CSRF + strict fallback). Blocks every host-shell grant | Parts 1-3 not yet in the #336 fix plan |
+| 0 | **#336 fix** | Definitive parts 1-6 plus unknown→deny (section 4): sandbox `$HUSH_HOME` + relay port; env allowlist (read `HUSH_KEY_PASS` once, then unset); no loopback Set-Cookie; no owner-stamping from child-reachable writes; one UI nonce minter; no `?k=` + Origin check. Blocks every host-shell grant | #336 body not yet updated to this list |
 | 1 | **#333 fix** (Floor) | Gate Copilot `--allow-all-tools` and Goose `GOOSE_MODE` on `project_tools` | Copilot headless without the flag |
 | 2 | M1 `gb/provider-hermes` | Per-job private `HERMES_HOME` + Hush-owned gateway lifecycle. Ungated `--safe-mode -t safe`. Gated `--yolo` INTERIM. Env allowlist. Refuse unless proofs (a)-(d) and the real check pass. 270/60 s | `-t` semantics; multiplex fold; port conflicts |
 | 3 | M2 `gb/provider-openclaw` | `agent exec --isolated --code-mode direct` + allowlist policy. Stored-creds auth. Refuse until stub + real check pass. 270/60 s | Offered-tool enumeration method |
@@ -310,7 +311,7 @@ The Hush clock (N-6, corrected) is 300 s for a project job, else **90 s** (`hush
 
 | Finding | Where addressed |
 |---|---|
-| P1-1 #336 not gating host shells | Section 4 (#336 parts 1-5); section 5 row 0; Hermes and OpenClaw INTERIM bullets |
+| P1-1 #336 not gating host shells | Section 4 (#336 parts 1-6); section 5 row 0; Hermes and OpenClaw INTERIM bullets |
 | P1-2 Hermes ungated not fail-closed | Hermes section: ungated argv, env, fail-closed proofs |
 | P2-1 "only switch" overclaim | Section 2 item 4 |
 | P2-2 OpenClaw auth/deny/`--isolated` | OpenClaw section; section 0 Q4 row |
@@ -324,7 +325,7 @@ The Hush clock (N-6, corrected) is 300 s for a project job, else **90 s** (`hush
 | Finding | Where addressed |
 |---|---|
 | N-1 Hermes gateway outside the child/clock (P1) | Hermes "gateway client" and "Per-job gateway" bullets; proofs (c)(d); refuse rule; Timeouts Hermes row |
-| N-2 "#336 fixed" undefined (P2) | Section 4 "#336 parts required" 1-5; section 5 row 0 |
+| N-2 "#336 fixed" undefined (P2) | Section 4 "#336 definitive parts" 1-6 plus unknown→deny (CoS 10:43); section 5 row 0 |
 | N-3 GUARD #335 not referenced (P2) | Section 4 "Target shell path" and INTERIM table; Hermes/OpenClaw INTERIM bullets; Containers (no Hermes container backend) |
 | N-4 OpenClaw denylist vs profile (P2) | OpenClaw ungated/gated allowlist policy and fail-closed check; NemoClaw gate |
 | N-5 `.env` reloads `HERMES_YOLO_MODE` (P3) | Hermes private home writes its own `.env`; proof (b); gaps |
