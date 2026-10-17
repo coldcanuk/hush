@@ -1,9 +1,22 @@
-# PROVIDERS+ phase 1: research and plan (Hermes, OpenClaw, NVIDIA NeMo, NanoClaw)
+# PROVIDERS+ phase 1: research and plan (Hermes, OpenClaw, NVIDIA NemoClaw, NanoClaw)
 
 Status: plan only. This PR adds no product code. Base: `main` @ `13511bd48b47` (#323).
-Refs #322, #311 (person gate). Researched 2026-10-17 (America/Toronto).
+Refs #322, #311 (person gate), #333 (Copilot/Goose gate fix). Researched 2026-10-17 (America/Toronto). CoS rulings added 09:45 and 09:48 ET.
 
 Tags: **V** = VERIFIED_EXTERNAL (URL given), **I** = INFERRED, **U** = UNKNOWN.
+
+## 0. CoS rulings (2026-10-17)
+
+| Q | Ruling | Effect on this plan |
+|---|---|---|
+| Q1 Hermes | **Hermes Agent CLI** | M1 targets `hermes`. The Hermes 4 model family is out of scope; it stays reachable through `custom`. |
+| Q2 NVIDIA | **NemoClaw**, `NVIDIA/NemoClaw` (Chuck, 09:48) | M3 targets NemoClaw (section 3). |
+| Q3 NanoClaw | **GO**, only behind the #322 person gate | Turns without the gate are refused with a clear reason; Docker isolation documented (section 3). |
+| Q4 OpenClaw | **`--isolated`** | `agent exec` ignores the operator's ambient config and credentials. |
+| Q5 Copilot/Goose | **YES**: P1 issue **#333**, owned by Floor | Fix lands before M1. |
+
+**Order:** #333 fix, then M1 Hermes, M2 OpenClaw, M4 NanoClaw, M3 NemoClaw.
+
 
 ## 1. Findings
 
@@ -11,7 +24,7 @@ Tags: **V** = VERIFIED_EXTERNAL (URL given), **I** = INFERRED, **U** = UNKNOWN.
 |---|---|---|---|---|---|---|---|---|---|
 | Hermes | **Hermes Agent** CLI, `NousResearch/hermes-agent` [V1] | Yes: Hermes Agent CLI vs Hermes 4 model family (weights on HF, served via OpenAI-compatible Nous Portal API) [V5] vs NemoClaw's Hermes sandbox [V12] | `hermes chat -q "<p>" -Q` answers and exits; `--oneshot` implied on non-TTY [V2] | `hermes setup` / `hermes model`; Nous Portal OAuth or provider keys; `--provider custom --base-url --api-key` [V2] | `--format stream-json` JSONL, terminal `result` record carries `text`, `exit_code` [V2] | `--yolo` skips approvals [V2]; `approvals.single_query_mode` default `deny` for `-q` [V3]; **`-z` forces `HERMES_YOLO_MODE=1`** [V4]; `-t/--toolsets <csv>` [V2]; terminal tool runs non-dangerous commands without a prompt [V3] | MIT [V1]; Hermes 4 weights `llama3` [V5] | Local CLI (Python), any hosted or local model | **Good.** Closest to Cline: one argv, JSON stream, explicit approval flag. |
 | OpenClaw | `openclaw/openclaw`, formerly Warelay, CLAWDIS, Clawdbot, Moltbot (renamed 2026-01-30) [V6] | Low. One project. NemoClaw (NVIDIA) wraps it [V12] | `openclaw agent exec "<p>" --cwd <dir> --timeout <s> --json` runs one embedded turn with no Gateway [V7] | Ambient config and stored creds by default; `--isolated`, `--config <file>`, `--auth-env-only` [V7] | `--json` stable envelope `{ok,status,final,...}`; exit 0/1/2(timeout) [V7] | `agent exec` defaults: sandbox off, `coding` profile, **full exec policy** [V7]; `--config-override '{"tools":{"deny":["exec"]}}'` [V7]; `tools.exec.mode deny/allowlist/ask/auto/full` [V8] | MIT [V6] | Local Node CLI plus optional Gateway; any model | **Good.** Shell on by default, so the deny override is required unless a person gated the turn. |
-| NVIDIA NeMo | **Unresolved.** Candidates: (a) NIM LLM API (OpenAI-compatible `integrate.api.nvidia.com/v1/chat/completions`) [V9]; (b) NeMo Agent Toolkit `nat` CLI [V10]; (c) NeMo framework (`NVIDIA/NeMo` now redirects to `NVIDIA-NeMo/Speech`, a training framework) [V11]; (d) NeMo Guardrails (rails layer, not an agent) [V11]; (e) **NemoClaw** (OpenClaw/Hermes inside OpenShell) [V12] | **High.** CoS must pick | (a) HTTP API, no CLI; (b) `nat run --config_file <yml> --input "<p>"` [V10]; (e) `nemoclaw` CLI, alpha [V12] | (a) Bearer `NVIDIA_API_KEY` [V9]; (b) per workflow YAML (U) | (a) OpenAI chat JSON/SSE [V9]; (b) console `Workflow Result:` text [V10]: no JSON flag found (U) | (a) none: text only; (b) tool use is set by workflow config, no approval flag found (U); first `nat` run shows a telemetry consent prompt that defaults to yes [V10] | (a) NVIDIA service terms (U); (b) Apache-2.0 [V10]; (e) Apache-2.0 [V12] | (a) hosted or self-hosted NIM; (b) local Python; (e) local sandbox | (a) **Excellent**: an API-family entry, no shell. (b) Weak: needs a workflow YAML per robot. (e) Defer: duplicates the OpenClaw/Hermes adapters plus OpenShell. |
+| NVIDIA NeMo → **NemoClaw** | `NVIDIA/NemoClaw`: a reference stack that runs OpenClaw (default), Hermes or LangChain Deep Agents Code inside NVIDIA OpenShell sandboxes [V12]. Other NeMo products considered and not chosen: NIM API [V9], NeMo Agent Toolkit `nat` [V10], NeMo framework and Guardrails [V11] | **Resolved** by the CoS ruling of 09:48 | OpenClaw sandbox: `nemoclaw <sandbox> agent --agent main --json -m "<p>" --timeout <s>` forwards to `openclaw agent` in the sandbox [V15]. Hermes sandbox: the `agent` wrapper refuses; use the in-sandbox OpenAI-compatible API on `127.0.0.1:8642-8652` with `gateway-token` [V16] | `nemoclaw onboard` (the non-interactive examples pass `--yes-i-accept-third-party-software`). Provider creds are registered with the OpenShell gateway and never written to host disk (NVIDIA Endpoints, OpenAI, Anthropic, ...) [V15] | `--json` OpenClaw envelope; the wrapper exits 1 on `incomplete_turn` or timeout [V15] | No per-turn approval flag in the wrapper (U). Shell runs **inside** the OpenShell sandbox. Network egress is set by policy tier (restricted/balanced/open/personal), and host mounts are read-only only [V15] | Apache-2.0 [V12]; **alpha**, best-effort support [V12]; tags v0.0.x (latest v0.0.135), package 0.1.0 [V17] | Local: Node 22.19+, Docker (default) or rootless Podman, OpenShell gateway/k3s, 8 GB RAM minimum, ~2.4 GB image [V18]; inference hosted or local | **Fair.** Reuses the OpenClaw (M2) and Hermes (M1) adapters behind one more wrapper. Heavy prerequisites; alpha. |
 | NanoClaw | `nanocoai/nanoclaw` (`qwibitai/nanoclaw` redirects here) [V13] | Low. One project | Daemon plus `pnpm run chat <msg>` over the `data/cli.sock` Unix socket (JSON lines `{"text":...}`) [V14] | Credential gateway with an Anthropic credential; Docker [V13] | Plain reply text. Exits after 2 s of silence; exit 3 if no reply within 120 s [V14] | **No per-turn approval or tool flag found (U).** Bash always available inside the per-session container [V13] | MIT [V13] | Local daemon plus Docker; Anthropic Agents SDK | **Poor.** Daemon-owned and one client at a time (a second client supersedes the first) [V14]. Cannot run parallel Hush jobs. |
 
 Sources: [V1] https://github.com/NousResearch/hermes-agent (README, LICENSE) ·
@@ -24,7 +37,9 @@ Sources: [V1] https://github.com/NousResearch/hermes-agent (README, LICENSE) ·
 [V9] https://docs.api.nvidia.com/nim/docs/api-quickstart , https://build.nvidia.com/llms.txt ·
 [V10] https://github.com/NVIDIA/NeMo-Agent-Toolkit , https://docs.nvidia.com/nemo/agent-toolkit/latest/run-workflows/about-running-workflows.html ·
 [V11] https://api.github.com/repos/NVIDIA/NeMo , https://api.github.com/repos/NVIDIA/NeMo-Guardrails (both 301 to NVIDIA-NeMo/*) ·
-[V12] https://github.com/NVIDIA/NemoClaw · [V13] https://github.com/nanocoai/nanoclaw · [V14] https://docs.nanoclaw.dev/channels/cli
+[V12] https://github.com/NVIDIA/NemoClaw (README, LICENSE) · [V13] https://github.com/nanocoai/nanoclaw · [V14] https://docs.nanoclaw.dev/channels/cli ·
+[V15] https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/reference/commands · [V16] https://docs.nvidia.com/nemoclaw/latest/user-guide/hermes/reference/commands (`nemohermes <name> agent`) ·
+[V17] https://api.github.com/repos/NVIDIA/NemoClaw/tags , https://github.com/NVIDIA/NemoClaw/blob/main/package.json · [V18] https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/get-started/prerequisites · [V19] https://docs.nanoclaw.dev/concepts/security
 
 ## 2. How providers are wired today (adapter contract)
 
@@ -55,62 +70,102 @@ Sources: [V1] https://github.com/NousResearch/hermes-agent (README, LICENSE) ·
 - **Gaps (U):** exact toolset names for a "chat only" turn, and whether `hermes chat` needs a running local gateway (the docs mention gateway-resolved sessions [V2]).
 - **Risk:** the terminal backend `local` runs on the host [V3].
 
-### OpenClaw (`openclaw`)
+### OpenClaw (`openclaw`), ruling Q4: `--isolated`
 
-- **argv (I):** `openclaw agent exec --json --cwd <cwd> --timeout <s> [--config-override <deny-json>] <combined>`.
-- **Gate:** if `project_tools == 0`, pass `--config-override '{"tools":{"deny":["exec", ...]}}'` [V7]. The full deny list (write, process, browser) needs verification (U).
+- **argv (I):** `openclaw agent exec --isolated --json --cwd <cwd> --timeout <s> [--config-override <deny-json>] <combined>`.
+- **Auth:** `--isolated` ignores the ambient config [V7], so the model and provider key must reach the run explicitly. Candidates: `--model` plus an env-var key from Hush pass (I). Whether `--isolated` allows env provider keys is U, to be confirmed in M2 with a stub.
+- **Gate:** if `project_tools == 0`, pass `--config-override '{"tools":{"deny":["exec", ...]}}'` [V7]. The full deny list (write, process, browser) is U.
 - **Parse:** `final` when `ok:true`. Exit 2 means timeout [V7].
-- **Home:** `~/.openclaw` [V6].
 - **Risks:**
-  - `agent exec` inherits the operator's config and credentials unless `--isolated` or `--config` is passed [V7].
-  - Existing `AGENTS.md` in cwd is injected [V7].
-  - `agent exec` takes an exclusive state lock if `--state-dir` is reused, so keep the default temp state [V7].
+  - `AGENTS.md` in the cwd is still injected [V7].
+  - Keep the default temp state; a reused `--state-dir` takes an exclusive lock [V7].
 
-### NVIDIA NeMo
+### NVIDIA NemoClaw (`nemoclaw`), ruling Q2
 
-- **If (a) NIM:** add an `nvidia-api` API-family row, host `https://integrate.api.nvidia.com/v1`, key in pass. The existing streaming path and `/chat/completions` cover it (`hush_inference.c:165-186`). There is no shell, so no gate change. It is possible today with zero code via the `custom` provider (I).
-- **If (b) `nat`:** each robot needs a workflow YAML. There is no JSON output, the approval surface is U, and there is a first-run telemetry prompt [V10]. Not recommended.
-- **If (e) NemoClaw:** it rides on the Hermes and OpenClaw adapters. Phase 2+.
+- **Identity and maturity [V12, V17]:**
+  - Official repo `NVIDIA/NemoClaw`, Apache-2.0.
+  - The README calls it an "alpha project" with best-effort maintainer review.
+  - No GitHub releases; tags run v0.0.x (latest v0.0.135).
+- **Prerequisites [V18]:**
+  - Node 22.19+ and npm 10+.
+  - Docker Engine/Desktop/Colima (default) or rootless Podman.
+  - An OpenShell gateway: `nemoclaw onboard` creates it and the sandbox.
+  - 4 vCPU, 8 GB RAM and 20 GB disk minimum.
+  - Membership of the `docker` group, which grants root-level daemon control.
+- **Inner agents [V15]:** `nemoclaw agents list` shows `openclaw` (default), `hermes` and `langchain-deepagents-code`.
+- **Headless turn, OpenClaw sandbox [V15]:**
+  - Command: `nemoclaw <sandbox> agent --agent main --json --timeout <s> -m <combined>`.
+  - The wrapper forwards verbatim to `openclaw agent` inside the sandbox via `openshell sandbox exec`.
+  - It needs a target selector and exits 1 on `incomplete_turn`, abandoned or timeout.
+  - The JSON envelope is `{payloads, meta}` or `{status, result:{payloads, meta}}`.
+- **Headless turn, Hermes sandbox [V16]:**
+  - The `agent` wrapper refuses.
+  - Instead, POST `/v1/chat/completions` to the sandbox's OpenAI-compatible API on `127.0.0.1:<8642-8652>`, with Bearer `nemohermes <name> gateway-token --quiet`.
+- **Reuse:**
+  - The OpenClaw path reuses the M2 argv builder and `final`/`payloads` parser, behind a `nemoclaw <sandbox> agent` prefix.
+  - The Hermes path is an API-family call (`hush_inference_stream`, `hush_inference.c:556`) with a per-sandbox host and token, but the agent behind it still runs tools.
+- **Isolation [V15]:**
+  - Tools and shell run inside the OpenShell sandbox, not on the host.
+  - Egress is set by the policy tier (`restricted`/`balanced` default/`open`/`personal`).
+  - `--host-mount` is read-only only.
+  - Credentials stay in OpenShell provider storage.
+- **Gate (#322):** the wrapper has no per-turn auto-approve or tool flag (U), and the inner agent can run shell in the sandbox.
+  - If `project_tools == 1`: run the turn.
+  - Otherwise, OpenClaw sandbox: forward the same deny override as M2 (`--config-override` support through `openclaw agent` is U). If that cannot be proven with a stub, **refuse**.
+  - Otherwise, Hermes sandbox: **refuse**, since the API takes no per-turn tool restriction (U).
+  - Refusal reason: `HUSH_JOB_ERR:NemoClaw runs tools in its sandbox; a person must ask for this turn (owner's note or the owner's Yes in a project thread)`.
+- **Gaps (U):**
+  - Mapping the Hush cwd to the sandbox: mounts are read-only, and `upload`/`download` exist.
+  - Whether `openclaw agent` (Gateway-backed) honours `--config-override`.
+  - Hermes API tool limits.
+  - How many concurrent turns one sandbox allows.
+  - A readiness probe: `nemoclaw <name> status --json` (I).
 
-### NanoClaw
+### NanoClaw (`nanoclaw`), ruling Q3: GO behind the person gate
 
-- **Integration:** speak the `data/cli.sock` JSON-line protocol directly (I), or exec `pnpm run chat` from the NanoClaw checkout dir.
-- **Gate:** there is no per-turn tool switch (U) and bash is always available in the container, so **every NanoClaw turn is shell-capable**. It must require `person_gate` (proposed: refuse to start unless `project_tools == 1`).
+- **Integration (I):** speak the `data/cli.sock` JSON-line protocol (`{"text":...}`) directly from C, instead of exec'ing `pnpm run chat` from the NanoClaw checkout [V14].
+- **Gate:** every NanoClaw turn is shell-capable because bash is always available in its container [V13]. So `project_tools == 1` is required.
+  - Otherwise the adapter refuses before connecting, with: `HUSH_JOB_ERR:NanoClaw always has a shell in its container; a person must ask for this turn (owner's note or the owner's Yes in a project thread)`.
+  - The refusal goes out through `hush_agent_worker_err` (`agent_process.c:228-240`), so the thread sees a clear diagnostic.
+- **Docker isolation [V13, V19]:**
+  - One Docker container per session. Each spawn uses `--cap-drop=ALL` and `no-new-privileges`, and the agent runs non-root.
+  - Only explicit mounts (session folder, group workspace, read-only shared code; its own config is re-mounted read-only). No host home, `.ssh` or Docker socket. Extra mounts are checked against `~/.config/nanoclaw/mount-allowlist`.
+  - Credentials stay outside the container through the credential gateway.
+  - Egress lockdown is **off by default**. When on, the container joins a Docker `--internal` network where the vault gateway is the only hop, and NanoClaw refuses to spawn if lockdown cannot be established. Hush docs should recommend turning it on.
+  - The daemon and Docker run outside Hush's lifecycle. Hush must document that the operator owns `nanoclaw` service health, and must not start or stop it.
 - **Risks:**
-  - A single client supersedes the last [V14], which conflicts with `HUSH_AGENT_JOBS_MAX` parallelism.
+  - One client at a time [V14]. Hush must serialise NanoClaw turns: at most one in flight, and others are refused with a "busy" reason (I).
   - The 2 s-silence exit can truncate replies [V14].
-  - The daemon and Docker are outside Hush lifecycle control.
+  - The Hush project cwd is not visible in the container unless the operator allowlists a mount (U).
 
-### Pre-existing (not in scope, for CoS)
+### Copilot / Goose: tracked in #333 (P1, Floor, before M1)
 
-- Copilot's `--allow-all-tools` (`agent_process.c:40,457`) and Goose `run` (`:556-559`) are not tied to `project_tools`.
-- Goose's default tool-approval mode is U. Consider a follow-up issue to route both through the person gate the way Cline is.
+Copilot's `--allow-all-tools` (`agent_process.c:40,457`) and Goose's `run` with no approval flag (`:556-559`) ignore `project_tools`. Goose `GOOSE_MODE` defaults to `auto` (V: https://github.com/block/goose/blob/main/documentation/docs/guides/config-files.md L52). The fix and test plan are in #333.
 
 ## 4. Gate rule for every new adapter (#322/#323)
 
-> Any flag, env var or config that auto-approves tools or grants shell/file write is emitted **only** when `job->project_tools == 1`. That value is set solely by `hush_agent_apply_project_cwd` behind `person_gate`. The default argv must be the least-privileged mode the tool offers. If a tool has no least-privileged mode (NanoClaw), the adapter refuses to start without `project_tools`.
+> Any flag, env var or config that auto-approves tools or grants shell/file write is emitted **only** when `job->project_tools == 1`. That value is set solely by `hush_agent_apply_project_cwd` behind `person_gate`. The default argv must be the least-privileged mode the tool offers. If a tool has no least-privileged mode (NanoClaw; NemoClaw unless the deny override is proven), the adapter refuses to start without `project_tools`, with a `HUSH_JOB_ERR:` reason naming the gate.
 
-## 5. Milestones (one provider per small DRAFT PR, ordered by readiness)
+## 5. Milestones (one small DRAFT PR each, in CoS order)
 
-| # | PR | Scope | Blocked on |
+| Order | PR | Scope | Open (U) |
 |---|---|---|---|
-| M1 | `gb/provider-hermes` | Id `hermes`, meta row, home detect, pure `hush_agent_hermes_argv` (Cline pattern), stream-json parse, UI_SPEC rows | toolset names (U) |
-| M2 | `gb/provider-openclaw` | Id `openclaw`, `agent exec --json`, deny override when not gated, `final` parse | deny list (U) |
-| M3 | `gb/provider-nvidia` | `nvidia-api` API-family row (NIM), or whichever candidate CoS picks | CoS choice |
-| M4 | `gb/provider-nanoclaw` | Socket client, gate-every-turn | CoS go/no-go |
+| 0 | **#333 fix** (Floor) | Gate Copilot `--allow-all-tools` and Goose `GOOSE_MODE` on `project_tools` | Copilot headless without the flag |
+| 1 | M1 `gb/provider-hermes` | Id `hermes`, meta row, home detect (`~/.hermes/config.yaml`), pure `hush_agent_hermes_argv` (Cline pattern), stream-json parse, `--yolo` only when gated, never `-z` | Toolset names; gateway need |
+| 2 | M2 `gb/provider-openclaw` | Id `openclaw`, `agent exec --isolated --json`, deny override when not gated, `final` parse | Deny list; key passing under `--isolated` |
+| 3 | M4 `gb/provider-nanoclaw` | Socket client, refuse unless `project_tools`, serialise to 1 in flight, Docker-isolation note in UI_SPEC | Mounts for the project dir |
+| 4 | M3 `gb/provider-nemoclaw` | Id `nemoclaw`. OpenClaw sandbox via `nemoclaw <sb> agent` reusing M2. Hermes sandbox via the API path. Refuse unless gated, or deny proven | Override passthrough; cwd mapping; concurrency |
 
 **Each PR must include:**
 
-- Stub tests on the `tests/test_cline_gate.c` model, named `tests/test_<id>_gate.c`. A stub binary goes first on PATH under a scratch HOME/HUSH_HOME. The tests assert argv for owner, guest, guest-in-owner-thread and guest+Yes. They also cover a parse unit test on canned stdout.
+- Stub tests on the `tests/test_cline_gate.c` model, named `tests/test_<id>_gate.c`. A stub binary or socket goes first on PATH under a scratch HOME/HUSH_HOME.
+- Argv/refusal assertions for owner, guest, guest-in-owner-thread and guest+Yes, plus reverse mutants, plus a parse unit test on canned stdout.
 - The new binary name added to the sentinel list (`hush-c/Makefile:193`, `hush-c/tests/check_hermetic_path.sh:14`). This keeps the canary at 0: no real tool is ever spawned.
 - `HUSH_PROVIDER_COUNT` and the UI_SPEC wire-id list updated.
 - CI green on the exact head (`make test`).
 - Draft only, `Refs #322`.
 
-## 6. Open questions for CoS
+## 6. Questions for CoS: all resolved (section 0)
 
-1. **Hermes:** Hermes Agent CLI (recommended) or the Hermes 4 model via an OpenAI-compatible endpoint (already possible with `custom`)? Or both?
-2. **NVIDIA NeMo:** which one? NIM API (recommended, lowest risk), NeMo Agent Toolkit `nat`, NemoClaw, Guardrails, or the training framework (no fit)?
-3. **NanoClaw:** proceed given the daemon, Docker and single-client limits, and the gate-every-turn rule? Or defer?
-4. **OpenClaw:** run with `--isolated` (no ambient operator creds) or with the operator's config?
-5. Should the pre-existing Copilot and Goose ungated tool access get its own issue?
+- Q1, Q3, Q4 and Q5 were resolved at 09:45 ET. Q2 was resolved at 09:48 ET (NemoClaw).
+- The remaining unknowns are implementation-level and are listed per milestone in section 5.
