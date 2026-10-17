@@ -192,6 +192,11 @@ def check_child(backend):
             print(f"sandbox[{backend}]: stub HOME 0700; auth allow; "
                   "ssh/gpg/pass denied; /proc+ptrace denied OK")
             wait_no_job_homes(hive, backend + " reply")
+            # The job HOME links to real auth; removing it must never follow
+            # a link into the operator's files.
+            auth = real_home / ".grok" / "auth.json"
+            assert auth.read_text() == '{"token":"grok-auth-canary"}', "real auth file lost"
+            print(f"sandbox[{backend}]: job HOME removal kept the real ~/.grok OK")
         finally:
             hive.relay.stop()
         assert not hive.relay.hits.exists(), hive.relay.hits.read_text()
