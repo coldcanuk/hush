@@ -1,10 +1,10 @@
 # PLAN_VOICE — voice target selector (phase 1: research + plan, no code)
 
 Epic VOICE, ordered by CoS 2026-10-17 13:18 EDT (Chuck USER_SPECIFIED).
-Decisions §8: CoS ruling 2026-10-17 13:21 EDT (Chuck may override).
+Decisions §8: CoS ruling 2026-10-17 13:21 EDT; D1-D8 approved by Chuck 13:23 EDT.
 Base: `origin/main` @ `fa56420a`. Tags: **OBS** = OBSERVED in repo, **EXT** =
 VERIFIED_EXTERNAL (cited URL), **INF** = INFERRED, **UNK** = UNKNOWN,
-**CoS** = CoS ruling (USER_SPECIFIED).
+**USR** = USER_SPECIFIED (Chuck 13:23 EDT, via CoS), **CoS** = CoS ruling 13:21 EDT.
 Claim ids `[Cn]` resolve in the appendix.
 
 Feature: one control that picks who hears the human's voice:
@@ -189,23 +189,23 @@ out of scope.
 | Firefox has no SpeechRecognition | server Whisper STT | EXT [C21] |
 | Chrome webkitSpeechRecognition ships audio off-box | do not use by default | INF |
 | Piper GPL-3.0 vs repo licence; voice model licences vary | detect only, never bundled or linked (D5); check model cards | EXT [C17] / UNK |
-| Mic left hot | `MUTE` default (D2), push-to-talk (D3), LIVE stamp, auto-off on tab hide | CoS / INF |
+| Mic left hot | `MUTE` default (D2), push-to-talk (D3), LIVE stamp, auto-off on tab hide | USR / INF |
 | Fan-out cost with `all` + provider TTS | per-reply char cap, Piper default | INF |
 | Legacy ids not valid on xAI | mapping table | OBS+EXT |
 
-## 8. Decisions (CoS 2026-10-17 13:21 EDT, Chuck may override)
+## 8. Decisions (USER_SPECIFIED: Chuck 2026-10-17 13:23 EDT, via CoS)
 
 | # | Decision | Lands in | Tag |
 |---|----------|----------|-----|
-| D1 | C/S = per-hive role (`hive.cos`), default Major [C12] | §4, P2.1 | CoS |
-| D2 | First open = `MUTE` | §4, P2.5 | CoS |
-| D3 | Push-to-talk in V3; continuous listening later, opt-in, visible mic indicator | V3, V6 | CoS |
-| D4 | Transcript = normal note, same recipients/visibility as target mode; no extra privacy claims | §4, P2.6 | CoS |
-| D5 | Piper default when detected; probe reports absent → fallback chain (§2.3); no bundling [C17] | P1.5, §7 | CoS |
-| D6 | Provider TTS = xAI + OpenAI, opt-in per robot; xAI API credentials only; keys via Vault chain [C14] | §4, V5 | CoS |
-| D7 | `ALL`: each targeted robot replies in text; voice queued one at a time, distinct voices [C22]; optional lead-only | §4, P4.2, P4.5 | CoS |
-| D8 | Fold ♫ (`.chan-voice`) and ☎ (`.robot-call`) into the selector, on-theme S1 stamps [C6][C13] | §5, P2.7 | CoS |
-| D9 | Voice is mic-only: voice path requests audio only, never camera [C8] | V3, P3.1 | CoS |
+| D1 | C/S = per-hive role (`hive.cos`), default Major [C12] | §4, P2.1 | USR |
+| D2 | First open = `MUTE` | §4, P2.5 | USR |
+| D3 | Push-to-talk in V3; continuous listening later, opt-in, visible mic indicator | V3, V6 | USR |
+| D4 | Transcript = normal note, same recipients/visibility as target mode; no extra privacy claims | §4, P2.6 | USR |
+| D5 | Piper default when detected; probe reports absent → fallback chain (§2.3); no bundling [C17] | P1.5, §7 | USR |
+| D6 | Provider TTS = xAI + OpenAI, opt-in per robot; xAI API credentials only; keys via Vault chain [C14] | §4, V5 | USR |
+| D7 | `ALL`: each targeted robot replies in text; voice queued one at a time, distinct voices [C22]; optional lead-only | §4, P4.2, P4.5 | USR |
+| D8 | Fold ♫ (`.chan-voice`) and ☎ (`.robot-call`) into the selector, on-theme S1 stamps [C6][C13] | §5, P2.7 | USR |
+| D9 | Voice is mic-only: voice path requests audio only, never camera [C8]; CoS ruling 13:21, not in the 13:23 approval | V3, P3.1 | CoS |
 
 ## 9. UNKNOWNs
 
