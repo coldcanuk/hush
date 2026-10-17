@@ -185,6 +185,10 @@ async function waitRadio(page, want, ms, msg) {
 /* Counts 👍-phase ack pills that name Happy in the rendered page. */
 const HAPPY_EMOJI = `[...document.querySelectorAll('.robot-ack.emoji')]
   .filter((p) => p.textContent.includes('Happy')).length`;
+/* Counts ack pills of any phase that name Happy (a held pill would still
+ * show a 👍, whatever its class). */
+const HAPPY_PILLS = `[...document.querySelectorAll('.robot-ack')]
+  .filter((p) => p.textContent.includes('Happy')).length`;
 
 async function waitEvent(relay, head, ms, msg) {
   for (const t0 = Date.now(); Date.now() - t0 < ms; await sleep(100)) {
@@ -210,7 +214,7 @@ async function checkHeldAck(relay, cdp) {
     fail('U6 the page never saw the approval ask');
   if (!(await cdp.evaluate(`document.getElementById('stream').textContent.includes('tell a joke')`)))
     fail('U6 the owner\'s mention is not on screen');
-  if ((await cdp.evaluate(HAPPY_EMOJI)) !== 0) fail('U6 👍 shown while the turn waits');
+  if ((await cdp.evaluate(HAPPY_PILLS)) !== 0) fail('U6 an ack pill shown while the turn waits');
   await relay.post('/api/event', { kind: 1, channel: 'welcome', reply_to: ask.reply_to, content: 'Yes' });
   await waitEvent(relay, RAN_HAPPY, ACK_WAIT_MS, 'U6 the Yes must run the turn');
   for (const t0 = Date.now(); (await cdp.evaluate(HAPPY_EMOJI)) !== 1; await sleep(100)) {
