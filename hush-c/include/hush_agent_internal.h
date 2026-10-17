@@ -13,6 +13,7 @@
 #include "hush_launch.h"
 #include "hush_presence.h"
 #include "hush_roster.h"
+#include "hush_sandbox.h"
 #include "hush_skill.h"
 #include "hush_status.h"
 #include "hush_store.h"
@@ -164,6 +165,8 @@ typedef struct {
     int person_gate;
     /* started plus the kill clock. 0 until fill arms the job. */
     time_t budget_deadline;
+    /* Jailed stub HOME, made before fork and removed by close (#336). */
+    char stub_home[HUSH_SANDBOX_PATH_MAX];
 } hush_agent_job_t;
 
 /* Loop state for one thread root (#280). Hush drives every turn; robots

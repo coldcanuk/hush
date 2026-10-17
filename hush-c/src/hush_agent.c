@@ -846,6 +846,7 @@ void hush_agent_close_job(hush_agent_job_t *job)
     job->busy = 0;
     job->cancelled = 0;
     job->kill_deadline = 0;
+    hush_sandbox_home_remove(job->stub_home, sizeof(job->stub_home));
 }
 
 static void hush_agent_kill_job(hush_agent_job_t *job)

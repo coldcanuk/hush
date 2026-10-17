@@ -93,7 +93,9 @@ class Hive:
         return [f"X-Hush-Token: {self.relay.token()}"]
 
     def paired(self):
-        return [f"Cookie: hush_session={self.relay.token()}", f"X-Hush-Nonce: {self.ui}"]
+        # A browser POST from the served page also carries its own Origin (#338).
+        return [f"Cookie: hush_session={self.relay.token()}", f"X-Hush-Nonce: {self.ui}",
+                f"Origin: http://{self.relay.host}", "Sec-Fetch-Site: same-origin"]
 
     def pair(self):
         raw = self.relay.send("GET", "/?pair=" + self.relay.pair_code(), [])

@@ -15,7 +15,9 @@ curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session
 bin=./hush-relay
 port=$(hush_free_port) || exit 1
 log=$(mktemp)
-home=$(mktemp -d)
+base=$(mktemp -d)
+home="$base/user"
+bin_dir="$base/bin"
 pid=""
 bad_body=""
 
@@ -26,7 +28,7 @@ cleanup() {
     fi
     rm -f "$log"
     if [ -n "$bad_body" ]; then rm -f "$bad_body"; fi
-    rm -rf "$home"
+    rm -rf "${base:-$home}" "$test_home" "${HUSH_FAKE_PASS_DIR:-}"
 }
 trap cleanup EXIT
 
@@ -45,12 +47,14 @@ wait_up() {
 }
 
 export HOME="$home"
+export HUSH_HOME="$base/home"
+export HUSH_CONFIG_DIR="$base/config"
 unset XDG_CONFIG_HOME
 export HUSH_PROVIDER_TERM=/bin/true
-mkdir -p "$home/.config/goose" "$home/bin"
-printf '%s\n' '#!/bin/sh' 'exit 0' > "$home/bin/grok"
-chmod 0755 "$home/bin/grok"
-PATH="$home/bin:$PATH"
+mkdir -p "$home/.config/goose" "$bin_dir" "$HUSH_HOME" "$HUSH_CONFIG_DIR"
+printf '%s\n' '#!/bin/sh' 'exit 0' > "$bin_dir/grok"
+chmod 0755 "$bin_dir/grok"
+PATH="$bin_dir:$PATH"
 export PATH
 printf '%s\n' 'active_provider: xai_oauth' > "$home/.config/goose/config.yaml"
 printf '%s\n' '  xai_oauth:' >> "$home/.config/goose/config.yaml"
@@ -108,7 +112,7 @@ echo "$again" | grep -q '"password"' && fail "later GET leaked password field"
 echo "$again" | grep -q '"token"' && fail "later GET leaked token field"
 echo "$again" | grep -q '"passkey"' && fail "later GET leaked passkey field"
 
-overlay="$HUSH_HOME/config/providers.json"
+overlay="$HUSH_CONFIG_DIR/providers.json"
 test -f "$overlay" || fail "overlay missing"
 grep -q 'sk-secret-test' "$overlay" && fail "overlay stored api_key"
 grep -q 'user-alice' "$overlay" && fail "overlay stored username"

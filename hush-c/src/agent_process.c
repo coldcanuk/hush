@@ -21,6 +21,8 @@
 #include "hush_dir.h"
 #include "hush_relay.h"
 #include "hush_provider.h"
+#include "hush_http.h"
+#include "hush_sandbox.h"
 
 #define HUSH_AGENT_DEVNULL "/dev/null"
 #define HUSH_AGENT_DISALLOWED \
@@ -80,6 +82,8 @@ static const char *const hush_agent_copilot_env_scrub[HUSH_AGENT_COPILOT_SCRUB_C
 
 /* Runs the provider CLI in a forked worker. */
 static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job);
+static void hush_agent_exec_jailed(const hush_agent_job_t *job, const char *file,
+                                   char **argv);
 static void hush_agent_exec_api(const hush_agent_job_t *job);
 static void hush_agent_exec_cline(const hush_agent_job_t *job);
 static void hush_agent_exec_grok(const hush_agent_job_t *job);
@@ -272,6 +276,19 @@ static void hush_agent_worker_err(int fd, const char *reason)
         return;
 }
 
+/* Forwards a child's HUSH_JOB_ERR line, or a generic exit reason. */
+static void hush_agent_forward_worker_err(int output_fd, const char *capture)
+{
+    assert(capture != NULL);
+    if (strstr(capture, HUSH_AGENT_ERR_MARK) != NULL) {
+        size_t len = strlen(capture);
+        if (write(output_fd, capture, len) != (ssize_t)len)
+            _exit(HUSH_AGENT_EXEC_FAILURE);
+        return;
+    }
+    hush_agent_worker_err(output_fd, "worker exited with an error");
+}
+
 static void hush_agent_run_worker(int output_fd, const hush_agent_job_t *job)
 {
     assert(output_fd >= 0);
@@ -290,7 +307,7 @@ static void hush_agent_run_worker(int output_fd, const hush_agent_job_t *job)
      * already holds the whole answer and the supervisor writes nothing more. */
     int forward = hush_inference_is_api(job->provider) ? output_fd : -1;
     if (hush_agent_capture_worker(capture, sizeof(capture), forward, job) != HUSH_OK) {
-        hush_agent_worker_err(output_fd, "worker exited with an error");
+        hush_agent_forward_worker_err(output_fd, capture);
         _exit(HUSH_AGENT_EXEC_FAILURE);
     }
     if (forward >= 0) {
@@ -338,6 +355,24 @@ static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job)
     else if (strcmp(job->provider, HUSH_ROSTER_PROVIDER_GROK_BUILD) == 0)
         hush_agent_exec_grok(job);
     hush_agent_worker_err(STDOUT_FILENO, "provider executable failed to start");
+    _exit(HUSH_AGENT_EXEC_FAILURE);
+}
+
+/* Every provider CLI execs through here: inside the jail, or not at all
+ * (#336 parts 1 and 2). See hush_sandbox.h for what the jail denies. */
+static void hush_agent_exec_jailed(const hush_agent_job_t *job, const char *file,
+                                   char **argv)
+{
+    hush_sandbox_job_t jail = {.cwd = job->cwd, .home = job->stub_home,
+                               .relay_port = hush_http_listen_port()};
+
+    assert(job != NULL && file != NULL && argv != NULL);
+    if (hush_sandbox_exec(&jail, file, argv) == HUSH_ERR_DENIED) {
+        const char *why = hush_sandbox_why();
+        hush_agent_worker_err(STDOUT_FILENO,
+                              why[0] != '\0' ? why
+                              : "agent sandbox unavailable: need Landlock ABI>=4 or bwrap");
+    }
     _exit(HUSH_AGENT_EXEC_FAILURE);
 }
 
@@ -443,7 +478,7 @@ static void hush_agent_exec_cline(const hush_agent_job_t *job)
     assert(job != NULL);
     hush_agent_build_combined(combined, sizeof(combined), job);
     hush_agent_cline_argv(&cline, job, combined);
-    execvp(cline.argv[0], cline.argv);
+    hush_agent_exec_jailed(job, cline.argv[0], cline.argv);
     _exit(HUSH_AGENT_EXEC_FAILURE);
 }
 
@@ -546,7 +581,7 @@ static void hush_agent_exec_grok(const hush_agent_job_t *job)
     argv[20] = (char *)job->rules;
     argv[21] = (char *)HUSH_AGENT_GROK_NOMEM;
     argv[22] = NULL;
-    execvp(HUSH_AGENT_GROK_BIN, argv);
+    hush_agent_exec_jailed(job, HUSH_AGENT_GROK_BIN, argv);
     _exit(127);
 }
 
@@ -599,7 +634,7 @@ static void hush_agent_exec_copilot(const hush_agent_job_t *job)
     hush_agent_build_combined(combined, sizeof(combined), job);
     if (hush_agent_fill_copilot_argv(job, argv, HUSH_AGENT_ARGV_MAX, combined) == 0)
         _exit(127);
-    execvp(argv[0], argv);
+    hush_agent_exec_jailed(job, argv[0], argv);
     _exit(127);
 }
 
@@ -617,7 +652,7 @@ static void hush_agent_exec_codex(const hush_agent_job_t *job)
         (char *)"--skip-git-repo-check", (char *)"--sandbox", (char *)"read-only",
         combined, NULL
     };
-    execvp(arguments[0], arguments);
+    hush_agent_exec_jailed(job, arguments[0], arguments);
     _exit(HUSH_AGENT_EXEC_FAILURE);
 }
 
@@ -639,7 +674,7 @@ static void hush_agent_exec_goose(const hush_agent_job_t *job)
     argv[2] = (char *)"--text";
     argv[3] = combined;
     argv[4] = NULL;
-    execvp(argv[0], argv);
+    hush_agent_exec_jailed(job, argv[0], argv);
     _exit(127);
 }
 
@@ -662,7 +697,7 @@ static void hush_agent_exec_ollama(const hush_agent_job_t *job)
     argv[2] = st.model;
     argv[3] = combined;
     argv[4] = NULL;
-    execvp(argv[0], argv);
+    hush_agent_exec_jailed(job, argv[0], argv);
     _exit(127);
 }
 
@@ -675,10 +710,15 @@ hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job)
     assert(job != NULL);
     if (pipe(fds) != 0)
         return HUSH_ERR_IO;
+    /* No HOME made here: the child's jail refuses and says why. */
+    if (job->stub_home[0] == '\0')
+        (void)hush_sandbox_home_make(job->stub_home, sizeof(job->stub_home));
+    (void)hush_sandbox_net_prepare(hush_http_listen_port());
     pid = fork();
     if (pid < 0) {
         close(fds[0]);
         close(fds[1]);
+        hush_sandbox_home_remove(job->stub_home, sizeof(job->stub_home));
         return HUSH_ERR_IO;
     }
     if (pid == 0) {
