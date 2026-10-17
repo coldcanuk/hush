@@ -9,19 +9,22 @@ the top-level `VERSION` file.
 ### Changed
 
 - Christmas theme: every red is one crimson hue. Light crimson `--accent` #ff6b7f (dark ink #0f1f14)
-  is for accent text, radios, outlines and the switch knob, so a checked Settings radio reads 5.77:1
-  against its panel (was 2.71:1). Deep crimson `--accent-dim` #5c1420 (was #7f1d1d) sits behind accent
-  text on hover (4.86:1, was 1.71:1 on main), the mine bubble and the switch track. A christmas-only
-  `--accent-fill` #c41e3a paints the primary buttons with light ink (5.57:1) and a light-crimson edge;
-  the Thread stamp outline is light crimson (5.77:1, was 1.58:1). The switch track is `--faint` when
-  off (4.66:1, was 1.61:1) and light crimson with a dark knob when on (5.77:1, was 1.58:1 on main);
-  borders and focus edges once drawn in `--accent-dim` use the light crimson (min 5.77:1) (#309).
+  is for accent text, radios, outlines, borders, focus edges and rings, and the on switch track, so a
+  checked Settings radio reads 5.77:1 against its panel (was 2.71:1). Deep crimson `--accent-dim`
+  #5c1420 (was #7f1d1d) sits only behind accent text: the hover fill (4.86:1, was 1.71:1 on main) and
+  the mine bubble. A christmas-only `--accent-fill` #c41e3a paints the primary buttons with light ink
+  (5.57:1) and a light-crimson edge. The Thread stamp outline is light crimson (5.77:1, was 1.58:1). The
+  switch track is `--faint` when off (4.66:1, was 1.61:1) and light crimson when on (5.77:1, was 1.58:1
+  on main); its knob is `--fg` when off (3.23:1 on the track) and dark `--accent-ink` when on (6.25:1).
+  Measured borders and rings once drawn in `--accent-dim` use the light crimson (min 5.77:1) (#309).
   Other themes are unchanged. `tests/check_palette.cjs` R1 requires a 3:1 checked radio fill in all 8
   themes at both widths; R2 measures christmas accent-painted text and controls on each checked
   surface; R3 hovers each visible Thread and channel voice button with the mouse and needs 4.5:1
   text (R3s pins the robot call button, which no view shows); R4 needs a 3:1 Thread stamp outline;
-  R5 needs 3:1 on christmas accent / accent-dim borders at rest, focused and hovered; R6 needs a 3:1
-  switch track off and on. The check now fails if it stops before its pass line.
+  R5 needs 3:1 on christmas accent / accent-dim borders and outer rings at rest, focused, and with
+  the mouse on each Providers hub row, with at least one measured instance of each claimed rule; R6
+  needs a 3:1 switch track and a 3:1 knob on it, off and on; R7 needs the primary buttons on
+  `--accent-fill`. The check now fails if it stops before its pass line.
 
 - A robot loop that hits its limit says "Mention both robots again to start
   a new loop." A fresh loop arms only when the next note names exactly two
