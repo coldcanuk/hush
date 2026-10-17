@@ -9,8 +9,9 @@
 //   U3 a tick during a Settings post does not flip the radio back
 //   U4 the radio shows what the server saved, not what was clicked
 //   U5 a refused post snaps the radio back to the saved setting
-//   U6 (#312) under Approve every action the owner's mention shows no 👍
-//      for Happy while his turn waits; the 👍 shows after the owner's Yes
+//   U6 (#312) under Approve every action the owner's mention shows a
+//      neutral "waiting" pill (no 👍) for Happy while his turn waits; the
+//      👍 shows after the owner's Yes; after the owner's No no pill shows
 //
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN
 // (required; tests/check_approve_ui.sh resolves it), HUSH_TEST_WAIT_S
@@ -32,6 +33,9 @@ const HELD_WAIT_MS = 3000;
 const ACK_WAIT_MS = 6000;
 const ASK_HAPPY = 'Approval needed: Happy wants to take a turn. Reply Yes or No in this thread.';
 const RAN_HAPPY = 'No selected provider is ready for Happy.';
+const DECLINED_HAPPY = 'Turn declined: Happy ';
+const SAY_YES = 'tell a joke';
+const SAY_NO = 'skip this one';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const procs = [];
 const dirs = [];
@@ -182,23 +186,62 @@ async function waitRadio(page, want, ms, msg) {
   }
   fail(`${msg} (radio=${got}, want ${want})`);
 }
-/* Counts 👍-phase ack pills that name Happy in the rendered page. */
-const HAPPY_EMOJI = `[...document.querySelectorAll('.robot-ack.emoji')]
-  .filter((p) => p.textContent.includes('Happy')).length`;
-/* Counts ack pills of any phase that name Happy (a held pill would still
- * show a 👍, whatever its class). */
-const HAPPY_PILLS = `[...document.querySelectorAll('.robot-ack')]
-  .filter((p) => p.textContent.includes('Happy')).length`;
+/* The ack pills under the owner's stream note that says `say`, as
+ * [{ cls, text }] (a held pill would still show a 👍, whatever its class). */
+const PILLS_ON = (say) => `[...document.querySelectorAll('#stream .note:not(.reply)')]
+  .filter((n) => n.textContent.includes(${JSON.stringify(say)}))
+  .flatMap((n) => [...n.querySelectorAll('.robot-ack')])
+  .map((p) => ({ cls: p.className, text: p.textContent }))`;
+/* True when the waiting pill under `say` uses the theme's own ink and rule
+ * (--muted text, --line dashed border), checked against a probe element. */
+const WAIT_THEMED = (say) => `(() => {
+  const n = [...document.querySelectorAll('#stream .note:not(.reply)')]
+    .find((x) => x.textContent.includes(${JSON.stringify(say)}));
+  const p = n && n.querySelector('.robot-ack.waiting');
+  if (!p) return false;
+  const probe = document.createElement('span');
+  probe.style.color = 'var(--muted)'; probe.style.borderColor = 'var(--line)';
+  document.body.appendChild(probe);
+  const want = getComputedStyle(probe); const got = getComputedStyle(p);
+  const ok = got.color === want.color && got.borderTopColor === want.borderTopColor &&
+    got.borderTopStyle === 'dashed';
+  probe.remove();
+  return ok;
+})()`;
+const isWaiting = (p) => /\bwaiting\b/.test(p.cls) && p.text.includes('Happy') &&
+  !p.text.includes('👍') && !/\bemoji\b/.test(p.cls);
+const isThumb = (p) => /\bemoji\b/.test(p.cls) && p.text.includes('👍') && p.text.includes('Happy');
 
-async function waitEvent(relay, head, ms, msg) {
-  for (const t0 = Date.now(); Date.now() - t0 < ms; await sleep(100)) {
-    const hit = (await relay.events()).find((e) => String(e.content || '').startsWith(head));
+/* Waits for a relay note that starts with `head` and is not `skipId`. */
+async function waitEvent(relay, head, msg, skipId) {
+  for (const t0 = Date.now(); Date.now() - t0 < ACK_WAIT_MS; await sleep(100)) {
+    const hit = (await relay.events()).find((e) =>
+      String(e.content || '').startsWith(head) && e.id !== skipId);
     if (hit) return hit;
   }
   return fail(msg);
 }
+/* Mentions Happy with `say` and waits for the approval ask in that thread. */
+async function mentionHappy(relay, happy, say, skipId) {
+  await relay.post('/api/event', { kind: 1, channel: 'welcome', mention_0: happy.npub,
+    content: 'nostr:' + happy.npub + ' ' + say });
+  return waitEvent(relay, ASK_HAPPY, 'U6 the turn must wait for approval', skipId);
+}
+/* Past the 2 s 👍 delay, the held note shows one neutral waiting pill. */
+async function expectWaiting(cdp, say) {
+  await sleep(HELD_WAIT_MS);
+  if (!(await cdp.evaluate(`lastEvents.some((e) => e.content === ${JSON.stringify(ASK_HAPPY)})`)))
+    fail('U6 the page never saw the approval ask');
+  if (!(await cdp.evaluate(`document.getElementById('stream').textContent.includes(${JSON.stringify(say)})`)))
+    fail(`U6 the owner's mention "${say}" is not on screen`);
+  const pills = await cdp.evaluate(PILLS_ON(say));
+  if (!pills || pills.length !== 1 || !isWaiting(pills[0]))
+    fail(`U6 a held turn must show one neutral waiting pill, no 👍 (${JSON.stringify(pills)})`);
+  if (!(await cdp.evaluate(WAIT_THEMED(say))))
+    fail('U6 the waiting pill must use the theme ink and a dashed theme rule');
+}
 
-/* U6 (#312): a held turn shows no 👍 until the owner's Yes settles it. */
+/* U6 (#312): a held turn shows a waiting pill; the owner's Yes brings the 👍. */
 async function checkHeldAck(relay, cdp) {
   await relay.post('/api/profile', { approval_mode: EVERY });
   const raised = await relay.post('/api/agent', { name: 'Happy', system_prompt: 'Tell jokes.',
@@ -206,20 +249,33 @@ async function checkHeldAck(relay, cdp) {
   const happy = (raised.agents || []).find((a) => a.name === 'Happy');
   if (!happy) fail('U6 setup: Happy was not raised');
   await load(cdp, relay.base);
-  await relay.post('/api/event', { kind: 1, channel: 'welcome', mention_0: happy.npub,
-    content: 'nostr:' + happy.npub + ' tell a joke' });
-  const ask = await waitEvent(relay, ASK_HAPPY, ACK_WAIT_MS, 'U6 the turn must wait for approval');
-  await sleep(HELD_WAIT_MS);
-  if (!(await cdp.evaluate(`lastEvents.some((e) => e.content === ${JSON.stringify(ASK_HAPPY)})`)))
-    fail('U6 the page never saw the approval ask');
-  if (!(await cdp.evaluate(`document.getElementById('stream').textContent.includes('tell a joke')`)))
-    fail('U6 the owner\'s mention is not on screen');
-  if ((await cdp.evaluate(HAPPY_PILLS)) !== 0) fail('U6 an ack pill shown while the turn waits');
+  const ask = await mentionHappy(relay, happy, SAY_YES, '');
+  await expectWaiting(cdp, SAY_YES);
   await relay.post('/api/event', { kind: 1, channel: 'welcome', reply_to: ask.reply_to, content: 'Yes' });
-  await waitEvent(relay, RAN_HAPPY, ACK_WAIT_MS, 'U6 the Yes must run the turn');
-  for (const t0 = Date.now(); (await cdp.evaluate(HAPPY_EMOJI)) !== 1; await sleep(100)) {
-    if (Date.now() - t0 > ACK_WAIT_MS) fail('U6 the 👍 must show after the owner\'s Yes');
+  await waitEvent(relay, RAN_HAPPY, 'U6 the Yes must run the turn', '');
+  for (const t0 = Date.now(); ; await sleep(100)) {
+    const pills = await cdp.evaluate(PILLS_ON(SAY_YES));
+    if (pills && pills.length === 1 && isThumb(pills[0])) break;
+    if (Date.now() - t0 > ACK_WAIT_MS)
+      fail(`U6 the 👍 must show after the owner's Yes (${JSON.stringify(pills)})`);
   }
+  await checkDeclinedAck(relay, cdp, happy, ask.id);
+}
+
+/* U6 after No (#312): a declined turn shows no pill at all, never a 👍. */
+async function checkDeclinedAck(relay, cdp, happy, firstAskId) {
+  const ask = await mentionHappy(relay, happy, SAY_NO, firstAskId);
+  await expectWaiting(cdp, SAY_NO);
+  await relay.post('/api/event', { kind: 1, channel: 'welcome', reply_to: ask.reply_to, content: 'No' });
+  await waitEvent(relay, DECLINED_HAPPY, 'U6 the No must decline the turn', '');
+  await sleep(HELD_WAIT_MS);
+  if (!(await cdp.evaluate(`lastEvents.some((e) => String(e.content).startsWith(${JSON.stringify(DECLINED_HAPPY)}))`)))
+    fail('U6 the page never saw the declined turn');
+  const pills = await cdp.evaluate(PILLS_ON(SAY_NO));
+  if (!Array.isArray(pills) || pills.length !== 0)
+    fail(`U6 no ack pill after the owner's No (${JSON.stringify(pills)})`);
+  const yes = await cdp.evaluate(PILLS_ON(SAY_YES));
+  if (!yes || yes.length !== 1 || !isThumb(yes[0])) fail('U6 the Yes thread lost its 👍 after a No');
 }
 
 async function load(cdp, base) {

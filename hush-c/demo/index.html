@@ -278,6 +278,11 @@
       white-space: nowrap;
     }
     .robot-ack .emoji { margin-right: 3px; }
+    /* #312: a held turn's neutral stamp: theme ink, dashed theme rule. */
+    .robot-ack.waiting,
+    html[data-theme] .robot-ack.waiting {
+      color: var(--muted); border-color: var(--line); border-style: dashed;
+    }
 
     /* M3.3: mention pills keep original positions in text (fidelity) */
     .mention-pill {
@@ -6805,29 +6810,43 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
     }
 
     /* #312: under Approve every action a robot's turn waits for the
-       owner's Yes. While it waits ("Approval needed: <Robot> ..." in the
-       thread, not yet settled by "Turn declined: <Robot> ..." or a note
-       from the robot or about its run; receipts and intros do not
-       settle it), the mention shows no 👍. */
+       owner's Yes. turnMark names what one thread note does to that turn:
+       "ask" ("Approval needed: <Robot> wants ..."), "declined" ("Turn
+       declined: <Robot> ...", the owner's No), "ran" (a note from the
+       robot or about its run), or "" (anything else; receipts and intros
+       do not settle a turn). */
     const INTRO_HEAD = "At ease.";
-    function turnHeld(parentId, bot) {
+    function turnMark(e, bot) {
+      const name = bot.name;
+      const text = String(e.content || "");
+      if (text.indexOf("Approval needed: " + name + " wants ") === 0) return "ask";
+      if (text.indexOf("Turn declined: " + name + " ") === 0) return "declined";
+      if (text.indexOf("No selected provider is ready for " + name + ".") === 0) return "ran";
+      if (sameKey(bot.pubkey || bot.npub, e.pubkey) && text.indexOf(INTRO_HEAD) !== 0) return "ran";
+      return "";
+    }
+
+    /* "held" while an ask is not yet settled, "declined" when the latest
+       settle is the owner's No, else "". */
+    function turnState(parentId, bot) {
       const events = lastEvents || [];
       const parent = events.find((e) => e && e.id === parentId);
-      const name = bot && bot.name;
-      if (!parent || !name) return false;
+      if (!parent || !bot || !bot.name) return "";
       const root = parent.reply_to || parent.id;
-      const ask = "Approval needed: " + name + " wants ";
-      const settled = ["Turn declined: " + name + " ", "No selected provider is ready for " + name + "."];
       let asks = 0;
       let settles = 0;
+      let last = { at: -1, mark: "" };
       events.forEach((e) => {
         if (!e || isDevLogNote(e) || (e.id !== root && e.reply_to !== root)) return;
-        const text = String(e.content || "");
-        if (text.indexOf(ask) === 0) asks++;
-        else if (settled.some((head) => text.indexOf(head) === 0)) settles++;
-        else if (sameKey(bot.pubkey || bot.npub, e.pubkey) && text.indexOf(INTRO_HEAD) !== 0) settles++;
+        const mark = turnMark(e, bot);
+        if (mark === "ask") { asks++; return; }
+        if (!mark) return;
+        settles++;
+        const at = Number(e.created_at || 0);
+        if (at >= last.at) last = { at, mark };
       });
-      return asks > settles;
+      if (asks > settles) return "held";
+      return last.mark === "declined" ? "declined" : "";
     }
 
     function mentionAckPhase(parentId, bot, jobs) {
@@ -6835,7 +6854,8 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       const now = Date.now();
       const parent = (lastEvents || []).find((e) => e && e.id === parentId);
       const live = (jobs || []).some((j) => j && bot && j.name === bot.name);
-      if (!live && turnHeld(parentId, bot)) return "held";
+      const turn = live ? "" : turnState(parentId, bot);
+      if (turn) return turn;
       const created = parent && parent.created_at ? Number(parent.created_at) : 0;
       if (created && (now - created * 1000) > 2000 && !live)
         return "emoji";
@@ -6856,6 +6876,7 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
         if (p === "thinking") stamp = "t";
         else if (p === "reacting" && stamp !== "t") stamp = "r";
         else if (p === "held" && stamp === "e") stamp = "h";
+        else if (p === "declined" && stamp === "e") stamp = "d";
       });
       return stamp;
     }
@@ -7337,6 +7358,65 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       }
     });
 
+    /* #312: the owner's mention under Approve every action. While the
+       turn waits for the owner's Yes the pill is a neutral "waiting" stamp
+       (no emoji); after the owner's No there is no pill at all, since a
+       👍 would read as the robot accepting or doing the work. */
+    function ackWaitingPill(bot) {
+      const name = bot.name || "robot";
+      const pill = document.createElement("span");
+      pill.className = "robot-ack waiting";
+      pill.title = name + " waits for your Yes or No in the thread";
+      pill.textContent = name + " · waiting for your OK";
+      return pill;
+    }
+
+    /* One ack pill for a mentioned robot, or null when none shows. */
+    function ackPill(bot, i, phase, quietRobot) {
+      if (phase === "declined") return null;
+      if (phase === "held") return ackWaitingPill(bot);
+      const pill = document.createElement("span");
+      /* A missing-runtime sentence is already the answer. Do not
+       * also say that robot is thinking or reacting, and do not
+       * leave a title that names a phase ("is emoji" included).
+       * The emoji thumb may stay. Do not rename the phase to
+       * another in-progress word. */
+      const name = bot.name || "robot";
+      const quieted = !!(quietRobot && name === quietRobot);
+      if (quieted && (phase === "thinking" || phase === "reacting"))
+        phase = "emoji";
+      pill.className = "robot-ack " + phase;
+      pill.title = quieted ? name : (name + " is " + phase);
+      const line = presenceSlugFor(bot.pubkey || bot.npub);
+      if (phase === "thinking" || phase === "reacting") {
+        const word = phase === "thinking" ? " is thinking" : " is reacting";
+        pill.textContent = name + word + (line ? " · " + line : "");
+        return pill;
+      }
+      const emoji = ["👍", "🎯", "🏆"][i % 3];
+      pill.innerHTML = '<span class="emoji">' + emoji + '</span>' +
+        esc(name) + (line ? " · " + esc(line) : "");
+      return pill;
+    }
+
+    /* Progressive ack bar under a note that mentions robots; omitted
+       when no robot shows a pill. */
+    function paintAcks(n, e, quietRobot) {
+      const acks = mentionedRobots(e);
+      if (!acks || !acks.length) return;
+      const ackBar = document.createElement("div");
+      ackBar.className = "robot-acks";
+      const jobs = thinkingFor(e.id, lastStatus);
+      let shown = 0;
+      acks.forEach((bot, i) => {
+        const pill = ackPill(bot, i, mentionAckPhase(e.id, bot, jobs), quietRobot);
+        if (!pill) return;
+        ackBar.appendChild(pill);
+        shown++;
+      });
+      if (shown) n.appendChild(ackBar);
+    }
+
     function paintNote(e, extra, quietRobot) {
       const n = document.createElement("div");
       const mine = isMineNote(e);
@@ -7393,50 +7473,7 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       if (extra) extra(n, e);
 
       // Progressive ack: thinking → reacting → emoji (not instant 👍).
-      try {
-        const acks = mentionedRobots(e);
-        if (acks && acks.length) {
-          const ackBar = document.createElement("div");
-          ackBar.className = "robot-acks";
-          const jobs = thinkingFor(e.id, lastStatus);
-          const emojiSet = ["👍", "🎯", "🏆"];
-          let shown = 0;
-          acks.forEach((bot, i) => {
-            let phase = mentionAckPhase(e.id, bot, jobs);
-            /* #312: no pill while the turn waits for the owner's Yes. */
-            if (phase === "held") return;
-            const pill = document.createElement("span");
-            /* A missing-runtime sentence is already the answer. Do not
-             * also say that robot is thinking or reacting, and do not
-             * leave a title that names a phase ("is emoji" included).
-             * The emoji thumb may stay. Do not rename the phase to
-             * another in-progress word. */
-            const quieted = !!(quietRobot && (bot.name || "robot") === quietRobot);
-            if (quieted && (phase === "thinking" || phase === "reacting"))
-              phase = "emoji";
-            pill.className = "robot-ack " + phase;
-            pill.title = quieted
-              ? (bot.name || "robot")
-              : ((bot.name || "robot") + " is " + phase);
-            const line = presenceSlugFor(bot.pubkey || bot.npub);
-            if (phase === "thinking")
-              pill.textContent = (bot.name || "robot") + " is thinking" +
-                (line ? " · " + line : "");
-            else if (phase === "reacting")
-              pill.textContent = (bot.name || "robot") + " is reacting" +
-                (line ? " · " + line : "");
-            else {
-              const emoji = emojiSet[i % emojiSet.length];
-              pill.innerHTML = '<span class="emoji">' + emoji + '</span>' +
-                esc(bot.name || "robot") +
-                (line ? " · " + esc(line) : "");
-            }
-            ackBar.appendChild(pill);
-            shown++;
-          });
-          if (shown) n.appendChild(ackBar);
-        }
-      } catch (eAck) { /* never break render on ack */ }
+      try { paintAcks(n, e, quietRobot); } catch (eAck) { /* never break render on ack */ }
 
       return n;
     }
