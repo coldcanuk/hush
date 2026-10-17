@@ -92,7 +92,7 @@ Turn gate interaction: GUARD runs inside an already-approved turn. `approve_ever
 
 - **Writes.** Only the owner, through the UI, with the session cookie, plus the **C-5 approve nonce bound to the browser session** (C-5 fix b), plus a matching `Origin`/CSRF check (C-5 fix c). Bearer-only and query-token calls cannot write rules. **INFERRED**: a remote client holding the token is not the owner's browser.
 - **Robots.** Propose only. This mirrors the KEYS flow: a system skill `skills/system/guard-rules/SKILL.md` emits a fenced `hush-guard` v1 block. The UI shows it as a proposal card, and the owner presses Apply, which goes through the nonce path. The relay never parses robot output into rules on its own.
-- **Decisions.** "Always approve" and "Reject" from a pending card create a rule (`created_by: owner`, `source: decision`). The proposed default match is `exact`; the owner can widen it to prefix or pattern in the card (open question for JNY).
+- **Decisions.** Decisions are made **only on the pending card** (JNY 10:13). "Always approve" and "Reject" create a rule (`created_by: owner`, `source: decision`). "Ask every time" stores an `ask` rule. **Always defaults to `exact` match at `robot` scope.** The scope pick may widen it to project or global. Prefix and glob are set only by editing in the rules table or adding a custom row, never from the card.
 - **Audit.** `hush/guard-audit.jsonl`, append-only, mode 0600, relay-written, one JSON line per decision or rule change. Fields: `ts, event (decide|rule_create|rule_update|rule_delete|propose), robot, provider, project, thread_root, job_id, cmd_redacted, cmd_sha256, segments, decision, rule_id, by (owner|rule|default|timeout|failclosed), mechanism (H|P|M)`.
 - **Redaction** before writing: values of `--token/--password/--secret/--key`, `Authorization`/`Bearer`, `ghp_/gho_/ghs_/xai-/sk-` shapes, URL userinfo, and env prefix values. The full command is kept only as `cmd_sha256`.
 - **Retention.** Rotate at 5 MiB, keep 5 files (**approved, CoS 10:12**). Never synced over nostr.
@@ -134,7 +134,7 @@ The UI can still share the drawer (a GUARDRAILS tab). JNY to confirm.
 }
 ```
 
-`action` is one of `approve|reject|ask`. "Approve once" is never stored. `scope.kind` is one of `robot|project|global`, and `id` is the robot hex or the project slug.
+Stored `action` enum is exactly `approve|reject|ask` (JNY 10:13). `ask` is stored because "Ask every time" needs it. "Approve once" is never stored. `scope.kind` is one of `robot|project|global`, and `id` is the robot hex or the project slug.
 
 **API** (all need the session cookie; mutations also need `X-Hush-Nonce` + same Origin):
 
@@ -152,16 +152,17 @@ Route style follows `/api/*` in `hush_http.c:1005-1060`. Path parameters are **N
 
 **UI hand-off (JNY).** No colours are set here; JNY uses existing tokens.
 
+- **Placement (RESOLVED, JNY 10:13).** The pending card sits inline in the thread the command came from and carries the 4 S1 stamps. The rules table is the GUARDRAILS tab in the Shortcuts & Macros drawer (PLAN_KEYS §3). The tab may show a pending-count badge that links to the thread card. JNY's UI work starts after #325 + W1/W2.
 - **States.** Pending card: waiting (with a countdown to auto-reject) / deciding / decided (once, always, ask, reject) / expired (auto-reject, visible reason) / failed-closed / rejected-by-restart. Rules table: empty / list / editing / delete-confirm / save-error / nonce-expired. Proposal card: proposed / applied / dismissed.
 - **Stamps.** Approve | Always approve | Ask every time | Reject (PLAN_KEYS §2).
-- **Copy placeholders** (JNY/Ops own the words):
-  - `[[GUARD_PENDING_TITLE]]`
-  - `[[GUARD_SEGMENT_HINT]]` ("this command has N parts")
-  - `[[GUARD_ALWAYS_SCOPE_PICK]]`
-  - `[[GUARD_EXPIRED]]`
-  - `[[GUARD_FAILCLOSED]]`
-  - `[[GUARD_PROPOSAL_FROM_ROBOT]]`
-  - `[[GUARD_NO_SEAM_PROVIDER]]` ("this robot's shell is off")
+- **Copy (PROPOSED by JNY 10:13; Ops owns the final tone; freeze via Ops/CoS):**
+  - `GUARD_PENDING_TITLE`: "{robot} wants to run a command"
+  - `GUARD_SEGMENT_HINT`: "This command has {n} parts. Each part is checked."
+  - `GUARD_ALWAYS_SCOPE_PICK`: "Always approve this exact command for: {robot} | this project | everywhere"
+  - `GUARD_EXPIRED`: "No answer in time, so the command was rejected."
+  - `GUARD_FAILCLOSED`: "Hush couldn't check this command, so it was blocked."
+  - `GUARD_PROPOSAL_FROM_ROBOT`: "{robot} suggests a guardrail. Nothing changes until you apply it."
+  - `GUARD_NO_SEAM_PROVIDER`: "This robot's shell is off: Hush can't see its commands to check them."
 - **Must show:** the redacted command, its split segments, the matched rule (if any), robot, project and provider.
 
 ## 8. Milestones (each a small DRAFT; after C-5)
@@ -187,7 +188,7 @@ Every PR includes stub tests with a stub PATH (fake `cline`, `copilot`, `codex`,
 ## 9. Open questions
 
 - **CoS:** Sandbox fallback and loopback cookie decisions are tracked in #336. Close #333 before GUARD G5?
-- **JNY:** Do the GUARDRAILS tab and the pending card live in the drawer or inline in the thread? What is the default match when the owner picks "Always" (exact vs prefix)? Countdown display. All copy placeholders.
+- **JNY:** countdown display on the card. (Placement, Always default and copy were resolved 10:13.)
 - **Floor:** path parameters vs query parameters in the router; bounds for `ask_timeout_s`; Cline `--auto-approve true` + hooks behaviour; OpenClaw isolated-mode prompt seam; #337 hand-off for pending asks.
 
 ## 10. Resolved (CoS 10:12, JNY 10:10)
@@ -199,4 +200,8 @@ Every PR includes stub tests with a stub PATH (fake `cline`, `copilot`, `codex`,
 | Copilot | hook timeout fails open = unacceptable. No official fail-closed timeout setting exists (VERIFIED_EXTERNAL above), so native shell is denied and Copilot gets the Hush MCP shell only (§2, G5) |
 | Store | separate `hush/guardrails.json` (§7) |
 | Always vs chained/follow/election | excluded by default; per-rule opt-in later, Gauge-reviewed (§4) |
+| UI placement (JNY 10:13) | inline pending card in the source thread with the 4 S1 stamps, decisions only there; rules table = GUARDRAILS tab (PLAN_KEYS §3) with an optional pending badge; JNY starts after #325 + W1/W2 |
+| Always default (JNY 10:13) | exact match at robot scope; scope may widen; prefix/glob only via table edit or custom row |
+| Action enum (JNY 10:13) | stored `approve\|reject\|ask` |
+| Copy (JNY 10:13) | PROPOSED strings in §7, pending Ops |
 | Tracking | #333 Copilot/Goose ungated; #336 C-5 + loopback `Set-Cookie` owner token (GUARD depends on it); #337 persisted held turns (pending asks) |
