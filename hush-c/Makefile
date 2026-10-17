@@ -208,6 +208,7 @@ test: check-deps $(TEST_BINS) hush-relay
 	sh tests/check_restart.sh || exit 1; \
 	sh tests/check_restart_ui_deps.sh || exit 1; \
 	sh tests/check_restart_ui_chrome_wait.sh || exit 1; \
+	sh tests/check_restart_ui_tmp.sh || exit 1; \
 	sh tests/check_restart_ui.sh || exit 1; \
 	sh tests/check_layer_ui.sh || exit 1; \
 	python3 tests/check_palette_tokens.py || exit 1; \
@@ -236,6 +237,9 @@ test: check-deps $(TEST_BINS) hush-relay
 	python3 tests/check_ws.py || exit 1; \
 	python3 tests/check_limits.py || exit 1; \
 	python3 tests/check_trust.py || exit 1; \
+	python3 tests/check_bootstrap.py || exit 1; \
+	python3 tests/check_approve_nonce.py || exit 1; \
+	python3 tests/check_owner_stamp.py || exit 1; \
 	python3 tests/check_reasons.py || exit 1; \
 	python3 tests/check_save_pass.py || exit 1; \
 	sh tests/check_fixup.sh || exit 1; \

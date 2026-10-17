@@ -52,10 +52,46 @@ per-job capability token). Credentials are accepted as:
 
 | Carrier | Use |
 |---|---|
-| `Cookie: hush_session=…` | issued to loopback browsers on the first response |
+| `Cookie: hush_session=…` | issued only to the window that opens the one-time pairing link |
 | `X-Hush-Token: …` | scripts and CLI clients |
 | `Authorization: Bearer …` | HTTP clients |
-| `?k=…` | one-off links |
+
+Each carrier's value is compared whole, in constant time, against the
+token: a longer value that starts with the token, or a truncated one, is
+refused `401` (#357; `check_trust.py`).
+
+The relay never hands the token to a caller that does not already hold a
+credential (#336): no loopback request earns a cookie, and `?k=` in a URL is
+not accepted (URLs land in history, logs, and `Referer`). At start the relay
+mints a pairing code in memory only (32 hex, not derived from the token,
+never on disk, new each start). The app window the relay opens is launched
+with `/?pair=<code>`; with `--no-open` the relay prints that link once. The
+first request presenting the code gets the `hush_session` cookie
+(`Max-Age` 30 days, so a reopened window of the same profile stays signed in)
+and the code is re-minted at once, so a copy of the link is dead. Exercised
+by `check_bootstrap.py` (exact `Max-Age=2592000` line). The page removes
+`?pair=` from its address bar on load; exercised by `check_layer_ui.cjs`. Limit: until the window redeems it, the code is in the
+browser's command line (`/proc/<pid>/cmdline`) for about a second.
+
+Owner authority that a robot must never borrow needs more than the token
+(#336 part 5). Redeeming the pairing code also mints a browser-session
+secret issued as the `X-Hush-Nonce` response header (32 hex, memory only,
+not derived from the token) plus a non-HttpOnly `hush_nonce` session cookie
+(no `Max-Age`, so the browser keeps it in memory and never writes it to its
+Cookies DB) the page reads and sends back as that header. A new pairing
+rotates it (`test_auth`) and a relay restart ends it. An owner `Yes`/`No` answer note (held turns, team
+offers, loop "Continue?") and any `approval_mode` write are refused `403`
+unless the request carries the live `X-Hush-Nonce` (constant-time compare);
+`session.token` alone, in any carrier, is not enough. A stored
+`approval_mode` that is present but unknown, empty, or not a string asks
+every action; a vibe that never saved one keeps the auto-approve default.
+Exercised by `check_approve_nonce.py` and `test_auth`.
+
+No write a child can reach stamps the owner (#336 part 4). An agent child
+can reach the relay port and can read `session.token`, so every route that
+stores an event under the owner's pubkey (`POST /api/event` notes of any
+kind, `/api/signal`, `/api/presence`) needs the live `X-Hush-Nonce` too and is
+refused `403` without it. Exercised by `check_owner_stamp.py`.
 
 The listener binds `127.0.0.1` by default. `--listen 0.0.0.0` (or another
 address) exposes it deliberately; remote clients must then present the token.
@@ -176,8 +212,9 @@ Host), like every other non-liveness `/api/*` route. Regression coverage:
 2. Token: `$HUSH_HOME/session.token` (0600) is the credential for every
    `/api/*` route except `/api/status` and one-shot
    `GET /api/complete?t=<job-token>`. Cookie, `X-Hush-Token`,
-   `Authorization: Bearer`, and `?k=` all carry it; all four are exercised
-   by `check_trust.py`.
+   and `Authorization: Bearer` carry it (`check_trust.py`); `?k=` is refused
+   and the cookie only follows the one-time pairing link
+   (`check_bootstrap.py`, #336).
 3. Join tokens: `POST /api/vibe {"action":"rotate_token"}` when membership
    changes. Rotation invalidates the previous token immediately; the file
    persists only `vibe_token_hash`, and a restart clears the displayed

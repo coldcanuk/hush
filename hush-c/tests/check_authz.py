@@ -2,6 +2,7 @@
 """NIP-42 AUTH and private-hive gating against an isolated live relay."""
 
 import json
+import re
 import os
 import socket
 import subprocess
@@ -26,6 +27,29 @@ def free_port():
         return listener.getsockname()[1]
 
 
+
+def pair_ui(port, log):
+    """Redeem the one-time ?pair= link a --no-open relay prints, the way the
+    app window does, and return the X-Hush-Nonce it sets. Owner-stamped
+    writes need it (#336); session.token alone is refused."""
+    for _ in range(100):
+        log.flush()
+        found = re.findall(r"\?pair=([0-9a-f]{32})", Path(log.name).read_text())
+        if found:
+            break
+        time.sleep(0.05)
+    else:
+        raise AssertionError("relay printed no pairing link")
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as conn:
+        conn.sendall(f"GET /?pair={found[-1]} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+                     "Connection: close\r\n\r\n".encode())
+        raw = b""
+        while chunk := conn.recv(65536):
+            raw += chunk
+    ui = re.search(rb"(?i)X-Hush-Nonce: ([0-9a-f]{32})", raw.split(b"\r\n\r\n", 1)[0])
+    assert ui, "pairing link gave no X-Hush-Nonce"
+    return ui.group(1).decode()
+
 class Relay:
     def __init__(self, directory):
         self.directory = directory
@@ -39,6 +63,7 @@ class Relay:
         )
         self.log = (directory / "relay.log").open("w+")
         self.process = None
+        self.ui = ""
 
     def start(self):
         self.process = subprocess.Popen(
@@ -55,6 +80,7 @@ class Relay:
         for _ in range(100):
             try:
                 self.request("/api/session")
+                self.ui = pair_ui(self.port, self.log)
                 return
             except (OSError, ValueError):
                 time.sleep(0.05)
@@ -72,7 +98,8 @@ class Relay:
         request = urllib.request.Request(
             f"http://127.0.0.1:{self.port}{path}",
             data=payload,
-            headers={"Content-Type": "application/json", "X-Hush-Token": token},
+            headers={"Content-Type": "application/json", "X-Hush-Token": token,
+                     "X-Hush-Nonce": self.ui},
         )
         try:
             response = urllib.request.urlopen(request, timeout=5)

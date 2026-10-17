@@ -164,21 +164,36 @@ async function startRelay() {
   eventsTokenFile = path.join(env.HUSH_HOME, 'session.token');
   const port = await freePort();
   const tokenFile = path.join(env.HUSH_HOME, 'session.token');
+  // #336: approval_mode needs the paired window's X-Hush-Nonce; the test pairs
+  // once through the printed one-time link and sends that cookie.
+  const jar = {};
   const headers = () => {
-    try {
-      return { 'X-Hush-Token': fs.readFileSync(tokenFile, 'utf8').trim(),
-               'Content-Type': 'application/json' };
-    } catch (e) { return { 'Content-Type': 'application/json' }; }
+    const h = { 'Content-Type': 'application/json' };
+    try { h['X-Hush-Token'] = fs.readFileSync(tokenFile, 'utf8').trim(); } catch (e) { /* not yet */ }
+    if (jar.nonce) h['X-Hush-Nonce'] = jar.nonce;
+    return h;
   };
-  procs.push(spawn(RELAY, ['--no-open', String(port)], { env, stdio: 'ignore' }));
+  const proc = spawn(RELAY, ['--no-open', String(port)], { env, stdio: ['ignore', 'pipe', 'ignore'] });
+  procs.push(proc);
+  let out = '';
+  proc.stdout.on('data', (d) => { out += d; });
   const base = `http://127.0.0.1:${port}`;
   for (let i = 0; ; i++) {
     try {
-      if ((await fetch(base + '/api/session', { headers: headers() })).ok) break;
+      if ((await fetch(base + '/api/session', { headers: headers() })).ok && /\?pair=[0-9a-f]+/.test(out)) break;
     } catch (e) { /* not up */ }
     if (i > 200) fail('relay did not come up');
     await sleep(50);
   }
+  const code = out.match(/\?pair=([0-9a-f]+)/)[1];
+  const paired = await fetch(base + '/?pair=' + code);
+  jar.nonce = paired.headers.get('X-Hush-Nonce');
+  for (const c of paired.headers.getSetCookie()) {
+    const m = c.match(/^(hush_session|hush_nonce)=([0-9a-f]+);/);
+    if (m) jar[m[1]] = m[2];
+  }
+  if (!jar.nonce) jar.nonce = jar.hush_nonce;
+  if (!jar.nonce || !jar.hush_session) fail('pairing gave no X-Hush-Nonce / hush_session');
   const post = async (p, body) => {
     const r = await fetch(base + p, { method: 'POST', headers: headers(), body: JSON.stringify(body) });
     if (!r.ok) fail(`POST ${p} ${JSON.stringify(body)} -> ${r.status}`);
@@ -190,7 +205,7 @@ async function startRelay() {
   await post('/api/profile', { first_name: 'Chuck', last_name: 'P', email: '', organization: '', theme: 'dark' });
   const mode = async () =>
     (await (await fetch(base + '/api/session', { headers: headers() })).json()).approval_mode;
-  return { base, post, mode };
+  return { base, post, mode, jar };
 }
 
 /* Launches headless Chrome and returns a minimal CDP client on its page. */
@@ -338,7 +353,14 @@ async function checkFit390(cdp) {
   }
 }
 
-async function load(cdp, base) {
+async function load(cdp, relay) {
+  const base = relay.base;
+  // #336: seed the session cookie and the JS-readable nonce storage cookie
+  // the paired window holds; api() sends the latter as X-Hush-Nonce.
+  await cdp.send('Network.setCookie', { name: 'hush_session', value: relay.jar.hush_session,
+    url: base + '/', httpOnly: true, sameSite: 'Strict' });
+  await cdp.send('Network.setCookie', { name: 'hush_nonce', value: relay.jar.nonce,
+    url: base + '/', httpOnly: false, sameSite: 'Strict' });
   await cdp.send('Page.navigate', { url: base + '/' });
   for (let i = 0; i < 120; i++) {
     if (await cdp.evaluate(`typeof session !== 'undefined' && !!session.logged_in &&
@@ -637,7 +659,7 @@ async function checkAcks(relay, cdp) {
   const cdp = await startChrome();
   await checkAcks(relay, cdp);
   await relay.post('/api/profile', { approval_mode: EVERY });
-  await load(cdp, relay.base);
+  await load(cdp, relay);
   await waitRadio(cdp, EVERY, 3000, 'U1 a page load must show the saved setting');
   await relay.post('/api/profile', { approval_mode: AUTO });
   await waitRadio(cdp, AUTO, 3500, 'U2 a change made elsewhere must reach the open page');
@@ -659,7 +681,7 @@ async function checkAcks(relay, cdp) {
 
   // U4: the server answers the click with a different saved value.
   await relay.post('/api/profile', { approval_mode: AUTO });
-  await load(cdp, relay.base);
+  await load(cdp, relay);
   await waitRadio(cdp, AUTO, 3000, 'U4 setup');
   await cdp.evaluate(STUB(`return Promise.resolve(new Response(JSON.stringify(
       Object.assign({}, session, { approval_mode: '${AUTO}' })), { status: 200,
@@ -668,7 +690,7 @@ async function checkAcks(relay, cdp) {
   await waitRadio(cdp, AUTO, 1500, 'U4 the radio must show what the server saved, not what was clicked');
 
   // U5: the server refuses the click.
-  await load(cdp, relay.base);
+  await load(cdp, relay);
   await waitRadio(cdp, AUTO, 3000, 'U5 setup');
   await cdp.evaluate(STUB(`return Promise.resolve(new Response(
       'approval_mode must be auto_approve or approve_every_action.\\n', { status: 400 }));`));

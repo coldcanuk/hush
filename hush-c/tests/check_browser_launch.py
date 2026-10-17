@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 from pathlib import Path
 import socket
 import subprocess
@@ -13,6 +14,21 @@ from urllib.request import urlopen
 
 
 SOURCE = Path(__file__).resolve().parents[1]
+
+
+def check_app_url(arguments, port, reopen, hush_home, log_path):
+    """#336: only the window the relay itself opens carries the pairing code."""
+    plain = f"--app=http://127.0.0.1:{port}/"
+    if reopen:
+        assert plain in arguments, f"reopen opens the plain URL: {arguments}"
+        return
+    paired = [a for a in arguments if a.startswith(plain + "?pair=")]
+    assert len(paired) == 1, f"first window must carry ?pair=: {arguments}"
+    code = paired[0][len(plain + "?pair="):]
+    assert re.fullmatch(r"[0-9a-f]{32}", code), code
+    token = (hush_home / "session.token").read_text().strip()
+    assert code != token, "pairing code must not be the owner token"
+    assert code not in log_path.read_text(), "an opened window's code is never logged"
 
 
 def check_launch(directory, browser, reopen):
@@ -65,7 +81,7 @@ def check_launch(directory, browser, reopen):
             )
             assert "--class=hush-relay" in arguments
             assert "--ozone-platform=x11" in arguments
-            assert f"--app=http://127.0.0.1:{port}/" in arguments
+            check_app_url(arguments, port, reopen, hush_home, directory / "relay.log")
             if browser == "flatpak":
                 permission = f"--filesystem={profile}:create"
                 assert permission in arguments

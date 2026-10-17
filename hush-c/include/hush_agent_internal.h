@@ -417,11 +417,26 @@ int hush_agent_job_timed_out(const hush_agent_job_t *job, time_t now);
 /* 1 when the child pid is live and the kill clock has not passed. */
 int hush_agent_child_is_working(const hush_agent_job_t *job, time_t now);
 
-/* Writes the Copilot argv for prompt. Adds -C when job->cwd is non-empty.
- * Returns the slot count, including the NULL terminator, or 0 when cap
- * is too small. Does not start the process. */
+/* 1 only when project_tools is exactly 1: a person-gated turn in a
+ * project-bound thread (#311 A3). Any other value, unknown included, is
+ * ungated, so it grants nothing (#333). Pure. */
+int hush_agent_is_gated(int project_tools);
+
+/* Copilot --deny-tool flag for project_tools. Shell, URL and memory are
+ * always denied; file writes are denied too unless the turn is gated. Pure. */
+const char *hush_agent_copilot_deny(int project_tools);
+
+/* Writes the Copilot argv for prompt: never --allow-all-tools, shell tools
+ * excluded and denied, --allow-tool=write only on a gated turn, -C when
+ * job->cwd is non-empty. Returns the slot count, including the NULL
+ * terminator, or 0 when cap is too small. Does not start the process. */
 int hush_agent_fill_copilot_argv(const hush_agent_job_t *job, char **argv,
                                  size_t cap, const char *prompt);
+
+/* Sets GOOSE_MODE=chat in this process's environment, overriding any
+ * inherited value and Goose's config.yaml, so Goose uses no tools on any
+ * turn (#333). Returns 1 on success, 0 when setenv fails (refuse the turn). */
+int hush_agent_set_goose_mode(void);
 
 /* True when the job's provider/roster turn is still enabled. */
 int hush_agent_job_enabled(const hush_agent_job_t *job);

@@ -87,6 +87,55 @@ int main(void)
         expect(hush_auth_join_matches(NULL, hash) == 0, "join NULL");
         expect(hush_auth_join_matches("", hash) == 0, "join empty");
     }
+    {
+        /* #336: one in-memory browser-session secret, rotated per pairing. */
+        char ui[HUSH_AUTH_UI_BUF];
+        char old[HUSH_AUTH_UI_BUF];
+        char pair[HUSH_AUTH_PAIR_BUF];
+
+        expect(hush_auth_ui_copy(ui, sizeof(ui)) == HUSH_ERR_IO, "no ui secret before pairing");
+        expect(hush_auth_ui_matches("") == 0, "no ui secret matches nothing");
+        expect(hush_auth_ui_rotate() == HUSH_OK, "ui rotate");
+        expect(hush_auth_ui_copy(old, sizeof(old)) == HUSH_OK, "ui copy");
+        expect(strlen(old) == (size_t)HUSH_AUTH_UI_HEX, "ui hex length");
+        expect(strcmp(old, token) != 0, "ui secret is not the token");
+        expect(hush_auth_ui_matches(old) == 1, "live ui secret matches");
+        expect(hush_auth_ui_matches(token) == 0, "the token is no ui secret");
+        {
+            char near[HUSH_AUTH_UI_BUF];
+
+            memcpy(near, old, sizeof(near));
+            near[HUSH_AUTH_UI_HEX - 1] = near[HUSH_AUTH_UI_HEX - 1] == '0' ? '1' : '0';
+            expect(hush_auth_ui_matches(near) == 0, "a one-digit miss does not match");
+        }
+        expect(hush_auth_ui_rotate() == HUSH_OK, "ui rotate again");
+        expect(hush_auth_ui_copy(ui, sizeof(ui)) == HUSH_OK, "ui copy again");
+        expect(strcmp(ui, old) != 0 && hush_auth_ui_matches(old) == 0,
+               "rotation ends the old ui secret");
+        expect(hush_auth_ui_copy(ui, 4) == HUSH_ERR_ARG, "ui short buffer");
+        expect(hush_auth_pair_init() == HUSH_OK, "pair init");
+        expect(hush_auth_pair_copy(pair, sizeof(pair)) == HUSH_OK, "pair copy");
+        expect(strcmp(pair, token) != 0 && strcmp(pair, ui) != 0, "pair code is its own");
+        expect(hush_auth_ui_copy(old, sizeof(old)) == HUSH_OK, "ui before pairing");
+        expect(hush_auth_pair_take(pair) == 1, "pair code redeems once");
+        expect(hush_auth_pair_take(pair) == 0, "a spent pair code is dead");
+        expect(hush_auth_ui_matches(old) == 0, "pairing ends the earlier ui secret");
+        expect(hush_auth_ui_copy(ui, sizeof(ui)) == HUSH_OK && hush_auth_ui_matches(ui) == 1,
+               "the paired window's ui secret is live");
+        expect(hush_auth_pair_copy(pair, sizeof(pair)) == HUSH_OK, "re-minted pair code");
+        memcpy(old, ui, sizeof(old));
+        expect(hush_auth_pair_take(pair) == 1, "a second pairing redeems");
+        expect(hush_auth_ui_matches(old) == 0, "a second pairing ends the first window's secret");
+        expect(hush_auth_ui_copy(ui, sizeof(ui)) == HUSH_OK && strcmp(ui, old) != 0 &&
+               hush_auth_ui_matches(ui) == 1, "the second window holds the only live secret");
+        {
+            char cut[HUSH_AUTH_UI_BUF];
+
+            memcpy(cut, ui, sizeof(cut));
+            cut[HUSH_AUTH_UI_HEX - 1] = '\0';
+            expect(hush_auth_ui_matches(cut) == 0, "a truncated ui secret does not match");
+        }
+    }
     if (g_fail)
         return 1;
     printf("test_auth ok\n");

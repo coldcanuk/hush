@@ -8,6 +8,35 @@ the top-level `VERSION` file.
 
 ### Changed
 
+- Christmas theme: every red is one crimson hue. Light crimson `--accent` #ff6b7f (dark ink #0f1f14)
+  is for accent text, radios, outlines, borders, focus edges and rings, and the on switch track, so a
+  checked Settings radio reads 5.77:1 against its panel (was 2.71:1). Deep crimson `--accent-dim`
+  #5c1420 (was #7f1d1d) sits only behind accent text: the hover fill (4.86:1, was 1.71:1 on main) and
+  the mine bubble. A christmas-only `--accent-fill` #c41e3a paints the primary buttons with light ink
+  (5.57:1) and a light-crimson edge. The Thread stamp outline is light crimson (5.77:1, was 1.58:1). The
+  switch track is `--faint` when off (4.66:1, was 1.61:1) and light crimson when on (5.77:1, was 1.58:1
+  on main); its knob is `--fg` when off (3.23:1 on the track) and dark `--accent-ink` when on (6.25:1).
+  Measured borders and rings once drawn in `--accent-dim` use the light crimson (min 5.77:1), including
+  the selected avatar tile's ring (5.77:1, was 1.19:1) (#309). The selected avatar tile's 3px ring is
+  `--accent` in every theme (was `--accent-dim`, below 3:1 on the grid in six themes), so the picked tile
+  is unmistakable: dark 2.45 → 3.98, light 1.43 → 6.90, color-blind 2.16 → 7.62, dracula 1.61 → 11.51,
+  desert 1.45 → 4.14, monochrome 2.18 → 13.53; christmas stays 5.77 (its own rule is dropped) and
+  field-office keeps its own offset print shadow (5.31). The avatar window's preview ring is
+  `--accent` in every theme (was `--accent-dim`, below 3:1 on the panel in six themes): dark 2.45 → 3.98,
+  light 1.43 → 6.90, color-blind 2.16 → 7.62, dracula 1.61 → 11.51, desert 1.45 → 4.14, monochrome
+  2.18 → 13.53; christmas stays 5.77 and field-office keeps its own offset print shadow (4.88). No other
+  element changes in the other themes. `tests/check_palette.cjs` R1 requires a 3:1 checked radio fill in all 8
+  themes at both widths; R2 measures christmas accent-painted text and controls on each checked
+  surface; R3 hovers each visible Thread and channel voice button with the mouse and needs 4.5:1
+  text (R3s pins the robot call button, which no view shows); R4 needs a 3:1 Thread stamp outline;
+  R5 needs 3:1 on christmas accent / accent-dim borders and outer rings at rest, focused, and with
+  the mouse on each Providers hub row, with at least one measured instance of each claimed rule; R6
+  needs a 3:1 switch track and a 3:1 knob on it, off and on; R7 needs the primary buttons on
+  `--accent-fill`; R5 also measures the selected tile's ring in the avatar window, opened by its real
+  buttons; R8 needs a solid avatar preview ring of at least 3:1 in all 8 themes at both widths, and R9
+  the same of the selected tile's ring against the grid. The
+  check now fails if it stops before its pass line.
+
 - A robot loop that hits its limit says "Mention both robots again to start
   a new loop." A fresh loop arms only when the next note names exactly two
   robots. The feed card's "Decision" cue on a waiting loop shows for the
@@ -71,6 +100,17 @@ the top-level `VERSION` file.
   steering through it). Loop state is not kept across a relay
   restart. The partner still sees only its own clause, and robots still
   never chain on their own.
+
+### Security
+
+- Copilot and Goose no longer run with tool auto-approve (#333). Copilot
+  never gets `--allow-all-tools`: its shell tools are excluded and denied
+  on every turn, URL and memory tools are denied, and only a person-gated
+  project turn may write files. The child drops `COPILOT_ALLOW_ALL` and
+  the `GITHUB_COPILOT_PROMPT_MODE_*` switches. Goose always runs with
+  `GOOSE_MODE=chat` (no tools), overriding an inherited mode or
+  `config.yaml`. A turn whose mode cannot be set is refused with a
+  `HUSH_JOB_ERR` reason.
 
 ### Fixed
 

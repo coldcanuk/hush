@@ -3,7 +3,7 @@
 
 Locks in behaviors that must not regress silently:
 
-- session-token carriers: Cookie / X-Hush-Token / Bearer / ?k= all open
+- session-token carriers: Cookie / X-Hush-Token / Bearer open; ?k= refused (#336)
   the gate; a wrong or missing token answers 401.
 - Host allowlist: loopback names (with or without port) are served;
   foreign or missing Host answers 403, including on /api/status.
@@ -143,7 +143,9 @@ def check_token_carriers(relay):
         b"GET /api/session?k=" + token.encode() + b" HTTP/1.1\r\nHost: " + base
         + b"\r\nConnection: close\r\n\r\n",
     )
-    assert status_of(raw) == 200, ("query token", raw[:160])
+    # #336: a URL token is no credential (history, logs, Referer).
+    assert status_of(raw) == 401, ("query token", raw[:160])
+    assert b"Set-Cookie" not in headers_of(raw), ("query token cookie", raw[:160])
     raw = raw_request(
         relay,
         b"GET /api/session HTTP/1.1\r\nHost: " + base
@@ -156,7 +158,23 @@ def check_token_carriers(relay):
         + b"\r\nX-Hush-Token: deadbeef\r\nConnection: close\r\n\r\n",
     )
     assert status_of(raw) == 401, ("wrong token", raw[:160])
-    print("trust: Cookie / X-Hush-Token / Bearer / ?k= open, wrong/missing 401 OK")
+    check_exact_length(relay, base, token.encode())
+    print("trust: Cookie / X-Hush-Token / Bearer open, ?k= / wrong / missing 401 OK")
+
+
+def check_exact_length(relay, base, token):
+    """#357: every carrier compares the whole value; token+suffix or a
+    truncated token never authenticates."""
+    carriers = (b"Cookie: hush_session=", b"X-Hush-Token: ", b"Authorization: Bearer ")
+    for value in (token + b"x", token + b"0", token + b"0" * 40, token[:-1]):
+        for carrier in carriers:
+            raw = raw_request(
+                relay,
+                b"GET /api/session HTTP/1.1\r\nHost: " + base + b"\r\n" + carrier
+                + value + b"\r\nConnection: close\r\n\r\n",
+            )
+            assert status_of(raw) == 401, (carrier, len(value), raw[:160])
+    print("trust: token+suffix / truncated token 401 on Cookie / X-Hush-Token / Bearer OK")
 
 
 def check_host_allowlist(relay):
