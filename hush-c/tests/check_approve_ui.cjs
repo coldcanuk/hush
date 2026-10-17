@@ -12,8 +12,11 @@
 //   U7 (#314) in light, field office and dark, at 1440 and 390 wide, the
 //      help line under Robot turns (and under Theme) sits at least 8 px
 //      below the pills
-//   U8 (#314) at 390 wide with the root font at 125% to 250%, no
-//      Robot turns pill clips its text or crosses the panel's content edge
+//   U8 (#314) at 390 wide in light, field office and dark, with the root
+//      font at 100% to 250%, no Robot turns pill clips its text or crosses
+//      the panel's content edge, its text sits at least 3 px inside its
+//      border top and bottom, "Auto-approve" stays on one line, and at
+//      100% every pill stays on one line
 //
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN
 // (required; tests/check_approve_ui.sh resolves it), HUSH_TEST_WAIT_S
@@ -184,10 +187,11 @@ const PHONE_W = 390;
 const VIEW_H = 900;
 const MIN_HELP_GAP_PX = 8;
 const GAP_THEMES = ['light', 'field-office', 'dark'];
-/* 125% and 150% are the sizes #314 names; on headless Chrome a nowrap pill
- * still fits there (it takes its own row), so 200% and 250% are where the
- * old nowrap rule pushes "Approve every action" past the panel. */
-const BIG_TEXT = ['125%', '150%', '200%', '250%'];
+/* 100% is the default phone view (both pills must stay one line there);
+ * 125% and 150% are the sizes #314 names; 200% and 250% are where the old
+ * nowrap rule pushed "Approve every action" past the panel. */
+const FIT_TEXT = ['100%', '125%', '150%', '200%', '250%'];
+const MIN_TEXT_INSET_PX = 3;
 /* Settle time after a viewport, theme or font change before measuring. */
 const LAYOUT_MS = 200;
 
@@ -219,20 +223,46 @@ async function checkHelpGap(cdp) {
     }
   }
 }
-/* Labels of #approval-list that clip their text or leave the panel. */
-const CLIPPED = `(() => { const panel = document.querySelector('#settings .panel');
+/* Each #approval-list label: its text, whether it clips or leaves the
+ * panel, its text's line count, and the gap from the text's glyph box to
+ * the inside of the border, top and bottom. */
+const PILL_FIT = `(() => { const panel = document.querySelector('#settings .panel');
   const edge = panel.getBoundingClientRect().right - parseFloat(getComputedStyle(panel).paddingRight);
-  return [...document.querySelectorAll('#approval-list label')]
-    .filter((l) => l.scrollWidth > l.clientWidth || l.getBoundingClientRect().right > edge)
-    .map((l) => l.textContent.trim()); })()`;
+  return [...document.querySelectorAll('#approval-list label')].map((l) => {
+    const box = l.getBoundingClientRect();
+    const r = document.createRange();
+    r.selectNodeContents(l); r.setStartAfter(l.querySelector('input'));
+    const rects = [...r.getClientRects()].filter((x) => x.width > 0);
+    const top = Math.min(...rects.map((x) => x.top));
+    const bottom = Math.max(...rects.map((x) => x.bottom));
+    return { text: l.textContent.trim(), lines: new Set(rects.map((x) => Math.round(x.top))).size,
+      clip: l.scrollWidth > l.clientWidth || box.right > edge,
+      insetTop: top - (box.top + l.clientTop),
+      insetBottom: box.top + l.clientTop + l.clientHeight - bottom };
+  }); })()`;
 
-/* U8: at 390 px and large text every Robot turns pill fits. */
+/* The first U8 complaint about one pill at one theme and text size. */
+function pillFault(p, size) {
+  if (p.clip) return 'clips';
+  if (!(p.insetTop >= MIN_TEXT_INSET_PX && p.insetBottom >= MIN_TEXT_INSET_PX))
+    return `text inset ${p.insetTop.toFixed(1)}/${p.insetBottom.toFixed(1)} px (< ${MIN_TEXT_INSET_PX})`;
+  if (p.text === 'Auto-approve' && p.lines !== 1) return `breaks onto ${p.lines} lines`;
+  if (size === '100%' && p.lines !== 1) return `wraps onto ${p.lines} lines at default size`;
+  return '';
+}
+
+/* U8: at 390 px, default and large text, every Robot turns pill fits. */
 async function checkFit390(cdp) {
-  for (const size of BIG_TEXT) {
-    await settings(cdp, PHONE_W, 'field-office', size);
-    const clipped = await cdp.evaluate(CLIPPED);
-    if (!Array.isArray(clipped)) fail('U8 could not measure the Robot turns pills');
-    if (clipped.length) fail(`U8 ${clipped.join(', ')} clips at 390 (root font ${size})`);
+  for (const theme of GAP_THEMES) {
+    for (const size of FIT_TEXT) {
+      await settings(cdp, PHONE_W, theme, size);
+      const pills = await cdp.evaluate(PILL_FIT);
+      if (!Array.isArray(pills) || pills.length !== 2) fail('U8 could not measure the Robot turns pills');
+      for (const p of pills) {
+        const why = pillFault(p, size);
+        if (why) fail(`U8 ${p.text} ${why} at 390 (${theme}, root font ${size})`);
+      }
+    }
   }
 }
 
