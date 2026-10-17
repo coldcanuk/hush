@@ -57,15 +57,25 @@ setTimeout(() => {
 // Like real Chrome, (re)create the profile and write into it while shutting
 // down on SIGTERM, so a harness that removes the profile before its Chrome
 // has exited leaves a dir behind (tests/check_restart_ui_tmp.sh).
-process.on('SIGTERM', () => {
+// HUSH_FAKE_CHROME_STOP_MS (default 0) is how long that shutdown takes;
+// HUSH_FAKE_CHROME_EXIT_LOG, when set, gets one line once the write is done.
+const stopMs = Number(process.env.HUSH_FAKE_CHROME_STOP_MS || 0);
+function shutDown() {
+  const fs = require('node:fs');
   const dir = process.env.FAKE_CHROME_USER_DIR || '';
+  const exitLog = process.env.HUSH_FAKE_CHROME_EXIT_LOG || '';
   if (dir) {
-    const fs = require('node:fs');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(require('node:path').join(dir, 'Last Session'), 'x');
   }
+  if (exitLog)
+    fs.appendFileSync(exitLog, 'exit\n');
   process.exit(0);
-});
-// Stay alive until killed.
-setInterval(() => {}, 60000);
+}
+process.on('SIGTERM', () => { setTimeout(shutDown, stopMs); });
+// Stay alive until killed, or until the harness that started it is gone
+// (a harness that exits without stopping it must not leave it running).
+const PARENT_POLL_MS = 500;
+const parent = process.ppid;
+setInterval(() => { if (process.ppid !== parent) process.exit(0); }, PARENT_POLL_MS);
 NODE
