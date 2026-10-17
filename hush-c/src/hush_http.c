@@ -87,7 +87,7 @@ enum {
 #define HUSH_HTTP_WINDOW_PREPARE "prepare"
 #define HUSH_HTTP_RATE_BODY "{\"ok\":false,\"error\":\"rate-limited\"}\n"
 #define HUSH_HTTP_UI_PROOF_BODY \
-    "{\"ok\":false,\"error\":\"Approvals need the paired Hush window. " \
+    "{\"ok\":false,\"error\":\"This needs the paired Hush window. " \
     "Reopen Hush from its launcher.\"}\n"
 
 /* Per-source-IP API request bucket. addr 0 marks a free slot (a real peer
@@ -158,6 +158,7 @@ int hush_http_json_bare_field(const char *body, const char *key,
 /* Decodes optional required room guidance into borrowed caller storage.
  * Missing field preserves the supplied default; invalid or oversized fields fail. */
 const char *hush_http_body(const char *req, size_t len);
+static int hush_http_stamps_owner(const char *path);
 static hush_status_t hush_http_serve_api_post(int fd, const char *path,
                                               const char *req, size_t len,
                                               hush_store_t *store,
@@ -1077,11 +1078,23 @@ int hush_http_json_bare_field(const char *body, const char *key,
     return out[0] != '\0';
 }
 
+/* Routes that store an event under the owner's pubkey: a note, a call
+ * signal, or the owner's presence. Agent children can reach the relay with
+ * session.token, so only the paired window's X-Hush-Nonce may stamp one (#336). */
+static int hush_http_stamps_owner(const char *path)
+{
+    assert(path != NULL);
+    return strcmp(path, "/api/event") == 0 || strcmp(path, "/api/signal") == 0 ||
+           strcmp(path, "/api/presence") == 0;
+}
+
 static hush_status_t hush_http_serve_api_post(int fd, const char *path,
                                               const char *req, size_t len,
                                               hush_store_t *store,
                                               hush_event_t *out_posted)
 {
+    if (hush_http_stamps_owner(path) && !hush_http_ui_proven())
+        return hush_http_reply_ui_required(fd);
     if (strcmp(path, "/api/event") == 0)
         return hush_http_serve_post(fd, req, len, store, out_posted);
     if (strcmp(path, "/api/presence") == 0)

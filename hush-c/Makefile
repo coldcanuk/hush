@@ -238,6 +238,7 @@ test: check-deps $(TEST_BINS) hush-relay
 	python3 tests/check_trust.py || exit 1; \
 	python3 tests/check_bootstrap.py || exit 1; \
 	python3 tests/check_approve_nonce.py || exit 1; \
+	python3 tests/check_owner_stamp.py || exit 1; \
 	python3 tests/check_reasons.py || exit 1; \
 	python3 tests/check_save_pass.py || exit 1; \
 	sh tests/check_fixup.sh || exit 1; \
