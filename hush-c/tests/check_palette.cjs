@@ -59,7 +59,8 @@
 //   B1 Thread, Download and Stop are 20-24px tall at both widths; at 390 a
 //      point 20px above and below the centre still hits the control (44px).
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
-// HUSH_TEST_WAIT_S (DevTools ready deadline, default 30), PALETTE_ART (dir:
+// HUSH_TEST_WAIT_S (DevTools ready deadline, default 30), HUSH_CDP_TIMEOUT_MS
+// (per CDP call, default 60000; a closed socket fails at once), PALETTE_ART (dir:
 // writes palette-report.json there when set).
 'use strict';
 const { spawn } = require('node:child_process');
@@ -247,13 +248,18 @@ const L1_EXPECT = {
   "chip-oncall|color": "rgb(143, 211, 255)",
 };
 
+/* A CDP call with no answer (Chrome crashed, socket closed) fails the run
+ * instead of hanging it: HUSH_CDP_TIMEOUT_MS per call, default 60000. */
+const CDP_TIMEOUT_MS = parseInt(process.env.HUSH_CDP_TIMEOUT_MS || '', 10) > 0 ? parseInt(process.env.HUSH_CDP_TIMEOUT_MS, 10) : 60000;
 class Cdp {
-  constructor(url) { this.url = url; this.id = 0; this.waiters = new Map(); }
+  constructor(url) { this.url = url; this.id = 0; this.waiters = new Map(); this.closed = false; }
   connect() {
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(this.url);
       this.ws.onopen = () => resolve();
       this.ws.onerror = (e) => reject(new Error('CDP connect failed: ' + e.message));
+      this.ws.onclose = () => { this.closed = true;
+        if (this.waiters.size) die(`CDP socket closed with ${this.waiters.size} call(s) unanswered (Chrome exited?)`); };
       this.ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data.toString());
         if (msg.id && this.waiters.has(msg.id)) {
@@ -267,9 +273,11 @@ class Cdp {
     });
   }
   send(method, params) {
+    if (this.closed) die(`CDP ${method} after the socket closed (Chrome exited?)`);
     const id = ++this.id;
     return new Promise((resolve) => {
-      this.waiters.set(id, resolve);
+      const t = setTimeout(() => die(`CDP ${method} got no answer in ${CDP_TIMEOUT_MS} ms`), CDP_TIMEOUT_MS);
+      this.waiters.set(id, (r) => { clearTimeout(t); resolve(r); });
       this.ws.send(JSON.stringify({ id, method, params: params || {} }));
     });
   }
