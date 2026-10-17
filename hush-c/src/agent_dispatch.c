@@ -1429,6 +1429,22 @@ void hush_agent_follow_release(const hush_event_t *ev, int counted, int end_loop
         slot->loop.active = 0;
 }
 
+void hush_agent_follow_resume(hush_store_t *store, const hush_launch_t *launch,
+                              const hush_event_t *ev)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    const hush_agent_follow_t *slot = NULL;
+
+    assert(store != NULL && launch != NULL && ev != NULL);
+    hush_agent_event_root(root, sizeof(root), ev);
+    slot = hush_agent_follow_find(root);
+    /* A turn still in flight kicks the wave when it posts; with nothing
+     * queued a kick would start the loop's next turn instead. */
+    if (slot == NULL || slot->inflight > 0 || slot->at >= slot->nnext)
+        return;
+    hush_agent_follow_kick(store, launch, ev);
+}
+
 static void hush_agent_begin_plan(const hush_agent_job_in_t *in)
 {
     hush_agent_job_in_t plan;

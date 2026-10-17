@@ -68,6 +68,8 @@ enum {
 #define TEST_APPROVE_ASK_SCOUT \
     "Approval needed: Scout wants to take a turn. Reply Yes or No in this thread."
 #define TEST_APPROVE_NO_SCOUT "Turn declined: Scout stood down."
+#define TEST_APPROVE_ASK_BUILDER \
+    "Approval needed: Builder wants to take a turn. Reply Yes or No in this thread."
 /* The literal table size and guest share the docs promise (#279 r2). */
 #define TEST_APPROVE_TABLE 8
 #define TEST_APPROVE_GUESTS 4
@@ -574,13 +576,17 @@ static void check_threads(void)
     close_hive(&fx);
 }
 
-/* Opens an owner pair thread, runs Happy's turn (Yes; no runtime), and
- * finishes it with out, so Scout's follow-wave turn waits. */
+/* Opens an owner pair thread and brings it to Scout's held follow turn.
+ * out NULL: the owner's Yes runs Happy with no runtime ready and the relay
+ * asks Scout at once (#312). Otherwise Happy's run is fed back as finished
+ * with out (role sets the loop verdict) while its ask is open, which asks
+ * Scout; the owner's Yes then settles Happy's own ask. */
 static void pair_to_scout(test_approve_fixture_t *fx, int role, const char *out)
 {
     open_thread(fx, &fx->root, fx->launch.human.pubkey_hex, fx->scout);
+    if (out != NULL)
+        finish_turn(fx, fx->happy, role, out);
     answer(fx, fx->launch.human.pubkey_hex, "Yes");
-    finish_turn(fx, fx->happy, role, out);
     expect(count_line(fx->store, TEST_APPROVE_ASK_SCOUT) >= 1, "Scout's follow turn waits");
     expect(hush_agent_follow_peek(fx->root.id, NULL) == 1, "a held follow turn counts in flight");
 }
@@ -605,7 +611,7 @@ static void check_guest_share(void)
     expect(count_line(fx.store, TEST_APPROVE_GUEST_COPY) == 1 &&
            count_line(fx.store, TEST_APPROVE_GUEST_OLD) == 0,
            "the guest refusal names the refused robot");
-    pair_to_scout(&fx, HUSH_AGENT_LOOP_ROLE_NONE, "A line.");
+    pair_to_scout(&fx, HUSH_AGENT_LOOP_ROLE_NONE, NULL);
     for (int i = 0; i < TEST_APPROVE_TABLE - TEST_APPROVE_GUESTS; i++) {
         snprintf(text, sizeof(text), "owner joke %d", i);
         mention_happy(&fx, text);
@@ -688,18 +694,18 @@ static void check_release(void)
     int loop = -1;
 
     open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
-    pair_to_scout(&fx, HUSH_AGENT_LOOP_ROLE_NONE, "A line.");
+    pair_to_scout(&fx, HUSH_AGENT_LOOP_ROLE_NONE, NULL);
     answer(&fx, fx.launch.human.pubkey_hex, "never mind");
     expect(hush_agent_follow_peek(fx.root.id, NULL) == -1, "a void frees the follow slot");
-    pair_to_scout(&fx, HUSH_AGENT_LOOP_ROLE_NONE, "A line.");
+    pair_to_scout(&fx, HUSH_AGENT_LOOP_ROLE_NONE, NULL);
     answer(&fx, fx.launch.human.pubkey_hex, "No");
     expect(hush_agent_follow_peek(fx.root.id, &loop) == 0 && loop == 0,
            "a No gives back the count and stops the loop");
-    pair_to_scout(&fx, HUSH_AGENT_LOOP_ROLE_NONE, "A line.");
+    pair_to_scout(&fx, HUSH_AGENT_LOOP_ROLE_NONE, NULL);
     answer(&fx, fx.launch.human.pubkey_hex, "Yes");
     expect(count_head(fx.store, TEST_APPROVE_RAN_SCOUT) == 1, "Scout's approved turn ran");
     expect(hush_agent_follow_peek(fx.root.id, NULL) == 0, "a turn that starts no job gives back");
-    pair_to_scout(&fx, HUSH_AGENT_LOOP_ROLE_NONE, "A line.");
+    pair_to_scout(&fx, HUSH_AGENT_LOOP_ROLE_NONE, NULL);
     expect(hush_launch_remove_agent(&fx.launch, "scout") == HUSH_OK, "remove Scout");
     answer(&fx, fx.launch.human.pubkey_hex, "Yes");
     expect(hush_agent_follow_peek(fx.root.id, NULL) == 0, "a removed robot's turn gives back");
@@ -707,13 +713,16 @@ static void check_release(void)
 }
 
 /* P2-7: a held loop turn counts in flight; a void frees the slot, a No ends
- * the loop and gives back the count. */
+ * the loop and gives back the count. #312: a Yes that starts no job (no
+ * runtime ready) gives back the count and asks no one else: the loop's
+ * other robot is not asked again for a turn that never ran. */
 static void check_loop_release(void)
 {
+    static const char *const answers[] = {"never mind", "No", "Yes"};
     static test_approve_fixture_t fx;
     int loop = -1;
 
-    for (int no = 0; no < 2; no++) {
+    for (size_t a = 0; a < sizeof(answers) / sizeof(answers[0]); a++) {
         open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
         pair_to_scout(&fx, HUSH_AGENT_LOOP_ROLE_LEAD, "Riddle one?\nLOOP: continue");
         answer(&fx, fx.launch.human.pubkey_hex, "Yes");
@@ -721,12 +730,17 @@ static void check_loop_release(void)
         expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == 2, "Happy's loop turn waits");
         expect(hush_agent_follow_peek(fx.root.id, &loop) == 1 && loop == 1,
                "a held loop turn counts in flight");
-        answer(&fx, fx.launch.human.pubkey_hex, no ? "No" : "never mind");
-        if (no)
+        answer(&fx, fx.launch.human.pubkey_hex, answers[a]);
+        if (a == 0)
+            expect(hush_agent_follow_peek(fx.root.id, NULL) == -1, "a void frees the loop's slot");
+        else if (a == 1)
             expect(hush_agent_follow_peek(fx.root.id, &loop) == 0 && loop == 0,
                    "a declined loop turn gives back the count and ends the loop");
         else
-            expect(hush_agent_follow_peek(fx.root.id, NULL) == -1, "a void frees the loop's slot");
+            expect(hush_agent_follow_peek(fx.root.id, NULL) == 0 &&
+                   count_line(fx.store, TEST_APPROVE_ASK_COPY) == 2 &&
+                   count_line(fx.store, TEST_APPROVE_ASK_SCOUT) == 1,
+                   "a loop turn that starts no job gives back and asks no one again");
         close_hive(&fx);
     }
 }
@@ -741,7 +755,6 @@ static void check_many_voids(void)
     for (int i = 0; i < TEST_APPROVE_THREADS; i++) {
         open_thread(&fx, &fx.root, fx.launch.human.pubkey_hex, fx.scout);
         answer(&fx, fx.launch.human.pubkey_hex, "Yes");
-        finish_turn(&fx, fx.happy, HUSH_AGENT_LOOP_ROLE_NONE, "A line.");
         answer(&fx, fx.launch.human.pubkey_hex, "never mind");
         answer(&fx, fx.launch.human.pubkey_hex, "No");
     }
@@ -751,8 +764,9 @@ static void check_many_voids(void)
 }
 
 /* An owner answer settles a waiting turn before a paused loop's question
- * in the same thread; the question still waits afterwards. Happy's first
- * turn is declined (no runtime note), so cap 2 counts only replies. */
+ * in the same thread; the question still waits afterwards. Happy's run is
+ * fed back (lead verdict: continue) while its ask is open, which asks
+ * Scout; the owner's Yes then settles Happy's ask (one no-runtime note). */
 static void check_answer_order(void)
 {
     static test_approve_fixture_t fx;
@@ -762,8 +776,8 @@ static void check_answer_order(void)
     open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
     cap_two(&fx);
     open_thread(&fx, &fx.root, fx.launch.human.pubkey_hex, fx.scout);
-    answer(&fx, fx.launch.human.pubkey_hex, "No");
     finish_turn(&fx, fx.happy, HUSH_AGENT_LOOP_ROLE_LEAD, "Riddle one?\nLOOP: continue");
+    answer(&fx, fx.launch.human.pubkey_hex, "Yes");
     snprintf(content, sizeof(content), "nostr:%s one more", fx.happy->id.npub);
     fill_note(&ask, TEST_APPROVE_STRANGER_PUB, content, fx.root.id);
     expect(hush_store_insert(fx.store, &ask) == HUSH_OK, "guest ask insert");
@@ -774,7 +788,7 @@ static void check_answer_order(void)
     finish_turn(&fx, fx.scout, HUSH_AGENT_LOOP_ROLE_PARTNER, "An answer.");
     expect(count_line(fx.store, HUSH_AGENT_LOOP_ASK_LINE) == 1, "the loop pauses at the cap");
     answer(&fx, fx.launch.human.pubkey_hex, "Yes");
-    expect(count_head(fx.store, TEST_APPROVE_RAN_HEAD) == 1, "the Yes runs the waiting turn first");
+    expect(count_head(fx.store, TEST_APPROVE_RAN_HEAD) == 2, "the Yes runs the waiting turn first");
     answer(&fx, fx.launch.human.pubkey_hex, "No");
     expect(count_line(fx.store, HUSH_AGENT_LOOP_STOPPED_LINE) == 1, "the loop question still waited");
     close_hive(&fx);
@@ -822,17 +836,25 @@ static void give_intro(test_approve_fixture_t *fx, const char *name)
            "give_intro: the intro is set and switched on");
 }
 
-/* #312 fixtures, file scope (no static inside a function). */
-static test_approve_fixture_t intro_waits_fx;
-static test_approve_fixture_t intro_auto_fx;
+/* A zeroed fixture on the heap, so no check keeps a mutable static; the
+ * caller frees it after close_hive. NULL fails the check. */
+static test_approve_fixture_t *new_fixture(void)
+{
+    test_approve_fixture_t *const fx = calloc(1, sizeof(*fx));
+
+    expect(fx != NULL, "fixture allocation");
+    return fx;
+}
 
 /* #312: under Approve every action a custom intro waits for the owner's
  * Yes, posts once before the run note, and never posts after a No.
  * Auto-approve still greets at the mention. */
 static void check_intro_waits(void)
 {
-    test_approve_fixture_t *const fx = &intro_waits_fx;
+    test_approve_fixture_t *const fx = new_fixture();
 
+    if (fx == NULL)
+        return;
     open_hive(fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
     give_intro(fx, "Happy");
     mention_happy(fx, "tell a joke");
@@ -847,6 +869,7 @@ static void check_intro_waits(void)
     answer(fx, fx->launch.human.pubkey_hex, "No");
     expect(count_line(fx->store, TEST_APPROVE_INTRO_NOTE) == 1, "a declined turn posts no intro");
     close_hive(fx);
+    free(fx);
 }
 
 /* #312: Auto-approve is unchanged. The mention greets every robot it names
@@ -854,8 +877,10 @@ static void check_intro_waits(void)
  * intro posts once. */
 static void check_intro_auto(void)
 {
-    test_approve_fixture_t *const fx = &intro_auto_fx;
+    test_approve_fixture_t *const fx = new_fixture();
 
+    if (fx == NULL)
+        return;
     open_hive(fx, HUSH_ROSTER_APPROVAL_AUTO_ID);
     give_intro(fx, "Happy");
     give_intro(fx, "Scout");
@@ -866,6 +891,107 @@ static void check_intro_auto(void)
            first_at(fx->store, TEST_APPROVE_RAN_HEAD),
            "Auto-approve greets at the mention, before any turn runs");
     close_hive(fx);
+    free(fx);
+}
+
+/* How the lead's (Happy's) held turn ends in check_pair_asks. */
+typedef enum {
+    TEST_APPROVE_LEAD_NO = 0,
+    TEST_APPROVE_LEAD_YES_NO_RUNTIME,
+    TEST_APPROVE_LEAD_REMOVED,
+    TEST_APPROVE_LEAD_ENDS
+} test_approve_lead_end_t;
+
+/* Ends Happy's held pair turn the way end says and checks its own line. */
+static void pair_lead_ends(test_approve_fixture_t *fx, test_approve_lead_end_t end)
+{
+    const char *const owner = fx->launch.human.pubkey_hex;
+
+    if (end == TEST_APPROVE_LEAD_REMOVED)
+        expect(hush_launch_remove_agent(&fx->launch, "happy") == HUSH_OK, "remove Happy");
+    answer(fx, owner, end == TEST_APPROVE_LEAD_NO ? "No" : "Yes");
+    expect(count_line(fx->store, TEST_APPROVE_NO_COPY) == (end == TEST_APPROVE_LEAD_NO),
+           "pair: only the No posts Happy's decline line");
+    expect(count_head(fx->store, TEST_APPROVE_RAN_HEAD) ==
+           (end == TEST_APPROVE_LEAD_YES_NO_RUNTIME),
+           "pair: only a Yes with no runtime posts Happy's no-runtime note");
+}
+
+/* #312 (Gauge P2-1): "@Happy @Scout" under Approve every action. Scout is
+ * not asked while Happy's ask is open. Once Happy's turn ends with no job
+ * (the owner's No, a Yes with no runtime ready, or Happy removed), the
+ * relay asks Scout in the same thread at once; Scout's own Yes runs it and
+ * the pair ends with exactly two asks. */
+static void check_pair_asks(void)
+{
+    for (int end = 0; end < (int)TEST_APPROVE_LEAD_ENDS; end++) {
+        test_approve_fixture_t *const fx = new_fixture();
+
+        if (fx == NULL)
+            return;
+        open_hive(fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+        open_thread(fx, &fx->root, fx->launch.human.pubkey_hex, fx->scout);
+        expect(count_line(fx->store, TEST_APPROVE_ASK_SCOUT) == 0,
+               "pair: Scout is not asked while Happy's ask is open");
+        pair_lead_ends(fx, (test_approve_lead_end_t)end);
+        expect(count_line(fx->store, TEST_APPROVE_ASK_SCOUT) == 1,
+               "pair: once Happy's turn ends with no job the relay asks Scout");
+        expect(hush_agent_follow_peek(fx->root.id, NULL) == 1,
+               "pair: Scout's held turn counts in flight");
+        answer(fx, fx->launch.human.pubkey_hex, "Yes");
+        expect(count_head(fx->store, TEST_APPROVE_RAN_SCOUT) == 1, "pair: Scout's own Yes runs Scout");
+        expect(count_head(fx->store, "Approval needed: ") == 2,
+               "pair: the pair ends with exactly two asks");
+        close_hive(fx);
+        free(fx);
+    }
+}
+
+/* Opens an owner thread naming Happy, Scout and bot3 in order, each with
+ * its own task, and hands every mention to the mention path. */
+static void open_trio(test_approve_fixture_t *fx, const hush_roster_agent_t *bot3)
+{
+    const hush_roster_agent_t *const bots[] = {fx->happy, fx->scout, bot3};
+    char content[HUSH_EVENT_MAX_CONTENT] = {0};
+
+    snprintf(content, sizeof(content), "nostr:%s write a line. nostr:%s review it. nostr:%s test it.",
+             fx->happy->id.npub, fx->scout->id.npub, bot3->id.npub);
+    fill_note(&fx->root, fx->launch.human.pubkey_hex, content, NULL);
+    for (size_t i = 0; i < sizeof(bots) / sizeof(bots[0]); i++) {
+        size_t at = fx->root.tag_count;
+
+        hush_agent_copy(fx->root.tags[at][0], sizeof(fx->root.tags[at][0]), "p");
+        hush_agent_copy(fx->root.tags[at][1], sizeof(fx->root.tags[at][1]), bots[i]->id.npub);
+        fx->root.tag_count = at + 1;
+    }
+    expect(hush_store_insert(fx->store, &fx->root) == HUSH_OK, "trio insert");
+    for (size_t i = 0; i < sizeof(bots) / sizeof(bots[0]); i++)
+        hush_agent_handle_mention(fx->store, &fx->launch, &fx->root, bots[i]->id.npub);
+}
+
+/* #312: a turn that ends with no job only moves the queue on when no other
+ * turn of the thread is in flight. Happy's run is fed back while its ask is
+ * open (Scout is asked); the owner's Yes then ends Happy's turn with no job
+ * and must not ask Builder while Scout still waits. Scout's own Yes with no
+ * runtime then asks Builder. */
+static void check_resume_waits(void)
+{
+    test_approve_fixture_t *const fx = new_fixture();
+
+    if (fx == NULL)
+        return;
+    open_hive(fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+    open_trio(fx, raise_robot(fx, "Builder"));
+    finish_turn(fx, fx->happy, HUSH_AGENT_LOOP_ROLE_NONE, "A line.");
+    expect(count_line(fx->store, TEST_APPROVE_ASK_SCOUT) == 1, "trio: Happy's run asks Scout");
+    answer(fx, fx->launch.human.pubkey_hex, "Yes");
+    expect(count_line(fx->store, TEST_APPROVE_ASK_BUILDER) == 0,
+           "trio: Happy's no-job end must not ask Builder while Scout waits");
+    answer(fx, fx->launch.human.pubkey_hex, "Yes");
+    expect(count_line(fx->store, TEST_APPROVE_ASK_BUILDER) == 1,
+           "trio: Scout's Yes with no runtime asks Builder");
+    close_hive(fx);
+    free(fx);
 }
 
 /* Without a signed-in identity the setting is refused and unchanged. */
@@ -902,6 +1028,8 @@ int main(void)
     check_answer_order();
     check_intro_waits();
     check_intro_auto();
+    check_pair_asks();
+    check_resume_waits();
     check_login();
     if (g_fail)
         return 1;

@@ -542,6 +542,13 @@ int hush_agent_begin_approved(hush_agent_job_in_t *in);
  * inflight count when counted, and stops the thread's loop when end_loop. */
 void hush_agent_follow_release(const hush_event_t *ev, int counted, int end_loop);
 
+/* agent_dispatch.c: after a held turn ended without a job (a No, or a Yes
+ * that started nothing), starts the next follow wave of ev's thread when no
+ * turn is in flight and robots are still queued, so each queued robot gets
+ * its own ask. A thread with nothing queued is left alone (#312). */
+void hush_agent_follow_resume(hush_store_t *store, const hush_launch_t *launch,
+                              const hush_event_t *ev);
+
 /* agent_dispatch.c: read-only view of root's follow slot. Returns its
  * in-flight turn count, or -1 when no live slot holds root; writes the loop
  * flag to *loop_active when not NULL. Used by tests (#279 r2). */
