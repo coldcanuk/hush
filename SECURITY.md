@@ -128,6 +128,22 @@ address) exposes it deliberately; remote clients must then present the token.
 `Access-Control-Allow-Origin` is not set, the `Host` header must name the local
 machine in loopback mode, and the browser cookie is `HttpOnly; SameSite=Strict`.
 
+State-changing requests (every `POST` under `/api/`) also pass an Origin
+gate after the token check, because a browser attaches the `SameSite=Strict`
+cookie to same-site requests from another local origin (another localhost
+port) on its own; `?k=` is no longer a credential (#339). When the browser sends
+`Sec-Fetch-Site`, it must be `same-origin`. When it sends `Origin`, it must be
+exactly `http://<Host>` of that request (`null`, another scheme or host, or a
+look-alike suffix is refused), even with `Sec-Fetch-Site: same-origin`. A
+request with no `Origin` passes only when its `X-Hush-Token` or
+`Authorization: Bearer` matches the token (presence alone is not enough); a
+browser cannot add those headers cross-site without a CORS preflight the relay
+never grants.
+Refusals answer `403 {"ok":false,"error":"cross-origin request refused"}` and
+change nothing. Reads (`GET`) are unchanged. This gate stops browser CSRF only:
+a local process that holds the token can still send any `Origin` it likes
+(agent children: see #336 and #322).
+
 On the wire protocol — WebSocket or raw TCP — every connection receives a
 per-connection [NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md)
 challenge: WebSocket clients immediately after the `101`, raw clients in
