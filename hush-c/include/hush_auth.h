@@ -51,12 +51,14 @@ hush_status_t hush_auth_pair_init(void);
 hush_status_t hush_auth_pair_copy(char *out, size_t outsz);
 
 /* Redeems a pairing code: true when presented equals the live code
- * (constant time). A redeemed code is re-minted at once, so it works once. */
+ * (constant time). A redeemed code is re-minted at once, so it works once,
+ * and the browser-session secret rotates (hush_auth_ui_rotate), so only the
+ * last paired window holds a live one. False when either mint fails. */
 int hush_auth_pair_take(const char *presented);
 
-/* Mints a new browser-session secret, ending the previous one. Called when
- * a pairing code is redeemed, so the last paired window holds the only
- * live secret. Memory only; not derived from session.token. Fails
+/* Mints a new browser-session secret, ending the previous one. Called by
+ * hush_auth_pair_take, so the last paired window holds the only live
+ * secret. Memory only; not derived from session.token. Fails
  * HUSH_ERR_IO when entropy is unavailable (then nothing matches). */
 hush_status_t hush_auth_ui_rotate(void);
 

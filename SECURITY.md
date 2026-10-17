@@ -72,9 +72,10 @@ browser's command line (`/proc/<pid>/cmdline`) for about a second.
 Owner authority that a robot must never borrow needs more than the token
 (#336 part 5). Redeeming the pairing code also mints a browser-session
 secret issued as the `X-Hush-Nonce` response header (32 hex, memory only,
-not derived from the token) plus a non-HttpOnly `hush_nonce` storage cookie
-the page reads and sends back as that header. A new pairing rotates it and
-a relay restart ends it. An owner `Yes`/`No` answer note (held turns, team
+not derived from the token) plus a non-HttpOnly `hush_nonce` session cookie
+(no `Max-Age`, so the browser keeps it in memory and never writes it to its
+Cookies DB) the page reads and sends back as that header. A new pairing
+rotates it (`test_auth`) and a relay restart ends it. An owner `Yes`/`No` answer note (held turns, team
 offers, loop "Continue?") and any `approval_mode` write are refused `403`
 unless the request carries the live `X-Hush-Nonce` (constant-time compare);
 `session.token` alone, in any carrier, is not enough. A stored
