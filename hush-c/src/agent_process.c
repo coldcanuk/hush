@@ -41,22 +41,19 @@
 #define HUSH_AGENT_COPILOT_CD "-C"
 #define HUSH_AGENT_CLINE_APPROVE_ON "true"
 #define HUSH_AGENT_CLINE_APPROVE_OFF "false"
+#define HUSH_AGENT_CLINE_BIN "cline"
 
 enum {
     /* copilot, -p, prompt, --allow-all-tools, NULL */
     HUSH_AGENT_COPILOT_SLOTS = 5,
     /* those slots plus -C and the job directory */
-    HUSH_AGENT_COPILOT_CWD_SLOTS = 7,
-    /* Decimal text for Cline --timeout. Holds any 32-bit second count. */
-    HUSH_AGENT_TIMEOUT_TEXT = 16
+    HUSH_AGENT_COPILOT_CWD_SLOTS = 7
 };
 
 /* Runs the provider CLI in a forked worker. */
 static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job);
 static void hush_agent_exec_api(const hush_agent_job_t *job);
 static void hush_agent_exec_cline(const hush_agent_job_t *job);
-static void hush_agent_write_cline_timeout(char *out, size_t cap,
-                                           int project_tools);
 static void hush_agent_exec_grok(const hush_agent_job_t *job);
 static void hush_agent_exec_copilot(const hush_agent_job_t *job);
 static void hush_agent_exec_codex(const hush_agent_job_t *job);
@@ -368,9 +365,11 @@ int hush_agent_cline_timeout_s(int project_tools)
     return HUSH_AGENT_CLINE_TIMEOUT_S;
 }
 
-/* Headless Cline denies a tool call that still needs a person. A bound
- * project already cleared Hush's gate, so the CLI may run its tools.
- * Chat stays off so that job does not gain a shell. */
+/* Headless Cline denies a tool call that still needs a person. project_tools
+ * is 1 only for a turn in a project-bound thread that passed a person gate:
+ * the hive owner asked for it, or the owner answered Yes to it (#311 A3,
+ * hush_agent_apply_project_cwd). Every other job stays "false", so it does
+ * not gain a shell. */
 const char *hush_agent_cline_approve(int project_tools)
 {
     if (project_tools)
@@ -378,36 +377,40 @@ const char *hush_agent_cline_approve(int project_tools)
     return HUSH_AGENT_CLINE_APPROVE_OFF;
 }
 
-/* Writes the decimal --timeout for this job. out is caller storage. */
-static void hush_agent_write_cline_timeout(char *out, size_t cap,
-                                           int project_tools)
+void hush_agent_cline_argv(hush_agent_cline_argv_t *out, const hush_agent_job_t *job,
+                           char *prompt)
 {
-    int wrote;
+    int wrote = 0;
 
-    assert(out != NULL);
-    assert(cap > 1);
-    wrote = snprintf(out, cap, "%d", hush_agent_cline_timeout_s(project_tools));
-    assert(wrote > 0);
-    assert((size_t)wrote < cap);
+    assert(out != NULL && job != NULL && prompt != NULL);
+    memset(out, 0, sizeof(*out));
+    wrote = snprintf(out->timeout, sizeof(out->timeout), "%d",
+                     hush_agent_cline_timeout_s(job->project_tools));
+    /* HUSH_AGENT_CLINE_TIMEOUT_TEXT holds any int, so this cannot cut. */
+    assert(wrote > 0 && (size_t)wrote < sizeof(out->timeout));
+    (void)wrote;
+    /* POSIX exec borrows mutable argv. Non-TTY stdout selects Cline headless mode. */
+    out->argv[0] = (char *)HUSH_AGENT_CLINE_BIN;
+    out->argv[1] = (char *)"--json";
+    out->argv[2] = (char *)"--cwd";
+    out->argv[3] = (char *)job->cwd;
+    out->argv[4] = (char *)"--auto-approve";
+    out->argv[5] = (char *)hush_agent_cline_approve(job->project_tools);
+    out->argv[6] = (char *)"--timeout";
+    out->argv[7] = out->timeout;
+    out->argv[8] = prompt;
+    out->argv[9] = NULL;
 }
 
 static void hush_agent_exec_cline(const hush_agent_job_t *job)
 {
     char combined[HUSH_AGENT_COMBINED_PROMPT_MAX] = {0};
-    char timeout_text[HUSH_AGENT_TIMEOUT_TEXT] = {0};
-    const char *approve;
+    hush_agent_cline_argv_t cline = {0};
 
     assert(job != NULL);
     hush_agent_build_combined(combined, sizeof(combined), job);
-    hush_agent_write_cline_timeout(timeout_text, sizeof(timeout_text),
-                                   job->project_tools);
-    approve = hush_agent_cline_approve(job->project_tools);
-    assert(approve != NULL);
-    /* POSIX exec borrows mutable argv. Non-TTY stdout selects Cline headless mode. */
-    char *arguments[] = {(char *)"cline", (char *)"--json", (char *)"--cwd",
-        (char *)job->cwd, (char *)"--auto-approve", (char *)approve,
-        (char *)"--timeout", timeout_text, combined, NULL};
-    execvp(arguments[0], arguments);
+    hush_agent_cline_argv(&cline, job, combined);
+    execvp(cline.argv[0], cline.argv);
     _exit(HUSH_AGENT_EXEC_FAILURE);
 }
 

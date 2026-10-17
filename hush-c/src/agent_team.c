@@ -320,12 +320,12 @@ void hush_agent_chief_equip(hush_agent_job_t *job, const hush_store_t *store)
 
 void hush_agent_apply_project_cwd(hush_agent_job_t *job)
 {
-    hush_thread_desk_t desk;
-    size_t i;
+    hush_thread_desk_t desk = {0};
+    size_t i = 0;
 
     assert(job != NULL);
     job->project_tools = 0;
-    if (job->launch == NULL || job->parent_id[0] == '\0')
+    if (!job->person_gate || job->launch == NULL || job->parent_id[0] == '\0')
         return;
     if (hush_thread_desk_get(job->parent_id, &desk) != HUSH_OK)
         return;
