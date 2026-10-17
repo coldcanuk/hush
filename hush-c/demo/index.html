@@ -2199,8 +2199,9 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
 }
 /* #309 r2: christmas keeps every red in one crimson hue (~350deg).
    --accent (#ff6b7f) is the light crimson for text, rings, radios and
-   outlines on the dark greens; --accent-dim (#5c1420) is the deep crimson
-   behind accent text (hover, mine bubble, switch track); --accent-fill
+   outlines on the dark greens (and the on switch track); --accent-dim
+   (#5c1420) is the deep crimson behind accent text (hover fill, mine
+   bubble); --accent-fill
    (#c41e3a, christmas only) is the solid crimson of the primary buttons,
    with light ink and a light-crimson edge so the control clears 3:1. */
 html[data-theme="christmas"] #install,
@@ -2214,16 +2215,20 @@ html[data-theme="christmas"] .robot-call { border-color: var(--accent); }
 /* #309 r3: no christmas border or switch track is drawn in deep crimson on
    the greens (#5c1420 is 1.19-1.29:1 there). Borders, focus edges and the
    status-feed rule take the light crimson; the switch track is --faint
-   when off and light crimson (dark knob) when on, >= 3:1 on its panel. */
+   when off and light crimson when on, >= 3:1 on its panel, and the knob
+   (--fg off, --accent-ink on) is >= 3:1 on its track. .robot-card and
+   .note.reply follow the same rule but no measured view shows them with a
+   border (#robot-list is display:none; the thread pane drops the reply
+   rule). The old .agent box has no element in the page and is left out. */
 html[data-theme="christmas"] #badge.ok,
 html[data-theme="christmas"] .composer-box:focus-within,
 html[data-theme="christmas"] .card input:focus,
 html[data-theme="christmas"] .card textarea:focus,
-html[data-theme="christmas"] .agent,
 html[data-theme="christmas"] .robot-card,
 html[data-theme="christmas"] .prov-row:hover,
 html[data-theme="christmas"] .iconbtn.on { border-color: var(--accent); }
 html[data-theme="christmas"] .composer-box:focus-within { box-shadow: 0 0 0 1px var(--accent); }
+html[data-theme="christmas"] .avatar-preview { box-shadow: 0 0 0 3px var(--accent); }
 html[data-theme="christmas"] .partial,
 html[data-theme="christmas"] .note.reply,
 html[data-theme="christmas"] .fo-feed-line { border-left-color: var(--accent); }
