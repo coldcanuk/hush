@@ -1631,11 +1631,15 @@ turns need approval.
    `Approve every action` a robot's custom intro waits for the owner's Yes
    and posts once after it; after No it never posts. While the turn
    waits, the owner's mention shows a neutral "<Robot> · waiting for your
-   OK" pill for that robot (theme ink, dashed theme rule, no emoji). After
-   the owner's Yes, the robot's run settles the turn and the 👍 ack pill
-   shows. After No ("Turn declined: <Robot> ...") the mention shows no
-   pill for that robot, since a 👍 would read as the robot accepting or
-   doing the work (#312). Under
+   OK" pill for that robot (theme ink, dashed theme rule, no emoji). When
+   one mention names two robots their turns queue: the second robot shows
+   the same waiting pill until its own ask is answered, so the pair
+   settles with both asks. After the owner's Yes, the robot's run settles
+   the turn and the 👍 ack pill shows. After No ("Turn declined: <Robot>
+   ...") the mention shows no pill for that robot, since a 👍 would read
+   as the robot accepting or doing the work. The state is kept per
+   mention: a later mention in the same thread, and its No, do not change
+   an earlier mention's pill (#312). Under
    `Auto-approve` the mention greeting still runs first. The default on-deck
    line is not a chat note (#278).) That covers the first turn after a mention, each
    follow wave, each two-robot loop turn, the leader election pass, the

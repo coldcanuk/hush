@@ -6826,27 +6826,54 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       return "";
     }
 
-    /* "held" while an ask is not yet settled, "declined" when the latest
-       settle is the owner's No, else "". */
+    /* True for a bare Yes or No answer (the server's loop/approval parse:
+       one word, then only spaces, "." or "!"). */
+    function isTurnAnswer(text) {
+      return /^\s*(yes|no)[\s.!]*$/i.test(String(text || ""));
+    }
+
+    /* #312: the thread notes that belong to the owner's mention e, oldest
+       first: the notes after e in its thread, up to the owner's next note
+       that is not a bare Yes/No answer (that note starts its own turn). So
+       each mention keeps its own state; a later No in the same thread does
+       not change an earlier mention's 👍. */
+    function mentionWindow(e) {
+      const root = e.reply_to || e.id;
+      const thread = (lastEvents || []).map((x, i) => ({ x, i }))
+        .filter((o) => o.x && !isDevLogNote(o.x) && (o.x.id === root || o.x.reply_to === root))
+        .sort((p, q) => (Number(p.x.created_at || 0) - Number(q.x.created_at || 0)) || (p.i - q.i))
+        .map((o) => o.x);
+      const start = thread.findIndex((x) => x.id === e.id);
+      const notes = [];
+      for (let k = start < 0 ? thread.length : start + 1; k < thread.length; k++) {
+        if (isMineNote(thread[k]) && !isTurnAnswer(thread[k].content)) break;
+        notes.push(thread[k]);
+      }
+      return notes;
+    }
+
+    /* #312 state of bot's turn for the owner's mention parentId: "held"
+       while its ask is not yet settled, or while it has no ask or settle
+       yet but a robot named in the same mention was asked (the turns queue,
+       so a pair settles together with both asks); "declined" when its
+       latest settle is the owner's No; else "". */
     function turnState(parentId, bot) {
-      const events = lastEvents || [];
-      const parent = events.find((e) => e && e.id === parentId);
+      const parent = (lastEvents || []).find((e) => e && e.id === parentId);
       if (!parent || !bot || !bot.name) return "";
-      const root = parent.reply_to || parent.id;
+      const notes = mentionWindow(parent);
       let asks = 0;
       let settles = 0;
-      let last = { at: -1, mark: "" };
-      events.forEach((e) => {
-        if (!e || isDevLogNote(e) || (e.id !== root && e.reply_to !== root)) return;
+      let last = "";
+      notes.forEach((e) => {
         const mark = turnMark(e, bot);
-        if (mark === "ask") { asks++; return; }
-        if (!mark) return;
-        settles++;
-        const at = Number(e.created_at || 0);
-        if (at >= last.at) last = { at, mark };
+        if (mark === "ask") asks++;
+        else if (mark) { settles++; last = mark; }
       });
       if (asks > settles) return "held";
-      return last.mark === "declined" ? "declined" : "";
+      const pairAsked = mentionedRobots(parent).some((other) =>
+        notes.some((e) => turnMark(e, other) === "ask"));
+      if (!asks && !settles && pairAsked) return "held";
+      return last === "declined" ? "declined" : "";
     }
 
     function mentionAckPhase(parentId, bot, jobs) {
@@ -7371,6 +7398,9 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       return pill;
     }
 
+    /* Settled ack emoji, one per mentioned robot in mention order. */
+    const ACK_EMOJI = ["👍", "🎯", "🏆"];
+
     /* One ack pill for a mentioned robot, or null when none shows. */
     function ackPill(bot, i, phase, quietRobot) {
       if (phase === "declined") return null;
@@ -7393,7 +7423,7 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
         pill.textContent = name + word + (line ? " · " + line : "");
         return pill;
       }
-      const emoji = ["👍", "🎯", "🏆"][i % 3];
+      const emoji = ACK_EMOJI[i % ACK_EMOJI.length];
       pill.innerHTML = '<span class="emoji">' + emoji + '</span>' +
         esc(name) + (line ? " · " + esc(line) : "");
       return pill;

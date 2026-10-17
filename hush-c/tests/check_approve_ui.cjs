@@ -9,13 +9,23 @@
 //   U3 a tick during a Settings post does not flip the radio back
 //   U4 the radio shows what the server saved, not what was clicked
 //   U5 a refused post snaps the radio back to the saved setting
-//   U6 (#312) under Approve every action the owner's mention shows a
-//      neutral "waiting" pill (no 👍) for Happy while his turn waits; the
-//      👍 shows after the owner's Yes; after the owner's No no pill shows
+//   U7 (#314) in light, field office and dark, at 1440 and 390 wide, the
+//      help line under Robot turns (and under Theme) sits at least 8 px
+//      below the pills
+//   U8 (#314) at 390 wide in light, field office and dark, with the root
+//      font at 100% to 250%, no Robot turns pill clips its text or crosses
+//      the panel's content edge, its text sits at least 3 px inside its
+//      border top and bottom, "Auto-approve" stays on one line, and at
+//      100% every pill stays on one line
 //
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN
 // (required; tests/check_approve_ui.sh resolves it), HUSH_TEST_WAIT_S
 // (Chrome DevTools ready deadline, default 30).
+//
+//   U6 (#312) under Approve every action, the owner's mention shows a
+//      neutral "<Robot> · waiting for your OK" pill (no 👍) while a turn
+//      waits, the 👍 after the owner's Yes, and no pill or bar after a No.
+//      A two-robot mention waits for both asks; the state is per mention.
 'use strict';
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -34,8 +44,11 @@ const ACK_WAIT_MS = 6000;
 const ASK_HAPPY = 'Approval needed: Happy wants to take a turn. Reply Yes or No in this thread.';
 const RAN_HAPPY = 'No selected provider is ready for Happy.';
 const DECLINED_HAPPY = 'Turn declined: Happy ';
+const WAITING_COPY = ' · waiting for your OK';
 const SAY_YES = 'tell a joke';
+const SAY_PAIR = 'roll call';
 const SAY_NO = 'skip this one';
+const SAY_IN = 'one more in here';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const procs = [];
 const dirs = [];
@@ -122,9 +135,7 @@ async function startRelay() {
   await post('/api/profile', { first_name: 'Chuck', last_name: 'P', email: '', organization: '', theme: 'dark' });
   const mode = async () =>
     (await (await fetch(base + '/api/session', { headers: headers() })).json()).approval_mode;
-  const events = async () =>
-    (await (await fetch(base + '/api/events', { headers: headers() })).json()).events || [];
-  return { base, post, mode, events };
+  return { base, post, mode, headers };
 }
 
 /* Launches headless Chrome and returns a minimal CDP client on its page. */
@@ -186,12 +197,111 @@ async function waitRadio(page, want, ms, msg) {
   }
   fail(`${msg} (radio=${got}, want ${want})`);
 }
-/* The ack pills under the owner's stream note that says `say`, as
- * [{ cls, text }] (a held pill would still show a 👍, whatever its class). */
+/* U7/U8 (#314) viewports, themes and root text sizes. */
+const WIDE_W = 1440;
+const PHONE_W = 390;
+const VIEW_H = 900;
+const MIN_HELP_GAP_PX = 8;
+const GAP_THEMES = ['light', 'field-office', 'dark'];
+/* 100% is the default phone view (both pills must stay one line there);
+ * 125% and 150% are the sizes #314 names; 200% and 250% are where the old
+ * nowrap rule pushed "Approve every action" past the panel. */
+const FIT_TEXT = ['100%', '125%', '150%', '200%', '250%'];
+const MIN_TEXT_INSET_PX = 3;
+/* Settle time after a viewport, theme or font change before measuring. */
+const LAYOUT_MS = 200;
+
+async function settings(cdp, width, theme, fontSize) {
+  await cdp.send('Emulation.setDeviceMetricsOverride',
+    { width, height: VIEW_H, deviceScaleFactor: 1, mobile: false });
+  await cdp.evaluate(`(() => { applyTheme(${JSON.stringify(theme)});
+    document.documentElement.style.fontSize = ${JSON.stringify(fontSize)};
+    openSettings(); return true; })()`);
+  await sleep(LAYOUT_MS);
+}
+/* Pixels from the bottom of group to the top of the help line under it. */
+const GAP = (group) => `(() => { const g = document.getElementById(${JSON.stringify(group)});
+  const h = g && g.nextElementSibling;
+  if (!g || !h || !h.classList.contains('help')) return null;
+  return Math.round(h.getBoundingClientRect().top - g.getBoundingClientRect().bottom); })()`;
+
+/* U7: the help line under each Settings radio group keeps a visible gap. */
+async function checkHelpGap(cdp) {
+  for (const theme of GAP_THEMES) {
+    for (const width of [WIDE_W, PHONE_W]) {
+      await settings(cdp, width, theme, '');
+      const robot = await cdp.evaluate(GAP('approval-list'));
+      if (robot === null || robot < MIN_HELP_GAP_PX)
+        fail(`U7 help line ${robot} px under Robot turns (${theme}, ${width})`);
+      const look = await cdp.evaluate(GAP('theme-list'));
+      if (look === null || look < MIN_HELP_GAP_PX)
+        fail(`U7 help line ${look} px under Theme (${theme}, ${width})`);
+    }
+  }
+}
+/* Each #approval-list label: its text, whether it clips or leaves the
+ * panel, its text's line count, and the gap from the text's glyph box to
+ * the inside of the border, top and bottom. */
+const PILL_FIT = `(() => { const panel = document.querySelector('#settings .panel');
+  const edge = panel.getBoundingClientRect().right - parseFloat(getComputedStyle(panel).paddingRight);
+  return [...document.querySelectorAll('#approval-list label')].map((l) => {
+    const box = l.getBoundingClientRect();
+    const r = document.createRange();
+    r.selectNodeContents(l); r.setStartAfter(l.querySelector('input'));
+    const rects = [...r.getClientRects()].filter((x) => x.width > 0);
+    const top = Math.min(...rects.map((x) => x.top));
+    const bottom = Math.max(...rects.map((x) => x.bottom));
+    return { text: l.textContent.trim(), lines: new Set(rects.map((x) => Math.round(x.top))).size,
+      clip: l.scrollWidth > l.clientWidth || box.right > edge,
+      insetTop: top - (box.top + l.clientTop),
+      insetBottom: box.top + l.clientTop + l.clientHeight - bottom };
+  }); })()`;
+
+/* The first U8 complaint about one pill at one theme and text size. */
+function pillFault(p, size) {
+  if (p.clip) return 'clips';
+  if (!(p.insetTop >= MIN_TEXT_INSET_PX && p.insetBottom >= MIN_TEXT_INSET_PX))
+    return `text inset ${p.insetTop.toFixed(1)}/${p.insetBottom.toFixed(1)} px (< ${MIN_TEXT_INSET_PX})`;
+  if (p.text === 'Auto-approve' && p.lines !== 1) return `breaks onto ${p.lines} lines`;
+  if (size === '100%' && p.lines !== 1) return `wraps onto ${p.lines} lines at default size`;
+  return '';
+}
+
+/* U8: at 390 px, default and large text, every Robot turns pill fits. */
+async function checkFit390(cdp) {
+  for (const theme of GAP_THEMES) {
+    for (const size of FIT_TEXT) {
+      await settings(cdp, PHONE_W, theme, size);
+      const pills = await cdp.evaluate(PILL_FIT);
+      if (!Array.isArray(pills) || pills.length !== 2) fail('U8 could not measure the Robot turns pills');
+      for (const p of pills) {
+        const why = pillFault(p, size);
+        if (why) fail(`U8 ${p.text} ${why} at 390 (${theme}, root font ${size})`);
+      }
+    }
+  }
+}
+
+async function load(cdp, base) {
+  await cdp.send('Page.navigate', { url: base + '/' });
+  for (let i = 0; i < 120; i++) {
+    if (await cdp.evaluate(`typeof session !== 'undefined' && !!session.logged_in &&
+        !!document.querySelector("input[name='approval']")`)) return;
+    await sleep(100);
+  }
+  fail('the page never loaded a logged-in session');
+}
+
+/* U6 (#312). The ack pills under the owner's stream note that says `say`,
+ * as [{ cls, text }] (a held pill would still show a 👍, whatever its class). */
 const PILLS_ON = (say) => `[...document.querySelectorAll('#stream .note:not(.reply)')]
   .filter((n) => n.textContent.includes(${JSON.stringify(say)}))
   .flatMap((n) => [...n.querySelectorAll('.robot-ack')])
   .map((p) => ({ cls: p.className, text: p.textContent }))`;
+/* Ack bars (even empty ones) under that note. */
+const BARS_ON = (say) => `[...document.querySelectorAll('#stream .note:not(.reply)')]
+  .filter((n) => n.textContent.includes(${JSON.stringify(say)}))
+  .reduce((k, n) => k + n.querySelectorAll('.robot-acks').length, 0)`;
 /* True when the waiting pill under `say` uses the theme's own ink and rule
  * (--muted text, --line dashed border), checked against a probe element. */
 const WAIT_THEMED = (say) => `(() => {
@@ -208,89 +318,209 @@ const WAIT_THEMED = (say) => `(() => {
   probe.remove();
   return ok;
 })()`;
-const isWaiting = (p) => /\bwaiting\b/.test(p.cls) && p.text.includes('Happy') &&
-  !p.text.includes('👍') && !/\bemoji\b/.test(p.cls);
-const isThumb = (p) => /\bemoji\b/.test(p.cls) && p.text.includes('👍') && p.text.includes('Happy');
-
-/* Waits for a relay note that starts with `head` and is not `skipId`. */
-async function waitEvent(relay, head, msg, skipId) {
+/* The neutral waiting pill for robot name: exact UI_SPEC copy, no emoji. */
+const isWaiting = (p, name) => /\bwaiting\b/.test(p.cls) && p.text === name + WAITING_COPY &&
+  !/\bemoji\b/.test(p.cls);
+/* A settled ack pill for robot name (👍 for the first robot, 🎯 the second). */
+const isDone = (p, name, emoji) => /\bemoji\b/.test(p.cls) && p.text === emoji + name;
+/* The pills under `say` match `want` ([[kind, name, emoji]]) in order. */
+async function pillsAre(cdp, say, want) {
+  const pills = await cdp.evaluate(PILLS_ON(say));
+  const ok = Array.isArray(pills) && pills.length === want.length && want.every(([kind, name, emoji], i) =>
+    (kind === 'wait' ? isWaiting(pills[i], name) : isDone(pills[i], name, emoji)));
+  return { ok, pills };
+}
+/* Waits up to ACK_WAIT_MS for the pills under `say` to match `want`. */
+async function waitPills(cdp, say, want, msg) {
+  let last = null;
   for (const t0 = Date.now(); Date.now() - t0 < ACK_WAIT_MS; await sleep(100)) {
-    const hit = (await relay.events()).find((e) =>
-      String(e.content || '').startsWith(head) && e.id !== skipId);
+    last = await pillsAre(cdp, say, want);
+    if (last.ok) return;
+  }
+  fail(`${msg} (${JSON.stringify(last && last.pills)})`);
+}
+/* Past the 2 s 👍 delay the pills under `say` still match `want`. */
+async function holdPills(cdp, say, want, msg) {
+  await sleep(HELD_WAIT_MS);
+  const got = await pillsAre(cdp, say, want);
+  if (!got.ok) fail(`${msg} (${JSON.stringify(got.pills)})`);
+}
+
+/* Every note the relay holds. */
+async function events(relay) {
+  return (await (await fetch(relay.base + '/api/events', { headers: relay.headers() })).json()).events || [];
+}
+/* Waits for a relay note that starts with `head` and whose id is not in `skip`. */
+async function waitEvent(relay, head, msg, skip) {
+  for (const t0 = Date.now(); Date.now() - t0 < ACK_WAIT_MS; await sleep(100)) {
+    const hit = (await events(relay)).find((e) =>
+      String(e.content || '').startsWith(head) && !(skip || []).includes(e.id));
     if (hit) return hit;
   }
   return fail(msg);
 }
-/* Mentions Happy with `say` and waits for the approval ask in that thread. */
-async function mentionHappy(relay, happy, say, skipId) {
-  await relay.post('/api/event', { kind: 1, channel: 'welcome', mention_0: happy.npub,
-    content: 'nostr:' + happy.npub + ' ' + say });
-  return waitEvent(relay, ASK_HAPPY, 'U6 the turn must wait for approval', skipId);
+/* Posts the owner's note `say` naming robots (in a thread when replyTo). */
+async function mention(relay, robots, say, replyTo) {
+  const ev = { kind: 1, channel: 'welcome', content: robots.map((r) => 'nostr:' + r.npub).join(' ') + ' ' + say };
+  robots.forEach((r, i) => { ev['mention_' + i] = r.npub; });
+  if (replyTo) ev.reply_to = replyTo;
+  await relay.post('/api/event', ev);
 }
-/* Past the 2 s 👍 delay, the held note shows one neutral waiting pill. */
-async function expectWaiting(cdp, say) {
-  await sleep(HELD_WAIT_MS);
-  if (!(await cdp.evaluate(`lastEvents.some((e) => e.content === ${JSON.stringify(ASK_HAPPY)})`)))
-    fail('U6 the page never saw the approval ask');
-  if (!(await cdp.evaluate(`document.getElementById('stream').textContent.includes(${JSON.stringify(say)})`)))
-    fail(`U6 the owner's mention "${say}" is not on screen`);
-  const pills = await cdp.evaluate(PILLS_ON(say));
-  if (!pills || pills.length !== 1 || !isWaiting(pills[0]))
-    fail(`U6 a held turn must show one neutral waiting pill, no 👍 (${JSON.stringify(pills)})`);
-  if (!(await cdp.evaluate(WAIT_THEMED(say))))
-    fail('U6 the waiting pill must use the theme ink and a dashed theme rule');
+async function answer(relay, root, text) {
+  await relay.post('/api/event', { kind: 1, channel: 'welcome', reply_to: root, content: text });
+}
+async function askIds(relay) {
+  return (await events(relay)).filter((e) => String(e.content || '').startsWith('Approval needed: ')).map((e) => e.id);
 }
 
-/* U6 (#312): a held turn shows a waiting pill; the owner's Yes brings the 👍. */
+/* U6: a held turn shows the waiting pill; the owner's Yes brings the 👍. */
 async function checkHeldAck(relay, cdp) {
   await relay.post('/api/profile', { approval_mode: EVERY });
-  const raised = await relay.post('/api/agent', { name: 'Happy', system_prompt: 'Tell jokes.',
-    provider: 'grok-build', save_pass: true });
-  const happy = (raised.agents || []).find((a) => a.name === 'Happy');
-  if (!happy) fail('U6 setup: Happy was not raised');
+  const bots = {};
+  for (const name of ['Happy', 'Scout']) {
+    const raised = await relay.post('/api/agent', { name, system_prompt: 'Tell jokes.',
+      provider: 'grok-build', save_pass: true });
+    bots[name] = (raised.agents || []).find((a) => a.name === name);
+    if (!bots[name]) fail(`U6 setup: ${name} was not raised`);
+  }
   await load(cdp, relay.base);
-  const ask = await mentionHappy(relay, happy, SAY_YES, '');
-  await expectWaiting(cdp, SAY_YES);
-  await relay.post('/api/event', { kind: 1, channel: 'welcome', reply_to: ask.reply_to, content: 'Yes' });
-  await waitEvent(relay, RAN_HAPPY, 'U6 the Yes must run the turn', '');
-  for (const t0 = Date.now(); ; await sleep(100)) {
-    const pills = await cdp.evaluate(PILLS_ON(SAY_YES));
-    if (pills && pills.length === 1 && isThumb(pills[0])) break;
-    if (Date.now() - t0 > ACK_WAIT_MS)
-      fail(`U6 the 👍 must show after the owner's Yes (${JSON.stringify(pills)})`);
-  }
-  await checkDeclinedAck(relay, cdp, happy, ask.id);
+  await mention(relay, [bots.Happy], SAY_YES, '');
+  const ask = await waitEvent(relay, ASK_HAPPY, 'U6 the turn must wait for approval', []);
+  await holdPills(cdp, SAY_YES, [['wait', 'Happy']], 'U6 a held turn must show one neutral waiting pill, no 👍');
+  if (!(await cdp.evaluate(WAIT_THEMED(SAY_YES))))
+    fail('U6 the waiting pill must use the theme ink and a dashed theme rule');
+  await answer(relay, ask.reply_to, 'Yes');
+  await waitEvent(relay, RAN_HAPPY, 'U6 the Yes must run the turn', []);
+  await waitPills(cdp, SAY_YES, [['done', 'Happy', '👍']], 'U6 the 👍 must show after the owner\'s Yes');
+  return { bots, root: ask.reply_to };
 }
 
-/* U6 after No (#312): a declined turn shows no pill at all, never a 👍. */
-async function checkDeclinedAck(relay, cdp, happy, firstAskId) {
-  const ask = await mentionHappy(relay, happy, SAY_NO, firstAskId);
-  await expectWaiting(cdp, SAY_NO);
-  await relay.post('/api/event', { kind: 1, channel: 'welcome', reply_to: ask.reply_to, content: 'No' });
-  await waitEvent(relay, DECLINED_HAPPY, 'U6 the No must decline the turn', '');
-  await sleep(HELD_WAIT_MS);
-  if (!(await cdp.evaluate(`lastEvents.some((e) => String(e.content).startsWith(${JSON.stringify(DECLINED_HAPPY)}))`)))
-    fail('U6 the page never saw the declined turn');
-  const pills = await cdp.evaluate(PILLS_ON(SAY_NO));
-  if (!Array.isArray(pills) || pills.length !== 0)
-    fail(`U6 no ack pill after the owner's No (${JSON.stringify(pills)})`);
-  const yes = await cdp.evaluate(PILLS_ON(SAY_YES));
-  if (!yes || yes.length !== 1 || !isThumb(yes[0])) fail('U6 the Yes thread lost its 👍 after a No');
+/* U6 pair (#312): "@Happy @Scout" queues two turns. Both wait while
+ * Happy is asked; after Happy's Yes, Scout still waits for its own ask.
+ * The stub runtime does not finish a job, so the follow wave never asks
+ * Scout here; TURN_CASES pins the pair after both asks. */
+async function checkPairAck(relay, cdp, bots) {
+  const seen = await askIds(relay);
+  await mention(relay, [bots.Happy, bots.Scout], SAY_PAIR, '');
+  const ask = await waitEvent(relay, ASK_HAPPY, 'U6 pair: Happy must ask first', seen);
+  await holdPills(cdp, SAY_PAIR, [['wait', 'Happy'], ['wait', 'Scout']],
+    'U6 pair: both robots wait while Happy is asked (no done ack for Scout)');
+  const ran = (await events(relay)).filter((e) => String(e.content).startsWith(RAN_HAPPY)).map((e) => e.id);
+  await answer(relay, ask.reply_to, 'Yes');
+  await waitEvent(relay, RAN_HAPPY, 'U6 pair: the Yes must run Happy', ran);
+  await waitPills(cdp, SAY_PAIR, [['done', 'Happy', '👍'], ['wait', 'Scout']],
+    'U6 pair: Happy settles; Scout still waits for its own ask');
+  await holdPills(cdp, SAY_PAIR, [['done', 'Happy', '👍'], ['wait', 'Scout']],
+    'U6 pair: Scout must not settle without its own ask');
 }
 
-async function load(cdp, base) {
-  await cdp.send('Page.navigate', { url: base + '/' });
-  for (let i = 0; i < 120; i++) {
-    if (await cdp.evaluate(`typeof session !== 'undefined' && !!session.logged_in &&
-        !!document.querySelector("input[name='approval']")`)) return;
-    await sleep(100);
+/* U6 after No: a declined turn shows no pill and no ack bar; a No on a
+ * later mention in the Yes thread leaves the Yes note's 👍 (per mention). */
+async function checkDeclinedAck(relay, cdp, bots, yesRoot) {
+  let seen = await askIds(relay);
+  await mention(relay, [bots.Happy], SAY_NO, '');
+  const ask = await waitEvent(relay, ASK_HAPPY, 'U6 the turn must wait for approval', seen);
+  await holdPills(cdp, SAY_NO, [['wait', 'Happy']], 'U6 a held turn must show one neutral waiting pill, no 👍');
+  await answer(relay, ask.reply_to, 'No');
+  await waitEvent(relay, DECLINED_HAPPY, 'U6 the No must decline the turn', []);
+  await holdPills(cdp, SAY_NO, [], 'U6 no ack pill after the owner\'s No');
+  if ((await cdp.evaluate(BARS_ON(SAY_NO))) !== 0) fail('U6 an empty ack bar is drawn after the owner\'s No');
+  seen = await askIds(relay);
+  const declines = (await events(relay)).filter((e) => String(e.content).startsWith(DECLINED_HAPPY)).map((e) => e.id);
+  await mention(relay, [bots.Happy], SAY_IN, yesRoot);
+  const inAsk = await waitEvent(relay, ASK_HAPPY, 'U6 the in-thread mention must ask', seen);
+  await answer(relay, inAsk.reply_to, 'No');
+  await waitEvent(relay, DECLINED_HAPPY, 'U6 the in-thread No must decline', declines);
+  await holdPills(cdp, SAY_YES, [['done', 'Happy', '👍']],
+    'U6 a later No in the same thread must leave the Yes note\'s 👍');
+}
+
+/* U6 unit (#312): the page's own turnState and mentionAckPhase on fixed
+ * thread notes, for cases the stub runtime cannot post. */
+const TURN_AT = (events, id, name, jobs) => `(() => {
+  const keep = lastEvents;
+  try {
+    lastEvents = ${JSON.stringify(events)};
+    const bot = mentionRoster().find((h) => h && h.name === ${JSON.stringify(name)});
+    return ${jobs ? `mentionAckPhase(${JSON.stringify(id)}, bot, ${JSON.stringify(jobs)})`
+      : `turnState(${JSON.stringify(id)}, bot)`};
+  } finally { lastEvents = keep; }
+})()`;
+const WHO = `({ me: session.pubkey, bots: mentionRoster().filter((h) => h.kind !== 'human')
+  .map((h) => ({ name: h.name, npub: h.npub, pk: h.pubkey || h.npub })) })`;
+/* Builds one fixture note; more is { text, root, ms }. */
+function note(id, pubkey, at, more) {
+  return { id, pubkey, content: more.text, created_at: at, reply_to: more.root || '', channel: 'welcome',
+    kind: 1, mentions: more.ms || [] };
+}
+/* Fixture threads, keyed by the case they pin. */
+function turnFixtures(who) {
+  const h = who.bots.find((b) => b.name === 'Happy');
+  const s = who.bots.find((b) => b.name === 'Scout');
+  const chap = 'c'.repeat(64);
+  const askText = (name) => `Approval needed: ${name || 'Happy'} wants to take a turn. Reply Yes or No in this thread.`;
+  const ask = (id, at, root, name) => note(id, chap, at, { text: askText(name), root });
+  const top = (id, at, root, ms) => note(id, who.me, at, { text: 'nostr:x go', root, ms: ms || [h.npub] });
+  const yes = (id, at, root, t) => note(id, who.me, at, { text: t || 'Yes', root });
+  const rob = (id, at, root, t) => note(id, h.pk, at, { text: t, root });
+  return {
+    reply: [top('m1', 100), ask('a1', 101, 'm1'), yes('y1', 102, 'm1'), rob('r1', 103, 'm1', 'Here is a joke.')],
+    intro: [top('m2', 100), ask('a2', 101, 'm2'), yes('y2', 102, 'm2'), rob('i2', 103, 'm2', 'At ease. Coach here.')],
+    latest: [top('m3', 100), ask('a3', 101, 'm3'), yes('y3', 102, 'm3'), rob('r3', 103, 'm3', 'Done.'),
+      ask('b3', 104, 'm3'), yes('n3', 105, 'm3', 'No'), note('d3', chap, 106, { text: 'Turn declined: Happy stood down.', root: 'm3' })],
+    prefix: [top('m4', 100), ask('x4', 101, 'm4', 'Happyish'), ask('a4', 102, 'm4'), yes('y4', 103, 'm4'),
+      rob('r4', 104, 'm4', 'Done.')],
+    pair: [top('m5', 100, '', [h.npub, s.npub]), ask('a5', 101, 'm5')],
+    pairDone: [top('m6', 100, '', [h.npub, s.npub]), ask('a6', 101, 'm6'), yes('y6', 102, 'm6'),
+      rob('r6', 103, 'm6', 'Done.'), ask('b6', 104, 'm6', 'Scout'), yes('z6', 105, 'm6'),
+      note('s6', s.pk, 106, { text: 'Here too.', root: 'm6' })],
+    pairMid: [top('m7', 100, '', [h.npub, s.npub]), ask('a7', 101, 'm7'), yes('y7', 102, 'm7'),
+      rob('r7', 103, 'm7', 'Done.'), ask('b7', 104, 'm7', 'Scout')],
+    robotRoot: [rob('r8', 99, '', 'A robot top note.'), top('m8', 100, 'r8'), ask('a8', 101, 'r8')],
+    twoNotes: [top('m9', 100), ask('a9', 101, 'm9'), yes('y9', 102, 'm9'), rob('f9', 103, 'm9', 'Using another provider.'),
+      rob('r9', 104, 'm9', 'Done.'), top('m10', 105, 'm9'), ask('a10', 106, 'm9')],
+    otherThread: [top('m11', 100), ask('a11', 101, 'm11'), rob('o11', 102, 'elsewhere', 'Done.')],
+  };
+}
+/* U6 unit cases: [fixture, mention id, robot, jobs, want, message]. */
+const TURN_CASES = [
+  ['reply', 'm1', 'Happy', null, '', 'a robot reply after Yes must settle the turn'],
+  ['intro', 'm2', 'Happy', null, 'held', 'an intro must not settle the turn'],
+  ['intro', 'm2', 'Happy', [{ name: 'Happy' }], 'live', 'a live job must show thinking/reacting, not the turn state'],
+  ['latest', 'm3', 'Happy', null, 'declined', 'the latest settle (a No) must win over an earlier run'],
+  ['prefix', 'm4', 'Happy', null, '', 'another robot\'s ask whose name starts with Happy must not count'],
+  ['pair', 'm5', 'Scout', null, 'held', 'a co-mentioned robot with no ask yet must wait'],
+  ['pairMid', 'm7', 'Scout', null, 'held', 'the second robot waits while its own ask is open'],
+  ['pairDone', 'm6', 'Scout', null, '', 'the second robot settles after its own Yes and reply'],
+  ['pairDone', 'm6', 'Happy', null, '', 'the first robot stays settled after the second ask'],
+  ['robotRoot', 'm8', 'Happy', null, 'held', 'a robot-authored thread root must not settle a held turn'],
+  ['twoNotes', 'm10', 'Happy', null, 'held', 'two notes from an earlier turn must not settle a later held turn'],
+  ['twoNotes', 'm9', 'Happy', null, '', 'a later mention in the thread leaves the earlier turn settled'],
+  ['otherThread', 'm11', 'Happy', null, 'held', 'a robot note in another thread must not settle this turn'],
+];
+async function checkTurnUnits(cdp) {
+  const who = await cdp.evaluate(WHO);
+  if (!who || !who.me || !who.bots) fail('U6 unit setup: no session or roster');
+  const fx = turnFixtures(who);
+  for (const [key, id, name, jobs, want, msg] of TURN_CASES) {
+    const got = await cdp.evaluate(TURN_AT(fx[key], id, name, jobs));
+    const ok = want === 'live' ? (got === 'thinking' || got === 'reacting') : got === want;
+    if (!ok) fail(`U6 unit ${key}: ${msg} (got ${JSON.stringify(got)}, want ${want})`);
   }
-  fail('the page never loaded a logged-in session');
+}
+
+/* U6 entry: rendered held/Yes, pair, No and per-mention cases, then units. */
+async function checkAcks(relay, cdp) {
+  const { bots, root } = await checkHeldAck(relay, cdp);
+  await checkPairAck(relay, cdp, bots);
+  await checkDeclinedAck(relay, cdp, bots, root);
+  await checkTurnUnits(cdp);
 }
 
 (async () => {
   const relay = await startRelay();
   const cdp = await startChrome();
+  await checkAcks(relay, cdp);
   await relay.post('/api/profile', { approval_mode: EVERY });
   await load(cdp, relay.base);
   await waitRadio(cdp, EVERY, 3000, 'U1 a page load must show the saved setting');
@@ -331,7 +561,8 @@ async function load(cdp, base) {
   await sleep(300);
   await waitRadio(cdp, AUTO, 1500, 'U5 a refused post must snap the radio back');
   if ((await relay.mode()) !== AUTO) fail('U5 a refused post must not change the setting');
-  await checkHeldAck(relay, cdp);
+  await checkHelpGap(cdp);
+  await checkFit390(cdp);
   await cleanup();
   console.log('approve UI checks ok');
   process.exit(0);

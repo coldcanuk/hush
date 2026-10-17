@@ -767,7 +767,13 @@ static void check_answer_order(void)
  * TEST_APPROVE_SCAN_MAX when none does. */
 static size_t first_at(hush_store_t *store, const char *head)
 {
-    size_t total = hush_store_count(store);
+    size_t total = 0;
+    const int ok = store != NULL && head != NULL && head[0] != '\0';
+
+    expect(ok, "first_at needs a store and a head");
+    if (!ok)
+        return TEST_APPROVE_SCAN_MAX;
+    total = hush_store_count(store);
 
     for (size_t i = 0; i < total && i < TEST_APPROVE_SCAN_MAX; i++) {
         hush_event_t ev = {0};
@@ -780,36 +786,50 @@ static size_t first_at(hush_store_t *store, const char *head)
     return TEST_APPROVE_SCAN_MAX;
 }
 
-/* Gives robot (Happy or Scout) a custom intro with the switch on (#312). */
-static void give_intro(test_approve_fixture_t *fx, const hush_roster_agent_t *robot)
+/* Gives the fixture's roster robot named name (Happy or Scout) a custom
+ * intro with the switch on (#312). */
+static void give_intro(test_approve_fixture_t *fx, const char *name)
 {
-    hush_roster_agent_t *bot = &fx->launch.roster.agents[robot - fx->launch.roster.agents];
+    hush_roster_agent_t *bot = NULL;
 
+    for (size_t i = 0; i < (size_t)HUSH_ROSTER_AGENTS_MAX && bot == NULL; i++) {
+        if (strcmp(fx->launch.roster.agents[i].name, name) == 0)
+            bot = &fx->launch.roster.agents[i];
+    }
+    expect(bot != NULL, "give_intro: the robot is on the roster");
+    if (bot == NULL)
+        return;
     hush_agent_copy(bot->intro, sizeof(bot->intro), TEST_APPROVE_INTRO);
     bot->intro_enabled = 1;
+    expect(strcmp(bot->intro, TEST_APPROVE_INTRO) == 0 && bot->intro_enabled == 1,
+           "give_intro: the intro is set and switched on");
 }
+
+/* #312 fixtures, file scope (no static inside a function). */
+static test_approve_fixture_t intro_waits_fx;
+static test_approve_fixture_t intro_auto_fx;
 
 /* #312: under Approve every action a custom intro waits for the owner's
  * Yes, posts once before the run note, and never posts after a No.
  * Auto-approve still greets at the mention. */
 static void check_intro_waits(void)
 {
-    static test_approve_fixture_t fx;
+    test_approve_fixture_t *const fx = &intro_waits_fx;
 
-    open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
-    give_intro(&fx, fx.happy);
-    mention_happy(&fx, "tell a joke");
-    expect(count_line(fx.store, TEST_APPROVE_INTRO_NOTE) == 0,
+    open_hive(fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+    give_intro(fx, "Happy");
+    mention_happy(fx, "tell a joke");
+    expect(count_line(fx->store, TEST_APPROVE_INTRO_NOTE) == 0,
            "custom intro posted before the owner's Yes");
-    expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == 1, "the intro turn asks once");
-    answer(&fx, fx.launch.human.pubkey_hex, "Yes");
-    expect(count_line(fx.store, TEST_APPROVE_INTRO_NOTE) == 1, "the Yes posts the intro once");
-    expect(first_at(fx.store, TEST_APPROVE_INTRO_NOTE) <
-           first_at(fx.store, TEST_APPROVE_RAN_HEAD), "the intro posts before the run note");
-    mention_happy(&fx, "another joke");
-    answer(&fx, fx.launch.human.pubkey_hex, "No");
-    expect(count_line(fx.store, TEST_APPROVE_INTRO_NOTE) == 1, "a declined turn posts no intro");
-    close_hive(&fx);
+    expect(count_line(fx->store, TEST_APPROVE_ASK_COPY) == 1, "the intro turn asks once");
+    answer(fx, fx->launch.human.pubkey_hex, "Yes");
+    expect(count_line(fx->store, TEST_APPROVE_INTRO_NOTE) == 1, "the Yes posts the intro once");
+    expect(first_at(fx->store, TEST_APPROVE_INTRO_NOTE) <
+           first_at(fx->store, TEST_APPROVE_RAN_HEAD), "the intro posts before the run note");
+    mention_happy(fx, "another joke");
+    answer(fx, fx->launch.human.pubkey_hex, "No");
+    expect(count_line(fx->store, TEST_APPROVE_INTRO_NOTE) == 1, "a declined turn posts no intro");
+    close_hive(fx);
 }
 
 /* #312: Auto-approve is unchanged. The mention greets every robot it names
@@ -817,18 +837,18 @@ static void check_intro_waits(void)
  * intro posts once. */
 static void check_intro_auto(void)
 {
-    static test_approve_fixture_t fx;
+    test_approve_fixture_t *const fx = &intro_auto_fx;
 
-    open_hive(&fx, HUSH_ROSTER_APPROVAL_AUTO_ID);
-    give_intro(&fx, fx.happy);
-    give_intro(&fx, fx.scout);
-    open_thread(&fx, &fx.root, fx.launch.human.pubkey_hex, fx.scout);
-    expect(count_line(fx.store, TEST_APPROVE_INTRO_NOTE) == 1, "Auto-approve greets Happy once");
-    expect(count_line(fx.store, TEST_APPROVE_INTRO_SCOUT) == 1, "Auto-approve greets Scout once");
-    expect(first_at(fx.store, TEST_APPROVE_INTRO_SCOUT) <
-           first_at(fx.store, TEST_APPROVE_RAN_HEAD),
+    open_hive(fx, HUSH_ROSTER_APPROVAL_AUTO_ID);
+    give_intro(fx, "Happy");
+    give_intro(fx, "Scout");
+    open_thread(fx, &fx->root, fx->launch.human.pubkey_hex, fx->scout);
+    expect(count_line(fx->store, TEST_APPROVE_INTRO_NOTE) == 1, "Auto-approve greets Happy once");
+    expect(count_line(fx->store, TEST_APPROVE_INTRO_SCOUT) == 1, "Auto-approve greets Scout once");
+    expect(first_at(fx->store, TEST_APPROVE_INTRO_SCOUT) <
+           first_at(fx->store, TEST_APPROVE_RAN_HEAD),
            "Auto-approve greets at the mention, before any turn runs");
-    close_hive(&fx);
+    close_hive(fx);
 }
 
 /* Without a signed-in identity the setting is refused and unchanged. */
