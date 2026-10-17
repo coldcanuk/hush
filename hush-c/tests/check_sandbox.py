@@ -12,6 +12,7 @@ auth path refuses the turn and names the path.
 """
 
 import json
+import subprocess
 import os
 import sys
 import tempfile
@@ -227,9 +228,60 @@ def check_path_refuse(rel, label):
             hive.relay.stop()
 
 
+def bwrap_works():
+    """Host proof, same words the relay uses for its own probe."""
+    try:
+        r = subprocess.run(["bwrap", "--unshare-pid", "--unshare-net", "--ro-bind", "/", "/",
+                            "--proc", "/proc", "--", "true"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return r.returncode == 0
+
+
+def check_bwrap_unusable():
+    """A bwrap that is present but cannot unshare must refuse, never run."""
+    with tempfile.TemporaryDirectory(prefix="hush-sandbox-") as temporary:
+        hive = Hive(Path(temporary))
+        hive.relay.environment.update(SECRETS)
+        hive.relay.environment["HUSH_SANDBOX_BACKEND"] = "bwrap"
+        fake = hive.relay.directory / "bin" / "bwrap"
+        fake.parent.mkdir(parents=True, exist_ok=True)
+        fake.write_text("#!/bin/sh\necho 'bwrap: setting up uid map: Permission denied' >&2\nexit 1\n")
+        fake.chmod(0o755)
+        plant_sensitive(Path(hive.relay.environment["HOME"]))
+        hive.relay.start()
+        try:
+            npub = raise_happy(hive)
+            cwd = hive.relay.directory / "config" / "agent-cwd"
+            cwd.mkdir(parents=True, exist_ok=True)
+            write_stub(hive.relay.directory / "bin", cwd / "x.json",
+                       hive.relay.directory / "home", hive.relay.directory / "config",
+                       hive.relay.port, hive.relay.process.pid,
+                       hive.relay.environment["HOME"], cwd)
+            hive.pair()
+            before = len(hive.events())
+            note = {"content": f"nostr:{npub} probe a broken jail", "kind": 1,
+                    "channel": "general", "mention_0": npub}
+            st, body = hive.post("/api/event", note, hive.paired())
+            assert st == 200, body[:200]
+            reason = wait_reason(hive, before, lambda c: "cannot unshare" in c)
+            assert reason, "unusable bwrap not refused; log=\n" + hive.relay.log_path.read_text()[-2000:]
+            assert not (cwd / "x.json").exists(), "provider ran under an unusable bwrap"
+            print("sandbox[bwrap-unusable]: refused with clear reason OK")
+        finally:
+            hive.relay.stop()
+
+
 def main():
     check_child("landlock")
-    check_child("bwrap")
+    if bwrap_works():
+        check_child("bwrap")
+    else:
+        print("sandbox[bwrap]: host cannot unshare; proving the refusal instead")
+        check_refuse({"HUSH_SANDBOX_BACKEND": "bwrap"},
+                     lambda c: "cannot unshare" in c, "bwrap-host")
+    check_bwrap_unusable()
     check_refuse({"HUSH_SANDBOX_BACKEND": "none"},
                  lambda c: "Landlock" in c or "bwrap" in c,
                  "none")

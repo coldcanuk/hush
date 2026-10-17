@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "hush_home.h"
@@ -329,7 +330,7 @@ static int hush_sandbox_holds_denied(const hush_sandbox_policy_t *policy, const 
     return 0;
 }
 
-static int hush_sandbox_bwrap_ok(void)
+static int hush_sandbox_bwrap_found(void)
 {
     const char *no = getenv("HUSH_SANDBOX_NO_BWRAP");
     char *path = NULL;
@@ -358,6 +359,40 @@ static int hush_sandbox_bwrap_ok(void)
         }
     }
     return access("/usr/bin/bwrap", X_OK) == 0;
+}
+
+/* Proof, not presence: bwrap must really build the pid+net namespaces and a
+ * private /proc on this host (CI runners and AppArmor hosts may forbid it). */
+static int hush_sandbox_bwrap_proof(void)
+{
+    static char *const words[] = {"bwrap", "--unshare-pid", "--unshare-net",
+                                  "--ro-bind", "/", "/", "--proc", "/proc",
+                                  "--", "true", NULL};
+    int status = 0;
+    pid_t pid = fork();
+
+    if (pid < 0)
+        return 0;
+    if (pid == 0) {
+        int null_fd = open("/dev/null", O_RDWR);
+        if (null_fd >= 0) {
+            (void)dup2(null_fd, STDIN_FILENO);
+            (void)dup2(null_fd, STDOUT_FILENO);
+            (void)dup2(null_fd, STDERR_FILENO);
+        }
+        execvp("bwrap", words);
+        _exit(127);
+    }
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR)
+            return 0;
+    }
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+static int hush_sandbox_bwrap_ok(void)
+{
+    return hush_sandbox_bwrap_found() && hush_sandbox_bwrap_proof();
 }
 
 hush_sandbox_backend_t hush_sandbox_backend(void)
@@ -793,7 +828,8 @@ static hush_status_t hush_sandbox_exec_bwrap(const hush_sandbox_policy_t *policy
 
     assert(policy != NULL && file != NULL && argv != NULL);
     if (!hush_sandbox_bwrap_ok()) {
-        hush_sandbox_set_why("agent sandbox refused: bwrap not available");
+        hush_sandbox_set_why(
+            "agent sandbox refused: bwrap missing or cannot unshare pid+net here");
         return HUSH_ERR_DENIED;
     }
 #if defined(__linux__)
