@@ -26,4 +26,20 @@ for bin in "${HUSH_CHROME_BIN:-}" google-chrome chromium chromium-browser; do
     fi
 done
 [ -n "$CHROME" ] || missing "no Chrome on PATH (need google-chrome or chromium)"
-HUSH_CHROME_BIN="$CHROME" node tests/check_restart_ui.cjs
+# #326: run with TMPDIR pointed at a private dir, then require that the run
+# removed every id1-* temp dir it made (Chrome profile, relay homes, fake
+# pass dir); the fixed id1-shots art dir stays where it always was.
+run_tmp=$(mktemp -d)
+trap 'rm -rf "$run_tmp"' EXIT
+art="${ID1_ART:-${TMPDIR:-/tmp}/id1-shots}"
+set +e
+TMPDIR="$run_tmp" ID1_ART="$art" HUSH_CHROME_BIN="$CHROME" node tests/check_restart_ui.cjs
+rc=$?
+set -e
+[ "$rc" -eq 0 ] || exit "$rc"
+left=$(find "$run_tmp" -mindepth 1 -maxdepth 1 -name 'id1-*' ! -name id1-shots -exec basename {} \;)
+if [ -n "$left" ]; then
+    echo "restart UI check failed: the full run left id1-* temp dirs: $(echo $left)" >&2
+    exit 1
+fi
+echo "restart UI full run left no id1-* temp dirs"
