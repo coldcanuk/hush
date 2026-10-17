@@ -326,10 +326,10 @@ detail and no KEYS milestone.
   - **They decide at different layers (Gauge X2).** The mode decides at the
     **turn** layer: whether a turn is held before it starts (`approval_needed`,
     agent_approve.c:40-46). GUARD decides at the **command** layer, inside a
-    turn that has already started (guard-plan.md:91 @cabf5a44). They never
+    turn that has already started (`docs/guard-plan.md`:91, in "## 4. Precedence", main @587beda0; same text as @cabf5a44). They never
     compete for one decision, so there is no precedence between a GUARD rule
     and the mode. A GUARD Reject or Ask still applies to every command in a
-    turn the mode let start.
+    turn the mode let start. The command layer is specified in the merged GUARD plan (main @587beda0): "## 5. Rule authority and audit" (guard-plan.md:97-105: owner-only rule writes with the nonce + Origin, robots propose only, decisions only on the pending card, `hush/guard-audit.jsonl`, pending-ask timeout) and "## 7. Data, API, UI contract" (guard-plan.md:124-180: `hush/guardrails.json`, `/api/guard/*` with `X-Hush-Nonce` + same Origin at :153, the inline pending card and its four stamps). Neither section touches `approval_needed` or the turn hold.
   - The mode never writes or satisfies Always-approve rules, and GUARD rules
     never start or un-hold a turn.
   - Neither path may run a guest turn without an owner decision (§7.1, #322).
@@ -1121,6 +1121,6 @@ of this file at this revision.
 | F16 P3 downgrade fails open | §4.4:435-443, :452; K7:883 | On disk: `approval_mode: approve_every_action` + `approve_owner_asks: true` (K7+ only). An older relay, incl. pre-#336 main 13511bd4, loads Approve every action. K7 test added. Unknown id → deny is the #336 "plus" item |
 | F17 P2 T3 "fixed by env scrub" overclaims | §7.0 T3:691; §0:72-75 | T3 needs part 2 (child env allowlist + relay reads `HUSH_KEY_PASS` once and unsetenvs it, hush_keyfile.c:280) and part 1 (hide `$HUSH_HOME`/`keys.vault`; deny `/proc/<relay>`/ptrace via Landlock domain or pid namespace) |
 | X1 P3 GUARD names (`approve_guest_turns`, retracted token claim) | none here (defect is in #335) | Fixed in #335 at cabf5a44 (guard-plan.md:33-34). No KEYS change |
-| X2 P3 "same relay point" / "wins over the mode" | §3:326-334 | Reworded: mode = turn layer (`approval_needed`), GUARD = command layer inside a started turn (guard-plan.md:91 @cabf5a44); no precedence; GUARD Reject/Ask still applies inside a mode-started turn |
+| X2 P3 "same relay point" / "wins over the mode" | §3:326-334 | Reworded: mode = turn layer (`approval_needed`), GUARD = command layer inside a started turn (guard-plan.md:91 @cabf5a44 / main @587beda0); no precedence; GUARD Reject/Ask still applies inside a mode-started turn; GUARD §5 (:97-105) and §7 (:124-180) on main cited as the command-layer spec (CoS 11:17) |
 | X3 P3 10:10 ruling attributed to CoS here, JNY in GUARD | §3:336; §7.4:845 | Both labels noted as one ruling with identical content (guard-plan.md:95 @cabf5a44) |
 | #332 N-2 (same gap) | §0:69-86 | Covered by the F14 parts list |
