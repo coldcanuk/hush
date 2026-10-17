@@ -1011,9 +1011,9 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 }
 
 /* Avatar selection window: dedicated 128px viewer + grid. The preview ring
-   is the light --accent in every theme (#309 r5): --accent-dim was below
-   3:1 on the panel in six themes. Field-office keeps its own offset print
-   shadow (below). */
+   (#309 r5) and the selected tile's ring (#309 r6) are the light --accent
+   in every theme: --accent-dim was below 3:1 on the panel in six themes.
+   Field-office keeps its own offset print shadows (below). */
 #avatar-drawer .panel { width: min(56rem, 100%); }
 .avatar-preview {
   width: 128px; height: 128px; margin: 8px auto 4px; border: 2px solid var(--line);
@@ -1031,7 +1031,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
   border-radius: 12px; cursor: pointer; background-repeat: no-repeat;
   background-position: center; background-size: cover; background-color: var(--surface-2);
 }
-.avatar-cell.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.avatar-cell.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent); }
 
 /* UI-M9: persistent vertical tool rail deleted. No activity-bar strip, no
    drag grip, no collapsed stamp box. Header KIT stamp + #kit-menu only. */
@@ -2223,8 +2223,8 @@ html[data-theme="christmas"] .robot-call { border-color: var(--accent); }
    .note.reply follow the same rule but no measured view shows them with a
    border (#robot-list is display:none; the thread pane drops the reply
    rule). The old .agent box has no element in the page and is left out.
-   r5: the selected avatar tile's ring takes the light crimson too; the
-   preview ring needs no christmas rule (the base ring is --accent). */
+   The avatar preview and selected tile rings need no christmas rule: both
+   base rings are --accent (#309 r5, r6). */
 html[data-theme="christmas"] #badge.ok,
 html[data-theme="christmas"] .composer-box:focus-within,
 html[data-theme="christmas"] .card input:focus,
@@ -2233,7 +2233,6 @@ html[data-theme="christmas"] .robot-card,
 html[data-theme="christmas"] .prov-row:hover,
 html[data-theme="christmas"] .iconbtn.on { border-color: var(--accent); }
 html[data-theme="christmas"] .composer-box:focus-within { box-shadow: 0 0 0 1px var(--accent); }
-html[data-theme="christmas"] .avatar-cell.on { box-shadow: 0 0 0 3px var(--accent); }
 html[data-theme="christmas"] .partial,
 html[data-theme="christmas"] .note.reply,
 html[data-theme="christmas"] .fo-feed-line { border-left-color: var(--accent); }

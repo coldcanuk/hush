@@ -58,6 +58,9 @@
 //      ring, or field-office's own 2px offset print shadow) is solid (no blur)
 //      and >= 3:1 against the panel behind it, in all 8 themes at both widths,
 //      in the real avatar window with a tile picked (#309 r5).
+//   R9 the selected avatar tile's (.avatar-cell.on) outer ring, measured the
+//      same way, is solid and >= 3:1 against the grid behind it, in all 8
+//      themes at both widths, so the picked tile is unmistakable (#309 r6).
 //   B1 Thread, Download and Stop are 20-24px tall at both widths; at 390 a
 //      point 20px above and below the centre still hits the control (44px).
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
@@ -731,8 +734,12 @@ async function main() {
    * real mouse click, so .avatar-cell.on and the filled preview are painted.
    * The agent drawer underneath is closed so only the window is on screen.
    * R5 (christmas, accentTouch) measures the selected tile's ring. R8: the
-   * preview's outer ring (first box-shadow) in all 8 themes. */
+   * preview's outer ring (first box-shadow) in all 8 themes. R9: the same
+   * for the selected tile (.avatar-cell.on) against the grid behind it. */
   const r8 = [];
+  const r9 = [];
+  /* [pin, name, selector, results]: the element's first box-shadow is its ring. */
+  const RING_PINS = [['R8', 'avatar-preview', '#avatar-preview', r8], ['R9', 'avatar-cell.on', '#avatar-grid .avatar-cell.on', r9]];
   const R8_THEMES = ['dark', 'light', 'color-blind', 'dracula', 'desert', 'monochrome', 'christmas', 'field-office'];
   for (const [w, h] of WIDTHS) {
     await view(w, h);
@@ -751,21 +758,25 @@ async function main() {
     await cdp.eval(`(() => { const a = document.activeElement; if (a && a !== document.body) a.blur(); })()`);
     await sleep(150); await cdp.eval(KIT);
     await accentTouch('avatar-window', w);
-    const rr = await cdp.eval(`((T) => { const P = window.__pal; const h = document.documentElement; const was = h.getAttribute('data-theme');
-      const st = document.createElement('style'); st.textContent = '*, *::before, *::after { transition: none !important; animation: none !important; }'; document.head.appendChild(st);
-      const el = document.getElementById('avatar-preview'); const out = [];
-      for (const t of T) { h.setAttribute('data-theme', t); const cs = getComputedStyle(el); const behind = P.bgOf(el.parentElement);
-        const mm = /((?:rgba?|oklch|oklab|lab|lch|hsla?|color)\\([^)]*\\))\\s+(-?[\\d.]+)px\\s+(-?[\\d.]+)px\\s+([\\d.]+)px(?:\\s+(-?[\\d.]+)px)?(?!\\s*inset)/.exec(cs.boxShadow || '');
-        if (!mm) { out.push({ theme: t, shadow: cs.boxShadow, ratio: 0 }); continue; }
-        const c = P.over(P.rgba(mm[1]), behind);
-        out.push({ theme: t, kind: (+mm[2] || +mm[3]) ? 'offset' : 'ring', blur: +mm[4], spread: +(mm[5] || 0), ring: P.hex(c), behind: P.hex(behind), ratio: Math.round(P.ratio(c, behind) * 100) / 100, shadow: cs.boxShadow }); }
-      st.remove(); h.setAttribute('data-theme', was); return out; })(${JSON.stringify(R8_THEMES)})`);
-    for (const x of rr) { r8.push(Object.assign({ w }, x));
-      if (!x.ring || x.blur > 0 || x.ratio < 3) failures.push(`R8 avatar-preview ${x.theme}@${w} ring ${x.ratio}:1 ${x.ring || '-'} behind ${x.behind || '-'} (${x.shadow})`); }
-    console.log(`palette R8 avatar-preview ring @${w}: ` + rr.map((x) => `${x.theme} ${x.ratio} (${x.kind || 'none'} ${x.ring || '-'} on ${x.behind || '-'})`).join(', '));
+    for (const [pin, name, sel, acc] of RING_PINS) {
+      const rr = await cdp.eval(`((T, S) => { const P = window.__pal; const h = document.documentElement; const was = h.getAttribute('data-theme');
+        const st = document.createElement('style'); st.textContent = '*, *::before, *::after { transition: none !important; animation: none !important; }'; document.head.appendChild(st);
+        const el = document.querySelector(S); const out = [];
+        for (const t of T) { h.setAttribute('data-theme', t); if (!el) { out.push({ theme: t, shadow: 'no ' + S, ratio: 0 }); continue; }
+          const cs = getComputedStyle(el); const behind = P.bgOf(el.parentElement);
+          const mm = /((?:rgba?|oklch|oklab|lab|lch|hsla?|color)\\([^)]*\\))\\s+(-?[\\d.]+)px\\s+(-?[\\d.]+)px\\s+([\\d.]+)px(?:\\s+(-?[\\d.]+)px)?(?!\\s*inset)/.exec(cs.boxShadow || '');
+          if (!mm) { out.push({ theme: t, shadow: cs.boxShadow, ratio: 0 }); continue; }
+          const c = P.over(P.rgba(mm[1]), behind);
+          out.push({ theme: t, kind: (+mm[2] || +mm[3]) ? 'offset' : 'ring', blur: +mm[4], spread: +(mm[5] || 0), ring: P.hex(c), behind: P.hex(behind), ratio: Math.round(P.ratio(c, behind) * 100) / 100, shadow: cs.boxShadow }); }
+        st.remove(); h.setAttribute('data-theme', was); return out; })(${JSON.stringify(R8_THEMES)}, ${JSON.stringify(sel)})`);
+      for (const x of rr) { acc.push(Object.assign({ w }, x));
+        if (!x.ring || x.blur > 0 || x.ratio < 3) failures.push(`${pin} ${name} ${x.theme}@${w} ring ${x.ratio}:1 ${x.ring || '-'} behind ${x.behind || '-'} (${x.shadow})`); }
+      console.log(`palette ${pin} ${name} ring @${w}: ` + rr.map((x) => `${x.theme} ${x.ratio} (${x.kind || 'none'} ${x.ring || '-'} on ${x.behind || '-'})`).join(', '));
+    }
     await cdp.eval(`(() => { for (const d of document.querySelectorAll('.drawer.show')) d.classList.remove('show'); })()`);
   }
   if (r8.length !== 16) failures.push(`R8 measured ${r8.length} avatar-preview rings, want 8 themes x 2 widths`);
+  if (r9.length !== 16) failures.push(`R9 measured ${r9.length} selected avatar tile rings, want 8 themes x 2 widths`);
   /* R3 voice phase (#309 r3): .chan-voice is drawn only when the relay
    * reports a speech engine. The real BOARDS drawer is re-rendered with
    * /api/status answering "whisper":true (rewritten in the browser via CDP
@@ -839,6 +850,7 @@ async function main() {
     `${r3.length} hovered accent buttons >= 4.5:1 (${r3stamps.length} stamps, outline >= 3:1; ${r3.filter((x) => x.el.includes('chan-voice')).length} chan-voice, ${r3.filter((x) => x.el.includes('robot-call')).length} robot-call), ` +
     `${r5.length} christmas accent / accent-dim border sides and rings >= 3:1 (floor ${R5_CLAIMS.length} claimed rules), ${r6.length} christmas switch track states >= 3:1 with knob >= 3:1, ${r7.length} christmas primary buttons on --accent-fill, ` +
     `${r8.length} avatar-preview rings >= 3:1 (${new Set(r8.map((x) => x.theme)).size} themes x 2 widths), ` +
+    `${r9.length} selected avatar tile rings >= 3:1 (${new Set(r9.map((x) => x.theme)).size} themes x 2 widths), ` +
     'ink-stamp actions 20-24px with 44px touch hit at 390');
 }
 
