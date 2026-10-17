@@ -139,7 +139,9 @@ static void test_worker_cwd(void)
     snprintf(job.cwd, sizeof(job.cwd), "%s", dir);
     n = hush_agent_fill_copilot_argv(&job, argv, HUSH_AGENT_ARGV_MAX, "note");
     expect(n > 0, "copilot argv built");
-    expect(argv_has(argv, "--allow-all-tools") == 1, "copilot tools");
+    expect(argv_has(argv, "--allow-all-tools") == 0, "copilot never allow-all-tools (#333)");
+    expect(argv_has(argv, "--deny-tool=shell,url,memory,write") == 1,
+           "ungated copilot denies shell and writes");
     expect(argv_has(argv, "-C") == 1, "copilot -C");
     expect(argv_has(argv, job.cwd) == 1, "copilot cwd");
     expect(argv_has(argv, "--allow-all") == 0, "copilot not allow-all");
@@ -147,8 +149,37 @@ static void test_worker_cwd(void)
     n = hush_agent_fill_copilot_argv(&job, argv, HUSH_AGENT_ARGV_MAX, "note");
     expect(n > 0, "copilot argv without cwd");
     expect(argv_has(argv, "-C") == 0, "no -C when cwd empty");
-    expect(argv_has(argv, "--allow-all-tools") == 1, "tools without cwd");
+    expect(argv_has(argv, "--allow-all-tools") == 0, "no allow-all-tools without cwd");
     expect(argv_has(argv, "--allow-all") == 0, "still not allow-all");
+}
+
+/* #333: only project_tools == 1 is a gate; every other value grants nothing. */
+static void test_copilot_gate_values(void)
+{
+    hush_agent_job_t job;
+    char *argv[HUSH_AGENT_ARGV_MAX];
+    int slots = 0;
+
+    expect(hush_agent_is_gated(1) == 1, "project_tools 1 is gated");
+    expect(hush_agent_is_gated(0) == 0, "project_tools 0 is not gated");
+    expect(hush_agent_is_gated(2) == 0, "unknown project_tools is not gated");
+    expect(hush_agent_is_gated(-1) == 0, "negative project_tools is not gated");
+    expect(strcmp(hush_agent_copilot_deny(1), "--deny-tool=shell,url,memory") == 0,
+           "gated copilot still denies shell");
+    expect(strcmp(hush_agent_copilot_deny(2), "--deny-tool=shell,url,memory,write") == 0,
+           "unknown gate value denies writes");
+    memset(&job, 0, sizeof(job));
+    job.project_tools = 2;
+    expect(hush_agent_fill_copilot_argv(&job, argv, HUSH_AGENT_ARGV_MAX, "note") > 0,
+           "copilot argv for an unknown gate value");
+    expect(argv_has(argv, "--allow-tool=write") == 0, "unknown gate value grants no writes");
+    job.project_tools = 1;
+    slots = hush_agent_fill_copilot_argv(&job, argv, HUSH_AGENT_ARGV_MAX, "note");
+    expect(slots > 0, "copilot argv for a gated turn");
+    expect(argv_has(argv, "--allow-tool=write") == 1, "gated copilot may write files");
+    expect(argv_has(argv, "--allow-all-tools") == 0, "gated copilot never allow-all-tools");
+    expect(hush_agent_fill_copilot_argv(&job, argv, (size_t)slots - 1, "note") == 0,
+           "copilot argv refuses a short buffer");
 }
 
 static void test_denylist(void)
@@ -353,6 +384,7 @@ int main(void)
     test_parse();
     test_project_clock();
     test_cline_argv();
+    test_copilot_gate_values();
     test_worker_cwd();
     test_denylist();
     test_yes_no(home);

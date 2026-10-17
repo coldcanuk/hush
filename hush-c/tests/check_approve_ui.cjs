@@ -40,8 +40,9 @@ const dirs = [];
 /* A child that ignores SIGTERM this long gets SIGKILL. */
 const STOP_WAIT_MS = 5000;
 
-/* Stops one child this check started and resolves once it has exited, so
- * nothing writes into its temp dir after the dir is removed. */
+/* Stops one child this check started and resolves once it has exited.
+ * That narrows writes into its temp dir after the dir is removed; it does
+ * not rule them out (a Chrome helper may still be writing). */
 function stopProc(p) {
   return new Promise((resolve) => {
     if (p.exitCode !== null || p.signalCode !== null) { resolve(); return; }
