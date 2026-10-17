@@ -64,9 +64,9 @@ never on disk, new each start). The app window the relay opens is launched
 with `/?pair=<code>`; with `--no-open` the relay prints that link once. The
 first request presenting the code gets the `hush_session` cookie
 (`Max-Age` 30 days, so a reopened window of the same profile stays signed in)
-and the code is re-minted at once, so a copy of the link is dead. The page
-removes `?pair=` from its address bar on load. Exercised by
-`check_bootstrap.py`. Limit: until the window redeems it, the code is in the
+and the code is re-minted at once, so a copy of the link is dead. Exercised
+by `check_bootstrap.py` (exact `Max-Age=2592000` line). The page removes
+`?pair=` from its address bar on load; exercised by `check_layer_ui.cjs`. Limit: until the window redeems it, the code is in the
 browser's command line (`/proc/<pid>/cmdline`) for about a second.
 
 The listener binds `127.0.0.1` by default. `--listen 0.0.0.0` (or another

@@ -202,8 +202,8 @@ def check_pairing(relay):
     assert b"set-cookie" not in head_of(raw).lower(), "a code outside the request line counted"
     raw = relay.send("GET", "/?pair=" + code, [])
     head = head_of(raw).decode("latin-1")
-    want = f"Set-Cookie: hush_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age="
-    assert want in head, head[:400]
+    want = f"Set-Cookie: hush_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000\r\n"
+    assert want in head + "\r\n", head[:400]
     raw = relay.send("GET", "/?pair=" + code, [])
     assert b"set-cookie" not in head_of(raw).lower(), "a spent code earned a second cookie"
     cookie = [f"Cookie: hush_session={token}"]
