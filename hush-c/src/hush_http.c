@@ -53,6 +53,9 @@ enum {
     HUSH_HTTP_COMPLETE_JSON_MAX = 1536,
     HUSH_HTTP_HDR_VALUE_MAX = 512,
     HUSH_HTTP_HOST_MAX = 128,
+    /* "http://" plus a Host value; a longer Origin cannot be the served one. */
+    HUSH_HTTP_ORIGIN_MAX = HUSH_HTTP_HOST_MAX + 8,
+    HUSH_HTTP_FETCH_SITE_MAX = 32,
     /* One Set-Cookie line: name, value, attributes, CRLF. */
     HUSH_HTTP_COOKIE_LINE_MAX = 160,
     /* The paired window keeps its cookie across a close and reopen; the
@@ -86,8 +89,12 @@ enum {
 #define HUSH_HTTP_WINDOW_MAX "maximize"
 #define HUSH_HTTP_WINDOW_PREPARE "prepare"
 #define HUSH_HTTP_RATE_BODY "{\"ok\":false,\"error\":\"rate-limited\"}\n"
+#define HUSH_HTTP_ORIGIN_BODY "{\"ok\":false,\"error\":\"cross-origin request refused\"}\n"
+/* The relay serves plain HTTP only, so the served origin is http://<Host>. */
+#define HUSH_HTTP_ORIGIN_SCHEME "http://"
+#define HUSH_HTTP_FETCH_SAME_ORIGIN "same-origin"
 #define HUSH_HTTP_UI_PROOF_BODY \
-    "{\"ok\":false,\"error\":\"Approvals need the paired Hush window. " \
+    "{\"ok\":false,\"error\":\"This needs the paired Hush window. " \
     "Reopen Hush from its launcher.\"}\n"
 
 /* Per-source-IP API request bucket. addr 0 marks a free slot (a real peer
@@ -158,6 +165,7 @@ int hush_http_json_bare_field(const char *body, const char *key,
 /* Decodes optional required room guidance into borrowed caller storage.
  * Missing field preserves the supplied default; invalid or oversized fields fail. */
 const char *hush_http_body(const char *req, size_t len);
+static int hush_http_stamps_owner(const char *path);
 static hush_status_t hush_http_serve_api_post(int fd, const char *path,
                                               const char *req, size_t len,
                                               hush_store_t *store,
@@ -195,6 +203,20 @@ static int hush_http_cookie_token(const char *cookie, const char *name,
                                   char *out, size_t outsz);
 /* True when any accepted credential matches the live session token. */
 static int hush_http_request_is_authed(const char *req, size_t len);
+/* True when X-Hush-Token or Authorization: Bearer matches the live token.
+ * A browser cannot attach either header cross-site without a CORS preflight,
+ * and the relay never grants one. */
+static int hush_http_header_is_authed(const char *req, size_t len);
+/* True when the request asks to change state: any POST under /api/. */
+static int hush_http_is_state_change(const char *req, const char *path);
+/* True when origin is exactly http://<Host> of this request. */
+static int hush_http_origin_is_served(const char *req, size_t len,
+                                      const char *origin);
+/* True when Sec-Fetch-Site and Origin allow a state change. A missing
+ * Origin passes only for a header-credential (non-browser) client. */
+static int hush_http_origin_ok(const char *req, size_t len);
+/* Replies 403 with the cross-origin JSON. */
+static hush_status_t hush_http_reply_cross_origin(int fd);
 /* True when host names the local machine. */
 static int hush_http_host_is_loopback(const char *host);
 /* Truncates a host at its port, keeping [v6] brackets. */
@@ -208,7 +230,7 @@ static int hush_http_needs_auth(const char *req, const char *path);
 static hush_limiter_t *hush_http_ip_req_lim(int fd);
 /* Replies 429 with the rate-limit JSON. */
 static hush_status_t hush_http_reply_rate_limited(int fd);
-/* Replies 401/403 and returns DENIED when host or token checks fail. */
+/* Replies 401/403 and returns DENIED when host, token, or origin checks fail. */
 static hush_status_t hush_http_guard(int fd, const char *req, size_t len,
                                      const char *path);
 
@@ -605,7 +627,6 @@ static int hush_http_cookie_token(const char *cookie, const char *name,
 
 static int hush_http_request_is_authed(const char *req, size_t len)
 {
-    static const char bearer[] = "Bearer ";
     char header[HUSH_HTTP_HDR_VALUE_MAX] = {0};
     /* Header-sized, not token-sized: a longer value is compared whole and
      * refused, never truncated down to the live token (#357). */
@@ -617,17 +638,73 @@ static int hush_http_request_is_authed(const char *req, size_t len)
                                sizeof(value)) &&
         hush_auth_token_matches(value))
         return 1;
+    if (hush_http_header_is_authed(req, len))
+        return 1;
+    /* No ?k=: a URL token lands in history, logs, and Referer (#336). */
+    return 0;
+}
+
+static int hush_http_header_is_authed(const char *req, size_t len)
+{
+    static const char bearer[] = "Bearer ";
+    char header[HUSH_HTTP_HDR_VALUE_MAX] = {0};
+    /* Header-sized for the same reason as the cookie (#357). */
+    char value[HUSH_HTTP_HDR_VALUE_MAX] = {0};
+
+    assert(req != NULL);
     if (hush_http_header_value(req, len, "Authorization", header,
                                sizeof(header)) &&
         strncmp(header, bearer, sizeof(bearer) - 1) == 0 &&
         hush_auth_token_matches(header + sizeof(bearer) - 1))
         return 1;
-    if (hush_http_header_value(req, len, HUSH_AUTH_HEADER, value,
-                               sizeof(value)) &&
-        hush_auth_token_matches(value))
-        return 1;
-    /* No ?k=: a URL token lands in history, logs, and Referer (#336). */
-    return 0;
+    return hush_http_header_value(req, len, HUSH_AUTH_HEADER, value,
+                                  sizeof(value)) &&
+           hush_auth_token_matches(value);
+}
+
+static int hush_http_is_state_change(const char *req, const char *path)
+{
+    assert(req != NULL);
+    assert(path != NULL);
+    return strncmp(path, "/api/", 5) == 0 && memcmp(req, "POST", 4) == 0;
+}
+
+static int hush_http_origin_is_served(const char *req, size_t len,
+                                      const char *origin)
+{
+    char host[HUSH_HTTP_HOST_MAX] = {0};
+    char served[HUSH_HTTP_ORIGIN_MAX] = {0};
+    int n = 0;
+
+    assert(req != NULL);
+    assert(origin != NULL);
+    if (!hush_http_header_value(req, len, "Host", host, sizeof(host)))
+        return 0;
+    n = snprintf(served, sizeof(served), "%s%s", HUSH_HTTP_ORIGIN_SCHEME, host);
+    if (n <= 0 || (size_t)n >= sizeof(served))
+        return 0;
+    return strcmp(origin, served) == 0;
+}
+
+static int hush_http_origin_ok(const char *req, size_t len)
+{
+    char site[HUSH_HTTP_FETCH_SITE_MAX] = {0};
+    char origin[HUSH_HTTP_ORIGIN_MAX] = {0};
+
+    assert(req != NULL);
+    if (hush_http_header_value(req, len, "Sec-Fetch-Site", site, sizeof(site)) &&
+        strcmp(site, HUSH_HTTP_FETCH_SAME_ORIGIN) != 0)
+        return 0;
+    if (hush_http_header_value(req, len, "Origin", origin, sizeof(origin)))
+        return hush_http_origin_is_served(req, len, origin);
+    return hush_http_header_is_authed(req, len);
+}
+
+static hush_status_t hush_http_reply_cross_origin(int fd)
+{
+    hush_http_reply(fd, "403 Forbidden", "application/json",
+                    HUSH_HTTP_ORIGIN_BODY, strlen(HUSH_HTTP_ORIGIN_BODY));
+    return HUSH_ERR_DENIED;
 }
 
 static hush_limiter_t *hush_http_ip_req_lim(int fd)
@@ -743,12 +820,16 @@ static hush_status_t hush_http_guard(int fd, const char *req, size_t len,
             !hush_limiter_take(req_lim, hush_limiter_now_ms()))
             return hush_http_reply_rate_limited(fd);
     }
-    if (hush_http_request_is_authed(req, len))
-        return HUSH_OK;
-    denied = "{\"ok\":false,\"error\":\"session token required\"}\n";
-    hush_http_reply(fd, "401 Unauthorized", "application/json", denied,
-                    strlen(denied));
-    return HUSH_ERR_DENIED;
+    if (!hush_http_request_is_authed(req, len)) {
+        denied = "{\"ok\":false,\"error\":\"session token required\"}\n";
+        hush_http_reply(fd, "401 Unauthorized", "application/json", denied,
+                        strlen(denied));
+        return HUSH_ERR_DENIED;
+    }
+    /* Browser CSRF: the cookie rides same-site POSTs from other local ports. */
+    if (hush_http_is_state_change(req, path) && !hush_http_origin_ok(req, len))
+        return hush_http_reply_cross_origin(fd);
+    return HUSH_OK;
 }
 
 
@@ -1088,11 +1169,23 @@ int hush_http_json_bare_field(const char *body, const char *key,
     return out[0] != '\0';
 }
 
+/* Routes that store an event under the owner's pubkey: a note, a call
+ * signal, or the owner's presence. Agent children can reach the relay with
+ * session.token, so only the paired window's X-Hush-Nonce may stamp one (#336). */
+static int hush_http_stamps_owner(const char *path)
+{
+    assert(path != NULL);
+    return strcmp(path, "/api/event") == 0 || strcmp(path, "/api/signal") == 0 ||
+           strcmp(path, "/api/presence") == 0;
+}
+
 static hush_status_t hush_http_serve_api_post(int fd, const char *path,
                                               const char *req, size_t len,
                                               hush_store_t *store,
                                               hush_event_t *out_posted)
 {
+    if (hush_http_stamps_owner(path) && !hush_http_ui_proven())
+        return hush_http_reply_ui_required(fd);
     if (strcmp(path, "/api/event") == 0)
         return hush_http_serve_post(fd, req, len, store, out_posted);
     if (strcmp(path, "/api/presence") == 0)

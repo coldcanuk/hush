@@ -158,8 +158,14 @@ def check_token_carriers(relay):
         + b"\r\nX-Hush-Token: deadbeef\r\nConnection: close\r\n\r\n",
     )
     assert status_of(raw) == 401, ("wrong token", raw[:160])
+    raw = raw_request(
+        relay,
+        b"GET /api/session HTTP/1.1\r\nHost: " + base
+        + b"\r\nAuthorization: Bearer deadbeef\r\nConnection: close\r\n\r\n",
+    )
+    assert status_of(raw) == 401, ("wrong bearer", raw[:160])
     check_exact_length(relay, base, token.encode())
-    print("trust: Cookie / X-Hush-Token / Bearer open, ?k= / wrong / missing 401 OK")
+    print("trust: Cookie / X-Hush-Token / Bearer open, ?k= / wrong token / wrong bearer / missing 401 OK")
 
 
 def check_exact_length(relay, base, token):

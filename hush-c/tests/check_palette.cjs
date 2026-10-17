@@ -791,8 +791,13 @@ async function main() {
   // code fence, so Download / Canvas render), replies so Thread shows.
   await cdp.eval(`[...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#welcome')).click()`);
   await cdp.waitFor(`document.querySelectorAll('#stream .note').length >= 1`, 'welcome note');
-  const post = (body) => cdp.eval(`(async () => (await fetch('/api/event', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(${JSON.stringify(body)}) })).status)()`, true);
+  // Owner-stamped /api/event needs the paired window's X-Hush-Nonce (#336 part 4).
+  const post = (body) => cdp.eval(`(async () => {
+    const m = document.cookie.match(/(?:^|; )hush_nonce=([0-9a-f]{32})(?:;|$)/);
+    const headers = { 'Content-Type': 'application/json' };
+    if (m) headers['X-Hush-Nonce'] = m[1];
+    return (await fetch('/api/event', { method: 'POST', headers,
+      body: JSON.stringify(${JSON.stringify(body)}) })).status; })()`, true);
   if (await post({ content: 'Morning, Major. Status on the supply manifest?', kind: 1, channel: 'welcome' }) !== 200) die('post note 1');
   if (await post({ content: 'Manifest attached.\n```txt\nrations 40\nfuel 12\n```', kind: 1, channel: 'welcome' }) !== 200) die('post note 2');
   const evs = JSON.parse(await cdp.eval(`(async () => await (await fetch('/api/events?channel=welcome')).text())()`, true));

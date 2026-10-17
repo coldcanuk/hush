@@ -270,20 +270,48 @@ hush_status_t hush_keyfile_load(char *out, size_t outsz, const char *path)
     return st;
 }
 
+/* The unlock phrase, taken out of the environment (#336 part 2). Any later
+ * child, an agent above all, inherits no HUSH_KEY_PASS, and
+ * /proc/<relay>/environ no longer shows it. */
+static char g_keyfile_phrase[HUSH_KEYFILE_PHRASE_MAX];
+static int g_keyfile_phrase_state; /* 0 none, 1 held, -1 did not fit */
+
+void hush_keyfile_take_phrase(void)
+{
+    char *env = getenv(HUSH_KEYFILE_ENV);
+    size_t n = 0;
+
+    if (env == NULL)
+        return;
+    n = strlen(env);
+    OPENSSL_cleanse(g_keyfile_phrase, sizeof(g_keyfile_phrase));
+    g_keyfile_phrase_state = n == 0 ? 0 : (n + 1 > sizeof(g_keyfile_phrase) ? -1 : 1);
+    if (g_keyfile_phrase_state == 1)
+        memcpy(g_keyfile_phrase, env, n + 1);
+    /* Wipe the whole NAME=value entry in place: /proc/<pid>/environ reads
+     * the initial environment block, and unsetenv only drops the pointer. */
+    {
+        size_t name_n = strlen(HUSH_KEYFILE_ENV);
+        char *entry = env - name_n - 1;
+
+        OPENSSL_cleanse(entry, name_n + 1 + n);
+    }
+    (void)unsetenv(HUSH_KEYFILE_ENV);
+}
+
 static int hush_keyfile_phrase(char *out, size_t outsz)
 {
-    const char *env = NULL;
     size_t n = 0;
 
     assert(out != NULL && outsz > 0);
     out[0] = '\0';
-    env = getenv(HUSH_KEYFILE_ENV);
-    if (env == NULL || env[0] == '\0')
-        return 0;
-    n = strlen(env);
+    hush_keyfile_take_phrase();
+    if (g_keyfile_phrase_state <= 0)
+        return g_keyfile_phrase_state;
+    n = strlen(g_keyfile_phrase);
     if (n + 1 > outsz)
         return -1;
-    memcpy(out, env, n + 1);
+    memcpy(out, g_keyfile_phrase, n + 1);
     return 1;
 }
 

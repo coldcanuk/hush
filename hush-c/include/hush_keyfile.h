@@ -10,6 +10,12 @@
 /* Unlock phrase. Unset or empty means the vault is off. */
 #define HUSH_KEYFILE_ENV "HUSH_KEY_PASS"
 
+/* Moves HUSH_KEY_PASS from the environment into memory: copies it, wipes
+ * the bytes in place, and unsets it (#336 part 2). The relay calls this
+ * first thing; every vault read calls it too, so a later setenv is taken
+ * the same way. */
+void hush_keyfile_take_phrase(void);
+
 /* Writes secret under path into $HUSH_HOME/keys.vault.
  * A missing phrase is HUSH_OK and writes nothing.
  * A phrase that does not fit is HUSH_ERR_ARG and writes nothing.
