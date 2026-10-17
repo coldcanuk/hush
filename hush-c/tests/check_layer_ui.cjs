@@ -250,6 +250,10 @@ async function main() {
 
   // Setup through the real gate once: create a key, name the hive, meet Major.
   await view(CONFIGS[0]);
+  // #336: the relay hands its cookie only to the one-time pairing link, so
+  // seed the cookie a paired window holds.
+  await cdp.send('Network.setCookie', { name: 'hush_session', value: fs.readFileSync(path.join(home, 'session.token'), 'utf8').trim(),
+    url: `http://127.0.0.1:${port}/`, httpOnly: true, sameSite: 'Strict' });
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/` });
   await cdp.waitFor(`!!document.querySelector('#gate.show')`, 'gate');
   await jsClick('#begin');

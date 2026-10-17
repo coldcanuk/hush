@@ -2987,6 +2987,9 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
 
   <script>
     const API = (location.protocol === "file:") ? "http://127.0.0.1:10555" : "";
+    // #336: the one-time ?pair= link is spent by the load; drop it from history.
+    if (new URLSearchParams(location.search).has("pair"))
+      history.replaceState(null, "", location.pathname + location.hash);
 
     let channel = "welcome";
     let seen = "";

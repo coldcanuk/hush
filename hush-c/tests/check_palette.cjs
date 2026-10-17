@@ -386,6 +386,10 @@ async function main() {
   };
 
   await view(1440, 900);
+  // #336: the relay hands its cookie only to the one-time pairing link, so
+  // seed the cookie a paired window holds.
+  await cdp.send('Network.setCookie', { name: 'hush_session', value: fs.readFileSync(path.join(home, 'session.token'), 'utf8').trim(),
+    url: base + '/', httpOnly: true, sameSite: 'Strict' });
   await cdp.send('Page.navigate', { url: base + '/' });
   await cdp.waitFor(`!!document.querySelector('#gate.show #begin')`, 'splash');
   await measure('gate-splash');

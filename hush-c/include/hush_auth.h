@@ -12,12 +12,16 @@ enum {
     HUSH_AUTH_CHALLENGE_HEX = 64,
     HUSH_AUTH_CHALLENGE_BUF = HUSH_AUTH_CHALLENGE_HEX + 1,
     HUSH_AUTH_SHA256_HEX = 64,
-    HUSH_AUTH_SHA256_BUF = HUSH_AUTH_SHA256_HEX + 1
+    HUSH_AUTH_SHA256_BUF = HUSH_AUTH_SHA256_HEX + 1,
+    /* One-time browser pairing code (#336). */
+    HUSH_AUTH_PAIR_HEX = 32,
+    HUSH_AUTH_PAIR_BUF = HUSH_AUTH_PAIR_HEX + 1
 };
 
 #define HUSH_AUTH_FILE "session.token"
 #define HUSH_AUTH_COOKIE "hush_session"
 #define HUSH_AUTH_HEADER "X-Hush-Token"
+#define HUSH_AUTH_PAIR_PARAM "pair"
 
 /* Loads the session token from $HUSH_HOME/session.token, minting a 0600 file
  * when absent or malformed. Idempotent. Fails HUSH_ERR_IO when the home or
@@ -32,6 +36,19 @@ int hush_auth_token_matches(const char *presented);
 
 /* Constant-time equality for two NUL-terminated strings. */
 int hush_auth_tokens_equal(const char *a, const char *b);
+
+/* Mints the one-time browser pairing code. It lives in memory only: never
+ * written to disk, never derived from session.token, new on every relay
+ * start. Idempotent. Fails HUSH_ERR_IO when entropy is unavailable. */
+hush_status_t hush_auth_pair_init(void);
+
+/* Copies the live pairing code into out. Fails HUSH_ERR_ARG on a short
+ * buffer, HUSH_ERR_IO before hush_auth_pair_init or after a failed re-mint. */
+hush_status_t hush_auth_pair_copy(char *out, size_t outsz);
+
+/* Redeems a pairing code: true when presented equals the live code
+ * (constant time). A redeemed code is re-minted at once, so it works once. */
+int hush_auth_pair_take(const char *presented);
 
 /* Mints a fresh NIP-42 challenge: 32 random bytes hex-encoded (64 chars).
  * Fails HUSH_ERR_ARG on a short buffer, HUSH_ERR_IO when entropy is

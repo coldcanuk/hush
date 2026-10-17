@@ -98,7 +98,8 @@ async function startRelay() {
   await post('/api/profile', { first_name: 'Chuck', last_name: 'P', email: '', organization: '', theme: 'dark' });
   const mode = async () =>
     (await (await fetch(base + '/api/session', { headers: headers() })).json()).approval_mode;
-  return { base, post, mode };
+  const token = () => fs.readFileSync(tokenFile, 'utf8').trim();
+  return { base, post, mode, token };
 }
 
 /* Launches headless Chrome and returns a minimal CDP client on its page. */
@@ -160,7 +161,12 @@ async function waitRadio(page, want, ms, msg) {
   }
   fail(`${msg} (radio=${got}, want ${want})`);
 }
-async function load(cdp, base) {
+async function load(cdp, relay) {
+  const base = relay.base;
+  // #336: the relay hands its cookie only to the one-time pairing link, so
+  // seed the cookie a paired window holds.
+  await cdp.send('Network.setCookie', { name: 'hush_session', value: relay.token(),
+    url: base + '/', httpOnly: true, sameSite: 'Strict' });
   await cdp.send('Page.navigate', { url: base + '/' });
   for (let i = 0; i < 120; i++) {
     if (await cdp.evaluate(`typeof session !== 'undefined' && !!session.logged_in &&
@@ -174,7 +180,7 @@ async function load(cdp, base) {
   const relay = await startRelay();
   const cdp = await startChrome();
   await relay.post('/api/profile', { approval_mode: EVERY });
-  await load(cdp, relay.base);
+  await load(cdp, relay);
   await waitRadio(cdp, EVERY, 3000, 'U1 a page load must show the saved setting');
   await relay.post('/api/profile', { approval_mode: AUTO });
   await waitRadio(cdp, AUTO, 3500, 'U2 a change made elsewhere must reach the open page');
@@ -196,7 +202,7 @@ async function load(cdp, base) {
 
   // U4: the server answers the click with a different saved value.
   await relay.post('/api/profile', { approval_mode: AUTO });
-  await load(cdp, relay.base);
+  await load(cdp, relay);
   await waitRadio(cdp, AUTO, 3000, 'U4 setup');
   await cdp.evaluate(STUB(`return Promise.resolve(new Response(JSON.stringify(
       Object.assign({}, session, { approval_mode: '${AUTO}' })), { status: 200,
@@ -205,7 +211,7 @@ async function load(cdp, base) {
   await waitRadio(cdp, AUTO, 1500, 'U4 the radio must show what the server saved, not what was clicked');
 
   // U5: the server refuses the click.
-  await load(cdp, relay.base);
+  await load(cdp, relay);
   await waitRadio(cdp, AUTO, 3000, 'U5 setup');
   await cdp.evaluate(STUB(`return Promise.resolve(new Response(
       'approval_mode must be auto_approve or approve_every_action.\\n', { status: 400 }));`));

@@ -53,6 +53,11 @@ enum {
     HUSH_HTTP_COMPLETE_JSON_MAX = 1536,
     HUSH_HTTP_HDR_VALUE_MAX = 512,
     HUSH_HTTP_HOST_MAX = 128,
+    /* One Set-Cookie line: name, value, attributes, CRLF. */
+    HUSH_HTTP_COOKIE_LINE_MAX = 160,
+    /* The paired window keeps its cookie across a close and reopen; the
+     * owner token itself is what a relay restart keeps (#336). */
+    HUSH_HTTP_COOKIE_MAX_AGE_S = 2592000,
     /* Ingress throttling: per-IP API requests and per-hive provider quotas.
      * Generous on purpose; the 429 is a flood defense, not a UX gate. */
     HUSH_HTTP_IP_LIMITS_MAX = 16,
@@ -162,15 +167,19 @@ static int hush_http_line_has_name(const char *line, const char *name,
                                    size_t name_len);
 /* Copies a header value trimmed of leading blanks and trailing CR/LF. */
 static void hush_http_copy_value(const char *src, char *out, size_t outsz);
-/* Copies the ?k= credential from the request line. 0 when absent. */
-static int hush_http_query_token(const char *req, char *out, size_t outsz);
+/* Copies query parameter name from the request line (never a header).
+ * 0 when absent or empty. */
+static int hush_http_query_value(const char *req, const char *name,
+                                 char *out, size_t outsz);
+/* True when c continues a query value (not an end, separator, or space). */
+static int hush_http_query_char(char c);
+/* Redeems a ?pair= code on this request; the reply then sets the cookie. */
+static void hush_http_take_pair(const char *req);
 /* Copies cookie name's value from a Cookie header. 0 when absent. */
 static int hush_http_cookie_token(const char *cookie, const char *name,
                                   char *out, size_t outsz);
 /* True when any accepted credential matches the live session token. */
 static int hush_http_request_is_authed(const char *req, size_t len);
-/* True when the peer address is loopback. */
-static int hush_http_peer_is_loopback(int fd);
 /* True when host names the local machine. */
 static int hush_http_host_is_loopback(const char *host);
 /* Truncates a host at its port, keeping [v6] brackets. */
@@ -283,13 +292,11 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
         return HUSH_OK;
     }
     hush_http_path(req, path, sizeof(path));
-    /* A loopback browser earns the session cookie on any first response, so
-     * the fetch after page load already carries it. Remotes present the token. */
-    if (hush_http_peer_is_loopback(fd) &&
-        !hush_http_request_is_authed(req, len))
-        g_set_cookie = 1;
+    /* #336: the session cookie is handed out only to the request that
+     * redeems the one-time pairing link, never to any loopback caller. */
     if (hush_http_guard(fd, req, len, path) != HUSH_OK)
         return HUSH_ERR_DENIED;
+    hush_http_take_pair(req);
     if (hush_http_serve_asset(fd, path))
         return HUSH_OK;
     if (strcmp(path, "/api/status") == 0 && memcmp(req, "GET", 3) == 0) {
@@ -460,35 +467,57 @@ int hush_http_header_value(const char *req, size_t len, const char *name,
     return 0;
 }
 
-static int hush_http_query_token(const char *req, char *out, size_t outsz)
+static int hush_http_query_value(const char *req, const char *name,
+                                 char *out, size_t outsz)
 {
+    size_t name_len;
     const char *p;
     size_t n = 0;
 
     assert(req != NULL);
+    assert(name != NULL);
     assert(out != NULL);
     if (outsz == 0)
         return 0;
     out[0] = '\0';
-    p = strchr(req, '?');
-    if (p == NULL)
-        return 0;
+    name_len = strlen(name);
+    p = strpbrk(req, "?\r\n");
+    if (p == NULL || *p != '?')
+        return 0; /* the query lives on the request line only */
     p++;
     for (;;) {
-        if (p[0] == 'k' && p[1] == '=') {
-            const char *value = p + 2;
+        if (strncmp(p, name, name_len) == 0 && p[name_len] == '=') {
+            const char *value = p + name_len + 1;
 
-            while (*value != '\0' && *value != ' ' && *value != '&' &&
-                   *value != '#' && n + 1 < outsz)
+            while (n + 1 < outsz && hush_http_query_char(*value))
                 out[n++] = *value++;
             out[n] = '\0';
-            return n > 0;
+            /* An over-long value is refused, never matched truncated. */
+            return n > 0 && !hush_http_query_char(*value);
         }
-        p = strchr(p, '&');
-        if (p == NULL)
+        p = strpbrk(p, "& \r");
+        if (p == NULL || *p != '&')
             return 0;
         p++;
     }
+}
+
+static int hush_http_query_char(char c)
+{
+    return c != '\0' && c != ' ' && c != '&' && c != '#' && c != '\r' &&
+           c != '\n';
+}
+
+static void hush_http_take_pair(const char *req)
+{
+    char code[HUSH_AUTH_PAIR_BUF];
+
+    assert(req != NULL);
+    if (!hush_http_query_value(req, HUSH_AUTH_PAIR_PARAM, code, sizeof(code)))
+        return;
+    if (!hush_auth_pair_take(code))
+        return;
+    g_set_cookie = 1;
 }
 
 static int hush_http_cookie_token(const char *cookie, const char *name,
@@ -547,29 +576,7 @@ static int hush_http_request_is_authed(const char *req, size_t len)
                                sizeof(value)) &&
         hush_auth_token_matches(value))
         return 1;
-    if (hush_http_query_token(req, value, sizeof(value)) &&
-        hush_auth_token_matches(value))
-        return 1;
-    return 0;
-}
-
-static int hush_http_peer_is_loopback(int fd)
-{
-    struct sockaddr_storage peer;
-    socklen_t peer_len = (socklen_t)sizeof(peer);
-
-    if (getpeername(fd, (struct sockaddr *)&peer, &peer_len) != 0)
-        return 0;
-    if (peer.ss_family == AF_INET) {
-        const struct sockaddr_in *addr = (const struct sockaddr_in *)&peer;
-
-        return addr->sin_addr.s_addr == htonl(INADDR_LOOPBACK);
-    }
-    if (peer.ss_family == AF_INET6) {
-        const struct sockaddr_in6 *addr = (const struct sockaddr_in6 *)&peer;
-
-        return IN6_IS_ADDR_LOOPBACK(&addr->sin6_addr);
-    }
+    /* No ?k=: a URL token lands in history, logs, and Referer (#336). */
     return 0;
 }
 
@@ -724,7 +731,7 @@ void hush_http_reply(int fd, const char *status, const char *ctype,
                             const char *body, size_t blen)
 {
     char hdr[512];
-    char cookie[160];
+    char cookie[HUSH_HTTP_COOKIE_LINE_MAX];
     char token[HUSH_AUTH_TOKEN_BUF];
     const char *extra = "";
     int n;
@@ -732,8 +739,8 @@ void hush_http_reply(int fd, const char *status, const char *ctype,
     if (g_set_cookie && hush_auth_token_copy(token, sizeof(token)) == HUSH_OK) {
         int cn = snprintf(cookie, sizeof(cookie),
                           "Set-Cookie: %s=%s; HttpOnly; SameSite=Strict; "
-                          "Path=/\r\n",
-                          HUSH_AUTH_COOKIE, token);
+                          "Path=/; Max-Age=%d\r\n",
+                          HUSH_AUTH_COOKIE, token, (int)HUSH_HTTP_COOKIE_MAX_AGE_S);
         if (cn > 0 && (size_t)cn < sizeof(cookie))
             extra = cookie;
     }
