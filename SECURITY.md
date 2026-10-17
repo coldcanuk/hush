@@ -87,11 +87,41 @@ unless the request carries the live `X-Hush-Nonce` (constant-time compare);
 every action; a vibe that never saved one keeps the auto-approve default.
 Exercised by `check_approve_nonce.py` and `test_auth`.
 
+Agent children (#336 parts 1 and 2) run in a jail: a fresh per-job `HOME`
+(mode 0700). Provider creds in that HOME will come from Vault
+(`vault.onerelay.app`, SOT): per-job copy, must match, deleted after (TODO).
+**INTERIM:** only allowlisted real-HOME auth trees are bound read-only
+(`.grok`, `.codex`, `.copilot`, `.config/goose`, `.goose`, `.cline`,
+`.ollama`); never `~/.password-store`, `~/.gnupg`, `~/.ssh`, or `$HUSH_HOME`.
+An unlisted auth path refuses the turn and names the path. The child env is
+an allowlist (no `HUSH_*`). Landlock ABI ≥ 4 is preferred (deny
+`$HUSH_HOME`/config/legacy and the real HOME tree, deny the relay TCP port,
+scope ptrace); otherwise `bwrap --unshare-pid --proc /proc` with
+`no_new_privs` when that hides the relay's `/proc` and blocks ptrace; with
+neither, the turn is refused with a clear reason. The relay keeps
+`HUSH_HOME`/`HUSH_CONFIG_DIR` in its own environ; children do not.
+
+
 No write a child can reach stamps the owner (#336 part 4). An agent child
 can reach the relay port and can read `session.token`, so every route that
 stores an event under the owner's pubkey (`POST /api/event` notes of any
 kind, `/api/signal`, `/api/presence`) needs the live `X-Hush-Nonce` too and is
 refused `403` without it. Exercised by `check_owner_stamp.py`.
+
+Agent children are jailed before exec (#336 parts 1 and 2). The environment
+is an allowlist (PATH, HOME, LANG, TERM, locale, proxy/CA, and provider
+`GROK_`/`CODEX_`/`COPILOT_`/`GOOSE_`/`OLLAMA_`/`CLINE_` settings): nothing
+named `HUSH_*`, so no `HUSH_KEY_PASS`, `HUSH_HOME`, or `HUSH_OP_*`. Inherited
+descriptors above stderr are closed. On Linux with Landlock ABI ≥ 4 the child
+enters a domain that denies every open under `$HUSH_HOME`, the config dir and
+the legacy config dir (the job cwd stays usable), denies TCP connect to the
+relay port, and — because Landlock scopes ptrace to the domain — cannot read
+the relay through `/proc/<pid>` or ptrace it. Without Landlock ABI 4 the turn
+is refused; there is no weaker fallback. The relay itself calls
+`hush_keyfile_take_phrase()` at start: it copies `HUSH_KEY_PASS` into memory,
+wipes the bytes in the initial environment block, and unsets it, so
+`/proc/<relay>/environ` no longer shows the phrase. Exercised by
+`check_sandbox.py`.
 
 The listener binds `127.0.0.1` by default. `--listen 0.0.0.0` (or another
 address) exposes it deliberately; remote clients must then present the token.

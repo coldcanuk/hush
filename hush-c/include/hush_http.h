@@ -12,6 +12,8 @@
 #include "hush_turn.h"
 
 void hush_http_set_listen_port(uint16_t port);
+/* The relay's listen port; agent children are jailed off it (#336). */
+uint16_t hush_http_listen_port(void);
 
 /* Records the configured bind address. Host checks stay on for loopback binds. */
 void hush_http_set_bind_addr(const char *addr);

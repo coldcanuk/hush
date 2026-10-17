@@ -141,14 +141,16 @@ static void stub_provider(gate_fixture_t *fx)
     char body[GATE_PATH_MAX * 2] = {0};
     const char *cap = fx->capture_file;
 
-    make_sub(fx, "bin");
-    snprintf(fx->capture_file, sizeof(fx->capture_file), "%s/%s.capture", fx->dir,
+    snprintf(path, sizeof(path), "%s-bin", fx->dir);
+    expect(mkdir(path, S_IRWXU) == 0, "stub bin dir");
+    /* Sibling of HUSH_HOME: agent children are jailed off $HUSH_HOME (#336). */
+    snprintf(fx->capture_file, sizeof(fx->capture_file), "%s-bin/%s.capture", fx->dir,
              fx->provider);
     snprintf(body, sizeof(body), "#!/bin/sh\n{ printf '%%s\\n' \"$@\"; echo '--ENV--'; env; }"
              " > '%s.tmp'\nmv '%s.tmp' '%s'\nexit 0\n", cap, cap, cap);
-    snprintf(path, sizeof(path), "%s/bin/%s", fx->dir, fx->provider);
+    snprintf(path, sizeof(path), "%s-bin/%s", fx->dir, fx->provider);
     write_exec(path, body);
-    snprintf(path, sizeof(path), "%s/bin:%s", fx->dir, GATE_SYS_PATH);
+    snprintf(path, sizeof(path), "%s-bin:%s", fx->dir, GATE_SYS_PATH);
     expect(setenv("PATH", path, 1) == 0, "stub PATH");
 }
 
@@ -176,13 +178,16 @@ static void set_hostile_env(void)
     expect(setenv("GOOSE_MODE", GATE_ENV_AUTO, 1) == 0, "hostile goose mode");
 }
 
-/* HOME, HUSH_HOME, XDG dirs, pass store and project under one mkdtemp root. */
+/* HOME, HUSH_HOME (<dir>/hush), XDG dirs, pass store and project under one
+ * mkdtemp root; the provider stub sits beside it in <dir>-bin. */
 static void make_scratch(gate_fixture_t *fx)
 {
     hush_agent_copy(fx->dir, sizeof(fx->dir), GATE_DIR_TEMPLATE);
     expect(mkdtemp(fx->dir) != NULL, "mkdtemp scratch");
     expect(setenv("HOME", fx->dir, 1) == 0, "scratch HOME");
-    expect(setenv("HUSH_HOME", fx->dir, 1) == 0, "scratch HUSH_HOME");
+    /* HOME/.copilot is an allowlisted auth tree only outside $HUSH_HOME (#336). */
+    make_sub(fx, "hush");
+    set_sub_env(fx, "HUSH_HOME", "hush");
     set_sub_env(fx, "HUSH_CONFIG_DIR", "config");
     make_sub(fx, "xdg");
     set_sub_env(fx, "XDG_CONFIG_HOME", "xdg");
@@ -233,8 +238,12 @@ static void open_hive(gate_fixture_t *fx, const char *provider, const char *id)
 
 static void close_hive(gate_fixture_t *fx)
 {
+    char bin[GATE_DIR_MAX * 2] = {0};
+
     hush_agent_shutdown();
     hush_store_destroy(fx->store);
+    snprintf(bin, sizeof(bin), "%s-bin", fx->dir);
+    (void)nftw(bin, remove_entry, GATE_FTW_FDS, FTW_DEPTH | FTW_PHYS);
     expect(nftw(fx->dir, remove_entry, GATE_FTW_FDS, FTW_DEPTH | FTW_PHYS) == 0,
            "scratch cleanup");
 }

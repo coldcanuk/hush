@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "hush_build.h"
+#include "hush_keyfile.h"
 #include "hush_relay.h"
 
 enum {
@@ -31,6 +32,8 @@ int main(int argc, char **argv)
 {
     struct hush_cli cli;
 
+    /* Before anything can fork: no child may inherit the vault phrase. */
+    hush_keyfile_take_phrase();
     cli.port = (uint16_t)HUSH_DEFAULT_PORT;
     cli.bind_addr = "127.0.0.1";
     cli.open_ui = hush_display_available();
