@@ -1637,10 +1637,15 @@ turns need approval.
    `Approve every action` a robot's custom intro waits for the owner's Yes
    and posts once after it; after No it never posts. While the turn
    waits, the owner's mention shows a neutral "<Robot> · waiting for your
-   OK" pill for that robot (theme ink, dashed theme rule, no emoji). When
-   one mention names two robots their turns queue: the second robot shows
-   the same waiting pill until its own ask is answered, so the pair
-   settles with both asks. After the owner's Yes, the robot's run settles
+   OK" pill for that robot (theme ink, dashed theme rule, no emoji). The
+   pill comes only from that robot's own ask. When one mention names two
+   robots their turns queue: while the first robot is asked the second
+   shows no pill (no ask exists for it yet). Once the first robot's turn
+   ends (its run's reply, a Yes with no runtime ready, or a No), the relay
+   asks the second robot in the same thread, and only then does its
+   waiting pill show. A No ends that robot's turn, not the other robot's.
+   The state comes from the stored notes, so a reload shows the same
+   pills. After the owner's Yes, the robot's run settles
    the turn and the 👍 ack pill shows. After No ("Turn declined: <Robot>
    ...") the mention shows no pill for that robot, since a 👍 would read
    as the robot accepting or doing the work. The state is kept per

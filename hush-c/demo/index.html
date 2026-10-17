@@ -6864,11 +6864,13 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       return notes;
     }
 
-    /* #312 state of bot's turn for the owner's mention parentId: "held"
-       while its ask is not yet settled, or while it has no ask or settle
-       yet but a robot named in the same mention was asked (the turns queue,
-       so a pair settles together with both asks); "declined" when its
-       latest settle is the owner's No; else "". */
+    /* #312 state of bot's turn for the owner's mention parentId, from the
+       notes of that mention only: "held" while bot's own ask is not yet
+       settled (the only state that shows "waiting for your OK");
+       "queued" while bot has no ask or settle yet but a robot named in the
+       same mention was asked (its turn waits in line; no pill, since no ask
+       exists to answer); "declined" when its latest settle is the owner's
+       No; else "". */
     function turnState(parentId, bot) {
       const parent = (lastEvents || []).find((e) => e && e.id === parentId);
       if (!parent || !bot || !bot.name) return "";
@@ -6884,7 +6886,7 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
       if (asks > settles) return "held";
       const pairAsked = mentionedRobots(parent).some((other) =>
         notes.some((e) => turnMark(e, other) === "ask"));
-      if (!asks && !settles && pairAsked) return "held";
+      if (!asks && !settles && pairAsked) return "queued";
       return last === "declined" ? "declined" : "";
     }
 
@@ -6916,6 +6918,7 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
         else if (p === "reacting" && stamp !== "t") stamp = "r";
         else if (p === "held" && stamp === "e") stamp = "h";
         else if (p === "declined" && stamp === "e") stamp = "d";
+        else if (p === "queued" && stamp === "e") stamp = "q";
       });
       return stamp;
     }
@@ -7415,7 +7418,7 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
 
     /* One ack pill for a mentioned robot, or null when none shows. */
     function ackPill(bot, i, phase, quietRobot) {
-      if (phase === "declined") return null;
+      if (phase === "declined" || phase === "queued") return null;
       if (phase === "held") return ackWaitingPill(bot);
       const pill = document.createElement("span");
       /* A missing-runtime sentence is already the answer. Do not

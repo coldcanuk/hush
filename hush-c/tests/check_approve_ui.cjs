@@ -25,7 +25,11 @@
 //   U6 (#312) under Approve every action, the owner's mention shows a
 //      neutral "<Robot> · waiting for your OK" pill (no 👍) while a turn
 //      waits, the 👍 after the owner's Yes, and no pill or bar after a No.
-//      A two-robot mention waits for both asks; the state is per mention.
+//      A two-robot mention shows "waiting" only from each robot's own ask:
+//      the queued robot shows no pill until the relay asks it, and the relay
+//      asks it after the first robot's No, Yes with no runtime, or Yes and
+//      run (stub runtime). Each end state is checked live and after a reload.
+//      The state is per mention.
 'use strict';
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -46,34 +50,65 @@ const RAN_HAPPY = 'No selected provider is ready for Happy.';
 const DECLINED_HAPPY = 'Turn declined: Happy ';
 const WAITING_COPY = ' · waiting for your OK';
 const SAY_YES = 'tell a joke';
-const SAY_PAIR = 'roll call';
+const SAY_PAIR = 'both answer here';
 const SAY_NO = 'skip this one';
 const SAY_IN = 'one more in here';
+const SAY_PAIR_NO = 'first one skips';
+const SAY_PAIR_RUN = 'stub runtime pair';
+const STUB_REPLY = 'Stub runtime reply.';
+const askOf = (name) => 'Approval needed: ' + name + ' wants ';
+const ranOf = (name) => 'No selected provider is ready for ' + name + '.';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const procs = [];
 const dirs = [];
+/* Every temp dir this check made, so the end can prove none is left. */
+const made = [];
 
 /* A child that ignores SIGTERM this long gets SIGKILL. */
 const STOP_WAIT_MS = 5000;
 
-/* Stops one child this check started and resolves once it has exited, so
- * nothing writes into its temp dir after the dir is removed. */
+/* A removed temp dir that something re-creates is removed again for this long. */
+const RM_WAIT_MS = 3000;
+
+/* Signals one child this check started; Chrome is spawned detached, so its
+ * signal goes to its own process group (the helpers that write into its
+ * profile go with it). Only children this check spawned are signalled. */
+function signalProc(p, sig) {
+  try { if (p.group) process.kill(-p.pid, sig); else p.kill(sig); }
+  catch (e) { try { p.kill(sig); } catch (e2) { /* gone */ } }
+}
+/* Stops one child and resolves once it has exited; a Chrome group then gets
+ * SIGKILL so no helper outlives it and writes into its profile. */
 function stopProc(p) {
   return new Promise((resolve) => {
-    if (p.exitCode !== null || p.signalCode !== null) { resolve(); return; }
-    const timer = setTimeout(() => { try { p.kill('SIGKILL'); } catch (e) { /* gone */ } },
-      STOP_WAIT_MS);
-    p.once('exit', () => { clearTimeout(timer); resolve(); });
-    try { p.kill('SIGTERM'); } catch (e) { clearTimeout(timer); resolve(); }
+    const done = () => { if (p.group) signalProc(p, 'SIGKILL'); resolve(); };
+    if (p.exitCode !== null || p.signalCode !== null) { done(); return; }
+    const timer = setTimeout(() => signalProc(p, 'SIGKILL'), STOP_WAIT_MS);
+    p.once('exit', () => { clearTimeout(timer); done(); });
+    signalProc(p, 'SIGTERM');
   });
 }
-/* Stops every child first, then removes the temp HOME and Chrome profile. */
+/* Removes d and checks it stays gone; returns false if it is still there. */
+async function removeDir(d) {
+  for (const t0 = Date.now(); Date.now() - t0 < RM_WAIT_MS; await sleep(100)) {
+    try { fs.rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); } catch (e) { /* retry */ }
+    await sleep(100);
+    if (!fs.existsSync(d)) return true;
+  }
+  return !fs.existsSync(d);
+}
+/* Stops every child first, then removes the temp HOMEs and Chrome profile.
+ * Returns the dirs that could not be removed. */
 async function cleanup() {
   await Promise.all(procs.splice(0).map(stopProc));
-  for (const d of dirs.splice(0)) {
-    try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* best effort */ }
-  }
+  for (const d of dirs.splice(0)) await removeDir(d);
+  return made.filter((d) => fs.existsSync(d));
 }
+/* Last resort on any exit path the async cleanup did not reach. */
+process.on('exit', () => {
+  for (const p of procs) signalProc(p, 'SIGKILL');
+  for (const d of dirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch (e) { /* best effort */ } }
+});
 class CheckFailed extends Error {}
 /* Ends the current step; the top level cleans up and exits 1. */
 function fail(msg) {
@@ -92,7 +127,20 @@ function freePort() {
 function tmpDir(tag) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), tag));
   dirs.push(d);
+  made.push(d);
   return d;
+}
+
+/* U6 stub runtime: a `codex` script in the throwaway HOME, first on the
+ * relay's PATH, so codex robots run a turn that ends with one reply. No real
+ * runtime starts; grok-build robots stay "no provider ready" (no grok login). */
+function stubRuntime(home) {
+  const bin = path.join(home, 'bin');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\nprintf "%s\\n" "' + STUB_REPLY + '"\n', { mode: 0o755 });
+  fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.codex', 'auth.json'), '{"ok":true}\n');
+  return bin;
 }
 
 /* Starts the relay in a throwaway HOME and walks it to a ready vibe. */
@@ -104,6 +152,7 @@ async function startRelay() {
     HUSH_PASS_HELPER: path.join(ROOT, 'tests', 'fake-pass.sh'),
     HUSH_FAKE_PASS_DIR: path.join(home, 'pass'), HUSH_AUTO_UPDATE: '0',
   });
+  env.PATH = stubRuntime(home) + path.delimiter + (process.env.PATH || '');
   delete env.XDG_CONFIG_HOME;
   for (const d of [env.HUSH_HOME, env.HUSH_CONFIG_DIR, env.HUSH_FAKE_PASS_DIR])
     fs.mkdirSync(d, { recursive: true });
@@ -146,7 +195,8 @@ async function startChrome() {
   delete env.DBUS_SESSION_BUS_ADDRESS;
   procs.push(spawn(CHROME, ['--headless', '--no-sandbox', '--disable-gpu', '--no-first-run',
     '--disable-dev-shm-usage', '--disable-software-rasterizer', `--remote-debugging-port=${port}`,
-    `--user-data-dir=${tmpDir('hush-approve-ui-chrome-')}`, 'about:blank'], { stdio: 'ignore', env }));
+    `--user-data-dir=${tmpDir('hush-approve-ui-chrome-')}`, 'about:blank'], { stdio: 'ignore', env, detached: true }));
+  procs[procs.length - 1].group = true;
   const waitS = Number(process.env.HUSH_TEST_WAIT_S || '30');
   let page = null;
   for (const t0 = Date.now(); !page; await sleep(200)) {
@@ -377,9 +427,11 @@ async function askIds(relay) {
 async function checkHeldAck(relay, cdp) {
   await relay.post('/api/profile', { approval_mode: EVERY });
   const bots = {};
-  for (const name of ['Happy', 'Scout']) {
+  /* Happy and Scout have no runtime ready; Ace and Bolt run the stub. */
+  for (const [name, provider] of [['Happy', 'grok-build'], ['Scout', 'grok-build'],
+    ['Ace', 'codex'], ['Bolt', 'codex']]) {
     const raised = await relay.post('/api/agent', { name, system_prompt: 'Tell jokes.',
-      provider: 'grok-build', save_pass: true });
+      provider, save_pass: true });
     bots[name] = (raised.agents || []).find((a) => a.name === name);
     if (!bots[name]) fail(`U6 setup: ${name} was not raised`);
   }
@@ -395,23 +447,71 @@ async function checkHeldAck(relay, cdp) {
   return { bots, root: ask.reply_to };
 }
 
-/* U6 pair (#312): "@Happy @Scout" queues two turns. Both wait while
- * Happy is asked; after Happy's Yes, Scout still waits for its own ask.
- * The stub runtime does not finish a job, so the follow wave never asks
- * Scout here; TURN_CASES pins the pair after both asks. */
-async function checkPairAck(relay, cdp, bots) {
+/* Waits for the pills under `say`, reloads the page, and checks the same
+ * pills come back from the stored notes. */
+async function pillsLiveAndReloaded(relay, cdp, say, want, msg) {
+  await waitPills(cdp, say, want, msg);
+  await load(cdp, relay.base);
+  await waitPills(cdp, say, want, msg + ' (after a reload)');
+}
+/* Thread notes (root and replies) that start with head. */
+async function inThread(relay, root, head) {
+  return (await events(relay)).filter((e) => (e.id === root || e.reply_to === root) &&
+    String(e.content || '').startsWith(head));
+}
+/* Waits until root's thread holds n notes that start with head. */
+async function waitInThread(relay, root, head, n, msg) {
+  for (const t0 = Date.now(); Date.now() - t0 < ACK_WAIT_MS; await sleep(100)) {
+    if ((await inThread(relay, root, head)).length >= n) return;
+  }
+  fail(msg);
+}
+
+/* U6 pair (#312): "@<lead> @<partner>" queues two turns. While the lead is
+ * asked only the lead waits (the partner has no ask, so no pill). After the
+ * owner's answer to the lead, the relay asks the partner in the same thread
+ * and the partner's own waiting pill shows; the partner's Yes then settles
+ * it. pair = { lead, partner, say, leadAnswer, leadDone, leadWant }:
+ * leadDone is the relay note that ends the lead's turn, leadWant the lead's
+ * pill once it ended ([] after a No). */
+async function checkPair(relay, cdp, pair) {
+  const { lead, partner, say } = pair;
   const seen = await askIds(relay);
-  await mention(relay, [bots.Happy, bots.Scout], SAY_PAIR, '');
-  const ask = await waitEvent(relay, ASK_HAPPY, 'U6 pair: Happy must ask first', seen);
-  await holdPills(cdp, SAY_PAIR, [['wait', 'Happy'], ['wait', 'Scout']],
-    'U6 pair: both robots wait while Happy is asked (no done ack for Scout)');
-  const ran = (await events(relay)).filter((e) => String(e.content).startsWith(RAN_HAPPY)).map((e) => e.id);
-  await answer(relay, ask.reply_to, 'Yes');
-  await waitEvent(relay, RAN_HAPPY, 'U6 pair: the Yes must run Happy', ran);
-  await waitPills(cdp, SAY_PAIR, [['done', 'Happy', '👍'], ['wait', 'Scout']],
-    'U6 pair: Happy settles; Scout still waits for its own ask');
-  await holdPills(cdp, SAY_PAIR, [['done', 'Happy', '👍'], ['wait', 'Scout']],
-    'U6 pair: Scout must not settle without its own ask');
+  await mention(relay, [lead, partner], say, '');
+  const ask = await waitEvent(relay, askOf(lead.name), `U6 pair ${say}: ${lead.name} must ask first`, seen);
+  const root = ask.reply_to;
+  if ((await inThread(relay, root, askOf(partner.name))).length !== 0)
+    fail(`U6 pair ${say}: ${partner.name} must not be asked before ${lead.name} is answered`);
+  await holdPills(cdp, say, [['wait', lead.name]],
+    `U6 pair ${say}: only ${lead.name} waits; ${partner.name} has no ask yet, so no pill`);
+  await answer(relay, root, pair.leadAnswer);
+  await waitInThread(relay, root, pair.leadDone, 1, `U6 pair ${say}: ${pair.leadAnswer} must end ${lead.name}'s turn`);
+  await waitInThread(relay, root, askOf(partner.name), 1,
+    `U6 pair ${say}: after ${lead.name}'s ${pair.leadAnswer} the relay must ask ${partner.name}`);
+  await pillsLiveAndReloaded(relay, cdp, say, [...pair.leadWant, ['wait', partner.name]],
+    `U6 pair ${say}: ${partner.name} waits on its own ask after ${lead.name}'s ${pair.leadAnswer}`);
+  await answer(relay, root, 'Yes');
+  await waitInThread(relay, root, pair.partnerDone, pair.partnerDone === pair.leadDone ? 2 : 1,
+    `U6 pair ${say}: the Yes must run ${partner.name}`);
+  await sleep(HELD_WAIT_MS);
+  const asks = (await inThread(relay, root, 'Approval needed: ')).length;
+  if (asks !== 2) fail(`U6 pair ${say}: the pair must end with exactly 2 asks (got ${asks})`);
+  await pillsLiveAndReloaded(relay, cdp, say, [...pair.leadWant, ['done', partner.name, '🎯']],
+    `U6 pair ${say}: end state after ${partner.name}'s Yes`);
+}
+
+/* U6 pair end states: the lead's No, the lead's Yes with no runtime ready,
+ * and the lead's Yes with a (stub) runtime that runs and replies. */
+async function checkPairs(relay, cdp, bots) {
+  const noRun = (name) => ranOf(name);
+  await checkPair(relay, cdp, { lead: bots.Happy, partner: bots.Scout, say: SAY_PAIR_NO,
+    leadAnswer: 'No', leadDone: DECLINED_HAPPY, leadWant: [], partnerDone: noRun('Scout') });
+  await checkPair(relay, cdp, { lead: bots.Happy, partner: bots.Scout, say: SAY_PAIR,
+    leadAnswer: 'Yes', leadDone: noRun('Happy'), leadWant: [['done', 'Happy', '👍']],
+    partnerDone: noRun('Scout') });
+  await checkPair(relay, cdp, { lead: bots.Ace, partner: bots.Bolt, say: SAY_PAIR_RUN,
+    leadAnswer: 'Yes', leadDone: STUB_REPLY, leadWant: [['done', 'Ace', '👍']],
+    partnerDone: STUB_REPLY });
 }
 
 /* U6 after No: a declined turn shows no pill and no ack bar; a No on a
@@ -436,7 +536,7 @@ async function checkDeclinedAck(relay, cdp, bots, yesRoot) {
 }
 
 /* U6 unit (#312): the page's own turnState and mentionAckPhase on fixed
- * thread notes, for cases the stub runtime cannot post. */
+ * thread notes (edge cases that are slow or awkward to drive live). */
 const TURN_AT = (events, id, name, jobs) => `(() => {
   const keep = lastEvents;
   try {
@@ -480,6 +580,8 @@ function turnFixtures(who) {
     twoNotes: [top('m9', 100), ask('a9', 101, 'm9'), yes('y9', 102, 'm9'), rob('f9', 103, 'm9', 'Using another provider.'),
       rob('r9', 104, 'm9', 'Done.'), top('m10', 105, 'm9'), ask('a10', 106, 'm9')],
     otherThread: [top('m11', 100), ask('a11', 101, 'm11'), rob('o11', 102, 'elsewhere', 'Done.')],
+    pairAskElsewhere: [top('m12', 100, '', [h.npub, s.npub]), ask('a12', 101, 'elsewhere')],
+    pairAskEarlier: [top('m13', 100), ask('a13', 101, 'm13'), top('m14', 102, 'm13', [h.npub, s.npub])],
   };
 }
 /* U6 unit cases: [fixture, mention id, robot, jobs, want, message]. */
@@ -489,7 +591,10 @@ const TURN_CASES = [
   ['intro', 'm2', 'Happy', [{ name: 'Happy' }], 'live', 'a live job must show thinking/reacting, not the turn state'],
   ['latest', 'm3', 'Happy', null, 'declined', 'the latest settle (a No) must win over an earlier run'],
   ['prefix', 'm4', 'Happy', null, '', 'another robot\'s ask whose name starts with Happy must not count'],
-  ['pair', 'm5', 'Scout', null, 'held', 'a co-mentioned robot with no ask yet must wait'],
+  ['pair', 'm5', 'Scout', null, 'queued', 'a co-mentioned robot with no ask of its own is queued (no waiting pill)'],
+  ['pair', 'm5', 'Happy', null, 'held', 'the asked robot of a pair waits'],
+  ['pairAskElsewhere', 'm12', 'Scout', null, '', 'an ask in another thread must not queue this mention\'s robot'],
+  ['pairAskEarlier', 'm14', 'Scout', null, '', 'an ask from an earlier mention in the thread must not queue this one\'s robot'],
   ['pairMid', 'm7', 'Scout', null, 'held', 'the second robot waits while its own ask is open'],
   ['pairDone', 'm6', 'Scout', null, '', 'the second robot settles after its own Yes and reply'],
   ['pairDone', 'm6', 'Happy', null, '', 'the first robot stays settled after the second ask'],
@@ -498,7 +603,11 @@ const TURN_CASES = [
   ['twoNotes', 'm9', 'Happy', null, '', 'a later mention in the thread leaves the earlier turn settled'],
   ['otherThread', 'm11', 'Happy', null, 'held', 'a robot note in another thread must not settle this turn'],
 ];
+/* A queued robot shows no pill at all: never a waiting pill without its own ask. */
+const QUEUED_PILL = `ackPill({ name: 'Scout' }, 1, 'queued', null)`;
 async function checkTurnUnits(cdp) {
+  if ((await cdp.evaluate(QUEUED_PILL)) !== null)
+    fail('U6 unit queued: a queued robot must show no pill (no ask to answer)');
   const who = await cdp.evaluate(WHO);
   if (!who || !who.me || !who.bots) fail('U6 unit setup: no session or roster');
   const fx = turnFixtures(who);
@@ -512,7 +621,7 @@ async function checkTurnUnits(cdp) {
 /* U6 entry: rendered held/Yes, pair, No and per-mention cases, then units. */
 async function checkAcks(relay, cdp) {
   const { bots, root } = await checkHeldAck(relay, cdp);
-  await checkPairAck(relay, cdp, bots);
+  await checkPairs(relay, cdp, bots);
   await checkDeclinedAck(relay, cdp, bots, root);
   await checkTurnUnits(cdp);
 }
@@ -563,7 +672,11 @@ async function checkAcks(relay, cdp) {
   if ((await relay.mode()) !== AUTO) fail('U5 a refused post must not change the setting');
   await checkHelpGap(cdp);
   await checkFit390(cdp);
-  await cleanup();
+  const left = await cleanup();
+  if (left.length) {
+    console.error('approve UI check failed: temp dirs left behind: ' + left.join(' '));
+    process.exit(1);
+  }
   console.log('approve UI checks ok');
   process.exit(0);
 })().catch(async (e) => {
