@@ -8,11 +8,15 @@ the top-level `VERSION` file.
 
 ### Changed
 
-- Christmas theme: the accent is a lighter red (#ff6b7f) with dark ink (#0f1f14) on it, so a checked
-  Settings radio reads 5.77:1 against its panel (was 2.71:1) and red accent text and buttons clear
-  4.5:1 / 3:1 (#309). Other themes are unchanged. `tests/check_palette.cjs` R1 now requires a 3:1
-  checked radio fill in all 8 themes at both widths, and new R2 measures christmas accent-painted
-  text and controls on each checked surface.
+- Christmas theme: every red is one crimson hue. Light crimson `--accent` #ff6b7f (dark ink #0f1f14)
+  is for accent text, radios, outlines and the switch knob, so a checked Settings radio reads 5.77:1
+  against its panel (was 2.71:1). Deep crimson `--accent-dim` #5c1420 (was #7f1d1d) sits behind accent
+  text on hover (4.86:1, was 1.71:1 on main), the mine bubble and the switch track. A christmas-only
+  `--accent-fill` #c41e3a paints the primary buttons with light ink (5.57:1) and a light-crimson edge;
+  the Thread stamp outline is light crimson (5.77:1, was 1.58:1) (#309). Other themes are unchanged.
+  `tests/check_palette.cjs` R1 requires a 3:1 checked radio fill in all 8 themes at both widths; R2
+  measures christmas accent-painted text and controls on each checked surface; R3 hovers each visible
+  Thread / call button with the mouse and needs 4.5:1 text; R4 needs a 3:1 Thread stamp outline.
 
 - A robot loop that hits its limit says "Mention both robots again to start
   a new loop." A fresh loop arms only when the next note names exactly two
