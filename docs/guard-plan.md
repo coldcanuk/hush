@@ -1,0 +1,184 @@
+# GUARD: per-command guardrails (plan only)
+
+Status: PLAN. No product code. Owner: Floor (engine, relay, API). Journeys (JNY): UI. Order: CoS 2026-10-17 09:56 ET, user-specified by Chuck.
+Base: main `13511bd48b47` (#323). Depends on C-5 P1 (CSRF/Origin, approve nonce, agent sandbox), which ships first.
+Tags: **OBS** `file:line` at `13511bd`, **VERIFIED_EXTERNAL** url, **INFERRED**, **UNKNOWN**.
+
+## 0. Spec (from the order)
+
+- Per shell command, the owner decides: **approve once | always approve | ask every time | reject**.
+- Always and reject persist as rules. The owner can list, edit and delete rules, and add custom rules directly.
+- Rule fields: `match` (exact/prefix/pattern), `scope` (robot/project/global), `action`, `created_by`, `created_at`, `hit_count`.
+- Default is ask. Reject beats approve. Robots cannot write rules; they only propose them (mirrors KEYS).
+- Enforced on the relay before exec, for every shell-capable provider. Every decision is audited.
+
+## 1. Current exec path (main `13511bd`)
+
+| Item | Finding | Tag |
+|---|---|---|
+| Tip | `13511bd48b4784746daf0645e7351591ca01d76a` "Gate Cline auto-approve behind a person" (#323) | OBS (GitHub API) |
+| Fork | `hush_agent_spawn_grok` forks a worker (`agent_process.c:597`); `capture_worker` also forks (`:190`) | OBS |
+| Child | `hush_agent_exec_child` (`agent_process.c:279-300`): dup2 stdout to the pipe, stderr to /dev/null, dispatch by `job->provider`. **No env scrub, no sandbox, stdin inherited.** | OBS |
+| Cline | `cline --json --cwd <cwd> --auto-approve <true\|false> --timeout N <prompt>` (`:380-401`). `true` only when `project_tools` is set (`:373-378`) | OBS |
+| Grok Build | `grok -p … --always-approve … --disallowed-tools <list>` (`:468-499`). Both deny lists contain `run_terminal_cmd` (`:26-29`), **so Grok has no shell today** | OBS |
+| Copilot | `copilot -p <prompt> --allow-all-tools [-C cwd]` (`:40`, `:440-465`). **Full shell, not gated by `project_tools`** | OBS |
+| Codex | `codex exec --cd <cwd> --skip-git-repo-check --sandbox read-only <prompt>` (`:529-545`). Shell runs, but in Codex's read-only sandbox | OBS |
+| Goose | `goose run --text <prompt>` after chdir (`:547-562`). No `GOOSE_MODE` set, so Goose's default `auto` applies (no prompts) | OBS + VERIFIED_EXTERNAL https://github.com/block/goose/blob/main/documentation/docs/guides/config-files.md |
+| Ollama / API | `ollama run <model> <prompt>` (`:565-584`), API path (`:330`). Neither has a tool loop, so no shell | OBS |
+| Turn gate | `hush_agent_approval_needed` (`agent_approve.c:40-46`) holds a whole **turn** under `approve_every_action` (`hush_roster.h:36-37,96-97`). Hold at `agent_dispatch.c:1363-1364`. The answer is an owner "Yes" note (`agent_approve.c:90`). `begin_approved` sets `approved` (`agent_dispatch.c:1386-1391`) | OBS |
+| Person gate (#322/#323) | `person_gate = in->approved \|\| owner_asked(in)` (`agent_prompt.c:153`) → `apply_project_cwd` sets `project_tools` (`agent_team.c:321-345`) | OBS |
+| HTTP auth | Session token by cookie, bearer or query (`hush_http.c:530-551`); 401/403 helper (`:187`); `/api/session` (`:307`). `/api/turn` (`:323`, `:1051`), `/api/profile` (`:1013`). **No Origin or CSRF check and no nonce** (searched `Origin\|Sec-Fetch`: no hits in `hush-c/src`) | OBS |
+| macros.json | **Not on main.** Planned in `docs/plan/PLAN_KEYS.md` §5.2 on branch `gb/keys-plan` (`59b48543`): `hush/macros.json`, mode 0600, written only by the relay, `GET/POST /api/macros` | OBS (branch) |
+| KEYS propose | **Not on main.** Planned in PLAN_KEYS §0: a system skill `skills/system/keys-macros/SKILL.md` emits a fenced `hush-keys` proposal; the owner applies it by hand; robots get no session token | OBS (branch) |
+| GUARD note | PLAN_KEYS §2 already reserves a GUARDRAILS tab and the Approve / Always approve / Ask every time / Reject stamps; it notes that the `approve_guest_turns` mode must never write Always rules and that explicit Reject/Ask beats the mode | OBS (branch) |
+
+Gap: today's approvals are per **turn**. Inside a turn, Copilot (always) and Goose (always), and Cline when `project_tools` is set, run any shell command with no Hush check. Codex runs read-only commands.
+
+## 2. Feasibility: can Hush decide before exec?
+
+Hush runs external CLIs, and those CLIs run the shell themselves. GUARD is only real when the CLI asks Hush before every command. The plan uses three mechanisms:
+
+- **(H) Hook.** The CLI runs a Hush-owned hook binary (`hush-guard-hook`) before each tool call. The hook asks the relay over a unix socket and blocks until the decision comes back.
+- **(P) Protocol.** Hush drives the CLI over JSON-RPC (ACP or app-server) and answers its permission requests.
+- **(M) MCP.** The native shell tool is disabled and Hush serves a `shell` tool over MCP that enforces the rules.
+
+Wrapper shells via PATH or SHELL are **rejected as an enforcement mechanism**: CLIs exec `/bin/bash` by absolute path, and a model can call `env -i`, `python -c` and so on (INFERRED). They may be used for logging only.
+
+| Provider | Today (OBS) | Officially supported interception | Pre-exec? | GUARD mechanism | Source |
+|---|---|---|---|---|---|
+| Cline | shell only when `--auto-approve true` | `PreToolUse` hook; `run_commands` input `command`; returns `cancel` / `review`. CLI path `.cline/hooks/PreToolUse.sh`; **hooks are disabled in `--yolo`** | **Yes** | H. Install the hook in a Hush-owned HOME, never in the project cwd (agent-writable). UNKNOWN: whether `--auto-approve true` keeps hooks on (a pin test is needed); whether a global CLI hook dir exists | VERIFIED_EXTERNAL https://github.com/cline/cline/blob/main/sdk/examples/hooks/README.md , https://docs.cline.bot/usage/cli-overview , https://github.com/cline/cline/pull/13649 |
+| Copilot CLI | `--allow-all-tools` | `preToolUse` hook, `permissionDecision` allow/deny/ask; `ask` acts as deny in non-interactive mode; **exit 2 or a crash fails closed, a timeout fails open**. Also `--deny-tool 'shell(x)'`; deny beats allow | **Yes** | H. Hook timeout far above the relay's ask timeout; the relay answers deny at its own timeout so Copilot's timeout never fires. Drop `--allow-all-tools` for `--allow-tool shell` plus the hook | VERIFIED_EXTERNAL https://docs.github.com/en/copilot/reference/hooks-reference , https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli/allowing-tools |
+| Codex | `exec --sandbox read-only` | app-server JSON-RPC `item/commandExecution/requestApproval` → accept/decline/cancel; `PreToolUse` hooks (non-managed hooks need trust review); execpolicy `prefix_rule` | **Yes** (P); H is secondary | P: move from `codex exec` to `codex app-server` with approval policy `untrusted`, so every command reaches Hush. Hush must never send `acceptWithExecpolicyAmendment` unless the owner chose Always | VERIFIED_EXTERNAL https://learn.chatgpt.com/docs/hooks , https://github.com/openai/codex/blob/main/codex-rs/execpolicy/README.md , https://www.mintlify.com/openai/codex/concepts/approvals |
+| Goose | `goose run`, default mode `auto` | `GOOSE_MODE=approve`; ACP `requestPermission` with allow_once / allow_always / reject_once / reject_always; per-tool `permission.yaml` | **Yes** via ACP (P) | P: `goose acp`, answer `requestPermission` per call; map allow_always/reject_always to Hush-only rules and reply `*_once` to Goose so Goose keeps no rule store | VERIFIED_EXTERNAL https://block-goose.mintlify.app/advanced/acp-protocol , https://github.com/block/goose/blob/58f3cc9e/documentation/docs/guides/goose-permissions.md |
+| Grok Build | shell denied (`run_terminal_cmd` in both deny lists) | `PreToolUse` hooks in `~/.grok/hooks/*.json` (matcher `Bash`), deny via JSON or exit 2; `--always-approve` keeps deny rules and hooks; **hook failure fails open** | Yes, but fail-open | Keep shell denied (today). Re-enable only with H **plus** M fallback; fail-open makes H alone non-enforcing | VERIFIED_EXTERNAL https://docs.x.ai/build/features/hooks , https://docs.x.ai/build/features/permissions |
+| Hermes Agent (planned) | not wired | plugin `pre_tool_call` returning `{"action":"block"}`; ACP bridges approvals (allow_once/allow_session/allow_always/deny; timeout = deny); smart mode uses an aux LLM; container backends skip approvals | **Yes** (ACP or plugin) | P (ACP), with approvals mode `manual`; the plugin as a second layer. Never a container backend without GUARD | VERIFIED_EXTERNAL https://hermes-agent.nousresearch.com/docs/user-guide/security , https://hermes-agent.nousresearch.com/docs/user-guide/features/hooks , https://github.com/NousResearch/hermes-agent/pull/9377 |
+| OpenClaw `--isolated` (planned) | not wired | exec approvals: `tools.exec.mode ask` (allowlist + on-miss) / `always`; `askFallback` defaults to deny with no UI; chains need every segment allowlisted | Yes (gateway/companion approval flow) | UNKNOWN how an external client answers prompts in `--isolated`/`--local` (no UI = askFallback). Plan: `ask: always` + `askFallback: deny` + `security: deny` for host exec, and M as the only shell | VERIFIED_EXTERNAL https://docs.openclaw.ai/tools/exec-approvals , https://docs.openclaw.ai/tools/exec , https://github.com/openclaw/openclaw/issues/59720 |
+| NanoClaw (planned) | not wired | runs the Claude Agent SDK in a container; the SDK has `PreToolUse` hooks (permissionDecision) | Yes in principle | UNKNOWN whether NanoClaw exposes a hook/config seam to an outside parent. Default: deny Bash, offer M | VERIFIED_EXTERNAL https://github.com/nanocoai/nanoclaw/blob/87a2d3af/container/agent-runner/src/providers/claude.ts , https://github.com/anthropics/claude-agent-sdk-python/blob/main/examples/hooks.py |
+| NemoClaw (planned) | not wired | OpenShell sandbox: deny-by-default **network** policy with operator approval; no documented per-command exec approval | **No** documented | Inherits OpenClaw exec approvals inside (INFERRED). Default: shell denied, M only | VERIFIED_EXTERNAL https://docs.nvidia.com/nemoclaw/user-guide/openclaw/reference/network-policies |
+| Ollama / API | no tools | n/a | n/a | none needed | OBS |
+
+**True per-command enforcement (target):** Cline (H), Copilot (H), Codex (P), Goose (P), Hermes (P). **Shell denied unless gated (M only):** Grok Build, OpenClaw, NanoClaw, NemoClaw, until a pin test proves a seam. **Rule:** a provider with no verified pre-exec seam gets no shell. The fallback is never "allow".
+
+Fail-closed contract for every mechanism: socket down, malformed reply, relay timeout, or hook crash → **deny**. Tests pin each provider's fail-open edge (Copilot timeout, Grok hook failure) as unreachable.
+
+## 3. Matcher semantics
+
+- **Input.** For P, use the argv the CLI reports (Codex sends an argv array). For H and M, use the command string, parsed by one relay-side POSIX-sh tokenizer (`hush_guard_parse`). Never match on the raw string.
+- **Kinds.**
+  - `exact`: token-for-token equality after normalisation.
+  - `prefix`: token prefix, as in Codex `prefix_rule`; `git push` matches `git push origin` but not `git pushx`.
+  - `pattern`: **glob, anchored on the whole normalised command**; `*` does not match `;|&<>$()\`` or a newline. No regex: it is hard to read, easy to leave unanchored, and has ReDoS risk.
+- **Normalisation.** Strip leading `VAR=val` env prefixes, but record them; any env prefix on `LD_*`, `PATH`, `BASH_ENV` or `PROMPT_COMMAND` falls to ask. Resolve `argv[0]` to its basename only when the path is in a fixed system set. Undo quoting. Collapse whitespace.
+- **Compound commands.** Split on `;`, `&&`, `||`, `|`, `&` and newlines. **Every segment must match an approve rule.** Any segment matching reject → reject. Otherwise → ask. This mirrors OpenClaw's allowlist (VERIFIED_EXTERNAL docs.openclaw.ai/tools/exec).
+- **Always ask** (rules cannot approve): subshells, `$(…)`, backticks, `<(…)`, `eval`, `exec`, `source`/`.`, `sh|bash|zsh -c`, `python|node|perl|ruby -e/-c`, `xargs`, `find -exec`, heredocs, redirections to paths outside the cwd, `sudo`/`doas`, and any parse error.
+- **Bypass risks** (each gets a test): quote splitting (`g""it push`), `\` newline, absolute paths (`/usr/bin/git`), aliases or functions defined earlier in the same command, `command`/`builtin` prefixes, unicode look-alikes (reject non-ASCII in `argv[0]`), long-command truncation (over 8 KiB → ask), and a TOCTOU gap between the hook seeing a command and the CLI running it (P and M avoid it; H trusts the CLI to run what it showed).
+
+## 4. Precedence
+
+1. A hard deny (fixed set, e.g. anything touching `$HUSH_HOME`) → reject; no rule can override it.
+2. Collect every rule that matches, at **any** scope. **Any reject → reject.** Reject beats approve across scopes, so a global reject cannot be overridden by a robot approve.
+3. Ask rules: the most specific scope's ask beats approve at the same or a broader scope. Specificity: robot > project > global.
+4. Approve applies only when every segment has an approve and no reject or ask applies.
+5. No match → **ask** (default).
+
+Turn gate interaction: GUARD runs inside an already-approved turn. `approve_every_action` (turn) and GUARD (command) are independent. The KEYS `approve_guest_turns` mode never creates or satisfies GUARD rules (PLAN_KEYS §2). Open: may Always rules apply in robot-chained, follow or election turns (C-3)? Proposed: no; those turns ask.
+
+## 5. Rule authority and audit
+
+- **Writes.** Only the owner, through the UI, with the session cookie, plus the **C-5 approve nonce bound to the browser session** (C-5 fix b), plus a matching `Origin`/CSRF check (C-5 fix c). Bearer-only and query-token calls cannot write rules. **INFERRED**: a remote client holding the token is not the owner's browser.
+- **Robots.** Propose only. This mirrors the KEYS flow: a system skill `skills/system/guard-rules/SKILL.md` emits a fenced `hush-guard` v1 block. The UI shows it as a proposal card, and the owner presses Apply, which goes through the nonce path. The relay never parses robot output into rules on its own.
+- **Decisions.** "Always approve" and "Reject" from a pending card create a rule (`created_by: owner`, `source: decision`). The proposed default match is `exact`; the owner can widen it to prefix or pattern in the card (open question for JNY).
+- **Audit.** `hush/guard-audit.jsonl`, append-only, mode 0600, relay-written, one JSON line per decision or rule change. Fields: `ts, event (decide|rule_create|rule_update|rule_delete|propose), robot, provider, project, thread_root, job_id, cmd_redacted, cmd_sha256, segments, decision, rule_id, by (owner|rule|default|timeout|failclosed), mechanism (H|P|M)`.
+- **Redaction** before writing: values of `--token/--password/--secret/--key`, `Authorization`/`Bearer`, `ghp_/gho_/ghs_/xai-/sk-` shapes, URL userinfo, and env prefix values. The full command is kept only as `cmd_sha256`.
+- **Retention.** Rotate at 5 MiB, keep 5 files (proposed; Ops to confirm). Never synced over nostr.
+
+## 6. Shared exec path with C-5 P1
+
+C-5 branches (`gb/p1-csrf-origin`, `gb/p1-approve-nonce`, `gb/p1-agent-sandbox`) **do not exist yet** (OBS: `git ls-remote` at 09:56 ET). No C-5 issue was found (search: open issues "session.token"). GUARD builds on C-5:
+
+- **Sandbox** (landlock/bwrap) in `exec_child` (`agent_process.c:279`) must deny read and write on `$HUSH_HOME`, which covers `guardrails.json`, `guard-audit.jsonl`, `session.token` and the guard socket directory except the one socket bound in. The hook binary and its config sit read-only, outside the cwd.
+- **Env scrub** in the same place: remove `HUSH_*`, tokens and keystore variables; set `HOME` to a per-job Hush-owned dir that contains the provider hook config (e.g. `~/.grok/hooks`, `.cline/hooks`, Copilot hooks).
+- **Socket.** One unix socket per job, carrying `job_id` and a per-job random secret passed by fd (not env). The relay checks `SO_PEERCRED` against the job's pid tree.
+- **Order.** C-5 merges → GUARD M1.
+
+## 7. Data, API, UI contract
+
+**Store recommendation: a separate `hush/guardrails.json`** (mode 0600, relay-only, atomic write by tmp + rename). Not shared with `macros.json`, because:
+
+1. It is a security boundary with a different blast radius. A bad macro must not corrupt rules; PLAN_KEYS chose a separate file for the same reason (C-7).
+2. It changes on a different path: GUARD writes need the nonce + Origin and count `hit_count` on every hit, while macros are edited rarely.
+3. The sandbox deny list and audit can name it precisely.
+4. `macros.json` does not exist yet.
+
+The UI can still share the drawer (a GUARDRAILS tab). JNY to confirm.
+
+```json
+{
+  "format": "hush-guard", "version": 1,
+  "rules": [
+    {"id": "g_01J…", "match": {"kind": "prefix", "value": ["git", "status"]},
+     "scope": {"kind": "project", "id": "hush"}, "action": "approve",
+     "created_by": "owner", "source": "decision", "created_at": "2026-10-17T14:00:00Z",
+     "updated_at": "2026-10-17T14:00:00Z", "hit_count": 0, "last_hit_at": null, "note": ""},
+    {"id": "g_01K…", "match": {"kind": "pattern", "value": "rm -rf *"},
+     "scope": {"kind": "global"}, "action": "reject", "created_by": "owner",
+     "source": "custom", "created_at": "…", "updated_at": "…", "hit_count": 3, "last_hit_at": "…", "note": ""}
+  ]
+}
+```
+
+`action` is one of `approve|reject|ask`. "Approve once" is never stored. `scope.kind` is one of `robot|project|global`, and `id` is the robot hex or the project slug.
+
+**API** (all need the session cookie; mutations also need `X-Hush-Nonce` + same Origin):
+
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `/api/guard/rules` | list rules |
+| POST | `/api/guard/rules` | create a rule (custom or apply-proposal) |
+| PATCH | `/api/guard/rules/{id}` | update match/scope/action/note |
+| DELETE | `/api/guard/rules/{id}` | delete a rule |
+| GET | `/api/guard/pending` | pending commands (robot, provider, project, cmd_redacted, segments, age, expires) |
+| POST | `/api/guard/pending/{id}` | `{decision: once\|always\|ask\|reject, match?, scope?}` |
+| GET | `/api/guard/audit?limit=` | tail of the audit log (redacted) |
+
+Route style follows `/api/*` in `hush_http.c:1005-1060`. Path parameters are **NEW** to the router (INFERRED: today it uses `strcmp` exact paths), so they may need to become query parameters, e.g. `?id=`. Floor to decide.
+
+**UI hand-off (JNY).** No colours are set here; JNY uses existing tokens.
+
+- **States.** Pending card: waiting / deciding / decided (once, always, ask, reject) / expired (auto-reject) / failed-closed. Rules table: empty / list / editing / delete-confirm / save-error / nonce-expired. Proposal card: proposed / applied / dismissed.
+- **Stamps.** Approve | Always approve | Ask every time | Reject (PLAN_KEYS §2).
+- **Copy placeholders** (JNY/Ops own the words):
+  - `[[GUARD_PENDING_TITLE]]`
+  - `[[GUARD_SEGMENT_HINT]]` ("this command has N parts")
+  - `[[GUARD_ALWAYS_SCOPE_PICK]]`
+  - `[[GUARD_EXPIRED]]`
+  - `[[GUARD_FAILCLOSED]]`
+  - `[[GUARD_PROPOSAL_FROM_ROBOT]]`
+  - `[[GUARD_NO_SEAM_PROVIDER]]` ("this robot's shell is off")
+- **Must show:** the redacted command, its split segments, the matched rule (if any), robot, project and provider.
+
+## 8. Milestones (each a small DRAFT; after C-5)
+
+Every PR includes stub tests with a stub PATH (fake `cline`, `copilot`, `codex`, `goose`, `grok` scripts) and a temp HOME and HUSH_HOME. Real tools are never spawned. Canary = 0 (the stubs fail the suite if a real binary is found first on PATH). Each PR lists reverse mutants and goes green on `ci.yml`.
+
+| # | Draft | Scope | Key tests / reverse mutants |
+|---|---|---|---|
+| G0 | this plan | docs | — |
+| G1 | `hush_guard` core | parser, matcher, precedence, `guardrails.json` load/save; no wiring | table tests for §3 bypasses. Mutants: drop the segment split → `a && rm` approved; reject-last ordering → approve wins; regex instead of anchored glob |
+| G2 | audit + redaction | jsonl writer, rotation | Mutant: skip redaction → `ghp_` appears in the log |
+| G3 | API + nonce | `/api/guard/*` on the C-5 nonce/Origin | Mutants: accept bearer-only writes; skip the Origin check |
+| G4 | guard socket + `hush-guard-hook` | socket, peercred, fail-closed | Mutant: on timeout return allow |
+| G5 | Copilot (H) | swap `--allow-all-tools`; hook config in the job HOME | stub copilot calls the hook; deny is honoured. Mutant: keep `--allow-all-tools` with no hook |
+| G6 | Cline (H) | hook in the job HOME; pin hook-on with `--auto-approve true` | Mutant: hook written into the project cwd |
+| G7 | Codex (P) | app-server client | Mutant: auto `acceptForSession` |
+| G8 | Goose (P) | ACP client | Mutant: forward `allow_always` to Goose |
+| G9 | MCP `shell` (M) | Hush MCP server; native shell off per provider | Mutant: native shell left enabled |
+| G10 | UI (JNY) | pending card, rules tab, proposal card | `check_guard_ui.cjs` with headless stub |
+| G11 | `guard-rules` skill | propose-only | Mutant: relay auto-applies a proposal |
+| G12 | planned providers | Hermes (P), OpenClaw/NanoClaw/NemoClaw (M) | per-provider no-seam → no shell |
+
+## 9. Open questions
+
+- **CoS:** Should Copilot's ungated `--allow-all-tools` (OBS `agent_process.c:40`) and Goose's default `auto` be closed now, as a C-5-adjacent fix, before GUARD? Should Always rules apply in robot-chained, follow or election turns (C-3)? What is the pending-ask timeout (proposed 10 min, then auto-reject)? Audit retention?
+- **JNY:** Do the GUARDRAILS tab and the pending card live in the drawer or inline in the thread? What is the default match when the owner picks "Always" (exact vs prefix)? All copy placeholders.
+- **Floor:** path parameters vs query parameters in the router; a C-5 issue number (none found); Cline `--auto-approve true` + hooks behaviour; OpenClaw isolated-mode prompt seam.
