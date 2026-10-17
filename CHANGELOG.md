@@ -29,11 +29,14 @@ the top-level `VERSION` file.
   themes compute the same values and S7's baseline is empty: any unscoped literal colour now fails.
   Pinned by `tests/check_palette.cjs` L1.
 - Field-office call stage: the Muted slip on a call tile is paper ink on the warn slip (5.88:1; was ink
-  on warn at 1.73:1). New pins: W1 (no element paints pure white anywhere in field-office), S8 (no
+  on warn at 1.73:1). New pins: W1 (no element paints pure white in the 62 field-office views the palette check renders), S8 (no
   white or near-white literal reaches field-office), K9 (the real call stage) and K10 (the real skills
   board and skill sheet). `tests/palette_mutants.py` runs the palette and mention mutants.
 - Mentions: the note body text never contains the npub and the @unknown pill's aria-label carries the
   short key (K7). The repaint key is the sorted npub=name pairs, so a same-size roster swap repaints (K7t).
+- Mentions: the live robot partial preview renders through the same mention renderer as a note body,
+  so an unresolved `@npub1…` shows as an @unknown pill there too (K7p). The roster key's sort and its
+  npub and name halves are pinned (K7k); the voice button's fallbacks in the other 7 themes are pinned (K11o).
 
 - A robot loop that hits its limit says "Mention both robots again to start
   a new loop." A fresh loop arms only when the next note names exactly two
