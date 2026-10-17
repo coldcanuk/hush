@@ -71,6 +71,8 @@ int main(void)
     expect(hush_auth_tokens_equal("abc", "abc") == 1, "equal strings");
     expect(hush_auth_tokens_equal("abc", "abd") == 0, "different strings");
     expect(hush_auth_tokens_equal("abc", "ab") == 0, "different lengths");
+    expect(hush_auth_tokens_equal("ab", "abc") == 0, "longer presented token");
+    expect(hush_auth_tokens_equal("abc", "") == 0, "empty presented token");
     expect(hush_auth_tokens_equal(NULL, "ab") == 0, "NULL is unequal");
     expect(hush_auth_token_copy(again, sizeof(again)) == HUSH_OK, "copy again");
     expect(strcmp(token, again) == 0, "token is stable");
