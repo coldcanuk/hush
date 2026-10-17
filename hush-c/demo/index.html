@@ -3155,7 +3155,8 @@ html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checke
     }
 
     function uiNonce() {
-      const m = document.cookie.match(/(?:^|; )hush_nonce=([0-9a-f]{32})(?:;|$)/);
+      const c = document.cookie || "";
+      const m = String(c).match(/(?:^|; )hush_nonce=([0-9a-f]{32})(?:;|$)/);
       return m ? m[1] : "";
     }
 
