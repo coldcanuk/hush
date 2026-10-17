@@ -87,6 +87,12 @@ unless the request carries the live `X-Hush-Nonce` (constant-time compare);
 every action; a vibe that never saved one keeps the auto-approve default.
 Exercised by `check_approve_nonce.py` and `test_auth`.
 
+No write a child can reach stamps the owner (#336 part 4). An agent child
+can reach the relay port and can read `session.token`, so every route that
+stores an event under the owner's pubkey (`POST /api/event` notes of any
+kind, `/api/signal`, `/api/presence`) needs the live `X-Hush-Nonce` too and is
+refused `403` without it. Exercised by `check_owner_stamp.py`.
+
 The listener binds `127.0.0.1` by default. `--listen 0.0.0.0` (or another
 address) exposes it deliberately; remote clients must then present the token.
 `Access-Control-Allow-Origin` is not set, the `Host` header must name the local

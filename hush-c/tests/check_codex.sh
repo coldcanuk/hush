@@ -4,13 +4,17 @@
 set -eu
 cd "$(dirname "$0")/.."
 . ./tests/hush_free_port.sh
+. ./tests/hush_pair.sh
 # Session-token gate plus a hermetic pass store, so the harness never reads the
 # operator's real credentials. curl() adds the hive token to every call.
 test_home="$(mktemp -d)"
 export HUSH_HOME="$test_home/hush"
 export HUSH_PASS_HELPER="$(pwd)/tests/fake-pass.sh"
 export HUSH_FAKE_PASS_DIR="$(mktemp -d)"
-curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" "$@"; }
+# The paired window's X-Hush-Nonce rides along: owner-stamped writes need it (#336).
+curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" \
+    -H "X-Hush-Nonce: $(cat "${HUSH_HOME:-/nonexistent}/ui.nonce" 2>/dev/null || true)" \
+    -b "${HUSH_HOME:-/nonexistent}/ui.jar" "$@"; }
 
 bin=./hush-relay
 port=$(hush_free_port) || exit 1
@@ -72,6 +76,7 @@ printf '%s\n' '{"ok":true}' > "$home/.grok/auth.json"
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
 wait_up || fail "relay did not start"
+hush_pair "$port" "$log" "$HUSH_HOME/ui.jar" || fail "relay printed no working pairing link"
 
 curl -sf -X POST "http://127.0.0.1:${port}/api/identity" \
     -H 'Content-Type: application/json' \
@@ -131,6 +136,7 @@ MIGRATE
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
 wait_up || fail "relay did not restart"
+hush_pair "$port" "$log" "$HUSH_HOME/ui.jar" || fail "relay printed no working pairing link"
 session=$(curl -sf "http://127.0.0.1:${port}/api/session")
 printf '%s' "$session" | python3 -c '
 import json, sys
