@@ -3209,12 +3209,21 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
       el.replaceChildren(verb, hid);
     }
 
+    function uiNonce() {
+      const c = document.cookie || "";
+      const m = String(c).match(/(?:^|; )hush_nonce=([0-9a-f]{32})(?:;|$)/);
+      return m ? m[1] : "";
+    }
+
     async function api(path, body) {
+      const headers = {};
+      const nonce = uiNonce();
+      if (nonce) headers["X-Hush-Nonce"] = nonce;
       const opt = body ? {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: Object.assign({ "Content-Type": "application/json" }, headers),
         body: JSON.stringify(body)
-      } : {};
+      } : (nonce ? { headers } : {});
       const r = await fetch(API + path, opt);
       if (!r.ok) {
         const err = new Error("request failed");

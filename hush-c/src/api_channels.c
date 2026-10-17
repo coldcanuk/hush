@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "hush_agent_internal.h"
 #include "hush_http_internal.h"
 #include "hush_intel.h"
 #include "hush_presence.h"
@@ -48,6 +49,9 @@ static hush_status_t hush_http_channel_roster(const char *body, const hush_launc
 static hush_status_t hush_http_channel_about(const char *body, const char *slug);
 static int hush_http_is_robot_key(const char *key);
 static void hush_http_add_reply_to(hush_event_t *out, const char *body);
+/* True when note reads as a Yes/No approval answer and the request did not
+ * present the paired window's X-Hush-Nonce (#336). */
+static int hush_http_is_unproven_answer(const hush_event_t *note);
 
 hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
                                           hush_store_t *store, hush_event_t *out)
@@ -58,6 +62,10 @@ hush_status_t hush_http_serve_post(int fd, const char *req, size_t len,
         return HUSH_ERR_DENIED;
     }
     hush_status_t status = hush_http_parse_note(out, hush_http_body(req, len));
+    /* An owner-stamped Yes/No drives held turns, team offers, and loops; the
+     * session token alone must not be able to send one. */
+    if (status == HUSH_OK && hush_http_is_unproven_answer(out))
+        return hush_http_reply_ui_required(fd);
     if (status == HUSH_OK) status = hush_http_resolve_conversation(out, store);
     if (status != HUSH_OK) {
         const char *error = "Invalid message or conversation. Reopen the thread and retry.\n";
@@ -110,6 +118,14 @@ static hush_status_t hush_http_parse_note(hush_event_t *out, const char *body)
     hush_http_add_reply_to(out, body);
     hush_http_add_mentions(out, body);
     return HUSH_OK;
+}
+
+static int hush_http_is_unproven_answer(const hush_event_t *note)
+{
+    assert(note != NULL);
+    if (hush_http_ui_proven())
+        return 0;
+    return hush_agent_loop_parse_answer(note->content) != HUSH_AGENT_LOOP_ANSWER_NONE;
 }
 
 static void hush_http_note_presence(hush_store_t *store, const hush_event_t *event)

@@ -699,7 +699,7 @@ hush_status_t hush_launch_patch_profile(hush_launch_t *launch,
 
 hush_status_t hush_launch_set_approval(hush_launch_t *launch, const char *id)
 {
-    hush_roster_approval_t mode = HUSH_ROSTER_APPROVAL_AUTO;
+    hush_roster_approval_t mode = HUSH_ROSTER_APPROVAL_EVERY;
 
     if (launch == NULL || id == NULL)
         return HUSH_ERR_ARG;
@@ -3329,12 +3329,18 @@ static hush_status_t hush_launch_take_members(hush_launch_t *launch,
 }
 
 /* #279: read apart from the theme-gated profile above, so the setting
- * survives a vibe with no theme. Missing or unknown reads as auto-approve. */
+ * survives a vibe with no theme. A vibe that never saved the key keeps the
+ * auto-approve default; a key that is present but unknown, empty, or not a
+ * string asks every action (#336). */
 static void hush_launch_take_approval(hush_launch_t *launch, const char *json)
 {
     char id[HUSH_ROSTER_NAME_MAX] = {0};
 
     assert(launch != NULL && json != NULL);
+    if (strstr(json, "\"approval_mode\"") == NULL) {
+        launch->roster.profile.approval = HUSH_ROSTER_APPROVAL_AUTO;
+        return;
+    }
     (void)hush_launch_json_string(json, "approval_mode", id, sizeof(id));
     (void)hush_roster_approval_parse(id, &launch->roster.profile.approval);
 }

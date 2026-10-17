@@ -244,21 +244,26 @@ int hush_roster_is_theme(const char *theme)
 int hush_roster_approval_parse(const char *id, hush_roster_approval_t *out)
 {
     assert(out != NULL);
-    *out = HUSH_ROSTER_APPROVAL_AUTO;
+    /* #336: anything unknown asks every action, never runs unasked. */
+    *out = HUSH_ROSTER_APPROVAL_EVERY;
     if (id == NULL)
         return 0;
     if (strcmp(id, HUSH_ROSTER_APPROVAL_EVERY_ID) == 0) {
         *out = HUSH_ROSTER_APPROVAL_EVERY;
         return 1;
     }
-    return strcmp(id, HUSH_ROSTER_APPROVAL_AUTO_ID) == 0;
+    if (strcmp(id, HUSH_ROSTER_APPROVAL_AUTO_ID) == 0) {
+        *out = HUSH_ROSTER_APPROVAL_AUTO;
+        return 1;
+    }
+    return 0;
 }
 
 const char *hush_roster_approval_id(hush_roster_approval_t mode)
 {
-    if (mode == HUSH_ROSTER_APPROVAL_EVERY)
-        return HUSH_ROSTER_APPROVAL_EVERY_ID;
-    return HUSH_ROSTER_APPROVAL_AUTO_ID;
+    if (mode == HUSH_ROSTER_APPROVAL_AUTO)
+        return HUSH_ROSTER_APPROVAL_AUTO_ID;
+    return HUSH_ROSTER_APPROVAL_EVERY_ID;
 }
 
 int hush_roster_is_provider(const char *provider)
