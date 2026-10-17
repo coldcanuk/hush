@@ -141,7 +141,8 @@ int hush_auth_pair_take(const char *presented)
         return 0;
     if (!hush_auth_tokens_equal(presented, g_pair))
         return 0;
-    return hush_auth_pair_mint() == HUSH_OK;
+    /* The new window gets a fresh UI secret; an older window's dies. */
+    return hush_auth_pair_mint() == HUSH_OK && hush_auth_ui_rotate() == HUSH_OK;
 }
 
 hush_status_t hush_auth_ui_rotate(void)
