@@ -36,6 +36,14 @@
 //      hover fill; at least one .thread-btn is hovered at each width (#309 r2).
 //   R4 christmas: the hovered .thread-btn (stamp) outline is >= 3:1 against
 //      what is behind it (#309 r2). R2 also swaps christmas --accent-fill.
+//   R3 also re-opens the BOARDS drawer with /api/status rewritten to
+//      "whisper":true (CDP Fetch) so .chan-voice is drawn and hovered; R3s pins
+//      .robot-call statically (its only host, #robot-list, is display:none).
+//   R5 christmas: every visible border side painted from --accent-dim or
+//      --accent (sentinel swap) is >= 3:1 against what is behind it, at rest,
+//      with each visible field focused, and with the mouse on each .prov-row.
+//   R6 christmas: each visible switch track is >= 3:1 against its panel, off
+//      and on (checked flipped on the input with no event, then restored).
 //   B1 Thread, Download and Stop are 20-24px tall at both widths; at 390 a
 //      point 20px above and below the centre still hits the control (44px).
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
@@ -155,6 +163,8 @@ class Cdp {
           const w = this.waiters.get(msg.id);
           this.waiters.delete(msg.id);
           w(msg.result || {});
+        } else if (msg.method === 'Fetch.requestPaused' && this.onPaused) {
+          this.onPaused(msg.params);
         } else if (msg.method === 'Page.javascriptDialogOpening') {
           this.send('Page.handleJavaScriptDialog', { accept: true }).catch(() => {});
         }
@@ -373,7 +383,7 @@ async function main() {
     let st = document.getElementById('pal-r2-still'); if (!st) { st = document.createElement('style'); st.id = 'pal-r2-still';
       st.textContent = '*, *::before, *::after { transition: none !important; animation: none !important; }'; document.head.appendChild(st); }
     return true; })()`;
-  const r3 = [];
+  const r3 = []; const r5 = []; const r6 = [];
   const accentTouch = async (surface, w) => {
     await cdp.eval(R2_SWAP);
     await sleep(60);
@@ -398,7 +408,55 @@ async function main() {
       if (m.stamp && m.outline < 3) failures.push(`R4 christmas ${surface}@${w} stamp outline ${m.outline}:1 ${m.border} behind ${m.behind} ${t.el}`);
     }
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
-    if (hov.length) console.log(`palette R3/R4 christmas ${surface}@${w}: ${hov.length} hovered (min hover ${Math.min(...r3.filter((x) => x.surface === surface && x.w === w).map((x) => x.hover)).toFixed(2)}, min stamp outline ${Math.min(...r3.filter((x) => x.surface === surface && x.w === w && x.stamp).map((x) => x.outline)).toFixed(2)})`);
+    if (hov.length) console.log(`palette R3/R4 christmas ${surface}@${w}: ${hov.length} hovered (min hover ${Math.min(...r3.filter((x) => x.surface === surface && x.w === w).map((x) => x.hover)).toFixed(2)}, min stamp outline ${r3.some((x) => x.surface === surface && x.w === w && x.stamp) ? Math.min(...r3.filter((x) => x.surface === surface && x.w === w && x.stamp).map((x) => x.outline)).toFixed(2) : '-'})`);
+
+    /* R5 (#309 r3): christmas borders painted from --accent-dim or --accent.
+     * Every visible border side whose colour changes when those are swapped
+     * for sentinels must hold 3:1 against what is behind the element; read
+     * at rest, with each visible field focused (its own and its
+     * .composer-box border), and with the mouse on each .prov-row. */
+    const BORD = `((focusSel) => { const P = window.__pal; const out = {}; const sides = ['Top', 'Right', 'Bottom', 'Left'];
+      const scan = (el, tag) => { const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2 || r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth) return;
+        const cs = getComputedStyle(el); if (cs.visibility === 'hidden' || P.opacityOf(el) < 0.05) return;
+        for (const sd of sides) { const bw = parseFloat(cs['border' + sd + 'Width']) || 0; if (bw < 1 || cs['border' + sd + 'Style'] === 'none') continue;
+          const c = P.rgba(cs['border' + sd + 'Color']); if (c[3] <= 0) continue; out[tag + P.path(el) + '|' + sd] = { c: cs['border' + sd + 'Color'], el: P.path(el), sd, state: tag,
+            behind: P.hex(P.bgOf(el.parentElement || el)), col: P.hex(P.over(c, P.bgOf(el.parentElement || el))), ratio: Math.round(P.ratio(P.over(c, P.bgOf(el.parentElement || el)), P.bgOf(el.parentElement || el)) * 100) / 100 }; } };
+      for (const el of document.querySelectorAll('body *')) scan(el, 'rest:');
+      for (const f of document.querySelectorAll('input:not([type=radio]):not([type=checkbox]):not([type=hidden]), textarea')) {
+        const r = f.getBoundingClientRect(); if (r.width < 4 || r.height < 4 || r.bottom <= 0 || r.top >= innerHeight || f.disabled || !P.onTop(f, r)) continue;
+        f.focus({ preventScroll: true }); if (document.activeElement !== f) continue; scan(f, 'focus:'); const box = f.closest('.composer-box'); if (box) scan(box, 'focus:'); f.blur(); }
+      return out; })()`;
+    const dimSides = async () => {
+      const a0 = await cdp.eval(BORD);
+      await cdp.eval(`(() => { const s = document.documentElement.style; s.setProperty('--accent-dim', '#00ffff'); s.setProperty('--accent', '#00ff00'); })()`); await sleep(40);
+      const b0 = await cdp.eval(BORD);
+      await cdp.eval(`(() => { const s = document.documentElement.style; s.removeProperty('--accent-dim'); s.removeProperty('--accent'); })()`); await sleep(40);
+      return Object.entries(a0).filter(([k, x]) => b0[k] && b0[k].c !== x.c).map(([, x]) => x);
+    };
+    const dims = await dimSides();
+    const rows = await cdp.eval(`(() => [...document.querySelectorAll('.prov-row')].map((el) => { const r = el.getBoundingClientRect();
+      return r.width > 4 && r.top >= 0 && r.bottom <= innerHeight && window.__pal.onTop(el, r) ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; }).filter(Boolean))()`);
+    for (const rw of rows) {
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rw.x, y: rw.y }); await sleep(40);
+      for (const x of await dimSides()) if (x.el.includes('prov-row')) dims.push(Object.assign(x, { state: 'hover:' }));
+    }
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
+    const seen5 = new Set();
+    for (const x of dims) { const k = x.state + x.el + x.sd; if (seen5.has(k)) continue; seen5.add(k); r5.push(Object.assign({ surface, w }, x));
+      if (x.ratio < 3) failures.push(`R5 christmas ${surface}@${w} ${x.state} accent border-${x.sd.toLowerCase()} ${x.ratio}:1 ${x.col} behind ${x.behind} ${x.el}`); }
+    /* R6 (#309 r3): christmas switch track >= 3:1 against its panel, off and
+     * on. The checked state is flipped on the input with no event (nothing is
+     * saved), read, and put back. */
+    const sw = await cdp.eval(`(() => { const P = window.__pal; const out = [];
+      for (const lab of document.querySelectorAll('.switch')) { const inp = lab.querySelector('input'); const sl = lab.querySelector('.slider'); if (!inp || !sl) continue;
+        const r = sl.getBoundingClientRect(); if (r.width < 4 || r.height < 4 || r.bottom <= 0 || r.top >= innerHeight || P.opacityOf(sl) < 0.05) continue;
+        const was = inp.checked;
+        for (const st of [was, !was]) { inp.checked = st; const behind = P.bgOf(lab.parentElement); const t = P.over(P.rgba(getComputedStyle(sl).backgroundColor), behind);
+          out.push({ id: inp.id, on: st, track: P.hex(t), behind: P.hex(behind), ratio: Math.round(P.ratio(t, behind) * 100) / 100 }); }
+        inp.checked = was; }
+      return out; })()`);
+    for (const x of sw) { r6.push(Object.assign({ surface, w }, x)); if (x.ratio < 3) failures.push(`R6 christmas ${surface}@${w} switch #${x.id} ${x.on ? 'on' : 'off'} track ${x.ratio}:1 ${x.track} behind ${x.behind}`); }
+    if (dims.length || sw.length) console.log(`palette R5/R6 christmas ${surface}@${w}: ${seen5.size} accent / accent-dim border sides (min ${dims.length ? Math.min(...dims.map((x) => x.ratio)).toFixed(2) : '-'}), ${sw.length} switch states (min ${sw.length ? Math.min(...sw.map((x) => x.ratio)).toFixed(2) : '-'})`);
     await cdp.eval(`(() => { const s = document.documentElement.style; s.setProperty('--accent', '#00ff00'); s.setProperty('--accent-ink', '#ff00ff'); s.setProperty('--accent-fill', '#0000ff'); })()`);
     await sleep(60);
     const b = await cdp.eval(MEASURE);
@@ -612,6 +670,43 @@ async function main() {
   }
   await accentTouch('boards-drawer', 390);
 
+  /* R3 voice phase (#309 r3): .chan-voice is drawn only when the relay
+   * reports a speech engine. The real BOARDS drawer is re-rendered with
+   * /api/status answering "whisper":true (rewritten in the browser via CDP
+   * Fetch, after the field-office passes above), then measured in christmas
+   * at both widths. */
+  cdp.onPaused = async (p) => {
+    const b = await cdp.send('Fetch.getResponseBody', { requestId: p.requestId });
+    const txt = (b.base64Encoded ? Buffer.from(b.body, 'base64').toString('utf8') : b.body).replace('"whisper":false', '"whisper":true');
+    await cdp.send('Fetch.fulfillRequest', { requestId: p.requestId, responseCode: p.responseStatusCode || 200, responseHeaders: p.responseHeaders, body: Buffer.from(txt).toString('base64') });
+  };
+  await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/status*', requestStage: 'Response' }] });
+  for (const [w, h] of WIDTHS) {
+    await view(w, h);
+    await cdp.eval(`(() => { if (!document.querySelector('#hive').classList.contains('nav-open')) document.querySelector('#nav-toggle').click(); })()`);
+    await cdp.waitFor(`document.querySelector('#hive').classList.contains('nav-open') && !!document.querySelector('.chan-voice')`, 'voice boards drawer', 15000);
+    await sleep(400);
+    await cdp.eval(KIT);
+    await accentTouch('boards-drawer-voice', w);
+  }
+  await cdp.send('Fetch.disable', {});
+  cdp.onPaused = null;
+  /* .robot-call lives only in #robot-list, which the markup keeps at
+   * display:none, so no real view can hover it. Static pin instead: one CSS
+   * rule gives .chan-voice:hover and .robot-call:hover the same background,
+   * and a christmas .robot-call computes the same colour and border colour as
+   * the .chan-voice that R3 hovered. */
+  {
+    const st = await cdp.eval(`(() => { const h = document.documentElement; const was = h.getAttribute('data-theme'); h.setAttribute('data-theme', 'christmas');
+      let shared = false; for (const sh of document.styleSheets) { let rs; try { rs = sh.cssRules; } catch (e) { continue; }
+        for (const r of rs) if (r.selectorText && /\.chan-voice:hover/.test(r.selectorText) && /\.robot-call:hover/.test(r.selectorText) && r.style.background) shared = true; }
+      const rc = document.querySelector('.robot-call'); const cv = document.querySelector('.chan-voice');
+      const g = (e) => e ? [getComputedStyle(e).color, getComputedStyle(e).borderTopColor] : null; const out = { shared, rc: g(rc), cv: g(cv) };
+      h.setAttribute('data-theme', was); return out; })()`);
+    console.log('palette R3s christmas .robot-call static: ' + JSON.stringify(st));
+    if (!st.shared || !st.rc || !st.cv || st.rc[0] !== st.cv[0] || st.rc[1] !== st.cv[1]) failures.push('R3s christmas .robot-call does not share the .chan-voice hover rule / colours: ' + JSON.stringify(st));
+  }
+  for (const w of [1440, 390]) for (const on of [false, true]) if (!r6.some((x) => x.w === w && x.on === on)) failures.push(`R6 christmas measured no ${on ? 'on' : 'off'} switch at ${w}`);
   if (process.env.PALETTE_ART) {
     fs.mkdirSync(process.env.PALETTE_ART, { recursive: true });
     fs.writeFileSync(path.join(process.env.PALETTE_ART, 'palette-report.json'), JSON.stringify(report, null, 1));
@@ -621,6 +716,8 @@ async function main() {
   const texts = report.reduce((n, r) => n + (r.text || []).length, 0);
   const ctls = report.reduce((n, r) => n + (r.ctl || []).length, 0);
   const r3stamps = r3.filter((x) => x.stamp);
+  if (!r3.some((x) => x.el.includes('chan-voice'))) failures.push('R3 christmas hovered no .chan-voice (want >= 1)');
+  if (process.env.PALETTE_ART) { fs.mkdirSync(process.env.PALETTE_ART, { recursive: true }); fs.writeFileSync(path.join(process.env.PALETTE_ART, 'r3r5r6.json'), JSON.stringify({ r3, r5, r6 }, null, 1)); }
   for (const w of [1440, 390]) if (!r3stamps.some((x) => x.w === w)) failures.push(`R3/R4 christmas hovered no .thread-btn at ${w} (want >= 1)`);
   if (failures.length) {
     const uniq = [...new Set(failures)];
@@ -639,8 +736,13 @@ async function main() {
     `${rings} focus rings >= 2px and >= 3:1, no near-white, theme radio accent matches in ${themes} themes, ` +
     `checked radio fill >= 3:1 in ${r1views} theme x width views, ` +
     `christmas accent-painted ${r2text} text runs >= 4.5:1 and ${r2ctl} controls >= 3:1 over ${r2views} surface views, ` +
-    `${r3.length} hovered accent buttons >= 4.5:1 (${r3stamps.length} stamps, outline >= 3:1), ` +
+    `${r3.length} hovered accent buttons >= 4.5:1 (${r3stamps.length} stamps, outline >= 3:1; ${r3.filter((x) => x.el.includes('chan-voice')).length} chan-voice, ${r3.filter((x) => x.el.includes('robot-call')).length} robot-call), ` +
+    `${r5.length} christmas accent / accent-dim border sides >= 3:1, ${r6.length} christmas switch track states >= 3:1, ` +
     'ink-stamp actions 20-24px with 44px touch hit at 390');
 }
 
-main().catch((e) => die(e && e.stack ? e.stack : String(e)));
+/* A CDP call that never answers (e.g. after the browser is stopped) drains
+ * the event loop; that must fail, never exit 0 without the pass line. */
+let finished = false;
+process.on('beforeExit', () => { if (!finished) { console.error('palette check failed: event loop drained before the check finished'); process.exit(1); } });
+main().then(() => { finished = true; }, (e) => die(e && e.stack ? e.stack : String(e)));

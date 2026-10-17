@@ -2211,6 +2211,25 @@ html[data-theme="christmas"] .btn:not(.ghost):not(.danger) {
 html[data-theme="christmas"] .thread-btn,
 html[data-theme="christmas"] .chan-voice,
 html[data-theme="christmas"] .robot-call { border-color: var(--accent); }
+/* #309 r3: no christmas border or switch track is drawn in deep crimson on
+   the greens (#5c1420 is 1.19-1.29:1 there). Borders, focus edges and the
+   status-feed rule take the light crimson; the switch track is --faint
+   when off and light crimson (dark knob) when on, >= 3:1 on its panel. */
+html[data-theme="christmas"] #badge.ok,
+html[data-theme="christmas"] .composer-box:focus-within,
+html[data-theme="christmas"] .card input:focus,
+html[data-theme="christmas"] .card textarea:focus,
+html[data-theme="christmas"] .agent,
+html[data-theme="christmas"] .robot-card,
+html[data-theme="christmas"] .prov-row:hover,
+html[data-theme="christmas"] .iconbtn.on { border-color: var(--accent); }
+html[data-theme="christmas"] .composer-box:focus-within { box-shadow: 0 0 0 1px var(--accent); }
+html[data-theme="christmas"] .partial,
+html[data-theme="christmas"] .note.reply,
+html[data-theme="christmas"] .fo-feed-line { border-left-color: var(--accent); }
+html[data-theme="christmas"] .slider { background: var(--faint); }
+html[data-theme="christmas"] .switch input:checked + .slider { background: var(--accent); }
+html[data-theme="christmas"] .switch input:checked + .slider:before { background: var(--accent-ink); }
 </style>
 </head>
 <body>
