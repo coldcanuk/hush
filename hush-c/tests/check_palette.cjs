@@ -817,7 +817,7 @@ async function main() {
     const l1 = await cdp.eval(`(() => { const P = window.__pal; const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
       const cols = (v) => [...v.matchAll(/rgba?\\([^)]*\\)/g)].map((m) => P.rgba(m[0])).filter((c) => c[3] > 0);
       for (const t of ${JSON.stringify(THEMES)}) { h.setAttribute('data-theme', t); const T = P.tokens();
-        for (const s of window.__l1spec) { const el = window.__l1[s.key]; const v = getComputedStyle(el).getPropertyValue(s.prop); const r = { theme: t, key: s.key, prop: s.prop, v };
+        for (const s of window.__l1spec) { const el = window.__l1[s.key]; const v = getComputedStyle(el).getPropertyValue(s.prop); const r = { theme: t, key: s.key, prop: s.prop, v, live: el.isConnected };
           if (t === 'field-office') {
             r.untok = cols(v).filter((c) => c[3] < 1 || !T.has(P.hex(c))).map((c) => c[3] < 1 ? 'rgba(' + c.join(',') + ')' : P.hex(c));
             if (s.prop === 'color') { const bg = P.bgOf(el); let fg = P.rgba(v); fg = P.over([fg[0], fg[1], fg[2], fg[3] * P.opacityOf(el)], bg); r.ratio = Math.round(P.ratio(fg, bg) * 100) / 100; r.min = 4.5; }
@@ -830,6 +830,9 @@ async function main() {
     let n = 0;
     for (const r of l1) {
       const k = r.key + '|' + r.prop;
+      /* No silent pass: a detached fixture computes '' for every property, and an
+         empty value would slip past the token / ratio reads below. */
+      if (!r.live || !String(r.v || '').trim()) { failures.push(`L1 ${r.theme}@${w} ${k} read an empty value ${JSON.stringify(r.v)} (fixture connected=${r.live})`); continue; }
       if (r.theme === 'field-office') {
         n++;
         if (r.untok.length) failures.push(`L1 field-office@${w} ${k} paints ${r.untok.join(',')}, not a field-office token (${r.v})`);
