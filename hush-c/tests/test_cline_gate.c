@@ -88,14 +88,15 @@ static void stub_cline(gate_fixture_t *fx)
     char path[GATE_PATH_MAX] = {0};
     char body[GATE_PATH_MAX * 2] = {0};
 
-    snprintf(path, sizeof(path), "%s/bin", fx->dir);
+    snprintf(path, sizeof(path), "%s-bin", fx->dir);
     expect(mkdir(path, S_IRWXU) == 0, "stub bin dir");
-    snprintf(fx->argv_file, sizeof(fx->argv_file), "%s/cline.argv", fx->dir);
+    /* Sibling of HUSH_HOME: agent children are jailed off $HUSH_HOME (#336). */
+    snprintf(fx->argv_file, sizeof(fx->argv_file), "%s-bin/cline.argv", fx->dir);
     snprintf(body, sizeof(body), "#!/bin/sh\nprintf '%%s\\n' \"$@\" > '%s.tmp'\n"
              "mv '%s.tmp' '%s'\nexit 0\n", fx->argv_file, fx->argv_file, fx->argv_file);
-    snprintf(path, sizeof(path), "%s/bin/cline", fx->dir);
+    snprintf(path, sizeof(path), "%s-bin/cline", fx->dir);
     write_exec(path, body);
-    snprintf(path, sizeof(path), "%s/bin:%s", fx->dir, GATE_SYS_PATH);
+    snprintf(path, sizeof(path), "%s-bin:%s", fx->dir, GATE_SYS_PATH);
     expect(setenv("PATH", path, 1) == 0, "stub PATH");
 }
 
@@ -116,11 +117,12 @@ static void make_scratch(gate_fixture_t *fx)
     snprintf(sub, sizeof(sub), "%s/proj", fx->dir);
     expect(mkdir(sub, S_IRWXU) == 0, "project dir");
     hush_pass_set_helper("tests/fake-pass.sh");
-    snprintf(sub, sizeof(sub), "%s/cline", fx->dir);
+    /* Outside $HUSH_HOME so the jailed child can still read providers.json. */
+    snprintf(sub, sizeof(sub), "%s-cline", fx->dir);
     expect(mkdir(sub, S_IRWXU) == 0 && setenv("CLINE_DATA_DIR", sub, 1) == 0, "cline data");
-    snprintf(sub, sizeof(sub), "%s/cline/settings", fx->dir);
+    snprintf(sub, sizeof(sub), "%s-cline/settings", fx->dir);
     expect(mkdir(sub, S_IRWXU) == 0, "cline settings");
-    snprintf(sub, sizeof(sub), "%s/cline/settings/providers.json", fx->dir);
+    snprintf(sub, sizeof(sub), "%s-cline/settings/providers.json", fx->dir);
     write_exec(sub, GATE_CLINE_LOGIN);
     stub_cline(fx);
 }
@@ -162,6 +164,14 @@ static void close_hive(gate_fixture_t *fx)
 {
     hush_agent_shutdown();
     hush_store_destroy(fx->store);
+    {
+        char extra[GATE_DIR_MAX * 2];
+        snprintf(extra, sizeof(extra), "%s-cline", fx->dir);
+        (void)nftw(extra, remove_entry, GATE_FTW_FDS, FTW_DEPTH | FTW_PHYS);
+        snprintf(extra, sizeof(extra), "%s-bin", fx->dir);
+        (void)nftw(extra, remove_entry, GATE_FTW_FDS, FTW_DEPTH | FTW_PHYS);
+        unlink(fx->argv_file);
+    }
     expect(nftw(fx->dir, remove_entry, GATE_FTW_FDS, FTW_DEPTH | FTW_PHYS) == 0,
            "scratch cleanup");
 }

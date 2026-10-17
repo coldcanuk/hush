@@ -50,12 +50,14 @@ export HOME="$home"
 export HUSH_HOME="$home/.hush"
 export HUSH_CONFIG_DIR="$home/.config/hush"
 unset XDG_CONFIG_HOME
-mkdir -p "$home/bin" "$home/.grok" "$home/.config/hush" "$home/.hush"
+mkdir -p "$home/bin" "$home/.grok" "$home/.config/hush" "$home/.hush" "$home/stubs"
 printf '%s\n' '#!/bin/sh' \
-    'log="${HUSH_CONFIG_DIR}/ollama-run.log"' \
+    'log="@STUBS@/ollama-run.log"' \
     'for a in "$@"; do printf "%s\n" "$a" >> "$log"; done' \
     'printf "%s\n" "OLLAMA_REPLY_MARKER"' \
     > "$home/bin/ollama"
+# Jailed children see no HUSH_* and cannot open the config dir (#336).
+sed -i "s|@STUBS@|$home/stubs|g" "$home/bin/ollama"
 chmod 0755 "$home/bin/ollama"
 # Seeded robots are grok-build; provide a stub so they stay quiet.
 printf '%s\n' '#!/bin/sh' 'printf "%s\n" "grok stub"' > "$home/bin/grok"
@@ -108,12 +110,12 @@ printf '%s' "$got" | grep -q 'OLLAMA_REPLY_MARKER' || fail "ollama reply missing
 
 # The ollama binary must have been invoked with `run <model> <combined>`,
 # proving it ran ollama (not grok) and the model came from the overlay.
-test -f "$home/.config/hush/ollama-run.log" || fail "ollama run log missing"
-grep -q '^llama3$' "$home/.config/hush/ollama-run.log" \
+test -f "$home/stubs/ollama-run.log" || fail "ollama run log missing"
+grep -q '^llama3$' "$home/stubs/ollama-run.log" \
     || fail "ollama missing configured model"
-grep -q 'Answer briefly' "$home/.config/hush/ollama-run.log" \
+grep -q 'Answer briefly' "$home/stubs/ollama-run.log" \
     || fail "ollama prompt missing robot system prompt"
-grep -q 'Hello from a human' "$home/.config/hush/ollama-run.log" \
+grep -q 'Hello from a human' "$home/stubs/ollama-run.log" \
     || fail "ollama prompt missing human note"
 
 echo "ollama routes ok"
