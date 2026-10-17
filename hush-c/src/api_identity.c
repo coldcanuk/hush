@@ -130,6 +130,9 @@ hush_status_t hush_http_serve_profile(int fd, const char *body)
         return hush_http_reply_session(fd, HUSH_ERR_ARG);
     /* Approval is its own post and never rewrites the name fields. */
     if (hush_http_json_has_key(body, "approval_mode")) {
+        /* #336: turning approvals off must not be a session-token action. */
+        if (!hush_http_ui_proven())
+            return hush_http_reply_ui_required(fd);
         (void)hush_http_json_field(body, "approval_mode", approval, sizeof(approval));
         st = hush_launch_set_approval(hush_http_launch(), approval);
         return hush_http_reply_refused(fd, st,

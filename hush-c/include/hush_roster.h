@@ -125,9 +125,10 @@ int hush_roster_is_context_mime(const char *mime, const char *filename);
 /* True when theme is one of the eight named palettes. */
 int hush_roster_is_theme(const char *theme);
 /* Reads an approval id. Returns 1 and sets *out for a known id; returns 0
- * and sets *out to HUSH_ROSTER_APPROVAL_AUTO for anything else. */
+ * and sets *out to HUSH_ROSTER_APPROVAL_EVERY (the strictest) for anything
+ * else, NULL and "" included (#336). */
 int hush_roster_approval_parse(const char *id, hush_roster_approval_t *out);
-/* The stored id for mode; an unknown value reads as auto-approve. */
+/* The stored id for mode; an unknown value writes the strictest id. */
 const char *hush_roster_approval_id(hush_roster_approval_t mode);
 
 /* True when provider is one of the known named runtimes. */

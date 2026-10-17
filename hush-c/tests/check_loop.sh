@@ -6,9 +6,13 @@
 set -eu
 cd "$(dirname "$0")/.."
 . ./tests/hush_free_port.sh
+. ./tests/hush_pair.sh
 # Session-token gate plus a hermetic pass store, so the harness never reads the
 # operator's real credentials. curl() adds the hive token to every call.
-curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" "$@"; }
+# The paired window's X-Hush-Nonce rides along: loop answers need it (#336).
+curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" \
+    -H "X-Hush-Nonce: $(cat "${HUSH_HOME:-/nonexistent}/ui.nonce" 2>/dev/null || true)" \
+    -b "${HUSH_HOME:-/nonexistent}/ui.jar" "$@"; }
 
 bin=./hush-relay
 port=$(hush_free_port) || exit 1
@@ -123,6 +127,7 @@ until curl -sf "http://127.0.0.1:${port}/api/session" >/dev/null 2>&1; do
     [ "$i" -lt 50 ] || fail "relay did not start"
     sleep 0.05
 done
+hush_pair "$port" "$log" "$HUSH_HOME/ui.jar" || fail "relay printed no working pairing link"
 
 curl -sf -X POST "http://127.0.0.1:${port}/api/identity" \
     -H 'Content-Type: application/json' -d '{"action":"create"}' >/dev/null

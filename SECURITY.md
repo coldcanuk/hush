@@ -56,6 +56,10 @@ per-job capability token). Credentials are accepted as:
 | `X-Hush-Token: …` | scripts and CLI clients |
 | `Authorization: Bearer …` | HTTP clients |
 
+Each carrier's value is compared whole, in constant time, against the
+token: a longer value that starts with the token, or a truncated one, is
+refused `401` (#357; `check_trust.py`).
+
 The relay never hands the token to a caller that does not already hold a
 credential (#336): no loopback request earns a cookie, and `?k=` in a URL is
 not accepted (URLs land in history, logs, and `Referer`). At start the relay
@@ -68,6 +72,20 @@ and the code is re-minted at once, so a copy of the link is dead. Exercised
 by `check_bootstrap.py` (exact `Max-Age=2592000` line). The page removes
 `?pair=` from its address bar on load; exercised by `check_layer_ui.cjs`. Limit: until the window redeems it, the code is in the
 browser's command line (`/proc/<pid>/cmdline`) for about a second.
+
+Owner authority that a robot must never borrow needs more than the token
+(#336 part 5). Redeeming the pairing code also mints a browser-session
+secret issued as the `X-Hush-Nonce` response header (32 hex, memory only,
+not derived from the token) plus a non-HttpOnly `hush_nonce` session cookie
+(no `Max-Age`, so the browser keeps it in memory and never writes it to its
+Cookies DB) the page reads and sends back as that header. A new pairing
+rotates it (`test_auth`) and a relay restart ends it. An owner `Yes`/`No` answer note (held turns, team
+offers, loop "Continue?") and any `approval_mode` write are refused `403`
+unless the request carries the live `X-Hush-Nonce` (constant-time compare);
+`session.token` alone, in any carrier, is not enough. A stored
+`approval_mode` that is present but unknown, empty, or not a string asks
+every action; a vibe that never saved one keeps the auto-approve default.
+Exercised by `check_approve_nonce.py` and `test_auth`.
 
 The listener binds `127.0.0.1` by default. `--listen 0.0.0.0` (or another
 address) exposes it deliberately; remote clients must then present the token.
