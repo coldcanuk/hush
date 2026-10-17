@@ -506,9 +506,13 @@ void hush_agent_plan_trigger(char *out, size_t outsz, const char *root);
 #define HUSH_AGENT_APPROVAL_FULL_LINE \
     "Too many turns are waiting for approval. Answer one first."
 /* Said instead of the full line when the refused turn was asked for by
- * someone other than the hive owner (r3): it is addressed to them. */
-#define HUSH_AGENT_APPROVAL_GUEST_LINE \
-    "Too many requests from other people are waiting for the owner. Try again later."
+ * someone other than the hive owner (r3): it is addressed to them and
+ * names the refused robot (#313). The fixed head comes before the name so
+ * prefix matchers keep the line out of prompts and turn counts. */
+#define HUSH_AGENT_APPROVAL_GUEST_HEAD "Turn not started for "
+#define HUSH_AGENT_APPROVAL_GUEST_FMT \
+    HUSH_AGENT_APPROVAL_GUEST_HEAD "%s: too many requests from other people are waiting " \
+    "for the owner. Try again later."
 
 /* Empties the table of waiting turns. */
 void hush_agent_approval_init(void);
