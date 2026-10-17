@@ -45,7 +45,7 @@ MIN_SEEN = {
     "src/agent_loop.c": 9,
     "src/agent_dispatch.c": 24,
     "src/agent_prompt.c": 1,
-    "src/agent_approve.c": 15,
+    "src/agent_approve.c": 16,
     "src/agent_thread.c": 1,
     "src/hush_roster.c": 3,
     "src/hush_launch.c": 4,

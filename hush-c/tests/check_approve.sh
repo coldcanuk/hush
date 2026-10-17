@@ -517,7 +517,7 @@ wait_eq g8 ask_builder 1
 rm -f "$plan/partner.slow"
 
 # Approval lines never reach a robot's prompt (#279 r2 promoted P3).
-[ "$(grep -c 'Approval needed: \|Turn declined: \|Too many turns are waiting\|Too many requests from other people' "$home/stubs/grok-p.log")" = 0 ] \
+[ "$(grep -c 'Approval needed: \|Turn declined: \|Too many turns are waiting\|Turn not started for \|Too many requests from other people' "$home/stubs/grok-p.log")" = 0 ] \
     || fail "approval lines must not appear in any robot prompt"
 
 # R1 restart: the setting survives; a turn waiting at restart never runs.
