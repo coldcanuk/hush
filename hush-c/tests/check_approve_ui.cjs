@@ -145,6 +145,9 @@ function stubRuntime(home) {
   return bin;
 }
 
+/* The relay's session token file, for events(); the check runs one relay. */
+let eventsTokenFile = '';
+
 /* Starts the relay in a throwaway HOME and walks it to a ready vibe. */
 async function startRelay() {
   const home = tmpDir('hush-approve-ui-');
@@ -158,6 +161,7 @@ async function startRelay() {
   delete env.XDG_CONFIG_HOME;
   for (const d of [env.HUSH_HOME, env.HUSH_CONFIG_DIR, env.HUSH_FAKE_PASS_DIR])
     fs.mkdirSync(d, { recursive: true });
+  eventsTokenFile = path.join(env.HUSH_HOME, 'session.token');
   const port = await freePort();
   const tokenFile = path.join(env.HUSH_HOME, 'session.token');
   const headers = () => {
@@ -186,7 +190,7 @@ async function startRelay() {
   await post('/api/profile', { first_name: 'Chuck', last_name: 'P', email: '', organization: '', theme: 'dark' });
   const mode = async () =>
     (await (await fetch(base + '/api/session', { headers: headers() })).json()).approval_mode;
-  return { base, post, mode, headers };
+  return { base, post, mode };
 }
 
 /* Launches headless Chrome and returns a minimal CDP client on its page. */
@@ -400,7 +404,7 @@ async function holdPills(cdp, say, want, msg) {
 
 /* Every note the relay holds. */
 async function events(relay) {
-  return (await (await fetch(relay.base + '/api/events', { headers: relay.headers() })).json()).events || [];
+  return (await (await fetch(relay.base + '/api/events', { headers: { 'X-Hush-Token': fs.readFileSync(eventsTokenFile, 'utf8').trim() } })).json()).events || [];
 }
 /* Waits for a relay note that starts with `head` and whose id is not in `skip`. */
 async function waitEvent(relay, head, msg, skip) {

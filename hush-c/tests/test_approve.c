@@ -13,6 +13,7 @@
 
 #define _XOPEN_SOURCE 700
 
+#include <assert.h>
 #include <ftw.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,6 +47,8 @@ enum {
 #define TEST_APPROVE_ASK_COPY \
     "Approval needed: Happy wants to take a turn. Reply Yes or No in this thread."
 #define TEST_APPROVE_NO_COPY "Turn declined: Happy stood down."
+/* The head every approval ask starts with. */
+#define TEST_APPROVE_ASK_HEAD "Approval needed: "
 #define TEST_APPROVE_FULL_COPY "Too many turns are waiting for approval. Answer one first."
 /* #313: the guest refusal names the refused robot (Happy in every guest check).
  * Copy is a proposal; CoS/Chuck own the words. */
@@ -905,6 +908,8 @@ typedef enum {
 /* Ends Happy's held pair turn the way end says and checks its own line. */
 static void pair_lead_ends(test_approve_fixture_t *fx, test_approve_lead_end_t end)
 {
+    assert(fx != NULL && fx->store != NULL);
+    assert(end >= TEST_APPROVE_LEAD_NO && end < TEST_APPROVE_LEAD_ENDS);
     const char *const owner = fx->launch.human.pubkey_hex;
 
     if (end == TEST_APPROVE_LEAD_REMOVED)
@@ -940,7 +945,7 @@ static void check_pair_asks(void)
                "pair: Scout's held turn counts in flight");
         answer(fx, fx->launch.human.pubkey_hex, "Yes");
         expect(count_head(fx->store, TEST_APPROVE_RAN_SCOUT) == 1, "pair: Scout's own Yes runs Scout");
-        expect(count_head(fx->store, "Approval needed: ") == 2,
+        expect(count_head(fx->store, TEST_APPROVE_ASK_HEAD) == 2,
                "pair: the pair ends with exactly two asks");
         close_hive(fx);
         free(fx);
@@ -951,6 +956,7 @@ static void check_pair_asks(void)
  * its own task, and hands every mention to the mention path. */
 static void open_trio(test_approve_fixture_t *fx, const hush_roster_agent_t *bot3)
 {
+    assert(fx != NULL && fx->happy != NULL && fx->scout != NULL && bot3 != NULL);
     const hush_roster_agent_t *const bots[] = {fx->happy, fx->scout, bot3};
     char content[HUSH_EVENT_MAX_CONTENT] = {0};
 
