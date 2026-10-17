@@ -535,13 +535,15 @@ static void hush_http_take_pair(const char *req)
     if (!hush_auth_pair_take(code))
         return;
     g_set_cookie = 1;
-    /* The new window gets a fresh X-Hush-Nonce; an older window's dies. */
-    g_set_ui = hush_auth_ui_rotate() == HUSH_OK;
+    /* hush_auth_pair_take rotated the UI secret: issue the fresh one. */
+    g_set_ui = 1;
 }
 
 static int hush_http_has_ui_nonce(const char *req, size_t len)
 {
-    char value[HUSH_AUTH_UI_BUF];
+    /* Wider than a nonce, so an over-long value is compared whole (and
+     * refused), never truncated to a live nonce. */
+    char value[HUSH_HTTP_HDR_VALUE_MAX] = {0};
 
     assert(req != NULL);
     return hush_http_header_value(req, len, HUSH_AUTH_UI_HEADER, value,
@@ -822,13 +824,14 @@ static void hush_http_ui_nonce_header(char *out, size_t outsz)
         return;
     /* Issued only on the pairing response: the X-Hush-Nonce header (what
      * fetch-based clients read) and a non-HttpOnly storage cookie the page
-     * reads and sends back as X-Hush-Nonce on writes (#336). A relay
-     * restart ends the secret. The Cookie alone is not accepted. */
+     * reads and sends back as X-Hush-Nonce on writes (#336). No Max-Age:
+     * a session cookie, so the browser keeps it in memory, never in its
+     * on-disk Cookies DB. A relay restart ends the secret. The Cookie
+     * alone is not accepted. */
     n = snprintf(out, outsz,
                  "%s: %s\r\n"
-                 "Set-Cookie: hush_nonce=%s; SameSite=Strict; Path=/; Max-Age=%d\r\n",
-                 HUSH_AUTH_UI_HEADER, secret, secret,
-                 (int)HUSH_HTTP_COOKIE_MAX_AGE_S);
+                 "Set-Cookie: hush_nonce=%s; SameSite=Strict; Path=/\r\n",
+                 HUSH_AUTH_UI_HEADER, secret, secret);
     if (n <= 0 || (size_t)n >= outsz)
         out[0] = '\0';
 }
