@@ -377,5 +377,6 @@ static hush_status_t hush_auth_mint_hex(char *hex, size_t hex_len)
     hush_auth_hex_encode(raw, sizeof(raw), hex);
     OPENSSL_cleanse(raw, sizeof(raw));
     assert(strlen(hex) == hex_len);
+    (void)hex_len; /* read only by assert(); -DNDEBUG -Werror stays clean */
     return HUSH_OK;
 }
