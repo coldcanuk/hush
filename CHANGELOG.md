@@ -17,7 +17,11 @@ the top-level `VERSION` file.
   switch track is `--faint` when off (4.66:1, was 1.61:1) and light crimson when on (5.77:1, was 1.58:1
   on main); its knob is `--fg` when off (3.23:1 on the track) and dark `--accent-ink` when on (6.25:1).
   Measured borders and rings once drawn in `--accent-dim` use the light crimson (min 5.77:1), including
-  the selected avatar tile's ring (5.77:1, was 1.19:1) (#309). The avatar window's preview ring is
+  the selected avatar tile's ring (5.77:1, was 1.19:1) (#309). The selected avatar tile's 3px ring is
+  `--accent` in every theme (was `--accent-dim`, below 3:1 on the grid in six themes), so the picked tile
+  is unmistakable: dark 2.45 → 3.98, light 1.43 → 6.90, color-blind 2.16 → 7.62, dracula 1.61 → 11.51,
+  desert 1.45 → 4.14, monochrome 2.18 → 13.53; christmas stays 5.77 (its own rule is dropped) and
+  field-office keeps its own offset print shadow (5.31). The avatar window's preview ring is
   `--accent` in every theme (was `--accent-dim`, below 3:1 on the panel in six themes): dark 2.45 → 3.98,
   light 1.43 → 6.90, color-blind 2.16 → 7.62, dracula 1.61 → 11.51, desert 1.45 → 4.14, monochrome
   2.18 → 13.53; christmas stays 5.77 and field-office keeps its own offset print shadow (4.88). No other
@@ -29,7 +33,8 @@ the top-level `VERSION` file.
   the mouse on each Providers hub row, with at least one measured instance of each claimed rule; R6
   needs a 3:1 switch track and a 3:1 knob on it, off and on; R7 needs the primary buttons on
   `--accent-fill`; R5 also measures the selected tile's ring in the avatar window, opened by its real
-  buttons; R8 needs a solid avatar preview ring of at least 3:1 in all 8 themes at both widths. The
+  buttons; R8 needs a solid avatar preview ring of at least 3:1 in all 8 themes at both widths, and R9
+  the same of the selected tile's ring against the grid. The
   check now fails if it stops before its pass line.
 
 - A robot loop that hits its limit says "Mention both robots again to start
