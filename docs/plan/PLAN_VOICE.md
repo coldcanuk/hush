@@ -1,10 +1,10 @@
 # PLAN_VOICE — voice target selector (phase 1: research + plan, no code)
 
 Epic VOICE, ordered by CoS 2026-10-17 13:18 EDT (Chuck USER_SPECIFIED).
-Decisions §8: CoS ruling 2026-10-17 13:21 EDT; D1-D8 approved by Chuck 13:23 EDT.
+Decisions §8: CoS ruling 2026-10-17 13:21 EDT; D1-D9 approved by Chuck 13:23 EDT.
 Base: `origin/main` @ `fa56420a`. Tags: **OBS** = OBSERVED in repo, **EXT** =
 VERIFIED_EXTERNAL (cited URL), **INF** = INFERRED, **UNK** = UNKNOWN,
-**USR** = USER_SPECIFIED (Chuck 13:23 EDT, via CoS), **CoS** = CoS ruling 13:21 EDT.
+**USR** = USER_SPECIFIED (Chuck 13:23 EDT, via CoS), **CoS** = CoS ruling (13:49 EDT).
 Claim ids `[Cn]` resolve in the appendix.
 
 Feature: one control that picks who hears the human's voice:
@@ -116,7 +116,7 @@ Routing (mirrors UI_SPEC 1:1 / 1:n, [C11]):
 
 Rules: the transcript is a normal note with the same recipients and
 visibility as a typed note in that mode (D4); no extra privacy claims.
-Lead (INF, proposal) = `hive.cos` robot if on the roster, else first in
+Lead (CoS 13:49) = `hive.cos` robot if on the roster, else first in
 roster order. Never mention the human. No silent fan-out: label always lists names.
 Keys never leave the relay; the PWA never sees provider keys.
 
@@ -205,7 +205,7 @@ out of scope.
 | D6 | Provider TTS = xAI + OpenAI, opt-in per robot; xAI API credentials only; keys via Vault chain [C14] | §4, V5 | USR |
 | D7 | `ALL`: each targeted robot replies in text; voice queued one at a time, distinct voices [C22]; optional lead-only | §4, P4.2, P4.5 | USR |
 | D8 | Fold ♫ (`.chan-voice`) and ☎ (`.robot-call`) into the selector, on-theme S1 stamps [C6][C13] | §5, P2.7 | USR |
-| D9 | Voice is mic-only: voice path requests audio only, never camera [C8]; CoS ruling 13:21, not in the 13:23 approval | V3, P3.1 | CoS |
+| D9 | Voice is mic-only: voice path requests audio only, never camera [C8] | V3, P3.1 | USR |
 
 ## 9. UNKNOWNs
 
@@ -213,8 +213,7 @@ out of scope.
 - Piper CPU latency on Omarchy target hardware (not measured; no run per order).
 - Whether Omarchy ships speech-dispatcher by default.
 - Licence compatibility of Piper with repo LICENSE (reduced by D5: not bundled).
-- Lead definition for `lead_only` (§4 proposal is INF).
-- Relay-side provider TTS probe (§2.2) design.
+- Relay-side provider TTS probe (§2.2) design (V5 design work).
 - Other providers (ElevenLabs, Kokoro, Coqui) not researched.
 
 ## Appendix — claim trace
