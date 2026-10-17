@@ -35,8 +35,12 @@ the top-level `VERSION` file.
 - Mentions: the note body text never contains the npub and the @unknown pill's aria-label carries the
   short key (K7). The repaint key is the sorted npub=name pairs, so a same-size roster swap repaints (K7t).
 - Mentions: the live robot partial preview renders through the same mention renderer as a note body,
-  so an unresolved `@npub1…` shows as an @unknown pill there too (K7p). The roster key's sort and its
+  so an unresolved `@npub1…` shows as an @unknown pill there too (K7p). Each new partial replaces the
+  preview instead of piling up after the last one: K7p paints three partials into one preview slot
+  and each must read exactly its own text with 2 pills. The roster key's sort and its
   npub and name halves are pinned (K7k); the voice button's fallbacks in the other 7 themes are pinned (K11o).
+  The L1 fixture no longer borrows the live robot inventory (its 1 s re-render made L1 flaky at 390)
+  and an empty or detached read fails L1. `tests/palette_mutants.py`: 42 of 42 caught.
 
 - A robot loop that hits its limit says "Mention both robots again to start
   a new loop." A fresh loop arms only when the next note names exactly two
