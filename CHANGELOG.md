@@ -16,15 +16,21 @@ the top-level `VERSION` file.
   (5.57:1) and a light-crimson edge. The Thread stamp outline is light crimson (5.77:1, was 1.58:1). The
   switch track is `--faint` when off (4.66:1, was 1.61:1) and light crimson when on (5.77:1, was 1.58:1
   on main); its knob is `--fg` when off (3.23:1 on the track) and dark `--accent-ink` when on (6.25:1).
-  Measured borders and rings once drawn in `--accent-dim` use the light crimson (min 5.77:1) (#309).
-  Other themes are unchanged. `tests/check_palette.cjs` R1 requires a 3:1 checked radio fill in all 8
+  Measured borders and rings once drawn in `--accent-dim` use the light crimson (min 5.77:1), including
+  the selected avatar tile's ring (5.77:1, was 1.19:1) (#309). The avatar window's preview ring is
+  `--accent` in every theme (was `--accent-dim`, below 3:1 on the panel in six themes): dark 2.45 → 3.98,
+  light 1.43 → 6.90, color-blind 2.16 → 7.62, dracula 1.61 → 11.51, desert 1.45 → 4.14, monochrome
+  2.18 → 13.53; christmas stays 5.77 and field-office keeps its own offset print shadow (4.88). No other
+  element changes in the other themes. `tests/check_palette.cjs` R1 requires a 3:1 checked radio fill in all 8
   themes at both widths; R2 measures christmas accent-painted text and controls on each checked
   surface; R3 hovers each visible Thread and channel voice button with the mouse and needs 4.5:1
   text (R3s pins the robot call button, which no view shows); R4 needs a 3:1 Thread stamp outline;
   R5 needs 3:1 on christmas accent / accent-dim borders and outer rings at rest, focused, and with
   the mouse on each Providers hub row, with at least one measured instance of each claimed rule; R6
   needs a 3:1 switch track and a 3:1 knob on it, off and on; R7 needs the primary buttons on
-  `--accent-fill`. The check now fails if it stops before its pass line.
+  `--accent-fill`; R5 also measures the selected tile's ring in the avatar window, opened by its real
+  buttons; R8 needs a solid avatar preview ring of at least 3:1 in all 8 themes at both widths. The
+  check now fails if it stops before its pass line.
 
 - A robot loop that hits its limit says "Mention both robots again to start
   a new loop." A fresh loop arms only when the next note names exactly two
