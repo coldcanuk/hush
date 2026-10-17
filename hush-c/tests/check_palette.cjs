@@ -231,7 +231,7 @@ function l1Fixture() {
   const E = {}; const S = [];
   const add = (key, el, sel, props, kind) => { E[key] = el; for (const p of props) S.push({ key, sel, prop: p, kind }); };
   const badge = document.getElementById('badge');
-  if (badge) { badge.dataset.l1Was = badge.className; badge.classList.add('bad'); add('badge-bad', badge, '#badge.bad', ['border-top-color'], 'rim'); }
+  if (badge) { badge.dataset.l1Was = badge.className; badge.classList.remove('ok'); badge.classList.add('bad'); add('badge-bad', badge, '#badge.bad', ['border-top-color'], 'rim'); }
   for (const l of ['python', 'go', 'javascript', 'js', 'c']) add('code-' + l, mk('div', 'code-block', { 'data-lang': l }, box, 'x = 1'), `.code-block[data-lang="${l}"]`, ['border-left-color'], 'rim');
   const hi = document.getElementById('code-canvas-hi') || mk('pre', '', { id: 'code-canvas-hi' });
   for (const t of ['kw', 'str', 'num']) add('tok-' + t, mk('span', 'tok-' + t, { 'data-l1': '1' }, hi, t + '_sample'), '#code-canvas-hi .tok-' + t, ['color'], 'text');
@@ -267,9 +267,7 @@ function l1Fixture() {
 /* Computed values on khaki head d58185ab in the 7 other themes (they read the
  * literal through var(--fo-*, literal) and must not move). '@390' = 390 only. */
 const L1_EXPECT = {
-  /* christmas: main's #309 r3 rule html[data-theme="christmas"] #badge.ok draws the
-     listening badge's border in --accent (#ff6b7f) at both widths (merge of main b7424fac). */
-  "badge-bad|border-top-color": {"*": "rgb(127, 29, 29)", "@390": "rgb(42, 36, 30)", "christmas": "rgb(255, 107, 127)"},
+  "badge-bad|border-top-color": {"*": "rgb(127, 29, 29)", "@390": "rgb(42, 36, 30)"},
   "code-python|border-left-color": "rgb(55, 118, 171)",
   "code-go|border-left-color": "rgb(0, 173, 216)",
   "code-javascript|border-left-color": "rgb(247, 223, 30)",
@@ -624,7 +622,7 @@ async function main() {
     ['.composer-box:focus-within', '.composer-box', 'focus:'], ['.card input:focus', '.card input', 'focus:'], ['.card textarea:focus', '.card textarea', 'focus:'],
     ['.prov-row:hover', '.prov-row', 'hover:'], ['.iconbtn.on', '.iconbtn.on', 'rest:'], ['.partial', '.partial', 'rest:'], ['.fo-feed-line', '.fo-feed-line', 'rest:'],
     ['.composer-box:focus-within ring', '.composer-box', 'focus:', 'Ring'], ['.avatar-preview ring', '.avatar-preview', 'rest:', 'Ring'],
-    ['.avatar-cell.on ring', '.avatar-cell.on', 'rest:', 'Ring']];
+    ['.avatar-cell.on ring', '.avatar-cell.on', 'rest:', 'Ring'], ['.skill-facet.on ring', '.skill-facet.on', 'rest:', 'Ring']];
   const accentTouch = async (surface, w) => {
     await cdp.eval(R2_SWAP);
     await sleep(60);
