@@ -133,12 +133,13 @@ function tmpDir(tag) {
   return d;
 }
 
-/* U6 stub runtime: a `codex` script in the throwaway HOME, first on the
- * relay's PATH, so codex robots run a turn that ends with one reply. No real
- * runtime starts; grok-build robots stay "no provider ready" (no grok login). */
+/* U6 stub runtime: a `codex` script first on the relay's PATH, so codex
+ * robots run a turn that ends with one reply. No real runtime starts;
+ * grok-build robots stay "no provider ready" (no grok login). The script
+ * lives outside HOME: the agent jail (#336 parts 1+2) denies the real HOME
+ * tree, and only allowlisted auth paths such as ~/.codex are bound in. */
 function stubRuntime(home) {
-  const bin = path.join(home, 'bin');
-  fs.mkdirSync(bin, { recursive: true });
+  const bin = tmpDir('hush-approve-ui-bin-');
   fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\nprintf "%s\\n" "' + STUB_REPLY + '"\n', { mode: 0o755 });
   fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
   fs.writeFileSync(path.join(home, '.codex', 'auth.json'), '{"ok":true}\n');
