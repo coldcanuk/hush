@@ -52,7 +52,7 @@
 //   L1 (G291-2 follow-up) a fixture per shared rule that painted a literal
 //      colour in every theme (code spines, Canvas syntax, call tiles, inventory
 //      text, pressed buttons, skill gems / slots / doll / lifetime chips, the
-//      bad badge): in field-office every painted colour is a field-office token,
+//      bad badge, the dragged inventory item): in field-office every painted colour is a field-office token,
 //      text >= 4.5:1 and rims >= 3:1; in the other 7 themes the computed value
 //      equals khaki head d58185ab's, at 1440 and 390.
 //   B1 Thread, Download and Stop are 20-24px tall at both widths; at 390 a
@@ -188,8 +188,11 @@ function l1Fixture() {
   for (const [k, id] of [['inv-btn', 'inv-seed'], ['qb-gear', 'qb-config'], ['send', 'thread-send']]) {
     const el = document.getElementById(id); if (el) add(k + '-active', el, '#' + id + ':active', ['box-shadow'], 'shadow'); }
   const pool = mk('div', 'skill-pool', {}, box);
-  for (const sc of ['system', 'user', 'robot']) add('gem-' + sc, mk('div', 'skill-gem', { 'data-scope': sc }, pool, 'G'), `.skill-gem[data-scope="${sc}"]`, ['box-shadow'], 'shadow');
-  add('slot-ok', mk('div', 'skill-slot drop-ok', {}, box), '.skill-slot.drop-ok', ['border-top-color'], 'rim');
+  for (const sc of ['system', 'user', 'robot']) add('gem-' + sc, mk('div', 'skill-gem', { 'data-scope': sc }, pool, 'G'), `.skill-gem[data-scope="${sc}"]`, ['box-shadow', 'border-top-color'], 'shadow');
+  add('slot-ok', mk('div', 'skill-slot drop-ok', {}, box), '.skill-slot.drop-ok', ['border-top-color', 'box-shadow'], 'rim');
+  add('slot-open', mk('div', 'skill-slot open', {}, box), '.skill-slot.open', ['box-shadow'], 'shadow');
+  add('doll-drop', mk('div', 'skill-doll-pic drop-ok', {}, box), '.skill-doll-pic.drop-ok', ['box-shadow'], 'shadow');
+  add('inv-drag', mk('div', 'inv-item dragging', { 'data-l1': '1' }, inv, 'Rx'), '.inv-item.dragging', ['border-top-color', 'box-shadow'], 'rim');
   add('slot-no', mk('div', 'skill-slot drop-no', {}, box), '.skill-slot.drop-no', ['border-top-color'], 'rim');
   add('doll-pic', mk('div', 'skill-doll-pic', {}, box), '.skill-doll-pic', ['border-top-color'], 'rim');
   for (const lt of ['always', 'oncall']) { const g = mk('div', 'skill-gem', { 'data-lifetime': lt }, pool); mk('span', 'sig', {}, g, 'S');
@@ -222,9 +225,17 @@ const L1_EXPECT = {
   "qb-gear-active|box-shadow": "rgba(0, 0, 0, 0.45) 0px 2px 5px 0px inset",
   "send-active|box-shadow": {"*": "rgba(0, 0, 0, 0.4) 0px 2px 5px 0px inset", "dark": "rgb(0, 0, 0) 2px 2px 0px 0px"},
   "gem-system|box-shadow": "rgba(212, 160, 23, 0.333) 0px 0px 6px 0px",
+  "gem-system|border-top-color": "rgb(212, 160, 23)",
   "gem-user|box-shadow": "rgba(0, 255, 255, 0.267) 0px 0px 6px 0px",
+  "gem-user|border-top-color": "rgb(0, 255, 255)",
   "gem-robot|box-shadow": "rgba(204, 102, 255, 0.267) 0px 0px 6px 0px",
+  "gem-robot|border-top-color": "rgb(204, 102, 255)",
   "slot-ok|border-top-color": "rgb(0, 255, 255)",
+  "slot-ok|box-shadow": "rgb(0, 255, 255) 0px 0px 8px 0px",
+  "slot-open|box-shadow": "rgba(212, 160, 23, 0.4) 0px 0px 8px 0px inset",
+  "doll-drop|box-shadow": "rgb(0, 255, 255) 0px 0px 8px 0px",
+  "inv-drag|border-top-color": "rgb(255, 255, 255)",
+  "inv-drag|box-shadow": "rgb(255, 255, 255) 0px 0px 8px 0px",
   "slot-no|border-top-color": "rgb(255, 102, 102)",
   "doll-pic|border-top-color": "rgb(0, 255, 255)",
   "life-always|color": "rgb(255, 215, 94)",
@@ -652,7 +663,7 @@ async function main() {
     const fo = l1.filter((r) => r.theme === 'field-office' && r.ratio !== undefined);
     console.log(`palette L1@${w}: ${nfix} fixture declarations, ${n} field-office measures, ${l1.length - n} other-theme values, ` +
       `min field-office ratio ${fo.length ? Math.min(...fo.map((r) => r.ratio)) : '-'}`);
-    if (nfix < 30) failures.push(`L1@${w} only ${nfix} fixture declarations (want 32)`);
+    if (nfix < 40) failures.push(`L1@${w} only ${nfix} fixture declarations (want 40)`);
   }
   await ringCheck('main-thread', ['#stream .thread-btn', '#stream .note-files button', '#stream .think-stop', '#nav-toggle', '#rail-toggle']);
 
