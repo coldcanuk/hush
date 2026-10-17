@@ -145,22 +145,40 @@ static void check_parse(void)
            mode == HUSH_ROSTER_APPROVAL_EVERY, "approve_every_action parses");
     mode = HUSH_ROSTER_APPROVAL_EVERY;
     expect(hush_roster_approval_parse("maybe", &mode) == 0 &&
-           mode == HUSH_ROSTER_APPROVAL_AUTO, "an unknown id reads as auto-approve");
+           mode == HUSH_ROSTER_APPROVAL_EVERY, "an unknown id asks every action");
     mode = HUSH_ROSTER_APPROVAL_EVERY;
     expect(hush_roster_approval_parse("", &mode) == 0 &&
-           mode == HUSH_ROSTER_APPROVAL_AUTO, "an empty id reads as auto-approve");
-    mode = HUSH_ROSTER_APPROVAL_EVERY;
+           mode == HUSH_ROSTER_APPROVAL_EVERY, "an empty id asks every action");
+    mode = HUSH_ROSTER_APPROVAL_AUTO;
     expect(hush_roster_approval_parse(NULL, &mode) == 0 &&
-           mode == HUSH_ROSTER_APPROVAL_AUTO, "a missing id reads as auto-approve");
+           mode == HUSH_ROSTER_APPROVAL_EVERY, "a missing id asks every action");
     expect(strcmp(hush_roster_approval_id(HUSH_ROSTER_APPROVAL_EVERY), "approve_every_action") == 0,
            "approve_every_action id");
     expect(strcmp(hush_roster_approval_id(HUSH_ROSTER_APPROVAL_AUTO), "auto_approve") == 0,
            "auto_approve id");
     expect(strcmp(hush_roster_approval_id((hush_roster_approval_t)TEST_APPROVE_BAD_MODE),
-                  "auto_approve") == 0, "a bad mode writes auto_approve");
+                  "approve_every_action") == 0, "a bad mode writes the strictest id");
 }
 
 /* Approval lines are notices, never robot turns, so the cap is unchanged. */
+/* #336: only an explicit auto-approve runs unasked; any other in-memory
+ * value holds the turn. */
+static void check_needed(void)
+{
+    static hush_launch_t launch;
+    hush_agent_job_in_t in;
+
+    memset(&in, 0, sizeof(in));
+    hush_launch_init(&launch);
+    in.launch = &launch;
+    launch.roster.profile.approval = HUSH_ROSTER_APPROVAL_AUTO;
+    expect(hush_agent_approval_needed(&in) == 0, "auto-approve does not hold");
+    launch.roster.profile.approval = HUSH_ROSTER_APPROVAL_EVERY;
+    expect(hush_agent_approval_needed(&in) == 1, "every action holds");
+    launch.roster.profile.approval = (hush_roster_approval_t)TEST_APPROVE_BAD_MODE;
+    expect(hush_agent_approval_needed(&in) == 1, "a bad in-memory mode holds");
+}
+
 static void check_not_turns(void)
 {
     expect(!hush_agent_is_work_note(TEST_APPROVE_ASK_COPY), "the approval line is not a turn");
@@ -774,6 +792,7 @@ static void check_login(void)
 int main(void)
 {
     check_parse();
+    check_needed();
     check_not_turns();
     check_owner_only();
     check_owner_yes();

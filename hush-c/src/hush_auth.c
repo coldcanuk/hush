@@ -30,6 +30,9 @@ static int g_ready = 0;
 /* g_pair is valid only while g_pair_ready; it never touches disk. */
 static char g_pair[HUSH_AUTH_PAIR_BUF];
 static int g_pair_ready = 0;
+/* g_ui is valid only while g_ui_ready; it never touches disk. */
+static char g_ui[HUSH_AUTH_UI_BUF];
+static int g_ui_ready = 0;
 
 /* Writes raw bytes as lowercase hex plus a terminator. */
 static void hush_auth_hex_encode(const unsigned char *raw, size_t raw_len,
@@ -58,6 +61,9 @@ static hush_status_t hush_auth_load_or_mint(const char *path);
 /* Re-mints g_pair from RAND_bytes. A failure leaves g_pair_ready 0, so no
  * code matches until the next hush_auth_pair_init. */
 static hush_status_t hush_auth_pair_mint(void);
+
+/* Fills hex (hex_len + 1 bytes) from RAND_bytes. Fails HUSH_ERR_IO. */
+static hush_status_t hush_auth_mint_hex(char *hex, size_t hex_len);
 
 hush_status_t hush_auth_init(void)
 {
@@ -136,6 +142,32 @@ int hush_auth_pair_take(const char *presented)
     if (!hush_auth_tokens_equal(presented, g_pair))
         return 0;
     return hush_auth_pair_mint() == HUSH_OK;
+}
+
+hush_status_t hush_auth_ui_rotate(void)
+{
+    g_ui_ready = 0;
+    if (hush_auth_mint_hex(g_ui, (size_t)HUSH_AUTH_UI_HEX) != HUSH_OK)
+        return HUSH_ERR_IO;
+    g_ui_ready = 1;
+    return HUSH_OK;
+}
+
+hush_status_t hush_auth_ui_copy(char *out, size_t outsz)
+{
+    if (out == NULL || outsz < sizeof(g_ui))
+        return HUSH_ERR_ARG;
+    if (!g_ui_ready)
+        return HUSH_ERR_IO;
+    memcpy(out, g_ui, sizeof(g_ui));
+    return HUSH_OK;
+}
+
+int hush_auth_ui_matches(const char *presented)
+{
+    if (!g_ui_ready || presented == NULL || presented[0] == '\0')
+        return 0;
+    return hush_auth_tokens_equal(presented, g_ui);
 }
 
 hush_status_t hush_auth_challenge_mint(char *out, size_t outsz)
@@ -327,13 +359,23 @@ static hush_status_t hush_auth_load_or_mint(const char *path)
 
 static hush_status_t hush_auth_pair_mint(void)
 {
-    unsigned char raw[HUSH_AUTH_PAIR_HEX / 2];
-
     g_pair_ready = 0;
+    if (hush_auth_mint_hex(g_pair, (size_t)HUSH_AUTH_PAIR_HEX) != HUSH_OK)
+        return HUSH_ERR_IO;
+    g_pair_ready = 1;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_auth_mint_hex(char *hex, size_t hex_len)
+{
+    unsigned char raw[HUSH_AUTH_UI_HEX / 2];
+
+    assert(hex != NULL);
+    assert(hex_len == (size_t)HUSH_AUTH_UI_HEX && hex_len == (size_t)HUSH_AUTH_PAIR_HEX);
     if (RAND_bytes(raw, (int)sizeof(raw)) != 1)
         return HUSH_ERR_IO;
-    hush_auth_hex_encode(raw, sizeof(raw), g_pair);
-    assert(strlen(g_pair) == (size_t)HUSH_AUTH_PAIR_HEX);
-    g_pair_ready = 1;
+    hush_auth_hex_encode(raw, sizeof(raw), hex);
+    OPENSSL_cleanse(raw, sizeof(raw));
+    assert(strlen(hex) == hex_len);
     return HUSH_OK;
 }

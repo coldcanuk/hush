@@ -69,6 +69,18 @@ removes `?pair=` from its address bar on load. Exercised by
 `check_bootstrap.py`. Limit: until the window redeems it, the code is in the
 browser's command line (`/proc/<pid>/cmdline`) for about a second.
 
+Owner authority that a robot must never borrow needs more than the token
+(#336 part 5). Redeeming the pairing code also mints a browser-session
+secret, `hush_ui` (32 hex, memory only, not derived from the token,
+`HttpOnly; SameSite=Strict`). A new pairing rotates it and a relay restart
+ends it. An owner `Yes`/`No` answer note (held turns, team offers, loop
+"Continue?") and any `approval_mode` write are refused `403` unless the
+request carries the live `hush_ui` (constant-time compare);
+`session.token` alone, in any carrier, is not enough. A stored
+`approval_mode` that is present but unknown, empty, or not a string asks
+every action; a vibe that never saved one keeps the auto-approve default.
+Exercised by `check_approve_nonce.py` and `test_auth`.
+
 The listener binds `127.0.0.1` by default. `--listen 0.0.0.0` (or another
 address) exposes it deliberately; remote clients must then present the token.
 `Access-Control-Allow-Origin` is not set, the `Host` header must name the local

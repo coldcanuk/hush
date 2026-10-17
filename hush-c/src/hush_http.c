@@ -86,6 +86,9 @@ enum {
 #define HUSH_HTTP_WINDOW_MAX "maximize"
 #define HUSH_HTTP_WINDOW_PREPARE "prepare"
 #define HUSH_HTTP_RATE_BODY "{\"ok\":false,\"error\":\"rate-limited\"}\n"
+#define HUSH_HTTP_UI_PROOF_BODY \
+    "{\"ok\":false,\"error\":\"Approvals need the paired Hush window. " \
+    "Reopen Hush from its launcher.\"}\n"
 
 /* Per-source-IP API request bucket. addr 0 marks a free slot (a real peer
  * can never be 0.0.0.0). */
@@ -101,6 +104,11 @@ static hush_launch_t *g_launch;
 static hush_turn_t *g_turn;
 static char g_bind_addr[HUSH_HTTP_HOST_MAX];
 static int g_set_cookie;
+/* Per request: g_set_ui asks the reply to carry hush_ui (a pairing code was
+ * redeemed); g_ui_proven records that the request presented the live
+ * hush_ui (#336). */
+static int g_set_ui;
+static int g_ui_proven;
 static hush_http_ip_limit_t g_ip_req[HUSH_HTTP_IP_LIMITS_MAX];
 static hush_limiter_t g_complete_lim;
 static hush_limiter_t g_fixup_lim;
@@ -175,6 +183,12 @@ static int hush_http_query_value(const char *req, const char *name,
 static int hush_http_query_char(char c);
 /* Redeems a ?pair= code on this request; the reply then sets the cookie. */
 static void hush_http_take_pair(const char *req);
+/* True when the Cookie header carries the live hush_ui secret. */
+static int hush_http_has_ui_cookie(const char *req, size_t len);
+/* Writes the hush_session Set-Cookie line, or "" when none is due. */
+static void hush_http_session_cookie(char *out, size_t outsz);
+/* Writes the hush_ui Set-Cookie line, or "" when none is due. */
+static void hush_http_ui_cookie(char *out, size_t outsz);
 /* Copies cookie name's value from a Cookie header. 0 when absent. */
 static int hush_http_cookie_token(const char *cookie, const char *name,
                                   char *out, size_t outsz);
@@ -287,6 +301,8 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
         return HUSH_ERR_ARG;
     memset(out_posted, 0, sizeof(*out_posted));
     g_set_cookie = 0;
+    g_set_ui = 0;
+    g_ui_proven = hush_http_has_ui_cookie(req, len);
     if (len >= 7 && memcmp(req, "OPTIONS", 7) == 0) {
         hush_http_reply(fd, "204 No Content", "text/plain", "", 0);
         return HUSH_OK;
@@ -518,6 +534,32 @@ static void hush_http_take_pair(const char *req)
     if (!hush_auth_pair_take(code))
         return;
     g_set_cookie = 1;
+    /* The new window gets a fresh hush_ui; an older window's dies. */
+    g_set_ui = hush_auth_ui_rotate() == HUSH_OK;
+}
+
+static int hush_http_has_ui_cookie(const char *req, size_t len)
+{
+    char header[HUSH_HTTP_HDR_VALUE_MAX];
+    char value[HUSH_AUTH_UI_BUF];
+
+    assert(req != NULL);
+    return hush_http_header_value(req, len, "Cookie", header, sizeof(header)) &&
+           hush_http_cookie_token(header, HUSH_AUTH_UI_COOKIE, value,
+                                  sizeof(value)) &&
+           hush_auth_ui_matches(value);
+}
+
+int hush_http_ui_proven(void)
+{
+    return g_ui_proven;
+}
+
+hush_status_t hush_http_reply_ui_required(int fd)
+{
+    hush_http_reply(fd, "403 Forbidden", "application/json",
+                    HUSH_HTTP_UI_PROOF_BODY, strlen(HUSH_HTTP_UI_PROOF_BODY));
+    return HUSH_ERR_DENIED;
 }
 
 static int hush_http_cookie_token(const char *cookie, const char *name,
@@ -731,33 +773,62 @@ void hush_http_reply(int fd, const char *status, const char *ctype,
                             const char *body, size_t blen)
 {
     char hdr[512];
-    char cookie[HUSH_HTTP_COOKIE_LINE_MAX];
-    char token[HUSH_AUTH_TOKEN_BUF];
-    const char *extra = "";
+    char session[HUSH_HTTP_COOKIE_LINE_MAX];
+    char ui[HUSH_HTTP_COOKIE_LINE_MAX];
     int n;
 
-    if (g_set_cookie && hush_auth_token_copy(token, sizeof(token)) == HUSH_OK) {
-        int cn = snprintf(cookie, sizeof(cookie),
-                          "Set-Cookie: %s=%s; HttpOnly; SameSite=Strict; "
-                          "Path=/; Max-Age=%d\r\n",
-                          HUSH_AUTH_COOKIE, token, (int)HUSH_HTTP_COOKIE_MAX_AGE_S);
-        if (cn > 0 && (size_t)cn < sizeof(cookie))
-            extra = cookie;
-    }
+    hush_http_session_cookie(session, sizeof(session));
+    hush_http_ui_cookie(ui, sizeof(ui));
     n = snprintf(hdr, sizeof(hdr),
                  "HTTP/1.1 %s\r\n"
                  "Content-Type: %s\r\n"
                  "Content-Length: %zu\r\n"
                  "Connection: close\r\n"
-                 "%s"
+                 "%s%s"
                  "\r\n",
-                 status, ctype, blen, extra);
+                 status, ctype, blen, session, ui);
     if (n <= 0 || (size_t)n >= sizeof(hdr))
         return;
     if (hush_http_write_all(fd, hdr, (size_t)n) != HUSH_OK)
         return;
     if (hush_http_write_all(fd, body, blen) != HUSH_OK)
         return;
+}
+
+static void hush_http_session_cookie(char *out, size_t outsz)
+{
+    char token[HUSH_AUTH_TOKEN_BUF];
+    int n;
+
+    assert(out != NULL && outsz > 0);
+    out[0] = '\0';
+    if (!g_set_cookie || hush_auth_token_copy(token, sizeof(token)) != HUSH_OK)
+        return;
+    n = snprintf(out, outsz,
+                 "Set-Cookie: %s=%s; HttpOnly; SameSite=Strict; Path=/; "
+                 "Max-Age=%d\r\n",
+                 HUSH_AUTH_COOKIE, token, (int)HUSH_HTTP_COOKIE_MAX_AGE_S);
+    if (n <= 0 || (size_t)n >= outsz)
+        out[0] = '\0';
+}
+
+static void hush_http_ui_cookie(char *out, size_t outsz)
+{
+    char secret[HUSH_AUTH_UI_BUF];
+    int n;
+
+    assert(out != NULL && outsz > 0);
+    out[0] = '\0';
+    if (!g_set_ui || hush_auth_ui_copy(secret, sizeof(secret)) != HUSH_OK)
+        return;
+    /* Max-Age keeps it across a closed and reopened window of this relay;
+     * the secret is memory only, so a relay restart ends it anyway. */
+    n = snprintf(out, outsz,
+                 "Set-Cookie: %s=%s; HttpOnly; SameSite=Strict; Path=/; "
+                 "Max-Age=%d\r\n",
+                 HUSH_AUTH_UI_COOKIE, secret, (int)HUSH_HTTP_COOKIE_MAX_AGE_S);
+    if (n <= 0 || (size_t)n >= outsz)
+        out[0] = '\0';
 }
 
 void hush_http_json_unescape_copy(const char *src, char *dst, size_t dstsz)

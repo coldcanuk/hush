@@ -72,21 +72,34 @@ async function startRelay() {
     fs.mkdirSync(d, { recursive: true });
   const port = await freePort();
   const tokenFile = path.join(env.HUSH_HOME, 'session.token');
+  // #336: approval_mode needs the paired window's hush_ui; the test pairs
+  // once through the printed one-time link and sends that cookie.
+  const jar = {};
   const headers = () => {
-    try {
-      return { 'X-Hush-Token': fs.readFileSync(tokenFile, 'utf8').trim(),
-               'Content-Type': 'application/json' };
-    } catch (e) { return { 'Content-Type': 'application/json' }; }
+    const h = { 'Content-Type': 'application/json' };
+    try { h['X-Hush-Token'] = fs.readFileSync(tokenFile, 'utf8').trim(); } catch (e) { /* not yet */ }
+    if (jar.hush_ui) h.Cookie = `hush_ui=${jar.hush_ui}`;
+    return h;
   };
-  procs.push(spawn(RELAY, ['--no-open', String(port)], { env, stdio: 'ignore' }));
+  const proc = spawn(RELAY, ['--no-open', String(port)], { env, stdio: ['ignore', 'pipe', 'ignore'] });
+  procs.push(proc);
+  let out = '';
+  proc.stdout.on('data', (d) => { out += d; });
   const base = `http://127.0.0.1:${port}`;
   for (let i = 0; ; i++) {
     try {
-      if ((await fetch(base + '/api/session', { headers: headers() })).ok) break;
+      if ((await fetch(base + '/api/session', { headers: headers() })).ok && /\?pair=[0-9a-f]+/.test(out)) break;
     } catch (e) { /* not up */ }
     if (i > 200) fail('relay did not come up');
     await sleep(50);
   }
+  const code = out.match(/\?pair=([0-9a-f]+)/)[1];
+  const paired = await fetch(base + '/?pair=' + code);
+  for (const c of paired.headers.getSetCookie()) {
+    const m = c.match(/^(hush_session|hush_ui)=([0-9a-f]+);/);
+    if (m) jar[m[1]] = m[2];
+  }
+  if (!jar.hush_ui || !jar.hush_session) fail('pairing gave no hush_ui / hush_session');
   const post = async (p, body) => {
     const r = await fetch(base + p, { method: 'POST', headers: headers(), body: JSON.stringify(body) });
     if (!r.ok) fail(`POST ${p} ${JSON.stringify(body)} -> ${r.status}`);
@@ -98,8 +111,7 @@ async function startRelay() {
   await post('/api/profile', { first_name: 'Chuck', last_name: 'P', email: '', organization: '', theme: 'dark' });
   const mode = async () =>
     (await (await fetch(base + '/api/session', { headers: headers() })).json()).approval_mode;
-  const token = () => fs.readFileSync(tokenFile, 'utf8').trim();
-  return { base, post, mode, token };
+  return { base, post, mode, jar };
 }
 
 /* Launches headless Chrome and returns a minimal CDP client on its page. */
@@ -163,10 +175,11 @@ async function waitRadio(page, want, ms, msg) {
 }
 async function load(cdp, relay) {
   const base = relay.base;
-  // #336: the relay hands its cookie only to the one-time pairing link, so
-  // seed the cookie a paired window holds.
-  await cdp.send('Network.setCookie', { name: 'hush_session', value: relay.token(),
-    url: base + '/', httpOnly: true, sameSite: 'Strict' });
+  // #336: the relay hands its cookies only to the one-time pairing link, so
+  // seed the two cookies the paired window holds.
+  for (const name of ['hush_session', 'hush_ui'])
+    await cdp.send('Network.setCookie', { name, value: relay.jar[name],
+      url: base + '/', httpOnly: true, sameSite: 'Strict' });
   await cdp.send('Page.navigate', { url: base + '/' });
   for (let i = 0; i < 120; i++) {
     if (await cdp.evaluate(`typeof session !== 'undefined' && !!session.logged_in &&

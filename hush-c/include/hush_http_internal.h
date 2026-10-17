@@ -39,9 +39,17 @@ hush_turn_t *hush_http_turn(void);
 int hush_http_client_count(void);
 uint16_t hush_http_listen_port(void);
 
-/* Writes one response with an optional session cookie. */
+/* Writes one response with the optional hush_session and hush_ui cookies. */
 void hush_http_reply(int fd, const char *status, const char *ctype,
                      const char *body, size_t blen);
+
+/* True when this request presented the live hush_ui browser-session
+ * secret (#336). session.token alone never makes it true. */
+int hush_http_ui_proven(void);
+
+/* Replies 403 JSON: approvals need the paired Hush window. Returns
+ * HUSH_ERR_DENIED. */
+hush_status_t hush_http_reply_ui_required(int fd);
 
 /* Serializes the session JSON reply for st. */
 hush_status_t hush_http_reply_session(int fd, hush_status_t st);

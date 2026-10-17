@@ -8,7 +8,12 @@
 set -eu
 cd "$(dirname "$0")/.."
 . ./tests/hush_free_port.sh
-curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" "$@"; }
+# Approval answers and approval_mode need the paired window's hush_ui
+# (#336): start_relay pairs once into ui.jar and every call sends it.
+curl() {
+    command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" \
+        -b "${home:-/nonexistent}/ui.jar" "$@"
+}
 
 bin=./hush-relay
 port=$(hush_free_port) || exit 1
@@ -151,6 +156,11 @@ start_relay() {
         [ "$i" -lt 100 ] || fail "relay did not start"
         sleep 0.05
     done
+    code=$(sed -n 's/.*?pair=\([0-9a-f]*\).*/\1/p' "$log" | tail -n 1)
+    [ -n "$code" ] || fail "relay printed no pairing link"
+    command curl -sf -c "$home/ui.jar" "http://127.0.0.1:${port}/?pair=${code}" >/dev/null \
+        || fail "pairing link refused"
+    grep -q 'hush_ui' "$home/ui.jar" || fail "pairing gave no hush_ui"
 }
 stop_relay() {
     kill "$pid" 2>/dev/null || true
@@ -518,10 +528,16 @@ settle
 expect r1 lead 0 "R1 a turn waiting at restart must never run"
 expect_starts lead 0 "R1 a turn waiting at restart must not start the robot program"
 
-# A5 garbled or missing stored value reads as the default, auto_approve.
+# A5 a garbled stored value asks every action (#336: strictest, never
+# auto_approve); a missing key keeps the auto_approve default.
 stop_relay
 sed -i 's/"approval_mode":"approve_every_action"/"approval_mode":"maybe"/' "$HUSH_CONFIG_DIR/vibe.json"
 grep -q '"approval_mode":"maybe"' "$HUSH_CONFIG_DIR/vibe.json" || fail "A5 garble step"
 start_relay
-[ "$(mode)" = auto_approve ] || fail "A5 a garbled stored value must read as auto_approve (got '$(mode)')"
+[ "$(mode)" = approve_every_action ] || fail "A5 a garbled stored value must ask every action (got '$(mode)')"
+stop_relay
+sed -i 's/,"approval_mode":"maybe"//; s/"approval_mode":"maybe",//' "$HUSH_CONFIG_DIR/vibe.json"
+if grep -q '"approval_mode"' "$HUSH_CONFIG_DIR/vibe.json"; then fail "A5 drop step"; fi
+start_relay
+[ "$(mode)" = auto_approve ] || fail "A5 a missing stored value must keep auto_approve (got '$(mode)')"
 echo "approve checks ok"

@@ -42,7 +42,8 @@ int hush_agent_approval_needed(const hush_agent_job_in_t *in)
     assert(in != NULL);
     if (in->launch == NULL || in->approved)
         return 0;
-    return in->launch->roster.profile.approval == HUSH_ROSTER_APPROVAL_EVERY;
+    /* #336: only an explicit auto-approve runs unasked. */
+    return in->launch->roster.profile.approval != HUSH_ROSTER_APPROVAL_AUTO;
 }
 
 int hush_agent_approval_hold(const hush_agent_job_in_t *in)
