@@ -19,7 +19,10 @@ curl() {
 bin=./hush-relay
 port=$(hush_free_port) || exit 1
 log=$(mktemp)
-home=$(mktemp -d)
+base=$(mktemp -d)
+home="$base/user"
+stubs="$base/stubs"
+bin_dir="$base/bin"
 pid=""
 
 cleanup() {
@@ -28,7 +31,7 @@ cleanup() {
         wait "$pid" 2>/dev/null || true
     fi
     rm -f "$log"
-    rm -rf "$home"
+    rm -rf "$base"
 }
 trap cleanup EXIT
 
@@ -49,20 +52,20 @@ grep -q 'session.approval_mode === "approve_every_action"' demo/index.html \
     || fail "the Settings radio must read approval_mode back from the session"
 
 export HOME="$home"
-export HUSH_HOME="$home/.hush"
-export HUSH_CONFIG_DIR="$home/.config/hush"
+export HUSH_HOME="$base/home"
+export HUSH_CONFIG_DIR="$base/config"
 export HUSH_PASS_HELPER="$(pwd)/tests/fake-pass.sh"
 export HUSH_FAKE_PASS_DIR="$home/pass"
 unset XDG_CONFIG_HOME
-plan="$home/stubs/loop"
-mkdir -p "$home/bin" "$home/.grok" "$HUSH_CONFIG_DIR" "$HUSH_HOME" "$home/stubs" "$plan" "$home/pass"
+plan="$stubs/loop"
+mkdir -p "$bin_dir" "$stubs" "$home/.grok" "$HUSH_CONFIG_DIR" "$HUSH_HOME" "$bin_dir" "$stubs" "$plan" "$home/pass"
 # The fake grok plays Happy (lead), Builder (builder), the election
 # committee (elect), the elected leader's plan pass (plan) or anyone else
 # (partner) from the system prompt, counts its starts in <who>.n, sleeps
 # <who>.slow seconds when that file exists, and prints line n of <who>.plan
 # after its nth reply ("-" or no file prints nothing). The election pass
 # prints only its plan line (the leader's name).
-cat > "$home/bin/grok" <<'GROK'
+cat > "$bin_dir/grok" <<'GROK'
 #!/bin/sh
 log="@STUBS@/grok-p.log"
 dir="@STUBS@/loop"
@@ -95,9 +98,9 @@ if [ -n "$line" ] && [ "$line" != "-" ]; then printf '%s\n' "$line"; fi
 GROK
 # Jailed children see no HUSH_* and cannot open the config dir (#336), so
 # the stub's log and plan paths are baked in here.
-sed -i "s|@STUBS@|$home/stubs|g" "$home/bin/grok"
-chmod 0755 "$home/bin/grok"
-PATH="$home/bin:$PATH"
+sed -i "s|@STUBS@|$stubs|g" "$bin_dir/grok"
+chmod 0755 "$bin_dir/grok"
+PATH="$bin_dir:$PATH"
 export PATH
 printf '%s\n' '{"ok":true}' > "$home/.grok/auth.json"
 
@@ -261,7 +264,7 @@ reply_m() {
         | grep -q '"ok":true' || fail "$1 reply not stored"
 }
 # last_sys WHO: the newest logged system prompt line for robot WHO.
-last_sys() { grep "^S:.*You are $1\." "$home/stubs/grok-p.log" | tail -1; }
+last_sys() { grep "^S:.*You are $1\." "$stubs/grok-p.log" | tail -1; }
 reply() {
     root=$(field "$1" root)
     curl -sf -X POST "http://127.0.0.1:${port}/api/event" \
@@ -430,7 +433,7 @@ reply g5 "Yes"
 wait_eq g5 approval 2
 settle
 expect_starts elect 1 "G5 Yes runs the election pass once"
-[ "$(grep -c '^S:.*You are the election committee\..*Candidates: Happy(skills:0) Scout(skills:0) Builder(skills:0) Task: .*plan a party together tag-g5' "$home/stubs/grok-p.log")" = 1 ] \
+[ "$(grep -c '^S:.*You are the election committee\..*Candidates: Happy(skills:0) Scout(skills:0) Builder(skills:0) Task: .*plan a party together tag-g5' "$stubs/grok-p.log")" = 1 ] \
     || fail "G5 the approved election pass must keep its candidates and task"
 expect g5 ask_happy 1 "G5 the plan pass asks for the elected leader"
 expect g5 job_start 1 "G5 the plan pass must wait"
@@ -517,7 +520,7 @@ wait_eq g8 ask_builder 1
 rm -f "$plan/partner.slow"
 
 # Approval lines never reach a robot's prompt (#279 r2 promoted P3).
-[ "$(grep -c 'Approval needed: \|Turn declined: \|Too many turns are waiting\|Too many requests from other people' "$home/stubs/grok-p.log")" = 0 ] \
+[ "$(grep -c 'Approval needed: \|Turn declined: \|Too many turns are waiting\|Too many requests from other people' "$stubs/grok-p.log")" = 0 ] \
     || fail "approval lines must not appear in any robot prompt"
 
 # R1 restart: the setting survives; a turn waiting at restart never runs.

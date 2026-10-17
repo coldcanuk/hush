@@ -18,7 +18,13 @@ curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session
 bin=./hush-relay
 port=$(hush_free_port) || exit 1
 log=$(mktemp)
-home=$(mktemp -d)
+# Layout matches Hive/Relay: bin/ and stubs/ are siblings of the denied
+# HOME (user/) and HUSH_HOME (home/), so Landlock grants the stub binary
+# and its log directory (#336 part 1).
+base=$(mktemp -d)
+home="$base/user"
+stubs="$base/stubs"
+bin_dir="$base/bin"
 pid=""
 
 cleanup() {
@@ -27,7 +33,7 @@ cleanup() {
         wait "$pid" 2>/dev/null || true
     fi
     rm -f "$log"
-    rm -rf "$home"
+    rm -rf "$base"
 }
 trap cleanup EXIT
 
@@ -46,10 +52,10 @@ wait_up() {
 }
 
 export HOME="$home"
-export HUSH_HOME="$home/.hush"
-export HUSH_CONFIG_DIR="$home/.config/hush"
+export HUSH_HOME="$base/home"
+export HUSH_CONFIG_DIR="$base/config"
 unset XDG_CONFIG_HOME
-mkdir -p "$home/bin" "$home/.grok" "$home/.codex" "$home/.config/hush" "$home/.hush" "$home/stubs"
+mkdir -p "$home/.grok" "$home/.codex" "$HUSH_CONFIG_DIR" "$HUSH_HOME" "$bin_dir" "$stubs"
 printf '%s\n' '#!/bin/sh' \
     'log="@STUBS@/grok-p.log"' \
     'prev=""' \
@@ -62,12 +68,12 @@ printf '%s\n' '#!/bin/sh' \
     'printf "go:\tfmt\n"' \
     'printf "%s\n" "I have keys but open no doors, I have space but no room, I have an enter key but never walk in—what am I? @Happy generate a new riddle and let @npub1t337pnf take the next turn."' \
     'printf "%s\n" "A keyboard. @Happy riddle answered; @npub1t337pnf your turn, continue the thread."' \
-    > "$home/bin/grok"
+    > "$bin_dir/grok"
 # Agent children run jailed off $HUSH_HOME and the config dir with no HUSH_*
 # in their environment (#336), so the stub logs to a path baked in here.
-sed -i "s|@STUBS@|$home/stubs|g" "$home/bin/grok"
-chmod 0755 "$home/bin/grok"
-PATH="$home/bin:$PATH"
+sed -i "s|@STUBS@|$stubs|g" "$bin_dir/grok"
+chmod 0755 "$bin_dir/grok"
+PATH="$bin_dir:$PATH"
 export PATH
 printf '%s\n' '{"ok":true}' > "$home/.grok/auth.json"
 
@@ -186,7 +192,7 @@ for e in (data.get("events") or []):
         sys.exit(1)
 sys.exit(0)
 ' || fail "scrub must strip echo, npub keys, self-mentions, and last-robot handoff from grok output"
-grep -q 'CTXMARKER7x9' "$home/stubs/grok-p.log" \
+grep -q 'CTXMARKER7x9' "$stubs/grok-p.log" \
     || fail "context body must reach the grok -p note"
 
 # Proof for M1 ack slice: server must emit the p-tag as authoritative "mentions" array
@@ -348,13 +354,13 @@ grep -q 'exactly one joke' src/agent_prompt.c || fail "hygiene must demand one j
 grep -q 'hush_agent_robot_busy' src/agent_dispatch.c || fail "must refuse a second job for a busy robot"
 i=0
 while [ "$i" -lt 40 ]; do
-    if grep -q 'Byte me. go: fmt' "$home/stubs/grok-p.log" 2>/dev/null; then
+    if grep -q 'Byte me. go: fmt' "$stubs/grok-p.log" 2>/dev/null; then
         break
     fi
     i=$((i + 1))
     sleep 0.05
 done
-grep -q 'Byte me. go: fmt' "$home/stubs/grok-p.log" \
+grep -q 'Byte me. go: fmt' "$stubs/grok-p.log" \
     || fail "follow-up -p must flatten the prior tabbed reply"
 
 got=$(curl -sf "http://127.0.0.1:${port}/api/events")
@@ -421,22 +427,22 @@ printf '%s' "$got_ord" | grep -F "nostr:${npub} tell a joke. nostr:${payne_npub}
 # own clause as the grok system prompt's "YOUR assignment", never the full ask.
 i=0
 while [ "$i" -lt 40 ]; do
-    if grep -q 'S:.*YOUR assignment: was it funny' "$home/stubs/grok-p.log" 2>/dev/null; then
+    if grep -q 'S:.*YOUR assignment: was it funny' "$stubs/grok-p.log" 2>/dev/null; then
         break
     fi
     i=$((i + 1))
     sleep 0.05
 done
-grep -q 'S:.*YOUR assignment: tell a joke\.' "$home/stubs/grok-p.log" \
+grep -q 'S:.*YOUR assignment: tell a joke\.' "$stubs/grok-p.log" \
     || fail "Happy must receive only its own clause"
-grep -q 'S:.*YOUR assignment: was it funny' "$home/stubs/grok-p.log" \
+grep -q 'S:.*YOUR assignment: was it funny' "$stubs/grok-p.log" \
     || fail "Payne must receive only its own clause"
-grep -q '@Major' "$home/stubs/grok-p.log" \
+grep -q '@Major' "$stubs/grok-p.log" \
     || fail "the peer must be shown as @Major, not a key"
-if grep -q 'nostr:npub' "$home/stubs/grok-p.log"; then
+if grep -q 'nostr:npub' "$stubs/grok-p.log"; then
     fail "raw npub keys must not reach the LLM (thread or prompt)"
 fi
-if grep -F "$npub" "$home/stubs/grok-p.log"; then
+if grep -F "$npub" "$stubs/grok-p.log"; then
     fail "the acting robot's own npub must not reach the LLM"
 fi
 python3 -c '
@@ -458,11 +464,11 @@ if happy_last:
 if not payne_last:
     print("LAST_ROBOT_MISSING_STOP_RULE")
     sys.exit(1)
-' "$home/stubs/grok-p.log" \
+' "$stubs/grok-p.log" \
     || fail "only the last robot stops"
 # #280 D2: the lead (first robot mentioned) also sees the whole human note;
 # the partner still receives only its own clause, never the full ask.
-grep '^S:' "$home/stubs/grok-p.log" | python3 -c '
+grep '^S:' "$stubs/grok-p.log" | python3 -c '
 import sys
 partner_bad = 0
 lead_whole = 0
@@ -490,16 +496,16 @@ echo "$del" | grep -q '"ok":true' || fail "delegation mention not stored"
 i=0
 while [ "$i" -lt 40 ]; do
     if grep -q 'S:.*YOUR assignment: generate a riddle and ask @Major' \
-        "$home/stubs/grok-p.log" 2>/dev/null; then
+        "$stubs/grok-p.log" 2>/dev/null; then
         break
     fi
     i=$((i + 1))
     sleep 0.05
 done
 grep -q 'S:.*YOUR assignment: generate a riddle and ask @Major' \
-    "$home/stubs/grok-p.log" \
+    "$stubs/grok-p.log" \
     || fail "delegation must name the peer in Happy's assignment"
-if grep '^S:' "$home/stubs/grok-p.log" | grep -q 'generate a riddle.*nostr:npub'; then
+if grep '^S:' "$stubs/grok-p.log" | grep -q 'generate a riddle.*nostr:npub'; then
     fail "delegation assignment must not carry a raw npub key"
 fi
 

@@ -19,7 +19,10 @@ curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session
 bin=./hush-relay
 port=$(hush_free_port) || exit 1
 log=$(mktemp)
-home=$(mktemp -d)
+base=$(mktemp -d)
+home="$base/user"
+stubs="$base/stubs"
+bin_dir="$base/bin"
 pid=""
 
 cleanup() {
@@ -28,7 +31,7 @@ cleanup() {
         wait "$pid" 2>/dev/null || true
     fi
     rm -f "$log"
-    rm -rf "$home"
+    rm -rf "$base"
 }
 trap cleanup EXIT
 
@@ -47,11 +50,11 @@ wait_up() {
 }
 
 export HOME="$home"
-export HUSH_HOME="$home/.hush"
-export HUSH_CONFIG_DIR="$home/.config/hush"
+export HUSH_HOME="$base/home"
+export HUSH_CONFIG_DIR="$base/config"
 unset XDG_CONFIG_HOME
-mkdir -p "$home/bin" "$home/.codex" "$home/.grok" "$home/.config/hush" "$home/.hush" "$home/stubs"
-cat > "$home/bin/codex" <<'CODEX'
+mkdir -p "$bin_dir" "$stubs" "$home/.codex" "$home/.grok" "$HUSH_CONFIG_DIR" "$HUSH_HOME"
+cat > "$bin_dir/codex" <<'CODEX'
 #!/bin/sh
 set -eu
 [ "$1" = exec ] || exit 61
@@ -66,12 +69,12 @@ printf '%s\n' "$7" > "@STUBS@/codex-exec.log"
 printf '%s\n' CODEX_REPLY_MARKER
 CODEX
 # Jailed children see no HUSH_* and cannot open the config dir (#336).
-sed -i "s|@STUBS@|$home/stubs|g" "$home/bin/codex"
-chmod 0755 "$home/bin/codex"
+sed -i "s|@STUBS@|$stubs|g" "$bin_dir/codex"
+chmod 0755 "$bin_dir/codex"
 # Seeded robots are grok-build; provide a stub so they stay quiet.
-printf '%s\n' '#!/bin/sh' 'printf "%s\n" "grok stub"' > "$home/bin/grok"
-chmod 0755 "$home/bin/grok"
-PATH="$home/bin:$PATH"
+printf '%s\n' '#!/bin/sh' 'printf "%s\n" "grok stub"' > "$bin_dir/grok"
+chmod 0755 "$bin_dir/grok"
+PATH="$bin_dir:$PATH"
 export PATH
 printf '%s\n' '{"ok":true}' > "$home/.grok/auth.json"
 
@@ -111,7 +114,7 @@ curl -sf -X POST "http://127.0.0.1:${port}/api/event" \
     -H 'Content-Type: application/json' \
     -d "{\"content\":\"nostr:${npub} Before login\",\"kind\":1,\"channel\":\"general\",\"mention_0\":\"${npub}\"}" >/dev/null
 sleep 0.2
-test ! -f "$home/stubs/codex-exec.log" || fail "Codex ran without login"
+test ! -f "$stubs/codex-exec.log" || fail "Codex ran without login"
 printf '%s\n' '{"ok":true}' > "$home/.codex/auth.json"
 
 # Restore legacy primary and ranked choices, including a duplicate Codex slot.
@@ -171,10 +174,10 @@ printf '%s' "$got" | grep -q 'CODEX_REPLY_MARKER' || fail "codex reply missing"
 
 # The Codex binary must have received the combined
 # system prompt + human note and loaded the repository skill.
-test -f "$home/stubs/codex-exec.log" || fail "codex exec log missing"
-grep -q 'Answer briefly' "$home/stubs/codex-exec.log" \
+test -f "$stubs/codex-exec.log" || fail "codex exec log missing"
+grep -q 'Answer briefly' "$stubs/codex-exec.log" \
     || fail "codex prompt missing robot system prompt"
-grep -q 'Hello from a human' "$home/stubs/codex-exec.log" \
+grep -q 'Hello from a human' "$stubs/codex-exec.log" \
     || fail "codex prompt missing human note"
 
 echo "codex routes ok"
