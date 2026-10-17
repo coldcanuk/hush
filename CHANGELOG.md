@@ -13,10 +13,15 @@ the top-level `VERSION` file.
   against its panel (was 2.71:1). Deep crimson `--accent-dim` #5c1420 (was #7f1d1d) sits behind accent
   text on hover (4.86:1, was 1.71:1 on main), the mine bubble and the switch track. A christmas-only
   `--accent-fill` #c41e3a paints the primary buttons with light ink (5.57:1) and a light-crimson edge;
-  the Thread stamp outline is light crimson (5.77:1, was 1.58:1) (#309). Other themes are unchanged.
-  `tests/check_palette.cjs` R1 requires a 3:1 checked radio fill in all 8 themes at both widths; R2
-  measures christmas accent-painted text and controls on each checked surface; R3 hovers each visible
-  Thread / call button with the mouse and needs 4.5:1 text; R4 needs a 3:1 Thread stamp outline.
+  the Thread stamp outline is light crimson (5.77:1, was 1.58:1). The switch track is `--faint` when
+  off (4.66:1, was 1.61:1) and light crimson with a dark knob when on (5.77:1, was 1.58:1 on main);
+  borders and focus edges once drawn in `--accent-dim` use the light crimson (min 5.77:1) (#309).
+  Other themes are unchanged. `tests/check_palette.cjs` R1 requires a 3:1 checked radio fill in all 8
+  themes at both widths; R2 measures christmas accent-painted text and controls on each checked
+  surface; R3 hovers each visible Thread and channel voice button with the mouse and needs 4.5:1
+  text (R3s pins the robot call button, which no view shows); R4 needs a 3:1 Thread stamp outline;
+  R5 needs 3:1 on christmas accent / accent-dim borders at rest, focused and hovered; R6 needs a 3:1
+  switch track off and on. The check now fails if it stops before its pass line.
 
 - A robot loop that hits its limit says "Mention both robots again to start
   a new loop." A fresh loop arms only when the next note names exactly two
