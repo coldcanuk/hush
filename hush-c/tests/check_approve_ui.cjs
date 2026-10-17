@@ -67,20 +67,13 @@ const made = [];
 /* A child that ignores SIGTERM this long gets SIGKILL. */
 const STOP_WAIT_MS = 5000;
 
-/* A removed temp dir that something re-creates is removed again for this long. */
-const RM_WAIT_MS = 3000;
-
-/* Signals one child this check started; Chrome is spawned detached, so its
- * signal goes to its own process group (the helpers that write into its
- * profile go with it). Only children this check spawned are signalled. */
-function signalProc(p, sig) {
-  try { if (p.group) process.kill(-p.pid, sig); else p.kill(sig); }
-  catch (e) { try { p.kill(sig); } catch (e2) { /* gone */ } }
-}
-/* Stops one child and resolves once it has exited; a Chrome group then gets
- * SIGKILL so no helper outlives it and writes into its profile. */
+/* Stops one child this check started and resolves once it has exited.
+ * That narrows writes into its temp dir after the dir is removed; it does
+ * not rule them out (a Chrome helper may still be writing). */
 function stopProc(p) {
   return new Promise((resolve) => {
+    /* A Chrome group gets SIGKILL once its main process exits, so no helper
+     * outlives it; removeDir then checks the profile stays gone. */
     const done = () => { if (p.group) signalProc(p, 'SIGKILL'); resolve(); };
     if (p.exitCode !== null || p.signalCode !== null) { done(); return; }
     const timer = setTimeout(() => signalProc(p, 'SIGKILL'), STOP_WAIT_MS);
@@ -88,6 +81,15 @@ function stopProc(p) {
     signalProc(p, 'SIGTERM');
   });
 }
+/* Signals one child this check started; Chrome is spawned detached, so its
+ * signal goes to its own process group (the helpers that write into its
+ * profile go with it). Only children this check spawned are signalled. */
+function signalProc(p, sig) {
+  try { if (p.group) process.kill(-p.pid, sig); else p.kill(sig); }
+  catch (e) { try { p.kill(sig); } catch (e2) { /* gone */ } }
+}
+/* A removed temp dir that something re-creates is removed again for this long. */
+const RM_WAIT_MS = 3000;
 /* Removes d and checks it stays gone; returns false if it is still there. */
 async function removeDir(d) {
   for (const t0 = Date.now(); Date.now() - t0 < RM_WAIT_MS; await sleep(100)) {
