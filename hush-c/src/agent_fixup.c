@@ -40,6 +40,7 @@ hush_status_t hush_agent_start_fixup(char *token, size_t tokensz,
         return HUSH_ERR_FULL;
     hush_agent_fill_fixup(job, instruction, text);
     if (hush_agent_spawn_grok(job) != HUSH_OK) {
+        hush_sandbox_home_remove(job->stub_home, sizeof(job->stub_home));
         job->busy = 0;
         return HUSH_ERR_IO;
     }

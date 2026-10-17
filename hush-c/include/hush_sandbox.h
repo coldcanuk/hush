@@ -53,9 +53,24 @@ typedef struct {
     uint16_t relay_port;
 } hush_sandbox_policy_t;
 
-/* Fills policy: deny trees, stub HOME, allowlisted auth binds, cwd, port. */
+/* Fills policy: deny trees, stub HOME (home, made by hush_sandbox_home_make),
+ * allowlisted auth binds, cwd, port. */
 hush_status_t hush_sandbox_policy(hush_sandbox_policy_t *policy, const char *cwd,
-                                  uint16_t relay_port);
+                                  const char *home, uint16_t relay_port);
+
+/* Makes a job's stub HOME, $TMPDIR/hush-job-XXXXXX (mode 0700), into out.
+ * The parent calls it before fork and owns the directory from then on. */
+hush_status_t hush_sandbox_home_make(char *out, size_t outsz);
+
+/* Builds the connect-TCP layer (every port but relay_port) once and keeps it
+ * for later jobs; rebuilt only when the port changes. The parent calls it
+ * before fork. A child whose parent did not build it builds its own (B1). */
+hush_status_t hush_sandbox_net_prepare(uint16_t relay_port);
+
+/* Removes a stub HOME made by hush_sandbox_home_make, links unfollowed, then
+ * empties home. Refuses any path that is not a hush-job-* directory. Call it
+ * on every way a job ends (done, error, refused, timed out, cancelled). */
+void hush_sandbox_home_remove(char *home, size_t homesz);
 
 /* 1 when name=value may reach an agent child. */
 int hush_sandbox_env_allowed(const char *entry);
@@ -81,8 +96,15 @@ int hush_sandbox_auth_allowed(const char *path);
  * and enters Landlock when that is the backend. Call in the child. */
 hush_status_t hush_sandbox_enter(const hush_sandbox_policy_t *policy);
 
+/* What one jailed exec needs from its job. home is the job's stub HOME. */
+typedef struct {
+    const char *cwd;
+    const char *home;
+    uint16_t relay_port;
+} hush_sandbox_job_t;
+
 /* Jails this child and execs file. Returns only on failure. */
-hush_status_t hush_sandbox_exec(const char *cwd, uint16_t relay_port, const char *file,
+hush_status_t hush_sandbox_exec(const hush_sandbox_job_t *job, const char *file,
                                 char **argv);
 
 #endif /* HUSH_SANDBOX_H */

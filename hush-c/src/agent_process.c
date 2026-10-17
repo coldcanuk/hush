@@ -363,8 +363,11 @@ static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job)
 static void hush_agent_exec_jailed(const hush_agent_job_t *job, const char *file,
                                    char **argv)
 {
+    hush_sandbox_job_t jail = {.cwd = job->cwd, .home = job->stub_home,
+                               .relay_port = hush_http_listen_port()};
+
     assert(job != NULL && file != NULL && argv != NULL);
-    if (hush_sandbox_exec(job->cwd, hush_http_listen_port(), file, argv) == HUSH_ERR_DENIED) {
+    if (hush_sandbox_exec(&jail, file, argv) == HUSH_ERR_DENIED) {
         const char *why = hush_sandbox_why();
         hush_agent_worker_err(STDOUT_FILENO,
                               why[0] != '\0' ? why
@@ -707,10 +710,15 @@ hush_status_t hush_agent_spawn_grok(hush_agent_job_t *job)
     assert(job != NULL);
     if (pipe(fds) != 0)
         return HUSH_ERR_IO;
+    /* No HOME made here: the child's jail refuses and says why. */
+    if (job->stub_home[0] == '\0')
+        (void)hush_sandbox_home_make(job->stub_home, sizeof(job->stub_home));
+    (void)hush_sandbox_net_prepare(hush_http_listen_port());
     pid = fork();
     if (pid < 0) {
         close(fds[0]);
         close(fds[1]);
+        hush_sandbox_home_remove(job->stub_home, sizeof(job->stub_home));
         return HUSH_ERR_IO;
     }
     if (pid == 0) {
