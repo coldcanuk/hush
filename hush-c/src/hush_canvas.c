@@ -66,6 +66,8 @@ typedef struct {
     char note[HUSH_EVENT_MAX_CONTENT + 1];
     char out[HUSH_EVENT_MAX_CONTENT + 1];
     size_t out_n;
+    /* Jailed stub HOME, made before fork; removed when the job ends. */
+    char stub_home[HUSH_SANDBOX_PATH_MAX];
 } hush_canvas_job_t;
 
 static hush_canvas_job_t g_job;
@@ -333,7 +335,8 @@ static void hush_canvas_exec_grok(int write_fd, const hush_canvas_job_t *job)
     argv[21] = (char *)HUSH_CANVAS_NOMEM;
     argv[22] = NULL;
     /* The canvas robot is an agent child too: jailed, or it does not run (#336). */
-    (void)hush_sandbox_exec(job->cwd, hush_http_listen_port(), HUSH_CANVAS_GROK_BIN, argv);
+    hush_sandbox_job_t jail = {job->cwd, job->stub_home, hush_http_listen_port()};
+    (void)hush_sandbox_exec(&jail, HUSH_CANVAS_GROK_BIN, argv);
     _exit(127);
 }
 
@@ -346,10 +349,14 @@ static hush_status_t hush_canvas_spawn(hush_canvas_job_t *job)
     assert(job != NULL);
     if (pipe(fds) != 0)
         return HUSH_ERR_IO;
+    /* No HOME made here: the child's jail refuses. */
+    (void)hush_sandbox_home_make(job->stub_home, sizeof(job->stub_home));
+    (void)hush_sandbox_net_prepare(hush_http_listen_port());
     pid = fork();
     if (pid < 0) {
         close(fds[0]);
         close(fds[1]);
+        hush_sandbox_home_remove(job->stub_home, sizeof(job->stub_home));
         return HUSH_ERR_IO;
     }
     if (pid == 0) {
@@ -374,6 +381,7 @@ static void hush_canvas_close_job(hush_canvas_job_t *job)
     job->fd = HUSH_CANVAS_FD_NONE;
     job->pid = 0;
     job->busy = 0;
+    hush_sandbox_home_remove(job->stub_home, sizeof(job->stub_home));
 }
 
 static void hush_canvas_kill_job(hush_canvas_job_t *job)
@@ -433,6 +441,7 @@ static void hush_canvas_finish_job(hush_canvas_job_t *job, int ok)
         close(job->fd);
     job->fd = HUSH_CANVAS_FD_NONE;
     job->pid = 0;
+    hush_sandbox_home_remove(job->stub_home, sizeof(job->stub_home));
 }
 
 static int hush_canvas_job_timed_out(const hush_canvas_job_t *job, time_t now)

@@ -164,7 +164,23 @@ def check_token_carriers(relay):
         + b"\r\nAuthorization: Bearer deadbeef\r\nConnection: close\r\n\r\n",
     )
     assert status_of(raw) == 401, ("wrong bearer", raw[:160])
+    check_exact_length(relay, base, token.encode())
     print("trust: Cookie / X-Hush-Token / Bearer open, ?k= / wrong token / wrong bearer / missing 401 OK")
+
+
+def check_exact_length(relay, base, token):
+    """#357: every carrier compares the whole value; token+suffix or a
+    truncated token never authenticates."""
+    carriers = (b"Cookie: hush_session=", b"X-Hush-Token: ", b"Authorization: Bearer ")
+    for value in (token + b"x", token + b"0", token + b"0" * 40, token[:-1]):
+        for carrier in carriers:
+            raw = raw_request(
+                relay,
+                b"GET /api/session HTTP/1.1\r\nHost: " + base + b"\r\n" + carrier
+                + value + b"\r\nConnection: close\r\n\r\n",
+            )
+            assert status_of(raw) == 401, (carrier, len(value), raw[:160])
+    print("trust: token+suffix / truncated token 401 on Cookie / X-Hush-Token / Bearer OK")
 
 
 def check_host_allowlist(relay):

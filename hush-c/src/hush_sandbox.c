@@ -6,6 +6,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <ftw.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -190,8 +191,7 @@ static hush_status_t hush_sandbox_add_auth(hush_sandbox_policy_t *policy, const 
     return HUSH_OK;
 }
 
-/* mkdtemp under TMPDIR (or /tmp), mode 0700. */
-static hush_status_t hush_sandbox_make_home(char *out, size_t outsz)
+hush_status_t hush_sandbox_home_make(char *out, size_t outsz)
 {
     const char *tmp = getenv("TMPDIR");
     char tmpl[HUSH_SANDBOX_PATH_MAX];
@@ -210,6 +210,43 @@ static hush_status_t hush_sandbox_make_home(char *out, size_t outsz)
         return HUSH_ERR_DENIED;
     }
     memcpy(out, tmpl, strlen(tmpl) + 1);
+    return HUSH_OK;
+}
+
+/* nftw step for hush_sandbox_home_remove: the walk is depth-first and never
+ * follows a link, so a symlinked auth file is unlinked, not its target. */
+static int hush_sandbox_home_drop(const char *path, const struct stat *sb, int flag,
+                                  struct FTW *ftw)
+{
+    (void)sb;
+    (void)ftw;
+    if (flag == FTW_DP)
+        (void)rmdir(path);
+    else
+        (void)unlink(path);
+    return 0;
+}
+
+void hush_sandbox_home_remove(char *home, size_t homesz)
+{
+    const char *base = NULL;
+    struct stat st;
+
+    if (home == NULL || homesz == 0 || home[0] == '\0')
+        return;
+    base = strrchr(home, '/');
+    if (base != NULL && strncmp(base + 1, "hush-job-", 9) == 0 &&
+        lstat(home, &st) == 0 && S_ISDIR(st.st_mode) && st.st_uid == geteuid())
+        (void)nftw(home, hush_sandbox_home_drop, 16, FTW_DEPTH | FTW_PHYS);
+    home[0] = '\0';
+}
+
+/* Takes the parent-made stub HOME into policy, or refuses without one. */
+static hush_status_t hush_sandbox_take_home(hush_sandbox_policy_t *policy, const char *home)
+{
+    if (home == NULL || home[0] == '\0' || strlen(home) >= sizeof(policy->stub_home))
+        return HUSH_ERR_DENIED;
+    memcpy(policy->stub_home, home, strlen(home) + 1);
     return HUSH_OK;
 }
 
@@ -269,11 +306,11 @@ static hush_status_t hush_sandbox_prepare_auth(hush_sandbox_policy_t *policy)
 }
 
 hush_status_t hush_sandbox_policy(hush_sandbox_policy_t *policy, const char *cwd,
-                                  uint16_t relay_port)
+                                  const char *home, uint16_t relay_port)
 {
     char path[HUSH_HOME_PATH_MAX];
     char real[PATH_MAX];
-    const char *home = getenv("HOME");
+    const char *real_home = getenv("HOME");
 
     if (policy == NULL)
         return HUSH_ERR_ARG;
@@ -281,12 +318,12 @@ hush_status_t hush_sandbox_policy(hush_sandbox_policy_t *policy, const char *cwd
     /* Port 0 means no relay listener (unit tests): skip TCP connect rules. */
     policy->relay_port = relay_port;
     hush_sandbox_set_why("");
-    if (home == NULL || home[0] == '\0' || realpath(home, real) == NULL) {
+    if (real_home == NULL || real_home[0] == '\0' || realpath(real_home, real) == NULL) {
         hush_sandbox_set_why("agent sandbox refused: HOME is unset");
         return HUSH_ERR_DENIED;
     }
     memcpy(policy->real_home, real, strlen(real) + 1);
-    if (hush_sandbox_make_home(policy->stub_home, sizeof(policy->stub_home)) != HUSH_OK) {
+    if (hush_sandbox_take_home(policy, home) != HUSH_OK) {
         hush_sandbox_set_why("agent sandbox refused: could not create job HOME");
         return HUSH_ERR_DENIED;
     }
@@ -455,6 +492,13 @@ typedef struct {
     uint64_t fs_file;
 } hush_sandbox_rules_t;
 
+/* B1: the connect-TCP layer (every port but the relay's) is 65534 rules and
+ * the same for every job, so the relay builds it once, before the first fork,
+ * and each jailed child only applies it. -1 until built; the kernel marks the
+ * fd close-on-exec, so no provider inherits it. */
+static int g_sandbox_net_fd = -1;
+static uint16_t g_sandbox_net_port;
+
 int hush_sandbox_abi(void)
 {
     long abi = syscall(SYS_landlock_create_ruleset, NULL, 0,
@@ -475,7 +519,8 @@ static uint64_t hush_sandbox_fs_rights(int abi)
     return rights;
 }
 
-static hush_status_t hush_sandbox_open_rules(hush_sandbox_rules_t *rules, int abi)
+static hush_status_t hush_sandbox_open_rules(hush_sandbox_rules_t *rules, int abi,
+                                             uint16_t relay_port)
 {
     hush_sandbox_attr_t attr = {0};
     size_t size = abi >= 6 ? sizeof(attr) : 2 * sizeof(uint64_t);
@@ -484,7 +529,9 @@ static hush_status_t hush_sandbox_open_rules(hush_sandbox_rules_t *rules, int ab
     rules->fs_all = hush_sandbox_fs_rights(abi);
     rules->fs_file = rules->fs_all & HUSH_SANDBOX_FILE_RIGHTS;
     attr.handled_access_fs = rules->fs_all;
-    attr.handled_access_net = LANDLOCK_ACCESS_NET_CONNECT_TCP;
+    /* With a relay port the net layer (hush_sandbox_net_layer) owns TCP; with
+     * none, this layer handles it with no port rule, so every connect fails. */
+    attr.handled_access_net = relay_port == 0 ? LANDLOCK_ACCESS_NET_CONNECT_TCP : 0;
     if (abi >= 6)
         attr.scoped = LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET | LANDLOCK_SCOPE_SIGNAL;
     rules->fd = (int)syscall(SYS_landlock_create_ruleset, &attr, size, 0U);
@@ -563,8 +610,7 @@ static hush_status_t hush_sandbox_grant_cwd(const hush_sandbox_rules_t *rules,
     return hush_sandbox_grant(rules, cwd, rules->fs_all);
 }
 
-static hush_status_t hush_sandbox_grant_ports(const hush_sandbox_rules_t *rules,
-                                              uint16_t relay_port)
+static hush_status_t hush_sandbox_grant_ports(int fd, uint16_t relay_port)
 {
     struct landlock_net_port_attr net = {0};
 
@@ -573,9 +619,48 @@ static hush_status_t hush_sandbox_grant_ports(const hush_sandbox_rules_t *rules,
         if (port == relay_port)
             continue;
         net.port = port;
-        if (syscall(SYS_landlock_add_rule, rules->fd, LANDLOCK_RULE_NET_PORT, &net, 0U) != 0)
+        if (syscall(SYS_landlock_add_rule, fd, LANDLOCK_RULE_NET_PORT, &net, 0U) != 0)
             return HUSH_ERR_DENIED;
     }
+    return HUSH_OK;
+}
+
+hush_status_t hush_sandbox_net_prepare(uint16_t relay_port)
+{
+    struct { uint64_t fs; uint64_t net; } attr = {0, LANDLOCK_ACCESS_NET_CONNECT_TCP};
+    int fd = -1;
+
+    if (relay_port == 0 || hush_sandbox_abi() < HUSH_SANDBOX_ABI_NET)
+        return HUSH_OK;
+    if (g_sandbox_net_fd >= 0 && g_sandbox_net_port == relay_port)
+        return HUSH_OK;
+    fd = (int)syscall(SYS_landlock_create_ruleset, &attr, sizeof(attr), 0U);
+    if (fd < 0)
+        return HUSH_ERR_DENIED;
+    if (hush_sandbox_grant_ports(fd, relay_port) != HUSH_OK) {
+        (void)close(fd);
+        return HUSH_ERR_DENIED;
+    }
+    if (g_sandbox_net_fd >= 0)
+        (void)close(g_sandbox_net_fd);
+    g_sandbox_net_fd = fd;
+    g_sandbox_net_port = relay_port;
+    return HUSH_OK;
+}
+
+/* Applies the deny-relay-port layer, building it here if the parent did not.
+ * Runs before close_inherited, which would close the parent's fd. */
+static hush_status_t hush_sandbox_net_layer(uint16_t relay_port)
+{
+    if (relay_port == 0)
+        return HUSH_OK;
+    if (hush_sandbox_abi() < HUSH_SANDBOX_ABI_NET ||
+        hush_sandbox_net_prepare(relay_port) != HUSH_OK || g_sandbox_net_fd < 0)
+        return HUSH_ERR_DENIED;
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0)
+        return HUSH_ERR_DENIED;
+    if (syscall(SYS_landlock_restrict_self, g_sandbox_net_fd, 0U) != 0)
+        return HUSH_ERR_DENIED;
     return HUSH_OK;
 }
 
@@ -596,7 +681,7 @@ static hush_status_t hush_sandbox_landlock(const hush_sandbox_policy_t *policy)
 
     if (abi < HUSH_SANDBOX_ABI_NET)
         return HUSH_ERR_DENIED;
-    HUSH_TRY(hush_sandbox_open_rules(&rules, abi));
+    HUSH_TRY(hush_sandbox_open_rules(&rules, abi, policy->relay_port));
     hush_status_t st = hush_sandbox_grant_tree(&rules, policy, "/");
     if (st == HUSH_OK)
         st = hush_sandbox_grant(&rules, "/", LANDLOCK_ACCESS_FS_READ_DIR);
@@ -606,8 +691,6 @@ static hush_status_t hush_sandbox_landlock(const hush_sandbox_policy_t *policy)
         st = hush_sandbox_grant_auth(&rules, policy);
     if (st == HUSH_OK)
         st = hush_sandbox_grant_cwd(&rules, policy);
-    if (st == HUSH_OK && policy->relay_port != 0)
-        st = hush_sandbox_grant_ports(&rules, policy->relay_port);
     if (st == HUSH_OK && prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0)
         st = HUSH_ERR_DENIED;
     if (st == HUSH_OK && syscall(SYS_landlock_restrict_self, rules.fd, 0U) != 0)
@@ -621,6 +704,18 @@ static hush_status_t hush_sandbox_landlock(const hush_sandbox_policy_t *policy)
 int hush_sandbox_abi(void)
 {
     return 0;
+}
+
+hush_status_t hush_sandbox_net_prepare(uint16_t relay_port)
+{
+    (void)relay_port;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_sandbox_net_layer(uint16_t relay_port)
+{
+    (void)relay_port;
+    return HUSH_ERR_DENIED;
 }
 
 static hush_status_t hush_sandbox_landlock(const hush_sandbox_policy_t *policy)
@@ -649,12 +744,13 @@ hush_status_t hush_sandbox_enter(const hush_sandbox_policy_t *policy)
 {
     if (policy == NULL || policy->ndeny < 1 || policy->stub_home[0] == '\0')
         return HUSH_ERR_DENIED;
+    if (hush_sandbox_backend() != HUSH_SANDBOX_BACKEND_LANDLOCK ||
+        hush_sandbox_net_layer(policy->relay_port) != HUSH_OK)
+        return HUSH_ERR_DENIED;
     hush_sandbox_close_inherited();
     if (setenv("HOME", policy->stub_home, 1) != 0)
         return HUSH_ERR_DENIED;
     hush_sandbox_scrub_env();
-    if (hush_sandbox_backend() != HUSH_SANDBOX_BACKEND_LANDLOCK)
-        return HUSH_ERR_DENIED;
     return hush_sandbox_landlock(policy) == HUSH_OK ? HUSH_OK : HUSH_ERR_DENIED;
 }
 
@@ -860,13 +956,13 @@ static hush_status_t hush_sandbox_exec_bwrap(const hush_sandbox_policy_t *policy
     return HUSH_ERR_IO;
 }
 
-hush_status_t hush_sandbox_exec(const char *cwd, uint16_t relay_port, const char *file,
+hush_status_t hush_sandbox_exec(const hush_sandbox_job_t *job, const char *file,
                                 char **argv)
 {
     hush_sandbox_policy_t policy;
     hush_sandbox_backend_t backend = hush_sandbox_backend();
 
-    if (file == NULL || argv == NULL)
+    if (job == NULL || file == NULL || argv == NULL)
         return HUSH_ERR_ARG;
     hush_sandbox_set_why("");
     if (backend == HUSH_SANDBOX_BACKEND_NONE) {
@@ -874,7 +970,7 @@ hush_status_t hush_sandbox_exec(const char *cwd, uint16_t relay_port, const char
             "agent sandbox unavailable: need Landlock ABI>=4 or bwrap --unshare-pid");
         return HUSH_ERR_DENIED;
     }
-    if (hush_sandbox_policy(&policy, cwd, relay_port) != HUSH_OK) {
+    if (hush_sandbox_policy(&policy, job->cwd, job->home, job->relay_port) != HUSH_OK) {
         if (g_sandbox_why[0] == '\0')
             hush_sandbox_set_why("agent sandbox refused: policy setup failed");
         return HUSH_ERR_DENIED;

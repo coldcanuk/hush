@@ -235,6 +235,21 @@ print("INTRO_COUNT_AFTER_FOLLOWUP", n)
 sys.exit(1)
 ' "${hex}" || fail "follow-up must not emit a stock intro"
 
+# The co-mention below starts two jobs against a channel cap of 2, so the
+# follow-up's job must have ended first, or the cap Holds by design. Jailed
+# children take tens of ms to start (#336 B1), so wait for the follow-up's
+# stub to run and exit instead of racing it; the no-Holding check stands.
+i=0
+while [ "$i" -lt 100 ]; do
+    if grep -q 'Current message: *another' "$stubs/grok-p.log" 2>/dev/null &&
+        ! pgrep -f "$bin_dir/grok" >/dev/null 2>&1; then
+        break
+    fi
+    i=$((i + 1))
+    sleep 0.05
+done
+test "$i" -lt 100 || fail "follow-up job never ran"
+sleep 0.2
 sess=$(curl -sf "http://127.0.0.1:${port}/api/session")
 payne_npub=$(printf '%s' "$sess" | python3 -c 'import json,sys; p=json.loads(sys.stdin.read()).get("payne") or {}; print(p.get("npub") or "")')
 payne_hex=$(printf '%s' "$sess" | python3 -c 'import json,sys; p=json.loads(sys.stdin.read()).get("payne") or {}; print(p.get("pubkey") or "")')
