@@ -49,6 +49,12 @@
 //   K8 robot inventory items (real renderAllInventories): in field-office the
 //      rim is a field-office token >= 3:1 against the grid; in the other 7
 //      themes it is the old cyan / gold, unchanged.
+//   L1 (G291-2 follow-up) a fixture per shared rule that painted a literal
+//      colour in every theme (code spines, Canvas syntax, call tiles, inventory
+//      text, pressed buttons, skill gems / slots / doll / lifetime chips, the
+//      bad badge): in field-office every painted colour is a field-office token,
+//      text >= 4.5:1 and rims >= 3:1; in the other 7 themes the computed value
+//      equals khaki head d58185ab's, at 1440 and 390.
 //   B1 Thread, Download and Stop are 20-24px tall at both widths; at 390 a
 //      point 20px above and below the centre still hits the control (44px).
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
@@ -154,6 +160,80 @@ async function launchChrome(chrome, deadlineMs) {
   }
   die('Chrome DevTools did not answer before the deadline');
 }
+
+/* L1 fixture: one element per shared rule that painted a literal colour in
+ * every theme (the 30 of the G291-2 follow-up), in the real hive page. Runs in
+ * the page as (${l1Fixture})(); window.__l1undo() removes it again. */
+function l1Fixture() {
+  const old = document.getElementById('l1-fix'); if (old) old.remove();
+  const box = document.createElement('div'); box.id = 'l1-fix';
+  box.style.cssText = 'position:fixed;left:0;top:0;width:600px;z-index:9999;background:var(--surface-2)';
+  document.body.appendChild(box);
+  const mk = (tag, cls, attrs, parent, text) => { const e = document.createElement(tag); if (cls) e.className = cls;
+    for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v); if (text) e.textContent = text; (parent || box).appendChild(e); return e; };
+  const E = {}; const S = [];
+  const add = (key, el, sel, props, kind) => { E[key] = el; for (const p of props) S.push({ key, sel, prop: p, kind }); };
+  const badge = document.getElementById('badge');
+  if (badge) { badge.dataset.l1Was = badge.className; badge.classList.add('bad'); add('badge-bad', badge, '#badge.bad', ['border-top-color'], 'rim'); }
+  for (const l of ['python', 'go', 'javascript', 'js', 'c']) add('code-' + l, mk('div', 'code-block', { 'data-lang': l }, box, 'x = 1'), `.code-block[data-lang="${l}"]`, ['border-left-color'], 'rim');
+  const hi = document.getElementById('code-canvas-hi') || mk('pre', '', { id: 'code-canvas-hi' });
+  for (const t of ['kw', 'str', 'num']) add('tok-' + t, mk('span', 'tok-' + t, { 'data-l1': '1' }, hi, t + '_sample'), '#code-canvas-hi .tok-' + t, ['color'], 'text');
+  add('btn-danger', mk('button', 'btn danger', { type: 'button' }, box, 'Leave'), '.btn.danger', ['color'], 'text');
+  const tile = mk('div', 'tile', {}, box); add('tile', tile, '.tile', ['background-color'], 'fill');
+  add('tile-video', mk('video', '', {}, tile), '.tile video', ['background-color'], 'fill');
+  add('tile-span', mk('span', '', {}, tile, 'Major'), '.tile span', ['background-color', 'color'], 'text');
+  add('tile-mute', mk('button', 'tile-mute', { type: 'button' }, tile, 'Mute'), '.tile-mute', ['background-color', 'color'], 'text');
+  const inv = document.getElementById('robot-inventory') || box;
+  add('inv-item', mk('div', 'inv-item', { 'data-l1': '1' }, inv, 'Rx'), '.inv-item', ['color'], 'text');
+  for (const [k, id] of [['inv-btn', 'inv-seed'], ['qb-gear', 'qb-config'], ['send', 'thread-send']]) {
+    const el = document.getElementById(id); if (el) add(k + '-active', el, '#' + id + ':active', ['box-shadow'], 'shadow'); }
+  const pool = mk('div', 'skill-pool', {}, box);
+  for (const sc of ['system', 'user', 'robot']) add('gem-' + sc, mk('div', 'skill-gem', { 'data-scope': sc }, pool, 'G'), `.skill-gem[data-scope="${sc}"]`, ['box-shadow'], 'shadow');
+  add('slot-ok', mk('div', 'skill-slot drop-ok', {}, box), '.skill-slot.drop-ok', ['border-top-color'], 'rim');
+  add('slot-no', mk('div', 'skill-slot drop-no', {}, box), '.skill-slot.drop-no', ['border-top-color'], 'rim');
+  add('doll-pic', mk('div', 'skill-doll-pic', {}, box), '.skill-doll-pic', ['border-top-color'], 'rim');
+  for (const lt of ['always', 'oncall']) { const g = mk('div', 'skill-gem', { 'data-lifetime': lt }, pool); mk('span', 'sig', {}, g, 'S');
+    add('life-' + lt, mk('span', 'life', {}, g, lt), `.skill-gem[data-lifetime="${lt}"] .life`, ['color'], 'text'); }
+  for (const lt of ['always', 'oncall']) add('chip-' + lt, mk('button', 'skill-life', { 'data-lifetime': lt, type: 'button' }, box, lt), `.skill-life[data-lifetime="${lt}"]`, ['border-top-color', 'color'], 'text+rim');
+  window.__l1 = E; window.__l1spec = S;
+  window.__l1undo = () => { box.remove(); for (const s of document.querySelectorAll('[data-l1]')) s.remove(); if (badge) badge.className = badge.dataset.l1Was; };
+  return S.length;
+}
+/* Computed values on khaki head d58185ab in the 7 other themes (they read the
+ * literal through var(--fo-*, literal) and must not move). '@390' = 390 only. */
+const L1_EXPECT = {
+  "badge-bad|border-top-color": {"*": "rgb(127, 29, 29)", "@390": "rgb(42, 36, 30)"},
+  "code-python|border-left-color": "rgb(55, 118, 171)",
+  "code-go|border-left-color": "rgb(0, 173, 216)",
+  "code-javascript|border-left-color": "rgb(247, 223, 30)",
+  "code-js|border-left-color": "rgb(247, 223, 30)",
+  "code-c|border-left-color": "rgb(168, 185, 204)",
+  "tok-kw|color": "rgb(125, 211, 252)",
+  "tok-str|color": "rgb(134, 239, 172)",
+  "tok-num|color": "rgb(251, 191, 36)",
+  "btn-danger|color": "rgb(255, 255, 255)",
+  "tile|background-color": "rgb(0, 0, 0)",
+  "tile-video|background-color": "rgb(0, 0, 0)",
+  "tile-span|background-color": "rgba(0, 0, 0, 0.55)",
+  "tile-mute|background-color": "rgba(0, 0, 0, 0.55)",
+  "tile-mute|color": "rgb(255, 255, 255)",
+  "inv-item|color": "rgb(255, 255, 255)",
+  "inv-btn-active|box-shadow": "rgba(0, 0, 0, 0.45) 0px 2px 5px 0px inset",
+  "qb-gear-active|box-shadow": "rgba(0, 0, 0, 0.45) 0px 2px 5px 0px inset",
+  "send-active|box-shadow": {"*": "rgba(0, 0, 0, 0.4) 0px 2px 5px 0px inset", "dark": "rgb(0, 0, 0) 2px 2px 0px 0px"},
+  "gem-system|box-shadow": "rgba(212, 160, 23, 0.333) 0px 0px 6px 0px",
+  "gem-user|box-shadow": "rgba(0, 255, 255, 0.267) 0px 0px 6px 0px",
+  "gem-robot|box-shadow": "rgba(204, 102, 255, 0.267) 0px 0px 6px 0px",
+  "slot-ok|border-top-color": "rgb(0, 255, 255)",
+  "slot-no|border-top-color": "rgb(255, 102, 102)",
+  "doll-pic|border-top-color": "rgb(0, 255, 255)",
+  "life-always|color": "rgb(255, 215, 94)",
+  "life-oncall|color": "rgb(143, 211, 255)",
+  "chip-always|border-top-color": "rgb(212, 160, 23)",
+  "chip-always|color": "rgb(255, 215, 94)",
+  "chip-oncall|border-top-color": "rgb(0, 255, 255)",
+  "chip-oncall|color": "rgb(143, 211, 255)",
+};
 
 class Cdp {
   constructor(url) { this.url = url; this.id = 0; this.waiters = new Map(); }
@@ -536,6 +616,44 @@ async function main() {
       else if (r.rims.some((c) => c !== '#00ffff' && c !== '#d4a017')) failures.push(`K8 ${r.theme} inventory rim changed to ${r.rims.join(',')} (want the old #00ffff / #d4a017)`);
     }
   }
+  /* L1: the shared literal-colour rules (G291-2 follow-up). */
+  for (const [w, h] of WIDTHS) {
+    await view(w, h); await cdp.eval(KIT);
+    const nfix = await cdp.eval(`(${l1Fixture.toString()})()`);
+    await cdp.send('DOM.enable', {}); await cdp.send('CSS.enable', {});
+    const root = (await cdp.send('DOM.getDocument', { depth: 0 })).root.nodeId; const forced = [];
+    for (const sel of ['#inv-seed', '#qb-config', '#thread-send']) { const q = await cdp.send('DOM.querySelector', { nodeId: root, selector: sel });
+      if (q.nodeId) { await cdp.send('CSS.forcePseudoState', { nodeId: q.nodeId, forcedPseudoClasses: ['active'] }); forced.push(q.nodeId); } }
+    const l1 = await cdp.eval(`(() => { const P = window.__pal; const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
+      const cols = (v) => [...v.matchAll(/rgba?\\([^)]*\\)/g)].map((m) => P.rgba(m[0])).filter((c) => c[3] > 0);
+      for (const t of ${JSON.stringify(THEMES)}) { h.setAttribute('data-theme', t); const T = P.tokens();
+        for (const s of window.__l1spec) { const el = window.__l1[s.key]; const v = getComputedStyle(el).getPropertyValue(s.prop); const r = { theme: t, key: s.key, prop: s.prop, v };
+          if (t === 'field-office') {
+            r.untok = cols(v).filter((c) => c[3] < 1 || !T.has(P.hex(c))).map((c) => c[3] < 1 ? 'rgba(' + c.join(',') + ')' : P.hex(c));
+            if (s.prop === 'color') { const bg = P.bgOf(el); let fg = P.rgba(v); fg = P.over([fg[0], fg[1], fg[2], fg[3] * P.opacityOf(el)], bg); r.ratio = Math.round(P.ratio(fg, bg) * 100) / 100; r.min = 4.5; }
+            else if (/border/.test(s.prop)) { const behind = P.bgOf(el.parentElement); const c = P.rgba(v); r.ratio = Math.round(P.ratio(P.over(c, behind), behind) * 100) / 100; r.min = 3; }
+          }
+          out.push(r); } }
+      h.setAttribute('data-theme', was); window.__l1undo(); return out; })()`);
+    for (const id of forced) await cdp.send('CSS.forcePseudoState', { nodeId: id, forcedPseudoClasses: [] });
+    report.push({ surface: 'L1', w, l1 });
+    let n = 0;
+    for (const r of l1) {
+      const k = r.key + '|' + r.prop;
+      if (r.theme === 'field-office') {
+        n++;
+        if (r.untok.length) failures.push(`L1 field-office@${w} ${k} paints ${r.untok.join(',')}, not a field-office token (${r.v})`);
+        if (r.ratio !== undefined && r.ratio < r.min) failures.push(`L1 field-office@${w} ${k} ${r.ratio}:1, want >= ${r.min}:1`);
+      } else if (L1_EXPECT[k] !== undefined) {
+        const e = L1_EXPECT[k]; const want = typeof e === 'string' ? e : (e[r.theme] || (w < 641 && e['@390']) || e['*']);
+        if (r.v !== want) failures.push(`L1 ${r.theme}@${w} ${k} is ${r.v}, want the unchanged ${want}`);
+      }
+    }
+    const fo = l1.filter((r) => r.theme === 'field-office' && r.ratio !== undefined);
+    console.log(`palette L1@${w}: ${nfix} fixture declarations, ${n} field-office measures, ${l1.length - n} other-theme values, ` +
+      `min field-office ratio ${fo.length ? Math.min(...fo.map((r) => r.ratio)) : '-'}`);
+    if (nfix < 30) failures.push(`L1@${w} only ${nfix} fixture declarations (want 32)`);
+  }
   await ringCheck('main-thread', ['#stream .thread-btn', '#stream .note-files button', '#stream .think-stop', '#nav-toggle', '#rail-toggle']);
 
   await measure('thread-pane', async () => {
@@ -742,7 +860,9 @@ async function main() {
     `K3 ${report.filter((r) => r.k3 && !r.k3.hidden).length} milestone fields fit their placeholder, K4 status light 2 states on tokens, ` +
     `K5 picture cells on tokens in ${report.filter((r) => r.k5).length} themes, K6 masthead chrome field-office only, ` +
     `K7 ${report.filter((r) => r.k7).reduce((n, r) => n + r.k7.out.length, 0)} mention pill text measures >= 4.5:1 + short-npub fallback renamed on roster load, ` +
-    `K8 inventory rims: field-office tokens, other ${report.filter((r) => r.k8 && r.k8.theme !== 'field-office').length} themes unchanged`);
+    `K8 inventory rims: field-office tokens, other ${report.filter((r) => r.k8 && r.k8.theme !== 'field-office').length} themes unchanged, ` +
+    `L1 ${report.filter((r) => r.l1).reduce((n, r) => n + r.l1.filter((x) => x.theme === 'field-office').length, 0)} shared-rule values on field-office tokens, ` +
+    `${report.filter((r) => r.l1).reduce((n, r) => n + r.l1.filter((x) => x.theme !== 'field-office' && L1_EXPECT[x.key + '|' + x.prop] !== undefined).length, 0)} other-theme values unchanged`);
 }
 
 main().catch((e) => die(e && e.stack ? e.stack : String(e)));
