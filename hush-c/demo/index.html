@@ -95,7 +95,7 @@
       border-radius: 12px; border: 0; background: var(--accent); color: var(--accent-ink);
     }
     #install.show { display: inline-block; }
-    #badge.bad { color: var(--warn); border-color: #7f1d1d; }
+    #badge.bad { color: var(--warn); border-color: var(--fo-badge-bad, #7f1d1d); }
     .shell { flex: 1; display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
     nav { border-right: 1px solid var(--line); background: var(--surface); padding: 14px 10px; display: flex; flex-direction: column; gap: 16px; }
     .lbl { font-size: 0.65rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); padding: 0 8px; }
@@ -256,10 +256,10 @@
       font-family: var(--mono); font-size: 0.78rem; line-height: 1.4;
       white-space: pre-wrap; word-break: break-word;
     }
-    .code-block[data-lang="python"] { border-left: 3px solid #3776ab; }
-    .code-block[data-lang="go"] { border-left: 3px solid #00add8; }
-    .code-block[data-lang="javascript"], .code-block[data-lang="js"] { border-left: 3px solid #f7df1e; }
-    .code-block[data-lang="c"] { border-left: 3px solid #a8b9cc; }
+    .code-block[data-lang="python"] { border-left: 3px solid var(--fo-lang-python, #3776ab); }
+    .code-block[data-lang="go"] { border-left: 3px solid var(--fo-lang-go, #00add8); }
+    .code-block[data-lang="javascript"], .code-block[data-lang="js"] { border-left: 3px solid var(--fo-lang-js, #f7df1e); }
+    .code-block[data-lang="c"] { border-left: 3px solid var(--fo-lang-c, #a8b9cc); }
     .note-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .note-files button {
       min-height: 32px; padding: 4px 10px; border-radius: 12px;
@@ -323,10 +323,10 @@
       background: transparent; color: transparent; caret-color: var(--fg);
       resize: none; z-index: 1;
     }
-    #code-canvas-hi .tok-kw { color: #7dd3fc; }
-    #code-canvas-hi .tok-str { color: #86efac; }
+    #code-canvas-hi .tok-kw { color: var(--fo-tok-kw, #7dd3fc); }
+    #code-canvas-hi .tok-str { color: var(--fo-tok-str, #86efac); }
     #code-canvas-hi .tok-cmt { color: var(--faint); font-style: italic; }
-    #code-canvas-hi .tok-num { color: #fbbf24; }
+    #code-canvas-hi .tok-num { color: var(--fo-tok-num, #fbbf24); }
     #code-canvas-hi .tok-ghost { color: var(--faint); opacity: 0.75; }
     #code-canvas-hi .fim-caret {
       display: inline-block; width: 0.55ch; height: 1.1em;
@@ -543,7 +543,7 @@
       cursor: pointer; font: inherit;
     }
     .btn.danger {
-      background: var(--warn); color: #fff; width: 100%; margin-top: 8px;
+      background: var(--warn); color: var(--fo-danger-text, #fff); width: 100%; margin-top: 8px;
     }
     .btn.danger:disabled { opacity: 0.4; }
     #agent-drawer .actions {
@@ -640,15 +640,15 @@
     }
     .vis input { margin-right: 6px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 12px 0; }
-    .tile { background: #000; border-radius: 12px; overflow: hidden; min-height: 120px; position: relative; }
-    .tile video { width: 100%; height: 160px; object-fit: cover; background: #000; }
+    .tile { background: var(--fo-tile-bg, #000); border-radius: 12px; overflow: hidden; min-height: 120px; position: relative; }
+    .tile video { width: 100%; height: 160px; object-fit: cover; background: var(--fo-tile-bg, #000); }
     .tile span {
       position: absolute; left: 8px; bottom: 8px; font-size: 0.7rem;
-      background: rgba(0,0,0,0.55); padding: 2px 8px; border-radius: 12px;
+      background: var(--fo-tile-label, rgba(0,0,0,0.55)); padding: 2px 8px; border-radius: 12px;
     }
     .tile-mute {
       position: absolute; right: 8px; bottom: 8px; font-size: 0.7rem;
-      background: rgba(0,0,0,0.55); color: #fff; border: 1px solid var(--line);
+      background: var(--fo-tile-label, rgba(0,0,0,0.55)); color: var(--fo-tile-ink, #fff); border: 1px solid var(--line);
       border-radius: 12px; padding: 4px 8px;
     }
     .tile-mute.on { background: var(--warn); border-color: var(--warn); }
@@ -685,7 +685,7 @@
 .inv-cell { border: 1px solid var(--line); background: var(--surface-2); box-sizing: border-box; }
 .inv-item {
   position: absolute; border: 1px solid var(--line); background: var(--surface-2);
-  color: #fff; font: 700 8px/1 sans-serif; padding: 2px 4px; cursor: grab;
+  color: var(--fo-inv-ink, #fff); font: 700 8px/1 sans-serif; padding: 2px 4px; cursor: grab;
   overflow: hidden; white-space: nowrap;
   display: flex; align-items: center; justify-content: center; touch-action: none;
 }
@@ -781,7 +781,7 @@ nav { padding: 10px 8px; gap: 12px; }
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), inset 0 -2px 0 rgb(0 0 0 / 0.25);
 }
 .inv-btn:active {
-  box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.45);
+  box-shadow: inset 0 2px 5px var(--fo-press, rgb(0 0 0 / 0.45));
 }
 .quick-tab { min-height: 30px; }
 .quick-tab kbd, .qb-slot kbd {
@@ -814,7 +814,7 @@ nav { padding: 10px 8px; gap: 12px; }
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), inset 0 -2px 0 rgb(0 0 0 / 0.25);
 }
 .qb-gear:active {
-  box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.45);
+  box-shadow: inset 0 2px 5px var(--fo-press, rgb(0 0 0 / 0.45));
 }
 body { padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
 /* Composer: same etched language, flatter than the Slack-ish card. */
@@ -832,7 +832,7 @@ body { padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 -2px 0 rgb(0 0 0 / 0.25);
 }
 #send:active, #thread-send:active {
-  box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.4);
+  box-shadow: inset 0 2px 5px var(--fo-press, rgb(0 0 0 / 0.4));
 }
 .inv-expand-link {
   font-size: 0.62rem; background: none; border: 0; color: var(--accent);
@@ -880,9 +880,9 @@ body { padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
 }
 .skill-gem .sig { font-size: 0.95rem; letter-spacing: 0.04em; }
 .skill-gem .nm { font-size: 0.55rem; max-width: 48px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.skill-gem[data-scope="system"] { border-color: #d4a017; box-shadow: 0 0 6px #d4a01755; }
-.skill-gem[data-scope="user"] { border-color: #0ff; box-shadow: 0 0 6px #0ff4; }
-.skill-gem[data-scope="robot"] { border-color: #c6f; box-shadow: 0 0 6px #c6f4; }
+.skill-gem[data-scope="system"] { border-color: #d4a017; box-shadow: 0 0 6px var(--fo-scope-system, #d4a01755); }
+.skill-gem[data-scope="user"] { border-color: #0ff; box-shadow: 0 0 6px var(--fo-scope-user, #0ff4); }
+.skill-gem[data-scope="robot"] { border-color: #c6f; box-shadow: 0 0 6px var(--fo-scope-robot, #c6f4); }
 .skill-gem:hover, .skill-gem:focus-visible { box-shadow: 0 0 10px currentColor; }
 .skill-gem.held { opacity: 0.4; }
 .skill-gem:active { cursor: grabbing; }
@@ -897,10 +897,10 @@ body { padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
 .skill-slot .skill-gem { width: 48px; height: 48px; }
 .skill-slot.open { box-shadow: inset 0 0 8px #d4a01766; }
 .skill-slot.filled { border-style: solid; }
-.skill-slot.drop-ok { border-style: solid; border-color: #0ff; box-shadow: 0 0 8px #0ff; }
-.skill-slot.drop-no { border-color: #f66; }
+.skill-slot.drop-ok { border-style: solid; border-color: var(--fo-slot-ok, #0ff); box-shadow: 0 0 8px #0ff; }
+.skill-slot.drop-no { border-color: var(--fo-slot-no, #f66); }
 .skill-doll-pic {
-  width: 56px; height: 56px; border: 2px solid #0ff; border-radius: 8px;
+  width: 56px; height: 56px; border: 2px solid var(--fo-doll-rim, #0ff); border-radius: 8px;
   background-color: var(--surface); background-size: cover; background-position: center;
 }
 .skill-doll-pic.drop-ok { box-shadow: 0 0 8px #0ff; }
@@ -931,15 +931,15 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
   display: block; font-size: 0.5rem; font-weight: 700;
   letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.9;
 }
-.skill-gem[data-lifetime="always"] .life { color: #ffd75e; }
-.skill-gem[data-lifetime="oncall"] .life { color: #8fd3ff; }
+.skill-gem[data-lifetime="always"] .life { color: var(--fo-life-always, #ffd75e); }
+.skill-gem[data-lifetime="oncall"] .life { color: var(--fo-life-oncall, #8fd3ff); }
 .skill-life {
   min-height: 20px; padding: 0 6px; border: 1px solid var(--line); border-radius: 10px;
   background: var(--surface); color: var(--muted); font: 700 0.55rem/1.6 var(--mono);
   letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer;
 }
-.skill-life[data-lifetime="always"] { border-color: #d4a017; color: #ffd75e; }
-.skill-life[data-lifetime="oncall"] { border-color: #0ff; color: #8fd3ff; }
+.skill-life[data-lifetime="always"] { border-color: var(--fo-life-always, #d4a017); color: var(--fo-life-always, #ffd75e); }
+.skill-life[data-lifetime="oncall"] { border-color: var(--fo-life-oncall, #0ff); color: var(--fo-life-oncall, #8fd3ff); }
 /* PE-4 favorites: named loadout shortcuts, saved per robot on the relay. */
 #fav-strip { margin: 12px 0; min-width: 0; }
 #fav-strip .lbl { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -1181,6 +1181,30 @@ html[data-theme="field-office"] {
   --fo-inv-live: var(--line);           /* robot inventory item rim + glow; drop allowed */
   --fo-inv-locked: #6b4f12;             /* locked robot (brass) */
   --fo-inv-bad: var(--accent);          /* drop not allowed */
+  /* Shared rules that paint in every theme read these through var(--fo-*, <old literal>):
+     the other themes never define them, so they keep the literal (follow-up to G291-2). */
+  --fo-badge-bad: var(--line);          /* #badge.bad rim (the badge rule above wins) */
+  --fo-lang-python: #2a4466;            /* code-block language spines, >= 3:1 on paper */
+  --fo-lang-go: #22605c;
+  --fo-lang-js: #5a4410;
+  --fo-lang-c: #5b3f5f;
+  --fo-tok-kw: #2a4466;                 /* Canvas syntax ink, >= 4.5:1 on --surface-2 */
+  --fo-tok-str: #2f5a24;
+  --fo-tok-num: #5a4410;
+  --fo-danger-text: var(--fg);          /* .btn.danger text (the .btn rule wins) */
+  --fo-tile-bg: var(--fg);              /* call tiles: ink plate behind the video */
+  --fo-tile-label: var(--surface-2);    /* name and mute slips on a tile */
+  --fo-tile-ink: var(--fg);
+  --fo-inv-ink: var(--fg);              /* robot inventory item text */
+  --fo-press: var(--line);              /* pressed inset (the soft-shadow kill wins) */
+  --fo-scope-system: var(--line);       /* skill gem scope rim + glow */
+  --fo-scope-user: var(--line);
+  --fo-scope-robot: var(--line);
+  --fo-slot-ok: var(--fo-inv-live);     /* skill slot: drop allowed */
+  --fo-slot-no: var(--fo-inv-bad);      /* skill slot: drop refused */
+  --fo-doll-rim: var(--line);           /* skill doll picture rim */
+  --fo-life-always: #5a4410;            /* ALWAYS-ON lifetime: brass ink */
+  --fo-life-oncall: #2a4466;            /* ON-CALL lifetime: blue ink */
   --sans: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
   --mono: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
   --display: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
