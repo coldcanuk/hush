@@ -637,8 +637,8 @@ static int hush_http_request_is_authed(const char *req, size_t len)
 static int hush_http_header_is_authed(const char *req, size_t len)
 {
     static const char bearer[] = "Bearer ";
-    char header[HUSH_HTTP_HDR_VALUE_MAX];
-    char value[HUSH_AUTH_TOKEN_BUF];
+    char header[HUSH_HTTP_HDR_VALUE_MAX] = {0};
+    char value[HUSH_AUTH_TOKEN_BUF] = {0};
 
     assert(req != NULL);
     if (hush_http_header_value(req, len, "Authorization", header,
@@ -661,9 +661,9 @@ static int hush_http_is_state_change(const char *req, const char *path)
 static int hush_http_origin_is_served(const char *req, size_t len,
                                       const char *origin)
 {
-    char host[HUSH_HTTP_HOST_MAX];
-    char served[HUSH_HTTP_ORIGIN_MAX];
-    int n;
+    char host[HUSH_HTTP_HOST_MAX] = {0};
+    char served[HUSH_HTTP_ORIGIN_MAX] = {0};
+    int n = 0;
 
     assert(req != NULL);
     assert(origin != NULL);
@@ -677,8 +677,8 @@ static int hush_http_origin_is_served(const char *req, size_t len,
 
 static int hush_http_origin_ok(const char *req, size_t len)
 {
-    char site[HUSH_HTTP_FETCH_SITE_MAX];
-    char origin[HUSH_HTTP_ORIGIN_MAX];
+    char site[HUSH_HTTP_FETCH_SITE_MAX] = {0};
+    char origin[HUSH_HTTP_ORIGIN_MAX] = {0};
 
     assert(req != NULL);
     if (hush_http_header_value(req, len, "Sec-Fetch-Site", site, sizeof(site)) &&
@@ -815,7 +815,7 @@ static hush_status_t hush_http_guard(int fd, const char *req, size_t len,
                         strlen(denied));
         return HUSH_ERR_DENIED;
     }
-    /* Browser CSRF: a cookie rides any cross-site POST; Origin does not lie. */
+    /* Browser CSRF: the cookie rides same-site POSTs from other local ports. */
     if (hush_http_is_state_change(req, path) && !hush_http_origin_ok(req, len))
         return hush_http_reply_cross_origin(fd);
     return HUSH_OK;

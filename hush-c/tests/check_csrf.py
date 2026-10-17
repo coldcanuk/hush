@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Origin / CSRF gate on state-changing API routes (P1, Refs #322).
 
-A browser attaches the hush_session cookie to any request,
-including a cross-site POST. Every POST under /api/ therefore needs:
+The hush_session cookie is SameSite=Strict, so a browser still attaches it to
+same-site requests from another local origin (another localhost port). Every
+POST under /api/ therefore needs:
 
 - Sec-Fetch-Site, when sent, equal to same-origin;
 - Origin, when sent, exactly http://<Host> of the request;
@@ -159,9 +160,20 @@ def check_refused(relay):
         raw = relay.send("POST", path, headers, yes)
         assert status_of(raw) == 403, (label, raw[:200])
         assert b"cross-origin request refused" in raw, (label, raw[:200])
-    raw = relay.send("POST", "/api/profile", [f"Cookie: hush_session={token}",
-                     "Origin: https://evil.example"], {"approval_mode": "auto_approve"})
-    assert status_of(raw) == 403, ("profile cross-origin", raw[:200])
+    # /api/profile has no nonce gate, so only the Origin gate can refuse these.
+    cookie = f"Cookie: hush_session={token}"
+    origin_only = [
+        ([cookie, "Origin: https://evil.example"], "cookie + foreign Origin"),
+        ([cookie, "Authorization: Bearer deadbeef"], "cookie + wrong bearer, no Origin"),
+        ([cookie, "Sec-Fetch-Site: same-origin", "Origin: https://evil.example"],
+         "cookie + Sec-Fetch-Site same-origin + foreign Origin"),
+        ([cookie, "Sec-Fetch-Site: same-origin"], "cookie + Sec-Fetch-Site same-origin, no Origin"),
+        ([cookie, "X-Hush-Token: deadbeef"], "cookie + wrong X-Hush-Token, no Origin"),
+    ]
+    for headers, label in origin_only:
+        raw = relay.send("POST", "/api/profile", headers, {"approval_mode": "auto_approve"})
+        assert status_of(raw) == 403, ("profile " + label, raw[:200])
+        assert b"cross-origin request refused" in raw, ("profile " + label, raw[:200])
     assert note_count(relay) == before, "a refused POST stored a note"
     print("csrf: foreign/missing/null Origin, cross-site fetch all 403, nothing stored OK")
 
