@@ -1010,12 +1010,15 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
   min-height: 46vh; font-family: var(--mono); font-size: 0.9rem; line-height: 1.5;
 }
 
-/* Avatar selection window: dedicated 128px viewer + grid. */
+/* Avatar selection window: dedicated 128px viewer + grid. The preview ring
+   is the light --accent in every theme (#309 r5): --accent-dim was below
+   3:1 on the panel in six themes. Field-office keeps its own offset print
+   shadow (below). */
 #avatar-drawer .panel { width: min(56rem, 100%); }
 .avatar-preview {
   width: 128px; height: 128px; margin: 8px auto 4px; border: 2px solid var(--line);
   border-radius: 16px; background-repeat: no-repeat; background-position: center;
-  background-size: cover; box-shadow: 0 0 0 3px var(--accent-dim);
+  background-size: cover; box-shadow: 0 0 0 3px var(--accent);
 }
 .avatar-preview.empty { background-color: var(--surface-2); background-image: none; }
 .avatar-sheets { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 10px 0 12px; }
@@ -2219,7 +2222,9 @@ html[data-theme="christmas"] .robot-call { border-color: var(--accent); }
    (--fg off, --accent-ink on) is >= 3:1 on its track. .robot-card and
    .note.reply follow the same rule but no measured view shows them with a
    border (#robot-list is display:none; the thread pane drops the reply
-   rule). The old .agent box has no element in the page and is left out. */
+   rule). The old .agent box has no element in the page and is left out.
+   r5: the selected avatar tile's ring takes the light crimson too; the
+   preview ring needs no christmas rule (the base ring is --accent). */
 html[data-theme="christmas"] #badge.ok,
 html[data-theme="christmas"] .composer-box:focus-within,
 html[data-theme="christmas"] .card input:focus,
@@ -2228,7 +2233,7 @@ html[data-theme="christmas"] .robot-card,
 html[data-theme="christmas"] .prov-row:hover,
 html[data-theme="christmas"] .iconbtn.on { border-color: var(--accent); }
 html[data-theme="christmas"] .composer-box:focus-within { box-shadow: 0 0 0 1px var(--accent); }
-html[data-theme="christmas"] .avatar-preview { box-shadow: 0 0 0 3px var(--accent); }
+html[data-theme="christmas"] .avatar-cell.on { box-shadow: 0 0 0 3px var(--accent); }
 html[data-theme="christmas"] .partial,
 html[data-theme="christmas"] .note.reply,
 html[data-theme="christmas"] .fo-feed-line { border-left-color: var(--accent); }
