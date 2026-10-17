@@ -409,7 +409,11 @@ async function main() {
   };
   const sess = async (port, headers) =>
     await (await fetch(`http://127.0.0.1:${port}/api/session`, { headers: headers() })).json();
-  const goto = async (port) => {
+  const goto = async (port, headers) => {
+    // #336: the relay hands its cookie only to the one-time pairing link, so
+    // seed the cookie a paired window holds.
+    await cdp.send('Network.setCookie', { name: 'hush_session', value: headers()['X-Hush-Token'],
+      url: `http://127.0.0.1:${port}/`, httpOnly: true, sameSite: 'Strict' });
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/` });
     await cdp.waitFor(`!!document.querySelector('#gate.show')`, 'gate');
   };
@@ -542,7 +546,7 @@ async function main() {
     check(s.pass_available === false, 'virgin session reports pass unavailable');
     check(s.restart_lost_login === false, 'virgin session has no restart-loss flag');
 
-    await goto(port);
+    await goto(port, R.headers);
     let t = await gateText();
     check(!t.includes('did not survive the restart'), 'virgin splash shows no restart note');
     check(!t.includes('Detecting identity'), 'splash hides the Detecting line');
@@ -1848,7 +1852,7 @@ async function main() {
     s = await sess(port, R.headers);
     check(s.restart_lost_login === true, 'restart without pass sets the restart-loss flag');
     check(s.logged_in === false && s.has_vibe === true, 'restart keeps vibe without login');
-    await goto(port);
+    await goto(port, R.headers);
     await tryWait(`document.querySelector('#gate').textContent.includes('did not survive the restart')`, 8000);
     t = await gateText();
     check(t.includes('did not survive the restart'), 'restart note shows after a pass-less restart');
@@ -1869,7 +1873,7 @@ async function main() {
     proc = R.proc;
     s = await sess(port, R.headers);
     check(s.pass_available === true, 'fake pass helper reports available');
-    await goto(port);
+    await goto(port, R.headers);
     await cdp.click('#begin');
     await cdp.waitFor(`document.querySelector('#gate').textContent.includes('Use an existing key')`, 'landing 2');
     await cdp.click('#create-id');

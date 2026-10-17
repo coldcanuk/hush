@@ -4,18 +4,25 @@
 set -eu
 cd "$(dirname "$0")/.."
 . ./tests/hush_free_port.sh
+. ./tests/hush_pair.sh
 # Session-token gate plus a hermetic pass store, so the harness never reads the
 # operator's real credentials. curl() adds the hive token to every call.
 test_home="$(mktemp -d)"
 export HUSH_HOME="$test_home/hush"
 export HUSH_PASS_HELPER="$(pwd)/tests/fake-pass.sh"
 export HUSH_FAKE_PASS_DIR="$(mktemp -d)"
-curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" "$@"; }
+# The paired window's X-Hush-Nonce rides along: owner-stamped writes need it (#336).
+curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" \
+    -H "X-Hush-Nonce: $(cat "${HUSH_HOME:-/nonexistent}/ui.nonce" 2>/dev/null || true)" \
+    -b "${HUSH_HOME:-/nonexistent}/ui.jar" "$@"; }
 
 bin=./hush-relay
 port=$(hush_free_port) || exit 1
 log=$(mktemp)
-home=$(mktemp -d)
+base=$(mktemp -d)
+home="$base/user"
+stubs="$base/stubs"
+bin_dir="$base/bin"
 pid=""
 
 cleanup() {
@@ -24,7 +31,7 @@ cleanup() {
         wait "$pid" 2>/dev/null || true
     fi
     rm -f "$log"
-    rm -rf "$home"
+    rm -rf "$base"
 }
 trap cleanup EXIT
 
@@ -43,26 +50,29 @@ wait_up() {
 }
 
 export HOME="$home"
-export HUSH_HOME="$home/.hush"
-export HUSH_CONFIG_DIR="$home/.config/hush"
+export HUSH_HOME="$base/home"
+export HUSH_CONFIG_DIR="$base/config"
 unset XDG_CONFIG_HOME
-mkdir -p "$home/bin" "$home/.grok" "$home/.config/hush" "$home/.hush"
+mkdir -p "$bin_dir" "$stubs" "$home/.grok" "$HUSH_CONFIG_DIR" "$HUSH_HOME"
 printf '%s\n' '#!/bin/sh' \
-    'log="${HUSH_CONFIG_DIR}/ollama-run.log"' \
+    'log="@STUBS@/ollama-run.log"' \
     'for a in "$@"; do printf "%s\n" "$a" >> "$log"; done' \
     'printf "%s\n" "OLLAMA_REPLY_MARKER"' \
-    > "$home/bin/ollama"
-chmod 0755 "$home/bin/ollama"
+    > "$bin_dir/ollama"
+# Jailed children see no HUSH_* and cannot open the config dir (#336).
+sed -i "s|@STUBS@|$stubs|g" "$bin_dir/ollama"
+chmod 0755 "$bin_dir/ollama"
 # Seeded robots are grok-build; provide a stub so they stay quiet.
-printf '%s\n' '#!/bin/sh' 'printf "%s\n" "grok stub"' > "$home/bin/grok"
-chmod 0755 "$home/bin/grok"
-PATH="$home/bin:$PATH"
+printf '%s\n' '#!/bin/sh' 'printf "%s\n" "grok stub"' > "$bin_dir/grok"
+chmod 0755 "$bin_dir/grok"
+PATH="$bin_dir:$PATH"
 export PATH
 printf '%s\n' '{"ok":true}' > "$home/.grok/auth.json"
 
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
 wait_up || fail "relay did not start"
+hush_pair "$port" "$log" "$HUSH_HOME/ui.jar" || fail "relay printed no working pairing link"
 
 curl -sf -X POST "http://127.0.0.1:${port}/api/identity" \
     -H 'Content-Type: application/json' \
@@ -103,12 +113,12 @@ printf '%s' "$got" | grep -q 'OLLAMA_REPLY_MARKER' || fail "ollama reply missing
 
 # The ollama binary must have been invoked with `run <model> <combined>`,
 # proving it ran ollama (not grok) and the model came from the overlay.
-test -f "$home/.config/hush/ollama-run.log" || fail "ollama run log missing"
-grep -q '^llama3$' "$home/.config/hush/ollama-run.log" \
+test -f "$stubs/ollama-run.log" || fail "ollama run log missing"
+grep -q '^llama3$' "$stubs/ollama-run.log" \
     || fail "ollama missing configured model"
-grep -q 'Answer briefly' "$home/.config/hush/ollama-run.log" \
+grep -q 'Answer briefly' "$stubs/ollama-run.log" \
     || fail "ollama prompt missing robot system prompt"
-grep -q 'Hello from a human' "$home/.config/hush/ollama-run.log" \
+grep -q 'Hello from a human' "$stubs/ollama-run.log" \
     || fail "ollama prompt missing human note"
 
 echo "ollama routes ok"

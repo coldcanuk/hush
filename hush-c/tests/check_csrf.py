@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Origin / CSRF gate on state-changing API routes (P1, Refs #322).
 
-A browser attaches the hush_session cookie (or a ?k= link) to any request,
+A browser attaches the hush_session cookie to any request,
 including a cross-site POST. Every POST under /api/ therefore needs:
 
 - Sec-Fetch-Site, when sent, equal to same-origin;
@@ -15,6 +15,7 @@ HOME/HUSH_HOME; any provider CLI on PATH is a canary that must stay silent.
 """
 
 import json
+import re
 import os
 import socket
 import subprocess
@@ -148,7 +149,6 @@ def check_refused(relay):
          "/api/event", "cookie + served Origin as a prefix"),
         ([f"Cookie: hush_session={token}", f"Origin: https://{relay.host}"], "/api/event",
          "cookie + https scheme"),
-        ([], f"/api/event?k={token}", "?k= link + no Origin"),
         ([f"X-Hush-Token: {token}", "Origin: https://evil.example"], "/api/event",
          "header token + foreign Origin"),
         ([f"Authorization: Bearer {token}", "Sec-Fetch-Site: cross-site"], "/api/event",
@@ -163,24 +163,36 @@ def check_refused(relay):
                      "Origin: https://evil.example"], {"approval_mode": "auto_approve"})
     assert status_of(raw) == 403, ("profile cross-origin", raw[:200])
     assert note_count(relay) == before, "a refused POST stored a note"
-    print("csrf: foreign/missing/null Origin, cross-site fetch, ?k= POST all 403, nothing stored OK")
+    print("csrf: foreign/missing/null Origin, cross-site fetch all 403, nothing stored OK")
+
+
+def pair(relay):
+    """Redeem the one-time ?pair= link like the app window; return X-Hush-Nonce."""
+    found = re.findall(r"\?pair=([0-9a-f]+)", (relay.directory / "relay.log").read_text())
+    assert found, "relay --no-open must print its pairing link"
+    raw = relay.send("GET", "/?pair=" + found[-1], [])
+    nonce = re.search(rb"(?i)X-Hush-Nonce: ([0-9a-f]{32})", raw.split(b"\r\n\r\n", 1)[0])
+    assert nonce, raw[:300]
+    return nonce.group(1).decode()
 
 
 def check_allowed(relay):
     """The served UI, header clients and plain reads keep working."""
     token = relay.token()
+    # Owner-stamped notes also need the paired window's X-Hush-Nonce (#336).
+    nonce = f"X-Hush-Nonce: {pair(relay)}"
     yes = {"content": "Yes", "kind": 1, "channel": "general"}
     before = note_count(relay)
-    ui = [f"Cookie: hush_session={token}", f"Origin: http://{relay.host}",
+    ui = [f"Cookie: hush_session={token}", nonce, f"Origin: http://{relay.host}",
           "Sec-Fetch-Site: same-origin"]
     assert status_of(relay.send("POST", "/api/event", ui, yes)) == 200, "UI POST"
     local = f"localhost:{relay.port}"
-    raw = relay.send("POST", "/api/event", [f"Cookie: hush_session={token}",
+    raw = relay.send("POST", "/api/event", [f"Cookie: hush_session={token}", nonce,
                      f"Origin: http://{local}"], yes, host=local)
     assert status_of(raw) == 200, ("localhost origin", raw[:200])
-    raw = relay.send("POST", "/api/event", [f"X-Hush-Token: {token}"], yes)
+    raw = relay.send("POST", "/api/event", [f"X-Hush-Token: {token}", nonce], yes)
     assert status_of(raw) == 200, ("header client", raw[:200])
-    raw = relay.send("POST", "/api/event", [f"Authorization: Bearer {token}",
+    raw = relay.send("POST", "/api/event", [f"Authorization: Bearer {token}", nonce,
                      f"Origin: http://{relay.host}"], yes)
     assert status_of(raw) == 200, ("bearer + served origin", raw[:200])
     assert note_count(relay) == before + 4, "allowed POSTs did not all land"

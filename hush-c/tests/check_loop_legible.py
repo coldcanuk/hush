@@ -33,8 +33,8 @@ FILES = {
 # Functions in tests/test_loop.c today. The scan must still find all of
 # them, so no test function can drop out of the caps unnoticed.
 TEST_LOOP_FUNCTIONS = 30
-# Functions in tests/test_approve.c today (#279 r2), held to the same rule.
-TEST_APPROVE_FUNCTIONS = 40
+# Functions in tests/test_approve.c today (#279 r2; +check_needed, #336), held to the same rule.
+TEST_APPROVE_FUNCTIONS = 41
 TEST_COUNTS = {
     "tests/test_loop.c": TEST_LOOP_FUNCTIONS,
     "tests/test_approve.c": TEST_APPROVE_FUNCTIONS,
@@ -45,7 +45,7 @@ MIN_SEEN = {
     "src/agent_loop.c": 9,
     "src/agent_dispatch.c": 24,
     "src/agent_prompt.c": 1,
-    "src/agent_approve.c": 15,
+    "src/agent_approve.c": 16,
     "src/agent_thread.c": 1,
     "src/hush_roster.c": 3,
     "src/hush_launch.c": 4,

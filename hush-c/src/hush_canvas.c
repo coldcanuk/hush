@@ -20,6 +20,8 @@
 #include "hush_provider.h"
 #include "hush_relay.h"
 #include "hush_roster.h"
+#include "hush_http.h"
+#include "hush_sandbox.h"
 
 enum {
     HUSH_CANVAS_FD_NONE = -1,
@@ -330,7 +332,8 @@ static void hush_canvas_exec_grok(int write_fd, const hush_canvas_job_t *job)
     argv[20] = (char *)HUSH_CANVAS_RULES;
     argv[21] = (char *)HUSH_CANVAS_NOMEM;
     argv[22] = NULL;
-    execvp(HUSH_CANVAS_GROK_BIN, argv);
+    /* The canvas robot is an agent child too: jailed, or it does not run (#336). */
+    (void)hush_sandbox_exec(job->cwd, hush_http_listen_port(), HUSH_CANVAS_GROK_BIN, argv);
     _exit(127);
 }
 

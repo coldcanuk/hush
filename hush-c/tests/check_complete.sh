@@ -14,7 +14,9 @@ curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session
 bin=./hush-relay
 port=$(hush_free_port) || exit 1
 log=$(mktemp)
-home=$(mktemp -d)
+base=$(mktemp -d)
+home="$base/user"
+bin_dir="$base/bin"
 pid=""
 
 cleanup() {
@@ -23,7 +25,7 @@ cleanup() {
         wait "$pid" 2>/dev/null || true
     fi
     rm -f "$log"
-    rm -rf "$home"
+    rm -rf "${base:-$home}"
 }
 trap cleanup EXIT
 
@@ -42,15 +44,15 @@ wait_up() {
 }
 
 export HOME="$home"
-export HUSH_HOME="$home/.hush"
-export HUSH_CONFIG_DIR="$home/.config/hush"
+export HUSH_HOME="$base/home"
+export HUSH_CONFIG_DIR="$base/config"
 unset XDG_CONFIG_HOME
-mkdir -p "$home/bin" "$home/.grok" "$home/.config/hush"
+mkdir -p "$bin_dir" "$home/.grok" "$base/home" "$base/config" "${HUSH_CONFIG_DIR:-$base/config}"
 printf '%s\n' '#!/bin/sh' \
     'printf "%s\n" "int x;"' \
-    > "$home/bin/grok"
-chmod 0755 "$home/bin/grok"
-PATH="$home/bin:$PATH"
+    > "$bin_dir/grok"
+chmod 0755 "$bin_dir/grok"
+PATH="$bin_dir:$PATH"
 export PATH
 printf '%s\n' '{"ok":true}' > "$home/.grok/auth.json"
 

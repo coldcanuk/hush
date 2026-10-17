@@ -56,6 +56,11 @@ enum {
     /* "http://" plus a Host value; a longer Origin cannot be the served one. */
     HUSH_HTTP_ORIGIN_MAX = HUSH_HTTP_HOST_MAX + 8,
     HUSH_HTTP_FETCH_SITE_MAX = 32,
+    /* One Set-Cookie line: name, value, attributes, CRLF. */
+    HUSH_HTTP_COOKIE_LINE_MAX = 160,
+    /* The paired window keeps its cookie across a close and reopen; the
+     * owner token itself is what a relay restart keeps (#336). */
+    HUSH_HTTP_COOKIE_MAX_AGE_S = 2592000,
     /* Ingress throttling: per-IP API requests and per-hive provider quotas.
      * Generous on purpose; the 429 is a flood defense, not a UX gate. */
     HUSH_HTTP_IP_LIMITS_MAX = 16,
@@ -88,6 +93,9 @@ enum {
 /* The relay serves plain HTTP only, so the served origin is http://<Host>. */
 #define HUSH_HTTP_ORIGIN_SCHEME "http://"
 #define HUSH_HTTP_FETCH_SAME_ORIGIN "same-origin"
+#define HUSH_HTTP_UI_PROOF_BODY \
+    "{\"ok\":false,\"error\":\"This needs the paired Hush window. " \
+    "Reopen Hush from its launcher.\"}\n"
 
 /* Per-source-IP API request bucket. addr 0 marks a free slot (a real peer
  * can never be 0.0.0.0). */
@@ -103,6 +111,11 @@ static hush_launch_t *g_launch;
 static hush_turn_t *g_turn;
 static char g_bind_addr[HUSH_HTTP_HOST_MAX];
 static int g_set_cookie;
+/* Per request: g_set_ui asks the reply to carry X-Hush-Nonce (a pairing
+ * code was redeemed); g_ui_proven records that the request presented the
+ * live nonce (#336). */
+static int g_set_ui;
+static int g_ui_proven;
 static hush_http_ip_limit_t g_ip_req[HUSH_HTTP_IP_LIMITS_MAX];
 static hush_limiter_t g_complete_lim;
 static hush_limiter_t g_fixup_lim;
@@ -152,6 +165,7 @@ int hush_http_json_bare_field(const char *body, const char *key,
 /* Decodes optional required room guidance into borrowed caller storage.
  * Missing field preserves the supplied default; invalid or oversized fields fail. */
 const char *hush_http_body(const char *req, size_t len);
+static int hush_http_stamps_owner(const char *path);
 static hush_status_t hush_http_serve_api_post(int fd, const char *path,
                                               const char *req, size_t len,
                                               hush_store_t *store,
@@ -169,8 +183,20 @@ static int hush_http_line_has_name(const char *line, const char *name,
                                    size_t name_len);
 /* Copies a header value trimmed of leading blanks and trailing CR/LF. */
 static void hush_http_copy_value(const char *src, char *out, size_t outsz);
-/* Copies the ?k= credential from the request line. 0 when absent. */
-static int hush_http_query_token(const char *req, char *out, size_t outsz);
+/* Copies query parameter name from the request line (never a header).
+ * 0 when absent or empty. */
+static int hush_http_query_value(const char *req, const char *name,
+                                 char *out, size_t outsz);
+/* True when c continues a query value (not an end, separator, or space). */
+static int hush_http_query_char(char c);
+/* Redeems a ?pair= code on this request; the reply then sets the cookie. */
+static void hush_http_take_pair(const char *req);
+/* True when the request carries the live X-Hush-Nonce. */
+static int hush_http_has_ui_nonce(const char *req, size_t len);
+/* Writes the hush_session Set-Cookie line, or "" when none is due. */
+static void hush_http_session_cookie(char *out, size_t outsz);
+/* Writes the X-Hush-Nonce response header, or "" when none is due. */
+static void hush_http_ui_nonce_header(char *out, size_t outsz);
 /* Copies cookie name's value from a Cookie header. 0 when absent. */
 static int hush_http_cookie_token(const char *cookie, const char *name,
                                   char *out, size_t outsz);
@@ -190,8 +216,6 @@ static int hush_http_origin_is_served(const char *req, size_t len,
 static int hush_http_origin_ok(const char *req, size_t len);
 /* Replies 403 with the cross-origin JSON. */
 static hush_status_t hush_http_reply_cross_origin(int fd);
-/* True when the peer address is loopback. */
-static int hush_http_peer_is_loopback(int fd);
 /* True when host names the local machine. */
 static int hush_http_host_is_loopback(const char *host);
 /* Truncates a host at its port, keeping [v6] brackets. */
@@ -299,18 +323,18 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
         return HUSH_ERR_ARG;
     memset(out_posted, 0, sizeof(*out_posted));
     g_set_cookie = 0;
+    g_set_ui = 0;
+    g_ui_proven = hush_http_has_ui_nonce(req, len);
     if (len >= 7 && memcmp(req, "OPTIONS", 7) == 0) {
         hush_http_reply(fd, "204 No Content", "text/plain", "", 0);
         return HUSH_OK;
     }
     hush_http_path(req, path, sizeof(path));
-    /* A loopback browser earns the session cookie on any first response, so
-     * the fetch after page load already carries it. Remotes present the token. */
-    if (hush_http_peer_is_loopback(fd) &&
-        !hush_http_request_is_authed(req, len))
-        g_set_cookie = 1;
+    /* #336: the session cookie is handed out only to the request that
+     * redeems the one-time pairing link, never to any loopback caller. */
     if (hush_http_guard(fd, req, len, path) != HUSH_OK)
         return HUSH_ERR_DENIED;
+    hush_http_take_pair(req);
     if (hush_http_serve_asset(fd, path))
         return HUSH_OK;
     if (strcmp(path, "/api/status") == 0 && memcmp(req, "GET", 3) == 0) {
@@ -481,35 +505,81 @@ int hush_http_header_value(const char *req, size_t len, const char *name,
     return 0;
 }
 
-static int hush_http_query_token(const char *req, char *out, size_t outsz)
+static int hush_http_query_value(const char *req, const char *name,
+                                 char *out, size_t outsz)
 {
+    size_t name_len;
     const char *p;
     size_t n = 0;
 
     assert(req != NULL);
+    assert(name != NULL);
     assert(out != NULL);
     if (outsz == 0)
         return 0;
     out[0] = '\0';
-    p = strchr(req, '?');
-    if (p == NULL)
-        return 0;
+    name_len = strlen(name);
+    p = strpbrk(req, "?\r\n");
+    if (p == NULL || *p != '?')
+        return 0; /* the query lives on the request line only */
     p++;
     for (;;) {
-        if (p[0] == 'k' && p[1] == '=') {
-            const char *value = p + 2;
+        if (strncmp(p, name, name_len) == 0 && p[name_len] == '=') {
+            const char *value = p + name_len + 1;
 
-            while (*value != '\0' && *value != ' ' && *value != '&' &&
-                   *value != '#' && n + 1 < outsz)
+            while (n + 1 < outsz && hush_http_query_char(*value))
                 out[n++] = *value++;
             out[n] = '\0';
-            return n > 0;
+            /* An over-long value is refused, never matched truncated. */
+            return n > 0 && !hush_http_query_char(*value);
         }
-        p = strchr(p, '&');
-        if (p == NULL)
+        p = strpbrk(p, "& \r");
+        if (p == NULL || *p != '&')
             return 0;
         p++;
     }
+}
+
+static int hush_http_query_char(char c)
+{
+    return c != '\0' && c != ' ' && c != '&' && c != '#' && c != '\r' &&
+           c != '\n';
+}
+
+static void hush_http_take_pair(const char *req)
+{
+    char code[HUSH_AUTH_PAIR_BUF];
+
+    assert(req != NULL);
+    if (!hush_http_query_value(req, HUSH_AUTH_PAIR_PARAM, code, sizeof(code)))
+        return;
+    if (!hush_auth_pair_take(code))
+        return;
+    g_set_cookie = 1;
+    /* The new window gets a fresh X-Hush-Nonce; an older window's dies. */
+    g_set_ui = hush_auth_ui_rotate() == HUSH_OK;
+}
+
+static int hush_http_has_ui_nonce(const char *req, size_t len)
+{
+    char value[HUSH_AUTH_UI_BUF];
+
+    assert(req != NULL);
+    return hush_http_header_value(req, len, HUSH_AUTH_UI_HEADER, value,
+                                  sizeof(value)) &&
+           hush_auth_ui_matches(value);
+}
+
+int hush_http_ui_proven(void)
+{
+    return g_ui_proven;
+}
+
+hush_status_t hush_http_reply_ui_required(int fd)
+{
+    hush_http_reply(fd, "403 Forbidden", "application/json",
+                    HUSH_HTTP_UI_PROOF_BODY, strlen(HUSH_HTTP_UI_PROOF_BODY));
+    return HUSH_ERR_DENIED;
 }
 
 static int hush_http_cookie_token(const char *cookie, const char *name,
@@ -560,9 +630,7 @@ static int hush_http_request_is_authed(const char *req, size_t len)
         return 1;
     if (hush_http_header_is_authed(req, len))
         return 1;
-    if (hush_http_query_token(req, value, sizeof(value)) &&
-        hush_auth_token_matches(value))
-        return 1;
+    /* No ?k=: a URL token lands in history, logs, and Referer (#336). */
     return 0;
 }
 
@@ -626,26 +694,6 @@ static hush_status_t hush_http_reply_cross_origin(int fd)
     hush_http_reply(fd, "403 Forbidden", "application/json",
                     HUSH_HTTP_ORIGIN_BODY, strlen(HUSH_HTTP_ORIGIN_BODY));
     return HUSH_ERR_DENIED;
-}
-
-static int hush_http_peer_is_loopback(int fd)
-{
-    struct sockaddr_storage peer;
-    socklen_t peer_len = (socklen_t)sizeof(peer);
-
-    if (getpeername(fd, (struct sockaddr *)&peer, &peer_len) != 0)
-        return 0;
-    if (peer.ss_family == AF_INET) {
-        const struct sockaddr_in *addr = (const struct sockaddr_in *)&peer;
-
-        return addr->sin_addr.s_addr == htonl(INADDR_LOOPBACK);
-    }
-    if (peer.ss_family == AF_INET6) {
-        const struct sockaddr_in6 *addr = (const struct sockaddr_in6 *)&peer;
-
-        return IN6_IS_ADDR_LOOPBACK(&addr->sin6_addr);
-    }
-    return 0;
 }
 
 static hush_limiter_t *hush_http_ip_req_lim(int fd)
@@ -803,33 +851,65 @@ void hush_http_reply(int fd, const char *status, const char *ctype,
                             const char *body, size_t blen)
 {
     char hdr[512];
-    char cookie[160];
-    char token[HUSH_AUTH_TOKEN_BUF];
-    const char *extra = "";
+    char session[HUSH_HTTP_COOKIE_LINE_MAX];
+    char ui[HUSH_HTTP_COOKIE_LINE_MAX];
     int n;
 
-    if (g_set_cookie && hush_auth_token_copy(token, sizeof(token)) == HUSH_OK) {
-        int cn = snprintf(cookie, sizeof(cookie),
-                          "Set-Cookie: %s=%s; HttpOnly; SameSite=Strict; "
-                          "Path=/\r\n",
-                          HUSH_AUTH_COOKIE, token);
-        if (cn > 0 && (size_t)cn < sizeof(cookie))
-            extra = cookie;
-    }
+    hush_http_session_cookie(session, sizeof(session));
+    hush_http_ui_nonce_header(ui, sizeof(ui));
     n = snprintf(hdr, sizeof(hdr),
                  "HTTP/1.1 %s\r\n"
                  "Content-Type: %s\r\n"
                  "Content-Length: %zu\r\n"
                  "Connection: close\r\n"
-                 "%s"
+                 "%s%s"
                  "\r\n",
-                 status, ctype, blen, extra);
+                 status, ctype, blen, session, ui);
     if (n <= 0 || (size_t)n >= sizeof(hdr))
         return;
     if (hush_http_write_all(fd, hdr, (size_t)n) != HUSH_OK)
         return;
     if (hush_http_write_all(fd, body, blen) != HUSH_OK)
         return;
+}
+
+static void hush_http_session_cookie(char *out, size_t outsz)
+{
+    char token[HUSH_AUTH_TOKEN_BUF];
+    int n;
+
+    assert(out != NULL && outsz > 0);
+    out[0] = '\0';
+    if (!g_set_cookie || hush_auth_token_copy(token, sizeof(token)) != HUSH_OK)
+        return;
+    n = snprintf(out, outsz,
+                 "Set-Cookie: %s=%s; HttpOnly; SameSite=Strict; Path=/; "
+                 "Max-Age=%d\r\n",
+                 HUSH_AUTH_COOKIE, token, (int)HUSH_HTTP_COOKIE_MAX_AGE_S);
+    if (n <= 0 || (size_t)n >= outsz)
+        out[0] = '\0';
+}
+
+static void hush_http_ui_nonce_header(char *out, size_t outsz)
+{
+    char secret[HUSH_AUTH_UI_BUF];
+    int n;
+
+    assert(out != NULL && outsz > 0);
+    out[0] = '\0';
+    if (!g_set_ui || hush_auth_ui_copy(secret, sizeof(secret)) != HUSH_OK)
+        return;
+    /* Issued only on the pairing response: the X-Hush-Nonce header (what
+     * fetch-based clients read) and a non-HttpOnly storage cookie the page
+     * reads and sends back as X-Hush-Nonce on writes (#336). A relay
+     * restart ends the secret. The Cookie alone is not accepted. */
+    n = snprintf(out, outsz,
+                 "%s: %s\r\n"
+                 "Set-Cookie: hush_nonce=%s; SameSite=Strict; Path=/; Max-Age=%d\r\n",
+                 HUSH_AUTH_UI_HEADER, secret, secret,
+                 (int)HUSH_HTTP_COOKIE_MAX_AGE_S);
+    if (n <= 0 || (size_t)n >= outsz)
+        out[0] = '\0';
 }
 
 void hush_http_json_unescape_copy(const char *src, char *dst, size_t dstsz)
@@ -1077,11 +1157,23 @@ int hush_http_json_bare_field(const char *body, const char *key,
     return out[0] != '\0';
 }
 
+/* Routes that store an event under the owner's pubkey: a note, a call
+ * signal, or the owner's presence. Agent children can reach the relay with
+ * session.token, so only the paired window's X-Hush-Nonce may stamp one (#336). */
+static int hush_http_stamps_owner(const char *path)
+{
+    assert(path != NULL);
+    return strcmp(path, "/api/event") == 0 || strcmp(path, "/api/signal") == 0 ||
+           strcmp(path, "/api/presence") == 0;
+}
+
 static hush_status_t hush_http_serve_api_post(int fd, const char *path,
                                               const char *req, size_t len,
                                               hush_store_t *store,
                                               hush_event_t *out_posted)
 {
+    if (hush_http_stamps_owner(path) && !hush_http_ui_proven())
+        return hush_http_reply_ui_required(fd);
     if (strcmp(path, "/api/event") == 0)
         return hush_http_serve_post(fd, req, len, store, out_posted);
     if (strcmp(path, "/api/presence") == 0)

@@ -8,12 +8,21 @@
 set -eu
 cd "$(dirname "$0")/.."
 . ./tests/hush_free_port.sh
-curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" "$@"; }
+# Approval answers and approval_mode need the paired window's X-Hush-Nonce
+# (#336): start_relay pairs once into ui.jar and every call sends it.
+curl() {
+    command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" \
+        -H "X-Hush-Nonce: $(cat "${home:-/nonexistent}/ui.nonce" 2>/dev/null || true)" \
+        -b "${home:-/nonexistent}/ui.jar" "$@"
+}
 
 bin=./hush-relay
 port=$(hush_free_port) || exit 1
 log=$(mktemp)
-home=$(mktemp -d)
+base=$(mktemp -d)
+home="$base/user"
+stubs="$base/stubs"
+bin_dir="$base/bin"
 pid=""
 
 cleanup() {
@@ -22,7 +31,7 @@ cleanup() {
         wait "$pid" 2>/dev/null || true
     fi
     rm -f "$log"
-    rm -rf "$home"
+    rm -rf "$base"
 }
 trap cleanup EXIT
 
@@ -43,23 +52,23 @@ grep -q 'session.approval_mode === "approve_every_action"' demo/index.html \
     || fail "the Settings radio must read approval_mode back from the session"
 
 export HOME="$home"
-export HUSH_HOME="$home/.hush"
-export HUSH_CONFIG_DIR="$home/.config/hush"
+export HUSH_HOME="$base/home"
+export HUSH_CONFIG_DIR="$base/config"
 export HUSH_PASS_HELPER="$(pwd)/tests/fake-pass.sh"
 export HUSH_FAKE_PASS_DIR="$home/pass"
 unset XDG_CONFIG_HOME
-plan="$HUSH_CONFIG_DIR/loop"
-mkdir -p "$home/bin" "$home/.grok" "$HUSH_CONFIG_DIR" "$HUSH_HOME" "$plan" "$home/pass"
+plan="$stubs/loop"
+mkdir -p "$bin_dir" "$stubs" "$home/.grok" "$HUSH_CONFIG_DIR" "$HUSH_HOME" "$bin_dir" "$stubs" "$plan" "$home/pass"
 # The fake grok plays Happy (lead), Builder (builder), the election
 # committee (elect), the elected leader's plan pass (plan) or anyone else
 # (partner) from the system prompt, counts its starts in <who>.n, sleeps
 # <who>.slow seconds when that file exists, and prints line n of <who>.plan
 # after its nth reply ("-" or no file prints nothing). The election pass
 # prints only its plan line (the leader's name).
-cat > "$home/bin/grok" <<'GROK'
+cat > "$bin_dir/grok" <<'GROK'
 #!/bin/sh
-log="${HUSH_CONFIG_DIR}/grok-p.log"
-dir="${HUSH_CONFIG_DIR}/loop"
+log="@STUBS@/grok-p.log"
+dir="@STUBS@/loop"
 prev=""
 sys=""
 for a in "$@"; do
@@ -87,8 +96,11 @@ if [ -f "$dir/$who.slow" ]; then sleep "$(cat "$dir/$who.slow")"; fi
 line=$(sed -n "${n}p" "$dir/$who.plan" 2>/dev/null || true)
 if [ -n "$line" ] && [ "$line" != "-" ]; then printf '%s\n' "$line"; fi
 GROK
-chmod 0755 "$home/bin/grok"
-PATH="$home/bin:$PATH"
+# Jailed children see no HUSH_* and cannot open the config dir (#336), so
+# the stub's log and plan paths are baked in here.
+sed -i "s|@STUBS@|$stubs|g" "$bin_dir/grok"
+chmod 0755 "$bin_dir/grok"
+PATH="$bin_dir:$PATH"
 export PATH
 printf '%s\n' '{"ok":true}' > "$home/.grok/auth.json"
 
@@ -151,6 +163,12 @@ start_relay() {
         [ "$i" -lt 100 ] || fail "relay did not start"
         sleep 0.05
     done
+    code=$(sed -n 's/.*?pair=\([0-9a-f]*\).*/\1/p' "$log" | tail -n 1)
+    [ -n "$code" ] || fail "relay printed no pairing link"
+    command curl -sf -D "$home/ui.hdr" -c "$home/ui.jar" "http://127.0.0.1:${port}/?pair=${code}" >/dev/null \
+        || fail "pairing link refused"
+    sed -n 's/^[Xx]-[Hh]ush-[Nn]once: *\([0-9a-f]\{32\}\).*/\1/p' "$home/ui.hdr" | head -n 1 > "$home/ui.nonce"
+    [ -s "$home/ui.nonce" ] || fail "pairing gave no X-Hush-Nonce"
 }
 stop_relay() {
     kill "$pid" 2>/dev/null || true
@@ -246,7 +264,7 @@ reply_m() {
         | grep -q '"ok":true' || fail "$1 reply not stored"
 }
 # last_sys WHO: the newest logged system prompt line for robot WHO.
-last_sys() { grep "^S:.*You are $1\." "$HUSH_CONFIG_DIR/grok-p.log" | tail -1; }
+last_sys() { grep "^S:.*You are $1\." "$stubs/grok-p.log" | tail -1; }
 reply() {
     root=$(field "$1" root)
     curl -sf -X POST "http://127.0.0.1:${port}/api/event" \
@@ -415,7 +433,7 @@ reply g5 "Yes"
 wait_eq g5 approval 2
 settle
 expect_starts elect 1 "G5 Yes runs the election pass once"
-[ "$(grep -c '^S:.*You are the election committee\..*Candidates: Happy(skills:0) Scout(skills:0) Builder(skills:0) Task: .*plan a party together tag-g5' "$HUSH_CONFIG_DIR/grok-p.log")" = 1 ] \
+[ "$(grep -c '^S:.*You are the election committee\..*Candidates: Happy(skills:0) Scout(skills:0) Builder(skills:0) Task: .*plan a party together tag-g5' "$stubs/grok-p.log")" = 1 ] \
     || fail "G5 the approved election pass must keep its candidates and task"
 expect g5 ask_happy 1 "G5 the plan pass asks for the elected leader"
 expect g5 job_start 1 "G5 the plan pass must wait"
@@ -502,7 +520,7 @@ wait_eq g8 ask_builder 1
 rm -f "$plan/partner.slow"
 
 # Approval lines never reach a robot's prompt (#279 r2 promoted P3).
-[ "$(grep -c 'Approval needed: \|Turn declined: \|Too many turns are waiting\|Too many requests from other people' "$HUSH_CONFIG_DIR/grok-p.log")" = 0 ] \
+[ "$(grep -c 'Approval needed: \|Turn declined: \|Too many turns are waiting\|Turn not started for \|Too many requests from other people' "$stubs/grok-p.log")" = 0 ] \
     || fail "approval lines must not appear in any robot prompt"
 
 # R1 restart: the setting survives; a turn waiting at restart never runs.
@@ -518,10 +536,16 @@ settle
 expect r1 lead 0 "R1 a turn waiting at restart must never run"
 expect_starts lead 0 "R1 a turn waiting at restart must not start the robot program"
 
-# A5 garbled or missing stored value reads as the default, auto_approve.
+# A5 a garbled stored value asks every action (#336: strictest, never
+# auto_approve); a missing key keeps the auto_approve default.
 stop_relay
 sed -i 's/"approval_mode":"approve_every_action"/"approval_mode":"maybe"/' "$HUSH_CONFIG_DIR/vibe.json"
 grep -q '"approval_mode":"maybe"' "$HUSH_CONFIG_DIR/vibe.json" || fail "A5 garble step"
 start_relay
-[ "$(mode)" = auto_approve ] || fail "A5 a garbled stored value must read as auto_approve (got '$(mode)')"
+[ "$(mode)" = approve_every_action ] || fail "A5 a garbled stored value must ask every action (got '$(mode)')"
+stop_relay
+sed -i 's/,"approval_mode":"maybe"//; s/"approval_mode":"maybe",//' "$HUSH_CONFIG_DIR/vibe.json"
+if grep -q '"approval_mode"' "$HUSH_CONFIG_DIR/vibe.json"; then fail "A5 drop step"; fi
+start_relay
+[ "$(mode)" = auto_approve ] || fail "A5 a missing stored value must keep auto_approve (got '$(mode)')"
 echo "approve checks ok"

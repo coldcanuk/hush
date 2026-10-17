@@ -307,17 +307,21 @@ async function main() {
   const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'palette-cfg-'));
   tmpDirs.push(home, cfg);
   const port = await freePort();
-  const relay = spawn(RELAY, ['--no-open', String(port)], { stdio: 'ignore',
+  const relay = spawn(RELAY, ['--no-open', String(port)], { stdio: ['ignore', 'pipe', 'ignore'],
     env: Object.assign({}, process.env, { HUSH_HOME: home, HUSH_CONFIG_DIR: cfg, HUSH_PASS_HELPER: '/nonexistent-hush-pass-helper' }) });
   liveProcs.push(relay);
   relay.once('error', (e) => die('relay did not start: ' + e.message));
+  let relayOut = '';
+  relay.stdout.on('data', (d) => { relayOut += d; });
   const base = `http://127.0.0.1:${port}`;
   let up = false;
   for (let i = 0; i < 200 && !up; i++) {
     try { up = (await fetch(base + '/api/session', { headers: { 'X-Hush-Token': (() => { try { return fs.readFileSync(path.join(home, 'session.token'), 'utf8').trim(); } catch (e) { return ''; } })() } })).ok; } catch (e) { /* not up */ }
     if (!up) await sleep(100);
   }
-  if (!up) die('relay did not come up on ' + port);
+  for (let i = 0; i < 100 && !/\?pair=[0-9a-f]{32}/.test(relayOut); i++) await sleep(50);
+  const pairCode = (relayOut.match(/\?pair=([0-9a-f]{32})/) || [])[1];
+  if (!up || !pairCode) die('relay did not come up on ' + port);
   const targets = await (await fetch(`http://127.0.0.1:${cport}/json/list`)).json();
   const page = targets.find((t) => t.type === 'page');
   if (!page) die('no page target');
@@ -386,7 +390,9 @@ async function main() {
   };
 
   await view(1440, 900);
-  await cdp.send('Page.navigate', { url: base + '/' });
+  // #336: open the one-time pairing link the relay printed, as the app
+  // window does; it sets hush_session and the hush_nonce that notes send as X-Hush-Nonce.
+  await cdp.send('Page.navigate', { url: base + '/?pair=' + pairCode });
   await cdp.waitFor(`!!document.querySelector('#gate.show #begin')`, 'splash');
   await measure('gate-splash');
   await cdp.click('#begin');
@@ -411,8 +417,13 @@ async function main() {
   // code fence, so Download / Canvas render), replies so Thread shows.
   await cdp.eval(`[...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#welcome')).click()`);
   await cdp.waitFor(`document.querySelectorAll('#stream .note').length >= 1`, 'welcome note');
-  const post = (body) => cdp.eval(`(async () => (await fetch('/api/event', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(${JSON.stringify(body)}) })).status)()`, true);
+  // Owner-stamped /api/event needs the paired window's X-Hush-Nonce (#336 part 4).
+  const post = (body) => cdp.eval(`(async () => {
+    const m = document.cookie.match(/(?:^|; )hush_nonce=([0-9a-f]{32})(?:;|$)/);
+    const headers = { 'Content-Type': 'application/json' };
+    if (m) headers['X-Hush-Nonce'] = m[1];
+    return (await fetch('/api/event', { method: 'POST', headers,
+      body: JSON.stringify(${JSON.stringify(body)}) })).status; })()`, true);
   if (await post({ content: 'Morning, Major. Status on the supply manifest?', kind: 1, channel: 'welcome' }) !== 200) die('post note 1');
   if (await post({ content: 'Manifest attached.\n```txt\nrations 40\nfuel 12\n```', kind: 1, channel: 'welcome' }) !== 200) die('post note 2');
   const evs = JSON.parse(await cdp.eval(`(async () => await (await fetch('/api/events?channel=welcome')).text())()`, true));

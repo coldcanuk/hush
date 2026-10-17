@@ -47,7 +47,17 @@ enum {
     "Approval needed: Happy wants to take a turn. Reply Yes or No in this thread."
 #define TEST_APPROVE_NO_COPY "Turn declined: Happy stood down."
 #define TEST_APPROVE_FULL_COPY "Too many turns are waiting for approval. Answer one first."
+/* #313: the guest refusal names the refused robot (Happy in every guest check).
+ * Copy is a proposal; CoS/Chuck own the words. */
 #define TEST_APPROVE_GUEST_COPY \
+    "Turn not started for Happy: too many requests from other people are waiting " \
+    "for the owner. Try again later."
+/* The same line for another robot name. */
+#define TEST_APPROVE_GUEST_SCOUT \
+    "Turn not started for Scout: too many requests from other people are waiting " \
+    "for the owner. Try again later."
+/* The line before #313, which named no robot. */
+#define TEST_APPROVE_GUEST_OLD \
     "Too many requests from other people are waiting for the owner. Try again later."
 /* The stub runtime: first on PATH, exits without a word. */
 #define TEST_APPROVE_STUB "#!/bin/sh\nexit 0\n"
@@ -145,28 +155,48 @@ static void check_parse(void)
            mode == HUSH_ROSTER_APPROVAL_EVERY, "approve_every_action parses");
     mode = HUSH_ROSTER_APPROVAL_EVERY;
     expect(hush_roster_approval_parse("maybe", &mode) == 0 &&
-           mode == HUSH_ROSTER_APPROVAL_AUTO, "an unknown id reads as auto-approve");
+           mode == HUSH_ROSTER_APPROVAL_EVERY, "an unknown id asks every action");
     mode = HUSH_ROSTER_APPROVAL_EVERY;
     expect(hush_roster_approval_parse("", &mode) == 0 &&
-           mode == HUSH_ROSTER_APPROVAL_AUTO, "an empty id reads as auto-approve");
-    mode = HUSH_ROSTER_APPROVAL_EVERY;
+           mode == HUSH_ROSTER_APPROVAL_EVERY, "an empty id asks every action");
+    mode = HUSH_ROSTER_APPROVAL_AUTO;
     expect(hush_roster_approval_parse(NULL, &mode) == 0 &&
-           mode == HUSH_ROSTER_APPROVAL_AUTO, "a missing id reads as auto-approve");
+           mode == HUSH_ROSTER_APPROVAL_EVERY, "a missing id asks every action");
     expect(strcmp(hush_roster_approval_id(HUSH_ROSTER_APPROVAL_EVERY), "approve_every_action") == 0,
            "approve_every_action id");
     expect(strcmp(hush_roster_approval_id(HUSH_ROSTER_APPROVAL_AUTO), "auto_approve") == 0,
            "auto_approve id");
     expect(strcmp(hush_roster_approval_id((hush_roster_approval_t)TEST_APPROVE_BAD_MODE),
-                  "auto_approve") == 0, "a bad mode writes auto_approve");
+                  "approve_every_action") == 0, "a bad mode writes the strictest id");
 }
 
 /* Approval lines are notices, never robot turns, so the cap is unchanged. */
+/* #336: only an explicit auto-approve runs unasked; any other in-memory
+ * value holds the turn. */
+static void check_needed(void)
+{
+    static hush_launch_t launch;
+    hush_agent_job_in_t in;
+
+    memset(&in, 0, sizeof(in));
+    hush_launch_init(&launch);
+    in.launch = &launch;
+    launch.roster.profile.approval = HUSH_ROSTER_APPROVAL_AUTO;
+    expect(hush_agent_approval_needed(&in) == 0, "auto-approve does not hold");
+    launch.roster.profile.approval = HUSH_ROSTER_APPROVAL_EVERY;
+    expect(hush_agent_approval_needed(&in) == 1, "every action holds");
+    launch.roster.profile.approval = (hush_roster_approval_t)TEST_APPROVE_BAD_MODE;
+    expect(hush_agent_approval_needed(&in) == 1, "a bad in-memory mode holds");
+}
+
 static void check_not_turns(void)
 {
     expect(!hush_agent_is_work_note(TEST_APPROVE_ASK_COPY), "the approval line is not a turn");
     expect(!hush_agent_is_work_note(TEST_APPROVE_NO_COPY), "the decline line is not a turn");
     expect(!hush_agent_is_work_note(TEST_APPROVE_FULL_COPY), "the full notice is not a turn");
     expect(!hush_agent_is_work_note(TEST_APPROVE_GUEST_COPY), "the guest notice is not a turn");
+    expect(!hush_agent_is_work_note(TEST_APPROVE_GUEST_SCOUT),
+           "the guest notice is not a turn for any robot name");
     expect(hush_agent_is_work_note("Approve the plan first, then build."),
            "an ordinary reply is still a turn");
     expect(hush_agent_is_approval_line(TEST_APPROVE_ASK_COPY), "the ask is an approval line");
@@ -174,6 +204,8 @@ static void check_not_turns(void)
     expect(hush_agent_is_approval_line(TEST_APPROVE_FULL_COPY), "the notice is an approval line");
     expect(hush_agent_is_approval_line(TEST_APPROVE_GUEST_COPY),
            "the guest notice is an approval line");
+    expect(hush_agent_is_approval_line(TEST_APPROVE_GUEST_SCOUT),
+           "the guest notice is an approval line for any robot name");
     expect(!hush_agent_is_approval_line("Approve the plan first, then build."),
            "an ordinary reply is not an approval line");
 }
@@ -584,6 +616,9 @@ static void check_guest_share(void)
     expect(count_line(fx.store, TEST_APPROVE_GUEST_COPY) == 1 &&
            count_line(fx.store, TEST_APPROVE_FULL_COPY) == 0,
            "the fifth guest turn is refused in the guest's terms");
+    expect(count_line(fx.store, TEST_APPROVE_GUEST_COPY) == 1 &&
+           count_line(fx.store, TEST_APPROVE_GUEST_OLD) == 0,
+           "the guest refusal names the refused robot");
     pair_to_scout(&fx, HUSH_AGENT_LOOP_ROLE_NONE, "A line.");
     for (int i = 0; i < TEST_APPROVE_TABLE - TEST_APPROVE_GUESTS; i++) {
         snprintf(text, sizeof(text), "owner joke %d", i);
@@ -774,6 +809,7 @@ static void check_login(void)
 int main(void)
 {
     check_parse();
+    check_needed();
     check_not_turns();
     check_owner_only();
     check_owner_yes();

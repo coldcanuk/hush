@@ -60,8 +60,9 @@ enum {
     HUSH_LISTEN_BACKLOG = 8,
     HUSH_POLL_TIMEOUT_MS = 1000,
     HUSH_FD_NONE = -1,
-    HUSH_UI_URL_MAX = 64,
-    HUSH_UI_APP_ARG_MAX = 80,
+    /* http://<host>:<port>/?pair=<HUSH_AUTH_PAIR_HEX hex> with room to spare. */
+    HUSH_UI_URL_MAX = 128,
+    HUSH_UI_APP_ARG_MAX = HUSH_UI_URL_MAX + 16,
     HUSH_UI_PROFILE_EXTRA_MAX = 64,
     HUSH_UI_PROFILE_ARG_MAX = HUSH_HOME_PATH_MAX + HUSH_UI_PROFILE_EXTRA_MAX,
     HUSH_PIDFILE_PATH_MAX = 256,
@@ -451,6 +452,8 @@ static void hush_quit_report_unverified(uint16_t port);
 static void hush_relay_prepare(uint16_t port, const char *bind_addr);
 static int hush_relay_auto_update_on(void);
 static hush_status_t hush_relay_bind(uint16_t port, int open_ui, int *out_ls);
+/* Prints the one-time pairing link (#336) when no window is opened. */
+static void hush_relay_announce_pair(uint16_t port);
 static void hush_relay_announce(uint16_t port, int open_ui);
 static void hush_relay_pump(int ls);
 static void hush_child_reset(void);
@@ -926,6 +929,10 @@ hush_status_t hush_relay_run(uint16_t port, const char *bind_addr, int open_ui)
         return st;
     if (ls == HUSH_FD_NONE)
         return HUSH_OK;
+    /* Only the relay that serves mints a code: a second process that just
+     * reopens the window must not hand out one the server never knew. */
+    if (hush_auth_pair_init() != HUSH_OK)
+        fprintf(stderr, "hush-relay: no pairing code; browser cannot pair\n");
     if (hush_store_create(&g_store) != HUSH_OK) {
         close(ls);
         return HUSH_ERR_FULL;
@@ -1052,8 +1059,15 @@ static hush_status_t hush_ui_format_address(hush_ui_browser_t *browser, uint16_t
     if (strcmp(host, "0.0.0.0") == 0)
         host = "127.0.0.1";
     /* snprintf's return type is int. */
+    /* The window this relay opens carries the one-time pairing code, so it
+     * alone earns the session cookie (#336). A second process has no code
+     * and opens the plain URL; the cookie the profile kept still works. */
+    char pair[HUSH_AUTH_PAIR_BUF] = {0};
+    if (hush_auth_pair_copy(pair, sizeof(pair)) != HUSH_OK)
+        pair[0] = '\0';
     int address_len = snprintf(browser->address, sizeof(browser->address),
-                               "http://%s:%u/", host, (unsigned)port);
+                               "http://%s:%u/%s%s", host, (unsigned)port,
+                               pair[0] != '\0' ? "?" HUSH_AUTH_PAIR_PARAM "=" : "", pair);
     int option_len = snprintf(browser->app_option, sizeof(browser->app_option),
                               "--app=%s", browser->address);
     if (address_len <= 0 || (size_t)address_len >= sizeof(browser->address) ||
@@ -1970,6 +1984,17 @@ static hush_status_t hush_relay_bind(uint16_t port, int open_ui, int *out_ls)
     return HUSH_ERR_IO;
 }
 
+static void hush_relay_announce_pair(uint16_t port)
+{
+    char pair[HUSH_AUTH_PAIR_BUF] = {0};
+
+    if (hush_auth_pair_copy(pair, sizeof(pair)) != HUSH_OK)
+        return;
+    fprintf(stdout, "  pair:     http://127.0.0.1:%u/?%s=%s"
+            " (open once; works one time)\n",
+            (unsigned)port, HUSH_AUTH_PAIR_PARAM, pair);
+}
+
 static void hush_relay_announce(uint16_t port, int open_ui)
 {
     char root[HUSH_HOME_PATH_MAX];
@@ -1979,6 +2004,8 @@ static void hush_relay_announce(uint16_t port, int open_ui)
     hush_home_root(root, sizeof(root));
     if (root[0] != '\0')
         fprintf(stdout, "  api auth: %s/%s\n", root, HUSH_AUTH_FILE);
+    if (!open_ui)
+        hush_relay_announce_pair(port);
     fprintf(stdout, "  chat UI:  frameless standalone app window\n");
     fprintf(stdout, "  nostr:    ws:// + newline JSON on the same port\n");
     fprintf(stdout, "  close:    Close in the hive (GUI gone, hive stays)\n");
