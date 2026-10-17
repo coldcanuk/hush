@@ -22,6 +22,12 @@ the top-level `VERSION` file.
   6.66:1 (were 3.17:1). The Developer Log and robot inventory inks are `--fo-*` tokens (other themes
   keep #000/#0f0 and cyan/gold/red as fallbacks). `tests/check_palette_tokens.py` S5-S7 now fail on a
   literal colour in a markup inline style, a script string, or a new unscoped rule (G291-2).
+- Field-office no longer paints the shared code-language spines, Canvas syntax colours, call
+  tiles, inventory item text, skill slot / doll rims and ALWAYS-ON / ON-CALL chips in their dark-theme
+  literals: they read `--fo-*` tokens (text >= 4.8:1, rims >= 4.32:1 there; were down to 1.01:1 and
+  1.19:1). Every other shared literal colour sits behind a `--fo-*` fallback too, so the other seven
+  themes compute the same values and S7's baseline is empty: any unscoped literal colour now fails.
+  Pinned by `tests/check_palette.cjs` L1.
 
 - A robot loop that hits its limit says "Mention both robots again to start
   a new loop." A fresh loop arms only when the next note names exactly two

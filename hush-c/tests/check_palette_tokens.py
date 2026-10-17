@@ -17,9 +17,9 @@ S6  No JavaScript string literal carries a hex / rgb() / hsl() colour,
     block defines (inline styles set from script beat the theme too).
 S7  Rules not scoped to a theme (they paint in field-office as well) add no
     literal colour: a literal there is allowed only as the fallback of a
-    defined --fo-* token, or in BASELINE_S7, the pre-existing declarations
-    counted at main 900a486d (a ratchet: a new one, or one with !important,
-    fails). Rules scoped to another theme, or to
+    defined --fo-* token (the other themes never define --fo-*, so they keep
+    the literal). BASELINE_S7 is empty: main 900a486d had 63 such
+    declarations, all now tokenized; a new one, or one with !important, fails. Rules scoped to another theme, or to
     html:not([data-theme="field-office"]), are not field-office paint.
 (Ops back-LOOK / Gauge G291-2.)
 Reads demo/index.html only; the painted contrast is check_palette.sh.
@@ -48,74 +48,11 @@ LITERAL = re.compile(
 JS_COLOUR = re.compile(r"#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla)\(")
 FO_FALLBACK = re.compile(r"var\(\s*(--fo-[a-z0-9-]+)\s*,[^()]*(?:\([^()]*\)[^()]*)*\)")
 COLOUR_PROPS = re.compile(r"(?:^|-)(?:color|background|border|outline|shadow|fill|stroke|caret|decoration)", re.I)
-# (selector, property) of the unscoped literal-colour declarations already on
-# main 900a486d, grandfathered as is. S7 does not check whether field-office
-# overrides them; several still paint in field-office (Gauge #325 finding 4)
-# and are tracked in the fo-literal-tokens follow-up. Do not add to this list.
-BASELINE_S7 = {
-    ('#badge.bad', 'border-color'),
-    ('.menu', 'box-shadow'),
-    ('#thread-pane', 'box-shadow'),
-    ('.code-block[data-lang="python"]', 'border-left'),
-    ('.code-block[data-lang="go"]', 'border-left'),
-    ('.code-block[data-lang="javascript"], .code-block[data-lang="js"]', 'border-left'),
-    ('.code-block[data-lang="c"]', 'border-left'),
-    ('#code-canvas', 'box-shadow'),
-    ('#code-canvas-hi .tok-kw', 'color'),
-    ('#code-canvas-hi .tok-str', 'color'),
-    ('#code-canvas-hi .tok-num', 'color'),
-    ('#canvas-k', 'box-shadow'),
-    ('dialog.secret::backdrop', 'background'),
-    ('.btn.danger', 'color'),
-    ('.iconbtn.danger', 'color'),
-    ('#kit-menu', 'box-shadow'),
-    ('.drawer, .stage', 'background'),
-    ('.tile', 'background'),
-    ('.tile video', 'background'),
-    ('.tile span', 'background'),
-    ('.tile-mute', 'background'),
-    ('.tile-mute', 'color'),
-    ('.inv-item', 'color'),
-    ('.inv-item.dragging', 'border-color'),
-    ('.inv-item.dragging', 'box-shadow'),
-    ('.qb-editor', 'box-shadow'),
-    ('header', 'box-shadow'),
-    ('#badge', 'box-shadow'),
-    ('.inv-btn', 'box-shadow'),
-    ('.inv-btn:active', 'box-shadow'),
-    ('.quick-tab kbd, .qb-slot kbd', 'box-shadow'),
-    ('#quick-bar', 'box-shadow'),
-    ('.qb-slot.folder-tab', 'box-shadow'),
-    ('.qb-gear', 'box-shadow'),
-    ('.qb-gear:active', 'box-shadow'),
-    ('#send, #thread-send', 'box-shadow'),
-    ('#send:active, #thread-send:active', 'box-shadow'),
-    ('.skill-gem[data-scope="system"]', 'border-color'),
-    ('.skill-gem[data-scope="system"]', 'box-shadow'),
-    ('.skill-gem[data-scope="user"]', 'border-color'),
-    ('.skill-gem[data-scope="user"]', 'box-shadow'),
-    ('.skill-gem[data-scope="robot"]', 'border-color'),
-    ('.skill-gem[data-scope="robot"]', 'box-shadow'),
-    ('.skill-slot.open', 'box-shadow'),
-    ('.skill-slot.drop-ok', 'border-color'),
-    ('.skill-slot.drop-ok', 'box-shadow'),
-    ('.skill-slot.drop-no', 'border-color'),
-    ('.skill-doll-pic', 'border'),
-    ('.skill-doll-pic.drop-ok', 'box-shadow'),
-    ('.skill-gem[data-lifetime="always"] .life', 'color'),
-    ('.skill-gem[data-lifetime="oncall"] .life', 'color'),
-    ('.skill-life[data-lifetime="always"]', 'border-color'),
-    ('.skill-life[data-lifetime="always"]', 'color'),
-    ('.skill-life[data-lifetime="oncall"]', 'border-color'),
-    ('.skill-life[data-lifetime="oncall"]', 'color'),
-    ('.hive > nav', 'box-shadow'),
-    ('#fo-dial-knob', 'box-shadow'),
-    ('html[data-theme] header #badge', 'border'),
-    ('html[data-theme] header #badge', 'background'),
-    ('html[data-theme] header #badge', 'box-shadow'),
-    ('html[data-theme] header #badge.ok', 'background'),
-    ('html[data-theme] header #badge.ok', 'box-shadow'),
-}
+# (selector, property) of unscoped literal-colour declarations still allowed.
+# main 900a486d had 63 declarations on 62 pairs; the follow-up to G291-2 put
+# every one behind a var(--fo-*, <literal>) fallback, so the list is empty and
+# any unscoped literal colour fails. Do not add to this list.
+BASELINE_S7 = set()
 TOKEN_SEL = re.compile(r'^html\[data-theme="field-office"\]$')
 
 failures = []
@@ -157,7 +94,7 @@ def theme_scoped(sel):
                ':not([data-theme="field-office"])' in x for x in parts)
 
 
-def scan_unscoped(src, base, css, defined):
+def scan_unscoped(src, base, css, defined, fallbacks):
     seen = 0
     for sel, body, off in rules(css):
         if 'data-theme="field-office"' in sel or theme_scoped(sel) or sel.lstrip().startswith("@"):
@@ -168,14 +105,16 @@ def scan_unscoped(src, base, css, defined):
                 continue
             hit = LITERAL.search(without_fo_fallbacks(val, defined))
             if not hit:
+                if any(f.group(1) in defined and LITERAL.search(f.group(0)) for f in FO_FALLBACK.finditer(val)):
+                    fallbacks[0] += 1
                 continue
             where = f"index.html:{line_of(src, base, off + m.start())}"
             key = (" ".join(sel.split()), prop)
             if "!important" in val:
                 fail(f"S7 {where} literal colour {hit.group(0)!r} with !important in {prop} of {sel[:80]}")
             elif key not in BASELINE_S7:
-                fail(f"S7 {where} new literal colour {hit.group(0)!r} in {prop} of unscoped {sel[:80]} "
-                     "(paints in field-office; use a token)")
+                fail(f"S7 {where} literal colour {hit.group(0)!r} in {prop} of unscoped {sel[:80]} "
+                     "(paints in field-office; use var(--fo-<token>, <literal>))")
             else:
                 seen += 1
     return seen
@@ -259,7 +198,8 @@ def main():
     defined = set()
     if token_bodies:
         defined = set(re.findall(r"(--fo-[a-z0-9-]+)\s*:", token_bodies[0]))
-    n_s7 = scan_unscoped(src, base, css, defined)
+    fallbacks = [0]
+    n_s7 = scan_unscoped(src, base, css, defined, fallbacks)
     n_inline, n_js = scan_inline_and_js(src, defined)
     if failures:
         for f in failures:
@@ -268,8 +208,9 @@ def main():
     print("palette tokens check passed: one token block, %d tokens pinned, "
           "no literal colour in field-office rules, ink-stamp family present, "
           "%d markup inline styles and %d script colour strings without a bare literal, "
-          "%d unscoped literal declarations, all on the %d baselined (selector, property) pairs, none !important"
-          % (len(TOKENS), n_inline, n_js, n_s7, len(BASELINE_S7)))
+          "%d unscoped declarations with a literal only as a --fo-* fallback, "
+          "%d bare unscoped literal declarations (%d baselined pairs allowed), none !important"
+          % (len(TOKENS), n_inline, n_js, fallbacks[0], n_s7, len(BASELINE_S7)))
     return 0
 
 
