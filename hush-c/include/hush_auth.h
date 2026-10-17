@@ -18,7 +18,10 @@ enum {
     HUSH_AUTH_PAIR_BUF = HUSH_AUTH_PAIR_HEX + 1,
     /* Browser-session secret behind approvals (#336). */
     HUSH_AUTH_UI_HEX = 32,
-    HUSH_AUTH_UI_BUF = HUSH_AUTH_UI_HEX + 1
+    HUSH_AUTH_UI_BUF = HUSH_AUTH_UI_HEX + 1,
+    /* One-shot capability secret, e.g. a canvas job token (#361). */
+    HUSH_AUTH_SECRET_HEX = 32,
+    HUSH_AUTH_SECRET_BUF = HUSH_AUTH_SECRET_HEX + 1
 };
 
 #define HUSH_AUTH_FILE "session.token"
@@ -69,6 +72,12 @@ hush_status_t hush_auth_ui_copy(char *out, size_t outsz);
 /* True when presented equals the live browser-session secret (constant
  * time). False when none is live. */
 int hush_auth_ui_matches(const char *presented);
+
+/* Mints a fresh 128-bit secret from the CSPRNG (RAND_bytes) as
+ * HUSH_AUTH_SECRET_HEX lowercase hex characters. Fails HUSH_ERR_ARG on NULL
+ * or a short buffer, HUSH_ERR_IO when entropy is unavailable; out is ""
+ * on every failure that has a buffer. */
+hush_status_t hush_auth_secret_mint(char *out, size_t outsz);
 
 /* Mints a fresh NIP-42 challenge: 32 random bytes hex-encoded (64 chars).
  * Fails HUSH_ERR_ARG on a short buffer, HUSH_ERR_IO when entropy is
