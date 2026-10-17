@@ -3,10 +3,12 @@
 Base: main 13511bd4 (#323), worktree branch `gb/keys-plan`
 Date: 2026-10-17
 Order: CoS 09:17 (Chuck-specified). Phase 1 is this document only. No app code.
-Status: **APPROVED** with the CoS K0 rulings of 2026-10-17 09:46 (§7.4).
-K1 is GO once #325 merges.
+Status: **APPROVED** with the CoS K0 rulings of 2026-10-17 09:46 and the CoS
+ruling of 10:10 (§7.4). K1 is GO once #325 merges.
+Gauge FAILed #334 at 59b48543 (10:16 ET). All of Gauge's fixes are adopted in
+this revision (Appendix B has the claim trace). Gauge re-review is pending.
 Path: the order asked for `docs/KEYS_PLAN.md`. AGENTS.md:83-88 says plans go
-under `docs/plan/` as `PLAN_*.md` (95 exist), so this is `docs/plan/PLAN_KEYS.md`.
+under `docs/plan/` as `PLAN_*.md` (93 on main 13511bd4; 94 with this file), so this is `docs/plan/PLAN_KEYS.md`.
 
 Citations:
 
@@ -30,13 +32,27 @@ Citations:
   **Shortcuts & Macros** drawer (`?`) in the field-office ink-stamp family. One
   `hush-keys` v1 JSON format with import, export and reset.
 - **Macros.** Macros are `trigger → conditions → actions`. A macro whose actions
-  stay in the UI runs in the browser. Anything that approves a turn or reaches
-  outside the hive runs **only on the relay**, because the relay alone knows
-  whether a held turn is a guest's (agent_approve.c:54, :66).
+  stay in the UI runs in the browser. Anything that reaches outside the hive runs
+  **only on the relay**.
+- **No approve or decline action.** No macro may approve or decline a turn
+  (§4.3, Gauge F1). Auto-approve exists only as the relay `approval_mode`
+  `approve_owner_asks`. Its exclusions are hard-coded on the relay, because the
+  relay alone knows whether a held turn is a guest's (agent_approve.c:54, :66).
 - **Agents.** Agents propose changes through a new system skill
   (`skills/system/keys-macros/SKILL.md`) that emits a fenced `hush-keys`
-  proposal. The owner applies it by hand. Robots get no session token, so they
-  cannot write prefs directly (§6).
+  proposal. The owner applies it by hand.
+- **Token caveat (Gauge F3).** Hush does not *hand* robots the session token,
+  but it doesn't keep them from it either:
+  - The worker setup does not scrub the environment (agent_process.c:65-74)
+    before `execvp` (:413).
+  - The token sits in `$HUSH_HOME/session.token`, 0600 and same uid
+    (hush_auth.h:18, :22-23).
+  - Any unauthenticated loopback request gets it back as a `Set-Cookie`
+    (hush_http.c:286-290, :732-738).
+
+  Until #336 is fixed, a shell-capable turn can read or fetch the token and act
+  as the owner. The propose-only agent path is therefore UX, not a security
+  boundary (§7.0).
 - **Security headline.** A browser macro that auto-posts "Yes" would answer a
   **guest** held turn as the owner. It would set `approved`
   (agent_dispatch.c:1386-1391), which sets `person_gate`
@@ -44,9 +60,12 @@ Citations:
   `--auto-approve true` (agent_team.c:327-342,
   agent_process.c:368-377). That is exactly the hole #322 closes.
 - **Ruled (C-1, C-2, C-3).** Auto-approve is a relay rule: a **new
-  `approval_mode` value** that the premade macro card toggles. It runs only
-  turns the owner asked for directly. Robot-chained, follow and election turns
-  stay held. Guest turns stay held and send an alert (§4.4, §7).
+  `approval_mode` value, `approve_owner_asks`**, that the premade macro card
+  toggles. It runs only turns the owner asked for directly. Robot-chained,
+  follow and election turns stay held, and guest turns stay held and send an
+  alert. These exclusions are hard-coded, not conditions (§4.4, §7).
+- **Dependencies.** K5-K9 depend on #336, the P1 fix for C-5: agent sandbox, env
+  scrub, per-action nonce and Origin check (§8).
 
 ---
 
@@ -116,7 +135,7 @@ were re-resolved against 13511bd4 (index.html is identical to 900a486d).
 
 - The two typing guards are copies (5963-5968 vs 6099-6105). Neither checks
   `ev.isComposing` or `ev.repeat`. Holding `i` re-toggles.
-- Matching is on `ev.key` (6024, 6135). On AZERTY the unshifted digit row gives
+- Matching is on `ev.key` (6025, 6135). On AZERTY the unshifted digit row gives
   `& é " '`, so quickbar `1`-`4` need Shift there.
 - No `?` help or cheat sheet. No key lists other than the `<kbd>` chips:
   - `#nav-inventory` and `#nav-character`: index.html:2250-2252
@@ -181,7 +200,8 @@ All rules below are the existing rules (6025-6027) moved into one dispatcher:
 - the remaining rows marked "menu-bindable" in Appendix A
 
 **Never bindable**, by key or by macro. These are destructive, identity or
-approval controls:
+approval controls. The list is a UX guard in the browser, not a security
+boundary: any token holder can call the same routes (§7.0).
 
 - `#hive-close` / `#hive-exit` (5928-5929)
 - `#leave-close` / `#leave-exit` (5950, 5957): `POST /api/close` and `/api/exit`
@@ -281,15 +301,28 @@ detail and no KEYS milestone.
 - **Approval prompt.** The prompt is getting S1 stamp buttons: **Approve |
   Always approve | Ask every time | Reject**.
 - **No clash with the premade auto-approve.** The premade (the
-  `approve_guest_turns` mode, §4.4) must not conflict with "Always approve"
+  `approve_owner_asks` mode, §4.4) must not conflict with "Always approve"
   rules:
   - Both decide at the same relay point (`approval_needed`,
     agent_approve.c:40-46).
   - An explicit per-rule Reject or Ask every time wins over the mode.
   - The mode never writes Always-approve rules.
   - Neither path may run a guest turn without an owner decision (§7.1, #322).
-  - Whether an Always-approve rule may cover robot-chained, follow or election
-    turns (C-3) is a GUARD-epic question for Gauge.
+  - **Ruled (CoS 10:10).** By default, Always-approve (GUARD) rules do **not**
+    cover robot-chained turns, which matches C-3. The owner may opt in per rule
+    later, after Gauge review.
+  - **Bind answers to a hold (Gauge F10).** Today a typed Yes answers the
+    *oldest* held turn in the thread (agent_approve.c:102). The prompt's stamp
+    buttons should each carry a hold id + nonce (#336), so a click answers
+    exactly the turn on screen.
+- **Floor co-design adopted (#335, `docs/guard-plan.md` §7).**
+  - The pending card sits inline in the source thread, and decisions happen only
+    there.
+  - The GUARDRAILS tab in this drawer shows a pending badge.
+  - Always means an exact match at robot scope. The scope pick widens it, and
+    prefix or glob matching is only possible through the table or a custom row.
+  - Rules live in a separate `hush/guardrails.json`, not in `hush/macros.json`.
+  - The stored action is one of `approve | reject | ask`.
 
 ---
 
@@ -311,7 +344,7 @@ action is relay-only, the whole macro is `relay`.
 | `note.new` (channel/thread) | `/api/events` poll every 1 s | `tick` 9060-9064, `setInterval(tick,1000)` 9412, `render` 7673 | browser |
 | `loop.ask` ("Continue this loop?") | client prefix test | `isLoopAsk` 6537, stamps 7363 | browser (**actions restricted**, §7) |
 | `approval.ask` | chaperon line "Approval needed: %s wants to …" | text hush_agent_internal.h:499-503; posted agent_approve.c:67-69; ingress `hush_intel.c:171` | **relay only**. The browser cannot tell guest from owner (§7.1) |
-| `approval.held` (with `guest`) | held-turn record | agent_approve.c:48-71, `held->guest` :66 | **NEW** relay hook |
+| `approval.held` (with `guest`) | held-turn record | agent_approve.c:48-71, `held->guest` :66 | **NEW** relay hook. Alert actions only. It can never be paired with an approve action, because none exists (§4.3) |
 | `robot.mention` | cevent `mention` | agent_dispatch.c:543; ring hush_cevent.h:20, `GET /api/chan-events` hush_http.c:311 | relay (browser would need **NEW** chan-events polling; the UI does not read it today) |
 | `job.start` / `job.done` | cevent `job_start` / `job_done` | agent_dispatch.c:1381; :240, :306, :416, :633 | relay, or browser via `st.thinking` (4205, 4224) |
 | `robot.stuck` | cevent `stuck` | hush_presence.c:501 | relay |
@@ -337,13 +370,25 @@ action is relay-only, the whole macro is `relay`.
 | run catalog action | `QUICKBAR_ACTIONS[id].run()` | index.html:6060-6066 | browser |
 | open thread | `openThreadPane(root)` | 7628 | browser |
 | stop robot on thread | `stopJob` → `POST /api/cancel {root, robot}` | 6773-6776 | browser |
-| post note | `POST /api/event {content, kind:1, channel, reply_to}` | 6565-6570 | browser. **Refused** when content parses as a loop/approval answer (§7) |
+| post note | `POST /api/event {content, kind:1, channel, reply_to}` | 6565-6570 | browser. Sent with a **NEW** `"via":"macro"` tag. The relay never treats a tagged note as an approval, team or loop answer (§7.2, Gauge F6) |
 | set theme | `POST /api/profile {theme}` | 6155 | browser |
 | browser notification | none (no `Notification` use in index.html) | **NEW** | browser |
 | ntfy alert | Credentials only: `hush_vault_read_ntfy` hush_vault.h:117-118, origin `https://ntfy.onerelay.app` :25. **No publisher, no caller outside tests** | **NEW** publisher | relay |
-| approve held turn | Today only by the owner's typed note: `hush_agent_approval_answer` agent_approve.c:90-115 → `approval_run` → `hush_agent_begin_approved` (agent_dispatch.c:1386-1391) | **NEW** relay rule (§7.2) | relay |
-| decline held turn | the same answer path, "No" | agent_approve.c:110-113 | relay |
 | chaperon line | `hush_agent_chaperon_say` | agent_approve.c:60-62 | relay (audit, §7.3) |
+
+**No approve or decline action (Gauge F1).** Today a held turn is answered only
+by the owner's note:
+
+- `hush_agent_approval_answer` (agent_approve.c:90-115) → `approval_run` →
+  `hush_agent_begin_approved`, which sets `approved` (agent_dispatch.c:1386-1391).
+- That makes `person_gate` true (agent_prompt.c:153) and grants project cwd plus
+  Cline `--auto-approve true` (agent_team.c:327-342; agent_process.c:398).
+
+A macro action that reached this path would turn a user-editable condition into
+the only guard on #322. So the macro action set has **no** `approve` or
+`decline`. `/api/macros` (**NEW**) checks every action against a server-side
+allow-list and rejects the whole macro on any action outside it, `approve` and
+`decline` included.
 
 ### 4.4 Premades (ship disabled)
 
@@ -351,16 +396,35 @@ action is relay-only, the whole macro is `relay`.
    Per the C-1 and C-2 rulings, this card is a **toggle for a new
    `approval_mode` value**, not a free-form macro.
 
-   - **Name.** The id is proposed as `approve_guest_turns` (**NEW**). It sits
+   - **Name.** The id is `approve_owner_asks` (**NEW**; renamed per Gauge F4 because
+     the earlier name was inverted). It sits
      beside `auto_approve` / `approve_every_action` (hush_roster.h:35-37; enum
      :95-98) and is set through the same `POST /api/profile {approval_mode}`
      path (api_identity.c:131-137 → `hush_launch_set_approval`,
-     hush_launch.h:193-196). The card's switch posts it, and turning the card
-     off posts the previous mode back.
-   - **Semantics, in `approval_needed`** (agent_approve.c:40-46, **NEW**
-     branch). A turn runs without a hold **only** when the parent note is the
-     owner's own: the first branch of `hush_agent_owner_asked`,
-     agent_approve.c:147-148. These turns are always held:
+     hush_launch.h:193-196). The card's switch posts it. Turning the card off
+     restores the previous mode, which the **relay** stores (vibe field
+     `approval_mode_prev`, **NEW**), not the browser (Gauge F8).
+   - **Unknown or corrupt values (Gauge F8).** An unknown or corrupt
+     `approval_mode` keeps the previous mode, or else falls to the strictest
+     (`approve_every_action`). It **never** becomes auto-approve.
+     - Today the API path already refuses an unknown id and leaves the mode
+       alone (`hush_launch_set_approval` → `HUSH_ERR_PARSE`,
+       hush_launch.c:700-710).
+     - But restore parses an unknown id as AUTO: `hush_launch_restore_vibe`
+       (hush_launch.c:3338-3339) → `hush_roster_approval_parse` sets
+       `HUSH_ROSTER_APPROVAL_AUTO` first (hush_roster.c:244-255). That fail-open
+       path changes in K7.
+   - **Semantics, hard-coded in `approval_needed`** (agent_approve.c:40-46,
+     **NEW** branch).
+     - The branch tests `is_human(parent) && !in->follow && !in->elect`. It
+       does **not** call `hush_agent_owner_asked`, whose robot branch would let
+       robot chains through (agent_approve.c:149-153; Gauge F11).
+     - No setting, macro, condition or import can widen it.
+     - A turn runs without a hold **only** when the parent note is the owner's
+       own, as in the first branch of `hush_agent_owner_asked`,
+       agent_approve.c:147-148.
+
+     These turns are always held:
      - **robot-chained** turns: a robot's note in an owner-opened thread,
        agent_approve.c:149-153 (C-3)
      - **follow** turns (`in->follow`, hush_agent_internal.h:296) (C-3)
@@ -373,15 +437,18 @@ action is relay-only, the whole macro is `relay`.
      `person_gate = approved || owner_asked` (agent_prompt.c:153) is the same
      value it would be under `auto_approve` today. The mode cannot grant a gate
      the owner did not.
-   - **Alert half** (C-6). When a **guest** turn is held, the relay sends an
-     ntfy alert with metadata only: robot name, channel, time and held count.
-     It never includes note text. The ntfy server and topic are
-     user-configured. Credentials come only from pass, 1Password or keyring
-     through the existing keystore (`hush_keystore_load`,
-     hush_keystore.h:59-61). They are never stored in plaintext.
+   - **Alert half** (C-6, Gauge F2). When a **guest** turn is held, the relay
+     sends an ntfy alert.
+     - **Payload.** Metadata only: robot name, channel, time and held count. It
+       never includes note text.
+     - **Config.** The ntfy server (`https://` only) and topic are
+       user-configured.
+     - **Credential.** It is read only from the keystore under the pinned
+       `hush/ntfy/` prefix (§5.2). The path is never user-set.
+     - **Changes.** A change needs the per-action nonce (#336).
    - **Audit.** Every turn run under the mode posts a chaperon line in the
-     thread, "Auto-approved (approve_guest_turns): <robot>.", and emits the
-     `macro` cevent (§7.3).
+     thread, "Auto-approved (approve_owner_asks): <robot>.", and emits the
+     `macro` cevent. Both record the actor class (§7.3, Gauge F5).
    - **Loop prompt.** "Continue this loop?" is never auto-answered (C-4).
 2. **"Mention me → notify"**, `runs: browser`. `note.new` + text contains my
    name, with the tab hidden → browser notification (**NEW**).
@@ -405,8 +472,22 @@ action is relay-only, the whole macro is `relay`.
 | thread / inventory / skill lifetime / agent pic | localStorage `hush-thread` 7614, `hush-thread-open` 5613, `hush-inv` 7927, `hush-skill-lifetime` 3125, `hush-agent-pic` 3885 | — |
 | robot skills / favorites | relay (equipped `skill_0..7`; PE-4 favorites "saved per robot on the relay", index.html:943) | skills/system/forge-skill/SKILL.md "Equip and prune" |
 
-All `/api` calls require the session token `X-Hush-Token` (hush_auth.h:18-20,
-denial hush_http.c:691).
+**API auth today (Gauge F3/F7).**
+
+- `/api` routes need the session token. It is accepted from any of four
+  carriers (hush_http.c:529-553):
+  - Cookie `hush_session`
+  - `Authorization: Bearer`
+  - `X-Hush-Token` (hush_auth.h:20)
+  - `?k=` query (:549-551)
+- The guard is at hush_http.c:663-695, with the denial at :691.
+- The only other check is Host (:668-673). There is no Origin or `Sec-Fetch`
+  check anywhere in hush_http.c.
+- An unauthenticated **loopback** peer is handed the token as
+  `Set-Cookie: hush_session=…` (hush_http.c:286-290, :732-738).
+- The token file is `$HUSH_HOME/session.token`, 0600 (hush_auth.h:18, :22-23).
+
+The fix is tracked in #336.
 
 ### 5.2 Proposal
 
@@ -420,13 +501,37 @@ denial hush_http.c:691).
   :53). It is mode 0600 and written only by the relay. Access is through
   `GET`/`POST /api/macros` (**NEW** route next to `/api/profile`,
   hush_http.c:1013).
-- **ntfy config** (C-6). The ntfy server URL, the topic and a keystore
-  *path* (for example `hush/ntfy/token`) are stored in `hush/macros.json`. The
-  secret itself is read at send time through `hush_keystore_load`
-  (hush_keystore.h:59-61; the stores are pass, then 1Password, then
-  secret-tool). It is never written to a hush-home file, consistent with
-  `hush_keystore_save` "Never writes a hush-home file" (:32-35). The
-  hardcoded onerelay values in hush_vault.h:11-27 are **not** the default.
+- **ntfy config** (C-6, Gauge F2).
+  - **Stored in `hush/macros.json`.**
+    - The server URL, which must start with `https://`. The relay rejects any
+      other scheme.
+    - The topic.
+    - A credential **name**, matching `[a-z0-9-]{1,32}`.
+  - **Keystore path is pinned (NEW).**
+    - The relay derives the keystore path `ntfy/<name>`, which is the pass entry
+      `hush/ntfy/<name>` under the same `hush/` prefix scheme as
+      hush_pass.h:20-23. **No user-set path is ever accepted.**
+    - The existing `hush_keystore_path_ok` accepts any relative
+      `[A-Za-z0-9/_-]` path (hush_keystore.c:305-325), including
+      `identity/nsec` (hush_pass.h:20). So the pin is a new relay check, not
+      the existing validator.
+  - **Changes.**
+    - Any change to server, topic or name needs the per-action UI nonce (#336).
+    - Each change is logged with the old→new server.
+    - Every alert carries a fresh random nonce in its body, so an alert can't
+      be replayed into an old notification.
+  - **Reading the secret.**
+    - It is read at send time through `hush_keystore_load`
+      (hush_keystore.h:59-61). Order: pass, then 1Password, then secret-tool
+      (hush_keystore.c:249-253), then the AES-256-GCM `keys.vault` fallback
+      (hush_keystore.c:273-281; hush_keyfile.h:1, :13). That is encrypted, not
+      plaintext (Gauge F9).
+    - It is never written to a hush-home file as plaintext (`hush_keystore_save`,
+      hush_keystore.h:32-35).
+  - **Defaults.** The hardcoded onerelay values in hush_vault.h:11-27 are
+    **not** the default.
+  - **Export.** It omits the ntfy server and topic unless the owner ticks
+    "include alert config" (a public ntfy topic is bearer-like; §7.0).
 - **Why not vibe.json.** Ruled C-7: new `hush/macros.json`. A separate file keeps a bad macro from
   corrupting the vibe.
 
@@ -440,20 +545,26 @@ denial hush_http.c:691).
   "keys": { "inventory": ["i"], "character": ["c"], "slot-1": ["1", "Digit1"] },
   "quickbar": ["inventory", "character", "new-channel", "stop"],
   "macros": [
-    { "id": "premade-approve-own", "name": "Approve my own asks", "origin": "premade",
-      "enabled": false, "runs": "relay",
-      "trigger": { "type": "approval.held" },
-      "conditions": [ { "type": "guest", "eq": false }, { "type": "follow", "eq": false } ],
-      "actions": [ { "type": "approve" }, { "type": "chaperon_line" } ] }
+    { "id": "premade-mention-notify", "name": "Mention me → notify", "origin": "premade",
+      "enabled": false, "runs": "browser",
+      "trigger": { "type": "note.new" },
+      "conditions": [ { "type": "text_contains", "value": "@me" }, { "type": "tab_hidden" } ],
+      "actions": [ { "type": "browser_notification" } ] }
   ]
 }
 ```
+
+`approve_owner_asks` is **not** a macro in this file. It is the relay
+`approval_mode`, and its premade card only toggles that setting (§4.4).
 
 **Validation.**
 
 - Unknown action ids are dropped, as `loadQuickbar` does (6070-6073).
 - Refused keys (§2.1) are dropped.
 - Never-bindable actions (§2) are dropped.
+- **Relay-side:** `/api/macros` rejects any action type that is not on its
+  allow-list, including `approve` and `decline` (Gauge F1). This check holds
+  whatever the browser importer did.
 - Limits: 64 macros, 8 actions per macro. Payloads over 64 KB are rejected (the
   same bound as `HUSH_SKILL_JSON_MAX`, hush_skill.h:23).
 
@@ -498,8 +609,13 @@ denial hush_http.c:691).
   - `role: any`
   - `category: craft`
   - Seeding is automatic (§6.1). No C change.
-- **Robots cannot write prefs.** They do not get `X-Hush-Token`; `/api` refuses
-  without it (hush_http.c:691). The skill tells the robot to answer with exactly
+- **Robots are not given the token, but can get it (Gauge F3).** Hush passes no
+  token to robots, and `/api` refuses requests without it (hush_http.c:691).
+  Until #336 is fixed, though, a shell-capable turn can read `session.token` or
+  take the loopback `Set-Cookie` (§5.1). The propose-only path below is
+  therefore UX. The relay-side allow-list (§5.2) and the hard-coded mode
+  exclusions (§4.4) are what hold regardless. The skill tells the robot to
+  answer with exactly
   one fenced block, language `hush-keys`, holding a **partial** v1 document
   (§5.2).
 - **The UI already parses fences.** `splitFences` (index.html:7123-7138) builds
@@ -522,6 +638,21 @@ denial hush_http.c:691).
 ---
 
 ## 7. Security
+
+### 7.0 Threat model (Gauge F7)
+
+| # | adversary / asset | today (file:line at 13511bd4) | plan stance |
+|---|---|---|---|
+| T1 | **Same-uid agent child** (primary adversary): any shell-capable robot turn | Runs as the relay's uid with its environment; no env scrub before `execvp` (agent_process.c:65-74, :413); no sandbox code in src/ | KEYS assumes T1 until #336. K5-K9 depend on #336 |
+| T2 | Session token | `$HUSH_HOME/session.token` 0600 (hush_auth.h:18, :22-23); handed to any unauthenticated loopback peer as `Set-Cookie` (hush_http.c:286-290, :732-738) | No KEYS assurance relies on the token alone. Security-relevant writes need the per-action nonce (#336) |
+| T3 | `HUSH_KEY_PASS` + `keys.vault` | The passphrase is read from the environment on each use (hush_keyfile.c:280; env name hush_keyfile.h:11). `keys.vault` is in `$HUSH_HOME` (hush_keyfile.h:13). A child inherits the env | Fixed by the #336 env scrub. ntfy creds never use a user-set path (§5.2) |
+| T4 | pass / 1Password / secret-tool stores | Reachable by the same uid wherever their agents are unlocked (hush_keystore.h:1, :59-61) | The ntfy credential is pinned to `hush/ntfy/*` so the relay can't be made a deputy for `identity/` or `agents/` (Gauge F2) |
+| T5 | `?k=` token carrier | Accepted (hush_http.c:549-551). URLs leak into history, logs and Referer | The KEYS UI never builds `?k=` URLs. Removing the carrier is a #336 item |
+| T6 | Cross-site requests | No Origin / `Sec-Fetch` check in hush_http.c; Host only (:668-673) | `/api/macros` and `approval_mode` writes need an Origin check (#336) |
+| T7 | Export file | Would carry the ntfy server and topic, which is bearer-like on public ntfy | Omitted by default (§5.2) |
+| T8 | `macros.log` contents and integrity | **NEW** file. The same uid can edit 0600 | Metadata only, no note text. Actor class per line. An optional hash chain is tamper-*evident* only after #336 |
+| T9 | Other local users | 0600 files (hush_auth.h:22-23) stop other uids. But the loopback `Set-Cookie` (T2) reaches **any** local uid | Stated. Closed by #336 |
+| T10 | Guests (other humans) | Guest turns get no person gate (agent_prompt.c:153). Guest ingress is latent today | `approve_owner_asks` never auto-runs a guest turn (§4.4). No approve action exists (§4.3) |
 
 ### 7.1 What #322 / #323 gate (exact)
 
@@ -562,17 +693,33 @@ denial hush_http.c:691).
   bit lives only in relay memory (agent_approve.c:54, :66).
 - So a browser macro would approve guest turns too. Each would get `approved=1`,
   then `person_gate=1`, then shell. **That launders the #322 gate.**
-- **Rule (C-1, C-2, C-3).** There is no browser `approve` / `decline`
-  action. Auto-approve is only the relay `approval_mode` `approve_guest_turns`
-  (§4.4). It skips the hold only for owner-direct turns (agent_approve.c:147-148).
+- **Rule (C-1, C-2, C-3; Gauge F1).** There is no `approve` / `decline` action
+  in the browser **or** on the relay. Auto-approve is only the relay
+  `approval_mode` `approve_owner_asks` (§4.4), with hard-coded exclusions. It
+  skips the hold only for owner-direct turns (agent_approve.c:147-148).
   For those turns `person_gate` is already true, so the mode never grants what
   the gate would refuse. Guest, robot-chained, follow and election turns stay
   held.
 - **Rule (C-4).** No macro, mode or action may answer "Continue this loop?".
-- **Rule.** The browser `post note` action refuses content that
-  `hush_agent_loop_parse_answer` would read as Yes/No in a thread with a pending
-  ask or loop prompt (parser used at agent_approve.c:105). The UI also skips any
-  thread whose last note `isLoopAsk` (6537) or starts with "Approval needed: ".
+- **Relay-side guard (Gauge F6), NEW.** A browser check alone is heuristic. It
+  would miss an ask that is not the last note, and only the relay knows held
+  state. Today every stored owner note is routed to the answer hooks:
+  - `hush_intel_consider` (api_channels.c:75)
+  - then `hush_agent_approval_answer`, `hush_agent_team_answer` and
+    `hush_agent_loop_answer` (hush_intel.c:171-176)
+
+  Changes:
+  1. Macro-posted notes carry `"via":"macro"`. The relay stores the tag and
+     never routes a tagged note to those three hooks.
+  2. Answers come only from the inline approval stamps. Each sends the hold id
+     plus a per-action nonce (#336) that the session token alone can't mint.
+     The relay refuses a Yes/No whose nonce is missing or stale.
+  3. Until #336 lands, a token holder can drop the tag. So (1) is defence in
+     depth, and (2) is the guard. K5's done-when is a **C test** of (1) and (2),
+     not only JS.
+- **Browser check (kept, UX).** The browser `post note` action still refuses
+  content that `hush_agent_loop_parse_answer` (used at agent_approve.c:105) would
+  read as Yes/No in a thread with a pending ask or loop prompt.
 
 ### 7.3 Opt-in, visible, auditable
 
@@ -580,10 +727,14 @@ denial hush_http.c:691).
   - Every premade ships `enabled:false`.
   - The `approval_mode` default stays `auto_approve` (hush_roster.h:95-98).
   - Turning on the auto-approve card needs a typed confirmation in the drawer.
-  - Imports and agent drafts can never set `approval_mode`, because §2 lists the
+  - Imports and agent drafts can't set `approval_mode`, because §2 lists the
     approval radios as never-bindable.
+  - **These are UX, not security boundaries (Gauge F3b).** `/api/profile`
+    accepts `approval_mode` from any token holder (api_identity.c:131-137). The
+    boundary is the per-action nonce + Origin check (#336), required for
+    `approval_mode` writes and for enabling relay macros.
 - **Visible.**
-  - While `approve_guest_turns` is on, a persistent `AUTO-APPROVE` stamp sits in
+  - While `approve_owner_asks` is on, a persistent `AUTO-APPROVE` stamp sits in
     the header stamp row (`header .stamp-row` index.html:658).
   - Settings shows it next to the approval radios (2390-2395).
 - **Auditable.**
@@ -593,26 +744,44 @@ denial hush_http.c:691).
     hush_cevent.h:20-29), readable at `GET /api/chan-events` (hush_http.c:311).
     The ring holds 64 events (hush_cevent.h:11), so LOG also appends to
     `hush/macros.log` (**NEW**, 0600).
-  - Enable, disable, edit, import and reset are logged with who did it and when.
+  - Enable, disable, edit, import, reset and mode changes are logged with the
+    time and the **actor class** (Gauge F5):
+    - `browser-nonce`: a request that carried a valid per-action nonce (#336)
+    - `token-only`: the bare session token, which may be a T1 child
+    - `relay`: a relay-internal firing
+
+    Every token write is stamped as the owner today (api_channels.c:102;
+    api_identity.c:131-137 records no actor). The actor class is therefore the
+    only way to tell the browser from a child. The log is not tamper-evident
+    while the same uid can edit it (§7.0 T8).
 
 ### 7.4 Conflicts for CoS
 
 #### Rulings (CoS 2026-10-17 09:46)
 
-Plan status: **APPROVED** with these rulings. K1 is GO after #325 merges.
+Plan status: **APPROVED** with these rulings and the 10:10 ruling below. K1 is GO
+after #325 merges. Gauge's FAIL at 59b48543 (10:16) is addressed in this
+revision, and re-review is pending.
 
 | # | ruling | where folded in |
 |---|---|---|
 | C-1 | Relay rule. Auto-approve owner-asked turns only. Guest turns are held and alerted | §0, §4.4, §7.2 |
-| C-2 | New `approval_mode` value. The premade macro card toggles it | §4.4 (`approve_guest_turns`), §7.3, K7 |
+| C-2 | New `approval_mode` value. The premade macro card toggles it | §4.4 (`approve_owner_asks`, renamed per Gauge F4), §7.3, K7 |
 | C-3 | Exclude robot-chained, follow and election turns by default | §4.4, §7.2, K7 test |
 | C-4 | Never auto-answer "Continue this loop?" | §4.4, §7.2 |
-| C-5 | Gauge check ordered. K6 is blocked until it answers | K6 |
-| C-6 | ntfy server and topic are user-configurable. Credentials only via pass, 1Password or keyring, never plaintext. Default payload is metadata only, no note text | §4.4, §5.2, K8 |
+| C-5 | Gauge check ordered. K6 is blocked until it answers. **Answered** YES/P1 and filed as #336. Per CoS 10:16, K5-K9 depend on #336 | §7.0, K5-K9 |
+| C-6 | ntfy server and topic are user-configurable. Credentials only via pass, 1Password or keyring, never plaintext. Default payload is metadata only, no note text. Per Gauge F2: https only, keystore pinned to `hush/ntfy/*`, nonce | §4.4, §5.2, K8 |
 | C-7 | New `hush/macros.json` | §5.2, K6 |
 | C-8 | Off switch + remap. No single-letter keys while typing. Ctrl/Cmd+S is OK | §2, §2.1, K1 |
-| C-9 | Floor issue to persist held turns. Not a KEYS blocker | K-F (outside KEYS) |
+| C-9 | Floor issue to persist held turns. Not a KEYS blocker. Filed as **#337** (Floor) | K-F (outside KEYS) |
 | C-10 | Resolved: rebased onto main 13511bd4 before push | header |
+
+#### Ruling (CoS 2026-10-17 10:10)
+
+| topic | ruling | where folded in |
+|---|---|---|
+| GUARD Always-approve vs robot chains | By default, Always-approve (GUARD) rules do **not** cover robot-chained turns (matches C-3). The owner may opt in per rule later, after Gauge review | §3 GUARD note |
+| C-9 | Filed as #337 (Floor) | K-F |
 
 #### Original conflicts (as raised)
 
@@ -643,13 +812,13 @@ store/reliability · **Gauge** C review/security · **Ops** visual · **CoS** me
 | K2 | New default keys (§2) + `aria-keyshortcuts`/titles; `[`/`]` channel cycle; verify desktop-window key delivery | JNY | Ops | K1 | each key wired to the cited action; screen-reader note in UI_SPEC |
 | K3 | `#keys-drawer` KEYS + LOG tabs: rebind (remap), refuse/swap, reset keys; canvas Ctrl/Cmd+S; stamp family; added to `check_palette.sh` surfaces | JNY (UI), Ops (visual) | Gauge | K1 | C1-C4/B1 pass at 1440 and 390 |
 | K4 | `hush-keys` v1 store: localStorage, migration from `hush-quickbar`, validate, import (disabled), export, reset | Floor | Gauge | K1 | round-trip test; corrupt input falls back to defaults like `loadQuickbar` |
-| K5 | Browser macros: MACROS tab, key/note/devlog/timer triggers, UI actions, refusal of answer-shaped posts; premades 2 and 4 | JNY + Floor | Gauge (security) | K3, K4 | refusal test: macro cannot post Yes/No into an asking thread |
-| K6 | Relay macro store `hush/macros.json` + `/api/macros` + cevent `macro` + `macros.log` | Floor | Gauge (C review) | **BLOCKED on Gauge C-5 answer** | unit tests; 0600; owner token required |
-| K7 | New `approval_mode` `approve_guest_turns`: parse/id (hush_roster.h:35-37), `approval_needed` branch (agent_approve.c:40-46), premade card toggle via `/api/profile`, chaperon line, `AUTO-APPROVE` header stamp | Floor (C), JNY (card + stamp) | **Gauge (security)** | K0 (C-1..C-3), K3 | tests: guest, robot-chained, follow and election turns are always held under the mode and never get `project_tools` without an owner Yes; loop prompt never answered |
-| K8 | ntfy publisher + guest-held alert (premade 1, alert half): user-set server/topic in `hush/macros.json`, token via `hush_keystore_load` only | Floor | Gauge (security) | K6, K7 | off by default; payload metadata only (no note text); no plaintext secret on disk; fake-curl test like tests/test_vault |
-| K9 | `skills/system/keys-macros/SKILL.md` + `REVIEW KEYS` stamp + diff/apply; agent-draft stripping | JNY (UI), Floor (importer) | Gauge | K4, K5 | test: an agent block with `approve` is stripped and lands disabled |
+| K5 | Browser macros: MACROS tab, key/note/devlog/timer triggers, UI actions, `"via":"macro"` tag + relay answer guard (§7.2); premades 2 and 4 | JNY + Floor | Gauge (security) | K3, K4, **#336** | **C test**: a tagged note and an un-nonced Yes never answer a held, team or loop ask; JS refusal test kept |
+| K6 | Relay macro store `hush/macros.json` + `/api/macros` (server-side action allow-list, no `approve`/`decline`) + cevent `macro` + `macros.log` with actor class | Floor | Gauge (C review) | **BLOCKED on #336** | unit tests; 0600; allow-list rejects `approve`/`decline`; nonce + Origin required for enable |
+| K7 | New `approval_mode` `approve_owner_asks`: parse/id (hush_roster.h:35-37), hard-coded `approval_needed` branch on `is_human(parent) && !follow && !elect` (agent_approve.c:40-46; not `owner_asked`), relay-stored previous mode, unknown/corrupt → previous or strictest (never AUTO; fixes hush_launch.c:3338-3339 / hush_roster.c:244-255 fail-open), premade card toggle via `/api/profile` with nonce, chaperon line with actor class, `AUTO-APPROVE` header stamp | Floor (C), JNY (card + stamp) | **Gauge (security)** | K0 (C-1..C-3), K3, **#336** | tests: guest, robot-chained, follow and election turns are always held under the mode and never get `project_tools` without an owner Yes; unknown/corrupt restore never yields AUTO; loop prompt never answered |
+| K8 | ntfy publisher + guest-held alert (premade 1, alert half): https-only server + topic in `hush/macros.json`, credential name → pinned keystore path `ntfy/<name>` (`hush/ntfy/*`), per-alert nonce, nonce-gated config changes | Floor | Gauge (security) | K6, K7, **#336** | off by default; payload metadata only (no note text); rejects non-https and any non-`ntfy/` path; no plaintext secret on disk; fake-curl test like tests/test_vault |
+| K9 | `skills/system/keys-macros/SKILL.md` + `REVIEW KEYS` stamp + diff/apply; agent-draft stripping | JNY (UI), Floor (importer) | Gauge | K4, K5, **#336** | test: an agent block with `approve` is stripped and lands disabled; `/api/macros` rejects it server-side too |
 | K10 | Merge each slice (PR per M, gb/* branch per AGENTS.md) | CoS | — | each | — |
-| K-F | (outside KEYS, C-9) Floor issue: persist held turns across relay restart (today they are lost: agent_approve.c:1-6) | Floor | Gauge | — | not a KEYS blocker |
+| K-F | (outside KEYS, C-9) **#337**: persist held turns across relay restart (today they are lost: agent_approve.c:1-6) | Floor | Gauge | — | not a KEYS blocker |
 
 ---
 
@@ -845,3 +1014,28 @@ The probe is the turn-1 W1 probe (180 controls). Columns:
 | `#inv-raise` | action | 2269 | 9291 | menu-bindable, unbound by default |
 | `button.fo-person` | list row | dynamic | - | menu-bindable, unbound by default |
 | `#stats` | action | 2281 | 5717 | menu-bindable, unbound by default |
+
+## Appendix B: Gauge #334 @59b48543 claim trace
+
+Source: Gauge's review of #334 at 59b48543 (FAIL, 10:16 ET), and CoS ORDER
+10:16. Line numbers are lines of this file at this revision.
+
+| finding / order item | doc section : line | fix |
+|---|---|---|
+| F1 P1 relay `approve` macro (order 1) | §0:37; §4.3:379; §5.2 validation:566; §7.2; K6 | Removed `approve`/`decline` actions. The mode is the only auto-approve, with exclusions hard-coded. `/api/macros` allow-list rejects them server-side |
+| F2 P1 ntfy key-exfil deputy (order 2) | §4.4 alert half; §5.2:504; §7.0 T4; K8 | https only; credential name → pinned `ntfy/<name>` (`hush/ntfy/*`); path never user-set; nonce-gated changes; per-alert nonce; old→new logged |
+| F3 P2 "robots get no token" (order 4) | §0:44; §5.1:475; §6.2:612 | Corrected with cites: agent_process.c:65-74, :413; hush_auth.h:18, :22-23; hush_http.c:286-290, :529-553, :732-738 |
+| F3b P2 UX shown as security (order 4) | §2 never-bindable; §7.3:732 | Marked UX. Boundary = nonce + Origin (#336); api_identity.c:131-137 |
+| F4 P2 inverted name (order 5) | §0; §3; §4.4:399; §7.2; §7.3; §7.4; K7 | `approve_guest_turns` → `approve_owner_asks` everywhere (doc and PR body) |
+| F5 P2 audit "who" (order 6) | §4.4 audit; §7.3:748; K6; K7 | Actor class `browser-nonce` / `token-only` / `relay` on every log line and cevent; not tamper-evident until #336 |
+| F6 P2 client-only Yes/No refusal (order 7) | §4.3 post note; §7.2:704; K5 | Relay guard: `"via":"macro"` notes never reach hush_intel.c:171-176 answer hooks; answers need hold id + nonce; C test |
+| F7 P2 no threat model (order 8) | §7.0:642 | T1-T10 covering Gauge (a)-(h) plus guests |
+| F8 P3 fail-open restore (order 9) | §4.4:407; K7 | Relay-stored previous mode; unknown/corrupt → previous or `approve_every_action`, never AUTO; cites hush_launch.c:700-710, :3338-3339; hush_roster.c:244-255 |
+| F9 P3 store list (order 11) | §5.2:526 | Added the keys.vault AES-GCM fallback (hush_keystore.c:249-253, :273-281) |
+| F10 P3 oldest-hold Yes (order 11) | §3:314; §7.2 | Stamps bind to hold id + nonce (agent_approve.c:102) |
+| F11 P3 K7 branch (order 11) | §4.4:420; K7 | Branch on `is_human(parent) && !follow && !elect`, not `owner_asked` (agent_approve.c:149-153) |
+| F12 P3 GUARD open question / 10:10 missing (order 10) | §3:311; §7.4:779 | CoS 10:10 ruling added: Always rules exclude robot chains by default, per-rule opt-in later after Gauge review |
+| F13 P3 drift (order 11) | header:11; §1.4:138 | 95 → 93 on main (94 with this file); `ev.key` line 6024 → 6025 |
+| Order 3: K5-K9 depend on #336 | §0:67; K5:815 … K9:819 | `#336` added to K5, K6 (blocked), K7, K8, K9 depends |
+| Order 10: C-9 = #337 | §7.4:776; K-F | C-9 row and K-F cite #337 (Floor) |
+| Order 12: Floor co-design (#335) | §3:318 | Inline pending card, GUARDRAILS tab badge, exact match at robot scope, `hush/guardrails.json`, `approve\|reject\|ask` |
