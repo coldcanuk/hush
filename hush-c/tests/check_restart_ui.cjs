@@ -76,9 +76,9 @@ const liveProcs = [];
 /* Temp dirs this run created (Chrome profiles, relay homes); removed on
  * every exit: normal, failure, thrown error, SIGINT and SIGTERM. */
 const ownDirs = [];
-/* A child that ignores SIGTERM this long gets SIGKILL. */
+/* stopProc's wait after SIGTERM before its SIGKILL fallback (not pinned by a test). */
 const STOP_WAIT_MS = 5000;
-/* Shell-style exit codes for the signals that end a run. */
+/* Exit codes for the signals that end a run (the pin checks only non-zero). */
 const SIGNAL_EXIT = { SIGINT: 130, SIGTERM: 143 };
 let stopping = null;
 class StopRun extends Error {}

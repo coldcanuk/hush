@@ -29,7 +29,7 @@ node -e 'process.exit(typeof WebSocket === "function" ? 0 : 1)' \
 NEVER_READY_MS=60000
 # Polls for the profile dir: 200 x 0.05 s = 10 s.
 POLL_TRIES=200
-# Fake Chrome shutdown time; well under the check's 5 s SIGKILL wait.
+# Fake Chrome shutdown time.
 STOP_MS=300
 fake="$(pwd)/tests/fake-chrome-count.sh"
 throwjs="$(pwd)/tests/fake-throw-callback.cjs"
@@ -188,4 +188,35 @@ for sig in TERM INT; do
     [ "$(left "$t")" = 0 ] || fail "SIG$sig left $(left "$t") id1-* dirs"
     echo "restart UI tmp ok (SIG$sig)"
 done
+
+# The preload's orphan line itself: a fake whose parent exits first logs
+# "orphan"; one whose parent waits for it logs nothing. Run $1 is orphan or
+# waited; the exit log is $scratch/probe.$1. The orphan's parent exits only
+# once the fake has logged ready (its preload has read the first parent).
+probe_js="process.on('SIGTERM', () => {}); setTimeout(() => process.exit(0), $STOP_MS);"
+probe() {
+    log="$scratch/probe.$1"
+    : > "$log"
+    : > "$log.ready"
+    if [ "$1" = orphan ]; then
+        FAKE_CHROME_PORT=1 HUSH_FAKE_CHROME_READY_LOG="$log.ready" HUSH_FAKE_CHROME_EXIT_LOG="$log" \
+            sh -c 'node -e "$0" & i=0; until [ -s "$1" ] || [ "$i" -ge "$2" ]; do i=$((i + 1)); sleep 0.05; done' \
+            "$probe_js" "$log.ready" "$POLL_TRIES"
+        [ -s "$log.ready" ] || fail "orphan probe: the fake never logged ready"
+        i=0
+        until [ -s "$log" ]; do
+            i=$((i + 1))
+            [ "$i" -lt "$POLL_TRIES" ] || fail "orphan probe: no orphan line from a fake that outlived its parent"
+            sleep 0.05
+        done
+    else
+        FAKE_CHROME_PORT=1 HUSH_FAKE_CHROME_READY_LOG="$log.ready" HUSH_FAKE_CHROME_EXIT_LOG="$log" \
+            node -e "$probe_js"
+    fi
+}
+probe orphan
+[ "$(grep -c '^orphan$' "$scratch/probe.orphan")" = 1 ] || fail "orphan probe: want one orphan line"
+probe waited
+[ ! -s "$scratch/probe.waited" ] || fail "orphan probe: a waited-for fake must not log orphan"
+echo "restart UI tmp ok (orphan line)"
 echo "restart UI tmp ok"
