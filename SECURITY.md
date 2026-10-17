@@ -83,10 +83,12 @@ every action; a vibe that never saved one keeps the auto-approve default.
 Exercised by `check_approve_nonce.py` and `test_auth`.
 
 Agent children (#336 parts 1 and 2) run in a jail: a fresh per-job `HOME`
-(mode 0700) with only allowlisted provider auth trees visible read-only
+(mode 0700). Provider creds in that HOME will come from Vault
+(`vault.onerelay.app`, SOT): per-job copy, must match, deleted after (TODO).
+**INTERIM:** only allowlisted real-HOME auth trees are bound read-only
 (`.grok`, `.codex`, `.copilot`, `.config/goose`, `.goose`, `.cline`,
 `.ollama`); never `~/.password-store`, `~/.gnupg`, `~/.ssh`, or `$HUSH_HOME`.
-An unknown auth path refuses the turn and names the path. The child env is
+An unlisted auth path refuses the turn and names the path. The child env is
 an allowlist (no `HUSH_*`). Landlock ABI ≥ 4 is preferred (deny
 `$HUSH_HOME`/config/legacy and the real HOME tree, deny the relay TCP port,
 scope ptrace); otherwise `bwrap --unshare-pid --proc /proc` with

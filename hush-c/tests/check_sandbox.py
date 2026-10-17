@@ -5,9 +5,10 @@ Q2: Landlock ABI>=4 preferred; bwrap --unshare-pid --proc /proc + no_new_privs
 fallback; neither -> refuse with a clear reason. All three branches are tested
 via HUSH_SANDBOX_BACKEND.
 
-Q3: child gets a stub per-job HOME (0700). Only allowlisted provider auth paths
-are visible; ~/.password-store, ~/.gnupg, ~/.ssh, $HUSH_HOME never are. An
-unknown auth path refuses the turn and names the path.
+Q3: child gets a stub per-job HOME (0700). INTERIM: only allowlisted real-HOME
+provider auth paths are visible (Vault-sourced per-job copy/match/delete is
+TODO); ~/.password-store, ~/.gnupg, ~/.ssh, $HUSH_HOME never are. An unlisted
+auth path refuses the turn and names the path.
 """
 
 import json

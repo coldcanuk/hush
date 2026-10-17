@@ -3,10 +3,11 @@
  * An agent CLI runs with the user's uid, so without a jail it could read
  * session.token and keys.vault, connect to the relay port, or read the
  * relay's environment. Just before exec the child:
- *   - gets a fresh per-job HOME (mode 0700) with only allowlisted provider
- *     auth paths linked or bound read-only; never ~/.password-store,
- *     ~/.gnupg, ~/.ssh, or $HUSH_HOME; an unknown auth path refuses the turn
- *     and names the path;
+ *   - gets a fresh per-job HOME (mode 0700). Provider creds in that HOME
+ *     will come from Vault (vault.onerelay.app, SOT): per-job copy, must
+ *     match, deleted after (TODO). INTERIM: bind only the allowlisted real
+ *     HOME auth paths read-only; never ~/.password-store, ~/.gnupg, ~/.ssh,
+ *     or $HUSH_HOME; an unlisted auth path refuses the turn and names it;
  *   - keeps only allowlisted environment variables (PATH, HOME, LANG, TERM,
  *     locale, proxy and CA settings, and the variables a provider CLI needs);
  *     nothing named HUSH_*, so no HUSH_KEY_PASS, HUSH_HOME or HUSH_OP_*;
