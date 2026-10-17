@@ -85,6 +85,9 @@ M = [
     ("P4 paintPartial clear removed", "    function paintPartial(el, text) {\n      el.textContent = \"\";\n      renderPreservingMentions(text, el);",
      "    function paintPartial(el, text) {\n      renderPreservingMentions(text, el);", "K7p refreshPartials .partial reads"),
     ("P6 refreshPartials skips the paint", "              paintPartial(el, ans.text);", "              void el;", "K7p refreshPartials .partial reads"),
+    # Merge of main b7424fac (r8): the christmas skills-facet ring fix.
+    ("X1 christmas skill-facet ring fix removed", 'html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accent); }\n', "",
+     "R5 christmas agent-skills@1440 rest: accent border-ring"),
     ("U13 text after the last mention dropped", 'if (last < (text || "").length) {', "if (false) {", "K7p paintThink .partial reads"),
     ("T8 roster key not sorted", '      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).sort().join("|");',
      '      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).join("|");', "K7k roster key is order-sensitive"),

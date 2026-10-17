@@ -37,26 +37,51 @@
 #define HUSH_AGENT_GROK_TURNS "2"
 #define HUSH_AGENT_GROK_PROJECT_TURNS "8"
 #define HUSH_AGENT_FIXUP_TURNS "1"
-#define HUSH_AGENT_COPILOT_TOOLS "--allow-all-tools"
+/* Copilot never gets --allow-all-tools or a native shell, gated or not
+ * (#333; CoS 11:00: no interim native shell for any provider). The model
+ * never sees the shell tools, and deny rules beat every allow rule and every
+ * saved approval in permissions-config.json. */
+#define HUSH_AGENT_COPILOT_EXCLUDED \
+    "--excluded-tools=bash,powershell,write_bash,write_powershell,read_bash," \
+    "read_powershell,list_bash,list_powershell,stop_bash,stop_powershell"
+#define HUSH_AGENT_COPILOT_DENY_PROJECT "--deny-tool=shell,url,memory"
+#define HUSH_AGENT_COPILOT_DENY_CHAT "--deny-tool=shell,url,memory,write"
+/* File edits only, and only for a person-gated project turn. */
+#define HUSH_AGENT_COPILOT_ALLOW_PROJECT "--allow-tool=write"
 #define HUSH_AGENT_COPILOT_CD "-C"
+/* Goose runs chat-only on every turn: no tools, no extensions. "approve"
+ * asks only for write tools and a per-tool Always Allow overrides it, and
+ * "smart_approve" auto-approves low-risk calls, so neither is a gate (#333). */
+#define HUSH_AGENT_GOOSE_MODE_ENV "GOOSE_MODE"
+#define HUSH_AGENT_GOOSE_MODE_CHAT "chat"
 #define HUSH_AGENT_CLINE_APPROVE_ON "true"
 #define HUSH_AGENT_CLINE_APPROVE_OFF "false"
+#define HUSH_AGENT_CLINE_BIN "cline"
 
 enum {
-    /* copilot, -p, prompt, --allow-all-tools, NULL */
-    HUSH_AGENT_COPILOT_SLOTS = 5,
-    /* those slots plus -C and the job directory */
-    HUSH_AGENT_COPILOT_CWD_SLOTS = 7,
-    /* Decimal text for Cline --timeout. Holds any 32-bit second count. */
-    HUSH_AGENT_TIMEOUT_TEXT = 16
+    /* copilot, -p, prompt, --excluded-tools, --deny-tool, NULL */
+    HUSH_AGENT_COPILOT_BASE_SLOTS = 6,
+    /* --allow-tool=write on a person-gated project turn */
+    HUSH_AGENT_COPILOT_GRANT_SLOTS = 1,
+    /* -C and the job directory */
+    HUSH_AGENT_COPILOT_DIR_SLOTS = 2,
+    /* Entries in hush_agent_copilot_env_scrub. */
+    HUSH_AGENT_COPILOT_SCRUB_COUNT = 4
+};
+
+/* Environment that would auto-approve Copilot tools or load repo hooks,
+ * extensions or workspace MCP servers in -p mode. The child never keeps it. */
+static const char *const hush_agent_copilot_env_scrub[HUSH_AGENT_COPILOT_SCRUB_COUNT] = {
+    "COPILOT_ALLOW_ALL",
+    "GITHUB_COPILOT_PROMPT_MODE_EXTENSIONS",
+    "GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS",
+    "GITHUB_COPILOT_PROMPT_MODE_WORKSPACE_MCP"
 };
 
 /* Runs the provider CLI in a forked worker. */
 static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job);
 static void hush_agent_exec_api(const hush_agent_job_t *job);
 static void hush_agent_exec_cline(const hush_agent_job_t *job);
-static void hush_agent_write_cline_timeout(char *out, size_t cap,
-                                           int project_tools);
 static void hush_agent_exec_grok(const hush_agent_job_t *job);
 static void hush_agent_exec_copilot(const hush_agent_job_t *job);
 static void hush_agent_exec_codex(const hush_agent_job_t *job);
@@ -64,6 +89,11 @@ static void hush_agent_exec_goose(const hush_agent_job_t *job);
 static void hush_agent_exec_ollama(const hush_agent_job_t *job);
 static void hush_agent_build_combined(char *out, size_t outsz,
                                        const hush_agent_job_t *job);
+/* Argv slots, NULL included, that the Copilot argv for job needs. Pure. */
+static size_t hush_agent_copilot_slots(const hush_agent_job_t *job);
+/* Unsets every hush_agent_copilot_env_scrub name in this process. Fails
+ * with HUSH_ERR_IO when unsetenv refuses a name. */
+static hush_status_t hush_agent_copilot_scrub_env(void);
 
 static hush_status_t hush_agent_prepare_worker(void)
 {
@@ -368,9 +398,11 @@ int hush_agent_cline_timeout_s(int project_tools)
     return HUSH_AGENT_CLINE_TIMEOUT_S;
 }
 
-/* Headless Cline denies a tool call that still needs a person. A bound
- * project already cleared Hush's gate, so the CLI may run its tools.
- * Chat stays off so that job does not gain a shell. */
+/* Headless Cline denies a tool call that still needs a person. project_tools
+ * is 1 only for a turn in a project-bound thread that passed a person gate:
+ * the hive owner asked for it, or the owner answered Yes to it (#311 A3,
+ * hush_agent_apply_project_cwd). Every other job stays "false", so it does
+ * not gain a shell. */
 const char *hush_agent_cline_approve(int project_tools)
 {
     if (project_tools)
@@ -378,36 +410,40 @@ const char *hush_agent_cline_approve(int project_tools)
     return HUSH_AGENT_CLINE_APPROVE_OFF;
 }
 
-/* Writes the decimal --timeout for this job. out is caller storage. */
-static void hush_agent_write_cline_timeout(char *out, size_t cap,
-                                           int project_tools)
+void hush_agent_cline_argv(hush_agent_cline_argv_t *out, const hush_agent_job_t *job,
+                           char *prompt)
 {
-    int wrote;
+    int wrote = 0;
 
-    assert(out != NULL);
-    assert(cap > 1);
-    wrote = snprintf(out, cap, "%d", hush_agent_cline_timeout_s(project_tools));
-    assert(wrote > 0);
-    assert((size_t)wrote < cap);
+    assert(out != NULL && job != NULL && prompt != NULL);
+    memset(out, 0, sizeof(*out));
+    wrote = snprintf(out->timeout, sizeof(out->timeout), "%d",
+                     hush_agent_cline_timeout_s(job->project_tools));
+    /* HUSH_AGENT_CLINE_TIMEOUT_TEXT holds any int, so this cannot cut. */
+    assert(wrote > 0 && (size_t)wrote < sizeof(out->timeout));
+    (void)wrote;
+    /* POSIX exec borrows mutable argv. Non-TTY stdout selects Cline headless mode. */
+    out->argv[0] = (char *)HUSH_AGENT_CLINE_BIN;
+    out->argv[1] = (char *)"--json";
+    out->argv[2] = (char *)"--cwd";
+    out->argv[3] = (char *)job->cwd;
+    out->argv[4] = (char *)"--auto-approve";
+    out->argv[5] = (char *)hush_agent_cline_approve(job->project_tools);
+    out->argv[6] = (char *)"--timeout";
+    out->argv[7] = out->timeout;
+    out->argv[8] = prompt;
+    out->argv[9] = NULL;
 }
 
 static void hush_agent_exec_cline(const hush_agent_job_t *job)
 {
     char combined[HUSH_AGENT_COMBINED_PROMPT_MAX] = {0};
-    char timeout_text[HUSH_AGENT_TIMEOUT_TEXT] = {0};
-    const char *approve;
+    hush_agent_cline_argv_t cline = {0};
 
     assert(job != NULL);
     hush_agent_build_combined(combined, sizeof(combined), job);
-    hush_agent_write_cline_timeout(timeout_text, sizeof(timeout_text),
-                                   job->project_tools);
-    approve = hush_agent_cline_approve(job->project_tools);
-    assert(approve != NULL);
-    /* POSIX exec borrows mutable argv. Non-TTY stdout selects Cline headless mode. */
-    char *arguments[] = {(char *)"cline", (char *)"--json", (char *)"--cwd",
-        (char *)job->cwd, (char *)"--auto-approve", (char *)approve,
-        (char *)"--timeout", timeout_text, combined, NULL};
-    execvp(arguments[0], arguments);
+    hush_agent_cline_argv(&cline, job, combined);
+    execvp(cline.argv[0], cline.argv);
     _exit(HUSH_AGENT_EXEC_FAILURE);
 }
 
@@ -434,32 +470,50 @@ int hush_agent_enter_cwd(const char *cwd)
     return 1;
 }
 
+int hush_agent_is_gated(int project_tools)
+{
+    return project_tools == 1;
+}
+
+const char *hush_agent_copilot_deny(int project_tools)
+{
+    if (hush_agent_is_gated(project_tools))
+        return HUSH_AGENT_COPILOT_DENY_PROJECT;
+    return HUSH_AGENT_COPILOT_DENY_CHAT;
+}
+
 int hush_agent_fill_copilot_argv(const hush_agent_job_t *job, char **argv,
                                  size_t cap, const char *prompt)
 {
-    int has_cwd;
-    size_t slots;
+    size_t slots = 0;
+    size_t n = 0;
 
     assert(job != NULL);
     assert(argv != NULL);
     assert(prompt != NULL);
-    has_cwd = job->cwd[0] != '\0';
-    slots = has_cwd ? (size_t)HUSH_AGENT_COPILOT_CWD_SLOTS
-                    : (size_t)HUSH_AGENT_COPILOT_SLOTS;
+    slots = hush_agent_copilot_slots(job);
     if (cap < slots)
         return 0;
-    argv[0] = (char *)HUSH_AGENT_COPILOT_BIN;
-    argv[1] = (char *)"-p";
-    argv[2] = (char *)prompt;
-    argv[3] = (char *)HUSH_AGENT_COPILOT_TOOLS;
-    if (has_cwd) {
-        argv[4] = (char *)HUSH_AGENT_COPILOT_CD;
-        argv[5] = (char *)job->cwd;
-        argv[6] = NULL;
-    } else {
-        argv[4] = NULL;
+    /* POSIX exec borrows mutable argv; the strings are never written. */
+    argv[n++] = (char *)HUSH_AGENT_COPILOT_BIN;
+    argv[n++] = (char *)"-p";
+    argv[n++] = (char *)prompt;
+    argv[n++] = (char *)HUSH_AGENT_COPILOT_EXCLUDED;
+    argv[n++] = (char *)hush_agent_copilot_deny(job->project_tools);
+    if (hush_agent_is_gated(job->project_tools))
+        argv[n++] = (char *)HUSH_AGENT_COPILOT_ALLOW_PROJECT;
+    if (job->cwd[0] != '\0') {
+        argv[n++] = (char *)HUSH_AGENT_COPILOT_CD;
+        argv[n++] = (char *)job->cwd;
     }
-    return (int)slots;
+    argv[n++] = NULL;
+    assert(n == slots);
+    return (int)n;
+}
+
+int hush_agent_set_goose_mode(void)
+{
+    return setenv(HUSH_AGENT_GOOSE_MODE_ENV, HUSH_AGENT_GOOSE_MODE_CHAT, 1) == 0;
 }
 
 static void hush_agent_exec_grok(const hush_agent_job_t *job)
@@ -510,12 +564,38 @@ static void hush_agent_build_combined(char *out, size_t outsz,
         out[outsz - 1] = '\0';
 }
 
+static size_t hush_agent_copilot_slots(const hush_agent_job_t *job)
+{
+    size_t slots = (size_t)HUSH_AGENT_COPILOT_BASE_SLOTS;
+
+    assert(job != NULL);
+    if (hush_agent_is_gated(job->project_tools))
+        slots += (size_t)HUSH_AGENT_COPILOT_GRANT_SLOTS;
+    if (job->cwd[0] != '\0')
+        slots += (size_t)HUSH_AGENT_COPILOT_DIR_SLOTS;
+    return slots;
+}
+
+static hush_status_t hush_agent_copilot_scrub_env(void)
+{
+    for (size_t i = 0; i < (size_t)HUSH_AGENT_COPILOT_SCRUB_COUNT; ++i) {
+        if (unsetenv(hush_agent_copilot_env_scrub[i]) != 0)
+            return HUSH_ERR_IO;
+    }
+    assert(getenv(hush_agent_copilot_env_scrub[0]) == NULL);
+    return HUSH_OK;
+}
+
 static void hush_agent_exec_copilot(const hush_agent_job_t *job)
 {
     char combined[HUSH_AGENT_COMBINED_PROMPT_MAX];
     char *argv[HUSH_AGENT_ARGV_MAX];
 
     assert(job != NULL);
+    if (hush_agent_copilot_scrub_env() != HUSH_OK) {
+        hush_agent_worker_err(STDOUT_FILENO, "copilot auto-approve env could not be cleared");
+        _exit(HUSH_AGENT_EXEC_FAILURE);
+    }
     hush_agent_build_combined(combined, sizeof(combined), job);
     if (hush_agent_fill_copilot_argv(job, argv, HUSH_AGENT_ARGV_MAX, combined) == 0)
         _exit(127);
@@ -549,6 +629,10 @@ static void hush_agent_exec_goose(const hush_agent_job_t *job)
     assert(job != NULL);
     if (job->cwd[0] != '\0' && hush_agent_enter_cwd(job->cwd) == 0)
         _exit(127);
+    if (!hush_agent_set_goose_mode()) {
+        hush_agent_worker_err(STDOUT_FILENO, "goose chat mode could not be set");
+        _exit(HUSH_AGENT_EXEC_FAILURE);
+    }
     hush_agent_build_combined(combined, sizeof(combined), job);
     argv[0] = (char *)HUSH_AGENT_GOOSE_BIN;
     argv[1] = (char *)"run";

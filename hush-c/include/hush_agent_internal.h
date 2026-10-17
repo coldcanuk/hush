@@ -156,8 +156,12 @@ typedef struct {
     int loop_role;
     /* hush_agent_loop_verdict_t parsed from (and stripped out of) out. */
     int loop_verdict;
-    /* 1 when cwd is a milestone project and file tools are allowed. */
+    /* 1 when cwd is a milestone project and file tools are allowed. Set
+     * only when person_gate is 1 (#311 A3). */
     int project_tools;
+    /* 1 when a person gated this turn: the hive owner asked for it, or the
+     * owner answered Yes to it under Approve every action. */
+    int person_gate;
     /* started plus the kill clock. 0 until fill arms the job. */
     time_t budget_deadline;
 } hush_agent_job_t;
@@ -413,11 +417,26 @@ int hush_agent_job_timed_out(const hush_agent_job_t *job, time_t now);
 /* 1 when the child pid is live and the kill clock has not passed. */
 int hush_agent_child_is_working(const hush_agent_job_t *job, time_t now);
 
-/* Writes the Copilot argv for prompt. Adds -C when job->cwd is non-empty.
- * Returns the slot count, including the NULL terminator, or 0 when cap
- * is too small. Does not start the process. */
+/* 1 only when project_tools is exactly 1: a person-gated turn in a
+ * project-bound thread (#311 A3). Any other value, unknown included, is
+ * ungated, so it grants nothing (#333). Pure. */
+int hush_agent_is_gated(int project_tools);
+
+/* Copilot --deny-tool flag for project_tools. Shell, URL and memory are
+ * always denied; file writes are denied too unless the turn is gated. Pure. */
+const char *hush_agent_copilot_deny(int project_tools);
+
+/* Writes the Copilot argv for prompt: never --allow-all-tools, shell tools
+ * excluded and denied, --allow-tool=write only on a gated turn, -C when
+ * job->cwd is non-empty. Returns the slot count, including the NULL
+ * terminator, or 0 when cap is too small. Does not start the process. */
 int hush_agent_fill_copilot_argv(const hush_agent_job_t *job, char **argv,
                                  size_t cap, const char *prompt);
+
+/* Sets GOOSE_MODE=chat in this process's environment, overriding any
+ * inherited value and Goose's config.yaml, so Goose uses no tools on any
+ * turn (#333). Returns 1 on success, 0 when setenv fails (refuse the turn). */
+int hush_agent_set_goose_mode(void);
 
 /* True when the job's provider/roster turn is still enabled. */
 int hush_agent_job_enabled(const hush_agent_job_t *job);
@@ -502,9 +521,13 @@ void hush_agent_plan_trigger(char *out, size_t outsz, const char *root);
 #define HUSH_AGENT_APPROVAL_FULL_LINE \
     "Too many turns are waiting for approval. Answer one first."
 /* Said instead of the full line when the refused turn was asked for by
- * someone other than the hive owner (r3): it is addressed to them. */
-#define HUSH_AGENT_APPROVAL_GUEST_LINE \
-    "Too many requests from other people are waiting for the owner. Try again later."
+ * someone other than the hive owner (r3): it is addressed to them and
+ * names the refused robot (#313). The fixed head comes before the name so
+ * prefix matchers keep the line out of prompts and turn counts. */
+#define HUSH_AGENT_APPROVAL_GUEST_HEAD "Turn not started for "
+#define HUSH_AGENT_APPROVAL_GUEST_FMT \
+    HUSH_AGENT_APPROVAL_GUEST_HEAD "%s: too many requests from other people are waiting " \
+    "for the owner. Try again later."
 
 /* Empties the table of waiting turns. */
 void hush_agent_approval_init(void);
@@ -551,8 +574,33 @@ void hush_agent_chief_prepare(hush_agent_job_t *job, const hush_store_t *store,
 /* Solo Major: append the milestone index to the job note. */
 void hush_agent_chief_equip(hush_agent_job_t *job, const hush_store_t *store);
 
-/* Uses the milestone project path as cwd when the owner bound one. */
+/* Uses the milestone project path as cwd when the owner bound one and a
+ * person gated the turn (job->person_gate); otherwise leaves the job off
+ * the project and its tools (#311 A3). */
 void hush_agent_apply_project_cwd(hush_agent_job_t *job);
+
+/* True when the hive owner asked for this turn: the note it answers is the
+ * owner's, or a robot's note in a thread the owner opened. */
+int hush_agent_owner_asked(const hush_agent_job_in_t *in);
+
+enum {
+    /* cline --json --cwd <dir> --auto-approve <tok> --timeout <s> <prompt> NULL */
+    HUSH_AGENT_CLINE_SLOTS = 10,
+    /* Decimal text for Cline --timeout. Holds any 32-bit second count. */
+    HUSH_AGENT_CLINE_TIMEOUT_TEXT = 16
+};
+
+/* A Cline exec argv and the --timeout text it points into. */
+typedef struct {
+    char timeout[HUSH_AGENT_CLINE_TIMEOUT_TEXT];
+    char *argv[HUSH_AGENT_CLINE_SLOTS];
+} hush_agent_cline_argv_t;
+
+/* Builds the Cline argv for job: --cwd job->cwd, --auto-approve from
+ * project_tools, --timeout from the job clock, then prompt. Pure: no exec.
+ * out->argv borrows job->cwd and prompt. */
+void hush_agent_cline_argv(hush_agent_cline_argv_t *out, const hush_agent_job_t *job,
+                           char *prompt);
 
 /* ---- hush_agent.c helpers shared with the per-cluster modules ---- */
 

@@ -250,6 +250,10 @@ async function main() {
 
   // Setup through the real gate once: create a key, name the hive, meet Major.
   await view(CONFIGS[0]);
+  // #336: the relay hands its cookie only to the one-time pairing link, so
+  // seed the cookie a paired window holds.
+  await cdp.send('Network.setCookie', { name: 'hush_session', value: fs.readFileSync(path.join(home, 'session.token'), 'utf8').trim(),
+    url: `http://127.0.0.1:${port}/`, httpOnly: true, sameSite: 'Strict' });
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/` });
   await cdp.waitFor(`!!document.querySelector('#gate.show')`, 'gate');
   await jsClick('#begin');
@@ -261,6 +265,13 @@ async function main() {
   await jsClick('#do-vibe');
   await jsClick('#meet-payne');
   await cdp.waitFor(`!!document.querySelector('#hive.show')`, 'hive');
+  // #336 (SECURITY.md): the page drops ?pair= from its address bar on load.
+  await cdp.eval('window.__prePair = true');
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/?pair=${'0'.repeat(32)}` });
+  await cdp.waitFor(`!window.__prePair && !!document.querySelector('#hive.show')`, 'hive after ?pair= load');
+  const search = await cdp.eval('location.search');
+  if (search !== '') fail('?pair= left in the address bar: ' + JSON.stringify(search));
+  console.log('L283 PASS P1 ?pair= stripped from the address bar');
 
   // Real CDP input.
   const point = (sel) => cdp.eval(`(() => { const e = document.querySelector(${JSON.stringify(sel)});
