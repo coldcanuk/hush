@@ -1492,6 +1492,32 @@ Each conference tile has `.tile-mute`. Mute is local: disable that
 tile’s inbound audio. Robots mute the same way humans do. This slice
 does not run Whisper STT/TTS inside the relay.
 
+Delta 2026-10-17 (VOICE V1, `docs/plan/PLAN_VOICE.md` P1.1–P1.5):
+`/api/status` also reports `stt` (bool, same detection as `whisper`),
+`tts` (server engines detected on PATH, chain order `piper`, `espeak`)
+and `voices` (Piper `*.onnx` models under `$HUSH_HOME/voices/piper`).
+The robot editor Voice picker (`#agent-voice-wrap`) is a TTS control: it
+follows `tts` non-empty (`ttsReady`), not `whisper`. `.chan-voice` and
+`.robot-call` stay Whisper-gated until V2 folds them into the selector.
+The browser probe (`voiceCaps()`) is detection only and mic-only: it
+counts `audioinput` devices and queries the `microphone` permission
+without opening the mic. The relay drawer `#voice-mic-test` (“Test mic”)
+is the only voice-path `getUserMedia` call: `{ audio: true }`, never
+video; it stops every track at once and records or sends nothing.
+`voiceTargetModes()` is the P1.2 gate V2's selector will read; V1 does
+not render the selector: `MUTE` is always enabled, and `C/S`, `ALL`,
+`ONE` are disabled with a reason title when relay STT is absent or no
+mic input is found.
+Chip and button paint (V1): theme tokens only, no literal colour.
+`#voice-caps` is a telegram chip: `--surface-2` fill, `--fg` uppercase
+mono text, 2px `--line` border, `2px 2px 0 var(--line)` shadow, hidden
+while empty. `#voice-mic-test` is an S1 stamp: transparent fill, `--fg`
+text, 2px border (`--line` in field-office, `--fg` in the other 7 themes,
+where `--line` measures under 3:1), `--line` offset shadow, 28px visual box with a 44px touch
+hit (`--btn-hit-touch` `::before`) on coarse pointers and ≤640px, and a
+2px `--fg` focus ring. `check_palette.sh` pin V1 measures both in all 8
+themes at 1440 and 390 (text ≥4.5:1, button edge ≥3:1).
+
 ### 18. Exit reaps children
 
 Exit / `--quit` / SIGTERM call `hush_relay_reap_children()` from
@@ -1510,7 +1536,9 @@ before a new install can take the port.”
 is a control: `role="button"` `tabindex="0"`, Fitts ≥44px tall.
 Click or Enter opens `#relay-drawer`. The panel lists version, listen
 port, stored note count, project names (or “no projects”), socket
-count, whisper, and turn. `#relay-close` [x] sits at the right of the
+count, turn, and the VOICE V1 capability chip `#voice-caps`
+(`STT whisper · TTS piper (N voices)`, mic inputs + permission, browser
+voices + browser STT; theme tokens only). `#relay-close` [x] sits at the right of the
 title row and dismisses the drawer. Nothing on `#stats` is a link
 off-hive.
 

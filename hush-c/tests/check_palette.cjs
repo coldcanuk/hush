@@ -63,6 +63,9 @@
 //      themes at both widths, so the picked tile is unmistakable (#309 r6).
 //   B1 Thread, Download and Stop are 20-24px tall at both widths; at 390 a
 //      point 20px above and below the centre still hits the control (44px).
+//   V1 VOICE V1 relay-drawer chip #voice-caps and Test mic #voice-mic-test:
+//      C1 text and C2 button edge in all 8 themes at 1440 and 390; C4 in
+//      field-office.
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
 // HUSH_TEST_WAIT_S (DevTools ready deadline, default 30), PALETTE_ART (dir:
 // writes palette-report.json there when set).
@@ -702,6 +705,48 @@ async function main() {
         const d = document.getElementById(${JSON.stringify(id)}); d.classList.add('show'); const p = d.querySelector('.panel'); if (p) p.scrollTop = 0; })()`);
       await sleep(150);
     });
+  }
+  /* V1 (VOICE V1): the relay-drawer capability chip #voice-caps and the
+   * Test mic button #voice-mic-test, measured in all 8 themes at both
+   * widths: their text runs >= 4.5:1 (C1), the button edge >= 3:1 (C2),
+   * near-white paint banned in field-office only (C4, the khaki rule). */
+  {
+    const VOICE_THEMES = ['dark', 'light', 'color-blind', 'dracula', 'desert', 'monochrome', 'christmas', 'field-office'];
+    const VOICE_IDS = ['#voice-caps', '#voice-mic-test'];
+    const mine = (el) => VOICE_IDS.some((id) => el.indexOf(id) >= 0);
+    let voiceViews = 0;
+    for (const [w, h] of WIDTHS) {
+      await view(w, h);
+      for (const theme of VOICE_THEMES) {
+        await cdp.eval(`(() => { for (const d of document.querySelectorAll('.drawer.show')) d.classList.remove('show');
+          document.documentElement.setAttribute('data-theme', ${JSON.stringify(theme)});
+          document.getElementById('relay-drawer').classList.add('show'); paintRelayDrawer(lastStatus);
+          const a = document.activeElement; if (a && a !== document.body) a.blur();
+          document.getElementById('voice-mic-test').scrollIntoView({ block: 'center' }); })()`);
+        await sleep(150);
+        await cdp.eval(KIT);
+        const m = await cdp.eval(MEASURE);
+        const live = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
+        if (live !== theme) failures.push(`V1 voice-${theme}@${w} page theme flipped to ${live} while measuring`);
+        const text = m.text.filter((t) => mine(t.el));
+        const ctl = m.ctl.filter((c) => mine(c.el));
+        const where = `voice-${theme}@${w}`;
+        report.push({ surface: where, w, text, ctl });
+        voiceViews++;
+        for (const id of VOICE_IDS)
+          if (!text.some((t) => t.el.indexOf(id) >= 0)) failures.push(`V1 ${where} ${id} has no measured text run (not on screen?)`);
+        if (!ctl.some((c) => c.el.indexOf('#voice-mic-test') >= 0)) failures.push(`V1 ${where} #voice-mic-test edge not measured`);
+        for (const t of text) if (t.ratio < 4.5) failures.push(`V1 C1 ${where} text ${t.ratio}:1 ${t.fg} on ${t.bg} ${t.el} "${t.t}"`);
+        for (const c of ctl) if (c.ratio < 3) failures.push(`V1 C2 ${where} control ${c.ratio}:1 border ${c.border} fill ${c.fill} behind ${c.behind} ${c.el}`);
+        if (theme === 'field-office')
+          for (const x of m.white.filter((x) => mine(x.el))) failures.push(`V1 C4 ${where} near-white ${x.kind} ${x.c} ${x.el}`);
+        console.log(`palette V1 ${where}: ${text.length} text (min ${text.length ? Math.min(...text.map((t) => t.ratio)).toFixed(2) : '-'}), ` +
+          `${ctl.length} controls (min ${ctl.length ? Math.min(...ctl.map((c) => c.ratio)).toFixed(2) : '-'})`);
+      }
+    }
+    if (voiceViews !== VOICE_THEMES.length * WIDTHS.length) failures.push(`V1 measured ${voiceViews} theme x width views, want ${VOICE_THEMES.length * WIDTHS.length}`);
+    await cdp.eval(`document.getElementById('relay-drawer').classList.remove('show')`);
+    await pinTheme();
   }
   await cdp.eval(`(() => { for (const d of document.querySelectorAll('.drawer.show')) d.classList.remove('show'); })()`);
   await cdp.eval(`document.getElementById('manage-chan').classList.add('show')`);

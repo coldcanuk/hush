@@ -1136,6 +1136,35 @@ button.fo-person:hover { background: var(--surface-2); }
   color: var(--warn); border: 2px solid var(--warn); border-radius: 3px;
   padding: 2px 8px; transform: rotate(2deg);
 }
+/* VOICE V1: relay-drawer capability chip (PLAN_VOICE section 5). Theme
+   tokens only, so it reads dossier khaki under field-office. */
+.voice-caps {
+  display: inline-block; margin: 10px 0 0; padding: 3px 8px;
+  border: 2px solid var(--line); border-radius: 3px; box-shadow: 2px 2px 0 var(--line);
+  background: var(--surface-2); color: var(--fg); font: 0.68rem/1.5 var(--mono);
+  letter-spacing: 0.08em; text-transform: uppercase; white-space: pre-line;
+}
+.voice-caps:empty { display: none; }
+/* The Test mic edge is --fg so it clears 3:1 in every theme (--line is a
+   faint rule outside field-office); field-office keeps its S1 --line stamp. */
+.voice-mic-test {
+  display: block; margin-top: 8px; min-height: 28px; padding: 0 10px;
+  border: 2px solid var(--fg); border-radius: 3px; box-shadow: 2px 2px 0 var(--line);
+  background: transparent; color: var(--fg); font: 700 0.66rem/1 var(--mono);
+  letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer; position: relative;
+}
+.voice-mic-test:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
+html[data-theme="field-office"] .voice-mic-test { border-color: var(--line); }
+/* UI-M12d: phones get the 44px hit from a transparent ::before; the
+   visual 28px box does not grow. */
+@media (pointer: coarse), (max-width: 640px) {
+  .voice-mic-test::before {
+    content: ""; position: absolute; left: 0; right: 0;
+    top: min(0px, calc(50% - var(--btn-hit-touch) / 2));
+    bottom: min(0px, calc(50% - var(--btn-hit-touch) / 2));
+    background: transparent; pointer-events: auto;
+  }
+}
 /* Mid widths: roster drops to a full-width strip under the log. */
 @media (max-width: 1100px) {
   .shell.hive { grid-template-columns: 200px minmax(0, 1fr); }
@@ -2553,6 +2582,9 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
       </div>
       <p class="help">Stored notes, projects, and sockets on this hive.</p>
       <div id="relay-body" class="help"></div>
+      <p id="voice-caps" class="voice-caps" aria-live="polite"></p>
+      <button id="voice-mic-test" class="voice-mic-test" type="button"
+        title="Opens the microphone once (audio only, no camera), then closes it. Nothing is recorded or sent.">Test mic</button>
     </div>
   </div>
   <div class="drawer" id="hive-leave" role="dialog" aria-label="Leave the hive">
@@ -3117,6 +3149,9 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
     let manageHumanPills = [];
     let manageRobotPills = [];
     let whisperReady = false;
+    /* VOICE V1 (PLAN_VOICE P1.4): the robot voice picker is a TTS control,
+       so it follows /api/status "tts", not Whisper (STT). */
+    let ttsReady = false;
     /* UI-M9: no persistent tool rail state. The header KIT stamp toggles
        #kit-menu (overlay only); thread park/restore are no-ops. */
     let threadDrag = null;
@@ -5320,7 +5355,7 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
       draftName = typedName;
       draftPrompt = typedPrompt;
       const voiceEl = $("agent-voice");
-      const voice = (whisperReady && voiceEl) ? (voiceEl.value || "") : "";
+      const voice = (ttsReady && voiceEl) ? (voiceEl.value || "") : "";
       const enabled = !($("agent-enabled")) || $("agent-enabled").checked;
       const introEnabled = !($("agent-intro-enabled")) || $("agent-intro-enabled").checked;
       const intro = ($("agent-intro") && $("agent-intro").value || "").trim()
@@ -5788,6 +5823,7 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
     $("relay-close").addEventListener("click", () => {
       $("relay-drawer").classList.remove("show");
     });
+    $("voice-mic-test").addEventListener("click", () => { voiceMicCheck(); });
 
     const selfId = "p" + Math.random().toString(16).slice(2, 10);
     const PEER_MAX = 8;
@@ -7731,10 +7767,140 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
         (status.events || 0) + " stored",
         proj.length ? (proj.map((p) => p.name || p.slug).join(", ")) : "no projects",
         (status.clients || 0) + " sockets",
-        "Whisper " + (status.whisper ? "ready" : "off"),
         "TURN " + (status.turn_running ? "running" : "off")
       ];
       $("relay-body").textContent = lines.join("\n");
+      $("voice-caps").textContent = voiceCapsText(voiceCapsFrom(status, voiceBrowser));
+      if (!voiceBrowser)
+        voiceBrowserCaps().then(() => { if ($("relay-drawer").classList.contains("show")) paintRelayDrawer(lastStatus); });
+    }
+
+    /* VOICE V1 capability probe (PLAN_VOICE section 2.2, P1.1-P1.5).
+       Detection only: nothing records, transcribes or speaks. Mic-only (D9):
+       the automatic probe counts "audioinput" devices and queries the
+       "microphone" permission; it does not open the mic. Only the explicit
+       Test mic click (voiceMicCheck) opens it, audio only. */
+    const VOICE_VOICES_WAIT_MS = 2000;
+    const VOICE_PROBE_CAP_MS = 2400;
+    let voiceBrowser = null;
+    let voiceBrowserProbe = null;
+
+    /* Resolves p, or fallback once ms pass, so no probe can hang voiceCaps(). */
+    function voiceWithin(p, ms, fallback) {
+      return new Promise((resolve) => {
+        const t = setTimeout(() => resolve(fallback), ms);
+        Promise.resolve(p).then((v) => { clearTimeout(t); resolve(v); },
+          () => { clearTimeout(t); resolve(fallback); });
+      });
+    }
+
+    /* Distinct speechSynthesis voiceURIs; null when the API is absent.
+       getVoices() is async on Chrome: wait for voiceschanged, at most 2 s. */
+    function voiceSynthCount() {
+      const synth = window.speechSynthesis;
+      if (!synth || typeof synth.getVoices !== "function") return Promise.resolve(null);
+      const count = () => new Set((synth.getVoices() || []).map((v) => v.voiceURI)).size;
+      if (count() > 0) return Promise.resolve(count());
+      return new Promise((resolve) => {
+        const done = () => { synth.removeEventListener("voiceschanged", done); resolve(count()); };
+        synth.addEventListener("voiceschanged", done);
+        setTimeout(done, VOICE_VOICES_WAIT_MS);
+      });
+    }
+
+    /* Mic inputs (null when unknown) and the microphone permission state. */
+    async function voiceMicProbe() {
+      const md = navigator.mediaDevices;
+      let inputs = null;
+      if (md && typeof md.enumerateDevices === "function") {
+        try {
+          inputs = (await md.enumerateDevices()).filter((d) => d.kind === "audioinput").length;
+        } catch (e) { inputs = null; }
+      }
+      let permission = "unknown";
+      if (navigator.permissions && typeof navigator.permissions.query === "function") {
+        try { permission = (await navigator.permissions.query({ name: "microphone" })).state; }
+        catch (e) { permission = "unknown"; }
+      }
+      return { inputs, permission };
+    }
+
+    /* Browser half of the probe, run once per page and cached. */
+    function voiceBrowserCaps() {
+      if (voiceBrowserProbe) return voiceBrowserProbe;
+      const recognition = ("SpeechRecognition" in window) || ("webkitSpeechRecognition" in window);
+      voiceBrowserProbe = Promise.all([
+        voiceWithin(voiceMicProbe(), VOICE_PROBE_CAP_MS, { inputs: null, permission: "unknown" }),
+        voiceWithin(voiceSynthCount(), VOICE_PROBE_CAP_MS, null)
+      ]).then(([mic, voices]) => {
+        voiceBrowser = { mic, voices, recognition };
+        return voiceBrowser;
+      });
+      return voiceBrowserProbe;
+    }
+
+    /* Combines /api/status (stt, tts, voices) with the browser probe b. */
+    function voiceCapsFrom(st, b) {
+      const s = st || {};
+      return {
+        stt: s.stt === true,
+        tts: Array.isArray(s.tts) ? s.tts.slice() : [],
+        voices: Number.isInteger(s.voices) ? s.voices : 0,
+        mic: b ? b.mic : { inputs: null, permission: "unknown" },
+        browserVoices: b ? b.voices : null,
+        browserStt: b ? !!b.recognition : false,
+        micCheck: b && b.micCheck ? b.micCheck : ""
+      };
+    }
+
+    /* Explicit mic check, run only from the #voice-mic-test click (CoS
+       13:54). Mic-only: the one getUserMedia call in the voice probe asks
+       for { audio: true } and nothing else, so no camera prompt. It reads
+       whether an audio track came back and stops every track at once;
+       nothing is recorded, kept or sent. */
+    async function voiceMicCheck() {
+      const md = navigator.mediaDevices;
+      let result = "unsupported";
+      if (md && typeof md.getUserMedia === "function") {
+        try {
+          const stream = await md.getUserMedia({ audio: true });
+          const tracks = stream.getTracks();
+          result = tracks.some((t) => t.kind === "audio") ? "ok" : "no audio track";
+          tracks.forEach((t) => t.stop());
+        } catch (e) { result = (e && e.name) || "error"; }
+      }
+      await voiceBrowserCaps();
+      voiceBrowser.micCheck = result;
+      paintRelayDrawer(lastStatus);
+      return result;
+    }
+
+    /* Full capability record; resolves within VOICE_PROBE_CAP_MS (P1.3). */
+    async function voiceCaps(st) {
+      return voiceCapsFrom(st, await voiceBrowserCaps());
+    }
+
+    /* P1.2: which VOICE TO: modes can be offered. MUTE always; the rest need
+       relay STT and a mic that is not known to be missing. The selector
+       itself is V2; this is the gate it will read. */
+    function voiceTargetModes(caps) {
+      const why = !caps.stt ? "Needs speech-to-text: Whisper was not found on the relay"
+        : (caps.mic.inputs === 0 ? "Needs a microphone: none was found" : "");
+      const mode = { enabled: !why, title: why };
+      return { cos: mode, all: mode, one: mode, none: { enabled: true, title: "Mic off" } };
+    }
+
+    /* Relay-drawer chip text, e.g. "STT whisper · TTS piper (12 voices)". */
+    function voiceCapsText(caps) {
+      const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
+      const piper = caps.tts.indexOf("piper") >= 0 ? " (" + plural(caps.voices, "voice", "voices") + ")" : "";
+      const mic = caps.mic.inputs === null ? "unknown" : plural(caps.mic.inputs, "input", "inputs");
+      return [
+        "STT " + (caps.stt ? "whisper" : "none") + " · TTS " + (caps.tts.length ? caps.tts.join(", ") : "none") + piper,
+        "Mic " + mic + " (" + caps.mic.permission + ")" + (caps.micCheck ? " · test " + caps.micCheck : ""),
+        "Browser voices " + (caps.browserVoices === null ? "none" : caps.browserVoices)
+          + " · Browser STT " + (caps.browserStt ? "yes" : "no")
+      ].join("\n");
     }
 
     function render(events, status) {
@@ -8273,8 +8439,8 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
       const wrap = $("agent-voice-wrap");
       const sel = $("agent-voice");
       if (!wrap || !sel) return;
-      wrap.hidden = !whisperReady;
-      if (!whisperReady) return;
+      wrap.hidden = !ttsReady;
+      if (!ttsReady) return;
       const ids = skillVoices.length ? skillVoices : ["alloy", "echo", "fable", "onyx", "nova", "shimmer"];
       sel.innerHTML = "<option value=\"\">Default</option>";
       ids.forEach((id) => {
@@ -9138,6 +9304,10 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
         syncIdentityViaImport();
         syncApproval();
         whisperReady = !!st.whisper;
+        const wasTts = ttsReady;
+        ttsReady = Array.isArray(st.tts) && st.tts.length > 0;
+        if (wasTts !== ttsReady) paintVoiceRow($("agent-voice") && $("agent-voice").value);
+        voiceBrowserCaps();
         if (session.ready && page !== "payne") page = "hive";
         else if (!session.logged_in
             && page !== "import" && page !== "help" && page !== "splash")

@@ -12,6 +12,7 @@
 #include "hush_presence.h"
 #include "hush_store.h"
 #include "hush_thread.h"
+#include "hush_voice.h"
 #include "hush_wake.h"
 
 enum {
@@ -54,6 +55,10 @@ static hush_status_t hush_http_desk_label(char *out, size_t outsz,
 /* True when slug is empty or names a launch project. */
 static int hush_http_project_known(const char *slug);
 
+/* Writes the VOICE V1 stt/tts/voices members into out (all absent when the
+ * probe or format fails). Returns stt, the legacy "whisper" value. */
+static int hush_http_voice_json(char *out, size_t outsz);
+
 void hush_http_serve_status(int fd, const hush_store_t *store)
 {
     char body[HUSH_HTTP_STATUS_MAX];
@@ -63,19 +68,21 @@ void hush_http_serve_status(int fd, const hush_store_t *store)
     int whisper;
     int turn_on;
     int vibe_pub;
+    char voice_json[HUSH_VOICE_JSON_MAX] = {0};
 
     n = hush_store_count(store);
-    whisper = hush_turn_whisper_available();
+    whisper = hush_http_voice_json(voice_json, sizeof(voice_json));
     turn_on = (hush_http_turn() != NULL && hush_http_turn()->running);
     vibe_pub = (hush_http_launch() == NULL || !hush_http_launch()->has_vibe || hush_http_launch()->vibe_public);
     hush_agent_status(thinking, sizeof(thinking));
     w = snprintf(body, sizeof(body),
                  "{\"ok\":true,\"version\":\"%s\",\"build\":\"%s\",\"events\":%zu,"
-                 "\"clients\":%d,\"port\":%u,\"whisper\":%s,"
+                 "\"clients\":%d,\"port\":%u,\"whisper\":%s,%s,"
                  "\"turn_running\":%s,\"vibe_public\":%s,\"thinking\":%s}\n",
                  HUSH_BUILD_VERSION, HUSH_BUILD_SHA,
                  n, hush_http_client_count(), (unsigned)hush_http_listen_port(),
                  whisper ? "true" : "false",
+                 voice_json,
                  turn_on ? "true" : "false",
                  vibe_pub ? "true" : "false",
                  thinking[0] ? thinking : "[]");
@@ -458,3 +465,16 @@ hush_status_t hush_http_serve_presence_post(int fd, const char *body,
     return HUSH_OK;
 }
 
+static int hush_http_voice_json(char *out, size_t outsz)
+{
+    hush_voice_caps_t voice = {0};
+
+    assert(out != NULL);
+    assert(outsz >= (size_t)HUSH_VOICE_JSON_MAX);
+    if (hush_voice_probe(&voice) == HUSH_OK &&
+        hush_voice_format(out, outsz, &voice) == HUSH_OK)
+        return voice.stt;
+    memset(&voice, 0, sizeof(voice));
+    (void)hush_voice_format(out, outsz, &voice);
+    return 0;
+}
