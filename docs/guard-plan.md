@@ -1,7 +1,8 @@
 # GUARD: per-command guardrails (plan only)
 
 Status: PLAN. No product code. Owner: Floor (engine, relay, API). Journeys (JNY): UI. Order: CoS 2026-10-17 09:56 ET, user-specified by Chuck.
-Base: main `13511bd48b47` (#323). Depends on C-5 P1 (CSRF/Origin, approve nonce, agent sandbox), which ships first.
+Base: main `13511bd48b47` (#323). Depends on C-5 P1 = #336 "P1 security: agent children can read session.token and self-approve; no Origin/CSRF check" (CSRF/Origin, approve nonce, agent sandbox, loopback `Set-Cookie` owner-token hand-out), which ships first. Related: #333 (Copilot/Goose ungated), #337 (persist approval-held turns across relay restart).
+CoS ruling 2026-10-17 10:12 ET applied (rev 2); see §10.
 Tags: **OBS** `file:line` at `13511bd`, **VERIFIED_EXTERNAL** url, **INFERRED**, **UNKNOWN**.
 
 ## 0. Spec (from the order)
@@ -47,7 +48,7 @@ Wrapper shells via PATH or SHELL are **rejected as an enforcement mechanism**: C
 | Provider | Today (OBS) | Officially supported interception | Pre-exec? | GUARD mechanism | Source |
 |---|---|---|---|---|---|
 | Cline | shell only when `--auto-approve true` | `PreToolUse` hook; `run_commands` input `command`; returns `cancel` / `review`. CLI path `.cline/hooks/PreToolUse.sh`; **hooks are disabled in `--yolo`** | **Yes** | H. Install the hook in a Hush-owned HOME, never in the project cwd (agent-writable). UNKNOWN: whether `--auto-approve true` keeps hooks on (a pin test is needed); whether a global CLI hook dir exists | VERIFIED_EXTERNAL https://github.com/cline/cline/blob/main/sdk/examples/hooks/README.md , https://docs.cline.bot/usage/cli-overview , https://github.com/cline/cline/pull/13649 |
-| Copilot CLI | `--allow-all-tools` | `preToolUse` hook, `permissionDecision` allow/deny/ask; `ask` acts as deny in non-interactive mode; **exit 2 or a crash fails closed, a timeout fails open**. Also `--deny-tool 'shell(x)'`; deny beats allow | **Yes** | H. Hook timeout far above the relay's ask timeout; the relay answers deny at its own timeout so Copilot's timeout never fires. Drop `--allow-all-tools` for `--allow-tool shell` plus the hook | VERIFIED_EXTERNAL https://docs.github.com/en/copilot/reference/hooks-reference , https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli/allowing-tools |
+| Copilot CLI | `--allow-all-tools` (#333) | `preToolUse` hook, `permissionDecision` allow/deny/ask; exit 2 or a crash fails closed. **A timeout always fails open, "including for `preToolUse` and admin-deployed policy hooks"; HTTP hooks fail open too. No documented setting makes a timeout deny.** `permissionRequest` hooks also fall through on no decision. `--deny-tool 'shell'` beats every allow | **No** (not fail-closed) | **Native shell denied** (`--deny-tool shell`, no `--allow-all-tools`). Shell only via the Hush MCP `shell` tool (M), allowed as `--allow-tool '<hush-mcp>(shell)'`. The hook may stay as defence in depth, never as the gate. UNKNOWN (pin later, not relied on): whether a timed-out hook's fall-through in `-p` mode with no allow rule denies | VERIFIED_EXTERNAL https://docs.github.com/en/copilot/reference/hooks-reference , https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli/allowing-tools |
 | Codex | `exec --sandbox read-only` | app-server JSON-RPC `item/commandExecution/requestApproval` → accept/decline/cancel; `PreToolUse` hooks (non-managed hooks need trust review); execpolicy `prefix_rule` | **Yes** (P); H is secondary | P: move from `codex exec` to `codex app-server` with approval policy `untrusted`, so every command reaches Hush. Hush must never send `acceptWithExecpolicyAmendment` unless the owner chose Always | VERIFIED_EXTERNAL https://learn.chatgpt.com/docs/hooks , https://github.com/openai/codex/blob/main/codex-rs/execpolicy/README.md , https://www.mintlify.com/openai/codex/concepts/approvals |
 | Goose | `goose run`, default mode `auto` | `GOOSE_MODE=approve`; ACP `requestPermission` with allow_once / allow_always / reject_once / reject_always; per-tool `permission.yaml` | **Yes** via ACP (P) | P: `goose acp`, answer `requestPermission` per call; map allow_always/reject_always to Hush-only rules and reply `*_once` to Goose so Goose keeps no rule store | VERIFIED_EXTERNAL https://block-goose.mintlify.app/advanced/acp-protocol , https://github.com/block/goose/blob/58f3cc9e/documentation/docs/guides/goose-permissions.md |
 | Grok Build | shell denied (`run_terminal_cmd` in both deny lists) | `PreToolUse` hooks in `~/.grok/hooks/*.json` (matcher `Bash`), deny via JSON or exit 2; `--always-approve` keeps deny rules and hooks; **hook failure fails open** | Yes, but fail-open | Keep shell denied (today). Re-enable only with H **plus** M fallback; fail-open makes H alone non-enforcing | VERIFIED_EXTERNAL https://docs.x.ai/build/features/hooks , https://docs.x.ai/build/features/permissions |
@@ -57,9 +58,11 @@ Wrapper shells via PATH or SHELL are **rejected as an enforcement mechanism**: C
 | NemoClaw (planned) | not wired | OpenShell sandbox: deny-by-default **network** policy with operator approval; no documented per-command exec approval | **No** documented | Inherits OpenClaw exec approvals inside (INFERRED). Default: shell denied, M only | VERIFIED_EXTERNAL https://docs.nvidia.com/nemoclaw/user-guide/openclaw/reference/network-policies |
 | Ollama / API | no tools | n/a | n/a | none needed | OBS |
 
-**True per-command enforcement (target):** Cline (H), Copilot (H), Codex (P), Goose (P), Hermes (P). **Shell denied unless gated (M only):** Grok Build, OpenClaw, NanoClaw, NemoClaw, until a pin test proves a seam. **Rule:** a provider with no verified pre-exec seam gets no shell. The fallback is never "allow".
+**True per-command enforcement (target):** Cline (H), Codex (P), Goose (P), Hermes (P). **Native shell denied; shell only through the Hush MCP `shell` tool (M):** Copilot (hook timeout fails open; CoS 10:12: unacceptable), Grok Build, OpenClaw, NanoClaw, NemoClaw, until a pin test proves a fail-closed seam. **Rule:** a provider with no verified pre-exec seam gets no shell. The fallback is never "allow".
 
-Fail-closed contract for every mechanism: socket down, malformed reply, relay timeout, or hook crash → **deny**. Tests pin each provider's fail-open edge (Copilot timeout, Grok hook failure) as unreachable.
+Fail-closed contract for every mechanism: socket down, malformed reply, relay timeout, or hook crash → **deny**. A seam with a documented fail-open edge (Copilot timeout, Grok hook failure) is not a gate; those providers use M. The M server itself fails closed.
+
+**Copilot fail-closed finding (CoS 10:12).** VERIFIED_EXTERNAL https://docs.github.com/en/copilot/reference/hooks-reference ("Exit codes for command hooks" and the `preToolUse` IMPORTANT note): "Timeouts are fail-open for every event, including `preToolUse` and admin-deployed policy hooks"; "HTTP `preToolUse` hooks are fail-open". `timeoutSec` (default 30) can be raised, but no option turns a timeout into a deny. So Copilot gets no native shell.
 
 ## 3. Matcher semantics
 
@@ -81,7 +84,9 @@ Fail-closed contract for every mechanism: socket down, malformed reply, relay ti
 4. Approve applies only when every segment has an approve and no reject or ask applies.
 5. No match → **ask** (default).
 
-Turn gate interaction: GUARD runs inside an already-approved turn. `approve_every_action` (turn) and GUARD (command) are independent. The KEYS `approve_guest_turns` mode never creates or satisfies GUARD rules (PLAN_KEYS §2). Open: may Always rules apply in robot-chained, follow or election turns (C-3)? Proposed: no; those turns ask.
+Turn gate interaction: GUARD runs inside an already-approved turn. `approve_every_action` (turn) and GUARD (command) are independent. The KEYS `approve_guest_turns` mode never creates or satisfies GUARD rules (PLAN_KEYS §2).
+
+**Resolved (JNY ruling 10:10): Always-approve rules exclude robot-chained, follow and election turns by default.** Commands in those turns skip approve rules and go to ask; reject rules still apply. A per-rule opt-in (`turns: ["chained","follow","election"]`) comes later and needs Gauge review. It is not in v1.
 
 ## 5. Rule authority and audit
 
@@ -90,11 +95,12 @@ Turn gate interaction: GUARD runs inside an already-approved turn. `approve_ever
 - **Decisions.** "Always approve" and "Reject" from a pending card create a rule (`created_by: owner`, `source: decision`). The proposed default match is `exact`; the owner can widen it to prefix or pattern in the card (open question for JNY).
 - **Audit.** `hush/guard-audit.jsonl`, append-only, mode 0600, relay-written, one JSON line per decision or rule change. Fields: `ts, event (decide|rule_create|rule_update|rule_delete|propose), robot, provider, project, thread_root, job_id, cmd_redacted, cmd_sha256, segments, decision, rule_id, by (owner|rule|default|timeout|failclosed), mechanism (H|P|M)`.
 - **Redaction** before writing: values of `--token/--password/--secret/--key`, `Authorization`/`Bearer`, `ghp_/gho_/ghs_/xai-/sk-` shapes, URL userinfo, and env prefix values. The full command is kept only as `cmd_sha256`.
-- **Retention.** Rotate at 5 MiB, keep 5 files (proposed; Ops to confirm). Never synced over nostr.
+- **Retention.** Rotate at 5 MiB, keep 5 files (**approved, CoS 10:12**). Never synced over nostr.
+- **Pending asks (CoS 10:12).** Each pending ask expires after **10 minutes** (default) and is **auto-rejected**. The owner can change the timeout (`ask_timeout_s` in `guardrails.json` settings, written through the nonce path; minimum and maximum bounds are for Floor). An auto-reject posts a **visible reason** to the thread and to the agent (copy `[[GUARD_EXPIRED]]`), logged as `by: timeout`. The relay's ask timeout is always shorter than any provider-side wait, so the provider never decides. Restart: today held state is in memory; pending asks follow #337 (persist approval-held turns across relay restart, owner FLR). Until #337 lands, a relay restart rejects every pending ask (`by: restart`) with a visible reason.
 
 ## 6. Shared exec path with C-5 P1
 
-C-5 branches (`gb/p1-csrf-origin`, `gb/p1-approve-nonce`, `gb/p1-agent-sandbox`) **do not exist yet** (OBS: `git ls-remote` at 09:56 ET). No C-5 issue was found (search: open issues "session.token"). GUARD builds on C-5:
+C-5 is tracked as **#336** (verified title: "P1 security: agent children can read session.token and self-approve; no Origin/CSRF check"). Its branches (`gb/p1-csrf-origin`, `gb/p1-approve-nonce`, `gb/p1-agent-sandbox`) did not exist at 09:56 ET. #336 also covers the P1 **loopback `Set-Cookie` owner-token hand-out** (`hush_http.c:286-290`, `:732-738` per #336). GUARD depends on that being closed: otherwise a sandboxed child fetches the token over loopback and writes rules. GUARD builds on C-5:
 
 - **Sandbox** (landlock/bwrap) in `exec_child` (`agent_process.c:279`) must deny read and write on `$HUSH_HOME`, which covers `guardrails.json`, `guard-audit.jsonl`, `session.token` and the guard socket directory except the one socket bound in. The hook binary and its config sit read-only, outside the cwd.
 - **Env scrub** in the same place: remove `HUSH_*`, tokens and keystore variables; set `HOME` to a per-job Hush-owned dir that contains the provider hook config (e.g. `~/.grok/hooks`, `.cline/hooks`, Copilot hooks).
@@ -103,7 +109,7 @@ C-5 branches (`gb/p1-csrf-origin`, `gb/p1-approve-nonce`, `gb/p1-agent-sandbox`)
 
 ## 7. Data, API, UI contract
 
-**Store recommendation: a separate `hush/guardrails.json`** (mode 0600, relay-only, atomic write by tmp + rename). Not shared with `macros.json`, because:
+**Store: a separate `hush/guardrails.json` (RESOLVED, CoS approved 10:12)** (mode 0600, relay-only, atomic write by tmp + rename). Not shared with `macros.json`, because:
 
 1. It is a security boundary with a different blast radius. A bad macro must not corrupt rules; PLAN_KEYS chose a separate file for the same reason (C-7).
 2. It changes on a different path: GUARD writes need the nonce + Origin and count `hit_count` on every hit, while macros are edited rarely.
@@ -115,6 +121,7 @@ The UI can still share the drawer (a GUARDRAILS tab). JNY to confirm.
 ```json
 {
   "format": "hush-guard", "version": 1,
+  "settings": {"ask_timeout_s": 600},
   "rules": [
     {"id": "g_01J…", "match": {"kind": "prefix", "value": ["git", "status"]},
      "scope": {"kind": "project", "id": "hush"}, "action": "approve",
@@ -138,14 +145,14 @@ The UI can still share the drawer (a GUARDRAILS tab). JNY to confirm.
 | PATCH | `/api/guard/rules/{id}` | update match/scope/action/note |
 | DELETE | `/api/guard/rules/{id}` | delete a rule |
 | GET | `/api/guard/pending` | pending commands (robot, provider, project, cmd_redacted, segments, age, expires) |
-| POST | `/api/guard/pending/{id}` | `{decision: once\|always\|ask\|reject, match?, scope?}` |
+| POST | `/api/guard/pending/{id}` | `{decision: once\|always\|ask\|reject, match?, scope?}`; expired asks return 410 with the auto-reject reason |
 | GET | `/api/guard/audit?limit=` | tail of the audit log (redacted) |
 
 Route style follows `/api/*` in `hush_http.c:1005-1060`. Path parameters are **NEW** to the router (INFERRED: today it uses `strcmp` exact paths), so they may need to become query parameters, e.g. `?id=`. Floor to decide.
 
 **UI hand-off (JNY).** No colours are set here; JNY uses existing tokens.
 
-- **States.** Pending card: waiting / deciding / decided (once, always, ask, reject) / expired (auto-reject) / failed-closed. Rules table: empty / list / editing / delete-confirm / save-error / nonce-expired. Proposal card: proposed / applied / dismissed.
+- **States.** Pending card: waiting (with a countdown to auto-reject) / deciding / decided (once, always, ask, reject) / expired (auto-reject, visible reason) / failed-closed / rejected-by-restart. Rules table: empty / list / editing / delete-confirm / save-error / nonce-expired. Proposal card: proposed / applied / dismissed.
 - **Stamps.** Approve | Always approve | Ask every time | Reject (PLAN_KEYS §2).
 - **Copy placeholders** (JNY/Ops own the words):
   - `[[GUARD_PENDING_TITLE]]`
@@ -167,8 +174,8 @@ Every PR includes stub tests with a stub PATH (fake `cline`, `copilot`, `codex`,
 | G1 | `hush_guard` core | parser, matcher, precedence, `guardrails.json` load/save; no wiring | table tests for §3 bypasses. Mutants: drop the segment split → `a && rm` approved; reject-last ordering → approve wins; regex instead of anchored glob |
 | G2 | audit + redaction | jsonl writer, rotation | Mutant: skip redaction → `ghp_` appears in the log |
 | G3 | API + nonce | `/api/guard/*` on the C-5 nonce/Origin | Mutants: accept bearer-only writes; skip the Origin check |
-| G4 | guard socket + `hush-guard-hook` | socket, peercred, fail-closed | Mutant: on timeout return allow |
-| G5 | Copilot (H) | swap `--allow-all-tools`; hook config in the job HOME | stub copilot calls the hook; deny is honoured. Mutant: keep `--allow-all-tools` with no hook |
+| G4 | guard socket + `hush-guard-hook` + pending expiry | socket, peercred, fail-closed, 10 min auto-reject (configurable), visible reason | Mutants: on timeout return allow; expiry posts no reason |
+| G5 | Copilot (M) | `--deny-tool shell`, drop `--allow-all-tools` (#333), allow only the Hush MCP `shell` | stub copilot argv pin: `--deny-tool shell` is present and `--allow-all-tools` is absent. Mutants: re-add `--allow-all-tools`; drop `--deny-tool shell` |
 | G6 | Cline (H) | hook in the job HOME; pin hook-on with `--auto-approve true` | Mutant: hook written into the project cwd |
 | G7 | Codex (P) | app-server client | Mutant: auto `acceptForSession` |
 | G8 | Goose (P) | ACP client | Mutant: forward `allow_always` to Goose |
@@ -179,6 +186,17 @@ Every PR includes stub tests with a stub PATH (fake `cline`, `copilot`, `codex`,
 
 ## 9. Open questions
 
-- **CoS:** Should Copilot's ungated `--allow-all-tools` (OBS `agent_process.c:40`) and Goose's default `auto` be closed now, as a C-5-adjacent fix, before GUARD? Should Always rules apply in robot-chained, follow or election turns (C-3)? What is the pending-ask timeout (proposed 10 min, then auto-reject)? Audit retention?
-- **JNY:** Do the GUARDRAILS tab and the pending card live in the drawer or inline in the thread? What is the default match when the owner picks "Always" (exact vs prefix)? All copy placeholders.
-- **Floor:** path parameters vs query parameters in the router; a C-5 issue number (none found); Cline `--auto-approve true` + hooks behaviour; OpenClaw isolated-mode prompt seam.
+- **CoS:** Sandbox fallback and loopback cookie decisions are tracked in #336. Close #333 before GUARD G5?
+- **JNY:** Do the GUARDRAILS tab and the pending card live in the drawer or inline in the thread? What is the default match when the owner picks "Always" (exact vs prefix)? Countdown display. All copy placeholders.
+- **Floor:** path parameters vs query parameters in the router; bounds for `ask_timeout_s`; Cline `--auto-approve true` + hooks behaviour; OpenClaw isolated-mode prompt seam; #337 hand-off for pending asks.
+
+## 10. Resolved (CoS 10:12, JNY 10:10)
+
+| Item | Ruling |
+|---|---|
+| Pending ask | 10 min, then auto-reject; owner-configurable; the reject shows a visible reason (§5) |
+| Audit retention | 5 MiB x 5 files (§5) |
+| Copilot | hook timeout fails open = unacceptable. No official fail-closed timeout setting exists (VERIFIED_EXTERNAL above), so native shell is denied and Copilot gets the Hush MCP shell only (§2, G5) |
+| Store | separate `hush/guardrails.json` (§7) |
+| Always vs chained/follow/election | excluded by default; per-rule opt-in later, Gauge-reviewed (§4) |
+| Tracking | #333 Copilot/Goose ungated; #336 C-5 + loopback `Set-Cookie` owner token (GUARD depends on it); #337 persisted held turns (pending asks) |
