@@ -61,6 +61,16 @@
 //      bad badge, the dragged inventory item): in field-office every painted colour is a field-office token,
 //      text >= 4.5:1 and rims >= 3:1; in the other 7 themes the computed value
 //      equals khaki head d58185ab's, at 1440 and 390.
+//   W1 (no white in field-office) in every measured view, the L1 fixture, the
+//      call stage and the skills board: no element with a box paints pure white
+//      (#fff / rgb(255,255,255), alpha > 0) in text colour, background colour or
+//      gradient, a drawn border side or outline, box- or text-shadow, SVG fill
+//      or stroke.
+//   K9 the real call stage (openStage + addTile, Mute and Muted) passes
+//      C1/C2/C4/W1 in field-office (Ops #325: label 1.23:1, #fff Mute).
+//   K10 the real skills board (paintSkillBoard) and skill sheet
+//      (paintSkillSheet) pass C1/C2/C4/W1 in field-office (Ops #325: #ffd75e
+//      lifetime ink, #d4a017 chip rim, #0ff portrait rim).
 //   B1 Thread, Download and Stop are 20-24px tall at both widths; at 390 a
 //      point 20px above and below the centre still hits the control (44px).
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
@@ -370,6 +380,55 @@ const KIT = `(() => {
   return true;
 })()`;
 
+/* W1: pure white anywhere in the rendered page. Every element with a box
+ * (any size, on or off screen) and visibility visible: text colour where it
+ * has text or is a control, background colour and gradient stops, each border
+ * side and the outline where they are drawn, box-shadow, text-shadow, and SVG
+ * fill / stroke. A colour is white when r = g = b = 255 with alpha > 0.
+ * Returns { n, hits }. */
+const WHITE = `(() => {
+  const isW = (v) => [...String(v).matchAll(/rgba?\\(([^)]*)\\)/g)].some((m) => { const p = m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number);
+    return p[0] === 255 && p[1] === 255 && p[2] === 255 && (p.length < 4 || p[3] > 0); }) || /(^|[^-\\w])(white|#fff(fff)?)([^-\\w]|$)/i.test(String(v));
+  const hits = []; let n = 0;
+  for (const el of document.querySelectorAll('body, body *')) {
+    if (!el.getClientRects().length) continue; const cs = getComputedStyle(el); if (cs.visibility !== 'visible') continue; n++;
+    const where = (el.id ? '#' + el.id : el.tagName.toLowerCase()) + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\\s+/).join('.') : '');
+    const hasText = [...el.childNodes].some((c) => c.nodeType === 3 && c.nodeValue.trim()) || /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(el.tagName);
+    const chk = (prop, v) => { if (isW(v)) hits.push({ el: where, prop, v }); };
+    if (hasText) chk('color', cs.color);
+    chk('background-color', cs.backgroundColor); if (cs.backgroundImage !== 'none') chk('background-image', cs.backgroundImage);
+    for (const side of ['top', 'right', 'bottom', 'left'])
+      if (cs.getPropertyValue('border-' + side + '-style') !== 'none' && parseFloat(cs.getPropertyValue('border-' + side + '-width')) > 0) chk('border-' + side + '-color', cs.getPropertyValue('border-' + side + '-color'));
+    if (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0) chk('outline-color', cs.outlineColor);
+    if (cs.boxShadow !== 'none') chk('box-shadow', cs.boxShadow);
+    if (cs.textShadow !== 'none') chk('text-shadow', cs.textShadow);
+    if (el instanceof SVGElement) { chk('fill', cs.fill); chk('stroke', cs.stroke); }
+  }
+  return { n, hits };
+})()`;
+const whiteViews = [];
+/* Every colour painted by the matched real elements (text, background, drawn
+ * borders, box-shadow) must be a field-office token value; drawn rims >= 3:1
+ * against the parent's background. Runs in field-office. */
+const TOKSCAN = (sel) => `(() => { const P = window.__pal; const T = P.tokens(); const out = [];
+  const cols = (v) => [...String(v).matchAll(/rgba?\\([^)]*\\)/g)].map((m) => P.rgba(m[0])).filter((c) => c[3] > 0);
+  for (const el of document.querySelectorAll(${JSON.stringify(sel)})) { if (!el.getClientRects().length) continue; const cs = getComputedStyle(el);
+    const where = el.tagName.toLowerCase() + '.' + String(el.className).trim().split(/\\s+/).join('.');
+    const props = ['color', 'background-color', 'box-shadow'];
+    for (const sd of ['top', 'right', 'bottom', 'left']) if (cs.getPropertyValue('border-' + sd + '-style') !== 'none' && parseFloat(cs.getPropertyValue('border-' + sd + '-width')) > 0) props.push('border-' + sd + '-color');
+    for (const pr of props) { const v = cs.getPropertyValue(pr); const bad = cols(v).filter((c) => !T.has(P.hex(c))).map((c) => P.hex(c) + (c[3] < 1 ? '@' + c[3] : ''));
+      const r = { el: where, prop: pr, v, bad };
+      if (/border/.test(pr)) { const behind = P.bgOf(el.parentElement); r.ratio = Math.round(P.ratio(P.over(P.rgba(v), behind), behind) * 100) / 100;
+        /* As C2: an opaque fill >= 3:1 against what is behind it carries the edge, and the rim then is not the boundary. */
+        const fill = P.rgba(cs.backgroundColor); if (fill[3] === 1) { r.fillRatio = Math.round(P.ratio(fill, behind) * 100) / 100; if (r.fillRatio >= 3) r.edge = 'fill'; } }
+      out.push(r); } }
+  return out; })()`;
+const tokCheck = async (cdp, tag, w, sel) => {
+  const r = await cdp.eval(TOKSCAN(sel));
+  for (const x of r) { if (x.bad.length) failures.push(`${tag}@${w} ${x.el} ${x.prop} paints ${x.bad.join(',')}, not a field-office token`);
+    if (x.ratio !== undefined && x.ratio < 3 && x.edge !== 'fill') failures.push(`${tag}@${w} ${x.el} ${x.prop} rim ${x.ratio}:1, want >= 3:1`); }
+  return r;
+};
 /* Measures the current viewport. Returns { text, ctl, white, counts }. */
 const MEASURE = `(() => {
   const P = window.__pal; const out = { text: [], ctl: [], white: [], n: { text: 0, ctl: 0, exempt: 0, hidden: 0 } };
@@ -480,6 +539,7 @@ async function main() {
       await cdp.eval(KIT);
       const m = await cdp.eval(MEASURE);
       report.push(Object.assign({ surface, w }, m));
+      await whiteCheck(surface, w);
       for (const t of m.text) if (t.ratio < 4.5) failures.push(`C1 ${surface}@${w} text ${t.ratio}:1 ${t.fg} on ${t.bg} ${t.el} "${t.t}"`);
       for (const c of m.ctl) if (c.ratio < 3) failures.push(`C2 ${surface}@${w} control ${c.ratio}:1 border ${c.border} fill ${c.fill} behind ${c.behind} ${c.el}`);
       for (const x of m.white) failures.push(`C4 ${surface}@${w} near-white ${x.kind} ${x.c} ${x.el}`);
@@ -489,6 +549,12 @@ async function main() {
     }
   };
 
+  /* W1 in the current view; the theme must already be field-office. */
+  const whiteCheck = async (surface, w) => {
+    const wt = await cdp.eval(WHITE); whiteViews.push({ surface, w, n: wt.n, hits: wt.hits.length });
+    for (const x of wt.hits.slice(0, 5)) failures.push(`W1 ${surface}@${w} white ${x.prop} ${x.v} on ${x.el}`);
+    if (wt.hits.length > 5) failures.push(`W1 ${surface}@${w} ... ${wt.hits.length - 5} more white values`);
+  };
   /* C3: keyboard ring >= 2px and >= 3:1 against what is behind it. A real Tab
    * key press first, so later programmatic focus matches :focus-visible the
    * way keyboard focus does. Switch inputs draw the ring on their .slider. */
@@ -683,6 +749,7 @@ async function main() {
     const root = (await cdp.send('DOM.getDocument', { depth: 0 })).root.nodeId; const forced = [];
     for (const sel of ['#inv-seed', '#qb-config', '#thread-send']) { const q = await cdp.send('DOM.querySelector', { nodeId: root, selector: sel });
       if (q.nodeId) { await cdp.send('CSS.forcePseudoState', { nodeId: q.nodeId, forcedPseudoClasses: ['active'] }); forced.push(q.nodeId); } }
+    await pinTheme(); await whiteCheck('L1-fixture', w);
     const l1 = await cdp.eval(`(() => { const P = window.__pal; const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
       const cols = (v) => [...v.matchAll(/rgba?\\([^)]*\\)/g)].map((m) => P.rgba(m[0])).filter((c) => c[3] > 0);
       for (const t of ${JSON.stringify(THEMES)}) { h.setAttribute('data-theme', t); const T = P.tokens();
@@ -823,6 +890,64 @@ async function main() {
     const d = document.getElementById('agent-drawer'); d.classList.add('show'); const p = d.querySelector('.panel'); if (p) p.scrollTop = 0;
     const pills = document.getElementById('agent-provider-pills'); if (pills) pills.scrollIntoView({ block: 'center' }); })()`;
   await measure('dialog-agent-pills', async () => { await cdp.eval(AGENT_FIXTURE); await sleep(150); });
+  /* K9 (Ops #325 P1): the real call stage (openStage + addTile: own tile, a robot
+     tile with Mute, a second robot tile muted) passes C1/C2/C4/W1 in field-office. */
+  await measure('call-stage', async () => {
+    await cdp.eval(`(() => { for (const d of document.querySelectorAll('.drawer.show')) d.classList.remove('show');
+      document.getElementById('tiles').innerHTML = ''; openStage('Call · Payne', 'One-to-one with Payne. Mute any voice you do not want.');
+      addTile(selfId, null, 'You · human'); addTile('k9-payne', null, 'Payne · agent'); addTile('k9-scout', null, 'Scout · robot');
+      const m = document.querySelector('#tile-k9-scout .tile-mute'); if (m && !m.classList.contains('on')) m.click(); })()`);
+    await sleep(150);
+  });
+  {
+    const k9 = report.filter((r) => r.surface === 'call-stage').map((r) => ({ w: r.w, tile: r.text.filter((t) => /tile/.test(t.el)) }));
+    for (const r of k9) {
+      console.log(`palette K9@${r.w}: ${r.tile.length} call-tile text runs (min ${r.tile.length ? Math.min(...r.tile.map((t) => t.ratio)) : '-'}) ${JSON.stringify(r.tile.map((t) => [t.t, t.ratio, t.fg, t.bg]))}`);
+      report.push({ surface: 'K9', w: r.w, k9: r.tile });
+      if (r.tile.length < 5) failures.push(`K9@${r.w} only ${r.tile.length} call-tile text runs measured (want 3 labels + Mute + Muted)`);
+    }
+    for (const [w, h] of WIDTHS) { await view(w, h); await pinTheme(); await cdp.eval(KIT);
+      const t = await tokCheck(cdp, 'K9 tokens', w, '#stage .tile, #stage .tile video, #stage .tile span, #stage .tile-mute');
+      console.log(`palette K9 tokens@${w}: ${t.length} values, ${t.filter((x) => x.bad.length).length} off-token, min rim ${Math.min(...t.filter((x) => x.ratio !== undefined).map((x) => x.ratio))}, edge by fill ${t.filter((x) => x.edge === 'fill').length} (min fill ${Math.min(...t.filter((x) => x.edge === 'fill').map((x) => x.fillRatio))})`); }
+    await cdp.eval(`(() => { document.getElementById('stage').classList.remove('show'); document.getElementById('tiles').innerHTML = ''; })()`);
+  }
+  /* K10 (Ops #325 P2): the real skills board in the robot drawer (paintSkillBoard:
+     lifetime shelves, gems, 3x3 doll and portrait) and the skill sheet chips
+     (paintSkillSheet), field-office. */
+  await measure('agent-skills', async () => {
+    await cdp.eval(`(() => { for (const d of document.querySelectorAll('.drawer.show')) d.classList.remove('show');
+      /* The test relay ships no skills: a fixture catalog (one per scope; robot scope = on-call) if empty, kept for the sheet below. */
+      if (!skillCatalog.length) { window.__k10cat = true; skillCatalog = [
+        { id: 'k10-sys', name: 'Field notes', scope: 'system', summary: 'Keep short notes.', chars: 120, complexity: 1 },
+        { id: 'k10-user', name: 'Brief me', scope: 'user', summary: 'One-line brief.', chars: 80, complexity: 1 },
+        { id: 'k10-bot', name: 'Radio log', scope: 'robot', summary: 'Log radio calls.', chars: 90, complexity: 1 },
+        { id: 'k10-bot2', name: 'Night watch', scope: 'robot', summary: 'Watch at night.', chars: 90, complexity: 1 }]; }
+      window.__k10eq = equippedSkills.slice(); if (!equippedSkills.length) equippedSkills.push('k10-bot2');
+      const d = document.getElementById('agent-drawer'); d.classList.add('show'); paintSkillBoard(editSlug);
+      const l = document.getElementById('skill-loadout') || document.getElementById('skill-armory'); if (l) l.scrollIntoView({ block: 'center' }); })()`);
+    await sleep(150);
+  });
+  {
+    const k10 = await cdp.eval(`(() => ({ gems: document.querySelectorAll('#agent-drawer .skill-gem').length, life: document.querySelectorAll('#agent-drawer .skill-gem .life').length, doll: document.querySelectorAll('#agent-drawer .skill-doll-pic').length }))()`);
+    console.log(`palette K10 board: ${JSON.stringify(k10)}`); report.push({ surface: 'K10', k10 });
+    if (!k10.doll || !k10.gems || k10.life < 2) failures.push(`K10 skills board not painted: ${JSON.stringify(k10)}`);
+    for (const [w, h] of WIDTHS) { await view(w, h); await pinTheme(); await cdp.eval(KIT);
+      const t = await tokCheck(cdp, 'K10 tokens', w, '#agent-drawer .skill-gem, #agent-drawer .skill-gem .life, #agent-drawer .skill-life, #agent-drawer .skill-doll-pic, #agent-drawer .skill-slot');
+      console.log(`palette K10 tokens@${w}: ${t.length} values, ${t.filter((x) => x.bad.length).length} off-token, min rim ${Math.min(...t.filter((x) => x.ratio !== undefined).map((x) => x.ratio))}, edge by fill ${t.filter((x) => x.edge === 'fill').length} (min fill ${Math.min(...t.filter((x) => x.edge === 'fill').map((x) => x.fillRatio))})`); }
+  }
+  await measure('skill-sheet', async () => {
+    await cdp.eval(`(() => { for (const d of document.querySelectorAll('.drawer.show')) d.classList.remove('show');
+      skillSheetView = 'robot'; if (equippedSkills.indexOf('k10-sys') < 0 && window.__k10cat) equippedSkills.push('k10-sys');
+      openSkillSheet(); })()`);
+    await sleep(150);
+  });
+  {
+    const k10s = await cdp.eval(`document.querySelectorAll('#skill-drawer .skill-life').length`);
+    console.log(`palette K10 sheet: ${k10s} lifetime chips`); report.push({ surface: 'K10s', chips: k10s });
+    if (!k10s) failures.push('K10 skill sheet shows no lifetime chip');
+    await cdp.eval(`(() => { for (const d of document.querySelectorAll('.drawer.show')) d.classList.remove('show');
+      equippedSkills.splice(0, equippedSkills.length, ...(window.__k10eq || [])); if (window.__k10cat) { skillCatalog = []; delete window.__k10cat; } })()`);
+  }
   {
     const k2 = report.filter((r) => r.surface === 'dialog-agent-pills').map((r) => r.text.filter((t) => t.el.includes('pill')));
     for (let i = 0; i < k2.length; i++) {
@@ -895,6 +1020,8 @@ async function main() {
     console.log(`palette boards-drawer@390: ${m.n.text} text (min ${Math.min(...m.text.map((t) => t.ratio)).toFixed(2)}), ${m.n.ctl} controls`);
   }
 
+  console.log(`palette W1: ${whiteViews.length} field-office views, ${whiteViews.reduce((n, v) => n + v.n, 0)} element scans, ${whiteViews.reduce((n, v) => n + v.hits, 0)} white values`);
+  report.push({ surface: 'W1', whiteViews });
   if (process.env.PALETTE_ART) {
     fs.mkdirSync(process.env.PALETTE_ART, { recursive: true });
     fs.writeFileSync(path.join(process.env.PALETTE_ART, 'palette-report.json'), JSON.stringify(report, null, 1));

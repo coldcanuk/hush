@@ -1552,6 +1552,8 @@ html[data-theme="field-office"] .agent-pic-cell.on { border-color: var(--accent)
 html[data-theme="field-office"] .tile { border: 2px solid var(--line); }
 html[data-theme="field-office"] .tile span,
 html[data-theme="field-office"] .tile-mute { border: 1px solid var(--line); }
+/* Muted: paper ink on the --warn slip, paper rim against the ink tile (Ops #325 K9: ink on --warn was 1.73:1). */
+html[data-theme="field-office"] .tile-mute.on { color: var(--surface-2); border-color: var(--surface-2); }
 html[data-theme="field-office"] .feather { border: 2px solid var(--line); box-shadow: 2px 2px 0 var(--line); }
 /* Canvas/code: paper slips, typewriter caret blink without the glow. */
 html[data-theme="field-office"] #code-canvas { border-left: 2px solid var(--line); box-shadow: none; }

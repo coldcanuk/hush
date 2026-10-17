@@ -21,6 +21,12 @@ S7  Rules not scoped to a theme (they paint in field-office as well) add no
     the literal). BASELINE_S7 is empty: main 900a486d had 63 such
     declarations, all now tokenized; a new one, or one with !important, fails. Rules scoped to another theme, or to
     html:not([data-theme="field-office"]), are not field-office paint.
+S8  No white or near-white literal reaches field-office (Ops #325 "NO white
+    in FO"): every literal in the field-office token block, and every literal
+    in a custom property set by an unscoped rule that the token block does not
+    redefine (field-office inherits it), has relative luminance < 0.80 and is
+    not white / ivory / beige. S1, S5, S6 and S7 already forbid bare literals
+    in field-office rules, inline styles, script strings and unscoped rules.
 (Ops back-LOOK / Gauge G291-2.)
 Reads demo/index.html only; the painted contrast is check_palette.sh.
 """
@@ -120,6 +126,73 @@ def scan_unscoped(src, base, css, defined, fallbacks):
     return seen
 
 
+NEAR_WHITE_NAMES = {"white", "ivory", "beige"}
+
+
+def luminance(lit):
+    """Relative luminance of a hex or rgb()/rgba() literal, else None."""
+    lit = lit.strip().lower()
+    m = re.fullmatch(r"#([0-9a-f]{3,8})", lit)
+    if m:
+        h = m.group(1)
+        if len(h) in (3, 4):
+            h = "".join(c * 2 for c in h[:3])
+        rgb = [int(h[i:i + 2], 16) for i in (0, 2, 4)]
+    else:
+        m = re.match(r"rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)", lit)
+        if not m:
+            return None
+        rgb = [float(x) for x in m.groups()]
+
+    def lin(c):
+        c = c / 255.0
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (lin(c) for c in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+NEAR_WHITE_LIT = re.compile(r"#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)|\b[a-zA-Z]+\b")
+
+
+def near_white(val):
+    """First white or near-white literal in a declaration value, else None."""
+    for m in NEAR_WHITE_LIT.finditer(val):
+        tok = m.group(0)
+        if tok.lower() in NEAR_WHITE_NAMES:
+            return tok
+        if tok.startswith("#") or tok.lower().startswith("rgb"):
+            y = luminance(tok)
+            if y is not None and y >= 0.80:
+                return tok
+    return None
+
+
+def scan_near_white(src, base, css, token_body):
+    """S8. Returns (token literals checked, inherited custom properties checked)."""
+    fo_props = set(re.findall(r"(--[a-z0-9-]+)\s*:", token_body or ""))
+    n_tok = 0
+    for m in re.finditer(r"(--[a-z0-9-]+)\s*:\s*([^;]+);", token_body or ""):
+        if not LITERAL.search(m.group(2)):
+            continue
+        n_tok += 1
+        hit = near_white(m.group(2))
+        if hit:
+            fail(f"S8 field-office token {m.group(1)} is near-white {hit!r}")
+    n_inh = 0
+    for sel, body, off in rules(css):
+        if 'data-theme="field-office"' in sel or theme_scoped(sel) or sel.lstrip().startswith("@"):
+            continue
+        for m in re.finditer(r"(--[a-z0-9-]+)\s*:([^;]*)", body):
+            if m.group(1) in fo_props or not LITERAL.search(m.group(2)):
+                continue
+            n_inh += 1
+            hit = near_white(m.group(2))
+            if hit:
+                fail(f"S8 index.html:{line_of(src, base, off + m.start())} {m.group(1)} = {hit!r} "
+                     f"in unscoped {sel[:60]} reaches field-office (not redefined in its token block)")
+    return n_tok, n_inh
+
+
 def scan_inline_and_js(src, defined):
     s0 = src.index("</style>")
     sc = src.index("<script>", s0)
@@ -201,6 +274,7 @@ def main():
     fallbacks = [0]
     n_s7 = scan_unscoped(src, base, css, defined, fallbacks)
     n_inline, n_js = scan_inline_and_js(src, defined)
+    n_tok, n_inh = scan_near_white(src, base, css, token_bodies[0] if token_bodies else "")
     if failures:
         for f in failures:
             print("palette tokens check failed: " + f, file=sys.stderr)
@@ -209,8 +283,9 @@ def main():
           "no literal colour in field-office rules, ink-stamp family present, "
           "%d markup inline styles and %d script colour strings without a bare literal, "
           "%d unscoped declarations with a literal only as a --fo-* fallback, "
-          "%d bare unscoped literal declarations (%d baselined pairs allowed), none !important"
-          % (len(TOKENS), n_inline, n_js, fallbacks[0], n_s7, len(BASELINE_S7)))
+          "%d bare unscoped literal declarations (%d baselined pairs allowed), none !important; "
+          "S8 %d field-office token literals and %d inherited custom-property literals, none near-white"
+          % (len(TOKENS), n_inline, n_js, fallbacks[0], n_s7, len(BASELINE_S7), n_tok, n_inh))
     return 0
 
 
