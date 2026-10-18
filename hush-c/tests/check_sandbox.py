@@ -43,11 +43,16 @@ ALLOWED_NAMES = {"PATH", "HOME", "LANG", "LANGUAGE", "TERM", "COLORTERM", "NO_CO
 PROBE = Path(__file__).resolve().parent / "check_sandbox_probe.py"
 
 
+# Readiness probes (#356): the stub answers --version and --help, runs nothing.
+GROK_READY = "case \"$1\" in --version) echo \"grok 0.2.50\"; exit 0;; --help) echo \"--permission-mode dontAsk --allow --deny --disallowed-tools\"; exit 0;; esac"
+
+
 def write_stub(bin_dir, report, home, cfg, port, ppid, real_home, cwd):
     del cwd
     grok = bin_dir / "grok"
     grok.write_text(
         "#!/bin/sh\n"
+        "case \"$1\" in --version) echo \"grok 0.2.50\"; exit 0;; --help) echo \"--permission-mode dontAsk --allow --deny --disallowed-tools\"; exit 0;; esac\n"
         f'exec {sys.executable} "{PROBE}" "{report}" "{home}" "{cfg}" '
         f'{port} {ppid} "{real_home}"\n'
     )
@@ -270,7 +275,7 @@ def check_job_home_end(script, label, stop_relay):
         try:
             npub = raise_happy(hive)
             grok = hive.relay.directory / "bin" / "grok"
-            grok.write_text("#!/bin/sh\n" + script)
+            grok.write_text("#!/bin/sh\n" + GROK_READY + "\n" + script)
             grok.chmod(0o755)
             hive.pair()
             note = {"content": f"nostr:{npub} {label}", "kind": 1,
