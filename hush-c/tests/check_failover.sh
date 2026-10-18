@@ -55,7 +55,7 @@ export HUSH_CONFIG_DIR="$base/config"
 unset XDG_CONFIG_HOME
 mkdir -p "$bin_dir" "$home/.grok" "$base/home" "$base/config" "${HUSH_CONFIG_DIR:-$base/config}" "${HUSH_HOME:-$base/home}"
 # grok-build is the fallback: fake it so a job succeeds with a marker.
-printf '%s\n' '#!/bin/sh' 'printf "%s\n" "FALLBACK_GROK_MARKER"' \
+printf '%s\n' '#!/bin/sh' 'case "$1" in --version) echo "grok 0.2.50"; exit 0;; --help) echo "--permission-mode dontAsk --allow --deny --disallowed-tools"; exit 0;; esac' 'printf "%s\n" "FALLBACK_GROK_MARKER"' \
     > "$bin_dir/grok"
 chmod 0755 "$bin_dir/grok"
 # No goose binary and no goose config.yaml: goose is unready, so failover must
