@@ -192,9 +192,21 @@ sudo apt install coturn
     root) with a fresh 32-hex secret. It keeps a conf that already has a
     generated secret, and replaces one whose credential is a placeholder.
     Settings → Daemon mode writes the same file when the relay can.
-  - The unit will not start without that file (`ConditionPathExists=`), and
-    its `ExecStartPre=` check fails closed on any credential that is not a
-    generated secret.
+  - The unit will not start without that file (`ConditionPathExists=`).
+    Its `ExecStartPre=` check (`hush-turn-setup --check`) stops the start
+    when any `user=` or `static-auth-secret` line is not a generated secret.
+    It reads lines the way coturn does (leading blanks, CRLF, `user = …` and
+    `user …` forms included).
+  - Upgrading a deb from before #353: the old package left
+    `/etc/hush/turnserver.conf` with a placeholder credential. The new
+    postinst runs `hush-turn-setup --replace-placeholder`, which backs that
+    file up as `turnserver.conf.placeholder-<time>.bak` and writes a fresh
+    0600 conf. It changes nothing else, and it does not enable or start
+    hush-turn. Hand edits such as `external-ip=` are in the backup; copy
+    them back if you need them.
+  - Logs and the pidfile come from the unit's command line
+    (`--log-file stdout`, so the journal, and `/run/hush-turn`). Neither the
+    template nor the Daemon mode conf sets them.
   - coturn runs as a transient unprivileged user (`DynamicUser=yes`) with no
     capabilities. The conf reaches it read-only through `LoadCredential=`
     (systemd 247 or newer).

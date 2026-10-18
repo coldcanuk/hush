@@ -138,6 +138,14 @@ the top-level `VERSION` file.
 
 ### Security
 
+- hush-turn (#353): packages no longer install `/etc/hush/turnserver.conf` with a placeholder TURN
+  credential. Run `sudo /usr/share/hush/hush-turn-setup` (fresh 32-hex secret, 0600) before
+  `systemctl enable --now hush-turn`; the unit will not start without a generated secret, and coturn
+  runs as a transient unprivileged user (`DynamicUser=yes`, systemd 247+). **Upgrading a deb:** the
+  postinst replaces the old conf only if it still holds the placeholder; the original is kept as
+  `/etc/hush/turnserver.conf.placeholder-<time>.bak` (copy back hand edits such as `external-ip=`).
+  hush-turn is never enabled or started for you.
+
 - Copilot and Goose no longer run with tool auto-approve (#333). Copilot
   never gets `--allow-all-tools`: its shell tools are excluded and denied
   on every turn, URL and memory tools are denied, and only a person-gated
