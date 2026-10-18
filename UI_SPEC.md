@@ -58,6 +58,23 @@ raise humans + robots that share channels."
   POST response applies the saved profile theme after that. Unifying
   the two is deferred to the UI-M12b colour/material pass.
 - Poll `/api/session`. If `ready` → hive. Else **Begin** → wizard step 1.
+
+### 1a. Pair this window (unpaired window)
+- When `/api/session` answers 401 (this window holds no `hush_session`
+  cookie, #336), the gate shows this card, not the splash: it is not a
+  first run, and Begin could not work.
+- Title "Pair this window". Lines: "Hush is running, but this window is
+  not paired with it yet, so it cannot open your hive." / "If you started
+  hush-relay with `--no-open`, open the `pair:` link it printed when it
+  started. Each link works one time." / "Otherwise, run
+  `hush-relay --quit <port>` and start Hush again. The window it opens is
+  paired. Quitting stops the hive's robots until Hush starts again." /
+  "This window also checks by itself and opens the hive once it is
+  paired." One primary button, **Check again**.
+- While unpaired: poll only `/api/status` + `/api/session`, back off
+  2 s doubling to 30 s (Check again, focus, or a visible tab asks at
+  once); `POST /api/window` is tried once. The first 200 leaves the card
+  without a reload (hive, or the splash on a first run).
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
   Before login the badge reads "listening"; the port is only in its
   tooltip ("Relay listening on port N"), not in the visible text

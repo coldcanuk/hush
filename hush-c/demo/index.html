@@ -3139,6 +3139,13 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
     let session = { logged_in: false, ready: false, channels: [] };
     let mentionRosterSeen = null; /* roster key repaintPendingMentions last saw */
     let page = "splash"; // splash detects, shows Payne branding, then advances to gate or hive
+    /* page "pair": the unpaired-window card; see enterPairState (#336). */
+    const PAIR_RETRY_FIRST_MS = 2000;
+    const PAIR_RETRY_MAX_MS = 30000;
+    let pairNeeded = false;
+    let pairDelayMs = 0;
+    let pairNextAt = 0;
+    let pairPort = 0;
     let pendingNsec = "";
     let identityViaImport = false;
     let keyRevealed = false;
@@ -3319,6 +3326,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       const r = await fetch(API + path, opt);
       if (!r.ok) {
         const err = new Error("request failed");
+        err.status = r.status;
         // A 400 body is one plain-text refusal reason; callers may show it.
         const text = r.status === 400 ? (await r.text().catch(() => "")).trim() : "";
         err.reason = text === "bad request" ? "" : text;
@@ -3439,6 +3447,24 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
     }
 
     function gateHtml() {
+      if (page === "pair") {
+        /* #336 left a window without the hush_session cookie answering 401
+           on every /api route except /api/status. It is not a first run, so
+           it gets this card instead of the splash. The two ways to pair are
+           the ones the relay has: the pair: link a --no-open relay prints
+           (hush_relay_announce_pair) and the window a relay opens on start
+           (hush_ui_format_address adds ?pair=). */
+        const quit = "hush-relay --quit" + (pairPort ? " " + pairPort : "");
+        return card("Pair this window",
+          "<div id=\"pair-card\">" +
+          "<p>Hush is running, but this window is not paired with it yet, so it cannot open your hive.</p>" +
+          "<p>If you started hush-relay with <code>--no-open</code>, open the <code>pair:</code> link it printed when it started. Each link works one time.</p>" +
+          "<p>Otherwise, run <code>" + esc(quit) + "</code> and start Hush again. The window it opens is paired. Quitting stops the hive's robots until Hush starts again.</p>" +
+          actions([{ id: "pair-check", label: "Check again" }]) +
+          /* A plain <p>, not .help: .help's muted ink is under 4.5:1 in four themes. */
+          "<p>This window also checks by itself and opens the hive once it is paired.</p>" +
+          "</div>");
+      }
       if (page === "splash") {
         return card("hush",
           "<img class=\"feather\" src=\"/icon-192.png\" alt=\"hush\">" +
@@ -3611,6 +3637,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         paint();
       });
       on("meet-payne", () => { page = "hive"; gateErr = ""; paint(); });
+      on("pair-check", () => { pairNextAt = 0; tick(); });
       on("do-vibe", () => {
         const name = ($("vibe-name") && $("vibe-name").value) || "local hive";
         const about = ($("vibe-about") && $("vibe-about").value) || "";
@@ -9354,12 +9381,49 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       return new Date(n * 1000).toLocaleString();
     }
 
+    /* Unpaired window (#336): /api/session answers 401 when this window has
+       no hush_session cookie. That is not "logged out": show the pair card,
+       ask only /api/status + /api/session, and back off (2 s doubling to
+       30 s) so the console does not fill with 401s. Focus, a visible tab or
+       Check again asks at once; the first 200 leaves the card. */
+    function enterPairState(st) {
+      pairDelayMs = pairDelayMs ? Math.min(pairDelayMs * 2, PAIR_RETRY_MAX_MS) : PAIR_RETRY_FIRST_MS;
+      pairNextAt = Date.now() + pairDelayMs;
+      if (st && st.port) pairPort = st.port;
+      badge(true, "listening", st && st.port ? "Relay listening on port " + st.port : "");
+      if (pairNeeded && page === "pair") return;
+      pairNeeded = true;
+      session = { logged_in: false, ready: false, channels: [] };
+      page = "pair";
+      paint();
+    }
+
+    function leavePairState() {
+      pairNeeded = false;
+      pairDelayMs = 0;
+      pairNextAt = 0;
+      if (page === "pair") page = "splash";
+      prepareNativeWindow();
+    }
+
+    function pairRecheck() {
+      if (pairNeeded) pairNextAt = 0;
+    }
+
     async function tick() {
       try {
-        const [st, evRes, sess, pres] = await Promise.all([
+        const [st, sessRes] = await Promise.all([
           fetch(API + "/api/status").then((r) => r.json()),
+          fetch(API + "/api/session")
+        ]);
+        if (sessRes.status === 401) {
+          enterPairState(st);
+          return;
+        }
+        const sess = await sessRes.json();
+        if (pairNeeded) leavePairState();
+        const [evRes, pres] = await Promise.all([
           fetch(API + "/api/events"),
-          fetch(API + "/api/session").then((r) => r.json()),
           fetch(API + "/api/presence").then((r) => r.json()).catch(() => null)
         ]);
         if (pres && pres.lines)
@@ -9696,7 +9760,11 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         try {
           const result = await api("/api/window", { action: "prepare" });
           if (result.ok) return;
-        } catch (err) {}
+        } catch (err) {
+          /* Unpaired: retrying cannot help; tick() shows the pair card and
+             leavePairState() prepares the window once it is paired. */
+          if (err && err.status === 401) return;
+        }
         if (attempt + 1 < attempts) {
           await new Promise(resolve => setTimeout(resolve, retryMs));
         }
@@ -9707,7 +9775,12 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
     applyTheme(localStorage.getItem("hush-theme") || "field-office");
     paint();
     tick();
-    setInterval(tick, 1000);
+    setInterval(() => {
+      if (pairNeeded && Date.now() < pairNextAt) return;
+      tick();
+    }, 1000);
+    window.addEventListener("focus", pairRecheck);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) pairRecheck(); });
 
     hideKitMenu();
 

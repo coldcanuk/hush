@@ -61,6 +61,10 @@
 //   R9 the selected avatar tile's (.avatar-cell.on) outer ring, measured the
 //      same way, is solid and >= 3:1 against the grid behind it, in all 8
 //      themes at both widths, so the picked tile is unmistakable (#309 r6).
+//   P1 unpaired window (no hush_session cookie; Ops #364 c3): the "Pair this
+//      window" card shows instead of the splash; field-office through the
+//      surface checks above (gate-pair), and every text run in the card
+//      >= 4.5:1 and its Check again control >= 3:1 in all 8 themes x 1440/390.
 //   K1-K6 (Ops back-LOOK 900a486d):
 //   K1 field-office Developer Log with log lines: its text box background and
 //      text colour are field-office colour tokens (main: #000 / #0f0), and the
@@ -761,6 +765,35 @@ async function main() {
     }
   };
 
+  await view(1440, 900);
+  /* P1 (unpaired window): a window with no hush_session cookie shows the
+   * "Pair this window" card, not the splash. Field-office through measure()
+   * (C1/C2/C4/W1 + the christmas R2-R7 touches), then C1 text >= 4.5:1 and
+   * C2 controls >= 3:1 in all 8 themes x 1440/390. */
+  await cdp.send('Page.navigate', { url: base + '/' });
+  await cdp.waitFor(`!!document.querySelector('#gate.show #pair-card') && !document.querySelector('#gate.show #begin')`, 'pair card (unpaired window)');
+  await measure('gate-pair');
+  const p1 = [];
+  for (const [w, h] of WIDTHS) {
+    await view(w, h);
+    await cdp.eval(KIT);
+    for (const t of THEMES) {
+      await cdp.eval(`document.documentElement.setAttribute('data-theme', ${JSON.stringify(t)})`);
+      await sleep(60);
+      const m = await cdp.eval(MEASURE);
+      const card = (x) => x.el.includes('.card');
+      const text = m.text.filter(card); const ctl = m.ctl.filter(card);
+      p1.push({ t, w, text: text.length, ctl: ctl.length, tmin: Math.min(...text.map((x) => x.ratio)), cmin: Math.min(...ctl.map((x) => x.ratio)) });
+      if (text.length < 5) failures.push(`P1 ${t}@${w} pair card measured only ${text.length} text runs`);
+      if (ctl.length < 1) failures.push(`P1 ${t}@${w} pair card measured no Check again control`);
+      for (const x of text) if (x.ratio < 4.5) failures.push(`P1 ${t}@${w} pair card text ${x.ratio}:1 ${x.fg} on ${x.bg} ${x.el} "${x.t}"`);
+      for (const x of ctl) if (x.ratio < 3) failures.push(`P1 ${t}@${w} pair card control ${x.ratio}:1 border ${x.border} fill ${x.fill} behind ${x.behind} ${x.el}`);
+    }
+  }
+  await cdp.eval(`document.documentElement.setAttribute('data-theme', 'field-office')`);
+  console.log(`palette P1 pair card: ${p1.length} theme x width views, text runs ${Math.min(...p1.map((x) => x.text))}-${Math.max(...p1.map((x) => x.text))} (min ${Math.min(...p1.map((x) => x.tmin)).toFixed(2)}), ` +
+    `controls ${Math.min(...p1.map((x) => x.ctl))}-${Math.max(...p1.map((x) => x.ctl))} (min ${Math.min(...p1.map((x) => x.cmin)).toFixed(2)})`);
+  for (const x of p1) console.log(`palette P1 ${x.t}@${x.w}: ${x.text} text (min ${x.tmin.toFixed(2)}), ${x.ctl} controls (min ${x.cmin.toFixed(2)})`);
   await view(1440, 900);
   // #336: open the one-time pairing link the relay printed, as the app
   // window does; it sets hush_session and the hush_nonce that notes send as X-Hush-Nonce.

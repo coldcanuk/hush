@@ -8,6 +8,15 @@ the top-level `VERSION` file.
 
 ### Changed
 
+- A window that is not paired with the relay (no `hush_session` cookie, so every `/api` route but
+  `/api/status` answers 401) shows a "Pair this window" card instead of the first-run "Click Begin"
+  splash. The card names the two real ways to pair: the one-time `pair:` link a `--no-open` relay
+  prints, or `hush-relay --quit <port>` and a fresh start (the window the relay opens is paired). While
+  unpaired the page asks only `/api/status` and `/api/session`, backing off from 2 s to a 30 s cap
+  (Check again, focus or a visible tab ask at once), and tries `POST /api/window` once instead of 20
+  times: 5 responses 401 in the first 30 s, was 110 on main. Once the cookie is there the card gives way to
+  the hive (or the splash on a first run) without a reload. Pinned by `tests/check_pair_ui.cjs` and
+  `tests/check_palette.cjs` P1 (all 8 themes x 1440/390).
 - Field office fixes from the Ops back-LOOK of main 900a486d: the Developer Log text box is ink on a paper
   slip instead of a black/green terminal; robot provider pills read 6.32:1 (were 3.17:1 on --accent-dim);
   the thread-pane milestone fields wrap at phone width so each placeholder shows whole; the 390px header
