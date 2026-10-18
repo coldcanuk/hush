@@ -182,14 +182,27 @@ sudo apt install coturn
   `external-ip=` only when you set **Public host / IP** (for NAT). Open the
   firewall for the listening port (tcp and udp) and `49152-49251/udp`.
 - **Daemon mode** (systemd, `contrib/systemd/hush-turn.service`) needs a system
-  install. `make install` puts the unit in `/lib/systemd/system/` and seeds
-  `/etc/hush/turnserver.conf` from `contrib/turnserver.conf.in` (port 3478,
-  same relay range, a commented `# external-ip=YOUR.PUBLIC.IP` line) only when
-  it runs as root or with `DESTDIR`. An existing `/etc/hush/turnserver.conf` is
-  kept. `ENABLE_STUN_TURN=0` skips all of this.
+  install. `make install` (and the deb/rpm) puts the unit in
+  `/lib/systemd/system/` when it runs as root or with `DESTDIR`. It ships
+  **no credential** (#353): only the template
+  `/usr/share/hush/turnserver.conf.in` (port 3478, same relay range, a
+  commented `# external-ip=YOUR.PUBLIC.IP` line, no `user=` line) and
+  `/usr/share/hush/hush-turn-setup`.
+  - First enable: `hush-turn-setup` writes `/etc/hush/turnserver.conf` (0600,
+    root) with a fresh 32-hex secret. It keeps a conf that already has a
+    generated secret, and replaces one whose credential is a placeholder.
+    Settings → Daemon mode writes the same file when the relay can.
+  - The unit will not start without that file (`ConditionPathExists=`), and
+    its `ExecStartPre=` check fails closed on any credential that is not a
+    generated secret.
+  - coturn runs as a transient unprivileged user (`DynamicUser=yes`) with no
+    capabilities. The conf reaches it read-only through `LoadCredential=`
+    (systemd 247 or newer).
+  - `ENABLE_STUN_TURN=0` skips all of this.
 
 ```bash
 sudo make install PREFIX=/usr
+sudo /usr/share/hush/hush-turn-setup
 sudo systemctl enable --now hush-turn
 # or open Settings → Daemon mode
 ```
