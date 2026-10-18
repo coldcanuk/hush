@@ -8,6 +8,13 @@ the top-level `VERSION` file.
 
 ### Changed
 
+- Canvas: the code view is visible again in field-office. The editing textarea had an opaque paper
+  slip (`--surface-2`) above the highlight layer, so code painted blank there (Ops #364 follow-up,
+  from #282). It is now transparent in every theme, with a `--fg` caret and a translucent accent
+  selection. Highlight inks are theme tokens (`--code-kw`, `--code-str`, `--code-num`); comments and
+  the FIM ghost use `--muted`. Field-office keyword 1.01:1 → 5.91:1, light keyword 1.61:1 → 8.42:1,
+  and every class is >= 4.5:1 in all 8 themes at 1440 and 390. Pinned by `tests/check_palette.cjs`
+  CC1, which opens a real C note in the canvas and also checks the rendered pixels.
 - Christmas theme: every red is one crimson hue. Light crimson `--accent` #ff6b7f (dark ink #0f1f14)
   is for accent text, radios, outlines, borders, focus edges and rings, and the on switch track, so a
   checked Settings radio reads 5.77:1 against its panel (was 2.71:1). Deep crimson `--accent-dim`
