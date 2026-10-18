@@ -102,6 +102,12 @@ refused c1 "a sequential c1 token must be refused"
 refused c2 "a sequential c2 token must be refused"
 refused "${token}0" "the token plus one character must be refused"
 refused "${token}${token}" "the token doubled must be refused"
+# #364 P2-2: an over-long ?t= is refused by the parser with a 400, never
+# truncated into a lookup.
+for t in "${token}0" "${token}${token}"; do
+    code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}/api/complete?t=${t}")
+    [ "$code" = 400 ] || fail "an over-long ?t= must be 400 (got $code)"
+done
 refused "${token%?}" "the token minus one character must be refused"
 refused "${token%?}${flip}" "a one-digit-off token must be refused"
 
