@@ -224,7 +224,7 @@ static void hush_http_host_strip_port(char *host);
 /* True when the Host header may serve this request. */
 static int hush_http_host_ok(const char *req, size_t len);
 /* True when path is an API route that requires the session credential. */
-static int hush_http_needs_auth(const char *req, const char *path);
+static int hush_http_needs_auth(const char *path);
 /* Returns the per-IP request bucket for fd, creating it on first sight;
  * NULL when the peer or the table is unavailable (fail open). */
 static hush_limiter_t *hush_http_ip_req_lim(int fd);
@@ -781,17 +781,14 @@ static int hush_http_host_ok(const char *req, size_t len)
     return hush_http_host_is_loopback(host);
 }
 
-static int hush_http_needs_auth(const char *req, const char *path)
+static int hush_http_needs_auth(const char *path)
 {
-    assert(req != NULL);
     assert(path != NULL);
     if (strncmp(path, "/api/", 5) != 0)
         return 0;
     if (strcmp(path, "/api/status") == 0)
         return 0;
-    if (strcmp(path, "/api/complete") == 0 && memcmp(req, "GET", 3) == 0)
-        return 0;
-    return 1;
+    return 1; /* #361: GET /api/complete needs the session like any route */
 }
 
 static hush_status_t hush_http_guard(int fd, const char *req, size_t len,
@@ -807,8 +804,8 @@ static hush_status_t hush_http_guard(int fd, const char *req, size_t len,
                         strlen(denied));
         return HUSH_ERR_DENIED;
     }
-    if (!hush_http_needs_auth(req, path))
-        return HUSH_OK; /* status and one-shot flows stay exempt */
+    if (!hush_http_needs_auth(path))
+        return HUSH_OK; /* only /api/status stays exempt */
     /* Per-IP throttle before the auth compare: an unauthenticated flood
      * costs the same 429 as an authenticated one. /api/event is exempt: it
      * is a cheap store insert and message floods are paced by the intel

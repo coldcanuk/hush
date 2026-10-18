@@ -171,6 +171,14 @@ int hush_auth_ui_matches(const char *presented)
     return hush_auth_tokens_equal(presented, g_ui);
 }
 
+hush_status_t hush_auth_secret_mint(char *out, size_t outsz)
+{
+    if (out == NULL || outsz < (size_t)HUSH_AUTH_SECRET_BUF)
+        return HUSH_ERR_ARG;
+    out[0] = '\0';
+    return hush_auth_mint_hex(out, (size_t)HUSH_AUTH_SECRET_HEX);
+}
+
 hush_status_t hush_auth_challenge_mint(char *out, size_t outsz)
 {
     unsigned char raw[HUSH_AUTH_CHALLENGE_HEX / 2];
@@ -372,7 +380,8 @@ static hush_status_t hush_auth_mint_hex(char *hex, size_t hex_len)
     unsigned char raw[HUSH_AUTH_UI_HEX / 2];
 
     assert(hex != NULL);
-    assert(hex_len == (size_t)HUSH_AUTH_UI_HEX && hex_len == (size_t)HUSH_AUTH_PAIR_HEX);
+    assert(hex_len == (size_t)HUSH_AUTH_UI_HEX && hex_len == (size_t)HUSH_AUTH_PAIR_HEX &&
+           hex_len == (size_t)HUSH_AUTH_SECRET_HEX);
     if (RAND_bytes(raw, (int)sizeof(raw)) != 1)
         return HUSH_ERR_IO;
     hush_auth_hex_encode(raw, sizeof(raw), hex);

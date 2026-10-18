@@ -481,6 +481,17 @@ expect_starts plan 0 "G6 a declined plan pass must not start the robot program"
 expect_starts partner 0 "G6 no worker runs after a declined plan"
 expect_starts builder 0 "G6 no worker runs after a declined plan"
 
+# G8 a declined election pass asks for no worker.
+fresh "- -" "- -" Happy
+note g8 "nostr:${happy} nostr:${scout} nostr:${builder} plan a lunch together" "$happy" "$scout" "$builder"
+wait_eq g8 approval 1
+reply g8 "No"
+wait_eq g8 declined 1
+settle
+expect g8 approval 1 "G8 a declined election asks for no worker"
+expect_starts elect 0 "G8 a declined election must not start the robot program"
+expect_starts partner 0 "G8 no worker runs after a declined election"
+
 # G7 void: another owner note voids the waiting turn; a later Yes answers
 # only the turn that note itself raised.
 set_cap 8

@@ -96,7 +96,7 @@
       border-radius: 12px; border: 0; background: var(--accent); color: var(--accent-ink);
     }
     #install.show { display: inline-block; }
-    #badge.bad { color: var(--warn); border-color: #7f1d1d; }
+    #badge.bad { color: var(--warn); border-color: var(--fo-badge-bad, #7f1d1d); }
     .shell { flex: 1; display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
     nav { border-right: 1px solid var(--line); background: var(--surface); padding: 14px 10px; display: flex; flex-direction: column; gap: 16px; }
     .lbl { font-size: 0.65rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); padding: 0 8px; }
@@ -116,13 +116,13 @@
     }
     .chan-options { width: 44px; height: 44px; border: 0; }
     .chan-options:hover { background: var(--surface-2); }
-    .chan-voice, .robot-call { color: var(--accent); border-color: var(--accent-dim); }
-    .chan-voice:hover, .robot-call:hover { background: var(--accent-dim); }
+    .chan-voice, .robot-call { color: var(--accent); border-color: var(--fo-voice-rim, var(--accent-dim)); }
+    .chan-voice:hover, .robot-call:hover { background: var(--fo-voice-hover-bg, var(--accent-dim)); color: var(--fo-voice-hover-ink, var(--accent)); }
     .group-lbl { font-size: 0.72rem; color: var(--muted); padding: 8px 8px 2px; font-weight: 650; }
     .menu {
       display: none; position: fixed; z-index: 40; min-width: 12rem;
       background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
-      padding: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      padding: 6px; box-shadow: 0 8px 24px var(--fo-shade, rgba(0,0,0,0.35));
     }
     .menu.show { display: block; }
     .menu button {
@@ -192,7 +192,7 @@
       left: 50%; top: 56px; transform: translateX(-50%);
       width: min(42rem, 92vw); height: min(70vh, 640px);
       background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
-      box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+      box-shadow: 0 16px 40px var(--fo-shade, rgba(0,0,0,0.45));
       flex-direction: column; min-width: 280px; min-height: 240px; overflow: hidden;
     }
     #thread-pane.show { display: flex; }
@@ -257,10 +257,10 @@
       font-family: var(--mono); font-size: 0.78rem; line-height: 1.4;
       white-space: pre-wrap; word-break: break-word;
     }
-    .code-block[data-lang="python"] { border-left: 3px solid #3776ab; }
-    .code-block[data-lang="go"] { border-left: 3px solid #00add8; }
-    .code-block[data-lang="javascript"], .code-block[data-lang="js"] { border-left: 3px solid #f7df1e; }
-    .code-block[data-lang="c"] { border-left: 3px solid #a8b9cc; }
+    .code-block[data-lang="python"] { border-left: 3px solid var(--fo-lang-python, #3776ab); }
+    .code-block[data-lang="go"] { border-left: 3px solid var(--fo-lang-go, #00add8); }
+    .code-block[data-lang="javascript"], .code-block[data-lang="js"] { border-left: 3px solid var(--fo-lang-js, #f7df1e); }
+    .code-block[data-lang="c"] { border-left: 3px solid var(--fo-lang-c, #a8b9cc); }
     .note-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .note-files button {
       min-height: 32px; padding: 4px 10px; border-radius: 12px;
@@ -279,6 +279,11 @@
       white-space: nowrap;
     }
     .robot-ack .emoji { margin-right: 3px; }
+    /* #312: a held turn's neutral stamp: theme ink, dashed theme rule. */
+    .robot-ack.waiting,
+    html[data-theme] .robot-ack.waiting {
+      color: var(--muted); border-color: var(--line); border-style: dashed;
+    }
 
     /* M3.3: mention pills keep original positions in text (fidelity) */
     .mention-pill {
@@ -295,7 +300,7 @@
       display: none; position: fixed; z-index: 28; right: 0; top: 0;
       width: min(36rem, 46vw); height: 100%;
       background: var(--surface); border-left: 1px solid var(--line);
-      box-shadow: -12px 0 32px rgba(0,0,0,0.35);
+      box-shadow: -12px 0 32px var(--fo-shade, rgba(0,0,0,0.35));
       flex-direction: column; min-width: 240px;
     }
     #code-canvas.show { display: flex; }
@@ -324,10 +329,10 @@
       background: transparent; color: transparent; caret-color: var(--fg);
       resize: none; z-index: 1;
     }
-    #code-canvas-hi .tok-kw { color: #7dd3fc; }
-    #code-canvas-hi .tok-str { color: #86efac; }
+    #code-canvas-hi .tok-kw { color: var(--fo-tok-kw, #7dd3fc); }
+    #code-canvas-hi .tok-str { color: var(--fo-tok-str, #86efac); }
     #code-canvas-hi .tok-cmt { color: var(--faint); font-style: italic; }
-    #code-canvas-hi .tok-num { color: #fbbf24; }
+    #code-canvas-hi .tok-num { color: var(--fo-tok-num, #fbbf24); }
     #code-canvas-hi .tok-ghost { color: var(--faint); opacity: 0.75; }
     #code-canvas-hi .fim-caret {
       display: inline-block; width: 0.55ch; height: 1.1em;
@@ -343,7 +348,7 @@
     #canvas-k {
       display: none; position: absolute; z-index: 2; left: 12px; top: 12px;
       width: min(22rem, 90%); background: var(--surface); border: 1px solid var(--line);
-      border-radius: 12px; padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      border-radius: 12px; padding: 8px; box-shadow: 0 8px 24px var(--fo-shade, rgba(0,0,0,0.35));
     }
     #canvas-k.show { display: block; }
     #canvas-k-ask {
@@ -453,7 +458,7 @@
       border: 1px solid var(--line); border-radius: 18px; padding: 0;
       background: var(--surface); color: var(--fg); width: min(34rem, 92vw);
     }
-    dialog.secret::backdrop { background: rgba(0, 0, 0, 0.62); }
+    dialog.secret::backdrop { background: var(--fo-scrim, rgba(0, 0, 0, 0.62)); }
     .hive { display: none; flex: 1; min-height: 0; }
     .hive.show { display: grid; }
     .mini {
@@ -544,7 +549,7 @@
       cursor: pointer; font: inherit;
     }
     .btn.danger {
-      background: var(--warn); color: #fff; width: 100%; margin-top: 8px;
+      background: var(--warn); color: var(--fo-danger-text, #fff); width: 100%; margin-top: 8px;
     }
     .btn.danger:disabled { opacity: 0.4; }
     #agent-drawer .actions {
@@ -580,7 +585,7 @@
     }
     .iconbtn.on { border-color: var(--accent-dim); color: var(--accent); }
     .iconbtn.danger {
-      background: var(--warn); color: #fff; border-color: var(--warn);
+      background: var(--warn); color: var(--fo-danger-text, #fff); border-color: var(--warn);
     }
     /* UI-M9: no persistent tool rail. The former vertical strip is gone;
        the header KIT stamp toggles #kit-menu (an overlay popup holding the
@@ -589,7 +594,7 @@
       position: fixed; z-index: 70; top: 64px; right: 12px;
       display: flex; flex-direction: column; gap: 6px;
       background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
-      padding: 10px; box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+      padding: 10px; box-shadow: 0 10px 28px var(--fo-shade, rgba(0,0,0,0.35));
       width: min(17rem, 92vw); max-height: calc(100vh - 90px); overflow: auto;
     }
     #kit-menu[hidden] { display: none; }
@@ -607,7 +612,7 @@
     .leave-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
     .leave-actions .btn { min-height: 44px; width: 100%; }
     .drawer, .stage {
-      display: none; position: fixed; inset: 0; background: rgba(9,9,11,0.72);
+      display: none; position: fixed; inset: 0; background: var(--fo-scrim, rgba(9,9,11,0.72));
       z-index: 60; align-items: flex-start; justify-content: center; padding: 48px 16px 16px;
     }
     .drawer.show, .stage.show { display: flex; }
@@ -641,15 +646,15 @@
     }
     .vis input { margin-right: 6px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 12px 0; }
-    .tile { background: #000; border-radius: 12px; overflow: hidden; min-height: 120px; position: relative; }
-    .tile video { width: 100%; height: 160px; object-fit: cover; background: #000; }
+    .tile { background: var(--fo-tile-bg, #000); border-radius: 12px; overflow: hidden; min-height: 120px; position: relative; }
+    .tile video { width: 100%; height: 160px; object-fit: cover; background: var(--fo-tile-bg, #000); }
     .tile span {
       position: absolute; left: 8px; bottom: 8px; font-size: 0.7rem;
-      background: rgba(0,0,0,0.55); padding: 2px 8px; border-radius: 12px;
+      background: var(--fo-tile-label, rgba(0,0,0,0.55)); padding: 2px 8px; border-radius: 12px;
     }
     .tile-mute {
       position: absolute; right: 8px; bottom: 8px; font-size: 0.7rem;
-      background: rgba(0,0,0,0.55); color: #fff; border: 1px solid var(--line);
+      background: var(--fo-tile-label, rgba(0,0,0,0.55)); color: var(--fo-tile-ink, #fff); border: 1px solid var(--line);
       border-radius: 12px; padding: 4px 8px;
     }
     .tile-mute.on { background: var(--warn); border-color: var(--warn); }
@@ -686,11 +691,11 @@
 .inv-cell { border: 1px solid var(--line); background: var(--surface-2); box-sizing: border-box; }
 .inv-item {
   position: absolute; border: 1px solid var(--line); background: var(--surface-2);
-  color: #fff; font: 700 8px/1 sans-serif; padding: 2px 4px; cursor: grab;
+  color: var(--fo-inv-ink, #fff); font: 700 8px/1 sans-serif; padding: 2px 4px; cursor: grab;
   overflow: hidden; white-space: nowrap;
   display: flex; align-items: center; justify-content: center; touch-action: none;
 }
-.inv-item.dragging { opacity: 0.5; border-color: #fff; box-shadow: 0 0 8px #fff; z-index: 20; }
+.inv-item.dragging { opacity: 0.5; border-color: var(--fo-inv-drag, #fff); box-shadow: 0 0 8px var(--fo-inv-drag, #fff); z-index: 20; }
 .inv-item .nm { font-size: 0.75rem; color: var(--fg); }
 .inv-header { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 4px; }
 .inv-header .inv-title-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
@@ -749,7 +754,7 @@
   position: absolute; right: 8px; bottom: calc(100% + 6px); width: min(19rem, 92vw);
   background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
   padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
-  box-shadow: 0 8px 24px #0006;
+  box-shadow: 0 8px 24px var(--fo-shade, #0006);
 }
 .qb-editor[hidden] { display: none; }
 .qb-row { display: grid; grid-template-columns: 4.5rem 1fr; gap: 8px; align-items: center; font-size: 0.75rem; color: var(--muted); }
@@ -767,11 +772,11 @@ body { padding-bottom: 44px; }
 header {
   padding: 8px 14px;
   background: linear-gradient(var(--surface-2), var(--surface));
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 1px 0 rgb(0 0 0 / 0.35);
+  box-shadow: inset 0 1px 0 var(--fo-sheen, rgb(255 255 255 / 0.06)), 0 1px 0 var(--fo-shade, rgb(0 0 0 / 0.35));
 }
 #badge {
   border-radius: 8px;
-  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.45);
+  box-shadow: inset 0 1px 3px var(--fo-shade, rgb(0 0 0 / 0.45));
 }
 nav { padding: 10px 8px; gap: 12px; }
 .chan { border-radius: 6px; padding: 8px 10px; border-left: 2px solid transparent; }
@@ -779,15 +784,15 @@ nav { padding: 10px 8px; gap: 12px; }
 /* Inventory/armory micro-button language: 6px bevel + pressed inset. */
 .inv-btn {
   border-radius: 6px;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), inset 0 -2px 0 rgb(0 0 0 / 0.25);
+  box-shadow: inset 0 1px 0 var(--fo-sheen, rgb(255 255 255 / 0.06)), inset 0 -2px 0 var(--fo-shade, rgb(0 0 0 / 0.25));
 }
 .inv-btn:active {
-  box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.45);
+  box-shadow: inset 0 2px 5px var(--fo-press, rgb(0 0 0 / 0.45));
 }
 .quick-tab { min-height: 30px; }
 .quick-tab kbd, .qb-slot kbd {
   background: var(--bg);
-  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.45);
+  box-shadow: inset 0 1px 2px var(--fo-shade, rgb(0 0 0 / 0.45));
 }
 /* UI-M9 folder tabs over the spellbar: the 4 slots read as overlapping
    manila folder tabs (thin strip, staggered overlap, tab on top when
@@ -795,12 +800,12 @@ nav { padding: 10px 8px; gap: 12px; }
 #quick-bar {
   padding: 0 8px calc(0px + env(safe-area-inset-bottom, 0px));
   background: linear-gradient(var(--surface-2), var(--surface));
-  box-shadow: 0 -1px 0 rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.06);
+  box-shadow: 0 -1px 0 var(--fo-shade, rgb(0 0 0 / 0.4)), inset 0 1px 0 var(--fo-sheen, rgb(255 255 255 / 0.06));
 }
 .qb-slot.folder-tab {
   min-width: 0; min-height: 30px; overflow: hidden;
   flex: 0 1 11rem;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  box-shadow: inset 0 1px 0 var(--fo-sheen, rgb(255 255 255 / 0.06));
 }
 .qb-slot.folder-tab:nth-child(1) { z-index: 1; }
 .qb-slot.folder-tab:nth-child(2) { z-index: 2; }
@@ -812,10 +817,10 @@ nav { padding: 10px 8px; gap: 12px; }
 }
 .qb-gear {
   border-radius: 6px; min-width: 40px; min-height: 40px;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), inset 0 -2px 0 rgb(0 0 0 / 0.25);
+  box-shadow: inset 0 1px 0 var(--fo-sheen, rgb(255 255 255 / 0.06)), inset 0 -2px 0 var(--fo-shade, rgb(0 0 0 / 0.25));
 }
 .qb-gear:active {
-  box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.45);
+  box-shadow: inset 0 2px 5px var(--fo-press, rgb(0 0 0 / 0.45));
 }
 body { padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
 /* Composer: same etched language, flatter than the Slack-ish card. */
@@ -830,10 +835,10 @@ body { padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
 }
 #send, #thread-send {
   border-radius: 8px;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 -2px 0 rgb(0 0 0 / 0.25);
+  box-shadow: inset 0 1px 0 var(--fo-sheen, rgb(255 255 255 / 0.12)), inset 0 -2px 0 var(--fo-shade, rgb(0 0 0 / 0.25));
 }
 #send:active, #thread-send:active {
-  box-shadow: inset 0 2px 5px rgb(0 0 0 / 0.4);
+  box-shadow: inset 0 2px 5px var(--fo-press, rgb(0 0 0 / 0.4));
 }
 .inv-expand-link {
   font-size: 0.62rem; background: none; border: 0; color: var(--accent);
@@ -881,9 +886,9 @@ body { padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
 }
 .skill-gem .sig { font-size: 0.95rem; letter-spacing: 0.04em; }
 .skill-gem .nm { font-size: 0.55rem; max-width: 48px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.skill-gem[data-scope="system"] { border-color: #d4a017; box-shadow: 0 0 6px #d4a01755; }
-.skill-gem[data-scope="user"] { border-color: #0ff; box-shadow: 0 0 6px #0ff4; }
-.skill-gem[data-scope="robot"] { border-color: #c6f; box-shadow: 0 0 6px #c6f4; }
+.skill-gem[data-scope="system"] { border-color: var(--fo-scope-system, #d4a017); box-shadow: 0 0 6px var(--fo-scope-system, #d4a01755); }
+.skill-gem[data-scope="user"] { border-color: var(--fo-scope-user, #0ff); box-shadow: 0 0 6px var(--fo-scope-user, #0ff4); }
+.skill-gem[data-scope="robot"] { border-color: var(--fo-scope-robot, #c6f); box-shadow: 0 0 6px var(--fo-scope-robot, #c6f4); }
 .skill-gem:hover, .skill-gem:focus-visible { box-shadow: 0 0 10px currentColor; }
 .skill-gem.held { opacity: 0.4; }
 .skill-gem:active { cursor: grabbing; }
@@ -896,15 +901,15 @@ body { padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
   background: var(--surface); display: flex; align-items: center; justify-content: center;
 }
 .skill-slot .skill-gem { width: 48px; height: 48px; }
-.skill-slot.open { box-shadow: inset 0 0 8px #d4a01766; }
+.skill-slot.open { box-shadow: inset 0 0 8px var(--fo-shade, #d4a01766); }
 .skill-slot.filled { border-style: solid; }
-.skill-slot.drop-ok { border-style: solid; border-color: #0ff; box-shadow: 0 0 8px #0ff; }
-.skill-slot.drop-no { border-color: #f66; }
+.skill-slot.drop-ok { border-style: solid; border-color: var(--fo-slot-ok, #0ff); box-shadow: 0 0 8px var(--fo-slot-ok, #0ff); }
+.skill-slot.drop-no { border-color: var(--fo-slot-no, #f66); }
 .skill-doll-pic {
-  width: 56px; height: 56px; border: 2px solid #0ff; border-radius: 8px;
+  width: 56px; height: 56px; border: 2px solid var(--fo-doll-rim, #0ff); border-radius: 8px;
   background-color: var(--surface); background-size: cover; background-position: center;
 }
-.skill-doll-pic.drop-ok { box-shadow: 0 0 8px #0ff; }
+.skill-doll-pic.drop-ok { box-shadow: 0 0 8px var(--fo-slot-ok, #0ff); }
 .skill-ghost { position: fixed; z-index: 80; pointer-events: none; width: 52px; height: 52px; margin-left: -26px; margin-top: -26px; }
 .skill-ghost * { pointer-events: none; }
 body.skill-holding, body.skill-holding * { cursor: grabbing; }
@@ -932,15 +937,15 @@ body.skill-holding, body.skill-holding * { cursor: grabbing; }
   display: block; font-size: 0.5rem; font-weight: 700;
   letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.9;
 }
-.skill-gem[data-lifetime="always"] .life { color: #ffd75e; }
-.skill-gem[data-lifetime="oncall"] .life { color: #8fd3ff; }
+.skill-gem[data-lifetime="always"] .life { color: var(--fo-life-always, #ffd75e); }
+.skill-gem[data-lifetime="oncall"] .life { color: var(--fo-life-oncall, #8fd3ff); }
 .skill-life {
   min-height: 20px; padding: 0 6px; border: 1px solid var(--line); border-radius: 10px;
   background: var(--surface); color: var(--muted); font: 700 0.55rem/1.6 var(--mono);
   letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer;
 }
-.skill-life[data-lifetime="always"] { border-color: #d4a017; color: #ffd75e; }
-.skill-life[data-lifetime="oncall"] { border-color: #0ff; color: #8fd3ff; }
+.skill-life[data-lifetime="always"] { border-color: var(--fo-life-always, #d4a017); color: var(--fo-life-always, #ffd75e); }
+.skill-life[data-lifetime="oncall"] { border-color: var(--fo-life-oncall, #0ff); color: var(--fo-life-oncall, #8fd3ff); }
 /* PE-4 favorites: named loadout shortcuts, saved per robot on the relay. */
 #fav-strip { margin: 12px 0; min-width: 0; }
 #fav-strip .lbl { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -1073,7 +1078,7 @@ button:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
   header #badge { max-width: 95px; overflow: hidden; margin-right: 48px; white-space: nowrap; text-overflow: ellipsis; }
   .hive > nav { display: none; position: fixed; top: 66px; bottom: 0; left: 0;
     width: min(300px, 90vw); overflow-y: auto; flex-direction: column; flex-wrap: nowrap;
-    background: var(--surface); z-index: 30; box-shadow: 8px 0 24px #0003; }
+    background: var(--surface); z-index: 30; box-shadow: 8px 0 24px var(--fo-shade, #0003); }
   .hive.nav-open > nav { display: flex; }
   .hive { grid-template-rows: minmax(0, 1fr); }
   #agent-providers { grid-template-columns: 1fr; }
@@ -1218,6 +1223,46 @@ html[data-theme="field-office"] {
   --fo-boss-shade: #5c574c;
   --fo-lever: #d8d0bc;                  /* Send switch: lever face */
   --fo-lever-shade: #9c927c;
+  --fo-lamp-ok: #3f6b2a;                /* 390 header status lamp: listening (green, R08) */
+  --fo-lamp-wait: #b07a1e;              /* 390 header status lamp: connecting / down (amber) */
+  --fo-log-bg: var(--surface-2);        /* Developer Log text box */
+  --fo-log-ink: var(--fg);
+  --fo-inv-live: var(--line);           /* robot inventory item rim + glow; drop allowed */
+  --fo-inv-locked: #6b4f12;             /* locked robot (brass) */
+  --fo-inv-bad: var(--accent);          /* drop not allowed */
+  /* Shared rules that paint in every theme read these through var(--fo-*, <old literal>):
+     the other themes never define them, so they keep the literal (follow-up to G291-2). */
+  --fo-badge-bad: var(--line);          /* #badge.bad rim (the badge rule above wins) */
+  --fo-lang-python: #2a4466;            /* code-block language spines, >= 3:1 on paper */
+  --fo-lang-go: #22605c;
+  --fo-lang-js: #5a4410;
+  --fo-lang-c: #5b3f5f;
+  --fo-tok-kw: #2a4466;                 /* Canvas syntax ink, >= 4.5:1 on --surface-2 */
+  --fo-tok-str: #2f5a24;
+  --fo-tok-num: #5a4410;
+  --fo-danger-text: var(--fg);          /* .btn.danger text (the .btn rule wins) */
+  --fo-tile-bg: var(--fg);              /* call tiles: ink plate behind the video */
+  --fo-tile-label: var(--surface-2);    /* name and mute slips on a tile */
+  --fo-tile-ink: var(--fg);
+  --fo-inv-ink: var(--fg);              /* robot inventory item text */
+  --fo-press: var(--line);              /* pressed inset (the soft-shadow kill wins) */
+  --fo-scope-system: var(--line);       /* skill gem scope rim + glow */
+  --fo-scope-user: var(--line);
+  --fo-scope-robot: var(--line);
+  --fo-slot-ok: var(--fo-inv-live);     /* skill slot: drop allowed */
+  --fo-slot-no: var(--fo-inv-bad);      /* skill slot: drop refused */
+  --fo-doll-rim: var(--line);           /* skill doll picture rim */
+  --fo-life-always: #4a380c;            /* ALWAYS-ON lifetime: brass ink (>= 4.5:1 at the .life 0.9 opacity) */
+  --fo-life-oncall: #22385a;            /* ON-CALL lifetime: blue ink */
+  --fo-voice-rim: var(--accent);        /* channel voice / robot call rim: --accent-dim was 2.89:1 on --surface */
+  --fo-voice-hover-bg: var(--accent);   /* hover slip; ink on --accent-dim was 1.84:1 */
+  --fo-voice-hover-ink: var(--surface-2);
+  /* Shared rules a field-office rule already overrides (soft shadows, scrims, the 390 lamp);
+     their literals sit behind these so the S7 baseline is empty. */
+  --fo-shade: var(--line);              /* soft shadow ink (the soft-shadow kill wins) */
+  --fo-sheen: transparent;              /* bevel highlight: none on paper */
+  --fo-inv-drag: var(--accent);         /* inventory item being dragged */
+  --fo-lamp-rim: var(--line);           /* 390 header lamp rim */
   --sans: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
   --mono: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
   --display: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
@@ -1559,6 +1604,8 @@ html[data-theme="field-office"] .agent-pic-cell.on { border-color: var(--accent)
 html[data-theme="field-office"] .tile { border: 2px solid var(--line); }
 html[data-theme="field-office"] .tile span,
 html[data-theme="field-office"] .tile-mute { border: 1px solid var(--line); }
+/* Muted: paper ink on the --warn slip, paper rim against the ink tile (Ops #325 K9: ink on --warn was 1.73:1). */
+html[data-theme="field-office"] .tile-mute.on { color: var(--surface-2); border-color: var(--surface-2); }
 html[data-theme="field-office"] .feather { border: 2px solid var(--line); box-shadow: 2px 2px 0 var(--line); }
 /* Canvas/code: paper slips, typewriter caret blink without the glow. */
 html[data-theme="field-office"] #code-canvas { border-left: 2px solid var(--line); box-shadow: none; }
@@ -1590,7 +1637,7 @@ html[data-theme="field-office"] dialog.secret::backdrop { background: var(--fo-s
   display: flex; position: fixed; top: 72px; bottom: 60px; left: 10px;
   width: min(288px, 88vw); overflow-y: auto; flex-direction: column; flex-wrap: nowrap;
   background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
-  box-shadow: 4px 4px 0 rgb(0 0 0 / 0.35); z-index: 30;
+  box-shadow: 4px 4px 0 var(--fo-shade, rgb(0 0 0 / 0.35)); z-index: 30;
   transform: translateX(calc(-100% - 18px)); visibility: hidden;
   transition: transform 180ms ease-out, visibility 180ms;
 }
@@ -1703,7 +1750,7 @@ html[data-theme="field-office"] #kit-menu {
   --dial-rot: 135deg;
   position: relative; width: 40px; height: 40px; border-radius: 50%;
   background: var(--surface-2); border: 2px solid var(--line);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 -2px 0 rgb(0 0 0 / 0.25);
+  box-shadow: inset 0 1px 0 var(--fo-sheen, rgb(255 255 255 / 0.12)), inset 0 -2px 0 var(--fo-shade, rgb(0 0 0 / 0.25));
   flex: 0 0 auto;
 }
 #fo-dial-pointer { position: absolute; inset: 0; transform: rotate(var(--dial-rot)); }
@@ -1958,13 +2005,13 @@ button.fo-person { min-height: var(--btn-h-sm); }
   html[data-theme] header #badge {
     width: 12px; min-width: 12px; max-width: 12px; height: 12px; padding: 0; margin: 0 2px 0 0;
     flex: none; align-self: center; font-size: 0; line-height: 0; overflow: hidden;
-    border-radius: 50%; border: 1px solid #2a241e; transform: none;
-    background: radial-gradient(circle at 35% 30%, #ffe2a3 0 18%, #e0a030 45%, #a86a10 100%);
-    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.35), 0 0 5px 1px rgb(224 160 48 / 0.55);
+    border-radius: 50%; border: 1px solid var(--fo-lamp-rim, #2a241e); transform: none;
+    background: radial-gradient(circle at 35% 30%, var(--fo-lamp-wait, #ffe2a3) 0 18%, var(--fo-lamp-wait, #e0a030) 45%, var(--fo-lamp-wait, #a86a10) 100%);
+    box-shadow: 0 0 0 1px var(--fo-sheen, rgb(255 255 255 / 0.35)), 0 0 5px 1px var(--fo-lamp-wait, rgb(224 160 48 / 0.55));
   }
   html[data-theme] header #badge.ok {
-    background: radial-gradient(circle at 35% 30%, #c8f5b8 0 18%, #3fae3a 45%, #1f6e1c 100%);
-    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.35), 0 0 5px 1px rgb(63 174 58 / 0.6);
+    background: radial-gradient(circle at 35% 30%, var(--fo-lamp-ok, #c8f5b8) 0 18%, var(--fo-lamp-ok, #3fae3a) 45%, var(--fo-lamp-ok, #1f6e1c) 100%);
+    box-shadow: 0 0 0 1px var(--fo-sheen, rgb(255 255 255 / 0.35)), 0 0 5px 1px var(--fo-lamp-ok, rgb(63 174 58 / 0.6));
   }
 }
 /* Pre-walk r4 (Ops FAIL-B): up to 800px the header has no room for the
@@ -2252,6 +2299,42 @@ html[data-theme="field-office"] input[type="radio"]:checked {
 html[data-theme="field-office"] input[type="checkbox"]:not(.switch input):checked {
   border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2px var(--surface-2);
 }
+/* Ops back-LOOK 900a486d items 1-3.
+   1 Developer Log: the text box is a field-office slip in ink, not a black /
+     green terminal. Its style moved out of the markup; the other themes keep
+     #000 / #0f0 through the token fallbacks. */
+#dev-log-body {
+  background: var(--fo-log-bg, #000); color: var(--fo-log-ink, #0f0); font: 0.78rem/1.3 ui-monospace, monospace;
+  height: 360px; overflow: auto; padding: 8px; border: 1px solid var(--line); border-radius: 12px; white-space: pre-wrap;
+}
+html[data-theme="field-office"] #dev-log-body { border: 2px solid var(--line); border-radius: 3px; }
+/* 2 Provider pills: a paper slip, not ink on --accent-dim (3.17:1). */
+html[data-theme="field-office"] .pill { background: var(--surface-2); color: var(--fg); }
+/* 7 Mention pills: same slip (they were --fg on --accent-dim, 3.17:1). */
+html[data-theme="field-office"] .mention-pill { background: var(--surface-2); color: var(--fg); }
+/* 3 Thread-pane milestone fields wrap at phone width so each placeholder
+     shows whole (they were 37-47px wide at 390). */
+@media (max-width: 640px) {
+  #thread-desk { flex-wrap: wrap; }
+  #thread-desk input { flex: 1 1 10rem; }
+}
+/* Ops back-LOOK 900a486d items 4-6.
+   4 Field office <= 480px: the header status light is an ink mark, not a
+     bright green / amber gradient with a white glint: a flat lamp in two
+     muted field-office tokens (still green when listening, amber when
+     not, per #231 R08) with an olive-ink rim and a glow of its own colour. */
+@media (max-width: 480px) {
+  html[data-theme="field-office"] header #badge { background: var(--fo-lamp-wait); border: 2px solid var(--line); box-shadow: 0 0 3px 1px var(--fo-lamp-wait); }
+  html[data-theme="field-office"] header #badge.ok { background: var(--fo-lamp-ok); box-shadow: 0 0 3px 1px var(--fo-lamp-ok); }
+}
+/* 5 Robot picture cells sit on the theme's slip colour, not the native
+     button grey, wherever a sprite leaves the cell uncovered. */
+.agent-pic-cell { background-color: var(--surface-2); }
+/* 6 The 1943 edition line and the HQ stamps are field-office dressing;
+     the other themes keep the layout without them. */
+html:not([data-theme="field-office"]) .fo-edition,
+html:not([data-theme="field-office"]) .fo-hq > span,
+html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
 /* #309 r2: christmas keeps every red in one crimson hue (~350deg).
    --accent (#ff6b7f) is the light crimson for text, rings, radios and
    outlines on the dark greens (and the on switch track); --accent-dim
@@ -2291,6 +2374,9 @@ html[data-theme="christmas"] .fo-feed-line { border-left-color: var(--accent); }
 html[data-theme="christmas"] .slider { background: var(--faint); }
 html[data-theme="christmas"] .switch input:checked + .slider { background: var(--accent); }
 html[data-theme="christmas"] .switch input:checked + .slider:before { background: var(--accent-ink); }
+/* Merge of main b7424fac into #325: the skills board facet ring was --accent-dim
+   (#5c1420), 1.01:1 on the christmas greens; light crimson per #309. */
+html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accent); }
 </style>
 </head>
 <body>
@@ -3030,7 +3116,7 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
         <button class="drawer-x" id="dev-log-close" type="button" aria-label="Close dev log">×</button>
       </div>
       <p class="help">Syslog stream (mentions, intros, debug). Visible only when Developer Logging enabled in Settings.</p>
-      <pre id="dev-log-body" style="background:#000;color:#0f0;font:0.78rem/1.3 ui-monospace,monospace;height:360px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius: 12px;white-space:pre-wrap;"></pre>
+      <pre id="dev-log-body"></pre>
       <div class="actions">
         <button class="btn ghost" id="dev-log-clear" type="button">Clear</button>
         <button class="btn" id="dev-log-close2" type="button">Close</button>
@@ -3094,6 +3180,7 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
     let threadSeen = "";
     const THREAD_PIN_PX = 48;
     let session = { logged_in: false, ready: false, channels: [] };
+    let mentionRosterSeen = null; /* roster key repaintPendingMentions last saw */
     let page = "splash"; // splash detects, shows Payne branding, then advances to gate or hive
     let pendingNsec = "";
     let identityViaImport = false;
@@ -3204,6 +3291,11 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
     /* M4.5 Inventory grid state (Diablo/Vein spatial). Variable sizes in cells.
      * Drag-drop with snap + occupancy collision. Cyber/steampunk neon+brass. */
     let invItems = []; /* {id, name, w, h, gx, gy, slug?, color?} */
+    /* Inventory inks: theme tokens, with the old cyan / gold / red as the
+       fallback where a theme does not set them (G291-2). */
+    const INV_INK_LIVE = "var(--fo-inv-live, #0ff)";
+    const INV_INK_LOCKED = "var(--fo-inv-locked, #d4a017)";
+    const INV_INK_BAD = "var(--fo-inv-bad, #f66)";
     const INV_COLS = 4;
     const INV_ROWS = 3;
     const INV_CELL = 40;
@@ -3313,6 +3405,7 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
       session = s;
       syncIdentityViaImport();
       syncApproval();
+      repaintPendingMentions();
     }
 
     function applySession(s) {
@@ -6896,6 +6989,14 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
     /* WS4: poll POST /api/reply for every live job and paint the newest
      * partial into its preview slot. Entries for finished jobs are dropped;
      * the final note arrives through the normal events tick. */
+    /* A live partial is robot output before the relay rewrites @npub1...
+       tokens, so it goes through the same mention renderer as a note body:
+       an npub is never painted (Gauge #325 r5 finding 1). */
+    function paintPartial(el, text) {
+      el.textContent = "";
+      renderPreservingMentions(text, el);
+    }
+
     async function refreshPartials(status) {
       const jobs = (status && status.thinking) || [];
       const live = {};
@@ -6908,7 +7009,7 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
           if (ans && ans.running && ans.text) {
             partials[key] = ans.text;
             document.querySelectorAll('[data-partial="' + CSS.escape(key) + '"]').forEach((el) => {
-              el.textContent = ans.text;
+              paintPartial(el, ans.text);
             });
           } else if (partials[key]) {
             delete partials[key];
@@ -6918,12 +7019,83 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
       Object.keys(partials).forEach((key) => { if (!live[key]) delete partials[key]; });
     }
 
+    /* #312: under Approve every action a robot's turn waits for the
+       owner's Yes. turnMark names what one thread note does to that turn:
+       "ask" ("Approval needed: <Robot> wants ..."), "declined" ("Turn
+       declined: <Robot> ...", the owner's No), "ran" (a note from the
+       robot or about its run), or "" (anything else; receipts and intros
+       do not settle a turn). */
+    const INTRO_HEAD = "At ease.";
+    function turnMark(e, bot) {
+      const name = bot.name;
+      const text = String(e.content || "");
+      if (text.indexOf("Approval needed: " + name + " wants ") === 0) return "ask";
+      if (text.indexOf("Turn declined: " + name + " ") === 0) return "declined";
+      if (text.indexOf("No selected provider is ready for " + name + ".") === 0) return "ran";
+      if (sameKey(bot.pubkey || bot.npub, e.pubkey) && text.indexOf(INTRO_HEAD) !== 0) return "ran";
+      return "";
+    }
+
+    /* True for a bare Yes or No answer (the server's loop/approval parse:
+       one word, then only spaces, "." or "!"). */
+    function isTurnAnswer(text) {
+      return /^\s*(yes|no)[\s.!]*$/i.test(String(text || ""));
+    }
+
+    /* #312: the thread notes that belong to the owner's mention e, oldest
+       first: the notes after e in its thread, up to the owner's next note
+       that is not a bare Yes/No answer (that note starts its own turn). So
+       each mention keeps its own state; a later No in the same thread does
+       not change an earlier mention's 👍. */
+    function mentionWindow(e) {
+      const root = e.reply_to || e.id;
+      const thread = (lastEvents || []).map((x, i) => ({ x, i }))
+        .filter((o) => o.x && !isDevLogNote(o.x) && (o.x.id === root || o.x.reply_to === root))
+        .sort((p, q) => (Number(p.x.created_at || 0) - Number(q.x.created_at || 0)) || (p.i - q.i))
+        .map((o) => o.x);
+      const start = thread.findIndex((x) => x.id === e.id);
+      const notes = [];
+      for (let k = start < 0 ? thread.length : start + 1; k < thread.length; k++) {
+        if (isMineNote(thread[k]) && !isTurnAnswer(thread[k].content)) break;
+        notes.push(thread[k]);
+      }
+      return notes;
+    }
+
+    /* #312 state of bot's turn for the owner's mention parentId, from the
+       notes of that mention only: "held" while bot's own ask is not yet
+       settled (the only state that shows "waiting for your OK");
+       "queued" while bot has no ask or settle yet but a robot named in the
+       same mention was asked (its turn waits in line; no pill, since no ask
+       exists to answer); "declined" when its latest settle is the owner's
+       No; else "". */
+    function turnState(parentId, bot) {
+      const parent = (lastEvents || []).find((e) => e && e.id === parentId);
+      if (!parent || !bot || !bot.name) return "";
+      const notes = mentionWindow(parent);
+      let asks = 0;
+      let settles = 0;
+      let last = "";
+      notes.forEach((e) => {
+        const mark = turnMark(e, bot);
+        if (mark === "ask") asks++;
+        else if (mark) { settles++; last = mark; }
+      });
+      if (asks > settles) return "held";
+      const pairAsked = mentionedRobots(parent).some((other) =>
+        notes.some((e) => turnMark(e, other) === "ask"));
+      if (!asks && !settles && pairAsked) return "queued";
+      return last === "declined" ? "declined" : "";
+    }
+
     function mentionAckPhase(parentId, bot, jobs) {
       const key = String(parentId || "") + ":" + (bot && (bot.slug || bot.npub) || "");
       const now = Date.now();
       const parent = (lastEvents || []).find((e) => e && e.id === parentId);
-      const created = parent && parent.created_at ? Number(parent.created_at) : 0;
       const live = (jobs || []).some((j) => j && bot && j.name === bot.name);
+      const turn = live ? "" : turnState(parentId, bot);
+      if (turn) return turn;
+      const created = parent && parent.created_at ? Number(parent.created_at) : 0;
       if (created && (now - created * 1000) > 2000 && !live)
         return "emoji";
       if (!ackClock[key]) ackClock[key] = now;
@@ -6942,6 +7114,9 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
         const p = mentionAckPhase(e.id, bot, jobs);
         if (p === "thinking") stamp = "t";
         else if (p === "reacting" && stamp !== "t") stamp = "r";
+        else if (p === "held" && stamp === "e") stamp = "h";
+        else if (p === "declined" && stamp === "e") stamp = "d";
+        else if (p === "queued" && stamp === "e") stamp = "q";
       });
       return stamp;
     }
@@ -6974,7 +7149,7 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
         prev.className = "partial";
         prev.setAttribute("data-partial", partialKey(job.parent, job.name));
         const text = partials[partialKey(job.parent, job.name)];
-        if (text) prev.textContent = text;
+        if (text) paintPartial(prev, text);
         node.appendChild(prev);
       });
     }
@@ -7423,6 +7598,68 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
       }
     });
 
+    /* #312: the owner's mention under Approve every action. While the
+       turn waits for the owner's Yes the pill is a neutral "waiting" stamp
+       (no emoji); after the owner's No there is no pill at all, since a
+       👍 would read as the robot accepting or doing the work. */
+    function ackWaitingPill(bot) {
+      const name = bot.name || "robot";
+      const pill = document.createElement("span");
+      pill.className = "robot-ack waiting";
+      pill.title = name + " waits for your Yes or No in the thread";
+      pill.textContent = name + " · waiting for your OK";
+      return pill;
+    }
+
+    /* Settled ack emoji, one per mentioned robot in mention order. */
+    const ACK_EMOJI = ["👍", "🎯", "🏆"];
+
+    /* One ack pill for a mentioned robot, or null when none shows. */
+    function ackPill(bot, i, phase, quietRobot) {
+      if (phase === "declined" || phase === "queued") return null;
+      if (phase === "held") return ackWaitingPill(bot);
+      const pill = document.createElement("span");
+      /* A missing-runtime sentence is already the answer. Do not
+       * also say that robot is thinking or reacting, and do not
+       * leave a title that names a phase ("is emoji" included).
+       * The emoji thumb may stay. Do not rename the phase to
+       * another in-progress word. */
+      const name = bot.name || "robot";
+      const quieted = !!(quietRobot && name === quietRobot);
+      if (quieted && (phase === "thinking" || phase === "reacting"))
+        phase = "emoji";
+      pill.className = "robot-ack " + phase;
+      pill.title = quieted ? name : (name + " is " + phase);
+      const line = presenceSlugFor(bot.pubkey || bot.npub);
+      if (phase === "thinking" || phase === "reacting") {
+        const word = phase === "thinking" ? " is thinking" : " is reacting";
+        pill.textContent = name + word + (line ? " · " + line : "");
+        return pill;
+      }
+      const emoji = ACK_EMOJI[i % ACK_EMOJI.length];
+      pill.innerHTML = '<span class="emoji">' + emoji + '</span>' +
+        esc(name) + (line ? " · " + esc(line) : "");
+      return pill;
+    }
+
+    /* Progressive ack bar under a note that mentions robots; omitted
+       when no robot shows a pill. */
+    function paintAcks(n, e, quietRobot) {
+      const acks = mentionedRobots(e);
+      if (!acks || !acks.length) return;
+      const ackBar = document.createElement("div");
+      ackBar.className = "robot-acks";
+      const jobs = thinkingFor(e.id, lastStatus);
+      let shown = 0;
+      acks.forEach((bot, i) => {
+        const pill = ackPill(bot, i, mentionAckPhase(e.id, bot, jobs), quietRobot);
+        if (!pill) return;
+        ackBar.appendChild(pill);
+        shown++;
+      });
+      if (shown) n.appendChild(ackBar);
+    }
+
     function paintNote(e, extra, quietRobot) {
       const n = document.createElement("div");
       const mine = isMineNote(e);
@@ -7479,46 +7716,7 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
       if (extra) extra(n, e);
 
       // Progressive ack: thinking → reacting → emoji (not instant 👍).
-      try {
-        const acks = mentionedRobots(e);
-        if (acks && acks.length) {
-          const ackBar = document.createElement("div");
-          ackBar.className = "robot-acks";
-          const jobs = thinkingFor(e.id, lastStatus);
-          const emojiSet = ["👍", "🎯", "🏆"];
-          acks.forEach((bot, i) => {
-            const pill = document.createElement("span");
-            let phase = mentionAckPhase(e.id, bot, jobs);
-            /* A missing-runtime sentence is already the answer. Do not
-             * also say that robot is thinking or reacting, and do not
-             * leave a title that names a phase ("is emoji" included).
-             * The emoji thumb may stay. Do not rename the phase to
-             * another in-progress word. */
-            const quieted = !!(quietRobot && (bot.name || "robot") === quietRobot);
-            if (quieted && (phase === "thinking" || phase === "reacting"))
-              phase = "emoji";
-            pill.className = "robot-ack " + phase;
-            pill.title = quieted
-              ? (bot.name || "robot")
-              : ((bot.name || "robot") + " is " + phase);
-            const line = presenceSlugFor(bot.pubkey || bot.npub);
-            if (phase === "thinking")
-              pill.textContent = (bot.name || "robot") + " is thinking" +
-                (line ? " · " + line : "");
-            else if (phase === "reacting")
-              pill.textContent = (bot.name || "robot") + " is reacting" +
-                (line ? " · " + line : "");
-            else {
-              const emoji = emojiSet[i % emojiSet.length];
-              pill.innerHTML = '<span class="emoji">' + emoji + '</span>' +
-                esc(bot.name || "robot") +
-                (line ? " · " + esc(line) : "");
-            }
-            ackBar.appendChild(pill);
-          });
-          n.appendChild(ackBar);
-        }
-      } catch (eAck) { /* never break render on ack */ }
+      try { paintAcks(n, e, quietRobot); } catch (eAck) { /* never break render on ack */ }
 
       return n;
     }
@@ -8202,6 +8400,13 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
      */
     function renderPreservingMentions(text, container) {
       if (!container) return;
+      /* #item7: a mention whose npub is not in the roster yet (roster not
+         loaded, or a stranger) keeps its place as a neutral "@unknown" pill
+         instead of vanishing. Per UI_SPEC an unresolved @npub1... token is
+         never painted: the short key is only in title / aria-label. The raw
+         text is kept so repaintPendingMentions can name it later. */
+      container.dataset.mentionText = text || "";
+      let pending = false;
       const re = /nostr:(npub1[0-9a-z]+)|@(npub1[0-9a-z]+)/gi;
       let last = 0;
       let m;
@@ -8211,12 +8416,18 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
         }
         const npub = m[1] || m[2];
         const hit = mentionHit(npub);
+        const span = document.createElement("span");
+        span.className = "mention-pill";
         if (!hit) {
+          span.classList.add("mention-unknown");
+          span.textContent = "@unknown";
+          span.title = "Not in this hive yet: " + npub.slice(0, 12) + "\u2026";
+          span.setAttribute("aria-label", "unknown member " + npub.slice(0, 12));
+          pending = true;
+          container.appendChild(span);
           last = re.lastIndex;
           continue;
         }
-        const span = document.createElement("span");
-        span.className = "mention-pill";
         span.textContent = "@" + hit.name;
         span.title = npub;
         container.appendChild(span);
@@ -8225,6 +8436,25 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
       if (last < (text || "").length) {
         container.appendChild(document.createTextNode(text.slice(last)));
       }
+      container.classList.toggle("mention-pending", pending);
+    }
+
+    /* Re-render note bodies that still hold an @unknown pill once the
+       roster changes (called from setSession and the 1 s tick). The tick
+       calls this every second; with the roster unchanged nothing could
+       resolve, so it returns without touching the DOM (no churn, and a
+       text selection in a stranger's note survives). */
+    function repaintPendingMentions() {
+      /* Content, not size: sorted npub=name pairs, so a same-size swap (one
+         member leaves as the mentioned npub joins) still repaints. */
+      const rosterKey = mentionRoster().map((h) => h.npub + "=" + h.name).sort().join("|");
+      if (rosterKey === mentionRosterSeen) return;
+      mentionRosterSeen = rosterKey;
+      document.querySelectorAll(".mention-pending[data-mention-text]").forEach((el) => {
+        const text = el.dataset.mentionText;
+        el.textContent = "";
+        renderPreservingMentions(text, el);
+      });
     }
 
     /* Developer log helpers. isDevLogNote is receipts only ("Mention received.").
@@ -8337,7 +8567,7 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
         w: sz.w, h: sz.h,
         gx: slot.gx, gy: slot.gy,
         slug: (bot && bot.slug) ? bot.slug : "",
-        color: (bot && bot.locked) ? "#d4a017" : "#0ff",
+        color: (bot && bot.locked) ? INV_INK_LOCKED : INV_INK_LIVE,
         enabled: !bot || bot.enabled !== false
       };
       invItems.push(item);
@@ -8379,7 +8609,7 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
           w: w, h: h, gx: gx, gy: gy,
           slug: bot.slug,
           picture: bot.picture || "",
-          color: bot.locked ? "#d4a017" : "#0ff",
+          color: bot.locked ? INV_INK_LOCKED : INV_INK_LIVE,
           enabled: bot.enabled !== false
         });
       });
@@ -8458,8 +8688,8 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
         el.style.top = (it.gy * cell + 1) + "px";
         el.style.width = ((it.w * cell) - 4) + "px";
         el.style.height = ((it.h * cell) - 4) + "px";
-        el.style.borderColor = it.color || "#0ff";
-        el.style.boxShadow = "0 0 4px " + (it.color || "#0ff");
+        el.style.borderColor = it.color || INV_INK_LIVE;
+        el.style.boxShadow = "0 0 4px " + (it.color || INV_INK_LIVE);
         el.title = it.name || "";
         const picCss = picCellStyle(it.picture, (compact ? INV_CELL : INV_EXPAND_CELL));
         if (picCss) {
@@ -8537,7 +8767,7 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
         el.style.left = (gx * cell + 1) + "px";
         el.style.top = (gy * cell + 1) + "px";
         const ok = isSpaceFree(gx, gy, invDrag.w, invDrag.h, invDrag.id, invDrag.cols, invDrag.rows);
-        el.style.borderColor = ok ? "#0ff" : "#f66";
+        el.style.borderColor = ok ? INV_INK_LIVE : INV_INK_BAD;
       }
     }
 
@@ -9434,6 +9664,7 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
         session = sess;
         syncIdentityViaImport();
         syncApproval();
+        repaintPendingMentions();
         whisperReady = !!st.whisper;
         const wasTts = ttsReady;
         ttsReady = Array.isArray(st.tts) && st.tts.length > 0;

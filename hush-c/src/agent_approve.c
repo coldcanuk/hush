@@ -30,6 +30,7 @@ static void hush_agent_approval_say(hush_store_t *store, const hush_launch_t *la
 static void hush_agent_approval_run(hush_store_t *store, const hush_launch_t *launch);
 static void hush_agent_approval_guest(const hush_agent_job_in_t *in);
 static void hush_agent_approval_decline(hush_store_t *store, const hush_launch_t *launch);
+static void hush_agent_approval_next(hush_store_t *store, const hush_launch_t *launch);
 
 void hush_agent_approval_init(void)
 {
@@ -260,10 +261,14 @@ static void hush_agent_approval_run(hush_store_t *store, const hush_launch_t *la
     /* A robot removed while its turn waited has nothing left to run. */
     if (!hush_agent_lookup_robot(&bot, launch, g_taken.hex)) {
         hush_agent_follow_release(&g_taken.parent, g_taken.in.follow, 0);
+        hush_agent_approval_next(store, launch);
         return;
     }
     hush_agent_held_point(&g_taken, store, launch, &bot);
-    (void)hush_agent_begin_approved(&g_taken.in);
+    /* A Yes that starts no job (no runtime ready) posts no robot reply, so
+     * nothing else would ask the robots still queued behind it (#312). */
+    if (hush_agent_begin_approved(&g_taken.in) == HUSH_AGENT_WORK_NONE)
+        hush_agent_approval_next(store, launch);
 }
 
 static void hush_agent_approval_decline(hush_store_t *store, const hush_launch_t *launch)
@@ -271,4 +276,19 @@ static void hush_agent_approval_decline(hush_store_t *store, const hush_launch_t
     assert(store != NULL);
     hush_agent_approval_say(store, launch, &g_taken, HUSH_AGENT_APPROVAL_NO_FMT);
     hush_agent_follow_release(&g_taken.parent, g_taken.in.follow, 1);
+    /* No ends this robot's turn and the loop, not the turns of the other
+     * robots the mention named: each still gets its own ask (#312). */
+    hush_agent_approval_next(store, launch);
+}
+
+/* #312: the answered turn ended with no job (a No, or a Yes that started
+ * nothing). The robots queued behind an ordinary turn still get their own
+ * asks. A team's election or plan pass decides the workers, so when it
+ * does not run no worker is asked (G6). */
+static void hush_agent_approval_next(hush_store_t *store, const hush_launch_t *launch)
+{
+    assert(store != NULL && launch != NULL);
+    if (g_taken.in.leader || g_taken.in.elect)
+        return;
+    hush_agent_follow_resume(store, launch, &g_taken.parent);
 }
