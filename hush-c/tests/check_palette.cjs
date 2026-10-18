@@ -1525,6 +1525,7 @@ async function main() {
           const caret = P.rgba(ecs.caretColor === 'auto' ? ecs.color : ecs.caretColor); const sel = P.rgba(getComputedStyle(ed, '::selection').backgroundColor);
           return { runs: Object.values(seen), bg: P.hex(bg), edBg: ecs.backgroundColor, edImg: ecs.backgroundImage, edZ: ecs.zIndex, hiZ: hcs.zIndex,
             caret: Math.round(P.ratio(P.over(caret, bg), bg) * 100) / 100, caretCss: ecs.caretColor, selAlpha: sel[3], selCss: getComputedStyle(ed, '::selection').backgroundColor,
+            cmtStyle: getComputedStyle(hi.querySelector('.tok-cmt')).fontStyle,
             kw: { x: kr.left, y: kr.top, w: kr.width, h: kr.height }, paper: { x: hr.left + parseFloat(hcs.borderLeftWidth) + Math.max(2, Math.min(5, parseFloat(hcs.paddingLeft) / 2)), y: kr.top + kr.height / 2 } }; })()`);
         const shot = async (tag) => { const sh = await cdp.send('Page.captureScreenshot', { format: 'png', fromSurface: true });
           if (process.env.PALETTE_ART) { fs.mkdirSync(process.env.PALETTE_ART, { recursive: true }); fs.writeFileSync(path.join(process.env.PALETTE_ART, `cc1-${t}-${w}-${tag}.png`), Buffer.from(sh.data, 'base64')); }
@@ -1546,6 +1547,7 @@ async function main() {
         if (P_alpha(m.edBg) > 0 || m.edImg !== 'none') failures.push(`CC1 ${t}@${w} #code-canvas-edit background ${m.edBg} / ${m.edImg} occludes #code-canvas-hi (want transparent, no image)`);
         if (m.caret < 3) failures.push(`CC1 ${t}@${w} canvas caret ${m.caretCss} ${m.caret}:1 < 3`);
         if (!(m.selAlpha > 0 && m.selAlpha < 1)) failures.push(`CC1 ${t}@${w} canvas ::selection ${m.selCss} is not translucent`);
+        if (m.cmtStyle !== 'italic') failures.push(`CC1 ${t}@${w} canvas .tok-cmt font-style ${m.cmtStyle}, want italic`);
         if (m.kw.w < 4 || m.kw.x < 0 || m.kw.y < 0 || m.kw.x + m.kw.w > w || m.kw.y + m.kw.h > h) failures.push(`CC1 ${t}@${w} canvas keyword box ${JSON.stringify(m.kw)} is not on screen`);
         if (m.px.ink < 3) failures.push(`CC1 ${t}@${w} canvas keyword pixels ${m.px.ink}:1 on painted paper ${m.px.paper} (ink hidden)`);
         if (m.pxSel.ink < 3) failures.push(`CC1 ${t}@${w} selected canvas keyword pixels ${m.pxSel.ink}:1 on ${m.pxSel.paper} (ink hidden)`);
@@ -1594,7 +1596,6 @@ async function main() {
     `${r8.length} avatar-preview rings >= 3:1 (${new Set(r8.map((x) => x.theme)).size} themes x 2 widths), ` +
     `${r9.length} selected avatar tile rings >= 3:1 (${new Set(r9.map((x) => x.theme)).size} themes x 2 widths), ` +
     `${cc1.length} code canvas views (8 themes x 2 widths: text and every highlight class >= 4.5:1, textarea transparent, keyword ink in pixels), ` +
-    
     'ink-stamp actions 20-24px with 44px touch hit at 390, ' +
     `K1 dev log on tokens, K2 ${report.filter((r) => r.k2).reduce((n, r) => n + r.k2.length, 0)} provider pill text runs, ` +
     `K3 ${report.filter((r) => r.k3 && !r.k3.hidden).length} milestone fields fit their placeholder, K4 status light 2 states on tokens, ` +
