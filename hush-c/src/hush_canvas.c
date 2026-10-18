@@ -18,6 +18,7 @@
 #include "hush_canvas.h"
 #include "hush_dir.h"
 #include "hush_event.h"
+#include "hush_mem.h"
 #include "hush_provider.h"
 #include "hush_relay.h"
 #include "hush_roster.h"
@@ -473,8 +474,8 @@ static void hush_canvas_forget(hush_canvas_job_t *job)
 {
     assert(job != NULL);
     assert(!job->busy);
-    memset(job->token, 0, sizeof(job->token));
-    memset(job->out, 0, sizeof(job->out));
+    hush_secure_zero(job->token, sizeof(job->token));
+    hush_secure_zero(job->out, sizeof(job->out));
     job->out_n = 0;
     job->ok = 0;
 }

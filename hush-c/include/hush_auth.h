@@ -75,8 +75,8 @@ int hush_auth_ui_matches(const char *presented);
 
 /* Mints a fresh 128-bit secret from the CSPRNG (RAND_bytes) as
  * HUSH_AUTH_SECRET_HEX lowercase hex characters. Fails HUSH_ERR_ARG on NULL
- * or a short buffer, HUSH_ERR_IO when entropy is unavailable; out is ""
- * on every failure that has a buffer. */
+ * or a short buffer (a short buffer is not written), HUSH_ERR_IO when
+ * entropy is unavailable (out is then ""). */
 hush_status_t hush_auth_secret_mint(char *out, size_t outsz);
 
 /* Mints a fresh NIP-42 challenge: 32 random bytes hex-encoded (64 chars).
