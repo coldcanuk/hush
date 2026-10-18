@@ -167,6 +167,10 @@ tests/test_wipe_pins: tests/test_wipe_pins.c libhush.a
 	$(CC) $(CFLAGS) $< libhush.a -o $@ $(LDFLAGS) \
 		-Wl,--wrap=hush_secure_zero -Wl,--wrap=BN_clear_free
 
+tests/test_canvas_take: tests/test_canvas_take.c libhush.a
+	$(CC) $(CFLAGS) $< libhush.a -o $@ $(LDFLAGS) \
+		-Wl,--wrap=hush_auth_tokens_equal -Wl,--wrap=hush_secure_zero
+
 tests/test_vault: tests/test_vault.c tests/fake_curl_vault.c tests/fake_curl_vault.h libhush.a
 	$(CC) $(CFLAGS) tests/test_vault.c tests/fake_curl_vault.c libhush.a -o $@ 		$(filter-out $(shell pkg-config --libs libcurl),$(LDFLAGS)) 		-Wl,--wrap=hush_secure_zero
 
