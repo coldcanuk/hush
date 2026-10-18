@@ -212,6 +212,16 @@ async function main() {
   for (const k of Object.keys(u0.by)) if (!['GET /api/session', 'POST /api/window'].includes(k)) failures.push('U0 unpaired window still asks ' + k);
   console.log('pair U0 text: ' + JSON.stringify(u0.view.text));
 
+  // R0: the cookie arrives on a first run (no identity yet): Check again
+  // leaves the card for the first-run splash, with no reload.
+  const token = fs.readFileSync(path.join(home, 'session.token'), 'utf8').trim();
+  const click = async (sel) => { await cdp.waitFor(`!!document.querySelector('${sel}')`, sel); await cdp.eval(`document.querySelector('${sel}').click()`); };
+  await cdp.eval('window.__noReload = true');
+  await cdp.send('Network.setCookie', { name: 'hush_session', value: token, url: base + '/', httpOnly: true, sameSite: 'Strict' });
+  await click('#pair-check');
+  const r0 = await cdp.waitFor(`(() => { const v = ${VIEW}; return (v.splash && !v.pair && window.__noReload === true) ? v : null; })()`, 'first-run splash after pairing without reload', 10000);
+  console.log('pair R0 first run recovered to the splash, no reload: ' + JSON.stringify({ splash: r0.splash, pair: r0.pair }));
+
   // F1: the same fresh hive through the one-time pair link: the first-run splash.
   reset();
   await cdp.send('Page.navigate', { url: base + '/?pair=' + code });
@@ -221,7 +231,6 @@ async function main() {
   console.log('pair F1 paired first run: ' + JSON.stringify({ splash: f1.splash, pair: f1.pair }));
 
   // P1: set the hive up and poll paired: no 401, no console error.
-  const click = async (sel) => { await cdp.waitFor(`!!document.querySelector('${sel}')`, sel); await cdp.eval(`document.querySelector('${sel}').click()`); };
   await click('#begin'); await click('#create-id'); await click('#ack-key');
   await cdp.waitFor(`!!document.querySelector('#vibe-name')`, 'vibe step');
   await cdp.eval(`document.querySelector('#vibe-name').value = 'PAIRHIVE'`);
@@ -234,7 +243,6 @@ async function main() {
   if (consoleErr.length) failures.push('P1 paired hive console errors: ' + JSON.stringify(consoleErr.slice(0, 3)));
 
   // U1: the Ops case: the hive has an identity, this window has no cookie.
-  const token = fs.readFileSync(path.join(home, 'session.token'), 'utf8').trim();
   const u1 = await unpairedRun('U1 hive with identity');
   if (!u1.view.pair || u1.view.splash || u1.view.hive) failures.push('U1 unpaired window over a set-up hive: ' + JSON.stringify({ pair: u1.view.pair, splash: u1.view.splash, hive: u1.view.hive }));
   if (u1.n401 > MAX_401) failures.push(`U1 ${u1.n401} responses 401 in ${WINDOW_MS / 1000}s, want <= ${MAX_401}`);
@@ -258,6 +266,6 @@ async function main() {
   stopAll();
   if (failures.length) { for (const f of failures) console.error('pair UI check failed: ' + f); process.exit(1); }
   console.log(`pair UI check passed: unpaired U0 ${u0.n401} / U1 ${u1.n401} responses 401 and ${u0.nerr} / ${u1.nerr} console errors in ${WINDOW_MS / 1000}s ` +
-    `(bound ${MAX_401}), POST /api/window ${u0.nposts} / ${u1.nposts}, pair card not splash, first run splash, paired hive 0 401, recovery without reload`);
+    `(bound ${MAX_401}), POST /api/window ${u0.nposts} / ${u1.nposts}, pair card not splash, first run splash, paired hive 0 401, recovery without reload to the splash (first run) and the hive`);
 }
 main().catch((e) => die(e.stack || String(e)));
