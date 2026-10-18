@@ -1,4 +1,9 @@
-# Hush-generated coturn config. hush-relay rewrites this file.
+# Hush coturn config TEMPLATE (#353). It carries no credential.
+# The live /etc/hush/turnserver.conf is written by
+# /usr/share/hush/hush-turn-setup (or by hush-relay in daemon mode) with a
+# fresh 32-hex secret on the user= line, mode 0600. hush-turn.service refuses
+# to start without that file or with any credential that is not a generated
+# 32-hex secret.
 # WebRTC requires long-term credentials (--lt-cred-mech).
 
 listening-port=3478
@@ -7,12 +12,10 @@ max-port=49251
 fingerprint
 lt-cred-mech
 realm=hush.local
-user=hush:replace-me
 no-cli
 no-tls
 no-dtls
 no-multicast-peers
 stale-nonce=600
-log-file=/var/log/hush/turnserver.log
 pidfile=/run/hush-turn/turnserver.pid
 # external-ip=YOUR.PUBLIC.IP
