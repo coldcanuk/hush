@@ -69,7 +69,7 @@ raise humans + robots that share channels."
   started. Each link works one time." / "Otherwise, run
   `hush-relay --quit <port>` and start Hush again. The window it opens is
   paired. Quitting stops the hive's robots until Hush starts again." /
-  "This window also checks by itself and opens the hive once it is
+  "This window checks again by itself and carries on once it is
   paired." One primary button, **Check again**.
 - While unpaired: poll only `/api/status` + `/api/session`, back off
   2 s doubling to 30 s (Check again, focus, or a visible tab asks at
