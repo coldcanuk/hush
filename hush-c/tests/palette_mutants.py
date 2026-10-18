@@ -73,11 +73,11 @@ M = [
     ("L6 bare #f66 back", ".skill-slot.drop-no { border-color: var(--fo-slot-no, #f66); }", ".skill-slot.drop-no { border-color: #f66; }", "S7 "),
     ("L7 bare literal back (overridden rule)", "box-shadow: inset 0 1px 3px var(--fo-shade, rgb(0 0 0 / 0.45));",
      "box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.45);", "S7 "),
-    ("L8 fallback names an undefined token", "var(--fo-tok-str, #86efac)", "var(--fo-tok-strx, #86efac)", "S7 "),
+    ("L8 fallback names an undefined token", "var(--fo-tok-str, var(--code-str))", "var(--fo-tok-strx, var(--code-str))", "S7 "),
     ("L9 drop an override-only token", "  --fo-inv-drag: var(--accent);         /* inventory item being dragged */\n", "", "S7 "),
     ("L10 tile ink unreadable", "  --fo-tile-ink: var(--fg);", "  --fo-tile-ink: var(--accent-ink);", "L1 field-office@1440 tile-mute|color"),
     ("L11 code spine off-palette", "  --fo-lang-js: #5a4410;", "  --fo-lang-js: #f7df1e;", "L1 field-office@1440 code-js"),
-    ("L12 bare #7dd3fc back", "#code-canvas-hi .tok-kw { color: var(--fo-tok-kw, #7dd3fc); }", "#code-canvas-hi .tok-kw { color: #7dd3fc; }", "S7 "),
+    ("L12 bare #7dd3fc back", "#code-canvas-hi .tok-kw { color: var(--fo-tok-kw, var(--code-kw)); }", "#code-canvas-hi .tok-kw { color: #7dd3fc; }", "S7 "),
     # Gauge #325 r5 (r6)
     ("P1 refreshPartials paints raw text", "              paintPartial(el, ans.text);", "              el.textContent = ans.text;", "K7p refreshPartials .partial paints an npub"),
     ("P2 paintThink paints raw text", "        if (text) paintPartial(prev, text);", "        if (text) prev.textContent = text;", "K7p paintThink .partial paints an npub"),

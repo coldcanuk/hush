@@ -915,6 +915,19 @@ no Prism). An in-page scanner colors strings, comments, numbers, and
 keywords for: LaTeX, R, Bash, Zsh, PowerShell, Plaintext, Markdown, C,
 C++, Rust, PHP, Python, Go, Ruby, HTML, JavaScript, TypeScript, React,
 Node.js. Fence aliases `go` / `golang` use the Go keyword set.
+Delta 2026-10-17 (Ops #364 F/U, P1): in every theme the textarea paints
+only the caret (`--fg`) and a translucent selection tint (30% `--accent`,
+text transparent). Its background is transparent, so the highlight
+layer under it shows. Before this, field-office gave it the opaque
+`--surface-2` slip, which hid the code. Highlight inks are theme tokens:
+`var(--fo-tok-*, var(--code-*))` for kw / str / num, with `--code-kw` /
+`--code-str` / `--code-num` #7dd3fc / #86efac / #fbbf24 in the
+dark-type themes and #1e40af / #166534 / #92400e in light; field-office
+keeps `--fo-tok-*` #2a4466 / #2f5a24 / #5a4410. Comments use `--muted`
+italic. The text
+and every highlight class are >= 4.5:1 on the canvas background in all
+8 themes (`tests/check_palette.cjs` CC1, which also reads the rendered
+pixels).
 Persist `{w}` in `localStorage.hush-canvas`.
 
 Ctrl+K (also Cmd+K) on the canvas opens `#canvas-k`: a small
@@ -930,7 +943,7 @@ and polls `GET /api/complete?t=` until a ghost is ready. State is
 `activePrediction` + `predictionPos`. While the request is in
 flight, `pre#code-canvas-hi` paints a `.fim-caret` pulse at the
 caret using `var(--accent)` and `var(--accent-dim)`. The returned
-middle paints as `.tok-ghost` (`var(--faint)`). Tab inserts the
+middle paints as `.tok-ghost` (`var(--muted)` at 0.85 opacity). Tab inserts the
 ghost at `predictionPos`, moves the caret, and clears state. Tab
 with no prediction is left to the textarea. Escape clears. A range
 selection does not start FIM. The pump must not `nanosleep` on
@@ -1492,7 +1505,8 @@ with a 44px touch hit at 390) over gate cards, main thread, thread
 pane, Kit menu, Settings and the other 15 `.drawer` dialogs (Profile,
 New channel, Manage Channel, robot, invite, providers hub, provider,
 relay, leave, dev log, seed, avatar, skill, forge, inventory) and the
-BOARDS drawer. Not measured: the Conference stage and the code canvas.
+BOARDS drawer. Not measured: the Conference stage. The code canvas is
+CC1 (all 8 themes; see the canvas delta above).
 
 ### 16. Mention + manage pills
 

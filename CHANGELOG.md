@@ -26,6 +26,14 @@ the top-level `VERSION` file.
   backoff instead of dropping to the splash and polling at 1 Hz. Pinned by `check_pair_ui.cjs` U2 (30 s
   cap, focus/visibility re-check, no focus storm), U3 (429 keeps the card), R1 (Check again <= 2 s) and
   R2 (pairing resets the backoff).
+- Canvas: the code view is visible again in field-office. The editing textarea had an opaque paper slip
+  (`--surface-2`) above the highlight layer, so code painted blank there (Ops #364 follow-up, from #282).
+  It is now transparent in every theme, with a `--fg` caret and a translucent accent selection. Highlight
+  inks fall back to new theme tokens (`--code-kw`, `--code-str`, `--code-num`; field-office keeps its
+  `--fo-tok-*`), so light no longer paints the dark-theme pastels; comments and the FIM ghost use
+  `--muted`. Field-office keyword 1.01:1 → 5.91:1, light keyword 1.61:1 → 8.42:1, and every class is >=
+  4.5:1 in all 8 themes at 1440 and 390. Pinned by `tests/check_palette.cjs` CC1, which opens a real C
+  note in the canvas and also checks the rendered pixels. L1's expected light syntax colours move with it.
 - Field office fixes from the Ops back-LOOK of main 900a486d: the Developer Log text box is ink on a paper
   slip instead of a black/green terminal; robot provider pills read 6.32:1 (were 3.17:1 on --accent-dim);
   the thread-pane milestone fields wrap at phone width so each placeholder shows whole; the 390px header
@@ -155,6 +163,14 @@ the top-level `VERSION` file.
   never chain on their own.
 
 ### Security
+
+- hush-turn (#353): packages no longer install `/etc/hush/turnserver.conf` with a placeholder TURN
+  credential. Run `sudo /usr/share/hush/hush-turn-setup` (fresh 32-hex secret, 0600) before
+  `systemctl enable --now hush-turn`; the unit will not start without a generated secret, and coturn
+  runs as a transient unprivileged user (`DynamicUser=yes`, systemd 247+). **Upgrading a deb:** the
+  postinst replaces the old conf only if it still holds the placeholder; the original is kept as
+  `/etc/hush/turnserver.conf.placeholder-<time>.bak` (copy back hand edits such as `external-ip=`).
+  hush-turn is never enabled or started for you.
 
 - Copilot and Goose no longer run with tool auto-approve (#333). Copilot
   never gets `--allow-all-tools`: its shell tools are excluded and denied
