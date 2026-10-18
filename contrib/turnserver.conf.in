@@ -4,7 +4,8 @@
 # fresh 32-hex secret on the user= line, mode 0600. hush-turn.service refuses
 # to start without that file or with any credential that is not a generated
 # 32-hex secret.
-# WebRTC requires long-term credentials (--lt-cred-mech).
+# WebRTC requires long-term credentials (--lt-cred-mech). No log-file= or
+# pidfile= here: hush-turn.service passes both on its command line.
 
 listening-port=3478
 min-port=49152
@@ -17,5 +18,4 @@ no-tls
 no-dtls
 no-multicast-peers
 stale-nonce=600
-pidfile=/run/hush-turn/turnserver.pid
 # external-ip=YOUR.PUBLIC.IP

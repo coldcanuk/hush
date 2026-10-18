@@ -2,8 +2,9 @@
 # check_turn_pkg.sh: #353 packaging guard for hush-turn (coturn).
 # A staged package install (make install DESTDIR=... PREFIX=/usr, what
 # debian/rules and the RPM spec run) must ship no live TURN credential, a
-# non-root fail-closed unit, and a first-enable helper that writes a fresh
-# secret. Static checks plus the helper run against temp paths: no root, no
+# non-root unit that will not start without a generated secret, and a
+# first-enable helper that writes a fresh secret. The deb postinst replaces
+# only the old placeholder conf. Static checks plus the helper run against temp paths: no root, no
 # systemd and no coturn are needed (none of them run here).
 set -eu
 cd "$(dirname "$0")/.."
@@ -23,13 +24,16 @@ if grep -rl 'replace-me' "$R" >"$T/hits" 2>/dev/null; then
     fail "staged install ships a placeholder credential: $(tr '\n' ' ' <"$T/hits")"
 fi
 [ ! -e "$R/etc/hush/turnserver.conf" ] || fail "package must not install /etc/hush/turnserver.conf"
-if grep -rIlE '^(user|static-auth-secret)=' "$R" >"$T/hits" 2>/dev/null; then
+# Same reading as coturn: leading blanks, and '=' or blanks after the key.
+if grep -rIlE '^[[:blank:]]*(user|static-auth-secret)[[:blank:]=]' "$R" >"$T/hits" 2>/dev/null; then
     fail "staged text file carries a credential line: $(tr '\n' ' ' <"$T/hits")"
 fi
 [ -f "$tmpl" ] || fail "template missing from /usr/share/hush"
+# The unit's command line owns logging and the pidfile; a conf value would win.
+! grep -Eq '^[[:blank:]]*(log-file|pidfile)[[:blank:]=]' "$tmpl" || fail "template overrides the unit's log-file or pidfile"
 [ -x "$setup" ] || fail "hush-turn-setup missing or not executable"
 
-# --- unit: unprivileged, no capabilities, fails closed ---
+# --- unit: unprivileged, no capabilities, no start without a generated secret ---
 [ -f "$unit" ] || fail "unit not staged"
 cmp -s "$unit" "$R/usr/share/hush/systemd/hush-turn.service" || fail "unit copies differ"
 has() { grep -qxF "$1" "$unit" || fail "unit lacks: $1"; }
@@ -60,7 +64,7 @@ no_bare_enable "hush-relay --help" "$T/help.out"
 grep -q '^%{_datadir}/hush/hush-turn-setup$' ../hush-relay.spec || fail "spec %files lacks hush-turn-setup"
 ! grep -q '/etc/hush/turnserver.conf' ../hush-relay.spec || fail "spec must not package /etc/hush/turnserver.conf"
 
-# --- helper: --check fails closed ---
+# --- helper: --check refuses every credential that is not generated ---
 H="$T/h"; mkdir "$H"
 chk() { HUSH_TURN_TEMPLATE="$tmpl" "$setup" --check "$1" >/dev/null 2>&1; }
 ! chk "$H/missing.conf" || fail "--check passed a missing conf"
@@ -70,6 +74,22 @@ cp "$tmpl" "$H/tmpl.conf"
 ! chk "$H/old.conf" || fail "--check passed a placeholder credential"
 { cat "$tmpl"; echo 'user=hush:0123456789abcdef0123456789abcdef'; echo 'user=x:short'; } >"$H/mixed.conf"
 ! chk "$H/mixed.conf" || fail "--check passed a conf with one weak user= line"
+# Gauge #366 P2-1: coturn also reads these forms, so --check must too.
+good='user=hush:0123456789abcdef0123456789abcdef'
+tab=$(printf '\t')
+for weak in '  user=hush:replace-me' "${tab}user=hush:replace-me" 'user hush:replace-me' \
+            "user${tab}hush:replace-me" 'user = hush:replace-me' 'user="hush:replace-me"'; do
+    { cat "$tmpl"; echo "$good"; printf '%s\n' "$weak"; } >"$H/coturn.conf"
+    ! chk "$H/coturn.conf" || fail "--check passed a coturn-readable weak line: $weak"
+done
+{ cat "$tmpl"; echo "$good"; printf 'static-auth-secret replace-me\nuse-auth-secret\n'; } >"$H/sas.conf"
+! chk "$H/sas.conf" || fail "--check passed a space-separated static-auth-secret"
+{ cat "$tmpl"; printf '%s\r\n' "$good"; } >"$H/crlf.conf"
+chk "$H/crlf.conf" || fail "--check rejected a good conf with CRLF endings"
+{ cat "$tmpl"; printf '%s  \n\n' "$good"; } >"$H/trail.conf"
+chk "$H/trail.conf" || fail "--check rejected a good conf with a trailing blank"
+{ cat "$tmpl"; printf 'user="hush:0123456789abcdef0123456789abcdef"\n'; } >"$H/quoted.conf"
+chk "$H/quoted.conf" || fail "--check rejected a good quoted credential"
 
 # --- helper: first enable writes a fresh secret, 0600 ---
 gen() { HUSH_TURN_CONF="$1" HUSH_TURN_TEMPLATE="$tmpl" "$setup" >/dev/null 2>&1; }
@@ -96,6 +116,33 @@ mkdir "$H/d"; cp "$tmpl" "$H/d/turnserver.conf"; echo 'realm=custom' >>"$H/d/tur
 before=$(cksum <"$H/d/turnserver.conf")
 ! gen "$H/d/turnserver.conf" || fail "setup overwrote a conf with no credential it knows"
 [ "$(cksum <"$H/d/turnserver.conf")" = "$before" ] || fail "setup changed a hand-made conf"
+mkdir "$H/e"; { cat "$tmpl"; echo '  user = hush:replace-me'; } >"$H/e/turnserver.conf"
+gen "$H/e/turnserver.conf" || fail "setup failed on an indented placeholder conf"
+chk "$H/e/turnserver.conf" || fail "setup kept an indented placeholder credential"
+
+# --- deb upgrade: only the old placeholder conf is replaced, with a backup ---
+up() { HUSH_TURN_SETUP="$setup" HUSH_TURN_CONF="$1" HUSH_TURN_TEMPLATE="$tmpl" \
+    sh ../debian/hush-relay.postinst configure >/dev/null 2>&1; }
+mkdir "$H/u"; cp "$H/old.conf" "$H/u/turnserver.conf"; echo 'external-ip=203.0.113.8' >>"$H/u/turnserver.conf"
+up "$H/u/turnserver.conf" || fail "postinst failed on a placeholder conf"
+chk "$H/u/turnserver.conf" || fail "postinst left the placeholder conf in place"
+[ "$(stat -c %a "$H/u/turnserver.conf")" = 600 ] || fail "postinst conf is not 0600"
+set -- "$H/u/turnserver.conf.placeholder-"*.bak
+[ -f "$1" ] && grep -q '^external-ip=203.0.113.8$' "$1" || fail "postinst kept no backup of the old conf"
+mkdir "$H/v"; { cat "$tmpl"; echo '  user hush:replace-me'; } >"$H/v/turnserver.conf"
+up "$H/v/turnserver.conf" && chk "$H/v/turnserver.conf" || fail "postinst missed an indented placeholder"
+for keep in good weak hand; do
+    mkdir "$H/k-$keep"; c="$H/k-$keep/turnserver.conf"; cp "$tmpl" "$c"
+    case $keep in good) echo "$good" >>"$c" ;; weak) echo 'user=hush:short' >>"$c" ;; esac
+    before=$(cksum <"$c")
+    up "$c" || fail "postinst failed on a $keep conf"
+    [ "$(cksum <"$c")" = "$before" ] || fail "postinst changed a $keep conf"
+    [ "$(find "$H/k-$keep" -name '*.bak' | wc -l)" = 0 ] || fail "postinst backed up a $keep conf"
+done
+up "$H/none/turnserver.conf" || fail "postinst failed with no conf"
+[ ! -e "$H/none" ] || fail "postinst created a conf that did not exist"
+! grep -v '^[[:blank:]]*#' ../debian/hush-relay.postinst | grep -q 'systemctl' \
+    || fail "postinst must not enable or start hush-turn"
 if [ "$(id -u)" != 0 ]; then
     if HUSH_TURN_TEMPLATE="$tmpl" "$setup" >"$T/root.out" 2>&1; then
         fail "setup on /etc/hush must require root"
