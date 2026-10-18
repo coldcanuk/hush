@@ -14,9 +14,11 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "hush_auth.h"
 #include "hush_canvas.h"
 #include "hush_dir.h"
 #include "hush_event.h"
+#include "hush_mem.h"
 #include "hush_provider.h"
 #include "hush_relay.h"
 #include "hush_roster.h"
@@ -60,7 +62,6 @@ typedef struct {
     pid_t pid;
     int fd;
     time_t started;
-    unsigned seq;
     char token[HUSH_CANVAS_TOKEN_MAX];
     char cwd[HUSH_CANVAS_PATH_MAX];
     char note[HUSH_EVENT_MAX_CONTENT + 1];
@@ -71,7 +72,9 @@ typedef struct {
 } hush_canvas_job_t;
 
 static hush_canvas_job_t g_job;
-static unsigned g_seq;
+
+_Static_assert((int)HUSH_CANVAS_TOKEN_MAX >= (int)HUSH_AUTH_SECRET_BUF,
+               "a canvas job token holds a full CSPRNG secret");
 
 /* Copies src into dst. dst is never NULL. src NULL becomes empty. */
 static void hush_canvas_copy(char *dst, size_t dstsz, const char *src);
@@ -86,9 +89,10 @@ static int hush_canvas_grok_ready(void);
 /* Writes PREFIX/SUFFIX note. prefix and suffix may be NULL. */
 static void hush_canvas_fill_note(char *dst, size_t dstsz,
                                  const char *prefix, const char *suffix);
-/* Resets job and fills note, token, cwd. job is never NULL. */
-static void hush_canvas_fill_job(hush_canvas_job_t *job,
-                                 const char *prefix, const char *suffix);
+/* Resets job and fills note, token, cwd. job is never NULL. Fails
+ * HUSH_ERR_IO when no CSPRNG token can be minted (token stays ""). */
+static hush_status_t hush_canvas_fill_job(hush_canvas_job_t *job,
+                                          const char *prefix, const char *suffix);
 /* execvp grok -p. Does not return. */
 static void hush_canvas_exec_grok(int write_fd, const hush_canvas_job_t *job);
 /* Forks grok with a non-blocking stdout pipe. Fails with HUSH_ERR_IO. */
@@ -103,8 +107,10 @@ static void hush_canvas_read_job(hush_canvas_job_t *job);
 static void hush_canvas_finish_job(hush_canvas_job_t *job, int ok);
 /* True when now is past started + TIMEOUT_S. */
 static int hush_canvas_job_timed_out(const hush_canvas_job_t *job, time_t now);
-/* True when token names g_job. */
+/* True when token names g_job: exact length, constant-time compare. */
 static int hush_canvas_token_matches(const char *token);
+/* Zeros the job's token and result so a taken job cannot be read again. */
+static void hush_canvas_forget(hush_canvas_job_t *job);
 
 void hush_canvas_init(void)
 {
@@ -151,8 +157,8 @@ hush_status_t hush_canvas_start(char *token, size_t tokensz,
     if (g_job.busy)
         hush_canvas_kill_job(&g_job);
     hush_canvas_close_job(&g_job);
-    hush_canvas_fill_job(&g_job, prefix, suffix);
-    if (hush_canvas_spawn(&g_job) != HUSH_OK) {
+    if (hush_canvas_fill_job(&g_job, prefix, suffix) != HUSH_OK ||
+        hush_canvas_spawn(&g_job) != HUSH_OK) {
         hush_canvas_close_job(&g_job);
         return HUSH_ERR_IO;
     }
@@ -178,10 +184,12 @@ hush_status_t hush_canvas_take(const char *token, char *out, size_t outsz)
         return HUSH_ERR_NOT_FOUND;
     if (!g_job.ok || g_job.out[0] == '\0') {
         hush_canvas_close_job(&g_job);
+        hush_canvas_forget(&g_job);
         return HUSH_ERR_IO;
     }
     hush_canvas_clip(out, outsz, g_job.out);
     hush_canvas_close_job(&g_job);
+    hush_canvas_forget(&g_job);
     return HUSH_OK;
 }
 
@@ -281,19 +289,20 @@ static void hush_canvas_fill_note(char *dst, size_t dstsz,
         hush_canvas_copy(dst, dstsz, left);
 }
 
-static void hush_canvas_fill_job(hush_canvas_job_t *job,
-                                 const char *prefix, const char *suffix)
+static hush_status_t hush_canvas_fill_job(hush_canvas_job_t *job,
+                                          const char *prefix, const char *suffix)
 {
     assert(job != NULL);
     memset(job, 0, sizeof(*job));
     job->fd = HUSH_CANVAS_FD_NONE;
+    if (hush_auth_secret_mint(job->token, sizeof(job->token)) != HUSH_OK)
+        return HUSH_ERR_IO;
+    assert(strlen(job->token) == (size_t)HUSH_CANVAS_TOKEN_HEX);
     job->busy = 1;
     job->started = time(NULL);
-    g_seq += 1;
-    job->seq = g_seq;
-    (void)snprintf(job->token, sizeof(job->token), "c%u", job->seq);
     hush_canvas_prepare_cwd(job->cwd, sizeof(job->cwd));
     hush_canvas_fill_note(job->note, sizeof(job->note), prefix, suffix);
+    return HUSH_OK;
 }
 
 static void hush_canvas_exec_grok(int write_fd, const hush_canvas_job_t *job)
@@ -458,5 +467,15 @@ static int hush_canvas_token_matches(const char *token)
         return 0;
     if (g_job.token[0] == '\0')
         return 0;
-    return strcmp(g_job.token, token) == 0;
+    return hush_auth_tokens_equal(g_job.token, token);
+}
+
+static void hush_canvas_forget(hush_canvas_job_t *job)
+{
+    assert(job != NULL);
+    assert(!job->busy);
+    hush_secure_zero(job->token, sizeof(job->token));
+    hush_secure_zero(job->out, sizeof(job->out));
+    job->out_n = 0;
+    job->ok = 0;
 }

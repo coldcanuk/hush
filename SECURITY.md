@@ -47,8 +47,10 @@ All security fixes land on `main` first.
 The HTTP API is gated by a per-hive session token. On first run the relay mints
 `session.token` (32 hex characters from `/dev/urandom`, mode 0600) inside
 `$HUSH_HOME` and prints its path at startup. Every `/api/*` route requires it
-except `/api/status` (liveness) and `GET /api/complete?t=<job-token>` (a
-per-job capability token). Credentials are accepted as:
+except `/api/status` (liveness). `GET /api/complete?t=<job-token>` needs the
+session too (#361); its job token is a 128-bit CSPRNG secret (32 hex),
+compared in constant time at its exact length and good for one take.
+Credentials are accepted as:
 
 | Carrier | Use |
 |---|---|
@@ -256,8 +258,8 @@ Host), like every other non-liveness `/api/*` route. Regression coverage:
 1. Bind: default listens on loopback. A non-loopback `--listen` makes the
    session token the only boundary; the Host check stays advisory then.
 2. Token: `$HUSH_HOME/session.token` (0600) is the credential for every
-   `/api/*` route except `/api/status` and one-shot
-   `GET /api/complete?t=<job-token>`. Cookie, `X-Hush-Token`,
+   `/api/*` route except `/api/status` (`GET /api/complete` included,
+   #361). Cookie, `X-Hush-Token`,
    and `Authorization: Bearer` carry it (`check_trust.py`); `?k=` is refused
    and the cookie only follows the one-time pairing link
    (`check_bootstrap.py`, #336).

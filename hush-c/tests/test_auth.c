@@ -21,6 +21,27 @@ static void expect(int cond, const char *msg)
     }
 }
 
+/* #361: the one-shot secret mint is 128-bit CSPRNG hex, fresh each call,
+ * and refuses a short buffer without writing past it. */
+static void check_secret_mint(void)
+{
+    char a[HUSH_AUTH_SECRET_BUF] = {0};
+    char b[HUSH_AUTH_SECRET_BUF] = {0};
+    char tiny[4] = {'x', 'x', 'x', '\0'};
+    size_t i = 0;
+
+    expect(hush_auth_secret_mint(a, sizeof(a)) == HUSH_OK, "secret mint");
+    expect(hush_auth_secret_mint(b, sizeof(b)) == HUSH_OK, "secret mint again");
+    expect(strlen(a) == (size_t)HUSH_AUTH_SECRET_HEX, "secret is 32 hex");
+    for (i = 0; i < (size_t)HUSH_AUTH_SECRET_HEX; ++i)
+        expect(isxdigit((unsigned char)a[i]) != 0 && !isupper((unsigned char)a[i]),
+               "secret is lowercase hex");
+    expect(strcmp(a, b) != 0, "two secrets differ");
+    expect(hush_auth_secret_mint(tiny, sizeof(tiny)) == HUSH_ERR_ARG, "secret short buffer");
+    expect(strcmp(tiny, "xxx") == 0, "a short buffer is left alone");
+    expect(hush_auth_secret_mint(NULL, sizeof(a)) == HUSH_ERR_ARG, "secret NULL buffer");
+}
+
 int main(void)
 {
     char home[] = "/tmp/hush-auth-XXXXXX";
@@ -50,6 +71,8 @@ int main(void)
     expect(hush_auth_tokens_equal("abc", "abc") == 1, "equal strings");
     expect(hush_auth_tokens_equal("abc", "abd") == 0, "different strings");
     expect(hush_auth_tokens_equal("abc", "ab") == 0, "different lengths");
+    expect(hush_auth_tokens_equal("ab", "abc") == 0, "longer presented token");
+    expect(hush_auth_tokens_equal("abc", "") == 0, "empty presented token");
     expect(hush_auth_tokens_equal(NULL, "ab") == 0, "NULL is unequal");
     expect(hush_auth_token_copy(again, sizeof(again)) == HUSH_OK, "copy again");
     expect(strcmp(token, again) == 0, "token is stable");
@@ -136,6 +159,7 @@ int main(void)
             expect(hush_auth_ui_matches(cut) == 0, "a truncated ui secret does not match");
         }
     }
+    check_secret_mint();
     if (g_fail)
         return 1;
     printf("test_auth ok\n");

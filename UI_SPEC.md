@@ -667,7 +667,7 @@ demo). No Raylib dependency on the main hush-relay.
 | `POST /api/canvas` | `{project, path, content}` writes `content` to `path` under that launch project's directory. `project` is a project id. `path` is a relative file (no `..`, no absolute). Missing project, empty content, or a path that escapes the project → `{ok:false,error}`. |
 | `POST /api/fixup` | `{instruction, text}` runs a one-shot `grok -p` and returns `{ok:true,text}` or `{ok:false,error}`. Does **not** insert a hive note. Instruction max 500. Text max `HUSH_EVENT_MAX_CONTENT`. |
 | `POST /api/complete` | `{prefix, suffix}` starts a Fill-in-the-Middle job and returns `{ok:true,token}` immediately. Does **not** wait on Grok. Does **not** insert a hive note. A new start replaces any in-flight job. |
-| `GET /api/complete?t=` | `{ok:true,pending:true}` while the token is busy, `{ok:true,text}` when ready (max `HUSH_CANVAS_PRED_MAX` = 512), or `{ok:false,error}`. |
+| `GET /api/complete?t=` | Needs the session like every `/api/*` route (#361). `{ok:true,pending:true}` while the token is busy, `{ok:true,text}` when ready (max `HUSH_CANVAS_PRED_MAX` = 512), or `{ok:false,error}`. The token is 32 hex from the CSPRNG; a ready result is handed out once, then the token names nothing. |
 | `POST /api/window` | `{action:"minimize"\|"maximize"}`. Iconify or toggle WM maximize on the `--app` window (`WM_CLASS=hush-relay`). Does **not** insert a note and does **not** shut down. No window / no X11 → `{ok:false,error}`. |
 | `GET /avatar/<64-hex>` | stored picture bytes |
 
@@ -891,9 +891,11 @@ only the caret (`--fg`) and a translucent selection tint (30% `--accent`,
 text transparent). Its background is transparent, so the highlight
 layer under it shows. Before this, field-office gave it the opaque
 `--surface-2` slip, which hid the code. Highlight inks are theme tokens:
-`--code-kw` / `--code-str` / `--code-num` (dark-type themes #7dd3fc /
-#86efac / #fbbf24, light #1e40af / #166534 / #92400e, field-office
-#2a4466 / #2f5a24 / #5a4410). Comments use `--muted` italic. The text
+`var(--fo-tok-*, var(--code-*))` for kw / str / num, with `--code-kw` /
+`--code-str` / `--code-num` #7dd3fc / #86efac / #fbbf24 in the
+dark-type themes and #1e40af / #166534 / #92400e in light; field-office
+keeps `--fo-tok-*` #2a4466 / #2f5a24 / #5a4410. Comments use `--muted`
+italic. The text
 and every highlight class are >= 4.5:1 on the canvas background in all
 8 themes (`tests/check_palette.cjs` CC1, which also reads the rendered
 pixels).

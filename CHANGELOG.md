@@ -8,13 +8,49 @@ the top-level `VERSION` file.
 
 ### Changed
 
-- Canvas: the code view is visible again in field-office. The editing textarea had an opaque paper
-  slip (`--surface-2`) above the highlight layer, so code painted blank there (Ops #364 follow-up,
-  from #282). It is now transparent in every theme, with a `--fg` caret and a translucent accent
-  selection. Highlight inks are theme tokens (`--code-kw`, `--code-str`, `--code-num`); comments and
-  the FIM ghost use `--muted`. Field-office keyword 1.01:1 → 5.91:1, light keyword 1.61:1 → 8.42:1,
-  and every class is >= 4.5:1 in all 8 themes at 1440 and 390. Pinned by `tests/check_palette.cjs`
-  CC1, which opens a real C note in the canvas and also checks the rendered pixels.
+- Canvas: the code view is visible again in field-office. The editing textarea had an opaque paper slip
+  (`--surface-2`) above the highlight layer, so code painted blank there (Ops #364 follow-up, from #282).
+  It is now transparent in every theme, with a `--fg` caret and a translucent accent selection. Highlight
+  inks fall back to new theme tokens (`--code-kw`, `--code-str`, `--code-num`; field-office keeps its
+  `--fo-tok-*`), so light no longer paints the dark-theme pastels; comments and the FIM ghost use
+  `--muted`. Field-office keyword 1.01:1 → 5.91:1, light keyword 1.61:1 → 8.42:1, and every class is >=
+  4.5:1 in all 8 themes at 1440 and 390. Pinned by `tests/check_palette.cjs` CC1, which opens a real C
+  note in the canvas and also checks the rendered pixels. L1's expected light syntax colours move with it.
+- Field office fixes from the Ops back-LOOK of main 900a486d: the Developer Log text box is ink on a paper
+  slip instead of a black/green terminal; robot provider pills read 6.32:1 (were 3.17:1 on --accent-dim);
+  the thread-pane milestone fields wrap at phone width so each placeholder shows whole; the 390px header
+  status lamp is flat muted green / amber (two new field-office tokens) with an ink rim, no gradient and
+  no white glint. All themes: robot
+  picture cells sit on --surface-2 instead of the native #efefef button grey, and the 1943 edition line
+  and HQ stamps show only in field-office. Pinned by `tests/check_palette.cjs` K1-K6.
+- A mention of someone not yet in the roster shows a neutral "@unknown" pill instead of vanishing
+  (it left a leading blank), and is renamed once the roster has them. The 1 s refresh re-renders such a
+  note only when the roster changes, not every second. Per UI_SPEC the unresolved
+  @npub1… token itself is still never painted; the short key is only in the pill's tooltip. Field-office mention pills read
+  6.66:1 (were 3.17:1). The Developer Log and robot inventory inks are `--fo-*` tokens (other themes
+  keep #000/#0f0 and cyan/gold/red as fallbacks). `tests/check_palette_tokens.py` S5-S7 now fail on a
+  literal colour in a markup inline style, a script string, or a new unscoped rule (G291-2).
+- Field-office no longer paints the shared code-language spines, Canvas syntax colours, call
+  tiles, inventory item text, skill slot / doll rims and ALWAYS-ON / ON-CALL chips in their dark-theme
+  literals: they read `--fo-*` tokens (text >= 4.8:1, rims >= 4.32:1 there; were down to 1.01:1 and
+  1.19:1). Every other shared literal colour sits behind a `--fo-*` fallback too, so the other seven
+  themes compute the same values and S7's baseline is empty: any unscoped literal colour now fails.
+  Pinned by `tests/check_palette.cjs` L1.
+- Field-office call stage: the Muted slip on a call tile is paper ink on the warn slip (5.88:1; was ink
+  on warn at 1.73:1). New pins: W1 (no element paints pure white in the 62 field-office views the palette check renders), S8 (no
+  white or near-white literal reaches field-office), K9 (the real call stage) and K10 (the real skills
+  board and skill sheet). `tests/palette_mutants.py` runs the palette and mention mutants.
+- Mentions: the note body text never contains the npub and the @unknown pill's aria-label carries the
+  short key (K7). The repaint key is the sorted npub=name pairs, so a same-size roster swap repaints (K7t).
+- Mentions: the live robot partial preview renders through the same mention renderer as a note body,
+  so an unresolved `@npub1…` shows as an @unknown pill there too (K7p). Each new partial replaces the
+  preview instead of piling up after the last one: K7p paints three partials into one preview slot
+  and each must read exactly its own text with 2 pills. The roster key's sort and its
+  npub and name halves are pinned (K7k); the voice button's fallbacks in the other 7 themes are pinned (K11o).
+  The L1 fixture no longer borrows the live robot inventory (its 1 s re-render made L1 flaky at 390)
+  and an empty or detached read fails L1. `tests/palette_mutants.py`: 43 of 43 caught.
+- Christmas: the selected skills-board facet's ring is light crimson `--accent` (was `--accent-dim`,
+  1.01:1 on the greens), pinned by R5 on the skills board view.
 - Christmas theme: every red is one crimson hue. Light crimson `--accent` #ff6b7f (dark ink #0f1f14)
   is for accent text, radios, outlines, borders, focus edges and rings, and the on switch track, so a
   checked Settings radio reads 5.77:1 against its panel (was 2.71:1). Deep crimson `--accent-dim`

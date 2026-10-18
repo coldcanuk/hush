@@ -274,6 +274,11 @@ def check_scan_and_ice_gates(relay):
             sock.close()
 
     assert status_of(unauthed("GET", "/api/ice")) == 401, "ice without token"
+    # #361: the canvas poll is gated like every route, for a guessed c<seq>
+    # token and for a well-formed 32-hex one.
+    for probe in ("c1", "0" * 32):
+        assert status_of(unauthed("GET", f"/api/complete?t={probe}")) == 401, \
+            ("complete poll without token", probe)
     scan_body = {"provider": "openai-api", "host": "http://127.0.0.1:1"}
     assert status_of(unauthed("POST", "/api/provider/scan", scan_body)) == 401, \
         "scan without token"
@@ -293,7 +298,7 @@ def check_scan_and_ice_gates(relay):
     blob = json.dumps(ice, separators=(",", ":")).encode()
     assert b"credential" not in blob, ice
     assert b"stun:stun.l.google.com:19302" in blob, ice
-    print("trust: /api/ice + /api/provider/scan gated, scan fail-closed, no leaks OK")
+    print("trust: /api/ice + /api/provider/scan + GET /api/complete gated, scan fail-closed, no leaks OK")
 
 
 def main():

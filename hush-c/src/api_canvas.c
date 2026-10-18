@@ -250,7 +250,11 @@ static void hush_http_complete_token(char *out, size_t outsz, const char *req)
         return;
     q += 3;
     i = 0;
-    while (q[i] != '\0' && q[i] != ' ' && q[i] != '&' && i + 1 < outsz) {
+    while (q[i] != '\0' && q[i] != ' ' && q[i] != '&') {
+        if (i + 1 >= outsz) {
+            out[0] = '\0'; /* #361/#357: never truncate a token into a match */
+            return;
+        }
         out[i] = q[i];
         i++;
     }
