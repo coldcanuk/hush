@@ -18,7 +18,8 @@ S6  No JavaScript string literal carries a hex / rgb() / hsl() colour,
 S7  Rules not scoped to a theme (they paint in field-office as well) add no
     literal colour: a literal there is allowed only as the fallback of a
     defined --fo-* token (the other themes never define --fo-*, so they keep
-    the literal). BASELINE_S7 is empty: main 900a486d had 63 such
+    the literal). Every --fo-* such a rule names must be defined, whatever
+    its fallback (a var() fallback has no literal to trip on). BASELINE_S7 is empty: main 900a486d had 63 such
     declarations, all now tokenized; a new one, or one with !important, fails. Rules scoped to another theme, or to
     html:not([data-theme="field-office"]), are not field-office paint.
 S8  No white or near-white literal reaches field-office (Ops #325 "NO white
@@ -109,6 +110,10 @@ def scan_unscoped(src, base, css, defined, fallbacks):
             prop, val = m.group(1).lower(), m.group(2)
             if prop.startswith("--") or prop in ("content", "font", "font-family", "src"):
                 continue
+            for f in FO_FALLBACK.finditer(val):
+                if f.group(1) not in defined:  # a var() fallback hides the typo from the literal scan (CC1)
+                    fail(f"S7 index.html:{line_of(src, base, off + m.start())} {f.group(1)} in {prop} of unscoped "
+                         f"{sel[:80]} is not a field-office token")
             hit = LITERAL.search(without_fo_fallbacks(val, defined))
             if not hit:
                 if any(f.group(1) in defined and LITERAL.search(f.group(0)) for f in FO_FALLBACK.finditer(val)):
