@@ -20,6 +20,11 @@
 #include "hush_canvas.h"
 #include "hush_event.h"
 
+/* Readiness probes (#356): the stub answers --version and --help, runs nothing. */
+#define CT_GROK_READY \
+    "case \"$1\" in --version) echo \"grok 0.2.50\"; exit 0;; --help) echo " \
+    "\"--permission-mode dontAsk --allow --deny --disallowed-tools\"; exit 0;; esac\n"
+
 enum {
     CT_PATH_MAX = 1024,
     CT_POLL_STEPS = 200,
@@ -82,7 +87,7 @@ static void fixture(const char *root)
     expect(setenv("PATH", path, 1) == 0, "PATH");
     (void)snprintf(p, sizeof(p), "%s/bin/grok", root);
     f = fopen(p, "w");
-    expect(f != NULL && fputs("#!/bin/sh\nsleep 0.3\nprintf 'int x;\\n'\n", f) >= 0 &&
+    expect(f != NULL && fputs("#!/bin/sh\n" CT_GROK_READY "sleep 0.3\nprintf 'int x;\\n'\n", f) >= 0 &&
            fclose(f) == 0 && chmod(p, CT_EXE_MODE) == 0, "stub grok");
 }
 
