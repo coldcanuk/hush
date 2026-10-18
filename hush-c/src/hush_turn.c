@@ -43,7 +43,7 @@ static void hush_turn_resolve_state(hush_turn_t *turn);
 static void hush_turn_find_binary(hush_turn_t *turn);
 static int hush_turn_unit_present(void);
 static hush_status_t hush_turn_random_hex(char *out, size_t hex_chars);
-static hush_status_t hush_turn_write_conf(const hush_turn_t *turn);
+static hush_status_t hush_turn_write_conf(const hush_turn_t *turn, hush_turn_mode_t mode);
 static hush_status_t hush_turn_enable_child(hush_turn_t *turn);
 static hush_status_t hush_turn_enable_daemon(hush_turn_t *turn);
 static hush_status_t hush_turn_spawn_child(hush_turn_t *turn);
@@ -124,7 +124,7 @@ static hush_status_t hush_turn_enable_child(hush_turn_t *turn)
     assert(turn != NULL);
     if (hush_dir_ensure_private(turn->state_dir) != HUSH_OK)
         return HUSH_ERR_IO;
-    if (hush_turn_write_conf(turn) != HUSH_OK)
+    if (hush_turn_write_conf(turn, HUSH_TURN_MODE_CHILD) != HUSH_OK)
         return HUSH_ERR_IO;
     if (!turn->have_binary)
         return HUSH_ERR_NOT_FOUND;
@@ -149,7 +149,7 @@ static hush_status_t hush_turn_enable_daemon(hush_turn_t *turn)
         turn->need_root = 1;
         return HUSH_ERR_DENIED;
     }
-    if (hush_turn_write_conf(turn) != HUSH_OK) {
+    if (hush_turn_write_conf(turn, HUSH_TURN_MODE_DAEMON) != HUSH_OK) {
         turn->need_root = 1;
         return HUSH_ERR_DENIED;
     }
@@ -380,44 +380,62 @@ static hush_status_t hush_turn_random_hex(char *out, size_t hex_chars)
     return HUSH_OK;
 }
 
-static hush_status_t hush_turn_write_conf(const hush_turn_t *turn)
+/* Counts one snprintf into *used; 0 when it was cut or failed. */
+static int hush_turn_fits(size_t outsz, size_t *used, int wrote)
 {
-    FILE *fp;
+    if (wrote < 0 || (size_t)wrote >= outsz - *used)
+        return 0;
+    *used += (size_t)wrote;
+    return 1;
+}
+
+hush_status_t hush_turn_format_conf(const hush_turn_t *turn, hush_turn_mode_t mode,
+                                    char *out, size_t outsz)
+{
+    size_t used = 0;
+
+    if (turn == NULL || out == NULL || outsz == 0)
+        return HUSH_ERR_ARG;
+    out[0] = '\0';
+    if (!hush_turn_fits(outsz, &used, snprintf(out, outsz,
+            "listening-port=%u\nmin-port=%u\nmax-port=%u\n"
+            "fingerprint\nlt-cred-mech\nrealm=%s\nuser=%s:%s\n"
+            "no-cli\nno-tls\nno-dtls\nno-multicast-peers\nstale-nonce=600\n",
+            (unsigned)turn->listen_port, (unsigned)HUSH_TURN_RELAY_MIN,
+            (unsigned)HUSH_TURN_RELAY_MAX, turn->realm, turn->username, turn->password)))
+        return HUSH_ERR_FULL;
+    /* Child mode only: the unit's command line owns these in daemon mode. */
+    if (mode == HUSH_TURN_MODE_CHILD &&
+        !hush_turn_fits(outsz, &used, snprintf(out + used, outsz - used,
+            "log-file=%s/turnserver.log\npidfile=%s/turnserver.pid\n",
+            turn->state_dir, turn->state_dir)))
+        return HUSH_ERR_FULL;
+    if (strcmp(turn->public_host, HUSH_TURN_HOST_LOCAL) != 0 &&
+        !hush_turn_fits(outsz, &used, snprintf(out + used, outsz - used,
+            "external-ip=%s\n", turn->public_host)))
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_turn_write_conf(const hush_turn_t *turn, hush_turn_mode_t mode)
+{
+    char text[HUSH_TURN_CONF_MAX];
+    size_t len = 0;
     int fd;
-    char log_path[HUSH_TURN_PATH_MAX];
-    char pid_path[HUSH_TURN_PATH_MAX];
 
     assert(turn != NULL);
-    if (snprintf(log_path, sizeof(log_path), "%s/turnserver.log",
-                 turn->state_dir) >= (int)sizeof(log_path))
+    if (hush_turn_format_conf(turn, mode, text, sizeof(text)) != HUSH_OK)
         return HUSH_ERR_ARG;
-    if (snprintf(pid_path, sizeof(pid_path), "%s/turnserver.pid",
-                 turn->state_dir) >= (int)sizeof(pid_path))
-        return HUSH_ERR_ARG;
+    len = strlen(text);
     fd = open(turn->conf_path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW,
               S_IRUSR | S_IWUSR);
     if (fd < 0)
         return HUSH_ERR_IO;
-    fp = fdopen(fd, "w");
-    if (fp == NULL) {
-        close(fd);
+    if (write(fd, text, len) != (ssize_t)len) {
+        (void)close(fd);
         return HUSH_ERR_IO;
     }
-    (void)fprintf(fp,
-                  "listening-port=%u\nmin-port=%u\nmax-port=%u\n"
-                  "fingerprint\nlt-cred-mech\nrealm=%s\nuser=%s:%s\n"
-                  "no-cli\nno-tls\nno-dtls\nno-multicast-peers\n"
-                  "stale-nonce=600\nlog-file=%s\npidfile=%s\n",
-                  (unsigned)turn->listen_port,
-                  (unsigned)HUSH_TURN_RELAY_MIN,
-                  (unsigned)HUSH_TURN_RELAY_MAX,
-                  turn->realm, turn->username, turn->password,
-                  log_path, pid_path);
-    if (strcmp(turn->public_host, HUSH_TURN_HOST_LOCAL) != 0)
-        (void)fprintf(fp, "external-ip=%s\n", turn->public_host);
-    if (fclose(fp) != 0)
-        return HUSH_ERR_IO;
-    return HUSH_OK;
+    return close(fd) == 0 ? HUSH_OK : HUSH_ERR_IO;
 }
 
 static hush_status_t hush_turn_spawn_child(hush_turn_t *turn)

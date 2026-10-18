@@ -10,7 +10,8 @@ ConditionPathExists=/etc/hush/turnserver.conf
 [Service]
 Type=simple
 # Root-side check (the + prefix): the conf must hold a generated secret and
-# no placeholder credential, or the unit fails closed.
+# no other credential, read the way coturn reads it, or the unit does not
+# start.
 ExecStartPre=+/usr/share/hush/hush-turn-setup --check /etc/hush/turnserver.conf
 # coturn runs as a transient unprivileged user (#353). The root-owned 0600
 # conf reaches it as a read-only credential copy (systemd >= 247).
