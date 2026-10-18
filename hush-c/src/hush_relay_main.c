@@ -146,5 +146,6 @@ static void hush_print_help(void)
     printf("  Clean quit is exit code 0.\n");
     printf("STUN/TURN: Settings → Enable STUN/TURN (needs coturn).\n");
     printf("Daemon:    sudo make install PREFIX=/usr, then Settings → Daemon mode\n");
-    printf("           or: sudo systemctl enable --now hush-turn\n");
+    printf("           or: sudo /usr/share/hush/hush-turn-setup &&\n");
+    printf("               sudo systemctl enable --now hush-turn\n");
 }

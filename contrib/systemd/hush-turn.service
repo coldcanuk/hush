@@ -3,24 +3,42 @@ Description=Hush STUN/TURN server (coturn)
 Documentation=https://github.com/coldcanuk/hush
 After=network-online.target
 Wants=network-online.target
+# #353: no generated config, no start. Run /usr/share/hush/hush-turn-setup
+# (or Settings → Daemon mode) first.
+ConditionPathExists=/etc/hush/turnserver.conf
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/turnserver -c /etc/hush/turnserver.conf --no-cli --pidfile /run/hush-turn/turnserver.pid
+# Root-side check (the + prefix): the conf must hold a generated secret and
+# no other credential, read the way coturn reads it, or the unit does not
+# start.
+ExecStartPre=+/usr/share/hush/hush-turn-setup --check /etc/hush/turnserver.conf
+# coturn runs as a transient unprivileged user (#353). The root-owned 0600
+# conf reaches it as a read-only credential copy (systemd >= 247).
+DynamicUser=yes
+LoadCredential=turnserver.conf:/etc/hush/turnserver.conf
+ExecStart=/usr/bin/turnserver -c ${CREDENTIALS_DIRECTORY}/turnserver.conf --no-cli --log-file stdout --pidfile /run/hush-turn/turnserver.pid --userdb /var/lib/hush-turn/turndb
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=3
 RuntimeDirectory=hush-turn
 RuntimeDirectoryMode=0755
-LogsDirectory=hush
-StateDirectory=hush
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+StateDirectory=hush-turn
+# Ports 3478 and 49152-49251 are unprivileged: no capabilities at all.
+CapabilityBoundingSet=
 NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/hush /var/log/hush
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
 LimitNOFILE=65536
 
 [Install]

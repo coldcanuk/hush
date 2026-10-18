@@ -1,0 +1,26 @@
+#!/bin/sh
+# postinst: hush-relay package configure step (#353).
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Packages before #353 installed /etc/hush/turnserver.conf with a placeholder
+# TURN credential. dpkg keeps that file on upgrade, and hush-turn.service now
+# refuses to start with it. On configure, replace the conf ONLY when it still
+# holds that placeholder: hush-turn-setup --replace-placeholder backs it up
+# next to itself and writes a fresh 0600 conf with a new secret. Any other
+# conf, or none, is left exactly as it is. This never enables or starts
+# hush-turn.
+# Test seam: HUSH_TURN_SETUP overrides the helper path.
+set -e
+
+setup=${HUSH_TURN_SETUP:-/usr/share/hush/hush-turn-setup}
+
+case "${1:-}" in
+    configure)
+        if [ -x "$setup" ]; then
+            "$setup" --replace-placeholder || \
+                echo "hush-relay: could not replace the old TURN placeholder; run $setup" >&2
+        fi
+        ;;
+esac
+
+exit 0

@@ -251,6 +251,7 @@ test: check-deps $(TEST_BINS) hush-relay
 	sh tests/check_fixup.sh || exit 1; \
 	sh tests/check_complete.sh || exit 1; \
 	sh tests/check_turn.sh || exit 1; \
+	sh tests/check_turn_pkg.sh || exit 1; \
 	sh tests/check_voice.sh || exit 1; \
 	sh tests/check_voice_ui.sh || exit 1; \
 	echo "ALL TESTS PASSED"
@@ -323,17 +324,16 @@ ifneq ($(ENABLE_STUN_TURN),0)
 		$(DESTDIR)$(HUSHSHARE)/systemd/hush-turn.service
 	install -m 0644 ../contrib/turnserver.conf.in \
 		$(DESTDIR)$(HUSHSHARE)/turnserver.conf.in
+	install -m 0755 ../scripts/hush-turn-setup \
+		$(DESTDIR)$(HUSHSHARE)/hush-turn-setup
+	@# #353: ship no live credential. /etc/hush/turnserver.conf is written
+	@# at first enable by hush-turn-setup (or the relay's Daemon mode).
 	@if [ -n "$(DESTDIR)" ] || [ "$$(id -u)" = "0" ]; then \
 		install -d $(DESTDIR)/lib/systemd/system; \
 		install -m 0644 ../contrib/systemd/hush-turn.service \
 			$(DESTDIR)/lib/systemd/system/hush-turn.service; \
-		install -d $(DESTDIR)/etc/hush; \
-		if [ ! -f $(DESTDIR)/etc/hush/turnserver.conf ]; then \
-			install -m 0640 ../contrib/turnserver.conf.in \
-				$(DESTDIR)/etc/hush/turnserver.conf; \
-		fi; \
-		echo "Installed hush-turn.service (not enabled)."; \
-		echo "  sudo systemctl enable --now hush-turn"; \
+		echo "Installed hush-turn.service (not enabled; no secret yet)."; \
+		echo "  first: sudo $(HUSHSHARE)/hush-turn-setup && sudo systemctl enable --now hush-turn"; \
 		echo "  or use Settings → Daemon mode"; \
 	else \
 		echo "STUN/TURN templates: $(DESTDIR)$(HUSHSHARE)/"; \
@@ -354,7 +354,8 @@ uninstall: check-prefix
 		$(DESTDIR)$(CODEX_SKILL_SHARE)/references/c-standard.md
 	rm -rf $(DESTDIR)$(HUSHSHARE)/skills/system
 	rm -f $(DESTDIR)$(HUSHSHARE)/systemd/hush-turn.service \
-		$(DESTDIR)$(HUSHSHARE)/turnserver.conf.in
+		$(DESTDIR)$(HUSHSHARE)/turnserver.conf.in \
+		$(DESTDIR)$(HUSHSHARE)/hush-turn-setup
 	@if [ -n "$(DESTDIR)" ] || [ "$$(id -u)" = "0" ]; then \
 		rm -f $(DESTDIR)/lib/systemd/system/hush-turn.service; \
 	fi

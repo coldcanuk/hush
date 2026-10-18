@@ -22,7 +22,8 @@ enum {
     HUSH_TURN_SECRET_BYTES = 16,
     HUSH_TURN_PASS_HEX = 32,
     HUSH_TURN_STATE_DIR_CAP = 300,
-    HUSH_TURN_PEER_MAX = 8
+    HUSH_TURN_PEER_MAX = 8,
+    HUSH_TURN_CONF_MAX = 2048
 };
 
 #define HUSH_TURN_REALM_DEFAULT "hush.local"
@@ -69,6 +70,13 @@ hush_status_t hush_turn_set_public_host(hush_turn_t *turn, const char *host);
 
 /* Reaps a dead child and refreshes running. */
 void hush_turn_refresh(hush_turn_t *turn);
+
+/* Formats the coturn conf for mode into out. Child mode names a log-file
+ * and pidfile under state_dir. Daemon mode names neither: hush-turn.service
+ * passes --log-file stdout and --pidfile on its command line, and a conf
+ * value would override them (#353). Pure. */
+hush_status_t hush_turn_format_conf(const hush_turn_t *turn, hush_turn_mode_t mode,
+                                    char *out, size_t outsz);
 
 /* Writes iceServers JSON. */
 hush_status_t hush_turn_format_ice(const hush_turn_t *turn,
