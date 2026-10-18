@@ -64,17 +64,29 @@ raise humans + robots that share channels."
   cookie, #336), the gate shows this card, not the splash: it is not a
   first run, and Begin could not work.
 - Title "Pair this window". Lines: "Hush is running, but this window is
-  not paired with it yet, so it cannot open your hive." / "If you started
-  hush-relay with `--no-open`, open the `pair:` link it printed when it
-  started. Each link works one time." / "Otherwise, run
-  `hush-relay --quit <port>` and start Hush again. The window it opens is
-  paired. Quitting stops the hive's robots until Hush starts again." /
-  "This window checks again by itself and carries on once it is
+  not paired with it yet, so it cannot open your hive." / "**To pair it,
+  quit Hush and start it again from your Hush app or shortcut.** The
+  window Hush opens when it starts is paired. Quitting stops the hive's
+  robots until Hush starts again." / "Started Hush from a terminal? Quit
+  it with `hush-relay --quit <port>`. If you started it with
+  `--no-open`, open the `pair:` link it printed instead. Each link works
+  one time." / "This window checks again by itself and carries on once it is
   paired." One primary button, **Check again**.
 - While unpaired: poll only `/api/status` + `/api/session`, back off
-  2 s doubling to 30 s (Check again, focus, or a visible tab asks at
-  once); `POST /api/window` is tried once. The first 200 leaves the card
+  2 s doubling to a 30 s cap. Check again asks at once (2-3 ms in our
+  probe); focus or a visible tab re-checks within a second, on the next
+  1 s tick (230-397 ms in our probe), so repeated focus events never ask
+  more than once a second. `POST /api/window` is tried once. The first
+  200 leaves the card; any other error (429, 5xx) keeps the card and its
+  backoff. Pairing resets the backoff to 2 s. The card goes away
   without a reload (hive, or the splash on a first run).
+- Card edge 2px `--pair-edge` (default `--faint`; `--muted` in desert and
+  dracula; `--line` in field-office via its own rule), >= 3:1 against page and card fill in
+  all 8 themes. `<code>` never wraps inside a flag; Check again keeps air
+  below it.
+- Profile and Settings can still open over the card (c, 2, Kit). While
+  unpaired each shows "Pair this window first." and disables its actions
+  and fields (theme radios stay: they are local); Profile shows no key, the TURN line says "Pair this window first.". Close stays.
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
   Before login the badge reads "listening"; the port is only in its
   tooltip ("Relay listening on port N"), not in the visible text

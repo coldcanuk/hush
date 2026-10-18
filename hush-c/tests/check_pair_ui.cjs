@@ -211,6 +211,28 @@ async function main() {
   if (u0.nposts > MAX_WINDOW_POSTS) failures.push(`U0 ${u0.nposts} POST /api/window, want <= ${MAX_WINDOW_POSTS} (no retry on 401)`);
   for (const k of Object.keys(u0.by)) if (!['GET /api/session', 'POST /api/window'].includes(k)) failures.push('U0 unpaired window still asks ' + k);
   console.log('pair U0 text: ' + JSON.stringify(u0.view.text));
+  if (!u0.view.text.includes('quit Hush and start it again from your Hush app or shortcut')) failures.push('U0 pair card has no plain-language step (quit Hush and start it again from your Hush app or shortcut)');
+
+  // L0 (#368 r2): Profile (c) and Settings (Kit) over the pair card say
+  // "Pair this window first", show no false state, and their actions are off.
+  const lock = async (tag, open, ids, drawer, hint) => {
+    await cdp.eval(open);
+    await sleep(800);
+    const r = await cdp.eval(`(() => { const d = document.getElementById(${JSON.stringify(drawer)}); const h = document.getElementById(${JSON.stringify(hint)});
+      const on = ${JSON.stringify(ids)}.filter((id) => { const e = document.getElementById(id); return !e || !e.disabled; });
+      return { shown: !!d && d.classList.contains('show'), hint: !!h && !h.hidden && h.getBoundingClientRect().height > 0 ? h.textContent : '', on, text: d ? d.innerText : '' }; })()`);
+    console.log(`pair L0 ${tag}: ` + JSON.stringify({ shown: r.shown, hint: r.hint, live: r.on }));
+    if (!r.shown) failures.push(`L0 ${tag} did not open over the pair card`);
+    if (!r.hint.startsWith('Pair this window first')) failures.push(`L0 ${tag} has no visible "Pair this window first" hint`);
+    if (r.on.length) failures.push(`L0 ${tag} actions still enabled while unpaired: ` + r.on.join(', '));
+    for (const bad of ['no identity yet', 'turn api unreachable']) if (r.text.includes(bad)) failures.push(`L0 ${tag} shows "${bad}" while unpaired`);
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await sleep(300);
+    await cdp.eval(`document.getElementById(${JSON.stringify(drawer)}).classList.remove('show')`);
+  };
+  await lock('Profile', 'openCharacterSheet()', ['profile-save', 'profile-logout', 'profile-copy', 'prof-first'], 'profile', 'profile-pair-hint');
+  await lock('Settings', 'openSettings()', ['turn-on', 'turn-daemon', 'turn-host', 'vibe-public', 'vibe-rotate', 'dev-log', 'approval-auto', 'approval-every'], 'settings', 'settings-pair-hint');
 
   // R0: the cookie arrives on a first run (no identity yet): Check again
   // leaves the card for the first-run splash, with no reload.
@@ -249,6 +271,27 @@ async function main() {
   if (u1.nerr > MAX_CONSOLE_ERRORS) failures.push(`U1 ${u1.nerr} console errors, want <= ${MAX_CONSOLE_ERRORS}`);
   if (u1.nposts > MAX_WINDOW_POSTS) failures.push(`U1 ${u1.nposts} POST /api/window, want <= ${MAX_WINDOW_POSTS}`);
 
+  // U2 (Gauge #368): the 30 s cap and the focus / visibility re-check, through the real 1 s interval.
+  for (let i = 0; i < 6; i++) { await cdp.eval('pairNextAt = 0'); await sleep(1300); }
+  const cap = await cdp.eval('pairDelayMs');
+  if (cap !== 30000) failures.push(`U2 backoff after 6 more retries is ${cap} ms, want the 30000 ms cap`);
+  for (const [tag, js] of [['focus', "window.dispatchEvent(new Event('focus'))"], ['visible', "document.dispatchEvent(new Event('visibilitychange'))"]]) {
+    await sleep(1500); const n = net401.length; await cdp.eval(js); await sleep(1500);
+    if (net401.length <= n) failures.push(`U2 ${tag} did not re-check pairing within 1.5 s`);
+  }
+  { const n = net401.length; const end = Date.now() + 3000; while (Date.now() < end) { await cdp.eval("window.dispatchEvent(new Event('focus'))"); await sleep(100); }
+    await sleep(500); const k = net401.length - n;
+    if (k > 5) failures.push(`U2 30 focus events in 3 s made ${k} /api/session requests, want <= 5 (re-checks ride the 1 s tick)`); }
+  // U3 (Gauge #368): a non-401 error from /api/session keeps the pair card (no splash, no events).
+  await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/session*', requestStage: 'Request' }] });
+  const paused = async (m, p) => { if (m === 'Fetch.requestPaused') await cdp.send('Fetch.fulfillRequest', { requestId: p.requestId, responseCode: 429, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from('{"ok":false}').toString('base64') }); };
+  cdp.on(paused);
+  await cdp.eval("document.querySelector('#pair-check').click()"); await sleep(2500);
+  const u3 = await cdp.eval(VIEW);
+  await cdp.send('Fetch.disable', {}); cdp.listeners.splice(cdp.listeners.indexOf(paused), 1);
+  if (!u3.pair || u3.splash) die('U3 a 429 from /api/session left the pair card: ' + JSON.stringify({ pair: u3.pair, splash: u3.splash }));
+  console.log(`pair U2/U3 cap ${cap} ms, focus/visible re-check, 429 keeps card ${u3.pair && !u3.splash}`);
+
   // R1: the cookie arrives (as when the pair link opens in another tab of this
   // browser); Check again leaves the card for the hive with no reload.
   await cdp.eval('window.__noReload = true');
@@ -257,11 +300,21 @@ async function main() {
   await click('#pair-check');
   const t = Date.now();
   await cdp.waitFor(`(${VIEW}).hive && window.__noReload === true`, 'hive after pairing without reload', 10000);
+  const r1ms = Date.now() - t;
+  if (r1ms > 2000) failures.push(`R1 Check again took ${r1ms} ms to leave the card, want <= 2000 (it asks at once)`);
   const posted = posts.filter((x) => x.status === 200).length;
   console.log(`pair R1 recovered to the hive in ${Date.now() - t} ms, no reload, POST /api/window 200 x${posted}`);
   if (!posted) failures.push('R1 window was not prepared after pairing (no POST /api/window 200)');
   const r1 = await cdp.eval(VIEW);
   if (r1.pair) failures.push('R1 pair card still shows after pairing');
+  const l1 = await cdp.eval(`(() => ({ off: ['profile-save', 'profile-logout', 'profile-copy', 'turn-on', 'vibe-rotate'].filter((id) => document.getElementById(id).disabled),
+    hint: ['profile-pair-hint', 'settings-pair-hint'].filter((id) => !document.getElementById(id).hidden) }))()`);
+  console.log('pair L1 paired: ' + JSON.stringify(l1));
+  if (l1.off.length || l1.hint.length) failures.push('L1 paired window still locks Profile/Settings: ' + JSON.stringify(l1));
+  // R2 (Gauge #368): pairing resets the backoff; losing the cookie starts again at 2 s.
+  await cdp.send('Network.clearBrowserCookies', {}); reset(); await sleep(4500);
+  const r2n = net401.filter((x) => x.path === '/api/session').length;
+  if (r2n < 2) failures.push(`R2 after pairing then losing the cookie, ${r2n} /api/session 401 in 4.5 s, want >= 2 (backoff reset to 2 s)`);
 
   stopAll();
   if (failures.length) { for (const f of failures) console.error('pair UI check failed: ' + f); process.exit(1); }

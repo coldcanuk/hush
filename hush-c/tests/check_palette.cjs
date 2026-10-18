@@ -65,6 +65,9 @@
 //      window" card shows instead of the splash; field-office through the
 //      surface checks above (gate-pair), and every text run in the card
 //      >= 4.5:1 and its Check again control >= 3:1 in all 8 themes x 1440/390.
+//   P2 the pair card edge is >= 3:1 against the page and its own fill, each
+//      <code> stays on one line and Check again keeps 12px of air below it,
+//      in all 8 themes x 1440/390 (#368 r2).
 //   K1-K6 (Ops back-LOOK 900a486d):
 //   K1 field-office Developer Log with log lines: its text box background and
 //      text colour are field-office colour tokens (main: #000 / #0f0), and the
@@ -773,7 +776,7 @@ async function main() {
   await cdp.send('Page.navigate', { url: base + '/' });
   await cdp.waitFor(`!!document.querySelector('#gate.show #pair-card') && !document.querySelector('#gate.show #begin')`, 'pair card (unpaired window)');
   await measure('gate-pair');
-  const p1 = [];
+  const p1 = []; const p2 = [];
   for (const [w, h] of WIDTHS) {
     await view(w, h);
     await cdp.eval(KIT);
@@ -781,6 +784,27 @@ async function main() {
       await cdp.eval(`document.documentElement.setAttribute('data-theme', ${JSON.stringify(t)})`);
       await sleep(60);
       const m = await cdp.eval(MEASURE);
+      /* P2 (#368 r2): the card edge >= 3:1 against the page behind it and the
+       * card fill; every <code> on one line (no break inside a flag); Check
+       * again keeps >= 12px of air above the next line. */
+      const e = await cdp.eval(`(() => { const P = window.__pal; const c = document.querySelector('#gate .card.pair-box');
+        if (!c) return { missing: true }; const cs = getComputedStyle(c); const page = P.bgOf(c.parentElement); const fill = P.bgOf(c);
+        const bc = P.over(P.rgba(cs.borderTopColor), page); const bw = parseFloat(cs.borderTopWidth) || 0;
+        const codes = [...c.querySelectorAll('code')].map((k) => ({ t: k.textContent, ws: getComputedStyle(k).whiteSpace, lines: new Set([...k.getClientRects()].map((r) => Math.round(r.top))).size }));
+        const btn = c.querySelector('#pair-check'); const nx = btn && btn.parentElement.nextElementSibling;
+        const gap = btn && nx ? Math.round(nx.getBoundingClientRect().top - btn.getBoundingClientRect().bottom) : -1;
+        return { bw, style: cs.borderTopStyle, page: P.ratio(bc, page), fill: P.ratio(bc, fill), border: P.hex(bc), behind: P.hex(page),
+          codes, gap, over: c.scrollWidth > c.clientWidth + 1 }; })()`);
+      if (e.missing) failures.push(`P2 ${t}@${w} no .card.pair-box`);
+      else {
+        const er = Math.min(e.page, e.fill);
+        p2.push({ t, w, er });
+        if (e.bw < 1 || e.style === 'none' || er < 3) failures.push(`P2 ${t}@${w} pair card edge ${er.toFixed(2)}:1 (${e.bw}px ${e.style} ${e.border} behind ${e.behind})`);
+        for (const k of e.codes) if (k.lines !== 1 || k.ws !== 'nowrap') failures.push(`P2 ${t}@${w} pair card code "${k.t}" breaks over ${k.lines} lines (white-space ${k.ws}, want nowrap)`);
+        if (e.codes.length < 3) failures.push(`P2 ${t}@${w} pair card has ${e.codes.length} code spans, want >= 3`);
+        if (e.gap < 12) failures.push(`P2 ${t}@${w} Check again sits ${e.gap}px above the next line, want >= 12`);
+        if (e.over) failures.push(`P2 ${t}@${w} pair card overflows sideways`);
+      }
       const card = (x) => x.el.includes('.card');
       const text = m.text.filter(card); const ctl = m.ctl.filter(card);
       p1.push({ t, w, text: text.length, ctl: ctl.length, tmin: Math.min(...text.map((x) => x.ratio)), cmin: Math.min(...ctl.map((x) => x.ratio)) });
@@ -793,6 +817,7 @@ async function main() {
   await cdp.eval(`document.documentElement.setAttribute('data-theme', 'field-office')`);
   console.log(`palette P1 pair card: ${p1.length} theme x width views, text runs ${Math.min(...p1.map((x) => x.text))}-${Math.max(...p1.map((x) => x.text))} (min ${Math.min(...p1.map((x) => x.tmin)).toFixed(2)}), ` +
     `controls ${Math.min(...p1.map((x) => x.ctl))}-${Math.max(...p1.map((x) => x.ctl))} (min ${Math.min(...p1.map((x) => x.cmin)).toFixed(2)})`);
+  for (const t of THEMES) console.log(`palette P2 pair card edge ${t}: min ${Math.min(...p2.filter((x) => x.t === t).map((x) => x.er)).toFixed(2)}:1 over ${p2.filter((x) => x.t === t).length} widths`);
   for (const x of p1) console.log(`palette P1 ${x.t}@${x.w}: ${x.text} text (min ${x.tmin.toFixed(2)}), ${x.ctl} controls (min ${x.cmin.toFixed(2)})`);
   await view(1440, 900);
   // #336: open the one-time pairing link the relay printed, as the app
