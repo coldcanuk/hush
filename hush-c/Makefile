@@ -252,6 +252,8 @@ test: check-deps $(TEST_BINS) hush-relay
 	sh tests/check_complete.sh || exit 1; \
 	sh tests/check_turn.sh || exit 1; \
 	sh tests/check_turn_pkg.sh || exit 1; \
+	sh tests/check_voice.sh || exit 1; \
+	sh tests/check_voice_ui.sh || exit 1; \
 	echo "ALL TESTS PASSED"
 
 clean:

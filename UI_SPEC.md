@@ -1506,6 +1506,81 @@ Each conference tile has `.tile-mute`. Mute is local: disable that
 tile’s inbound audio. Robots mute the same way humans do. This slice
 does not run Whisper STT/TTS inside the relay.
 
+Delta 2026-10-17 (VOICE V1, `docs/plan/PLAN_VOICE.md` P1.1–P1.5):
+`/api/status` also reports `stt` (bool, same detection as `whisper`),
+`tts` (server engines detected on PATH, chain order `piper`, `espeak`)
+and `voices` (Piper `*.onnx` models under `$HUSH_HOME/voices/piper`).
+The robot editor Voice picker (`#agent-voice-wrap`) is a TTS control: it
+follows `tts` non-empty (`ttsReady`), not `whisper`. `.chan-voice` and
+`.robot-call` stay Whisper-gated until V2 folds them into the selector.
+The browser probe (`voiceCaps()`) is detection only and mic-only: it
+counts `audioinput` devices and queries the `microphone` permission
+without opening the mic. The relay drawer `#voice-mic-test` (“Test mic”)
+is the only voice-path `getUserMedia` call: `{ audio: true }`, never
+video; it stops every track at once and records or sends nothing.
+`voiceTargetModes()` is the P1.2 gate V2's selector will read; V1 does
+not render the selector: `MUTE` is always enabled, and `C/S`, `ALL`,
+`ONE` are disabled with a reason title when relay STT is absent or no
+mic input is found.
+Chip and button paint (V1): theme tokens only, no literal colour.
+`#voice-caps` (`role="status"`, `aria-live="polite"`) is a telegram chip:
+`--surface-2` fill, `--fg` mono text, 2px border (`--line` in
+field-office, `--fg` in the other 7 themes, where `--line` measures under
+3:1), `2px 2px 0 var(--line)` shadow, hidden while empty.
+`#voice-mic-test` is an S1 stamp: transparent fill, `--fg` text, 2px border
+(`--line` in field-office, `--fg` elsewhere), `--line` offset shadow, 28px
+visual box with a 44px touch hit (`--btn-hit-touch` `::before`) on coarse
+pointers and ≤640px, a 2px `--fg` focus ring, and `aria-busy="true"` while
+the browser is asked (a second press then does nothing).
+`check_palette.sh` pin V1 measures both in all 8 themes at 1440 and 390
+(text ≥4.5:1, button edge, chip border and every voice icon ≥3:1).
+
+Delta 2026-10-17 (VOICE V1 r2, Ops #363): the chip is plain words, never a
+diagnostics readout and never a raw browser error name. One line per
+capability, built by `voiceCapsLines()` and painted by `paintVoiceCaps()`:
+topic icon, uppercase label (`.voice-cap-k`), plain value (`.voice-cap-v`,
+normal case), state mark. Icons are 14px inline SVG (16px viewBox, 1.75
+stroke) stroked in `currentColor` (= `--fg`), `aria-hidden`, no literal
+stroke/fill and no emoji. Topic icons: `stt` speech bubble, `tts`
+speaker, `mic` microphone (also on Test mic), `test` pulse. Marks: `ok`
+check, `off` dash in a circle, `blocked` slashed circle, `wait` clock.
+The words carry the meaning; the marks only repeat it by shape (never by
+hue alone).
+
+| Line | State | Mark | Words |
+|---|---|---|---|
+| SPEECH-TO-TEXT | `stt` true | ok | Ready (Whisper). |
+| | `stt` false | off | Not installed on this relay. |
+| READ ALOUD | Piper with N ≥ 1 voices | ok | Ready (Piper[, eSpeak]; N voice[s]). |
+| | Piper, 0 voices | off | Piper is installed, but no voices are. |
+| | eSpeak only | ok | Ready (eSpeak). |
+| | none | off | Not installed on this relay. |
+| MICROPHONE | probing (browser probe pending) | wait | Checking… |
+| | no `getUserMedia` on this page | off | This browser cannot use a microphone on this page. |
+| | permission `denied` | blocked | Blocked. Allow it for this page in your browser's site settings. |
+| | 0 inputs | off | None found. Plug one in. |
+| | inputs unknown | wait | Not checked yet. Press Test mic. |
+| | N inputs, `granted` | ok | N found, allowed. |
+| | N inputs, `prompt`/unknown | ok | N found. Your browser will ask before using it. |
+| MIC TEST (after a press) | asking | wait | Waiting for your browser… |
+| | audio track came back | ok | Mic opened and closed. Nothing was recorded. |
+| | `NotAllowedError`, `SecurityError` | blocked | Blocked. Allow the microphone for this page in your browser's site settings, then try again. |
+| | `NotFoundError`, `OverconstrainedError` | off | No microphone found. Plug one in, then try again. |
+| | `NotReadableError`, `AbortError` | off | Another app is using the mic. Close it, then try again. |
+| | no audio track | off | The mic sent no sound. Check it, then try again. |
+| | no `getUserMedia` | off | This browser cannot open a microphone on this page. |
+| | any other failure | off | The mic test did not work. Try again. |
+
+The chip is painted only while `#relay-drawer` is open and rebuilt only
+when its words change, so the 1 s tick never re-announces the live region.
+Browser speech voices and browser speech recognition stay in the
+`voiceCaps()` record for V2 but are not shown on the chip.
+`check_voice_ui.sh` pins U7–U10 hold this copy (U7b: no rebuild per
+tick), the no-raw-error rule in every failure, the pending and unsupported states, and icon presence,
+size and ≥3:1 contrast plus the chip border ≥3:1 in all 8 themes ×
+1440/390; `check_voice.sh` R3 holds tokens only, no emoji, no innerHTML
+and a word line for every result code.
+
 ### 18. Exit reaps children
 
 Exit / `--quit` / SIGTERM call `hush_relay_reap_children()` from
@@ -1524,7 +1599,9 @@ before a new install can take the port.”
 is a control: `role="button"` `tabindex="0"`, Fitts ≥44px tall.
 Click or Enter opens `#relay-drawer`. The panel lists version, listen
 port, stored note count, project names (or “no projects”), socket
-count, whisper, and turn. `#relay-close` [x] sits at the right of the
+count, turn, and the VOICE V1 capability chip `#voice-caps`
+(plain-words Speech-to-text / Read aloud / Microphone lines with icons,
+plus a Mic test line after a press; §17; theme tokens only). `#relay-close` [x] sits at the right of the
 title row and dismisses the drawer. Nothing on `#stats` is a link
 off-hive.
 

@@ -100,6 +100,21 @@ the top-level `VERSION` file.
 
 ### Added
 
+- Voice capability probe (VOICE V1, refs #341; detection only): `/api/status`
+  also reports `stt` (Whisper found), `tts` (server speech engines found on
+  `PATH`, Piper first, then espeak-ng) and `voices` (Piper `*.onnx` models
+  under `$HUSH_HOME/voices/piper`). Nothing is spawned, written, recorded,
+  sent or transcribed. The relay drawer shows a capability chip in plain
+  words, one line each for Speech-to-text, Read aloud and Microphone (for
+  example "Not installed on this relay." or "2 found, allowed."), each
+  with a topic icon and a state mark drawn in the theme's ink, and a
+  `Test mic` button with a mic icon that opens the microphone once, audio
+  only (never the camera), and closes it at once. Its result is a
+  friendly line such as "Blocked. Allow the microphone for this page in
+  your browser's site settings, then try again."; browser error names are
+  never shown. The robot editor Voice picker now follows `tts` instead of
+  Whisper.
+
 - Approval setting (#279): Settings → Robot turns offers `Auto-approve`
   (the default; robots run at once, as before) or `Approve every action`.
   With the second, every robot turn (first reply, follow wave, loop turn,
