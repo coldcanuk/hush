@@ -1137,23 +1137,34 @@ button.fo-person:hover { background: var(--surface-2); }
   padding: 2px 8px; transform: rotate(2deg);
 }
 /* VOICE V1: relay-drawer capability chip (PLAN_VOICE section 5). Theme
-   tokens only, so it reads dossier khaki under field-office. */
+   tokens only, so it reads dossier khaki under field-office. One line per
+   capability: topic icon, uppercase label, plain-words value, status mark.
+   Icons are inline SVG stroked in currentColor (= --fg), never a literal. */
+/* Edge is --fg so the chip outline clears 3:1 in every theme (CoS 19:56);
+   field-office keeps its --line stamp (4.88:1 on the khaki panel). */
 .voice-caps {
-  display: inline-block; margin: 10px 0 0; padding: 3px 8px;
-  border: 2px solid var(--line); border-radius: 3px; box-shadow: 2px 2px 0 var(--line);
-  background: var(--surface-2); color: var(--fg); font: 0.68rem/1.5 var(--mono);
-  letter-spacing: 0.08em; text-transform: uppercase; white-space: pre-line;
+  display: inline-block; margin: 10px 0 0; padding: 4px 8px;
+  border: 2px solid var(--fg); border-radius: 3px; box-shadow: 2px 2px 0 var(--line);
+  background: var(--surface-2); color: var(--fg); font: 0.72rem/1.5 var(--mono);
+  max-width: 100%; box-sizing: border-box;
 }
 .voice-caps:empty { display: none; }
+.voice-cap { display: flex; align-items: flex-start; gap: 6px; padding: 2px 0; }
+.voice-cap-k { font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+.voice-cap-v { flex: 1 1 auto; min-width: 0; }
+.voice-ico { flex: none; width: 14px; height: 14px; margin-top: 2px; stroke: currentColor; fill: none; }
 /* The Test mic edge is --fg so it clears 3:1 in every theme (--line is a
    faint rule outside field-office); field-office keeps its S1 --line stamp. */
 .voice-mic-test {
-  display: block; margin-top: 8px; min-height: 28px; padding: 0 10px;
+  display: flex; align-items: center; gap: 6px; width: max-content;
+  margin-top: 8px; min-height: 28px; padding: 0 10px;
   border: 2px solid var(--fg); border-radius: 3px; box-shadow: 2px 2px 0 var(--line);
   background: transparent; color: var(--fg); font: 700 0.66rem/1 var(--mono);
   letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer; position: relative;
 }
+.voice-mic-test[aria-busy="true"] { cursor: progress; }
 .voice-mic-test:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
+html[data-theme="field-office"] .voice-caps,
 html[data-theme="field-office"] .voice-mic-test { border-color: var(--line); }
 /* UI-M12d: phones get the 44px hit from a transparent ::before; the
    visual 28px box does not grow. */
@@ -2582,9 +2593,9 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
       </div>
       <p class="help">Stored notes, projects, and sockets on this hive.</p>
       <div id="relay-body" class="help"></div>
-      <p id="voice-caps" class="voice-caps" aria-live="polite"></p>
+      <div id="voice-caps" class="voice-caps" role="status" aria-live="polite"></div>
       <button id="voice-mic-test" class="voice-mic-test" type="button"
-        title="Opens the microphone once (audio only, no camera), then closes it. Nothing is recorded or sent.">Test mic</button>
+        title="Opens the microphone once (audio only, no camera), then closes it. Nothing is recorded or sent."><svg class="voice-ico" data-icon="mic" viewBox="0 0 16 16" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5.5 4a2.5 2.5 0 0 1 5 0v3a2.5 2.5 0 0 1-5 0z"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2.5M5.5 15h5"/></svg><span>Test mic</span></button>
     </div>
   </div>
   <div class="drawer" id="hive-leave" role="dialog" aria-label="Leave the hive">
@@ -5817,8 +5828,8 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
       }
     });
     $("stats").addEventListener("click", () => {
-      paintRelayDrawer(lastStatus);
       $("relay-drawer").classList.add("show");
+      paintRelayDrawer(lastStatus);
     });
     $("relay-close").addEventListener("click", () => {
       $("relay-drawer").classList.remove("show");
@@ -7770,7 +7781,10 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
         "TURN " + (status.turn_running ? "running" : "off")
       ];
       $("relay-body").textContent = lines.join("\n");
-      $("voice-caps").textContent = voiceCapsText(voiceCapsFrom(status, voiceBrowser));
+      /* The chip is painted only while the drawer is open, and only when its
+         words change, so a tick never re-announces the aria-live region. */
+      if ($("relay-drawer").classList.contains("show"))
+        paintVoiceCaps($("voice-caps"), voiceCapsFrom(status, voiceBrowser));
       if (!voiceBrowser)
         voiceBrowserCaps().then(() => { if ($("relay-drawer").classList.contains("show")) paintRelayDrawer(lastStatus); });
     }
@@ -7808,9 +7822,12 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
       });
     }
 
-    /* Mic inputs (null when unknown) and the microphone permission state. */
+    /* Mic inputs (null when unknown), the microphone permission state, and
+       whether this page can open a mic at all (no getUserMedia on plain-http
+       hosts other than localhost, or in old browsers). */
     async function voiceMicProbe() {
       const md = navigator.mediaDevices;
+      const supported = !!(md && typeof md.getUserMedia === "function");
       let inputs = null;
       if (md && typeof md.enumerateDevices === "function") {
         try {
@@ -7822,7 +7839,7 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
         try { permission = (await navigator.permissions.query({ name: "microphone" })).state; }
         catch (e) { permission = "unknown"; }
       }
-      return { inputs, permission };
+      return { inputs, permission, supported };
     }
 
     /* Browser half of the probe, run once per page and cached. */
@@ -7830,7 +7847,7 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
       if (voiceBrowserProbe) return voiceBrowserProbe;
       const recognition = ("SpeechRecognition" in window) || ("webkitSpeechRecognition" in window);
       voiceBrowserProbe = Promise.all([
-        voiceWithin(voiceMicProbe(), VOICE_PROBE_CAP_MS, { inputs: null, permission: "unknown" }),
+        voiceWithin(voiceMicProbe(), VOICE_PROBE_CAP_MS, { inputs: null, permission: "unknown", supported: true }),
         voiceWithin(voiceSynthCount(), VOICE_PROBE_CAP_MS, null)
       ]).then(([mic, voices]) => {
         voiceBrowser = { mic, voices, recognition };
@@ -7846,31 +7863,52 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
         stt: s.stt === true,
         tts: Array.isArray(s.tts) ? s.tts.slice() : [],
         voices: Number.isInteger(s.voices) ? s.voices : 0,
-        mic: b ? b.mic : { inputs: null, permission: "unknown" },
+        probing: !b,
+        mic: b ? b.mic : { inputs: null, permission: "unknown", supported: true },
         browserVoices: b ? b.voices : null,
         browserStt: b ? !!b.recognition : false,
         micCheck: b && b.micCheck ? b.micCheck : ""
       };
     }
 
+    /* getUserMedia failure name -> plain-words result code. The raw
+       DOMException name is never shown (Ops #363): unknown names are "failed". */
+    const VOICE_MIC_ERRORS = {
+      NotAllowedError: "blocked", SecurityError: "blocked",
+      NotFoundError: "missing", OverconstrainedError: "missing",
+      NotReadableError: "busy", AbortError: "busy"
+    };
+
     /* Explicit mic check, run only from the #voice-mic-test click (CoS
        13:54). Mic-only: the one getUserMedia call in the voice probe asks
        for { audio: true } and nothing else, so no camera prompt. It reads
        whether an audio track came back and stops every track at once;
-       nothing is recorded, kept or sent. */
+       nothing is recorded, kept or sent. Result codes: ok, blocked,
+       missing, busy, silent, unsupported, failed (shown via VOICE_CHECK_TEXT). */
     async function voiceMicCheck() {
       const md = navigator.mediaDevices;
+      const btn = $("voice-mic-test");
       let result = "unsupported";
+      if (btn.getAttribute("aria-busy") === "true") return "pending";
+      btn.setAttribute("aria-busy", "true");
+      if (voiceBrowser) {
+        voiceBrowser.micCheck = "pending";
+        paintRelayDrawer(lastStatus);
+      }
       if (md && typeof md.getUserMedia === "function") {
         try {
           const stream = await md.getUserMedia({ audio: true });
           const tracks = stream.getTracks();
-          result = tracks.some((t) => t.kind === "audio") ? "ok" : "no audio track";
+          result = tracks.some((t) => t.kind === "audio") ? "ok" : "silent";
           tracks.forEach((t) => t.stop());
-        } catch (e) { result = (e && e.name) || "error"; }
+        } catch (e) {
+          const name = e && typeof e.name === "string" ? e.name : "";
+          result = Object.hasOwn(VOICE_MIC_ERRORS, name) ? VOICE_MIC_ERRORS[name] : "failed";
+        }
       }
       await voiceBrowserCaps();
       voiceBrowser.micCheck = result;
+      btn.removeAttribute("aria-busy");
       paintRelayDrawer(lastStatus);
       return result;
     }
@@ -7890,17 +7928,110 @@ html[data-theme="christmas"] .switch input:checked + .slider:before { background
       return { cos: mode, all: mode, one: mode, none: { enabled: true, title: "Mic off" } };
     }
 
-    /* Relay-drawer chip text, e.g. "STT whisper · TTS piper (12 voices)". */
-    function voiceCapsText(caps) {
+    /* Chip icons: 16px viewBox, stroked in currentColor (theme --fg).
+       Topic icons name the line; marks show its state at a glance. The
+       words carry the meaning, so every icon is aria-hidden. */
+    const VOICE_ICONS = {
+      stt: ["M2.5 3h11v7.5H7l-3 3v-3H2.5z", "M5 6h6M5 8h4"],
+      tts: ["M2 6h3l4-3v10l-4-3H2z", "M11.5 5.5a3.5 3.5 0 0 1 0 5M13.5 3.5a6.5 6.5 0 0 1 0 9"],
+      mic: ["M5.5 4a2.5 2.5 0 0 1 5 0v3a2.5 2.5 0 0 1-5 0z", "M3 7.5a5 5 0 0 0 10 0M8 12.5v2.5M5.5 15h5"],
+      test: ["M1.5 8h2.5l1.5-4 2.5 8 2-6 1.5 2h3"],
+      ok: ["M3 8.5l3 3 7-7"],
+      off: ["M8 2a6 6 0 1 0 0 12A6 6 0 1 0 8 2z", "M5 8h6"],
+      blocked: ["M8 2a6 6 0 1 0 0 12A6 6 0 1 0 8 2z", "M3.8 12.2l8.4-8.4"],
+      wait: ["M8 2a6 6 0 1 0 0 12A6 6 0 1 0 8 2z", "M8 4.5V8l2.5 1.5"]
+    };
+
+    /* Mic test result code -> [mark, plain words]. */
+    const VOICE_CHECK_TEXT = {
+      pending: ["wait", "Waiting for your browser\u2026"],
+      ok: ["ok", "Mic opened and closed. Nothing was recorded."],
+      blocked: ["blocked", "Blocked. Allow the microphone for this page in your browser's site settings, then try again."],
+      missing: ["off", "No microphone found. Plug one in, then try again."],
+      busy: ["off", "Another app is using the mic. Close it, then try again."],
+      silent: ["off", "The mic sent no sound. Check it, then try again."],
+      unsupported: ["off", "This browser cannot open a microphone on this page."],
+      failed: ["off", "The mic test did not work. Try again."]
+    };
+
+    const VOICE_ENGINE_NAMES = { piper: "Piper", espeak: "eSpeak" };
+
+    /* Microphone line [mark, words] for every probe state. */
+    function voiceMicLine(caps) {
+      const m = caps.mic;
+      if (caps.probing) return ["wait", "Checking\u2026"];
+      if (m.supported === false) return ["off", "This browser cannot use a microphone on this page."];
+      if (m.permission === "denied") return ["blocked", "Blocked. Allow it for this page in your browser's site settings."];
+      if (m.inputs === 0) return ["off", "None found. Plug one in."];
+      if (m.inputs === null) return ["wait", "Not checked yet. Press Test mic."];
+      const found = m.inputs + " found";
+      if (m.permission === "granted") return ["ok", found + ", allowed."];
+      return ["ok", found + ". Your browser will ask before using it."];
+    }
+
+    /* Relay-drawer chip model: one { key, icon, label, mark, text } per line,
+       plain words only (Ops #363: no STT/TTS jargon, no raw error names). */
+    function voiceCapsLines(caps) {
       const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
-      const piper = caps.tts.indexOf("piper") >= 0 ? " (" + plural(caps.voices, "voice", "voices") + ")" : "";
-      const mic = caps.mic.inputs === null ? "unknown" : plural(caps.mic.inputs, "input", "inputs");
-      return [
-        "STT " + (caps.stt ? "whisper" : "none") + " · TTS " + (caps.tts.length ? caps.tts.join(", ") : "none") + piper,
-        "Mic " + mic + " (" + caps.mic.permission + ")" + (caps.micCheck ? " · test " + caps.micCheck : ""),
-        "Browser voices " + (caps.browserVoices === null ? "none" : caps.browserVoices)
-          + " · Browser STT " + (caps.browserStt ? "yes" : "no")
-      ].join("\n");
+      const names = caps.tts.map((e) => VOICE_ENGINE_NAMES[e] || e);
+      let read = ["off", "Not installed on this relay."];
+      if (caps.tts.indexOf("piper") >= 0)
+        read = caps.voices > 0 ? ["ok", "Ready (" + names.join(", ") + "; " + plural(caps.voices, "voice", "voices") + ")."]
+          : ["off", "Piper is installed, but no voices are."];
+      else if (names.length)
+        read = ["ok", "Ready (" + names.join(", ") + ")."];
+      const lines = [
+        { key: "stt", icon: "stt", label: "Speech-to-text",
+          mark: caps.stt ? "ok" : "off", text: caps.stt ? "Ready (Whisper)." : "Not installed on this relay." },
+        { key: "tts", icon: "tts", label: "Read aloud", mark: read[0], text: read[1] },
+        { key: "mic", icon: "mic", label: "Microphone", mark: voiceMicLine(caps)[0], text: voiceMicLine(caps)[1] }
+      ];
+      const check = VOICE_CHECK_TEXT[caps.micCheck];
+      if (check) lines.push({ key: "test", icon: "test", label: "Mic test", mark: check[0], text: check[1] });
+      return lines;
+    }
+
+    function voiceIcon(name, role) {
+      const ns = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(ns, "svg");
+      svg.setAttribute("class", "voice-ico");
+      svg.setAttribute("data-icon", name);
+      svg.setAttribute("data-role", role);
+      svg.setAttribute("viewBox", "0 0 16 16");
+      svg.setAttribute("stroke-width", "1.75");
+      svg.setAttribute("stroke-linecap", "round");
+      svg.setAttribute("stroke-linejoin", "round");
+      svg.setAttribute("aria-hidden", "true");
+      svg.setAttribute("focusable", "false");
+      (VOICE_ICONS[name] || []).forEach((d) => {
+        const path = document.createElementNS(ns, "path");
+        path.setAttribute("d", d);
+        svg.appendChild(path);
+      });
+      return svg;
+    }
+
+    let voiceCapsKey = "";
+    function paintVoiceCaps(el, caps) {
+      const lines = voiceCapsLines(caps);
+      const key = JSON.stringify(lines);
+      if (key === voiceCapsKey && el.firstChild) return;
+      voiceCapsKey = key;
+      const rows = lines.map((ln) => {
+        const row = document.createElement("div");
+        row.className = "voice-cap";
+        row.setAttribute("data-cap", ln.key);
+        row.setAttribute("data-state", ln.mark);
+        const k = document.createElement("span");
+        k.className = "voice-cap-k";
+        k.textContent = ln.label;
+        const v = document.createElement("span");
+        v.className = "voice-cap-v";
+        v.textContent = ln.text;
+        [voiceIcon(ln.icon, "topic"), k, v, voiceIcon(ln.mark, "mark")].forEach((n) => row.appendChild(n));
+        return row;
+      });
+      el.replaceChildren(...rows);
     }
 
     function render(events, status) {

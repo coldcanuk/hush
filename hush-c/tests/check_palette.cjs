@@ -65,7 +65,7 @@
 //      point 20px above and below the centre still hits the control (44px).
 //   V1 VOICE V1 relay-drawer chip #voice-caps and Test mic #voice-mic-test:
 //      C1 text and C2 button edge in all 8 themes at 1440 and 390; C4 in
-//      field-office.
+//      field-office; the chip border and every voice icon >= 3:1 (r2).
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
 // HUSH_TEST_WAIT_S (DevTools ready deadline, default 30), PALETTE_ART (dir:
 // writes palette-report.json there when set).
@@ -736,12 +736,22 @@ async function main() {
         for (const id of VOICE_IDS)
           if (!text.some((t) => t.el.indexOf(id) >= 0)) failures.push(`V1 ${where} ${id} has no measured text run (not on screen?)`);
         if (!ctl.some((c) => c.el.indexOf('#voice-mic-test') >= 0)) failures.push(`V1 ${where} #voice-mic-test edge not measured`);
+        /* r2 (CoS 19:56): the chip outline >= 3:1 against the panel, and every
+           voice icon (stroke = currentColor) >= 3:1 on its own background. */
+        const vx = await cdp.eval(`(() => { const P = window.__pal; const c = document.getElementById('voice-caps');
+          const behind = P.bgOf(c.parentElement); const edge = P.over(P.rgba(getComputedStyle(c).borderTopColor), behind);
+          const icons = [...document.querySelectorAll('#voice-caps svg, #voice-mic-test svg')].map((s) => { const bg = P.bgOf(s);
+            return Math.round(P.ratio(P.over(P.rgba(getComputedStyle(s).stroke), bg), bg) * 100) / 100; });
+          return { edge: Math.round(P.ratio(edge, behind) * 100) / 100, icons }; })()`);
+        if (vx.edge < 3) failures.push(`V1 C2 ${where} #voice-caps border ${vx.edge}:1`);
+        if (vx.icons.length < 4 || vx.icons.some((r) => r < 3)) failures.push(`V1 C2 ${where} voice icons ${JSON.stringify(vx.icons)}`);
         for (const t of text) if (t.ratio < 4.5) failures.push(`V1 C1 ${where} text ${t.ratio}:1 ${t.fg} on ${t.bg} ${t.el} "${t.t}"`);
         for (const c of ctl) if (c.ratio < 3) failures.push(`V1 C2 ${where} control ${c.ratio}:1 border ${c.border} fill ${c.fill} behind ${c.behind} ${c.el}`);
         if (theme === 'field-office')
           for (const x of m.white.filter((x) => mine(x.el))) failures.push(`V1 C4 ${where} near-white ${x.kind} ${x.c} ${x.el}`);
         console.log(`palette V1 ${where}: ${text.length} text (min ${text.length ? Math.min(...text.map((t) => t.ratio)).toFixed(2) : '-'}), ` +
-          `${ctl.length} controls (min ${ctl.length ? Math.min(...ctl.map((c) => c.ratio)).toFixed(2) : '-'})`);
+          `${ctl.length} controls (min ${ctl.length ? Math.min(...ctl.map((c) => c.ratio)).toFixed(2) : '-'}), ` +
+          `chip border ${vx.edge}, ${vx.icons.length} icons (min ${Math.min(...vx.icons).toFixed(2)})`);
       }
     }
     if (voiceViews !== VOICE_THEMES.length * WIDTHS.length) failures.push(`V1 measured ${voiceViews} theme x width views, want ${VOICE_THEMES.length * WIDTHS.length}`);

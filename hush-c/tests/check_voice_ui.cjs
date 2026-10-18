@@ -11,13 +11,28 @@
 //   U4 (P1.4)  picker stays hidden when tts is empty (gate is TTS, not STT).
 //   U5 (P1.2)  stt:false,tts:[] -> only MUTE enabled, others carry a title.
 //   U6 (P1.1)  /api/status in the page has stt bool, tts array, voices int.
-//   U7 chip    relay drawer chip text names STT/TTS, painted with theme
-//              tokens (field-office = dossier khaki), never white.
+//   U7 chip    relay drawer chip reads in plain words (Speech-to-text /
+//              Read aloud / Microphone lines, no STT/TTS jargon), painted
+//              with theme tokens (field-office = dossier khaki), never white.
+//   U7b        ticks leave an unchanged chip alone (no aria-live churn).
 //   U8 (D9, CoS 13:54) a real click on Test mic makes exactly one
 //              getUserMedia call with constraints {"audio":true} (no video),
-//              stops every returned track, and the chip shows the result.
+//              stops every returned track, and the chip says so in words.
+//   U8b (Ops #363) every getUserMedia failure maps to a friendly line; no
+//              raw DOMException name (…Error) shows anywhere in the drawer.
+//   U8c        while the browser is asked, the chip says "Waiting…" and the
+//              button is aria-busy; U8d: no getUserMedia -> "cannot open".
+//   U9 copy    voiceCapsLines() words for every state: probing, ready, none,
+//              denied, unsupported (+ prompt, unknown, piper without voices).
+//   U10 icons  topic icon + state mark per chip line and a mic icon on Test
+//              mic, stroked in currentColor (no literal colour), >= 12px,
+//              inside the viewport, >= 3:1 on their background, and the chip
+//              border >= 3:1 against the panel behind it (CoS 19:56), in all
+//              8 themes x 1440/390.
 // Chrome runs with its own temp profile on its own port; its pid and dir
 // are logged, and only processes and dirs this script made are removed.
+// Env: HUSH_RELAY_BIN, HUSH_CHROME_BIN, VOICE_UI_SHOTS (an existing dir:
+// U10 also writes voice-<theme>-<width>.png there for review).
 'use strict';
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -29,6 +44,7 @@ const RELAY = process.env.HUSH_RELAY_BIN || path.join(__dirname, '..', 'hush-rel
 const PROBE_LIMIT_MS = 2500;
 const SYNTH_LIMIT_MS = 2300;
 const HARNESS_FENCE_MS = 6000;
+const TICK_WAIT_MS = 2500;
 const CONFIGS = [
   { name: '1440-field-office', w: 1440, h: 900, theme: 'field-office' },
   { name: '390-field-office', w: 390, h: 844, theme: 'field-office' },
@@ -37,6 +53,24 @@ const CONFIGS = [
 // Field-office tokens the chip must resolve to (check_palette_tokens.py S2).
 const FO = { fg: 'rgb(31, 28, 18)', muted: 'rgb(67, 63, 39)', surface2: 'rgb(214, 199, 157)', line: 'rgb(75, 74, 44)' };
 const WHITE = 'rgb(255, 255, 255)';
+const THEMES = ['dark', 'light', 'color-blind', 'dracula', 'desert', 'monochrome', 'christmas', 'field-office'];
+const ICON_WIDTHS = [[1440, 900], [390, 844]];
+const ICON_MIN_PX = 12;
+const ICON_MIN_RATIO = 3;
+// Anything that reads like a raw DOMException name or an engineering readout.
+const RAW_ERROR = /[A-Za-z]+Error\b|DOMException/;
+const JARGON = /\b(STT|TTS)\b|\((granted|prompt|denied|unknown)\)|\bunknown\b|\binputs?\b/i;
+const TEST_OK = 'Mic opened and closed. Nothing was recorded.';
+const TEST_BLOCKED = "Blocked. Allow the microphone for this page in your browser's site settings, then try again.";
+const TEST_MISSING = 'No microphone found. Plug one in, then try again.';
+const TEST_BUSY = 'Another app is using the mic. Close it, then try again.';
+const TEST_FAILED = 'The mic test did not work. Try again.';
+const MIC_ERRORS = [
+  ['NotAllowedError', 'blocked', TEST_BLOCKED], ['SecurityError', 'blocked', TEST_BLOCKED],
+  ['NotFoundError', 'off', TEST_MISSING], ['OverconstrainedError', 'off', TEST_MISSING],
+  ['NotReadableError', 'off', TEST_BUSY], ['AbortError', 'off', TEST_BUSY],
+  ['TypeError', 'off', TEST_FAILED], ['constructor', 'off', TEST_FAILED],
+];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const liveProcs = [];
@@ -178,7 +212,7 @@ class Cdp {
 // Installed before any page script: getVoices() stays [] with no
 // voiceschanged, and every mic/camera entry point is counted.
 const SPY = `(() => {
-  window.__vv1 = { gum: 0, constraints: [], stopped: 0, enumerate: 0, perms: [] };
+  window.__vv1 = { gum: 0, constraints: [], stopped: 0, enumerate: 0, perms: [], mode: 'ok', release: null };
   /* Harness fence: a hung probe resolves fallback after ms, so a broken
      page fails a pin instead of hanging this script. */
   window.__vv1within = (p, ms, fallback) => Promise.race([p, new Promise((r) => setTimeout(() => r(fallback), ms))]);
@@ -188,11 +222,18 @@ const SPY = `(() => {
   const md = navigator.mediaDevices;
   if (md) {
     const realEnum = md.enumerateDevices && md.enumerateDevices.bind(md);
+    /* mode: 'ok' | 'hang' (resolves on __vv1.release()) | 'silent' (no
+       tracks) | 'reject:<name>' (DOMException with that name). */
     md.getUserMedia = function (c) {
-      window.__vv1.gum++;
-      window.__vv1.constraints.push(JSON.stringify(c));
-      const track = { kind: 'audio', stop() { window.__vv1.stopped++; } };
-      return Promise.resolve({ getTracks: () => [track] });
+      const v = window.__vv1;
+      v.gum++;
+      v.constraints.push(JSON.stringify(c));
+      const track = { kind: 'audio', stop() { v.stopped++; } };
+      const stream = { getTracks: () => [track] };
+      if (v.mode.indexOf('reject:') === 0) return Promise.reject(new DOMException('mic refused', v.mode.slice(7)));
+      if (v.mode === 'silent') return Promise.resolve({ getTracks: () => [] });
+      if (v.mode === 'hang') return new Promise((r) => { v.release = () => r(stream); });
+      return Promise.resolve(stream);
     };
     md.enumerateDevices = function () { window.__vv1.enumerate++; return realEnum ? realEnum() : Promise.resolve([]); };
   }
@@ -201,6 +242,90 @@ const SPY = `(() => {
     navigator.permissions.query = function (d) { window.__vv1.perms.push(d && d.name); return realQuery(d); };
   }
 })();`;
+
+// Chip lines as "LABEL value" (label upper-cased the way CSS shows it).
+const CHIP_READ = `(() => { const e = document.getElementById('voice-caps'); const cs = getComputedStyle(e);
+  const r = e.getBoundingClientRect();
+  const lines = [...e.querySelectorAll('.voice-cap')].map((l) => ({ key: l.getAttribute('data-cap'), state: l.getAttribute('data-state'),
+    text: l.querySelector('.voice-cap-k').textContent.toUpperCase() + ' ' + l.querySelector('.voice-cap-v').textContent }));
+  return { text: e.innerText, lines, fg: cs.color, bg: cs.backgroundColor, border: cs.borderTopColor, w: r.width, h: r.height }; })()`;
+// Every visible word and every title/aria-label/alt in the relay drawer.
+const DRAWER_TEXT = `(() => { const d = document.getElementById('relay-drawer');
+  return d.innerText + ' ' + [...d.querySelectorAll('*')].map((n) => ['title', 'aria-label', 'alt'].map((a) => n.getAttribute(a) || '').join(' ')).join(' '); })()`;
+// [label, caps patch, line key, mark, words]. Base caps: relay with nothing,
+// browser probed, mic supported, 1 input, permission prompt.
+const COPY_ROWS = [
+  ['probing', { probing: true }, 'mic', 'wait', 'Checking\u2026'],
+  ['ready stt', { stt: true }, 'stt', 'ok', 'Ready (Whisper).'],
+  ['ready piper', { tts: ['piper', 'espeak'], voices: 12 }, 'tts', 'ok', 'Ready (Piper, eSpeak; 12 voices).'],
+  ['ready espeak', { tts: ['espeak'] }, 'tts', 'ok', 'Ready (eSpeak).'],
+  ['ready mic', { mic: { inputs: 2, permission: 'granted', supported: true } }, 'mic', 'ok', '2 found, allowed.'],
+  ['prompt mic', {}, 'mic', 'ok', '1 found. Your browser will ask before using it.'],
+  ['none stt', {}, 'stt', 'off', 'Not installed on this relay.'],
+  ['none tts', {}, 'tts', 'off', 'Not installed on this relay.'],
+  ['piper no voices', { tts: ['piper'], voices: 0 }, 'tts', 'off', 'Piper is installed, but no voices are.'],
+  ['none mic', { mic: { inputs: 0, permission: 'prompt', supported: true } }, 'mic', 'off', 'None found. Plug one in.'],
+  ['unknown mic', { mic: { inputs: null, permission: 'unknown', supported: true } }, 'mic', 'wait', 'Not checked yet. Press Test mic.'],
+  ['denied mic', { mic: { inputs: 1, permission: 'denied', supported: true } }, 'mic', 'blocked', "Blocked. Allow it for this page in your browser's site settings."],
+  ['unsupported mic', { mic: { inputs: null, permission: 'unknown', supported: false } }, 'mic', 'off', 'This browser cannot use a microphone on this page.'],
+  ['test silent', { micCheck: 'silent' }, 'test', 'off', 'The mic sent no sound. Check it, then try again.'],
+  ['no test line', {}, 'test', null, null],
+];
+const COPY_CASES = COPY_ROWS.length;
+const COPY_TABLE = `(async () => { const rows = ${JSON.stringify(COPY_ROWS)}; const bad = []; let n = 0;
+  const raw = ${RAW_ERROR}; const jargon = ${JARGON};
+  for (const [name, patch, key, mark, words] of rows) {
+    const caps = Object.assign({ probing: false, stt: false, tts: [], voices: 0, mic: { inputs: 1, permission: 'prompt', supported: true },
+      browserVoices: 0, browserStt: false, micCheck: '' }, patch);
+    const lines = voiceCapsLines(caps); n++;
+    const ln = lines.find((l) => l.key === key) || { mark: null, text: null };
+    const all = lines.map((l) => l.label + ' ' + l.text).join(' | ');
+    if (ln.mark !== mark || ln.text !== words || raw.test(all) || jargon.test(all)) bad.push({ name, got: ln, all });
+  }
+  return { n, bad }; })()`;
+
+// Opens the drawer in THEME with a Mic test line showing, then measures every
+// voice icon: stroke resolves to the element colour (currentColor), no
+// literal stroke/fill attribute, >= ICON_MIN_PX, inside the viewport, and
+// stroke vs composited background >= ICON_MIN_RATIO.
+const ICON_MEASURE = `(async () => {
+  for (const d of document.querySelectorAll('.drawer.show')) d.classList.remove('show');
+  document.documentElement.setAttribute('data-theme', THEME);
+  await voiceBrowserCaps(); voiceBrowser.micCheck = 'blocked';
+  document.getElementById('relay-drawer').classList.add('show'); paintRelayDrawer(lastStatus);
+  document.getElementById('voice-mic-test').scrollIntoView({ block: 'center' });
+  await new Promise((r) => setTimeout(r, 120));
+  // Canvas normalises any CSS colour (rgb, oklch, ...) to sRGB bytes.
+  const cv = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  const rgba = (s) => { if (!s || s === 'none') return null; cv.clearRect(0, 0, 1, 1); cv.fillStyle = '#000'; cv.fillStyle = s;
+    cv.fillRect(0, 0, 1, 1); const d = cv.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
+  const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  const lum = (c) => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+  const over = (t, u) => [0, 1, 2].map((i) => t[i] * t[3] + u[i] * (1 - t[3])).concat(1);
+  const bgOf = (el) => { const layers = []; for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+      const c = rgba(getComputedStyle(n).backgroundColor); if (c && c[3] > 0) { layers.push(c); if (c[3] >= 1) break; } }
+    let base = [255, 255, 255, 1]; for (let i = layers.length - 1; i >= 0; i--) base = layers[i][3] >= 1 ? layers[i] : over(layers[i], base); return base; };
+  const icons = [...document.querySelectorAll('#voice-caps svg, #voice-mic-test svg')].map((s) => {
+    const cs = getComputedStyle(s); const r = s.getBoundingClientRect(); const stroke = rgba(cs.stroke); const bg = bgOf(s);
+    const col = stroke ? over(stroke, bg) : null;
+    const ratio = col ? (Math.max(lum(col), lum(bg)) + 0.05) / (Math.min(lum(col), lum(bg)) + 0.05) : 0;
+    const literal = [s, ...s.querySelectorAll('*')].some((n) => n.hasAttribute('stroke') || n.hasAttribute('fill') || n.hasAttribute('style'));
+    const where = s.closest('#voice-mic-test') ? 'button' : (s.getAttribute('data-role') || '?');
+    const ok = !!stroke && cs.stroke === cs.color && !literal && r.width >= ${ICON_MIN_PX} && r.height >= ${ICON_MIN_PX}
+      && r.left >= 0 && r.right <= innerWidth && ratio >= ${ICON_MIN_RATIO} && s.getAttribute('aria-hidden') === 'true';
+    return { where, icon: s.getAttribute('data-icon'), ok, ratio: Math.round(ratio * 100) / 100, w: r.width, h: r.height, stroke: cs.stroke, color: cs.color, literal };
+  });
+  const chip = document.getElementById('voice-caps'); const ccs = getComputedStyle(chip);
+  const behind = bgOf(chip.parentElement); const edge = rgba(ccs.borderTopColor);
+  const edgeCol = edge ? over(edge, behind) : behind;
+  const border = { width: parseFloat(ccs.borderTopWidth), ratio: Math.round(((Math.max(lum(edgeCol), lum(behind)) + 0.05) / (Math.min(lum(edgeCol), lum(behind)) + 0.05)) * 100) / 100,
+    color: ccs.borderTopColor, same: ['Right', 'Bottom', 'Left'].every((s) => ccs['border' + s + 'Color'] === ccs.borderTopColor) };
+  voiceBrowser.micCheck = ''; document.getElementById('relay-drawer').classList.remove('show');
+  return { theme: document.documentElement.getAttribute('data-theme'), icons, border,
+    topics: icons.filter((x) => x.where === 'topic').map((x) => x.icon), marks: icons.filter((x) => x.where === 'mark').length,
+    button: (icons.find((x) => x.where === 'button') || {}).icon,
+    minRatio: Math.min(...icons.map((x) => x.ratio)), minPx: Math.min(...icons.map((x) => Math.min(x.w, x.h))) };
+})()`;
 
 async function startRelay(label, binDir, extraEnv) {
   const home = noteTemp(fs.mkdtempSync(path.join(os.tmpdir(), `vv1-${label}-home-`)));
@@ -320,26 +445,85 @@ async function main() {
     record('U3', c.name, pick.hidden === false && pick.options > 1 && pick.whisperReady === false, pick);
 
     await jsClick('#stats');
-    await cdp.waitFor(`document.getElementById('relay-drawer').classList.contains('show') && /TTS piper/.test(document.getElementById('voice-caps').textContent) && /Browser voices/.test(document.getElementById('voice-caps').textContent)`, 'chip');
-    const chip = await cdp.eval(`(() => { const e = document.getElementById('voice-caps'); const cs = getComputedStyle(e);
-      const r = e.getBoundingClientRect();
-      return { text: e.textContent, fg: cs.color, bg: cs.backgroundColor, border: cs.borderTopColor, w: r.width, h: r.height }; })()`);
-    const textOk = chip.text.indexOf('STT none · TTS piper (1 voice)') === 0 && /\nMic /.test(chip.text);
+    await cdp.waitFor(`document.getElementById('relay-drawer').classList.contains('show') && !!document.querySelector('#voice-caps [data-cap=tts]') && document.querySelector('#voice-caps [data-cap=mic]').getAttribute('data-state') !== 'wait'`, 'chip');
+    const chip = await cdp.eval(CHIP_READ);
+    const lineOf = (k) => (chip.lines.find((l) => l.key === k) || {}).text;
+    const textOk = lineOf('stt') === 'SPEECH-TO-TEXT Not installed on this relay.'
+      && lineOf('tts') === 'READ ALOUD Ready (Piper; 1 voice).'
+      && /^MICROPHONE (None found\. Plug one in\.|\d+ found(, allowed\.|\. Your browser will ask before using it\.)|Not checked yet\. Press Test mic\.)$/.test(lineOf('mic'))
+      && chip.lines.length === 3 && !JARGON.test(chip.text) && !RAW_ERROR.test(chip.text);
     const paintOk = c.theme === 'field-office'
       ? ((chip.fg === FO.fg || chip.fg === FO.muted) && chip.bg === FO.surface2 && chip.border === FO.line)
       : (chip.bg !== WHITE && chip.fg !== WHITE);
     record('U7', c.name, textOk && paintOk && chip.w > 0 && chip.h > 0 && chip.bg !== WHITE, chip);
+    // U7b: ticks (1 s) do not rebuild an unchanged chip, so the aria-live
+    // region is not re-announced every second.
+    await cdp.eval(`window.__vv1row = document.querySelector('#voice-caps .voice-cap')`);
+    const t0 = Date.now();
+    await sleep(TICK_WAIT_MS);
+    const kept = await cdp.eval(`({ same: document.querySelector('#voice-caps .voice-cap') === window.__vv1row, live: document.getElementById('voice-caps').getAttribute('aria-live'), role: document.getElementById('voice-caps').getAttribute('role') })`);
+    record('U7b', c.name, kept.same && kept.live === 'polite' && kept.role === 'status', Object.assign({ waitedMs: Date.now() - t0 }, kept));
     const mt = await cdp.eval(`(() => { const e = document.getElementById('voice-mic-test');
       e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect();
       return { x: r.left + r.width / 2, y: r.top + r.height / 2, h: r.height, before: window.__vv1.gum }; })()`);
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: mt.x, y: mt.y });
     await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: mt.x, y: mt.y, button: 'left', clickCount: 1, buttons: 1 });
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: mt.x, y: mt.y, button: 'left', clickCount: 1, buttons: 0 });
-    await cdp.waitFor(`/test ok/.test(document.getElementById('voice-caps').textContent)`, 'mic test result', 10000);
-    const mic = await cdp.eval(`({ spy: window.__vv1, text: document.getElementById('voice-caps').textContent })`);
+    await cdp.waitFor(`(() => { const t = document.querySelector('#voice-caps [data-cap=test]'); return !!t && t.getAttribute('data-state') === 'ok'; })()`, 'mic test result', 10000);
+    const mic = await cdp.eval(`({ spy: window.__vv1, test: document.querySelector('#voice-caps [data-cap=test] .voice-cap-v').textContent,
+      busy: document.getElementById('voice-mic-test').getAttribute('aria-busy') })`);
     record('U8', c.name, mt.before === 0 && mic.spy.gum === 1 && mic.spy.constraints.length === 1
-      && mic.spy.constraints[0] === '{"audio":true}' && mic.spy.stopped === 1,
-      { before: mt.before, getUserMedia: mic.spy.gum, constraints: mic.spy.constraints, stopped: mic.spy.stopped, buttonH: mt.h });
+      && mic.spy.constraints[0] === '{"audio":true}' && mic.spy.stopped === 1 && mic.test === TEST_OK && mic.busy === null,
+      { before: mt.before, getUserMedia: mic.spy.gum, constraints: mic.spy.constraints, stopped: mic.spy.stopped, buttonH: mt.h, test: mic.test });
+
+    // U8b: each failure name -> its friendly line; nothing raw anywhere in the drawer.
+    const denied = [];
+    for (const [name, mark, want] of MIC_ERRORS) {
+      const got = await cdp.eval(`(async () => { window.__vv1.mode = ${JSON.stringify('reject:' + name)};
+        const code = await __vv1within(voiceMicCheck(), ${HARNESS_FENCE_MS}, 'hung');
+        const t = document.querySelector('#voice-caps [data-cap=test]');
+        return { code, mark: t && t.getAttribute('data-state'), text: t && t.querySelector('.voice-cap-v').textContent, drawer: DRAWER_TEXT() }; })()`.replace('DRAWER_TEXT()', DRAWER_TEXT), true);
+      denied.push({ name, code: got.code, ok: got.mark === mark && got.text === want && !RAW_ERROR.test(got.drawer) && got.drawer.indexOf(name) < 0, text: got.text });
+    }
+    record('U8b', c.name, denied.length === MIC_ERRORS.length && denied.every((d) => d.ok), denied);
+
+    // U8c: pending state while the browser asks.
+    await cdp.eval(`window.__vv1.mode = 'hang'; document.getElementById('voice-mic-test').click()`);
+    await cdp.waitFor(`typeof window.__vv1.release === 'function'`, 'hang armed', 10000);
+    const pend = await cdp.eval(`(() => { const t = document.querySelector('#voice-caps [data-cap=test]');
+      return { mark: t.getAttribute('data-state'), text: t.querySelector('.voice-cap-v').textContent,
+        busy: document.getElementById('voice-mic-test').getAttribute('aria-busy'), again: window.__vv1.gum }; })()`);
+    // Fenced: with the busy guard broken the second call would hang on the
+    // held getUserMedia, and the pin must fail rather than hang.
+    const again = await cdp.eval(`(async () => { const n = window.__vv1.gum; const first = window.__vv1.release;
+      const r = await __vv1within(voiceMicCheck(), ${HARNESS_FENCE_MS}, 'hung');
+      const extra = window.__vv1.gum - n; if (window.__vv1.release !== first) window.__vv1.release();
+      window.__vv1.release = first; return { r, extra }; })()`, true);
+    await cdp.eval(`window.__vv1.release(); window.__vv1.release = null; window.__vv1.mode = 'ok'`);
+    await cdp.waitFor(`document.querySelector('#voice-caps [data-cap=test]').getAttribute('data-state') === 'ok'`, 'hang released', 10000);
+    const after = await cdp.eval(`document.getElementById('voice-mic-test').getAttribute('aria-busy')`);
+    record('U8c', c.name, pend.mark === 'wait' && pend.text === 'Waiting for your browser\u2026' && pend.busy === 'true'
+      && again.r === 'pending' && again.extra === 0 && after === null, { pend, again, after });
+
+    // U8d: no getUserMedia at all (plain-http host, old browser).
+    const unsup = await cdp.eval(`(async () => { const md = navigator.mediaDevices; const keep = md.getUserMedia; md.getUserMedia = undefined;
+      try { const code = await voiceMicCheck(); const t = document.querySelector('#voice-caps [data-cap=test]');
+        return { code, mark: t.getAttribute('data-state'), text: t.querySelector('.voice-cap-v').textContent }; }
+      finally { md.getUserMedia = keep; } })()`, true);
+    // ...and the automatic probe flags it, so the Microphone line says so too.
+    const unsupProbe = await cdp.eval(`(async () => { const md = navigator.mediaDevices; const keep = md.getUserMedia; md.getUserMedia = undefined;
+      try { voiceBrowserProbe = null; voiceBrowser = null; const caps = await __vv1within(voiceCaps(lastStatus), ${HARNESS_FENCE_MS}, null);
+        paintRelayDrawer(lastStatus); const t = document.querySelector('#voice-caps [data-cap=mic]');
+        return { supported: caps && caps.mic.supported, mark: t.getAttribute('data-state'), text: t.querySelector('.voice-cap-v').textContent }; }
+      finally { md.getUserMedia = keep; voiceBrowserProbe = null; voiceBrowser = null; await voiceBrowserCaps(); } })()`, true);
+    record('U8d', c.name, unsup.code === 'unsupported' && unsup.mark === 'off'
+      && unsup.text === 'This browser cannot open a microphone on this page.'
+      && unsupProbe.supported === false && unsupProbe.mark === 'off'
+      && unsupProbe.text === 'This browser cannot use a microphone on this page.', { unsup, unsupProbe });
+
+    // U9: the words for every state, from the pure chip model.
+    const copy = await cdp.eval(COPY_TABLE, true);
+    record('U9', c.name, copy.bad.length === 0 && copy.n === COPY_CASES, copy);
     await cdp.eval(`document.getElementById('relay-close').click()`);
 
     // ---- bare relay: no whisper, no piper
@@ -359,6 +543,30 @@ async function main() {
     record('U5', c.name, bare.st.stt === false && m.none.enabled === true
       && ['cos', 'all', 'one'].every((k) => m[k].enabled === false && /Whisper/.test(m[k].title)),
       { st: bare.st, modes: m });
+  }
+
+  // ---- U10: icons in every theme at both widths (piper relay, 4 chip lines).
+  await openHive('piper', CONFIGS[0]);
+  for (const [w, hgt] of ICON_WIDTHS) {
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: hgt, deviceScaleFactor: 1, mobile: false });
+    for (const theme of THEMES) {
+      const ic = await cdp.eval(ICON_MEASURE.replace('THEME', JSON.stringify(theme)), true);
+      if (process.env.VOICE_UI_SHOTS) {
+        // Optional review shots: repaint with the Mic test line and capture.
+        await cdp.eval(`(() => { voiceBrowser.micCheck = 'blocked'; document.getElementById('relay-drawer').classList.add('show');
+          paintRelayDrawer(lastStatus); document.getElementById('voice-mic-test').scrollIntoView({ block: 'center' }); })()`);
+        await sleep(150);
+        const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+        fs.writeFileSync(path.join(process.env.VOICE_UI_SHOTS, `voice-${theme}-${w}.png`), Buffer.from(shot.data, 'base64'));
+        await cdp.eval(`voiceBrowser.micCheck = ''; document.getElementById('relay-drawer').classList.remove('show')`);
+      }
+      const want = { topic: ['stt', 'tts', 'mic', 'test'], mark: 4, button: 'mic' };
+      const ok = ic.theme === theme && JSON.stringify(ic.topics) === JSON.stringify(want.topic) && ic.marks === want.mark
+        && ic.button === want.button && ic.icons.length === 9 && ic.icons.every((x) => x.ok)
+        && ic.border.width >= 2 && ic.border.same && ic.border.ratio >= ICON_MIN_RATIO;
+      record('U10', `${theme}@${w}`, ok, { theme: ic.theme, n: ic.icons.length, minRatio: ic.minRatio, minPx: ic.minPx, border: ic.border,
+        bad: ic.icons.filter((x) => !x.ok) });
+    }
   }
 
   await stopAll();

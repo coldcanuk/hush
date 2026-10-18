@@ -76,6 +76,9 @@ check "STT whisper present (HUSH_WHISPER=1) -> stt true, whisper true" "$st" \
 #   R1 hush_voice.c spawns nothing and writes nothing (detection only).
 #   R2 the PWA voice block adds no ?k= URL, and its only getUserMedia call
 #      asks for { audio: true } (mic-only, never video).
+#   R3 (Ops #363) the voice CSS and UI code use theme tokens only (no hex
+#      literal), no emoji, no innerHTML; every Test mic result code has a
+#      plain-words line in VOICE_CHECK_TEXT, so no raw error name can show.
 python3 - <<'PY' || fail "read-only source pins"
 import re, sys
 c = open("src/hush_voice.c").read()
@@ -85,11 +88,25 @@ hits = re.findall(banned, c)
 print(("PIN ok   " if not hits else "PIN FAIL ") + "R1 hush_voice.c no spawn/write calls  " + str(hits))
 h = open("demo/index.html").read()
 a = h.index("VOICE V1 capability probe (PLAN_VOICE")
-b = h.index("function voiceCapsText(", a)
+b = h.index("function voiceCapsLines(", a)
 block = h[a:b]
 gum = re.findall(r"getUserMedia\(([^)]*)\)", block)
 ok2 = "?k=" not in block and gum == ["{ audio: true }"]
 print(("PIN ok   " if ok2 else "PIN FAIL ") + "R2 voice block: no ?k=, getUserMedia args " + str(gum))
-sys.exit(0 if not hits and ok2 else 1)
+css = h[h.index("/* VOICE V1: relay-drawer capability chip"):h.index("/* Mid widths: roster drops")]
+ui = h[a:h.index("    function render(events, status) {", a)]
+hexes = re.findall(r"#[0-9a-fA-F]{3,8}\b", re.sub(r"/\*.*?\*/", "", css + ui, flags=re.S))
+emoji = [ch for ch in css + ui if ord(ch) >= 0x2190]
+def obj_keys(name):
+    body = re.search(r"const " + name + r" = \{(.*?)\n    \};", ui, re.S).group(1)
+    return re.findall(r"^\s*(\w+):", body, re.M), re.findall(r':\s*"(\w+)"', body)
+check_keys, _ = obj_keys("VOICE_CHECK_TEXT")
+_, err_codes = obj_keys("VOICE_MIC_ERRORS")
+codes = set(err_codes) | {"ok", "silent", "unsupported", "failed", "pending"}
+missing = sorted(codes - set(check_keys))
+ok3 = not hexes and not emoji and "innerHTML" not in ui and not missing and len(err_codes) >= 6
+print(("PIN ok   " if ok3 else "PIN FAIL ") + "R3 voice UI: hex " + str(hexes) + " emoji " + str(emoji)
+      + " codes without words " + str(missing))
+sys.exit(0 if not hits and ok2 and ok3 else 1)
 PY
 echo "voice status ok"
