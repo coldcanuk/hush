@@ -25,6 +25,8 @@
       --bg: oklch(15.3% 0.006 107.1); --surface: oklch(22.8% 0.013 107.4); --surface-2: oklch(28.6% 0.016 107.4); --line: oklch(39.4% 0.023 107.4);
       --fg: oklch(98.8% 0.003 106.5); --muted: oklch(88% 0.011 106.6); --faint: oklch(73.7% 0.021 106.9); --accent: oklch(58% 0.031 107.3);
       --accent-ink: oklch(15.3% 0.006 107.1); --accent-dim: oklch(46.6% 0.025 107.3); --warn: #f87171;
+      /* Canvas syntax inks (#code-canvas-hi); the dark-type themes share these. */
+      --code-kw: #7dd3fc; --code-str: #86efac; --code-num: #fbbf24;
       --sans: "Inter", system-ui, sans-serif;
       --mono: ui-monospace, "Cascadia Mono", monospace;
       --display: var(--sans);
@@ -43,6 +45,7 @@
       --bg: oklch(98.8% 0.003 106.5); --surface: #ffffff; --surface-2: oklch(96.6% 0.005 106.5); --line: oklch(93% 0.007 106.5);
       --fg: oklch(22.8% 0.013 107.4); --muted: oklch(39.4% 0.023 107.4); --faint: oklch(46.6% 0.025 107.3); --accent: oklch(46.6% 0.025 107.3);
       --accent-ink: oklch(98.8% 0.003 106.5); --accent-dim: oklch(88% 0.011 106.6); --warn: #b91c1c;
+      --code-kw: #1e40af; --code-str: #166534; --code-num: #92400e;
     }
     html[data-theme="color-blind"] {
       --bg: #0b1220; --surface: #152033; --surface-2: #1e2d48; --line: #334155;
@@ -329,11 +332,14 @@
       background: transparent; color: transparent; caret-color: var(--fg);
       resize: none; z-index: 1;
     }
-    #code-canvas-hi .tok-kw { color: var(--fo-tok-kw, #7dd3fc); }
-    #code-canvas-hi .tok-str { color: var(--fo-tok-str, #86efac); }
-    #code-canvas-hi .tok-cmt { color: var(--faint); font-style: italic; }
-    #code-canvas-hi .tok-num { color: var(--fo-tok-num, #fbbf24); }
-    #code-canvas-hi .tok-ghost { color: var(--faint); opacity: 0.75; }
+    #code-canvas-hi .tok-kw { color: var(--fo-tok-kw, var(--code-kw)); }
+    #code-canvas-hi .tok-str { color: var(--fo-tok-str, var(--code-str)); }
+    #code-canvas-hi .tok-cmt { color: var(--muted); font-style: italic; }
+    #code-canvas-hi .tok-num { color: var(--fo-tok-num, var(--code-num)); }
+    #code-canvas-hi .tok-ghost { color: var(--muted); opacity: 0.85; }
+    /* The textarea paints only caret and selection; #code-canvas-hi under it
+       carries the ink, so the selection is a translucent tint (CC1). */
+    #code-canvas-edit::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); color: transparent; }
     #code-canvas-hi .fim-caret {
       display: inline-block; width: 0.55ch; height: 1.1em;
       margin: 0 1px -0.15em; vertical-align: text-bottom;
@@ -1520,9 +1526,13 @@ html[data-theme="field-office"] #kit-menu input,
 html[data-theme="field-office"] .qb-row select,
 html[data-theme="field-office"] #canvas-file,
 html[data-theme="field-office"] #canvas-k-ask,
-html[data-theme="field-office"] #code-canvas-hi,
-html[data-theme="field-office"] #code-canvas-edit {
+html[data-theme="field-office"] #code-canvas-hi {
   border: 2px solid var(--line); background: var(--surface-2);
+}
+/* The canvas textarea sits above #code-canvas-hi (z-index 1, transparent
+   text): an opaque slip here hid the highlighted code (Ops #364 F/U, CC1). */
+html[data-theme="field-office"] #code-canvas-edit {
+  border: 2px solid var(--line); background: transparent;
 }
 /* Paper-flattened buttons keep dark ink text. The block above overrides
  * background without touching color, which left cream text on tan. */

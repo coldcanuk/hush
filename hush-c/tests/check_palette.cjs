@@ -109,6 +109,17 @@
 //   K11 the channel voice button (whisper:true via a wrapped /api/status, real
 //      tick + paintChannels), BOARDS list at 1440 and 390, rest and :hover, in
 //      field-office: glyph >= 4.5:1, rim or opaque fill >= 3:1, tokens only.
+//   CC1 code canvas (Ops ops-pr364-a1f58a2b "FO canvas code is invisible"):
+//      a real C note is opened in #code-canvas through its Canvas button. In
+//      all 8 themes at both widths: plain text and every highlight class
+//      (.tok-kw, .tok-str, .tok-num, .tok-cmt, .tok-ghost) in #code-canvas-hi
+//      is >= 4.5:1 against the effective canvas background (opacity
+//      composited); the editing textarea above it (#code-canvas-edit, higher
+//      z-index) computes a transparent background and no background image;
+//      its caret colour is >= 3:1; ::selection is translucent; and rendered
+//      pixels prove the ink shows through: inside the keyword's box, at rest
+//      and with the text selected, some pixel is >= 3:1 against the paper
+//      pixel painted in the left padding on the keyword's line.
 //   B1 Thread, Download and Stop are 20-24px tall at both widths; at 390 a
 //      point 20px above and below the centre still hits the control (44px).
 // Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
@@ -121,6 +132,36 @@ const fs = require('node:fs');
 const os = require('node:os');
 const net = require('node:net');
 const path = require('node:path');
+const zlib = require('node:zlib');
+
+/* 8-bit RGB / RGBA non-interlaced PNG (what Page.captureScreenshot returns)
+ * -> { w, h, at(x, y) -> [r, g, b] }. Standard library only. */
+function decodePng(buf) {
+  let off = 8, w = 0, h = 0, ct = 0; const idat = [];
+  while (off < buf.length) {
+    const len = buf.readUInt32BE(off); const type = buf.toString('ascii', off + 4, off + 8); const data = buf.subarray(off + 8, off + 8 + len);
+    if (type === 'IHDR') { w = data.readUInt32BE(0); h = data.readUInt32BE(4); ct = data[9]; if (data[8] !== 8 || data[12] !== 0) throw new Error('png: want 8-bit non-interlaced'); }
+    else if (type === 'IDAT') idat.push(data); else if (type === 'IEND') break;
+    off += 12 + len;
+  }
+  const bpp = ct === 6 ? 4 : ct === 2 ? 3 : 0; if (!bpp) throw new Error('png: colour type ' + ct);
+  const raw = zlib.inflateSync(Buffer.concat(idat)); const stride = w * bpp; const px = Buffer.alloc(stride * h);
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * (stride + 1)]; const src = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let x = 0; x < stride; x++) {
+      const a = x >= bpp ? px[y * stride + x - bpp] : 0, b = y ? px[(y - 1) * stride + x] : 0, c = x >= bpp && y ? px[(y - 1) * stride + x - bpp] : 0;
+      let v = src[x];
+      if (f === 1) v += a; else if (f === 2) v += b; else if (f === 3) v += (a + b) >> 1;
+      else if (f === 4) { const pp = a + b - c, pa = Math.abs(pp - a), pb = Math.abs(pp - b), pc = Math.abs(pp - c); v += pa <= pb && pa <= pc ? a : pb <= pc ? b : c; }
+      px[y * stride + x] = v & 255;
+    }
+  }
+  return { w, h, at: (x, y) => { const i = y * stride + x * bpp; return [px[i], px[i + 1], px[i + 2]]; } };
+}
+const lin8 = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+const lum8 = (c) => 0.2126 * lin8(c[0]) + 0.7152 * lin8(c[1]) + 0.0722 * lin8(c[2]);
+const P_alpha = (css) => { const m = /rgba?\(([^)]*)\)/.exec(css || ''); if (!m) return css === 'transparent' ? 0 : 1; const p = m[1].split(/[,\s/]+/).filter(Boolean); return p.length > 3 ? parseFloat(p[3]) : 1; };
+const ratio8 = (a, b) => { const x = lum8(a), y = lum8(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
 
 const RELAY = process.env.HUSH_RELAY_BIN || path.join(__dirname, '..', 'hush-relay');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -273,9 +314,10 @@ const L1_EXPECT = {
   "code-javascript|border-left-color": "rgb(247, 223, 30)",
   "code-js|border-left-color": "rgb(247, 223, 30)",
   "code-c|border-left-color": "rgb(168, 185, 204)",
-  "tok-kw|color": "rgb(125, 211, 252)",
-  "tok-str|color": "rgb(134, 239, 172)",
-  "tok-num|color": "rgb(251, 191, 36)",
+  /* light moved on purpose (CC1, Ops #364 F/U): the pastels were 1.36-1.61:1 on its canvas. */
+  "tok-kw|color": {"*": "rgb(125, 211, 252)", "light": "rgb(30, 64, 175)"},
+  "tok-str|color": {"*": "rgb(134, 239, 172)", "light": "rgb(22, 101, 52)"},
+  "tok-num|color": {"*": "rgb(251, 191, 36)", "light": "rgb(146, 64, 14)"},
   "btn-danger|color": "rgb(255, 255, 255)",
   "tile|background-color": "rgb(0, 0, 0)",
   "tile-video|background-color": "rgb(0, 0, 0)",
@@ -1449,6 +1491,72 @@ async function main() {
     console.log('palette R3s christmas .robot-call static: ' + JSON.stringify(st));
     if (!st.shared || !st.rc || !st.cv || st.rc[0] !== st.cv[0] || st.rc[1] !== st.cv[1]) failures.push('R3s christmas .robot-call does not share the .chan-voice hover rule / colours: ' + JSON.stringify(st));
   }
+  /* CC1: the code canvas (see header). A note with a C fence is posted and
+   * opened through its real Canvas button; the ghost (FIM prediction) is set
+   * through the page's own activePrediction / predictionPos and painted by
+   * the page's paintCanvasHi. Animations and transitions are off while
+   * measuring. */
+  const cc1 = [];
+  {
+    const CC1_THEMES = ['dark', 'light', 'color-blind', 'dracula', 'desert', 'monochrome', 'christmas', 'field-office'];
+    const CC1_SRC = 'int main(void) {\n  /* field note */\n  return puts("ok") + 42;\n}\n';
+    if (await post({ content: 'Canvas check.\n```c\n' + CC1_SRC + '```', kind: 1, channel: 'welcome' }) !== 200) die('post CC1 note');
+    await cdp.waitFor(`[...document.querySelectorAll('#stream .note')].some((n) => n.textContent.includes('Canvas check.') && [...n.querySelectorAll('.note-files button')].some((b) => b.textContent.trim() === 'Canvas'))`, 'CC1 code note', 15000);
+    for (const [w, h] of WIDTHS) {
+      await view(w, h);
+      await cdp.eval(`(() => { for (const d of document.querySelectorAll('.drawer.show')) d.classList.remove('show'); document.querySelector('#hive').classList.remove('nav-open');
+        const n = [...document.querySelectorAll('#stream .note')].reverse().find((x) => x.textContent.includes('Canvas check.'));
+        const b = [...n.querySelectorAll('.note-files button')].find((x) => x.textContent.trim() === 'Canvas'); b.scrollIntoView({ block: 'center' }); b.click(); })()`);
+      await cdp.waitFor(`document.querySelector('#code-canvas').classList.contains('show') && !!document.querySelector('#code-canvas-hi .tok-kw')`, 'CC1 canvas open');
+      await cdp.eval(KIT);
+      await cdp.eval(`(() => { let st = document.getElementById('pal-cc1-still'); if (!st) { st = document.createElement('style'); st.id = 'pal-cc1-still';
+        st.textContent = '*, *::before, *::after { transition: none !important; animation: none !important; }'; document.head.appendChild(st); }
+        const e = document.querySelector('#code-canvas-edit'); e.scrollTop = 0; activePrediction = ' + 1'; predictionPos = e.value.indexOf(';'); e.setSelectionRange(predictionPos, predictionPos); paintCanvasHi(); return true; })()`);
+      for (const t of CC1_THEMES) {
+        await cdp.eval(`document.documentElement.setAttribute('data-theme', ${JSON.stringify(t)}); paintCanvasHi(); true`);
+        await sleep(60);
+        const m = await cdp.eval(`(() => { const P = window.__pal; const hi = document.querySelector('#code-canvas-hi'); const ed = document.querySelector('#code-canvas-edit');
+          const hcs = getComputedStyle(hi), ecs = getComputedStyle(ed); const bg = P.bgOf(hi);
+          const runs = []; const seen = {};
+          const push = (cls, el, text) => { const op = P.opacityOf(el); let fg = P.rgba(getComputedStyle(el).color); fg = P.over([fg[0], fg[1], fg[2], fg[3] * op], bg);
+            const r = Math.round(P.ratio(fg, bg) * 100) / 100; if (!(cls in seen) || r < seen[cls].ratio) seen[cls] = { cls, ratio: r, fg: P.hex(fg), t: text.trim().slice(0, 16) }; };
+          for (const n of hi.childNodes) { if (n.nodeType === 3 && n.nodeValue.trim()) push('plain', hi, n.nodeValue); else if (n.nodeType === 1 && n.className && n.textContent.trim()) push(n.className, n, n.textContent); }
+          const kw = hi.querySelector('.tok-kw'); const kr = kw.getBoundingClientRect(); const hr = hi.getBoundingClientRect();
+          const caret = P.rgba(ecs.caretColor === 'auto' ? ecs.color : ecs.caretColor); const sel = P.rgba(getComputedStyle(ed, '::selection').backgroundColor);
+          return { runs: Object.values(seen), bg: P.hex(bg), edBg: ecs.backgroundColor, edImg: ecs.backgroundImage, edZ: ecs.zIndex, hiZ: hcs.zIndex,
+            caret: Math.round(P.ratio(P.over(caret, bg), bg) * 100) / 100, caretCss: ecs.caretColor, selAlpha: sel[3], selCss: getComputedStyle(ed, '::selection').backgroundColor,
+            cmtStyle: getComputedStyle(hi.querySelector('.tok-cmt')).fontStyle,
+            kw: { x: kr.left, y: kr.top, w: kr.width, h: kr.height }, paper: { x: hr.left + parseFloat(hcs.borderLeftWidth) + Math.max(2, Math.min(5, parseFloat(hcs.paddingLeft) / 2)), y: kr.top + kr.height / 2 } }; })()`);
+        const shot = async (tag) => { const sh = await cdp.send('Page.captureScreenshot', { format: 'png', fromSurface: true });
+          if (process.env.PALETTE_ART) { fs.mkdirSync(process.env.PALETTE_ART, { recursive: true }); fs.writeFileSync(path.join(process.env.PALETTE_ART, `cc1-${t}-${w}-${tag}.png`), Buffer.from(sh.data, 'base64')); }
+          const png = decodePng(Buffer.from(sh.data, 'base64'));
+          if (png.w !== w || png.h !== h) failures.push(`CC1 ${t}@${w} screenshot ${png.w}x${png.h}, want the ${w}x${h} viewport`);
+          const at = (x, y) => png.at(Math.min(png.w - 1, Math.max(0, Math.round(x))), Math.min(png.h - 1, Math.max(0, Math.round(y))));
+          const paper = at(m.paper.x, m.paper.y); let best = 1;
+          for (let y = Math.ceil(m.kw.y); y < Math.floor(m.kw.y + m.kw.h); y++) for (let x = Math.ceil(m.kw.x); x < Math.floor(m.kw.x + m.kw.w); x++) best = Math.max(best, ratio8(at(x, y), paper));
+          return { paper: '#' + paper.map((v) => v.toString(16).padStart(2, '0')).join(''), ink: Math.round(best * 100) / 100 }; };
+        m.px = await shot('rest');
+        await cdp.eval(`(() => { const e = document.querySelector('#code-canvas-edit'); e.focus(); e.select(); return true; })()`); await sleep(60);
+        m.pxSel = await shot('selected');
+        await cdp.eval(`(() => { const e = document.querySelector('#code-canvas-edit'); e.setSelectionRange(predictionPos, predictionPos); e.blur(); paintCanvasHi(); return true; })()`);
+        m.theme = t; m.w = w; cc1.push(m);
+        const runTxt = m.runs.map((r) => `${r.cls} ${r.ratio}`).join(', ');
+        console.log(`palette CC1 ${t}@${w}: canvas ${m.bg}; ${runTxt}; textarea bg ${m.edBg} img ${m.edImg} z ${m.edZ}>${m.hiZ}; caret ${m.caret}; selection ${m.selCss}; pixels kw ink ${m.px.ink} on paper ${m.px.paper}, selected ${m.pxSel.ink} on ${m.pxSel.paper}`);
+        for (const r of m.runs) if (r.ratio < 4.5) failures.push(`CC1 ${t}@${w} canvas ${r.cls} "${r.t}" ${r.ratio}:1 ${r.fg} on ${m.bg}`);
+        for (const cls of ['plain', 'tok-kw', 'tok-str', 'tok-num', 'tok-cmt', 'tok-ghost']) if (!m.runs.some((r) => r.cls === cls)) failures.push(`CC1 ${t}@${w} canvas painted no ${cls} run`);
+        if (P_alpha(m.edBg) > 0 || m.edImg !== 'none') failures.push(`CC1 ${t}@${w} #code-canvas-edit background ${m.edBg} / ${m.edImg} occludes #code-canvas-hi (want transparent, no image)`);
+        if (m.caret < 3) failures.push(`CC1 ${t}@${w} canvas caret ${m.caretCss} ${m.caret}:1 < 3`);
+        if (!(m.selAlpha > 0 && m.selAlpha < 1)) failures.push(`CC1 ${t}@${w} canvas ::selection ${m.selCss} is not translucent`);
+        if (m.cmtStyle !== 'italic') failures.push(`CC1 ${t}@${w} canvas .tok-cmt font-style ${m.cmtStyle}, want italic`);
+        if (m.kw.w < 4 || m.kw.x < 0 || m.kw.y < 0 || m.kw.x + m.kw.w > w || m.kw.y + m.kw.h > h) failures.push(`CC1 ${t}@${w} canvas keyword box ${JSON.stringify(m.kw)} is not on screen`);
+        if (m.px.ink < 3) failures.push(`CC1 ${t}@${w} canvas keyword pixels ${m.px.ink}:1 on painted paper ${m.px.paper} (ink hidden)`);
+        if (m.pxSel.ink < 3) failures.push(`CC1 ${t}@${w} selected canvas keyword pixels ${m.pxSel.ink}:1 on ${m.pxSel.paper} (ink hidden)`);
+      }
+      await cdp.eval(`(() => { activePrediction = ''; document.documentElement.setAttribute('data-theme', 'field-office'); const st = document.getElementById('pal-cc1-still'); if (st) st.remove();
+        document.querySelector('#code-canvas').classList.remove('show'); return true; })()`);
+    }
+    if (cc1.length !== 16) failures.push(`CC1 measured ${cc1.length} canvas views, want 8 themes x 2 widths`);
+  }
   for (const w of [1440, 390]) for (const on of [false, true]) if (!r6.some((x) => x.w === w && x.on === on)) failures.push(`R6 christmas measured no ${on ? 'on' : 'off'} switch at ${w}`);
   if (process.env.PALETTE_ART) {
     fs.mkdirSync(process.env.PALETTE_ART, { recursive: true });
@@ -1487,6 +1595,7 @@ async function main() {
     `${r5.length} christmas accent / accent-dim border sides and rings >= 3:1 (floor ${R5_CLAIMS.length} claimed rules), ${r6.length} christmas switch track states >= 3:1 with knob >= 3:1, ${r7.length} christmas primary buttons on --accent-fill, ` +
     `${r8.length} avatar-preview rings >= 3:1 (${new Set(r8.map((x) => x.theme)).size} themes x 2 widths), ` +
     `${r9.length} selected avatar tile rings >= 3:1 (${new Set(r9.map((x) => x.theme)).size} themes x 2 widths), ` +
+    `${cc1.length} code canvas views (8 themes x 2 widths: text and every highlight class >= 4.5:1, textarea transparent, keyword ink in pixels), ` +
     'ink-stamp actions 20-24px with 44px touch hit at 390, ' +
     `K1 dev log on tokens, K2 ${report.filter((r) => r.k2).reduce((n, r) => n + r.k2.length, 0)} provider pill text runs, ` +
     `K3 ${report.filter((r) => r.k3 && !r.k3.hidden).length} milestone fields fit their placeholder, K4 status light 2 states on tokens, ` +
