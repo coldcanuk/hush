@@ -439,6 +439,16 @@
       box-sizing: border-box;
     }
     .gate .card { max-width: min(34rem, 100%); overflow-x: hidden; box-sizing: border-box; }
+    /* #368 r2: the pair card's edge is >= 3:1 against the page behind it in
+       every theme (--line is 1.2-2.2:1 outside field-office); a command
+       never breaks inside a flag; Check again keeps a line of air below. */
+    html .gate .card.pair-box { border: 2px solid var(--pair-edge, var(--faint)); }
+    /* --faint is 2.9-3.0:1 on the desert and dracula card fill. */
+    html[data-theme="desert"], html[data-theme="dracula"] { --pair-edge: var(--muted); }
+    html[data-theme="field-office"] .gate .card.pair-box { border-color: var(--line); }
+    #pair-card code { white-space: nowrap; }
+    #pair-card .actions { margin: 18px 0 22px; }
+    .pair-lock-hint { color: var(--fg) !important; font-weight: 650; }
     .help button { background: none; border: 0; color: var(--accent); padding: 0; font: inherit; }
     .keybox {
       font-family: var(--mono); font-size: 0.82rem; word-break: break-all;
@@ -2514,6 +2524,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
   <div class="drawer" id="settings" role="dialog" aria-label="Settings">
     <div class="panel">
       <h2>Settings</h2>
+      <p id="settings-pair-hint" class="pair-lock-hint" hidden>Pair this window first. Settings can be changed once this window is paired with Hush.</p>
       <p>Enable a local STUN/TURN server so conference calls work across NAT. coturn must be installed for the process to start.</p>
       <div class="row">
         <label for="turn-on">Enable STUN/TURN</label>
@@ -2665,6 +2676,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
   <div class="drawer" id="profile" role="dialog" aria-label="Profile">
     <div class="panel">
       <h2>Profile</h2>
+      <p id="profile-pair-hint" class="pair-lock-hint" hidden>Pair this window first. Your profile can be seen and changed once this window is paired with Hush.</p>
       <p class="help">Your identity is your orders. Guard it.</p>
       <p id="profile-npub" class="help" style="font-family:var(--mono);word-break:break-all"></p>
       <label for="prof-first">First name</label>
@@ -3149,6 +3161,13 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
     let session = { logged_in: false, ready: false, channels: [] };
     let mentionRosterSeen = null; /* roster key repaintPendingMentions last saw */
     let page = "splash"; // splash detects, shows Payne branding, then advances to gate or hive
+    /* page "pair": the unpaired-window card; see enterPairState (#336). */
+    const PAIR_RETRY_FIRST_MS = 2000;
+    const PAIR_RETRY_MAX_MS = 30000;
+    let pairNeeded = false;
+    let pairDelayMs = 0;
+    let pairNextAt = 0;
+    let pairPort = 0;
     let pendingNsec = "";
     let identityViaImport = false;
     let keyRevealed = false;
@@ -3329,6 +3348,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       const r = await fetch(API + path, opt);
       if (!r.ok) {
         const err = new Error("request failed");
+        err.status = r.status;
         // A 400 body is one plain-text refusal reason; callers may show it.
         const text = r.status === 400 ? (await r.text().catch(() => "")).trim() : "";
         err.reason = text === "bad request" ? "" : text;
@@ -3449,6 +3469,24 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
     }
 
     function gateHtml() {
+      if (page === "pair") {
+        /* #336 left a window without the hush_session cookie answering 401
+           on every /api route except /api/status. It is not a first run, so
+           it gets this card instead of the splash. The two ways to pair are
+           the ones the relay has: the pair: link a --no-open relay prints
+           (hush_relay_announce_pair) and the window a relay opens on start
+           (hush_ui_format_address adds ?pair=). */
+        const quit = "hush-relay --quit" + (pairPort ? " " + pairPort : "");
+        return card("Pair this window",
+          "<div id=\"pair-card\">" +
+          "<p>Hush is running, but this window is not paired with it yet, so it cannot open your hive.</p>" +
+          "<p><strong>To pair it, quit Hush and start it again from your Hush app or shortcut.</strong> The window Hush opens when it starts is paired. Quitting stops the hive's robots until Hush starts again.</p>" +
+          "<p>Started Hush from a terminal? Quit it with <code>" + esc(quit) + "</code>. If you started it with <code>--no-open</code>, open the <code>pair:</code> link it printed instead. Each link works one time.</p>" +
+          actions([{ id: "pair-check", label: "Check again" }]) +
+          /* A plain <p>, not .help: .help's muted ink is under 4.5:1 in four themes. */
+          "<p>This window checks again by itself and carries on once it is paired.</p>" +
+          "</div>", "pair-box");
+      }
       if (page === "splash") {
         return card("hush",
           "<img class=\"feather\" src=\"/icon-192.png\" alt=\"hush\">" +
@@ -3563,8 +3601,8 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         "Re-import your identity key (starts with nsec1), or start again with the same unlock phrase, to continue.</p>";
     }
 
-    function card(title, inner) {
-      return "<div class=\"card\"><h1>" + title + "</h1>" + inner + "</div>";
+    function card(title, inner, cls) {
+      return "<div class=\"card" + (cls ? " " + cls : "") + "\"><h1>" + title + "</h1>" + inner + "</div>";
     }
     function actions(items) {
       return "<div class=\"actions\">" + items.map((b) =>
@@ -3621,6 +3659,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         paint();
       });
       on("meet-payne", () => { page = "hive"; gateErr = ""; paint(); });
+      on("pair-check", () => { pairNextAt = 0; tick(); });
       on("do-vibe", () => {
         const name = ($("vibe-name") && $("vibe-name").value) || "local hive";
         const about = ($("vibe-about") && $("vibe-about").value) || "";
@@ -6030,6 +6069,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
     function paintCharacterStrip() {
       const el = $("profile-loadout-text");
       if (!el) return;
+      if (pairNeeded) { el.textContent = "Pair this window first."; return; }
       const slug = invSelectedSlug || editSlug;
       const bot = robotModels().find((x) => x.slug === slug) || null;
       if (!bot) {
@@ -6055,7 +6095,8 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       hideJourneyPeers("profile");
       p.classList.add("show");
       const np = $("profile-npub");
-      if (np) np.textContent = (session.npub || session.pubkey || "no identity yet");
+      if (np) np.textContent = pairNeeded ? "" : (session.npub || session.pubkey || "no identity yet");
+      applyPairLock();
       const prof = session.profile || {};
       if ($("prof-first")) $("prof-first").value = prof.first_name || "";
       if ($("prof-last")) $("prof-last").value = prof.last_name || "";
@@ -6394,6 +6435,8 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
     });
 
     async function syncSettings() {
+      applyPairLock();
+      if (pairNeeded) { $("turn-status").textContent = "Pair this window first."; return; }
       try {
         const t = await api("/api/turn");
         $("turn-on").checked = !!t.enabled;
@@ -6408,7 +6451,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         const ice = await api("/api/ice");
         if (ice.iceServers) iceServers = ice.iceServers;
       } catch (e) {
-        $("turn-status").textContent = "turn api unreachable";
+        $("turn-status").textContent = (e && e.status === 401) ? "Pair this window first." : "turn api unreachable";
       }
       if (session.vibe) {
         $("vibe-public").checked = session.vibe.visibility !== "private";
@@ -9364,12 +9407,65 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       return new Date(n * 1000).toLocaleString();
     }
 
+    /* Unpaired window (#336): /api/session answers 401 when this window has
+       no hush_session cookie. That is not "logged out": show the pair card,
+       ask only /api/status + /api/session, and back off (2 s doubling to
+       30 s) so the console does not fill with 401s. Check again asks at
+       once; focus or a visible tab re-checks on the next 1 s tick; the first 200 leaves the card, any other error keeps it. */
+    function enterPairState(st) {
+      pairDelayMs = pairDelayMs ? Math.min(pairDelayMs * 2, PAIR_RETRY_MAX_MS) : PAIR_RETRY_FIRST_MS;
+      pairNextAt = Date.now() + pairDelayMs;
+      if (st && st.port) pairPort = st.port;
+      badge(true, "listening", st && st.port ? "Relay listening on port " + st.port : "");
+      if (pairNeeded && page === "pair") return;
+      pairNeeded = true;
+      session = { logged_in: false, ready: false, channels: [] };
+      page = "pair";
+      applyPairLock();
+      paint();
+    }
+
+    /* #368 r2: Profile and Settings can still open over the pair card (c, 2,
+       Kit). Nothing in them can work without the session cookie, so their
+       actions are disabled and each says to pair the window first. */
+    const PAIR_LOCKED = ["profile-save", "profile-logout", "profile-copy", "prof-first", "prof-last", "prof-email", "prof-org",
+      "turn-on", "turn-daemon", "turn-host", "vibe-public", "vibe-rotate", "dev-log", "approval-auto", "approval-every"];
+    function applyPairLock() {
+      for (const id of PAIR_LOCKED) { const el = $(id); if (el) el.disabled = pairNeeded; }
+      for (const id of ["profile-pair-hint", "settings-pair-hint"]) { const el = $(id); if (el) el.hidden = !pairNeeded; }
+      if (pairNeeded) {
+        if ($("profile-npub")) $("profile-npub").textContent = "";
+        if ($("profile-loadout-text")) $("profile-loadout-text").textContent = "Pair this window first.";
+      }
+    }
+
+    function leavePairState() {
+      pairNeeded = false;
+      pairDelayMs = 0;
+      pairNextAt = 0;
+      if (page === "pair") page = "splash";
+      applyPairLock();
+      prepareNativeWindow();
+    }
+
+    function pairRecheck() {
+      if (pairNeeded) pairNextAt = 0;
+    }
+
     async function tick() {
       try {
-        const [st, evRes, sess, pres] = await Promise.all([
+        const [st, sessRes] = await Promise.all([
           fetch(API + "/api/status").then((r) => r.json()),
+          fetch(API + "/api/session")
+        ]);
+        if (sessRes.status === 401 || (pairNeeded && !sessRes.ok)) {
+          enterPairState(st);
+          return;
+        }
+        const sess = await sessRes.json();
+        if (pairNeeded) leavePairState();
+        const [evRes, pres] = await Promise.all([
           fetch(API + "/api/events"),
-          fetch(API + "/api/session").then((r) => r.json()),
           fetch(API + "/api/presence").then((r) => r.json()).catch(() => null)
         ]);
         if (pres && pres.lines)
@@ -9706,7 +9802,11 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         try {
           const result = await api("/api/window", { action: "prepare" });
           if (result.ok) return;
-        } catch (err) {}
+        } catch (err) {
+          /* Unpaired: retrying cannot help; tick() shows the pair card and
+             leavePairState() prepares the window once it is paired. */
+          if (err && err.status === 401) return;
+        }
         if (attempt + 1 < attempts) {
           await new Promise(resolve => setTimeout(resolve, retryMs));
         }
@@ -9717,7 +9817,12 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
     applyTheme(localStorage.getItem("hush-theme") || "field-office");
     paint();
     tick();
-    setInterval(tick, 1000);
+    setInterval(() => {
+      if (pairNeeded && Date.now() < pairNextAt) return;
+      tick();
+    }, 1000);
+    window.addEventListener("focus", pairRecheck);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) pairRecheck(); });
 
     hideKitMenu();
 

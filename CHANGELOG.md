@@ -8,6 +8,24 @@ the top-level `VERSION` file.
 
 ### Changed
 
+- A window that is not paired with the relay (no `hush_session` cookie, so every `/api` route but
+  `/api/status` answers 401) shows a "Pair this window" card instead of the first-run "Click Begin"
+  splash. The card names the two real ways to pair: the one-time `pair:` link a `--no-open` relay
+  prints, or `hush-relay --quit <port>` and a fresh start (the window the relay opens is paired). While
+  unpaired the page asks only `/api/status` and `/api/session`, backing off from 2 s to a 30 s cap
+  (Check again asks at once; focus or a visible tab re-checks within a second, on the 1 s tick), and tries `POST /api/window` once instead of 20
+  times: 5 responses 401 in the first 30 s, was 110 on main. Once the cookie is there the card gives way to
+  the hive (or the splash on a first run) without a reload. Pinned by `tests/check_pair_ui.cjs` and
+  `tests/check_palette.cjs` P1 (all 8 themes x 1440/390).
+  Ops r2 (#368): the card leads with a plain step ("quit Hush and start it again from your Hush app or
+  shortcut"); terminal commands sit in `<code>` that never breaks inside a flag at 390, and Check again
+  has air below it. Profile and Settings opened over the card say "Pair this window first" and their
+  actions are disabled (no "no identity yet", no "turn api unreachable" on a 401). The card edge is
+  >= 3:1 in all 8 themes (`--pair-edge`). Pinned by `check_pair_ui.cjs` L0/L1 and `check_palette.cjs` P2.
+  Gauge r2 (#368): a non-401 error (429, 5xx) from `/api/session` while unpaired keeps the card and its
+  backoff instead of dropping to the splash and polling at 1 Hz. Pinned by `check_pair_ui.cjs` U2 (30 s
+  cap, focus/visibility re-check, no focus storm), U3 (429 keeps the card), R1 (Check again <= 2 s) and
+  R2 (pairing resets the backoff).
 - Canvas: the code view is visible again in field-office. The editing textarea had an opaque paper slip
   (`--surface-2`) above the highlight layer, so code painted blank there (Ops #364 follow-up, from #282).
   It is now transparent in every theme, with a `--fg` caret and a translucent accent selection. Highlight
