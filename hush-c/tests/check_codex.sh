@@ -72,7 +72,7 @@ CODEX
 sed -i "s|@STUBS@|$stubs|g" "$bin_dir/codex"
 chmod 0755 "$bin_dir/codex"
 # Seeded robots are grok-build; provide a stub so they stay quiet.
-printf '%s\n' '#!/bin/sh' 'printf "%s\n" "grok stub"' > "$bin_dir/grok"
+printf '%s\n' '#!/bin/sh' 'case "$1" in --version) echo "grok 0.2.50"; exit 0;; --help) echo "--permission-mode dontAsk --allow --deny --disallowed-tools"; exit 0;; esac' 'printf "%s\n" "grok stub"' > "$bin_dir/grok"
 chmod 0755 "$bin_dir/grok"
 PATH="$bin_dir:$PATH"
 export PATH

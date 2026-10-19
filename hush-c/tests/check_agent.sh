@@ -57,6 +57,7 @@ export HUSH_CONFIG_DIR="$base/config"
 unset XDG_CONFIG_HOME
 mkdir -p "$home/.grok" "$home/.codex" "$HUSH_CONFIG_DIR" "$HUSH_HOME" "$bin_dir" "$stubs"
 printf '%s\n' '#!/bin/sh' \
+    'case "$1" in --version) echo "grok 0.2.50"; exit 0;; --help) echo "--permission-mode dontAsk --allow --deny --disallowed-tools"; exit 0;; esac' \
     'log="@STUBS@/grok-p.log"' \
     'prev=""' \
     'for a in "$@"; do' \
@@ -351,7 +352,13 @@ grep -q 'hush_agent_cline_timeout_s' src/agent_process.c || fail "cline timeout 
 if grep -q '(char \*)"80"' src/agent_process.c; then
     fail "cline argv still hardcodes 80"
 fi
-grep -q 'hush_agent_cline_approve' src/agent_process.c || fail "cline approve must follow the job"
+# #356: Cline never auto-approves and Grok never always-approves.
+if grep -q 'HUSH_AGENT_CLINE_APPROVE_ON\|hush_agent_cline_approve' src/agent_process.c; then
+    fail "cline auto-approve must be off on every turn"
+fi
+if grep -q -- '"--always-approve"' src/agent_process.c src/hush_canvas.c src/hush_cli_gate.c; then
+    fail "grok must never run with --always-approve"
+fi
 if grep -q '(char \*)"false"' src/agent_process.c; then
     fail "cline argv still hardcodes false"
 fi

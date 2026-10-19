@@ -23,7 +23,7 @@
 enum {
     HUSH_AGENT_INTRO_MAX = 32,
     HUSH_AGENT_KIND_NOTE = 1,
-    HUSH_AGENT_ARGV_MAX = 28,
+    HUSH_AGENT_ARGV_MAX = 40,
     HUSH_AGENT_PATH_MAX = 256,
     HUSH_AGENT_FD_NONE = -1,
     HUSH_AGENT_THREAD_MAX = 6,
@@ -430,11 +430,18 @@ int hush_agent_is_gated(int project_tools);
 const char *hush_agent_copilot_deny(int project_tools);
 
 /* Writes the Copilot argv for prompt: never --allow-all-tools, shell tools
- * excluded and denied, --allow-tool=write only on a gated turn, -C when
+ * excluded and denied, built-in MCP servers and the temp dir off,
+ * --allow-tool=write only on a gated turn, -C when
  * job->cwd is non-empty. Returns the slot count, including the NULL
  * terminator, or 0 when cap is too small. Does not start the process. */
 int hush_agent_fill_copilot_argv(const hush_agent_job_t *job, char **argv,
                                  size_t cap, const char *prompt);
+
+/* Writes the Grok argv for job: never --always-approve; the
+ * hush_cli_grok_policy rules (Edit allowed only on a gated turn) follow the
+ * fixed flags. Returns the slot count, NULL included, or 0 when cap is too
+ * small. Pure: argv borrows job's strings. Does not start the process. */
+size_t hush_agent_grok_argv(const hush_agent_job_t *job, char **argv, size_t cap);
 
 /* Sets GOOSE_MODE=chat in this process's environment, overriding any
  * inherited value and Goose's config.yaml, so Goose uses no tools on any
@@ -606,8 +613,8 @@ typedef struct {
     char *argv[HUSH_AGENT_CLINE_SLOTS];
 } hush_agent_cline_argv_t;
 
-/* Builds the Cline argv for job: --cwd job->cwd, --auto-approve from
- * project_tools, --timeout from the job clock, then prompt. Pure: no exec.
+/* Builds the Cline argv for job: --cwd job->cwd, --auto-approve false on
+ * every turn (#356), --timeout from the job clock, then prompt. Pure: no exec.
  * out->argv borrows job->cwd and prompt. */
 void hush_agent_cline_argv(hush_agent_cline_argv_t *out, const hush_agent_job_t *job,
                            char *prompt);
