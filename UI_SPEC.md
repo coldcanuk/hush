@@ -91,8 +91,11 @@ raise humans + robots that share channels."
   Configure Provider, New Robot, New Project, the new-project field) and
   the Boards drawer's New channel are disabled too, so key 3 opens
   nothing; the Kit shows "Pair this window first. …". Pairing re-enables
-  them. A disabled switch (opacity 0.45) or field (0.55) is dimmed in
-  every theme, like a disabled button.
+  them, and Inventory's Raise too. The drawer openers themselves refuse
+  while unpaired (New robot from the quick bar or a roster edit, Configure
+  Providers, Invite, New channel, New project). A disabled switch (opacity
+  0.45), field, radio or checkbox and its label (0.55) is dimmed in every
+  theme, like a disabled button.
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
   Before login the badge reads "listening"; the port is only in its
   tooltip ("Relay listening on port N"), not in the visible text

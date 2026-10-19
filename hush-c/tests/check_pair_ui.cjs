@@ -244,7 +244,7 @@ async function main() {
   // channel are off while unpaired, the Kit says "Pair this window first", key 3
   // opens no New channel drawer, and a disabled switch or field is dimmed
   // (opacity <= 0.6) in all 8 themes.
-  const KIT_LOCKED = ['invite-human', 'add-chan', 'nav-new-channel', 'providers-btn', 'raise-agent', 'add-proj', 'new-proj'];
+  const KIT_LOCKED = ['invite-human', 'add-chan', 'nav-new-channel', 'providers-btn', 'raise-agent', 'add-proj', 'new-proj', 'inv-raise'];
   await cdp.eval("document.getElementById('rail-toggle').click()"); await sleep(400);
   const k0 = await cdp.eval(`(() => { const h = document.getElementById('kit-pair-hint');
     return { live: ${JSON.stringify(KIT_LOCKED)}.filter((id) => { const e = document.getElementById(id); return !e || !e.disabled; }),
@@ -264,10 +264,31 @@ async function main() {
       document.documentElement.setAttribute('data-theme', t);
       const sl = parseFloat(getComputedStyle(document.querySelector('#turn-on + .slider')).opacity);
       const fi = parseFloat(getComputedStyle(document.getElementById('turn-host')).opacity);
-      out.push({ t, sl, fi }); }
+      const lb = parseFloat(getComputedStyle(document.getElementById('approval-auto').closest('label')).opacity);
+      out.push({ t, sl, fi, lb }); }
     document.documentElement.setAttribute('data-theme', keep); return out; })()`);
   console.log('pair K0 disabled dim: ' + JSON.stringify(dim));
-  for (const d of dim) if (!(d.sl <= 0.6) || !(d.fi <= 0.6)) failures.push(`K0 ${d.t} disabled switch/field not dimmed: slider ${d.sl}, field ${d.fi}`);
+  for (const d of dim) if (!(d.sl <= 0.6) || !(d.fi <= 0.6) || !(d.lb <= 0.6)) failures.push(`K0 ${d.t} disabled switch/field/radio label not dimmed: slider ${d.sl}, field ${d.fi}, label ${d.lb}`);
+  // K1 (#368 follow-up): every other route into these drawers stays shut while
+  // unpaired: the quick bar's New robot slot, Inventory's Raise, a roster
+  // edit (openAgentDrawer), Configure Providers, Invite, New channel, New project.
+  const k1 = await cdp.eval(`(async () => { const shown = (id) => { const e = document.getElementById(id); return !!e && e.classList.contains('show'); };
+    const keep = quickSlots[3]; quickSlots[3] = 'new-robot'; runQuickSlot(3); quickSlots[3] = keep;
+    const r = { quickRobot: shown('agent-drawer') };
+    openAgentDrawer({ name: 'x', slug: 'x' }); r.rosterEdit = shown('agent-drawer');
+    await openProvidersHub(); r.providers = shown('providers-hub');
+    const fire = (id) => { const e = document.getElementById(id); e.disabled = false; e.click(); e.disabled = true; };
+    fire('invite-human'); r.invite = shown('member-drawer');
+    fire('add-chan'); r.newChan = shown('new-chan-drawer');
+    fire('inv-raise'); r.invRaise = shown('agent-drawer');
+    return r; })()`);
+  { const seenP = new Set(reqs.keys());
+    await cdp.eval(`(() => { const i = document.getElementById('new-proj'), b = document.getElementById('add-proj'); i.disabled = false; b.disabled = false; i.value = 'zz'; b.click(); i.value = ''; i.disabled = true; b.disabled = true; })()`);
+    await sleep(500);
+    k1.newProject = [...reqs].some(([id, q]) => !seenP.has(id) && new URL(q.url).pathname === '/api/project'); }
+  console.log('pair K1 other routes: ' + JSON.stringify(k1));
+  for (const [k, v] of Object.entries(k1)) if (v) failures.push(`K1 ${k} opened its drawer while unpaired`);
+  await cdp.eval(`for (const id of ['agent-drawer', 'providers-hub', 'member-drawer']) document.getElementById(id).classList.remove('show'); if (document.getElementById('new-chan-drawer').classList.contains('show')) closeLayer('new-chan-drawer');`);
 
   // R0: the cookie arrives on a first run (no identity yet): Check again
   // leaves the card for the first-run splash, with no reload.
@@ -344,7 +365,7 @@ async function main() {
   if (r1.pair) failures.push('R1 pair card still shows after pairing');
   const l1 = await cdp.eval(`(() => ({ off: ['profile-save', 'profile-logout', 'profile-copy', 'turn-on', 'vibe-rotate', ...${JSON.stringify(KIT_LOCKED)}].filter((id) => document.getElementById(id).disabled),
     hint: ['profile-pair-hint', 'settings-pair-hint', 'kit-pair-hint'].filter((id) => !document.getElementById(id).hidden),
-    dim: [parseFloat(getComputedStyle(document.querySelector('#turn-on + .slider')).opacity), parseFloat(getComputedStyle(document.getElementById('turn-host')).opacity)] }))()`);
+    dim: [parseFloat(getComputedStyle(document.querySelector('#turn-on + .slider')).opacity), parseFloat(getComputedStyle(document.getElementById('turn-host')).opacity), parseFloat(getComputedStyle(document.getElementById('approval-auto').closest('label')).opacity)] }))()`);
   if (l1.dim.some((o) => o < 1)) failures.push('L1 paired switch/field still dimmed: ' + JSON.stringify(l1.dim));
   console.log('pair L1 paired: ' + JSON.stringify(l1));
   if (l1.off.length || l1.hint.length) failures.push('L1 paired window still locks Profile/Settings: ' + JSON.stringify(l1));

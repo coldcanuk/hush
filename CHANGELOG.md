@@ -29,7 +29,8 @@ the top-level `VERSION` file.
   Ops follow-ups (#368): while unpaired the Kit's Invite, Add Channel, Configure Provider, New Robot and
   New Project (and Boards > New channel, so key 3) are disabled with a "Pair this window first" line in
   the Kit; disabled switches and fields are dimmed in every theme; README's `--no-open` step points at
-  the `pair:` link. Pinned by `check_pair_ui.cjs` K0/L1.
+  the `pair:` link. Inventory's Raise and the quick bar's New robot slot are shut too (the drawer openers refuse
+  while unpaired), and disabled radio/checkbox labels dim with their control. Pinned by `check_pair_ui.cjs` K0/K1/L1.
 - Canvas: the code view is visible again in field-office. The editing textarea had an opaque paper slip
   (`--surface-2`) above the highlight layer, so code painted blank there (Ops #364 follow-up, from #282).
   It is now transparent in every theme, with a `--fg` caret and a translucent accent selection. Highlight
