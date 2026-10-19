@@ -99,6 +99,8 @@ static void check_versions(cg_t *t)
     expect(t, hush_cli_version_ok("no version here", &grok) == 0, "no version refused");
     expect(t, hush_cli_version_ok("", &grok) == 0, "empty output refused");
     expect(t, hush_cli_version_ok("0.2", &grok) == 0, "two fields refused");
+    expect(t, hush_cli_version_ok("grok 99999999999999999999999.0.0", &grok) == 0,
+           "an out-of-range field is refused, not saturated");
     expect(t, hush_cli_version_ok("copilot 0.0.370", &copilot) == 0, "pre-GA copilot refused");
     expect(t, hush_cli_version_ok("GitHub Copilot CLI 1.0.3.", &copilot) == 1, "GA copilot");
 }
@@ -113,6 +115,8 @@ static void check_help(cg_t *t)
     expect(t, hush_cli_help_ok("--allow --deny-tool dontAsk", grok) == 0,
            "--deny-tool is not --deny");
     expect(t, hush_cli_help_ok("--allow --deny dontAskMe", grok) == 0, "whole words only");
+    expect(t, hush_cli_help_ok("x--allow --deny dontAsk", grok) == 0, "left edge is a word edge");
+    expect(t, hush_cli_help_ok("--allow --deny nodontAsk", grok) == 0, "no prefix on dontAsk");
     expect(t, hush_cli_help_ok("", grok) == 0, "empty help refused");
 }
 
@@ -176,6 +180,48 @@ static void check_ready(cg_t *t)
            "copilot help without --disallow-temp-dir");
 }
 
+/* Gauge #370 T1: help that lacks any one required token is refused, for
+ * every token in spec (kills dropping a token from the spec, M19/M20). */
+static void check_each_token(cg_t *t, const hush_cli_spec_t *spec, const char *version_body)
+{
+    for (size_t skip = 0; spec->flags[skip] != NULL; skip++) {
+        char help[CG_BODY_MAX] = {0};
+        char label[CG_PATH_MAX] = {0};
+        size_t n = (size_t)snprintf(help, sizeof(help), "echo \"");
+
+        for (size_t i = 0; spec->flags[i] != NULL && n < sizeof(help); i++) {
+            if (i != skip)
+                n += (size_t)snprintf(help + n, sizeof(help) - n, "%s ", spec->flags[i]);
+        }
+        expect(t, n < sizeof(help) - CG_PATH_MAX, "help body fits");
+        snprintf(help + n, sizeof(help) - n, "\"; exit 0");
+        snprintf(label, sizeof(label), "%s help without %s refused", spec->bin, spec->flags[skip]);
+        stub(t, spec->bin, version_body, help);
+        expect(t, ready(t, spec) == HUSH_ERR_DENIED, label);
+    }
+}
+
+/* Gauge #370 T1: both probes run through the turn's jail. The stub answers
+ * only when it sees the job HOME and a scrubbed environment (the caller's
+ * HUSH_* canary gone), so a plain, unjailed exec makes the CLI not ready. */
+static void check_jailed(cg_t *t)
+{
+    char gate[CG_BODY_MAX] = {0};
+    char body[CG_BODY_MAX] = {0};
+
+    expect(t, setenv("HUSH_CG_UNJAILED", "1", 1) == 0, "set the unjailed canary");
+    snprintf(gate, sizeof(gate), "[ -z \"$HUSH_CG_UNJAILED\" ] && [ \"$HOME\" = '%s' ] && ",
+             t->home);
+    snprintf(body, sizeof(body), "%secho \"grok 0.2.50\"; exit 0", gate);
+    stub(t, "grok", body, CG_GROK_HELP);
+    expect(t, ready(t, &hush_cli_spec_grok) == HUSH_OK, "version probe runs jailed");
+    snprintf(body, sizeof(body), "%secho \"--permission-mode dontAsk --allow --deny "
+             "--disallowed-tools\"; exit 0", gate);
+    stub(t, "grok", "echo \"grok 0.2.50\"; exit 0", body);
+    expect(t, ready(t, &hush_cli_spec_grok) == HUSH_OK, "help probe runs jailed");
+    expect(t, unsetenv("HUSH_CG_UNJAILED") == 0, "clear the unjailed canary");
+}
+
 /* A hung --version is killed and refused on the probe clock; a missing
  * binary is refused; no probe ever passes a prompt. */
 static void check_hang_and_missing(cg_t *t)
@@ -188,6 +234,15 @@ static void check_hang_and_missing(cg_t *t)
     expect(t, ready(t, &hush_cli_spec_grok) == HUSH_ERR_DENIED, "hung grok refused");
     expect(t, now_ms() - start < HUSH_CLI_PROBE_MS + CG_HANG_SLACK_MS,
            "hung probe ends on the probe clock");
+    /* Gauge #370: output closed early, then the CLI lingers. EOF is not exit. */
+    stub(t, "grok", "echo \"grok 0.2.50\"; exec >/dev/null 2>&1; exec sleep 30", CG_GROK_HELP);
+    start = now_ms();
+    expect(t, ready(t, &hush_cli_spec_grok) == HUSH_ERR_DENIED, "lingering grok refused");
+    expect(t, now_ms() - start < HUSH_CLI_PROBE_MS + CG_HANG_SLACK_MS,
+           "a probe that closes its output still ends on the probe clock");
+    /* Gauge #370: a probe that dies on a signal is not ready, whatever it printed. */
+    stub(t, "grok", "echo \"grok 0.2.50\"; kill -9 $$", CG_GROK_HELP);
+    expect(t, ready(t, &hush_cli_spec_grok) == HUSH_ERR_DENIED, "signal-killed probe refused");
     snprintf(path, sizeof(path), "%s/bin/copilot", t->dir);
     expect(t, unlink(path) == 0, "remove copilot stub");
     expect(t, ready(t, &hush_cli_spec_copilot) != HUSH_OK, "missing copilot refused");
@@ -250,6 +305,9 @@ int main(void)
         return 1;
     }
     check_ready(&t);
+    check_each_token(&t, &hush_cli_spec_grok, "echo \"grok 0.2.50\"; exit 0");
+    check_each_token(&t, &hush_cli_spec_copilot, "echo \"1.0.0\"; exit 0");
+    check_jailed(&t);
     check_hang_and_missing(&t);
     expect(&t, log_has_only_probes(&t), "probes never ran a prompt");
     hush_sandbox_home_remove(t.home, sizeof(t.home));
