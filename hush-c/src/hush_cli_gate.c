@@ -23,7 +23,10 @@ enum {
     /* Sleep between exit checks once a probe's output has closed. */
     HUSH_CLI_REAP_NAP_NS = 10000000,
     /* A probe child's exit when the jail refused to run the CLI. */
-    HUSH_CLI_JAIL_EXIT = 125
+    HUSH_CLI_JAIL_EXIT = 125,
+    /* A pipe's two ends, and the value of an end not yet open. */
+    HUSH_CLI_PIPE_ENDS = 2,
+    HUSH_CLI_FD_NONE = -1
 };
 
 /* Every flag Hush's Grok permission argv uses, and the mode it selects. */
@@ -208,8 +211,11 @@ static int hush_cli_reap(pid_t pid, int *status, long deadline)
     pid_t got = 0;
 
     assert(pid > 0 && status != NULL);
-    while ((got = waitpid(pid, status, WNOHANG)) == 0 && hush_cli_now_ms() < deadline)
+    got = waitpid(pid, status, WNOHANG);
+    while (got == 0 && hush_cli_now_ms() < deadline) {
         (void)nanosleep(&nap, NULL);
+        got = waitpid(pid, status, WNOHANG);
+    }
     if (got == pid)
         return 1;
     (void)kill(pid, SIGKILL);
@@ -234,9 +240,8 @@ static hush_status_t hush_cli_exit_status(int status)
 static hush_status_t hush_cli_probe(char *out, const hush_sandbox_job_t *jail, const char *bin,
                                     const char *arg)
 {
-    int fds[2] = {-1, -1};
+    int fds[HUSH_CLI_PIPE_ENDS] = {HUSH_CLI_FD_NONE, HUSH_CLI_FD_NONE};
     int status = 0;
-    long deadline = 0;
 
     out[0] = '\0';
     if (pipe(fds) != 0)
@@ -252,7 +257,7 @@ static hush_status_t hush_cli_probe(char *out, const hush_sandbox_job_t *jail, c
         hush_cli_probe_child(fds[1], jail, bin, arg);
     }
     (void)close(fds[1]);
-    deadline = hush_cli_now_ms() + HUSH_CLI_PROBE_MS;
+    long deadline = hush_cli_now_ms() + HUSH_CLI_PROBE_MS;
     int in_time = hush_cli_drain(fds[0], out, HUSH_CLI_PROBE_MAX, deadline);
     (void)close(fds[0]);
     /* EOF is not exit: the clock covers the exit too (Gauge #370). */

@@ -6,6 +6,7 @@
 
 #define _XOPEN_SOURCE 700
 
+#include <errno.h>
 #include <ftw.h>
 #include <signal.h>
 #include <stdio.h>
@@ -232,24 +233,53 @@ static void check_jailed(cg_t *t)
     expect(t, unsetenv("HUSH_CG_UNJAILED") == 0, "clear the unjailed canary");
 }
 
-/* A hung --version is killed and refused on the probe clock; a missing
- * binary is refused; no probe ever passes a prompt. */
+/* 1 when the probe whose pid the stub wrote to <dir>/probe.pid is gone:
+ * killed and reaped, not left running or a zombie (Gauge #370 N1). Under
+ * bwrap the stub sees only its namespace pid, so the check needs Landlock. */
+static int probe_gone(cg_t *t)
+{
+    char path[CG_PATH_MAX + 64] = {0};
+    long pid = 0;
+    FILE *f = NULL;
+
+    if (hush_sandbox_backend() != HUSH_SANDBOX_BACKEND_LANDLOCK)
+        return 1;
+    snprintf(path, sizeof(path), "%s/probe.pid", t->dir);
+    f = fopen(path, "r");
+    if (f == NULL)
+        return 0;
+    int got = fscanf(f, "%ld", &pid);
+    (void)fclose(f);
+    (void)unlink(path);
+    if (got != 1 || pid <= 0)
+        return 0;
+    return kill((pid_t)pid, 0) == -1 && errno == ESRCH;
+}
+
+/* A hung --version is killed, reaped and refused on the probe clock; a
+ * missing binary is refused; no probe ever passes a prompt. */
 static void check_hang_and_missing(cg_t *t)
 {
     char path[CG_PATH_MAX + 64] = {0};
+    char body[CG_BODY_MAX] = {0};
     long start = 0;
 
-    stub(t, "grok", "exec sleep 30", CG_GROK_HELP);
+    snprintf(body, sizeof(body), "echo $$ > '%s/probe.pid'; exec sleep 30", t->dir);
+    stub(t, "grok", body, CG_GROK_HELP);
     start = now_ms();
     expect(t, ready(t, &hush_cli_spec_grok) == HUSH_ERR_DENIED, "hung grok refused");
     expect(t, now_ms() - start < HUSH_CLI_PROBE_MS + CG_HANG_SLACK_MS,
            "hung probe ends on the probe clock");
+    expect(t, probe_gone(t), "hung probe killed and reaped, no orphan");
     /* Gauge #370: output closed early, then the CLI lingers. EOF is not exit. */
-    stub(t, "grok", "echo \"grok 0.2.50\"; exec >/dev/null 2>&1; exec sleep 30", CG_GROK_HELP);
+    snprintf(body, sizeof(body), "echo \"grok 0.2.50\"; echo $$ > '%s/probe.pid'; "
+             "exec >/dev/null 2>&1; exec sleep 30", t->dir);
+    stub(t, "grok", body, CG_GROK_HELP);
     start = now_ms();
     expect(t, ready(t, &hush_cli_spec_grok) == HUSH_ERR_DENIED, "lingering grok refused");
     expect(t, now_ms() - start < HUSH_CLI_PROBE_MS + CG_HANG_SLACK_MS,
            "a probe that closes its output still ends on the probe clock");
+    expect(t, probe_gone(t), "lingering probe killed and reaped, no orphan");
     /* Gauge #370: a probe that dies on a signal is not ready, whatever it printed. */
     stub(t, "grok", "echo \"grok 0.2.50\"; kill -9 $$", CG_GROK_HELP);
     expect(t, ready(t, &hush_cli_spec_grok) == HUSH_ERR_DENIED, "signal-killed probe refused");
