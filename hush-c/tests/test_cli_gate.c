@@ -180,22 +180,32 @@ static void check_ready(cg_t *t)
            "copilot help without --disallow-temp-dir");
 }
 
-/* Gauge #370 T1: help that lacks any one required token is refused, for
- * every token in spec (kills dropping a token from the spec, M19/M20). */
-static void check_each_token(cg_t *t, const hush_cli_spec_t *spec, const char *version_body)
+/* Gauge #370 T1: the tokens the body promises, written out here rather than
+ * read back from the spec, so dropping one from the spec is caught (M19/M20). */
+static const char *const cg_grok_tokens[] = {
+    "--permission-mode", "dontAsk", "--allow", "--deny", "--disallowed-tools", NULL
+};
+static const char *const cg_copilot_tokens[] = {
+    "--deny-tool", "--excluded-tools", "--allow-tool", "--disable-builtin-mcps",
+    "--disallow-temp-dir", NULL
+};
+
+/* Help that lacks any one promised token is refused, for every token. */
+static void check_each_token(cg_t *t, const hush_cli_spec_t *spec, const char *const *tokens,
+                             const char *version_body)
 {
-    for (size_t skip = 0; spec->flags[skip] != NULL; skip++) {
+    for (size_t skip = 0; tokens[skip] != NULL; skip++) {
         char help[CG_BODY_MAX] = {0};
         char label[CG_PATH_MAX] = {0};
         size_t n = (size_t)snprintf(help, sizeof(help), "echo \"");
 
-        for (size_t i = 0; spec->flags[i] != NULL && n < sizeof(help); i++) {
+        for (size_t i = 0; tokens[i] != NULL && n < sizeof(help); i++) {
             if (i != skip)
-                n += (size_t)snprintf(help + n, sizeof(help) - n, "%s ", spec->flags[i]);
+                n += (size_t)snprintf(help + n, sizeof(help) - n, "%s ", tokens[i]);
         }
         expect(t, n < sizeof(help) - CG_PATH_MAX, "help body fits");
         snprintf(help + n, sizeof(help) - n, "\"; exit 0");
-        snprintf(label, sizeof(label), "%s help without %s refused", spec->bin, spec->flags[skip]);
+        snprintf(label, sizeof(label), "%s help without %s refused", spec->bin, tokens[skip]);
         stub(t, spec->bin, version_body, help);
         expect(t, ready(t, spec) == HUSH_ERR_DENIED, label);
     }
@@ -305,8 +315,9 @@ int main(void)
         return 1;
     }
     check_ready(&t);
-    check_each_token(&t, &hush_cli_spec_grok, "echo \"grok 0.2.50\"; exit 0");
-    check_each_token(&t, &hush_cli_spec_copilot, "echo \"1.0.0\"; exit 0");
+    check_each_token(&t, &hush_cli_spec_grok, cg_grok_tokens, "echo \"grok 0.2.50\"; exit 0");
+    check_each_token(&t, &hush_cli_spec_copilot, cg_copilot_tokens,
+                     "echo \"1.0.0\"; exit 0");
     check_jailed(&t);
     check_hang_and_missing(&t);
     expect(&t, log_has_only_probes(&t), "probes never ran a prompt");
