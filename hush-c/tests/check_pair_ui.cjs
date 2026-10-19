@@ -216,6 +216,7 @@ async function main() {
   // L0 (#368 r2): Profile (c) and Settings (Kit) over the pair card say
   // "Pair this window first", show no false state, and their actions are off.
   const lock = async (tag, open, ids, drawer, hint) => {
+    const seen = new Set(reqs.keys());
     await cdp.eval(open);
     await sleep(800);
     const r = await cdp.eval(`(() => { const d = document.getElementById(${JSON.stringify(drawer)}); const h = document.getElementById(${JSON.stringify(hint)});
@@ -226,12 +227,16 @@ async function main() {
     if (!r.hint.startsWith('Pair this window first')) failures.push(`L0 ${tag} has no visible "Pair this window first" hint`);
     if (r.on.length) failures.push(`L0 ${tag} actions still enabled while unpaired: ` + r.on.join(', '));
     for (const bad of ['no identity yet', 'turn api unreachable']) if (r.text.includes(bad)) failures.push(`L0 ${tag} shows "${bad}" while unpaired`);
+    const turnAsks = [...reqs].filter(([id, q]) => !seen.has(id) && new URL(q.url).pathname === '/api/turn').length;
+    if (turnAsks) failures.push(`L0 ${tag} asked GET /api/turn ${turnAsks}x while unpaired, want 0 (Settings skips it)`);
+    if (tag === 'Profile') { const lo = await cdp.eval(`(document.getElementById('profile-loadout-text') || {}).textContent`);
+      if (lo !== 'Pair this window first.') failures.push(`L0 Profile loadout line is ${JSON.stringify(lo)}, want "Pair this window first."`); }
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     await sleep(300);
     await cdp.eval(`document.getElementById(${JSON.stringify(drawer)}).classList.remove('show')`);
   };
-  await lock('Profile', 'openCharacterSheet()', ['profile-save', 'profile-logout', 'profile-copy', 'prof-first'], 'profile', 'profile-pair-hint');
+  await lock('Profile', 'openCharacterSheet()', ['profile-save', 'profile-logout', 'profile-copy', 'prof-first', 'prof-last', 'prof-email', 'prof-org'], 'profile', 'profile-pair-hint');
   await lock('Settings', 'openSettings()', ['turn-on', 'turn-daemon', 'turn-host', 'vibe-public', 'vibe-rotate', 'dev-log', 'approval-auto', 'approval-every'], 'settings', 'settings-pair-hint');
 
   // R0: the cookie arrives on a first run (no identity yet): Check again
