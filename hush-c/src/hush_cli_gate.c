@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
@@ -19,6 +20,8 @@ enum {
     HUSH_CLI_MS_PER_S = 1000,
     HUSH_CLI_NS_PER_MS = 1000000,
     HUSH_CLI_DECIMAL = 10,
+    /* Sleep between exit checks once a probe's output has closed. */
+    HUSH_CLI_REAP_NAP_NS = 10000000,
     /* A probe child's exit when the jail refused to run the CLI. */
     HUSH_CLI_JAIL_EXIT = 125
 };
@@ -79,9 +82,10 @@ static int hush_cli_field(const char **p, unsigned long *out)
 
     if (!isdigit((unsigned char)**p))
         return 0;
+    errno = 0;
     *out = strtoul(*p, &end, HUSH_CLI_DECIMAL);
     *p = end;
-    return 1;
+    return errno != ERANGE;
 }
 
 /* Parses "N.N.N" at p. 0 when p does not start one. */
@@ -100,7 +104,9 @@ int hush_cli_version_ok(const char *text, const hush_cli_version_t *min)
     const char *p = text;
 
     assert(text != NULL && min != NULL);
-    while (*p != '\0' && !hush_cli_parse_at(p, &v))
+    /* A version starts at a digit run's first digit, never inside one. */
+    while (*p != '\0' && ((p != text && isdigit((unsigned char)p[-1])) ||
+                           !hush_cli_parse_at(p, &v)))
         p++;
     if (*p == '\0')
         return 0;
@@ -194,6 +200,23 @@ static void hush_cli_probe_child(int wfd, const hush_sandbox_job_t *jail, const 
     _exit(EXIT_FAILURE);
 }
 
+/* Reaps pid by deadline; past it, SIGKILLs and reaps. 1 when it exited in
+ * time. Bounded by the deadline: each pass sleeps HUSH_CLI_REAP_NAP_NS. */
+static int hush_cli_reap(pid_t pid, int *status, long deadline)
+{
+    struct timespec nap = {.tv_sec = 0, .tv_nsec = HUSH_CLI_REAP_NAP_NS};
+    pid_t got = 0;
+
+    assert(pid > 0 && status != NULL);
+    while ((got = waitpid(pid, status, WNOHANG)) == 0 && hush_cli_now_ms() < deadline)
+        (void)nanosleep(&nap, NULL);
+    if (got == pid)
+        return 1;
+    (void)kill(pid, SIGKILL);
+    (void)waitpid(pid, status, 0);
+    return 0;
+}
+
 /* Maps a reaped probe status: exit 0 is HUSH_OK, a jail refusal HUSH_ERR_IO,
  * anything else HUSH_ERR_DENIED. */
 static hush_status_t hush_cli_exit_status(int status)
@@ -211,8 +234,9 @@ static hush_status_t hush_cli_exit_status(int status)
 static hush_status_t hush_cli_probe(char *out, const hush_sandbox_job_t *jail, const char *bin,
                                     const char *arg)
 {
-    int fds[2];
+    int fds[2] = {-1, -1};
     int status = 0;
+    long deadline = 0;
 
     out[0] = '\0';
     if (pipe(fds) != 0)
@@ -228,12 +252,11 @@ static hush_status_t hush_cli_probe(char *out, const hush_sandbox_job_t *jail, c
         hush_cli_probe_child(fds[1], jail, bin, arg);
     }
     (void)close(fds[1]);
-    int in_time = hush_cli_drain(fds[0], out, HUSH_CLI_PROBE_MAX,
-                                 hush_cli_now_ms() + HUSH_CLI_PROBE_MS);
+    deadline = hush_cli_now_ms() + HUSH_CLI_PROBE_MS;
+    int in_time = hush_cli_drain(fds[0], out, HUSH_CLI_PROBE_MAX, deadline);
     (void)close(fds[0]);
-    if (!in_time)
-        (void)kill(pid, SIGKILL);
-    if (waitpid(pid, &status, 0) != pid || !in_time)
+    /* EOF is not exit: the clock covers the exit too (Gauge #370). */
+    if (!hush_cli_reap(pid, &status, in_time ? deadline : 0) || !in_time)
         return HUSH_ERR_DENIED;
     return hush_cli_exit_status(status);
 }
