@@ -56,7 +56,7 @@ Run it:
 ~/.local/bin/hush-relay --no-open 10555   # default port 10555
 ```
 
-Then open `http://127.0.0.1:10555/` in a Chromium-family browser. First launch walks Identity → Backup (save to `pass` checked by default; unchecked and disabled, with an inline reason, when `pass` is missing) → Vibe → Meet Major. `Close` dismisses the window and leaves the hive standing; `Exit` stops the relay and the children it forked (`hush-relay --quit [port]`, default port 10555: exit 0 stopped, 1 nothing to stop, 2 stop failed or refused. Linux, FreeBSD, and OpenBSD check process identity before signalling. Other platforms refuse a live relay with exit 2 — use `POST /api/exit`). Details: [Close vs Exit](docs/OPERATIONS.md#close-vs-exit).
+Then open the `pair:` link it prints (`http://127.0.0.1:10555/?pair=…`, works one time) in a Chromium-family browser; the plain `http://127.0.0.1:10555/` shows a "Pair this window" card until a window is paired. First launch walks Identity → Backup (save to `pass` checked by default; unchecked and disabled, with an inline reason, when `pass` is missing) → Vibe → Meet Major. `Close` dismisses the window and leaves the hive standing; `Exit` stops the relay and the children it forked (`hush-relay --quit [port]`, default port 10555: exit 0 stopped, 1 nothing to stop, 2 stop failed or refused. Linux, FreeBSD, and OpenBSD check process identity before signalling. Other platforms refuse a live relay with exit 2 — use `POST /api/exit`). Details: [Close vs Exit](docs/OPERATIONS.md#close-vs-exit).
 
 Isolated demo run (how the screenshot above was produced):
 

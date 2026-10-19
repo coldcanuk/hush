@@ -239,6 +239,36 @@ async function main() {
   await lock('Profile', 'openCharacterSheet()', ['profile-save', 'profile-logout', 'profile-copy', 'prof-first', 'prof-last', 'prof-email', 'prof-org'], 'profile', 'profile-pair-hint');
   await lock('Settings', 'openSettings()', ['turn-on', 'turn-daemon', 'turn-host', 'vibe-public', 'vibe-rotate', 'dev-log', 'approval-auto', 'approval-every'], 'settings', 'settings-pair-hint');
 
+  // K0 (#368 Ops follow-up): the Kit menu's hive actions (Invite, Add Channel,
+  // Configure Provider, New Robot, New Project) and the Boards drawer's New
+  // channel are off while unpaired, the Kit says "Pair this window first", key 3
+  // opens no New channel drawer, and a disabled switch or field is dimmed
+  // (opacity <= 0.6) in all 8 themes.
+  const KIT_LOCKED = ['invite-human', 'add-chan', 'nav-new-channel', 'providers-btn', 'raise-agent', 'add-proj', 'new-proj'];
+  await cdp.eval("document.getElementById('rail-toggle').click()"); await sleep(400);
+  const k0 = await cdp.eval(`(() => { const h = document.getElementById('kit-pair-hint');
+    return { live: ${JSON.stringify(KIT_LOCKED)}.filter((id) => { const e = document.getElementById(id); return !e || !e.disabled; }),
+      hint: h && !h.hidden && h.getBoundingClientRect().height > 0 ? h.textContent : '' }; })()`);
+  console.log('pair K0 Kit: ' + JSON.stringify(k0));
+  if (k0.live.length) failures.push('K0 Kit/Boards actions still enabled while unpaired: ' + k0.live.join(', '));
+  if (!k0.hint.startsWith('Pair this window first')) failures.push('K0 Kit menu has no visible "Pair this window first" hint');
+  await cdp.eval("document.getElementById('rail-toggle').click()"); await sleep(200);
+  await cdp.eval(`(() => { const ae = document.activeElement; if (ae && ae.blur) ae.blur(); })()`);
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: '3', code: 'Digit3', text: '3', windowsVirtualKeyCode: 51 });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: '3', code: 'Digit3', windowsVirtualKeyCode: 51 });
+  await sleep(400);
+  const nc = await cdp.eval(`document.getElementById('new-chan-drawer').classList.contains('show')`);
+  if (nc) { failures.push('K0 key 3 opened New channel while unpaired'); await cdp.eval(`closeLayer('new-chan-drawer')`); }
+  const dim = await cdp.eval(`(() => { const out = []; const keep = document.documentElement.getAttribute('data-theme');
+    for (const t of ['dark', 'light', 'color-blind', 'dracula', 'desert', 'monochrome', 'christmas', 'field-office']) {
+      document.documentElement.setAttribute('data-theme', t);
+      const sl = parseFloat(getComputedStyle(document.querySelector('#turn-on + .slider')).opacity);
+      const fi = parseFloat(getComputedStyle(document.getElementById('turn-host')).opacity);
+      out.push({ t, sl, fi }); }
+    document.documentElement.setAttribute('data-theme', keep); return out; })()`);
+  console.log('pair K0 disabled dim: ' + JSON.stringify(dim));
+  for (const d of dim) if (!(d.sl <= 0.6) || !(d.fi <= 0.6)) failures.push(`K0 ${d.t} disabled switch/field not dimmed: slider ${d.sl}, field ${d.fi}`);
+
   // R0: the cookie arrives on a first run (no identity yet): Check again
   // leaves the card for the first-run splash, with no reload.
   const token = fs.readFileSync(path.join(home, 'session.token'), 'utf8').trim();
@@ -312,8 +342,10 @@ async function main() {
   if (!posted) failures.push('R1 window was not prepared after pairing (no POST /api/window 200)');
   const r1 = await cdp.eval(VIEW);
   if (r1.pair) failures.push('R1 pair card still shows after pairing');
-  const l1 = await cdp.eval(`(() => ({ off: ['profile-save', 'profile-logout', 'profile-copy', 'turn-on', 'vibe-rotate'].filter((id) => document.getElementById(id).disabled),
-    hint: ['profile-pair-hint', 'settings-pair-hint'].filter((id) => !document.getElementById(id).hidden) }))()`);
+  const l1 = await cdp.eval(`(() => ({ off: ['profile-save', 'profile-logout', 'profile-copy', 'turn-on', 'vibe-rotate', ...${JSON.stringify(KIT_LOCKED)}].filter((id) => document.getElementById(id).disabled),
+    hint: ['profile-pair-hint', 'settings-pair-hint', 'kit-pair-hint'].filter((id) => !document.getElementById(id).hidden),
+    dim: [parseFloat(getComputedStyle(document.querySelector('#turn-on + .slider')).opacity), parseFloat(getComputedStyle(document.getElementById('turn-host')).opacity)] }))()`);
+  if (l1.dim.some((o) => o < 1)) failures.push('L1 paired switch/field still dimmed: ' + JSON.stringify(l1.dim));
   console.log('pair L1 paired: ' + JSON.stringify(l1));
   if (l1.off.length || l1.hint.length) failures.push('L1 paired window still locks Profile/Settings: ' + JSON.stringify(l1));
   // R2 (Gauge #368): pairing resets the backoff; losing the cookie starts again at 2 s.

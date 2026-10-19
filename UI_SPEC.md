@@ -87,6 +87,12 @@ raise humans + robots that share channels."
 - Profile and Settings can still open over the card (c, 2, Kit). While
   unpaired each shows "Pair this window first." and disables its actions
   and fields (theme radios stay: they are local); Profile shows no key, the TURN line says "Pair this window first.". Close stays.
+- While unpaired the Kit menu's hive actions (Invite, Add Channel,
+  Configure Provider, New Robot, New Project, the new-project field) and
+  the Boards drawer's New channel are disabled too, so key 3 opens
+  nothing; the Kit shows "Pair this window first. …". Pairing re-enables
+  them. A disabled switch (opacity 0.45) or field (0.55) is dimmed in
+  every theme, like a disabled button.
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
   Before login the badge reads "listening"; the port is only in its
   tooltip ("Relay listening on port N"), not in the visible text
