@@ -98,7 +98,7 @@ raise humans + robots that share channels."
   theme, like a disabled button; a disabled field that is also read-only
   (Major's standing orders, a locked robot's name and prompt) stays at full
   opacity.
-  While unpaired, the controls the pairing lock shuts (Settings' host field and robot-turn radios, the Kit's actions) are not dimmed: they keep their text colour and show they are off with a dashed edge, the dimmed radio dot and the not-allowed cursor. Their text reads at least 3.09:1 in every theme (dracula; 5.01 field-office), and that lowest value is the empty fields' own placeholder, the same as when live. Radio labels and Kit buttons read 5.64:1 and up.
+  While unpaired, the controls the pairing lock shuts (Settings' host field and robot-turn radios, the Kit's actions) are not dimmed: they keep their text colour and show they are off with a dashed edge (the robot-turn labels too, so they do not look like the live Theme pills), the dimmed radio dot and the not-allowed cursor. Their text reads at least 3.09:1 in every theme (dracula; 5.01 field-office), and that lowest value is the empty fields' own placeholder, the same as when live. Radio labels and Kit buttons read 5.64:1 and up.
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
   Before login the badge reads "listening"; the port is only in its
   tooltip ("Relay listening on port N"), not in the visible text

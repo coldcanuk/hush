@@ -93,7 +93,7 @@
        not-allowed cursor show they are off (!important: the host field has an
        inline border and field-office restyles the Kit buttons). */
     button.pair-locked:disabled, input.pair-locked:disabled:not([type="checkbox"]):not([type="radio"]):not([readonly]) { opacity: 1; border-style: dashed !important; }
-    label:has(> input[type="radio"].pair-locked:disabled) { opacity: 1; }
+    label:has(> input[type="radio"].pair-locked:disabled) { opacity: 1; border-style: dashed !important; cursor: not-allowed; }
     a { color: var(--accent); }
     header {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;

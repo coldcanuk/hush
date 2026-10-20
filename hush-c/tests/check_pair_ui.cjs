@@ -273,6 +273,18 @@ async function main() {
   console.log('pair K0 disabled dim: ' + JSON.stringify(dim));
   for (const d of dim) if (!(d.sl <= 0.6) || !(d.fi <= 0.6) || !(d.dot <= 0.6)) failures.push(`K0 ${d.t} disabled switch/profile field/radio dot not dimmed (want opacity <= 0.6): slider ${d.sl}, prof-first ${d.fi}, radio dot ${d.dot}`);
   for (const d of dim) if (d.hb !== 'dashed' || d.kb !== 'dashed') failures.push(`K0 ${d.t} pair-locked host field / Kit Invite edge not dashed: ${d.hb}, ${d.kb}`);
+  // K0e (#368 Ops pre r4 f2): every one of the 11 pair-locked controls (a radio
+  // is its label) has a computed dashed top border of width > 0 in all 8 themes,
+  // so the robot-turn labels do not look like the live Theme pills.
+  const edge = await cdp.eval(`(() => { const out = []; const keep = document.documentElement.getAttribute('data-theme');
+    for (const t of ['dark', 'light', 'color-blind', 'dracula', 'desert', 'monochrome', 'christmas', 'field-office']) {
+      document.documentElement.setAttribute('data-theme', t);
+      for (const id of ['turn-host', 'approval-auto', 'approval-every', ...${JSON.stringify(KIT_LOCKED)}]) {
+        const c = document.getElementById(id); const el = c.type === 'radio' ? c.closest('label') : c; const cs = getComputedStyle(el);
+        out.push({ t, id, s: cs.borderTopStyle, w: parseFloat(cs.borderTopWidth), lk: c.classList.contains('pair-locked') && c.disabled }); } }
+    document.documentElement.setAttribute('data-theme', keep); return out; })()`);
+  console.log('pair K0e locked edges: ' + JSON.stringify(edge));
+  for (const e of edge) if (e.s !== 'dashed' || !(e.w > 0)) failures.push(`K0e ${e.t} pair-locked #${e.id} edge not dashed with width > 0: ${e.s} ${e.w}px`);
   // K2 (#368 Ops pre f2): the unpaired-locked text this branch dims (Settings'
   // host field, the robot-turn radio labels, the Kit's locked actions) still
   // reads >= 3:1 against what is behind it, in all 8 themes at 1440 and 390.
