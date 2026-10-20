@@ -271,7 +271,7 @@ async function main() {
       out.push({ t, sl, fi, dot, hb, kb }); }
     document.documentElement.setAttribute('data-theme', keep); return out; })()`);
   console.log('pair K0 disabled dim: ' + JSON.stringify(dim));
-  for (const d of dim) if (!(d.sl <= 0.6) || !(d.fi <= 0.6) || !(d.dot <= 0.6)) failures.push(`K0 ${d.t} disabled switch/profile field/radio dot not dimmed (want opacity <= 0.6): slider ${d.sl}, prof-first ${d.fi}, radio dot ${d.dot}`);
+  for (const d of dim) if (!(d.sl <= 0.6) || !(d.fi >= 0.6 && d.fi <= 0.6) || !(d.dot <= 0.6)) failures.push(`K0 ${d.t} disabled switch/profile field/radio dot: want slider <= 0.6, prof-first exactly 0.6 (K2b: field ink >= 3:1), radio dot <= 0.6; got slider ${d.sl}, prof-first ${d.fi}, radio dot ${d.dot}`);
   for (const d of dim) if (d.hb !== 'dashed' || d.kb !== 'dashed') failures.push(`K0 ${d.t} pair-locked host field / Kit Invite edge not dashed: ${d.hb}, ${d.kb}`);
   // K0e (#368 Ops pre r4 f2): every one of the 11 pair-locked controls (a radio
   // is its label) has a computed dashed top border of width > 0 in all 8 themes,
@@ -318,6 +318,38 @@ async function main() {
   console.log('pair K2 unpaired locked text min: ' + JSON.stringify(Object.values(k2min)));
   console.log('pair K2 all: ' + JSON.stringify(k2));
   for (const m of k2) if (m.r < 3) failures.push(`K2 unpaired locked text below 3:1: #${m.id} ${m.t}@${m.w} ${m.r}:1, want >= 3:1`);
+  // K2b (#368 Gauge pre r4 P2-2): the dimmed Profile fields (prof-first/last/
+  // email/org, opacity 0.6 while unpaired) keep their ink >= 3:1 in all
+  // 8 themes at 1440 and 390, measuring the field's text colour (its placeholder
+  // when it has one and is empty). The field is composited as one group: ink
+  // over its own background, then that group at its opacity over what is behind.
+  const k2b = [];
+  for (const w of [1440, 390]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: 900, deviceScaleFactor: 1, mobile: w < 600 });
+    await sleep(200);
+    k2b.push(...await cdp.eval(`(() => { const out = []; const keep = document.documentElement.getAttribute('data-theme');
+      const cx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+      const rgba = (s) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = 'rgba(0, 0, 0, 0)'; cx.fillStyle = s || 'transparent'; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
+      const over = (t, u, a) => [0, 1, 2].map((i) => t[i] * a + u[i] * (1 - a));
+      const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+      const lum = (c) => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+      const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+      for (const t of ['dark', 'light', 'color-blind', 'dracula', 'desert', 'monochrome', 'christmas', 'field-office']) {
+        document.documentElement.setAttribute('data-theme', t);
+        for (const id of ['prof-first', 'prof-last', 'prof-email', 'prof-org']) {
+          const el = document.getElementById(id); const chain = []; for (let n = el.parentElement; n && n.nodeType === 1; n = n.parentElement) chain.unshift(n);
+          let back = [255, 255, 255], pop = 1;
+          for (const n of chain) { const cs = getComputedStyle(n); pop *= parseFloat(cs.opacity); const b = rgba(cs.backgroundColor); if (b[3] > 0) back = over(b, back, b[3] * pop); }
+          const cs = getComputedStyle(el); const op = parseFloat(cs.opacity) * pop; const ob = rgba(cs.backgroundColor);
+          const ph = !el.value && el.placeholder; const c = rgba(ph ? getComputedStyle(el, '::placeholder').color : cs.color);
+          const gA = ob[3] + c[3] * (1 - ob[3]); const gTxt = gA > 0 ? [0, 1, 2].map((i) => (c[i] * c[3] + ob[i] * ob[3] * (1 - c[3])) / gA) : c;
+          const fg = over(gTxt, back, gA * op); const bg = over(ob, back, ob[3] * op);
+          out.push({ w: ${w}, t, id, ink: ph ? 'placeholder' : 'text', op: Math.round(op * 100) / 100, r: Math.round(ratio(fg, bg) * 100) / 100 }); } }
+      document.documentElement.setAttribute('data-theme', keep); return out; })()`));
+  }
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  console.log('pair K2b profile fields: ' + JSON.stringify(k2b));
+  for (const m of k2b) if (m.r < 3) failures.push(`K2b unpaired Profile field ${m.ink} below 3:1: #${m.id} ${m.t}@${m.w} ${m.r}:1 at opacity ${m.op}, want >= 3:1`);
   // K1 (#368 follow-up): every other route into these drawers stays shut while
   // unpaired: the quick bar's New robot slot, Inventory's Raise, a roster
   // edit (openAgentDrawer), Configure Providers, Invite, New channel, New project.

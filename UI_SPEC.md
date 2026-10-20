@@ -94,11 +94,11 @@ raise humans + robots that share channels."
   them, and Inventory's Raise too. The drawer openers themselves refuse
   while unpaired (New robot from the quick bar or a roster edit, Configure
   Providers, Invite, New channel, New project). A disabled switch (opacity
-  0.45), field, radio or checkbox and its label (0.55) is dimmed in every
+  0.45), field (0.6), radio or checkbox (0.55) is dimmed in every
   theme, like a disabled button; a disabled field that is also read-only
   (Major's standing orders, a locked robot's name and prompt) stays at full
   opacity.
-  While unpaired, the controls the pairing lock shuts (Settings' host field and robot-turn radios, the Kit's actions) are not dimmed: they keep their text colour and show they are off with a dashed edge (the robot-turn labels too, so they do not look like the live Theme pills), the dimmed radio dot and the not-allowed cursor. Their text reads at least 3.09:1 in every theme (dracula; 5.01 field-office), and that lowest value is the empty fields' own placeholder, the same as when live. Radio labels and Kit buttons read 5.64:1 and up.
+  While unpaired, the controls the pairing lock shuts (Settings' host field and robot-turn radios, the Kit's actions) are not dimmed: they keep their text colour and show they are off with a dashed edge (the robot-turn labels too, so they do not look like the live Theme pills), the dimmed radio dot and the not-allowed cursor. Their text reads at least 3.09:1 in every theme (dracula; 5.01 field-office), and that lowest value is the empty fields' own placeholder, the same as when live. Radio labels and Kit buttons read 5.64:1 and up. Profile's name, email and organization fields stay dimmed (opacity 0.6) at >= 3.29:1 (field-office; 4.38 light, 5.53+ elsewhere; their text colour, as they are empty while unpaired).
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
   Before login the badge reads "listening"; the port is only in its
   tooltip ("Relay listening on port N"), not in the visible text
