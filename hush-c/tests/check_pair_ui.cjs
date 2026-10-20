@@ -365,7 +365,9 @@ async function main() {
   if (r1.pair) failures.push('R1 pair card still shows after pairing');
   const l1 = await cdp.eval(`(() => ({ off: ['profile-save', 'profile-logout', 'profile-copy', 'turn-on', 'vibe-rotate', ...${JSON.stringify(KIT_LOCKED)}].filter((id) => document.getElementById(id).disabled),
     hint: ['profile-pair-hint', 'settings-pair-hint', 'kit-pair-hint'].filter((id) => !document.getElementById(id).hidden),
-    dim: [parseFloat(getComputedStyle(document.querySelector('#turn-on + .slider')).opacity), parseFloat(getComputedStyle(document.getElementById('turn-host')).opacity), parseFloat(getComputedStyle(document.getElementById('approval-auto').closest('label')).opacity)] }))()`);
+    dim: [parseFloat(getComputedStyle(document.querySelector('#turn-on + .slider')).opacity), parseFloat(getComputedStyle(document.getElementById('turn-host')).opacity), parseFloat(getComputedStyle(document.getElementById('approval-auto').closest('label')).opacity)],
+    ro: (() => { const p = document.getElementById('agent-prompt'); const d = p.disabled, r = p.readOnly; p.disabled = true; p.readOnly = true; const o = parseFloat(getComputedStyle(p).opacity); p.disabled = d; p.readOnly = r; return o; })() }))()`);
+  if (l1.ro < 1) failures.push('L1 #agent-prompt set disabled+readOnly (as for Major standing orders) is dimmed: opacity ' + l1.ro + ', want 1');
   if (l1.dim.some((o) => o < 1)) failures.push('L1 paired switch/field still dimmed: ' + JSON.stringify(l1.dim));
   console.log('pair L1 paired: ' + JSON.stringify(l1));
   if (l1.off.length || l1.hint.length) failures.push('L1 paired window still locks Profile/Settings: ' + JSON.stringify(l1));

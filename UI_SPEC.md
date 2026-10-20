@@ -96,6 +96,7 @@ raise humans + robots that share channels."
   Providers, Invite, New channel, New project). A disabled switch (opacity
   0.45), field, radio or checkbox and its label (0.55) is dimmed in every
   theme, like a disabled button.
+  Dimmed labels then read below 4.5:1 (about 2.5-4.5:1 by theme, measured 2.52 field-office to 4.49 dark); that is the WCAG 1.4.3 exemption for inactive (disabled) controls, the same as the pre-walk pass box.
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
   Before login the badge reads "listening"; the port is only in its
   tooltip ("Relay listening on port N"), not in the visible text

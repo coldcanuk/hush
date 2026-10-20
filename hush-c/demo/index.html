@@ -82,7 +82,9 @@
     /* #368 follow-up (Ops): a disabled switch or field looks off in every
        theme, not only buttons. Opacity, so each theme keeps its own tokens. */
     .switch input:disabled + .slider { opacity: 0.45; cursor: not-allowed; }
-    input:disabled:not([type="checkbox"]):not([type="radio"]), textarea:disabled, select:disabled { opacity: 0.55; cursor: not-allowed; }
+    /* Read-only display fields (Major's standing orders, a locked robot's
+       name and prompt) are disabled + readonly and stay at full contrast. */
+    input:disabled:not([type="checkbox"]):not([type="radio"]):not([readonly]), textarea:disabled:not([readonly]), select:disabled { opacity: 0.55; cursor: not-allowed; }
     input[type="radio"]:disabled, input[type="checkbox"]:disabled:not(.switch input) { opacity: 0.55; cursor: not-allowed; }
     label:has(> input[type="radio"]:disabled), label:has(> input[type="checkbox"]:disabled:not(.switch input)) { opacity: 0.55; cursor: not-allowed; }
     a { color: var(--accent); }
