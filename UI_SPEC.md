@@ -95,8 +95,10 @@ raise humans + robots that share channels."
   while unpaired (New robot from the quick bar or a roster edit, Configure
   Providers, Invite, New channel, New project). A disabled switch (opacity
   0.45), field, radio or checkbox and its label (0.55) is dimmed in every
-  theme, like a disabled button.
-  Dimmed labels then read below 4.5:1 (about 2.5-4.5:1 by theme, measured 2.52 field-office to 4.49 dark); that is the WCAG 1.4.3 exemption for inactive (disabled) controls, the same as the pre-walk pass box.
+  theme, like a disabled button; a disabled field that is also read-only
+  (Major's standing orders, a locked robot's name and prompt) stays at full
+  opacity.
+  While unpaired, the controls the pairing lock shuts (Settings' host field and robot-turn radios, the Kit's actions) are not dimmed: they keep their text colour and show they are off with a dashed edge, the dimmed radio dot and the not-allowed cursor. Their text reads at least 3.09:1 in every theme (dracula; 5.01 field-office), and that lowest value is the empty fields' own placeholder, the same as when live. Radio labels and Kit buttons read 5.64:1 and up.
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
   Before login the badge reads "listening"; the port is only in its
   tooltip ("Relay listening on port N"), not in the visible text

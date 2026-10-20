@@ -242,8 +242,9 @@ async function main() {
   // K0 (#368 Ops follow-up): the Kit menu's hive actions (Invite, Add Channel,
   // Configure Provider, New Robot, New Project) and the Boards drawer's New
   // channel are off while unpaired, the Kit says "Pair this window first", key 3
-  // opens no New channel drawer, and a disabled switch or field is dimmed
-  // (opacity <= 0.6) in all 8 themes.
+  // opens no New channel drawer, and a disabled switch, profile field and radio
+  // dot are dimmed (opacity <= 0.6) while the pair-locked host field and Kit
+  // actions keep their ink with a dashed edge (K2 measures it), in all 8 themes.
   const KIT_LOCKED = ['invite-human', 'add-chan', 'nav-new-channel', 'providers-btn', 'raise-agent', 'add-proj', 'new-proj', 'inv-raise'];
   await cdp.eval("document.getElementById('rail-toggle').click()"); await sleep(400);
   const k0 = await cdp.eval(`(() => { const h = document.getElementById('kit-pair-hint');
@@ -263,12 +264,48 @@ async function main() {
     for (const t of ['dark', 'light', 'color-blind', 'dracula', 'desert', 'monochrome', 'christmas', 'field-office']) {
       document.documentElement.setAttribute('data-theme', t);
       const sl = parseFloat(getComputedStyle(document.querySelector('#turn-on + .slider')).opacity);
-      const fi = parseFloat(getComputedStyle(document.getElementById('turn-host')).opacity);
-      const lb = parseFloat(getComputedStyle(document.getElementById('approval-auto').closest('label')).opacity);
-      out.push({ t, sl, fi, lb }); }
+      const fi = parseFloat(getComputedStyle(document.getElementById('prof-first')).opacity);
+      const dot = parseFloat(getComputedStyle(document.getElementById('approval-auto')).opacity);
+      const hb = getComputedStyle(document.getElementById('turn-host')).borderTopStyle;
+      const kb = getComputedStyle(document.getElementById('invite-human')).borderTopStyle;
+      out.push({ t, sl, fi, dot, hb, kb }); }
     document.documentElement.setAttribute('data-theme', keep); return out; })()`);
   console.log('pair K0 disabled dim: ' + JSON.stringify(dim));
-  for (const d of dim) if (!(d.sl <= 0.6) || !(d.fi <= 0.6) || !(d.lb <= 0.6)) failures.push(`K0 ${d.t} disabled switch/field/radio label not dimmed: slider ${d.sl}, field ${d.fi}, label ${d.lb}`);
+  for (const d of dim) if (!(d.sl <= 0.6) || !(d.fi <= 0.6) || !(d.dot <= 0.6)) failures.push(`K0 ${d.t} disabled switch/profile field/radio dot not dimmed (want opacity <= 0.6): slider ${d.sl}, prof-first ${d.fi}, radio dot ${d.dot}`);
+  for (const d of dim) if (d.hb !== 'dashed' || d.kb !== 'dashed') failures.push(`K0 ${d.t} pair-locked host field / Kit Invite edge not dashed: ${d.hb}, ${d.kb}`);
+  // K2 (#368 Ops pre f2): the unpaired-locked text this branch dims (Settings'
+  // host field, the robot-turn radio labels, the Kit's locked actions) still
+  // reads >= 3:1 against what is behind it, in all 8 themes at 1440 and 390.
+  // Opacity is composited up the tree; a field's empty value reads its placeholder.
+  const K2_IDS = ['turn-host', 'approval-auto', 'approval-every', ...KIT_LOCKED];
+  const k2 = [];
+  for (const w of [1440, 390]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: 900, deviceScaleFactor: 1, mobile: w < 600 });
+    await sleep(200);
+    k2.push(...await cdp.eval(`(() => { const out = []; const keep = document.documentElement.getAttribute('data-theme');
+      const cx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+      const rgba = (s) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = 'rgba(0, 0, 0, 0)'; cx.fillStyle = s || 'transparent'; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
+      const over = (t, u, a) => [0, 1, 2].map((i) => t[i] * a + u[i] * (1 - a));
+      const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+      const lum = (c) => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+      const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+      for (const t of ['dark', 'light', 'color-blind', 'dracula', 'desert', 'monochrome', 'christmas', 'field-office']) {
+        document.documentElement.setAttribute('data-theme', t);
+        for (const id of ${JSON.stringify(K2_IDS)}) {
+          const ctl = document.getElementById(id); const el = ctl.type === 'radio' ? ctl.closest('label') : ctl;
+          const chain = []; for (let n = el; n && n.nodeType === 1; n = n.parentElement) chain.unshift(n);
+          let bg = [255, 255, 255], op = 1, fg = null;
+          for (const n of chain) { const cs = getComputedStyle(n); op *= parseFloat(cs.opacity); const b = rgba(cs.backgroundColor); if (b[3] > 0) bg = over(b, bg, b[3] * op); }
+          const cs = getComputedStyle(el); const c = rgba(el.tagName === 'INPUT' && !el.value ? getComputedStyle(el, '::placeholder').color : cs.color);
+          fg = over(c, bg, c[3] * op);
+          out.push({ w: ${w}, t, id, r: Math.round(ratio(fg, bg) * 100) / 100 }); } }
+      document.documentElement.setAttribute('data-theme', keep); return out; })()`));
+  }
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  const k2min = {}; for (const m of k2) { const k = m.t + '@' + m.w; if (!k2min[k] || m.r < k2min[k].r) k2min[k] = m; }
+  console.log('pair K2 unpaired locked text min: ' + JSON.stringify(Object.values(k2min)));
+  console.log('pair K2 all: ' + JSON.stringify(k2));
+  for (const m of k2) if (m.r < 3) failures.push(`K2 unpaired locked text below 3:1: #${m.id} ${m.t}@${m.w} ${m.r}:1, want >= 3:1`);
   // K1 (#368 follow-up): every other route into these drawers stays shut while
   // unpaired: the quick bar's New robot slot, Inventory's Raise, a roster
   // edit (openAgentDrawer), Configure Providers, Invite, New channel, New project.
@@ -366,8 +403,8 @@ async function main() {
   const l1 = await cdp.eval(`(() => ({ off: ['profile-save', 'profile-logout', 'profile-copy', 'turn-on', 'vibe-rotate', ...${JSON.stringify(KIT_LOCKED)}].filter((id) => document.getElementById(id).disabled),
     hint: ['profile-pair-hint', 'settings-pair-hint', 'kit-pair-hint'].filter((id) => !document.getElementById(id).hidden),
     dim: [parseFloat(getComputedStyle(document.querySelector('#turn-on + .slider')).opacity), parseFloat(getComputedStyle(document.getElementById('turn-host')).opacity), parseFloat(getComputedStyle(document.getElementById('approval-auto').closest('label')).opacity)],
-    ro: (() => { const p = document.getElementById('agent-prompt'); const d = p.disabled, r = p.readOnly; p.disabled = true; p.readOnly = true; const o = parseFloat(getComputedStyle(p).opacity); p.disabled = d; p.readOnly = r; return o; })() }))()`);
-  if (l1.ro < 1) failures.push('L1 #agent-prompt set disabled+readOnly (as for Major standing orders) is dimmed: opacity ' + l1.ro + ', want 1');
+    ro: ['agent-prompt', 'agent-name'].map((id) => { const p = document.getElementById(id); const d = p.disabled, r = p.readOnly; p.disabled = true; p.readOnly = true; const o = parseFloat(getComputedStyle(p).opacity); p.disabled = d; p.readOnly = r; return o; }) }))()`);
+  ['agent-prompt', 'agent-name'].forEach((id, i) => { if (l1.ro[i] < 1) failures.push('L1 #' + id + ' set disabled+readOnly (as for Major standing orders) is dimmed: opacity ' + l1.ro[i] + ', want 1'); });
   if (l1.dim.some((o) => o < 1)) failures.push('L1 paired switch/field still dimmed: ' + JSON.stringify(l1.dim));
   console.log('pair L1 paired: ' + JSON.stringify(l1));
   if (l1.off.length || l1.hint.length) failures.push('L1 paired window still locks Profile/Settings: ' + JSON.stringify(l1));
