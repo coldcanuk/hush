@@ -2,7 +2,9 @@
  * its argv carries dontAsk with Bash, MCPTool, WebFetch, WebSearch and Edit
  * denied, and no --always-approve. It starts only after Grok's readiness
  * probes pass; a stub reporting an old version gets probed and never runs a
- * prompt. A stub grok under a scratch TMPDIR answers; no real CLI runs. */
+ * prompt. A stub grok under a scratch TMPDIR answers; no real CLI runs.
+ * The jailed stub writes only its job cwd, HOME and TMPDIR (#375 N2), so it
+ * logs into the job cwd, $HUSH_CONFIG_DIR/agent-cwd. */
 
 #define _XOPEN_SOURCE 700
 
@@ -56,7 +58,8 @@ static void make_dir(cn_t *t, char *out, size_t outsz, const char *rel)
 }
 
 /* <root>/bin/grok: probes log $1 and answer with version; a prompt run
- * writes its argv, one entry per line, and prints a completion. */
+ * writes its argv, one entry per line, and prints a completion. Both logs
+ * land in the job cwd. */
 static void stub(cn_t *t, const char *version)
 {
     char path[CN_PATH_MAX + 32] = {0};
@@ -76,7 +79,7 @@ static void stub(cn_t *t, const char *version)
     expect(t, chmod(path, S_IRWXU) == 0, "stub mode");
 }
 
-/* <TMPDIR>/hush-canvas-gate-XXXXXX/{user/.grok/auth.json, home, bin}. */
+/* <TMPDIR>/hush-canvas-gate-XXXXXX/{user/.grok/auth.json, home, config, bin}. */
 static int fixture(cn_t *t)
 {
     const char *tmp = getenv("TMPDIR");
@@ -95,9 +98,11 @@ static int fixture(cn_t *t)
     expect(t, f != NULL && fputs("{\"ok\":true}\n", f) >= 0 && fclose(f) == 0, "auth.json");
     make_dir(t, p, sizeof(p), "home");
     expect(t, setenv("HUSH_HOME", p, 1) == 0, "HUSH_HOME");
+    make_dir(t, p, sizeof(p), "config");
+    expect(t, setenv("HUSH_CONFIG_DIR", p, 1) == 0, "HUSH_CONFIG_DIR");
     make_dir(t, p, sizeof(p), "bin");
-    snprintf(t->argv_file, sizeof(t->argv_file), "%s/bin/argv", t->root);
-    snprintf(t->probe_file, sizeof(t->probe_file), "%s/bin/probes", t->root);
+    snprintf(t->argv_file, sizeof(t->argv_file), "%s/config/agent-cwd/argv", t->root);
+    snprintf(t->probe_file, sizeof(t->probe_file), "%s/config/agent-cwd/probes", t->root);
     snprintf(p, sizeof(p), "%s/bin:/usr/bin:/bin", t->root);
     expect(t, setenv("PATH", p, 1) == 0, "PATH");
     return 1;
