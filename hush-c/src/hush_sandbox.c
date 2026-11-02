@@ -122,7 +122,11 @@ static int hush_sandbox_is_grok(const char *file)
 /* 1 when entry's name is one a grok child must never see. */
 static int hush_sandbox_grok_denied(const char *entry)
 {
-    size_t n = (size_t)(strchr(entry, '=') - entry);
+    const char *eq = strchr(entry, '=');
+
+    if (eq == NULL)
+        return 0;
+    size_t n = (size_t)(eq - entry);
 
     for (size_t i = 0; i < HUSH_SANDBOX_COUNT(HUSH_SANDBOX_GROK_DENY_NAMES); ++i) {
         const char *name = HUSH_SANDBOX_GROK_DENY_NAMES[i];
@@ -162,6 +166,20 @@ void hush_sandbox_scrub_env_for(const char *file)
     }
     g_sandbox_kept[n] = NULL;
     environ = g_sandbox_kept;
+}
+
+void hush_sandbox_drop_grok_env_for(const char *file)
+{
+    char **out = environ;
+
+    if (file == NULL || environ == NULL || !hush_sandbox_is_grok(file))
+        return;
+    /* Compacts environ in place: out never passes the read position. */
+    for (char **e = environ; *e != NULL; ++e) {
+        if (!hush_sandbox_grok_denied(*e))
+            *out++ = *e;
+    }
+    *out = NULL;
 }
 
 void hush_sandbox_scrub_env(void)

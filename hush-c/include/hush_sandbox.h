@@ -84,6 +84,11 @@ int hush_sandbox_env_allowed_for(const char *entry, const char *file);
 /* Replaces environ with its allowlisted entries (pointers, no copies). */
 void hush_sandbox_scrub_env(void);
 
+/* When file is grok, removes XAI_API_KEY and every GROK_* entry from environ
+ * and keeps the rest, for an unjailed grok child such as `grok login --oauth`
+ * (#375 N1). No-op for any other file. */
+void hush_sandbox_drop_grok_env_for(const char *file);
+
 /* Like hush_sandbox_scrub_env, filtered for the binary file about to run. */
 void hush_sandbox_scrub_env_for(const char *file);
 

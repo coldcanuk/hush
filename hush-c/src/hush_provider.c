@@ -18,6 +18,7 @@
 #include "hush_provider.h"
 #include "hush_relay.h"
 #include "hush_roster.h"
+#include "hush_sandbox.h"
 
 enum {
     HUSH_PROVIDER_SCAN_BODY_MAX = 65536,
@@ -171,7 +172,9 @@ static int hush_provider_login_argv(char **argv, size_t argvsz, const char *id);
 static void hush_provider_fill_login_cmd(char *out, size_t outsz, char **argv);
 /* Adapter: execlp xterm -hold -e cmd. Returns only when exec fails. */
 static void hush_provider_exec_xterm(const char *cmd);
-/* Opens a held xterm when DISPLAY is set, else execvp of argv. Does not return. */
+/* Drops grok keys from the env (hush_sandbox_drop_grok_env_for), then runs
+ * argv in HUSH_PROVIDER_TERM, a held xterm when DISPLAY is set, else directly.
+ * Does not return. */
 static void hush_provider_exec_login(char **argv);
 /* fork + exec login. Parent returns immediately. */
 static hush_status_t hush_provider_spawn_login(char **argv);
@@ -1313,6 +1316,8 @@ static void hush_provider_exec_login(char **argv)
     assert(argv != NULL);
     assert(argv[0] != NULL);
     (void)signal(SIGCHLD, SIG_DFL);
+    /* No implicit key into an OAuth login, whichever terminal runs it. */
+    hush_sandbox_drop_grok_env_for(argv[0]);
     hush_provider_fill_login_cmd(cmd, sizeof(cmd), argv);
     term = getenv("HUSH_PROVIDER_TERM");
     if (term != NULL && term[0] != '\0') {
