@@ -8,6 +8,20 @@ the top-level `VERSION` file.
 
 ### Changed
 
+- M1 channels only: the channel log now shows every reply in place, oldest first, so a robot's answer
+  is visible in the channel with no click (G20). Before, the log listed only top-level notes and
+  replies were reachable only through the thread pane. A missing-runtime sentence still shows once, on
+  the note that asked. The thread UI is gone: the thread pane and its composer, the "Thread · N"
+  buttons, the milestone/desk form, desk archive, the 1:1 robot thread from a roster row (the row now
+  opens that robot's settings and loadout), and every thread word in labels, titles, placeholders and
+  help text. The owner answers loop, approval and team asks with the Yes / No stamps on the ask in the
+  channel. Chaperon asks now end "Reply Yes or No." (they said "… in this thread."). The relay is
+  unchanged underneath: replies still carry `reply_to`, answers still match by root, and
+  `/api/thread` and `/api/reply` stay (the page no longer calls `/api/thread`; `/api/reply` still feeds
+  the live preview on the channel note). Pinned by `tests/check_ch0_ui.cjs` (no thread UI in 9 states x
+  8 themes x 1440 and 390, and a stub-runtime robot reply, approved with the channel Yes stamp, visible
+  inline with no click) and the updated `tests/check_main_log_provider_failure.mjs`.
+
 - Canvas: the code view is visible again in field-office. The editing textarea had an opaque paper slip
   (`--surface-2`) above the highlight layer, so code painted blank there (Ops #364 follow-up, from #282).
   It is now transparent in every theme, with a `--fg` caret and a translucent accent selection. Highlight

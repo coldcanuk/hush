@@ -1349,7 +1349,6 @@ async function main() {
       const ringRuns = {};
       const mouseRuns = {};
       const threadRuns = {};
-      const threadMouse = {};
       const keepTheme = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
       for (const th of THEMES) {
         await cdp.eval(`applyTheme(${JSON.stringify(th)})`);
@@ -1385,34 +1384,13 @@ async function main() {
           mouseRuns[th] = { before, after, clicks };
         }
         await realEsc();
-        // #241 r7 (Ops #281): the thread composer #thread-msg, reached with
-        // real Tab keys from the thread's Close button, shows the same ring.
-        await cdp.eval(`(() => { const ev = (lastEvents || []).find((e) => !e.reply_to);
-          openThreadPane(ev ? ev.id : 'r7-ring-probe'); document.getElementById('thread-close').focus(); })()`);
-        await sleep(200);
-        let tm = null;
-        const tpath = [];
-        for (let i = 0; i < 12 && !tm; i++) {
-          await tabKey(false);
-          const s = await cdp.eval(ringState);
-          tpath.push(s.id);
-          if (s.id === 'thread-msg') tm = s;
-        }
-        threadRuns[th] = { tm, tpath };
-        if (th === 'field-office' || th === 'dark') {
-          await cdp.eval(`document.getElementById('thread-close').focus()`);
-          await realClick('#thread-msg');
-          const c = await cdp.eval(ringState);
-          c.theme = await cdp.eval(`document.documentElement.getAttribute('data-theme')`);
-          threadMouse[th] = c;
-        }
-        await cdp.eval(`closeThreadPane()`);
-        await sleep(150);
+        // M1 channels only: the #241 r7 thread composer ring is retired
+        // with the composer; nothing of the thread pane may exist.
+        threadRuns[th] = await cdp.eval(`({ pane: !!document.getElementById('thread-pane'), msg: !!document.getElementById('thread-msg'), open: typeof openThreadPane })`);
       }
       await cdp.eval(`applyTheme(${JSON.stringify(keepTheme || 'field-office')})`);
       console.log('settings focus rings: ' + JSON.stringify(ringRuns));
-      console.log('thread composer rings: ' + JSON.stringify(threadRuns));
-      console.log('thread composer mouse (text field: browsers show focus-visible on any focus): ' + JSON.stringify(threadMouse));
+      console.log('M1 thread composer gone: ' + JSON.stringify(threadRuns));
       const table = {};
       for (const th of THEMES) {
         const { seen, order } = ringRuns[th];
@@ -1439,12 +1417,9 @@ async function main() {
           check(!!s && s.othersStyles.every((x) => x === 'none'),
             `#241 r6 no other switch track is ringed while ${id} has focus (${th}): ${JSON.stringify(s)}`);
         }
-        const t = threadRuns[th].tm;
-        if (t && t.contrast) table[th]['thread-msg'] = t.contrast.ratio;
-        check(!!t && t.fv && t.ring && t.ring.style !== 'none' && t.ring.width >= 2 && t.ring.w > 0 && t.ring.h > 0 && t.ring.offset >= 0,
-          `#241 r7 real Tab to #thread-msg shows a visible ring outside the field (${th}): ${JSON.stringify(threadRuns[th])}`);
-        check(!!t && t.contrast && t.contrast.images.length === 0 && !!t.contrast.from && t.contrast.ratio >= 3,
-          `#241 r7 #thread-msg ring contrast vs its background is at least 3:1 (${th}): ${JSON.stringify(threadRuns[th])}`);
+        const t = threadRuns[th];
+        check(!!t && !t.pane && !t.msg && t.open === 'undefined',
+          `M1 no thread pane, composer or opener exists (${th}): ${JSON.stringify(t)}`);
         if (seen.theme) check(seen.theme.value === th, `#241 r7 the theme Tab stop is the checked radio (${th}): ${JSON.stringify(seen.theme)}`);
       }
       console.log('settings ring contrast: ' + JSON.stringify(table));

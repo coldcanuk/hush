@@ -1,5 +1,7 @@
-// Main-log bar: a missing-runtime reply is visible on the root card in
-// #stream. Opening #thread-pane is not required. No model reply is invented.
+// Main-log bar: a missing-runtime reply is visible once, on the asking
+// card in #stream. M1 channels only: every other reply paints flat in the
+// channel log as its own note; there is no thread pane. No model reply is
+// invented.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -18,7 +20,7 @@ const script = html.slice(start + "<script>".length, end);
 
 const FAIL = "No selected provider is ready for Major. Open Configure Providers to check its harness login or API model and credentials.";
 const ON_DECK = "At ease. I am on deck. Standing orders are noted. — Major";
-const NORMAL = "A normal reply that must stay in the thread.";
+const NORMAL = "A normal reply that stays in the channel.";
 
 function fail(msg) {
   console.error("main-log failure check: " + msg);
@@ -303,9 +305,7 @@ try {
 }
 
 const stream = document.getElementById("stream");
-const pane = document.getElementById("thread-pane");
 const streamText = stream.textContent || "";
-const paneText = pane.textContent || "";
 
 function walk(el, hit) {
   if (!el || el.nodeType === 3) return;
@@ -323,14 +323,14 @@ if (lines[0].textContent !== FAIL)
   fail("main-log failure text is not the relay sentence");
 if (lines[0].getAttribute("role") !== "status")
   fail("main-log failure is not a status line");
-if (pane.classList.contains("show"))
-  fail("render opened #thread-pane");
-if (paneText.indexOf(FAIL) >= 0)
-  fail("failure was painted in the thread pane instead of only the main log requirement");
-if (streamText.indexOf(ON_DECK) >= 0)
-  fail("main log invented the on-deck line as a reply");
-if (streamText.indexOf(NORMAL) >= 0)
-  fail("main log copied a normal thread reply onto the card");
+if (html.indexOf('id="thread-pane"') >= 0 || typeof sandbox.openThreadPane !== "undefined")
+  fail("M1: the thread pane or its opener still exists");
+if (streamText.split(FAIL).length !== 2)
+  fail("the failure sentence must paint exactly once in #stream (on the asking card)");
+if (streamText.split(ON_DECK).length !== 2)
+  fail("M1: the on-deck reply must paint once, flat in the channel log");
+if (streamText.split(NORMAL).length !== 2)
+  fail("M1: a normal reply must paint once, flat in the channel log");
 if (html.indexOf('class="log-failure"') < 0 && html.indexOf("line.className = \"log-failure\"") < 0)
   fail("demo source lost the main-log failure class");
 if (/\.log-failure\s*\{[^}]*display\s*:\s*none/.test(html))
@@ -430,16 +430,9 @@ if ((cards.normal.textContent || "").indexOf(FAIL) >= 0)
 if (failedAcks.some((a) => /\bis emoji\b/i.test(String(a.title || ""))))
   fail("failure card title still says is emoji");
 
-/* Open thread. The ask card is the root note. A failure outcome must
- * not show thinking, reacting, or an "is emoji" title. A thread with
- * no failure sentence still may. The on-deck line stays its own note. */
-if (typeof sandbox.openThreadPane !== "function")
-  fail("openThreadPane is not available");
-const paneEl = document.getElementById("thread-pane");
-const threadBox = document.getElementById("thread-stream");
-function threadNotes() {
-  return cardsOf(threadBox);
-}
+/* M1 flat log: the on-deck line and the normal reply are their own
+ * notes, never copied onto an asking card; the normal reply is not
+ * labeled a model reply. */
 function noteBody(note, text) {
   const hits = [];
   (function walk(el) {
@@ -452,74 +445,27 @@ function noteBody(note, text) {
   })(note);
   return hits;
 }
-
-try {
-  sandbox.openThreadPane(root);
-} catch (err) {
-  console.error(err && err.stack ? err.stack : err);
-  fail("openThreadPane threw for the failure thread");
-}
-if (!paneEl.classList.contains("show"))
-  fail("failure thread pane did not open");
-const failNotes = threadNotes();
-const failAsk = failNotes.find((n) => (n.textContent || "").indexOf("what time is it") >= 0);
-if (!failAsk)
-  fail("thread ask card is missing");
-if (cardShowsInProgress(failAsk))
-  fail("thread ask card shows thinking, reacting, or an in-progress title while the failure sentence is the outcome");
-const failAskAcks = [];
-progressAcks(failAsk, failAskAcks);
-if (!failAskAcks.length)
-  fail("thread ask card lost its robot ack");
-if (failAskAcks.some((a) => ackSaysInProgress(a) || inProgressText(a.textContent)))
-  fail("thread ask ack class, title, or text is still in progress");
-if (failAskAcks.some((a) => /\bis emoji\b/i.test(String(a.title || ""))))
-  fail("thread ask title still says is emoji");
-const failThumb = failAskAcks.some((a) =>
-  String(a.textContent || "").indexOf("\u{1F44D}") >= 0 ||
-  String(a.innerHTML || "").indexOf("\u{1F44D}") >= 0);
-if (!failThumb)
-  fail("emoji thumb was removed from the thread ask card");
-if ((failAsk.textContent || "").indexOf(ON_DECK) >= 0)
-  fail("on-deck line was copied onto the thread ask card");
-if ((failAsk.textContent || "").indexOf(FAIL) >= 0)
-  fail("failure sentence was copied onto the thread ask card");
-const deckNote = failNotes.find((n) => n !== failAsk && (n.textContent || "").indexOf(ON_DECK) >= 0);
-if (!deckNote)
-  fail("on-deck line is not its own thread note");
+const flat = cardsOf(document.getElementById("stream"));
+const deckNote = flat.find((n) => (n.textContent || "").indexOf(ON_DECK) >= 0);
+if (!deckNote || deckNote === cards.failed || deckNote === cards.normal)
+  fail("on-deck line is not its own channel note");
 if (/\bmodel\b/i.test(String(deckNote.className || "")))
   fail("on-deck note is labeled as a model reply");
 if (!noteBody(deckNote, ON_DECK).length)
   fail("on-deck note text is not the canned line");
-const failNote = failNotes.find((n) => (n.textContent || "").indexOf(FAIL) >= 0);
-if (!failNote)
-  fail("open thread dropped the failure sentence");
-if (!noteBody(failNote, FAIL).length)
-  fail("thread failure sentence wording changed");
-const think = document.getElementById("thread-think");
-const send = document.getElementById("thread-send");
-if (inProgressText(think.textContent) || inProgressText(send.title) || ackSaysInProgress(send))
-  fail("thread think chip or send title marks the robot in progress on a provider failure");
-if ((document.getElementById("stream").textContent || "").indexOf(FAIL) < 0)
-  fail("main log lost the red failure sentence after the thread opened");
-if ((document.getElementById("stream").textContent || "").indexOf(ON_DECK) >= 0)
-  fail("main log painted the on-deck line as a reply");
-
-try {
-  sandbox.openThreadPane(other);
-} catch (err) {
-  console.error(err && err.stack ? err.stack : err);
-  fail("openThreadPane threw for the normal thread");
-}
-const normAsk = threadNotes().find((n) => (n.textContent || "").indexOf("hello") >= 0);
-if (!normAsk)
-  fail("normal thread ask card is missing");
-if ((normAsk.textContent || "").indexOf("is reacting") < 0)
-  fail("a thread with no failure sentence did not show reacting");
-if ((normAsk.textContent || "").indexOf(FAIL) >= 0)
-  fail("normal thread ask picked up the failure sentence");
-if ((document.getElementById("thread-think").textContent || "").indexOf("is thinking") < 0)
-  fail("a thread with no failure sentence lost its thinking chip");
+const normalNote = flat.find((n) => (n.textContent || "").indexOf(NORMAL) >= 0);
+if (!normalNote || normalNote === cards.normal)
+  fail("normal reply is not its own channel note");
+if (/\breply\b/.test(String(normalNote.className || "")))
+  fail("M1: a reply note must not carry a reply class");
+if (flat.some((n) => n !== cards.failed && (n.textContent || "").indexOf(FAIL) >= 0))
+  fail("failure reply painted as its own note as well as on the asking card");
+const order = flat.map((n) => (n.textContent || "").indexOf("what time is it") >= 0 ? "ask" :
+  (n.textContent || "").indexOf(ON_DECK) >= 0 ? "deck" :
+  (n.textContent || "").indexOf("hello") >= 0 ? "hello" :
+  (n.textContent || "").indexOf(NORMAL) >= 0 ? "normal" : "?");
+if (order.join(",") !== "ask,deck,hello,normal")
+  fail("M1: channel log is not flat in event order: " + order.join(","));
 
 /* Roster and status feed drop "is thinking" only for the failed job.
    #241 B2: feed copy is plain English ("<name> is thinking"), not THINKING. */
@@ -546,79 +492,11 @@ walk(document.getElementById("stream"), still);
 if (still.length !== 1 || still[0].textContent !== FAIL)
   fail("main-log failure wording changed");
 
-console.log("main-log failure: #stream shows the provider sentence without the thread pane");
+console.log("main-log failure: #stream shows the provider sentence once, on the asking card");
 console.log("main-log failure: thinking and reacting marks are absent on the failure card");
 console.log("main-log failure: a card with no failure sentence still shows thinking, then reacting");
-console.log("thread ask: failure outcome has no thinking, reacting, or is-emoji title; the thumb stays");
-console.log("thread ask: a thread with no failure sentence still shows reacting");
+console.log("M1 flat log: replies paint once as their own notes in event order; no thread pane");
 console.log("on-deck line stays its own note and is not labeled a model reply");
 
-/* The thread-send finally used to repaint thinkingFor() with no filter,
- * after tick(), so a live job put "is thinking" back on the chip and
- * #thread-send title. No relay: stub fetch, run the real submit handler,
- * and require tick's render to have landed before the assertion. */
-sandbox.openThreadPane(root);
-try {
-  render(events, {
-    ok: true, version: "0.0.1", events: 5, clients: 1,
-    thinking: []
-  });
-} catch (err) {
-  console.error(err && err.stack ? err.stack : err);
-  fail("clearing the live job before send threw");
-}
-document.title = "before-send";
-sandbox.fetch = async (url) => {
-  const u = String(url);
-  const body = (obj) => ({
-    ok: true,
-    status: 200,
-    json: async () => obj,
-    text: async () => ""
-  });
-  if (u.indexOf("/api/status") >= 0) {
-    return body({
-      ok: true, version: "tick-saw-status", build: "test",
-      events: 5, clients: 1,
-      thinking: [{ name: "Major", parent: root }]
-    });
-  }
-  if (u.indexOf("/api/events") >= 0) return body({ events: events });
-  if (u.indexOf("/api/session") >= 0) {
-    return body({
-      logged_in: false,
-      ready: true,
-      channels: [{ name: "welcome", slug: "welcome", id: "", group_id: "" }],
-      payne: { name: "Major", npub: MAJOR_NPUB, pubkey: "majorpub" }
-    });
-  }
-  if (u.indexOf("/api/presence") >= 0) return body({ lines: [] });
-  if (u.indexOf("/api/thread") >= 0) {
-    return body({ ok: true, root: root, turns: [], count: 0, brief: "" });
-  }
-  return body({ ok: true, running: false });
-};
-const threadMsg = document.getElementById("thread-msg");
-threadMsg.value = "ping";
-const threadForm = document.getElementById("thread-form");
-const onSubmit = (threadForm.listeners && threadForm.listeners.submit || [])[0];
-if (typeof onSubmit !== "function")
-  fail("thread submit handler is not registered");
-try {
-  await onSubmit({ preventDefault() {} });
-} catch (err) {
-  console.error(err && err.stack ? err.stack : err);
-  fail("thread submit threw");
-}
-if (String(document.title).indexOf("tick-saw-status") < 0)
-  fail("thread send did not finish tick, so the finally path was not reached: " + document.title);
-const sendAfter = document.getElementById("thread-send");
-const thinkAfter = document.getElementById("thread-think");
-if (inProgressText(thinkAfter.textContent) || inProgressText(sendAfter.title) || ackSaysInProgress(sendAfter))
-  fail("thread send finally put an in-progress mark back: think=" +
-    JSON.stringify(thinkAfter.textContent) + " title=" + JSON.stringify(sendAfter.title));
-const afterLines = [];
-walk(document.getElementById("stream"), afterLines);
-if (afterLines.length !== 1 || afterLines[0].textContent !== FAIL)
-  fail("main-log failure sentence changed after the send finally path");
-console.log("thread send finally: tick restored a thinking job and the chip stayed quiet");
+/* The #thread-send finally-path regression is retired with the thread
+ * composer (M1 channels only). */

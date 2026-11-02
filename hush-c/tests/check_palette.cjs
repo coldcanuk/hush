@@ -6,8 +6,8 @@
 // Walks a real signup (Begin -> Create -> I saved it -> vibe -> Meet Major ->
 // hive) on a fresh relay, then measures each surface at 1440x900 and 390x844
 // with data-theme="field-office":
-//   gate cards (splash, landing, backup, vibe, Meet Major), main thread with
-//   notes, replies (Thread) and a code note (Download / Canvas), thread pane,
+//   gate cards (splash, landing, backup, vibe, Meet Major), the channel log
+//   with notes, flat replies and a code note (Download / Canvas),
 //   Settings, Kit menu, Profile, New channel, every other hive dialog
 //   (Manage Channel, robot, invite, providers, relay, leave, dev log, seed,
 //   avatar, skill, forge, inventory), and the BOARDS drawer at 390.
@@ -291,7 +291,7 @@ function l1Fixture() {
   const inv = mk('div', 'l1-inv', {}, box);
   inv.style.cssText = 'display:block;position:relative;height:40px;padding:4px;box-sizing:border-box;background:var(--surface);border:1px solid var(--line);border-radius:8px';
   add('inv-item', mk('div', 'inv-item', { 'data-l1': '1' }, inv, 'Rx'), '.inv-item', ['color'], 'text');
-  for (const [k, id] of [['inv-btn', 'inv-seed'], ['qb-gear', 'qb-config'], ['send', 'thread-send']]) {
+  for (const [k, id] of [['inv-btn', 'inv-seed'], ['qb-gear', 'qb-config']]) { /* M1: #thread-send is gone */
     const el = document.getElementById(id); if (el) add(k + '-active', el, '#' + id + ':active', ['box-shadow'], 'shadow'); }
   const pool = mk('div', 'skill-pool', {}, box);
   for (const sc of ['system', 'user', 'robot']) add('gem-' + sc, mk('div', 'skill-gem', { 'data-scope': sc }, pool, 'G'), `.skill-gem[data-scope="${sc}"]`, ['box-shadow', 'border-top-color'], 'shadow');
@@ -330,7 +330,6 @@ const L1_EXPECT = {
   "inv-item|color": "rgb(255, 255, 255)",
   "inv-btn-active|box-shadow": "rgba(0, 0, 0, 0.45) 0px 2px 5px 0px inset",
   "qb-gear-active|box-shadow": "rgba(0, 0, 0, 0.45) 0px 2px 5px 0px inset",
-  "send-active|box-shadow": {"*": "rgba(0, 0, 0, 0.4) 0px 2px 5px 0px inset", "dark": "rgb(0, 0, 0) 2px 2px 0px 0px"},
   "gem-system|box-shadow": "rgba(212, 160, 23, 0.333) 0px 0px 6px 0px",
   "gem-system|border-top-color": "rgb(212, 160, 23)",
   "gem-user|box-shadow": "rgba(0, 255, 255, 0.267) 0px 0px 6px 0px",
@@ -663,7 +662,7 @@ async function main() {
   const r3 = []; const r5 = []; const r6 = []; const r7 = [];
   /* R5 floor (#309 r4): each christmas border rule the PR claims must have at
    * least one measured instance in its state. [name, element selector, state] */
-  const R5_CLAIMS = [['.thread-btn', '.thread-btn', 'rest:'], ['.chan-voice', '.chan-voice', 'rest:'], ['#badge.ok', '#badge.ok', 'rest:'],
+  const R5_CLAIMS = [['.chan-voice', '.chan-voice', 'rest:'], ['#badge.ok', '#badge.ok', 'rest:'],
     ['.composer-box:focus-within', '.composer-box', 'focus:'], ['.card input:focus', '.card input', 'focus:'], ['.card textarea:focus', '.card textarea', 'focus:'],
     ['.prov-row:hover', '.prov-row', 'hover:'], ['.iconbtn.on', '.iconbtn.on', 'rest:'], ['.partial', '.partial', 'rest:'], ['.fo-feed-line', '.fo-feed-line', 'rest:'],
     ['.composer-box:focus-within ring', '.composer-box', 'focus:', 'Ring'], ['.avatar-preview ring', '.avatar-preview', 'rest:', 'Ring'],
@@ -676,16 +675,16 @@ async function main() {
      * mouse is moved to each visible one, so :hover is the browser's own; its
      * text must hold 4.5:1 on the hover fill. R4: the stamp (.thread-btn)
      * outline must hold 3:1 against what is behind it. */
-    const hov = await cdp.eval(`(() => { const P = window.__pal; return [...document.querySelectorAll('.thread-btn, .chan-voice, .robot-call')].map((el, i) => {
+    const hov = await cdp.eval(`(() => { const P = window.__pal; return [...document.querySelectorAll('.chan-voice, .robot-call')].map((el, i) => {
       const r = el.getBoundingClientRect(); if (r.width < 4 || r.height < 4 || r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth) return null;
       if (!P.onTop(el, r) || P.opacityOf(el) < 0.05) return null; return { i, x: r.left + r.width / 2, y: r.top + r.height / 2, el: P.path(el) }; }).filter(Boolean); })()`);
     for (const t of hov) {
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: t.x, y: t.y });
       await sleep(40);
-      const m = await cdp.eval(`(() => { const P = window.__pal; const el = [...document.querySelectorAll('.thread-btn, .chan-voice, .robot-call')][${t.i}];
+      const m = await cdp.eval(`(() => { const P = window.__pal; const el = [...document.querySelectorAll('.chan-voice, .robot-call')][${t.i}];
         if (!el || !el.matches(':hover')) return null; const cs = getComputedStyle(el); const bg = P.bgOf(el); const fg = P.over(P.rgba(cs.color), bg);
         const behind = P.bgOf(el.parentElement); const bc = P.over(P.rgba(cs.borderTopColor), behind);
-        return { hover: Math.round(P.ratio(fg, bg) * 100) / 100, fg: P.hex(fg), bg: P.hex(bg), stamp: el.classList.contains('thread-btn'), outline: Math.round(P.ratio(bc, behind) * 100) / 100, border: P.hex(bc), behind: P.hex(behind) }; })()`);
+        return { hover: Math.round(P.ratio(fg, bg) * 100) / 100, fg: P.hex(fg), bg: P.hex(bg), stamp: false, outline: Math.round(P.ratio(bc, behind) * 100) / 100, border: P.hex(bc), behind: P.hex(behind) }; })()`);
       if (!m) { failures.push(`R3 christmas ${surface}@${w} ${t.el} did not take :hover under the mouse`); continue; }
       r3.push(Object.assign({ surface, w, el: t.el }, m));
       if (m.hover < 4.5) failures.push(`R3 christmas ${surface}@${w} hover text ${m.hover}:1 ${m.fg} on ${m.bg} ${t.el}`);
@@ -752,7 +751,7 @@ async function main() {
     /* R7 (#309 r4): christmas primary buttons are filled with --accent-fill. */
     const pf = await cdp.eval(`(() => { const P = window.__pal; const probe = document.createElement('i'); probe.style.color = 'var(--accent-fill)'; document.body.appendChild(probe);
       const want = getComputedStyle(probe).color; probe.remove(); const out = [];
-      for (const el of document.querySelectorAll('#install, #thread-send, .btn:not(.ghost):not(.danger)')) { const r = el.getBoundingClientRect();
+      for (const el of document.querySelectorAll('#install, .btn:not(.ghost):not(.danger)')) { const r = el.getBoundingClientRect();
         if (r.width < 4 || r.height < 4 || r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth || P.opacityOf(el) < 0.05 || !P.onTop(el, r)) continue;
         out.push({ el: P.path(el), bg: getComputedStyle(el).backgroundColor, want }); }
       return out; })()`);
@@ -830,8 +829,9 @@ async function main() {
   await cdp.send('Page.reload', {});
   await cdp.waitFor(`!!document.querySelector('#hive.show')`, 'hive after reload');
 
-  // Main thread in #welcome: Major's welcome note, two notes of mine (one with a
-  // code fence, so Download / Canvas render), replies so Thread shows.
+  // Channel log in #welcome: Major's welcome note, two notes of mine (one with a
+  // code fence, so Download / Canvas render), and two replies that paint
+  // flat in the channel (M1 channels only: no Thread button, no pane).
   await cdp.eval(`[...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#welcome')).click()`);
   await cdp.waitFor(`document.querySelectorAll('#stream .note').length >= 1`, 'welcome note');
   // Owner-stamped /api/event needs the paired window's X-Hush-Nonce (#336 part 4).
@@ -851,7 +851,8 @@ async function main() {
     const st = await post({ content: text, kind: 1, channel: 'welcome', reply_to: id });
     if (st !== 200) die('post reply status ' + st + ' to ' + id + ' roots ' + JSON.stringify(roots.map((e) => [e.id, e.content.slice(0, 20)])));
   }
-  await cdp.waitFor(`document.querySelectorAll('#stream .thread-btn').length >= 2 && document.querySelectorAll('#stream .note-files button').length >= 2`, 'Thread + Download', 15000);
+  await cdp.waitFor(`document.querySelector('#stream').textContent.includes('Received. Stamped and filed.') && document.querySelectorAll('#stream .note-files button').length >= 2`, 'flat replies + Download', 15000);
+  if (await cdp.eval(`document.querySelectorAll('#stream .thread-btn, #thread-pane').length`) !== 0) die('M1: thread UI rendered in the channel log');
   /* Stop renders only while a robot runs, so a styled .think chip is added to
    * a note to measure the CSS (same markup as paintThink). */
   const STOP_FIXTURE = `(() => { const n = document.querySelector('#stream .note'); if (!n || n.querySelector('.think')) return;
@@ -867,7 +868,7 @@ async function main() {
     await cdp.eval(STOP_FIXTURE);
     await cdp.eval(KIT);
     const sizes = await cdp.eval(`(() => { const out = [];
-      for (const sel of ['#stream .thread-btn', '#stream .note-files button', '#stream .think-stop']) {
+      for (const sel of ['#stream .note-files button', '#stream .think-stop']) {
         const b = document.querySelector(sel); if (!b) { out.push({ sel, missing: true }); continue; }
         b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
         const els = [-20, 20].map((dy) => document.elementFromPoint(cx, cy + dy)); const hits = els.map((e) => !!e && (e === b || b.contains(e)));
@@ -1033,7 +1034,7 @@ async function main() {
     const nfix = await cdp.eval(`(${l1Fixture.toString()})()`);
     await cdp.send('DOM.enable', {}); await cdp.send('CSS.enable', {});
     const root = (await cdp.send('DOM.getDocument', { depth: 0 })).root.nodeId; const forced = [];
-    for (const sel of ['#inv-seed', '#qb-config', '#thread-send']) { const q = await cdp.send('DOM.querySelector', { nodeId: root, selector: sel });
+    for (const sel of ['#inv-seed', '#qb-config']) { const q = await cdp.send('DOM.querySelector', { nodeId: root, selector: sel });
       if (q.nodeId) { await cdp.send('CSS.forcePseudoState', { nodeId: q.nodeId, forcedPseudoClasses: ['active'] }); forced.push(q.nodeId); } }
     await pinTheme(); await whiteCheck('L1-fixture', w);
     const l1 = await cdp.eval(`(() => { const P = window.__pal; const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
@@ -1067,40 +1068,13 @@ async function main() {
     const fo = l1.filter((r) => r.theme === 'field-office' && r.ratio !== undefined);
     console.log(`palette L1@${w}: ${nfix} fixture declarations, ${n} field-office measures, ${l1.length - n} other-theme values, ` +
       `min field-office ratio ${fo.length ? Math.min(...fo.map((r) => r.ratio)) : '-'}`);
-    if (nfix < 40) failures.push(`L1@${w} only ${nfix} fixture declarations (want 40)`);
+    // M1: the #thread-send fixture left with the thread pane (40 -> 39).
+    if (nfix < 39) failures.push(`L1@${w} only ${nfix} fixture declarations (want 39)`);
   }
-  await ringCheck('main-thread', ['#stream .thread-btn', '#stream .note-files button', '#stream .think-stop', '#nav-toggle', '#rail-toggle']);
+  await ringCheck('main-thread', ['#stream .note-files button', '#stream .think-stop', '#nav-toggle', '#rail-toggle']);
 
-  await measure('thread-pane', async () => {
-    await cdp.eval(`(() => { const p = document.querySelector('#thread-pane'); if (!p.classList.contains('show')) document.querySelector('#stream .thread-btn').click(); })()`);
-    await cdp.waitFor(`document.querySelector('#thread-pane').classList.contains('show') && document.querySelectorAll('#thread-stream .note').length >= 2`, 'thread pane');
-  });
-  await ringCheck('thread-pane', ['#thread-msg', '#thread-close']);
-  /* K3: whole placeholder visible in the milestone fields, 8 themes x 2 widths. */
-  for (const [w, h] of WIDTHS) {
-    await view(w, h);
-    await cdp.eval(KIT);
-    const k3 = await cdp.eval(`(() => { const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
-      const ctx = document.createElement('canvas').getContext('2d');
-      for (const t of ${JSON.stringify(THEMES)}) { h.setAttribute('data-theme', t);
-        for (const el of document.querySelectorAll('#thread-desk input, #milestone-form input')) {
-          const r = el.getBoundingClientRect(); if (r.width < 2) { out.push({ theme: t, id: el.id || el.name, hidden: true }); continue; }
-          const ph = getComputedStyle(el, '::placeholder'); const cs = getComputedStyle(el);
-          ctx.font = ph.fontStyle + ' ' + ph.fontWeight + ' ' + ph.fontSize + ' ' + ph.fontFamily; ctx.letterSpacing = ph.letterSpacing === 'normal' ? '0px' : ph.letterSpacing;
-          let txt = el.placeholder; if (ph.textTransform === 'uppercase') txt = txt.toUpperCase();
-          const need = Math.ceil(ctx.measureText(txt).width); const room = Math.floor(el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
-          out.push({ theme: t, id: el.id || el.placeholder, need, room, fits: need <= room }); } }
-      h.setAttribute('data-theme', was); return out; })()`);
-    for (const r of k3) {
-      report.push({ surface: 'K3', w, k3: r });
-      if (r.hidden) { if (r.id.startsWith('thread-desk')) failures.push(`K3 ${r.theme}@${w} ${r.id} not on screen`); continue; }
-      if (!r.fits) failures.push(`K3 ${r.theme}@${w} ${r.id} placeholder needs ${r.need}px, field has ${r.room}px (clipped)`);
-    }
-    const shown = k3.filter((r) => !r.hidden);
-    console.log(`palette K3@${w}: ${shown.filter((r) => r.fits).length}/${shown.length} milestone fields show the whole placeholder (min room-need ${Math.min(...shown.map((r) => r.room - r.need))}px)`);
-  }
-  await cdp.eval(`(() => { const x = document.querySelector('#thread-close'); if (x) x.click(); })()`);
-  await sleep(300);
+  /* M1 channels only: the thread pane, its composer and the milestone forms
+   * are gone, so their views, rings and K3 placeholder fits are retired. */
   await measure('settings', async () => {
     await cdp.eval(`document.querySelector('#settings').classList.remove('show')`);
     await cdp.eval(`document.querySelector('#settings-btn').click()`);
@@ -1628,7 +1602,6 @@ async function main() {
   console.log('palette R5 floor christmas: ' + r5floor.map(([a, n]) => a + '=' + n).join(', '));
   for (const w of [1440, 390]) if (!r7.some((x) => x.w === w)) failures.push(`R7 christmas measured no primary button at ${w} (want >= 1)`);
   if (process.env.PALETTE_ART) { fs.mkdirSync(process.env.PALETTE_ART, { recursive: true }); fs.writeFileSync(path.join(process.env.PALETTE_ART, 'r3r5r6.json'), JSON.stringify({ r3, r5, r6, r7 }, null, 1)); }
-  for (const w of [1440, 390]) if (!r3stamps.some((x) => x.w === w)) failures.push(`R3/R4 christmas hovered no .thread-btn at ${w} (want >= 1)`);
   if (failures.length) {
     const uniq = [...new Set(failures)];
     for (const f of uniq.slice(0, 60)) console.error('palette check failed: ' + f);
@@ -1653,7 +1626,7 @@ async function main() {
     `${cc1.length} code canvas views (8 themes x 2 widths: text and every highlight class >= 4.5:1, textarea transparent, keyword ink in pixels), ` +
     'ink-stamp actions 20-24px with 44px touch hit at 390, ' +
     `K1 dev log on tokens, K2 ${report.filter((r) => r.k2).reduce((n, r) => n + r.k2.length, 0)} provider pill text runs, ` +
-    `K3 ${report.filter((r) => r.k3 && !r.k3.hidden).length} milestone fields fit their placeholder, K4 status light 2 states on tokens, ` +
+    'K3 retired (M1: no milestone fields), K4 status light 2 states on tokens, ' +
     `K5 picture cells on tokens in ${report.filter((r) => r.k5).length} themes, K6 masthead chrome field-office only, ` +
     `K7 ${report.filter((r) => r.k7).reduce((n, r) => n + r.k7.out.length, 0)} mention pill text measures >= 4.5:1 + @unknown fallback (no npub painted) renamed on roster load, ` +
     `K8 inventory rims: field-office tokens, other ${report.filter((r) => r.k8 && r.k8.theme !== 'field-office').length} themes unchanged, ` +
