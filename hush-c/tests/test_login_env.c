@@ -1,9 +1,11 @@
 /* tests/test_login_env.c: #375 N1, no implicit key into `grok login --oauth`.
  * The login runs unjailed, so hush_provider_start_login itself must drop
- * XAI_API_KEY and every GROK_* variable for grok, on the direct path and
- * through HUSH_PROVIDER_TERM, and leave another provider's login env alone.
- * Stub grok, codex and terminal binaries first on PATH dump their env, so no
- * real CLI or terminal starts. All values are fake. */
+ * XAI_API_KEY and every GROK_* variable for grok, on the direct path (also
+ * with the key as the last environ entry), through HUSH_PROVIDER_TERM and
+ * through the DISPLAY xterm, and leave another provider's login env alone.
+ * Stub grok, codex, terminal and xterm binaries first on PATH dump their env,
+ * so no real CLI or terminal starts. All values are fake. The run removes
+ * exactly the files and dirs it made. */
 
 #define _POSIX_C_SOURCE 200809L
 
@@ -16,6 +18,9 @@
 #include <unistd.h>
 
 #include "hush_provider.h"
+#include "hush_sandbox.h"
+
+extern char **environ;
 
 enum {
     LOGIN_TEST_PATH_MAX = 512,
@@ -33,6 +38,15 @@ static const char LOGIN_TEST_STUB[] =
     "\"$LOGIN_TEST_DUMP\"\n";
 /* A terminal stub: run as `term -e cmd`, it runs cmd. */
 static const char LOGIN_TEST_TERM[] = "#!/bin/sh\nexec sh -c \"$2\"\n";
+/* An xterm stub: run as `xterm -hold -e cmd` ($3 is cmd), it runs cmd. */
+static const char LOGIN_TEST_XTERM[] = "#!/bin/sh\nexec sh -c \"$3\"\n";
+
+/* Every stub this run writes into root/bin, and its body. */
+static const char *const LOGIN_TEST_STUB_NAMES[] = {"grok", "codex", "term", "xterm"};
+static const char *const LOGIN_TEST_STUB_BODIES[] = {
+    LOGIN_TEST_STUB, LOGIN_TEST_STUB, LOGIN_TEST_TERM, LOGIN_TEST_XTERM
+};
+enum { LOGIN_TEST_NSTUBS = sizeof LOGIN_TEST_STUB_NAMES / sizeof LOGIN_TEST_STUB_NAMES[0] };
 
 /* Fake secrets set in the parent. */
 static const char LOGIN_TEST_XAI[] = "XAI_API_KEY=fake-xai-key";
@@ -52,7 +66,7 @@ static void expect(int cond, const char *msg)
 /* Writes an executable script body to dir/name. */
 static void write_script(const char *dir, const char *name, const char *body)
 {
-    char path[LOGIN_TEST_PATH_MAX];
+    char path[LOGIN_TEST_PATH_MAX * 2];
     FILE *fp = NULL;
 
     snprintf(path, sizeof path, "%s/%s", dir, name);
@@ -136,30 +150,115 @@ static void check_logins(const char *root, const char *path_tag)
     }
 }
 
+/* 1 when env holds the exact entry. */
+static int env_has(char **env, const char *entry)
+{
+    for (char **e = env; *e != NULL; ++e) {
+        if (strcmp(*e, entry) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+/* #375 Gauge HC-1 and HC-2: hush_sandbox_drop_grok_env_for on fixed
+ * environs. A key that is the last entry is dropped (the compacted environ
+ * is NULL-terminated again), and an entry with no '=' is kept. */
+static void check_drop_units(void)
+{
+    static char keep[] = "KEEP=1";
+    static char noeq[] = "NOEQ";
+    static char xai[] = "XAI_API_KEY=fake-xai-key";
+    static char grok[] = "GROK_FOO=fake-grok-override";
+    char *tail[] = {keep, noeq, grok, xai, NULL};
+    char *bare[] = {noeq, NULL};
+    char **was = environ;
+
+    environ = tail;
+    hush_sandbox_drop_grok_env_for("grok");
+    expect(!env_has(environ, xai), "drop kept XAI_API_KEY as the last entry");
+    expect(!env_has(environ, grok), "drop kept GROK_FOO");
+    expect(env_has(environ, keep) && env_has(environ, noeq), "drop lost a plain entry");
+    environ = bare;
+    hush_sandbox_drop_grok_env_for("grok");
+    expect(environ[0] == noeq && environ[1] == NULL, "drop lost an entry with no '='");
+    environ = was;
+}
+
+/* 1 when the last environ entry is the exact entry. */
+static int env_last_is(const char *entry)
+{
+    char **e = environ;
+
+    while (e[0] != NULL && e[1] != NULL)
+        ++e;
+    return e[0] != NULL && strcmp(e[0], entry) == 0;
+}
+
+/* Writes every stub into bin; returns how many were written. */
+static int write_stubs(const char *bin)
+{
+    for (int i = 0; i < LOGIN_TEST_NSTUBS; ++i)
+        write_script(bin, LOGIN_TEST_STUB_NAMES[i], LOGIN_TEST_STUB_BODIES[i]);
+    return LOGIN_TEST_NSTUBS;
+}
+
+/* Removes the first nstubs stubs from bin, then bin and root: only the
+ * paths this run made. Returns 1 when all are gone. */
+static int remove_own(const char *root, const char *bin, int nstubs)
+{
+    char path[LOGIN_TEST_PATH_MAX * 2];
+    int ok = 1;
+
+    for (int i = 0; i < nstubs; ++i) {
+        snprintf(path, sizeof path, "%s/%s", bin, LOGIN_TEST_STUB_NAMES[i]);
+        ok = unlink(path) == 0 && ok;
+    }
+    ok = rmdir(bin) == 0 && ok;
+    return rmdir(root) == 0 && ok;
+}
+
+/* Runs the four login legs: direct, direct with XAI_API_KEY last in
+ * environ, HUSH_PROVIDER_TERM, and the DISPLAY xterm. */
+static void check_legs(const char *root, const char *bin)
+{
+    char term[LOGIN_TEST_PATH_MAX * 2];
+
+    check_logins(root, "direct");
+    /* The dump var exists now, so the re-set key lands after it, last. */
+    expect(unsetenv("XAI_API_KEY") == 0, "unset key");
+    put_fake(LOGIN_TEST_XAI);
+    expect(env_last_is(LOGIN_TEST_XAI), "key is not the last environ entry");
+    check_logins(root, "tail");
+    snprintf(term, sizeof term, "%s/term", bin);
+    expect(setenv("HUSH_PROVIDER_TERM", term, 1) == 0, "term env");
+    check_logins(root, "term");
+    expect(unsetenv("HUSH_PROVIDER_TERM") == 0 && setenv("DISPLAY", ":0", 1) == 0,
+           "xterm env");
+    check_logins(root, "xterm");
+}
+
 int main(void)
 {
     char root[] = "/tmp/hush-login-env-XXXXXX";
     char bin[LOGIN_TEST_PATH_MAX];
     char path[LOGIN_TEST_PATH_MAX * 2];
-    char term[LOGIN_TEST_PATH_MAX * 2];
 
+    check_drop_units();
     if (mkdtemp(root) == NULL)
         return 1;
+    printf("test_login_env: scratch root %s\n", root); /* removed below */
+    (void)fflush(stdout);
     snprintf(bin, sizeof bin, "%s/bin", root);
     expect(mkdir(bin, LOGIN_TEST_DIR_MODE) == 0, "bin dir");
-    write_script(bin, "grok", LOGIN_TEST_STUB);
-    write_script(bin, "codex", LOGIN_TEST_STUB);
-    write_script(bin, "term", LOGIN_TEST_TERM);
+    int nstubs = write_stubs(bin);
     snprintf(path, sizeof path, "%s:%s", bin, LOGIN_TEST_SYS_PATH);
     expect(setenv("PATH", path, 1) == 0, "PATH");
     expect(unsetenv("DISPLAY") == 0 && unsetenv("HUSH_PROVIDER_TERM") == 0, "no terminal");
     put_fake(LOGIN_TEST_XAI);
     put_fake(LOGIN_TEST_GROK);
     put_fake(LOGIN_TEST_OPENAI);
-    check_logins(root, "direct");
-    snprintf(term, sizeof term, "%s/term", bin);
-    expect(setenv("HUSH_PROVIDER_TERM", term, 1) == 0, "term env");
-    check_logins(root, "term");
+    check_legs(root, bin);
+    expect(remove_own(root, bin, nstubs), "scratch root not removed");
     if (g_fail)
         return 1;
     printf("login env ok\n");
