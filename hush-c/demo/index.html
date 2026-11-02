@@ -177,12 +177,6 @@
       border-left: 2px solid var(--accent-dim); padding-left: 8px;
     }
     .partial:empty { display: none; }
-    .thread-btn {
-      margin-top: 8px; min-height: 32px; padding: 4px 10px; border-radius: 12px;
-      border: 1px solid var(--accent-dim); background: transparent; color: var(--accent);
-      font-size: 0.72rem; font-weight: 650;
-    }
-    .thread-btn:hover { background: var(--accent-dim); }
     .drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .drawer-head h2 { margin: 0; }
     .drawer-x {
@@ -190,43 +184,6 @@
       color: var(--muted); font-size: 1.25rem; font-family: var(--display); line-height: 1; border-radius: 12px;
     }
     .drawer-x:hover { background: var(--surface-2); color: var(--fg); }
-    #thread-pane {
-      display: none; position: fixed; z-index: 25;
-      left: 50%; top: 56px; transform: translateX(-50%);
-      width: min(42rem, 92vw); height: min(70vh, 640px);
-      background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
-      box-shadow: 0 16px 40px var(--fo-shade, rgba(0,0,0,0.45));
-      flex-direction: column; min-width: 280px; min-height: 240px; overflow: hidden;
-    }
-    #thread-pane.show { display: flex; }
-    .thread-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-    #thread-pane .drawer-head { padding: 14px 16px 0; flex: 0 0 auto; }
-    #thread-help { margin: 4px 16px 8px; }
-    #thread-stream {
-      flex: 1; overflow: auto; padding: 8px 16px 12px;
-      display: flex; flex-direction: column; gap: 12px; min-height: 0;
-    }
-    #thread-think {
-      flex: 0 0 auto; min-height: 1.4rem; padding: 0 16px 6px;
-    }
-    #thread-form { position: relative; flex: 0 0 auto; }
-    #thread-desk, #milestone-form {
-      display: flex; gap: 6px; align-items: center;
-      padding: 0 16px 8px; flex: 0 0 auto;
-    }
-    #thread-desk input, #milestone-form input {
-      flex: 1; min-width: 0; font: inherit; color: var(--fg);
-      background: var(--bg); border: 1px solid var(--line);
-      border-radius: 4px; padding: 4px 6px;
-    }
-    #thread-desk button, #milestone-form button { flex: 0 0 auto; }
-    #thread-resize {
-      position: absolute; right: 2px; bottom: 2px; width: 24px; height: 24px;
-      cursor: nwse-resize; touch-action: none;
-      background:
-        linear-gradient(135deg, transparent 40%, var(--line) 40%, var(--line) 50%, transparent 50%),
-        linear-gradient(135deg, transparent 65%, var(--muted) 65%, var(--muted) 75%, transparent 75%);
-    }
     main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
     .room {
       padding: 12px 18px; border-bottom: 1px solid var(--line);
@@ -363,25 +320,15 @@
     }
     #canvas-k .row { display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end; }
     #canvas-k .row button { min-height: 32px; padding: 4px 10px; border-radius: 12px; font-size: 0.78rem; }
-    #thread-stream .note {
-      max-width: min(78%, 28rem); border-radius: 16px 16px 16px 6px;
-      background: var(--surface-2);
-    }
-    #thread-stream .note.mine {
-      align-self: flex-end; border-radius: 16px 16px 6px 16px;
-      background: var(--accent-dim); border-color: var(--accent);
-    }
-    #thread-stream .note.reply { margin-left: 0; border-left: 0; padding-left: 12px; }
-    #thread-help { color: var(--muted); font-size: 0.78rem; }
     .composer { display: flex; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--line); background: var(--surface); align-items: flex-end; }
     .composer-box {
       flex: 1; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px;
       background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
       padding: 6px 8px; min-height: 44px;
     }
-    #composer-pills, #thread-pills { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+    #composer-pills { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
     .composer-pill { margin: 0; }
-    #msg, #thread-msg {
+    #msg {
       flex: 1 1 100%; min-width: 8rem; background: transparent; color: var(--fg); border: 0;
       padding: 6px 6px; font: inherit; outline: none;
       resize: none; overflow-y: auto; line-height: 1.4;
@@ -389,14 +336,11 @@
       white-space: pre-wrap; word-break: break-word;
     }
     .composer-box:focus-within { border-color: var(--accent-dim); }
-    /* #241 r7: the thread composer drops its outline above; give it the
-       same keyboard ring as the .panel fields (inside the box padding). */
-    #thread-msg:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
-    #send, #thread-send {
+    #send {
       background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 12px;
       padding: 0 18px; font-weight: 650; min-width: 88px; min-height: 44px;
     }
-    #send:hover, #thread-send:hover { filter: brightness(1.05); }
+    #send:hover { filter: brightness(1.05); }
     .radio-col { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; }
     .radio-col label, #manage-talk { min-height: 44px; display: flex; align-items: center; gap: 10px; }
     .gate {
@@ -839,11 +783,11 @@ body { padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
   border-color: var(--accent-dim);
   box-shadow: 0 0 0 1px var(--accent-dim);
 }
-#send, #thread-send {
+#send {
   border-radius: 8px;
   box-shadow: inset 0 1px 0 var(--fo-sheen, rgb(255 255 255 / 0.12)), inset 0 -2px 0 var(--fo-shade, rgb(0 0 0 / 0.25));
 }
-#send:active, #thread-send:active {
+#send:active {
   box-shadow: inset 0 2px 5px var(--fo-press, rgb(0 0 0 / 0.4));
 }
 .inv-expand-link {
@@ -1210,7 +1154,7 @@ html[data-theme="field-office"] .voice-mic-test { border-color: var(--line); }
    >= 4.5:1 and every border / ring / track >= 3:1 on these surfaces
    (tests/check_palette.sh measures the painted page). */
 html[data-theme="field-office"] {
-  --bg: #c2b185;          /* log and thread pane paper */
+  --bg: #c2b185;          /* log paper */
   --surface: #cdbd92;     /* chrome: header, nav, roster, composer, drawers */
   --surface-2: #d6c79d;   /* slips: notes, cards, inputs */
   --line: #4b4a2c;        /* olive-ink rules, borders, offset shadows */
@@ -1371,7 +1315,7 @@ html[data-theme="field-office"] .note .meta {
   font-size: 0.66rem; letter-spacing: 0.14em; font-weight: 700;
 }
 html[data-theme="field-office"] .room h1 { font-size: 1.05rem; letter-spacing: 0.14em; }
-html[data-theme="field-office"] #msg, html[data-theme="field-office"] #thread-msg { letter-spacing: 0.02em; }
+html[data-theme="field-office"] #msg { letter-spacing: 0.02em; }
 /* Radius kill: every paper surface is sharp or 3px max. Dots stay round. */
 html[data-theme="field-office"] .card,
 html[data-theme="field-office"] .panel,
@@ -1381,7 +1325,6 @@ html[data-theme="field-office"] .mention-box,
 html[data-theme="field-office"] .qb-editor,
 html[data-theme="field-office"] #canvas-k,
 html[data-theme="field-office"] #kit-menu,
-html[data-theme="field-office"] #thread-pane,
 html[data-theme="field-office"] #code-canvas-hi,
 html[data-theme="field-office"] #code-canvas-edit,
 html[data-theme="field-office"] #canvas-file,
@@ -1389,8 +1332,6 @@ html[data-theme="field-office"] #canvas-k-ask,
 html[data-theme="field-office"] #canvas-k .row button,
 html[data-theme="field-office"] .code-block,
 html[data-theme="field-office"] .note-files button,
-html[data-theme="field-office"] #thread-stream .note,
-html[data-theme="field-office"] #thread-stream .note.mine,
 html[data-theme="field-office"] .robot-ack,
 html[data-theme="field-office"] .mention-pill,
 html[data-theme="field-office"] .pill,
@@ -1450,7 +1391,6 @@ html[data-theme="field-office"] .skill-sheet-card,
 html[data-theme="field-office"] .slider {
   border-radius: 3px;
 }
-html[data-theme="field-office"] #thread-stream .note.reply { border-radius: 3px; }
 html[data-theme="field-office"] .slider:before { border-radius: 0; }
 /* Soft-shadow kill: no blur/bloom under field-office; paper depth is
    sharp 2px offsets on slips, plates, and stamps only. */
@@ -1458,7 +1398,6 @@ html[data-theme="field-office"] header,
 html[data-theme="field-office"] #quick-bar,
 html[data-theme="field-office"] .menu,
 html[data-theme="field-office"] .mention-box,
-html[data-theme="field-office"] #thread-pane,
 html[data-theme="field-office"] #code-canvas,
 html[data-theme="field-office"] .qb-editor,
 html[data-theme="field-office"] #canvas-k,
@@ -1469,7 +1408,6 @@ html[data-theme="field-office"] .qb-slot:hover,
 html[data-theme="field-office"] .qb-gear,
 html[data-theme="field-office"] .inv-btn,
 html[data-theme="field-office"] #send,
-html[data-theme="field-office"] #thread-send,
 html[data-theme="field-office"] .composer-box:focus-within,
 html[data-theme="field-office"] .agent-pic-cell.on,
 html[data-theme="field-office"] .avatar-cell.on,
@@ -1488,12 +1426,9 @@ html[data-theme="field-office"] #badge {
   box-shadow: none;
 }
 html[data-theme="field-office"] .note,
-html[data-theme="field-office"] #thread-stream .note,
-html[data-theme="field-office"] #thread-stream .note.mine,
 html[data-theme="field-office"] .panel,
 html[data-theme="field-office"] .card,
 html[data-theme="field-office"] dialog.secret,
-html[data-theme="field-office"] #thread-pane,
 html[data-theme="field-office"] .menu,
 html[data-theme="field-office"] .mention-box,
 html[data-theme="field-office"] .qb-editor,
@@ -1502,33 +1437,23 @@ html[data-theme="field-office"] .code-block {
   box-shadow: 2px 2px 0 var(--line);
 }
 html[data-theme="field-office"] #badge { box-shadow: 2px 2px 0 var(--line); }
-html[data-theme="field-office"] #send:hover, html[data-theme="field-office"] #thread-send:hover { filter: none; }
+html[data-theme="field-office"] #send:hover { filter: none; }
 /* Gradient kill: flat paper under field-office. */
 html[data-theme="field-office"] header,
 html[data-theme="field-office"] #quick-bar,
 html[data-theme="field-office"] .composer { background: var(--surface); }
 html[data-theme="field-office"] #kit-menu { border: 2px solid var(--line); background: var(--surface); }
-html[data-theme="field-office"] #thread-resize { border: 0; background: transparent; }
 /* Carved dossier frames: double rules on the big paper surfaces. */
 html[data-theme="field-office"] .panel,
 html[data-theme="field-office"] .card,
-html[data-theme="field-office"] dialog.secret,
-html[data-theme="field-office"] #thread-pane {
+html[data-theme="field-office"] dialog.secret {
   border: 2px solid var(--line); outline: 1px solid var(--line); outline-offset: 2px;
 }
 html[data-theme="field-office"] .menu,
 html[data-theme="field-office"] .mention-box,
 html[data-theme="field-office"] .qb-editor,
 html[data-theme="field-office"] #canvas-k { border: 2px solid var(--line); }
-/* Thread slips: no sided chat bubbles; every note is a square paper slip. */
-html[data-theme="field-office"] #thread-stream .note,
-html[data-theme="field-office"] #thread-stream .note.mine {
-  max-width: none; background: var(--surface-2); border: 2px solid var(--line);
-  align-self: stretch;
-}
-html[data-theme="field-office"] #thread-stream .note.reply {
-  margin-left: 0; border: 2px solid var(--line); padding-left: 12px;
-}
+/* Reply slips: no sided chat bubbles; a reply is a square paper slip. */
 html[data-theme="field-office"] .note.reply {
   box-shadow: inset 4px 0 0 var(--accent), 2px 2px 0 var(--line);
 }
@@ -1578,9 +1503,7 @@ html[data-theme="field-office"] #code-canvas-edit {
  * background without touching color, which left cream text on tan. */
 html[data-theme="field-office"] .btn,
 html[data-theme="field-office"] .iconbtn.danger { color: var(--fg); }
-html[data-theme="field-office"] .btn,
-html[data-theme="field-office"] .thread-btn,
-html[data-theme="field-office"] #thread-send { text-transform: uppercase; letter-spacing: 0.1em; }
+html[data-theme="field-office"] .btn { text-transform: uppercase; letter-spacing: 0.1em; }
 html[data-theme="field-office"] .btn.ghost { background: var(--surface-2); }
 html[data-theme="field-office"] .btn.danger { border: 2px solid var(--accent); transform: rotate(-1deg); }
 /* Pre-walk (F7): KIT Exit stops the whole hive, so it gets a red danger
@@ -1852,7 +1775,7 @@ html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2p
    Phone/coarse pointers get a >= --btn-hit-touch hit from a transparent
    ::before (::after on .switch, whose .slider:before is the knob) centred on
    the control; it never draws. Left alone on purpose: #send, #fo-dial,
-   #thread-send (UI-M12c), .leave-actions .btn, #stats, #rail-toggle and
+   .leave-actions .btn, #stats, #rail-toggle and
    #nav-toggle (spec-pinned 44px), spatial tiles (.skill-gem, .inv-item,
    .agent-pic-cell, .avatar-cell), form-row labels, #quick-bar (clip-path),
    hidden legacy #robot-list. No colour, border or background changes. */
@@ -2100,11 +2023,9 @@ button.fo-person { min-height: var(--btn-h-sm); }
   }
 }
 
-/* Office paper + thread corner grip.
-   The resize handle had been a filled square beside Send, so it read as
-   a stray button. It is an ink crop-mark in the pane corner now.
+/* Office paper.
    The sheet uses the field-office tokens: chrome --surface, the big log
-   and thread pane --bg, slips and the composer ribbon --surface-2. Ink is
+   --bg, slips and the composer ribbon --surface-2. Ink is
    --fg, stamp --accent, borders --line (#282). No soft blur. */
 html[data-theme="field-office"] {
   background-color: var(--bg);
@@ -2122,94 +2043,25 @@ html[data-theme="field-office"] #roster-pane {
   background-color: var(--surface);
   color: var(--fg);
 }
-html[data-theme="field-office"] #stream,
-html[data-theme="field-office"] #thread-pane,
-html[data-theme="field-office"] #thread-stream {
+html[data-theme="field-office"] #stream {
   background-color: var(--bg);
   color: var(--fg);
 }
-html[data-theme="field-office"] #thread-stream {
-  background-image: repeating-linear-gradient(transparent 0 27px, color-mix(in srgb, var(--line) 18%, transparent) 27px 28px);
-}
 html[data-theme="field-office"] .note,
-html[data-theme="field-office"] #thread-stream .note,
-html[data-theme="field-office"] #thread-stream .note.mine,
 html[data-theme="field-office"] .composer-box {
   background-color: var(--surface-2);
   color: var(--fg);
 }
-html[data-theme="field-office"] #msg,
-html[data-theme="field-office"] #thread-msg {
+html[data-theme="field-office"] #msg {
   color: var(--fg);
   font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
-}
-html[data-theme="field-office"] #thread-form {
-  padding-right: 28px;
-  padding-bottom: 18px;
-}
-html[data-theme="field-office"] #thread-resize {
-  width: 14px;
-  height: 14px;
-  right: 6px;
-  bottom: 6px;
-  border: 0;
-  box-sizing: border-box;
-  background-color: transparent;
-  background-image: linear-gradient(135deg, transparent 0 42%, var(--line) 42% 52%, transparent 52% 64%, var(--line) 64% 74%, transparent 74%);
-  box-shadow: none;
-}
-html[data-theme="field-office"] #thread-send {
-  background: var(--accent);
-  color: var(--accent-ink);
-  border: 2px solid var(--line);
-  border-radius: 3px;
-  box-shadow: 2px 2px 0 var(--line);
-  font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-}
-/* Dark theme only. Same two controls, dark materials: not manila.
-   Thread Send was the shared accent chip (gray fill, 8px radius).
-   The resize hatch used --muted, which is light gray on this sheet. */
-html[data-theme="dark"] #thread-form {
-  padding-right: 28px;
-  padding-bottom: 18px;
-}
-html[data-theme="dark"] #thread-resize {
-  width: 14px;
-  height: 14px;
-  right: 6px;
-  bottom: 6px;
-  border: 0;
-  box-sizing: border-box;
-  background-color: transparent;
-  background-image: linear-gradient(135deg, transparent 0 42%, #000 42% 52%, transparent 52% 64%, #000 64% 74%, transparent 74%);
-  box-shadow: none;
-}
-html[data-theme="dark"] #thread-send {
-  background: var(--surface);
-  color: var(--fg);
-  border: 2px solid var(--line);
-  border-radius: 3px;
-  box-shadow: 2px 2px 0 #000;
-  font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-}
-html[data-theme="dark"] #thread-send:hover,
-html[data-theme="dark"] #thread-send:active {
-  filter: none;
-  background: var(--surface-2);
-  color: var(--fg);
-  box-shadow: 2px 2px 0 #000;
 }
 /* ===== #282 ink-stamp message actions (field-office) =====
-   Thread, Download / Canvas and Stop are one family: a small rubber stamp
+   Download / Canvas and Stop are one family: a small rubber stamp
    (22px box, double ink rule, telegram caps, slight tilt) in place of the
    33px plate. Hover inks the stamp; keyboard focus keeps the 2px --fg ring.
    At <= 640px or on a coarse pointer each keeps an invisible hit area of
    --btn-hit-touch (44px); the visual box does not grow. */
-html[data-theme="field-office"] .thread-btn,
 html[data-theme="field-office"] .note-files button,
 html[data-theme="field-office"] .think-stop {
   box-sizing: border-box; min-height: 22px; height: 22px; padding: 0 7px; margin-top: 0;
@@ -2219,28 +2071,23 @@ html[data-theme="field-office"] .think-stop {
   font: 700 0.62rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.16em;
   transform: rotate(-1.2deg);
 }
-html[data-theme="field-office"] .thread-btn { margin-top: 6px; }
 html[data-theme="field-office"] .think-stop {
   border-color: var(--warn); color: var(--warn);
   box-shadow: inset 0 0 0 1px var(--surface-2), inset 0 0 0 2px var(--warn);
 }
-html[data-theme="field-office"] .thread-btn:hover,
 html[data-theme="field-office"] .note-files button:hover {
   background: var(--accent); color: var(--accent-ink);
 }
 html[data-theme="field-office"] .think-stop:hover:not(:disabled) {
   background: var(--warn); color: var(--accent-ink);
 }
-html[data-theme="field-office"] .thread-btn:focus-visible,
 html[data-theme="field-office"] .note-files button:focus-visible,
 html[data-theme="field-office"] .think-stop:focus-visible {
   outline: 2px solid var(--fg); outline-offset: 3px;
 }
 @media (max-width: 640px), (pointer: coarse) {
-  html[data-theme="field-office"] .thread-btn,
   html[data-theme="field-office"] .note-files button,
   html[data-theme="field-office"] .think-stop { position: relative; }
-  html[data-theme="field-office"] .thread-btn::before,
   html[data-theme="field-office"] .note-files button::before,
   html[data-theme="field-office"] .think-stop::before {
     content: ""; position: absolute; left: 0; right: 0;
@@ -2248,9 +2095,8 @@ html[data-theme="field-office"] .think-stop:focus-visible {
     bottom: min(0px, calc(50% - var(--btn-hit-touch) / 2));
     background: transparent; pointer-events: auto;
   }
-  /* Stacked stamps (Download / Canvas above Thread) sit a full hit area
+  /* Wrapped Download / Canvas stamps sit a full hit area
      apart, so the 44px targets do not overlap. */
-  html[data-theme="field-office"] .note-files ~ .thread-btn { margin-top: calc(var(--btn-hit-touch) - 22px); }
   html[data-theme="field-office"] .note-files { row-gap: calc(var(--btn-hit-touch) - 22px); }
 }
 /* #284: owner Yes/No under the loop prompt. Yes is the accent stamp.
@@ -2342,12 +2188,6 @@ html[data-theme="field-office"] #dev-log-body { border: 2px solid var(--line); b
 html[data-theme="field-office"] .pill { background: var(--surface-2); color: var(--fg); }
 /* 7 Mention pills: same slip (they were --fg on --accent-dim, 3.17:1). */
 html[data-theme="field-office"] .mention-pill { background: var(--surface-2); color: var(--fg); }
-/* 3 Thread-pane milestone fields wrap at phone width so each placeholder
-     shows whole (they were 37-47px wide at 390). */
-@media (max-width: 640px) {
-  #thread-desk { flex-wrap: wrap; }
-  #thread-desk input { flex: 1 1 10rem; }
-}
 /* Ops back-LOOK 900a486d items 4-6.
    4 Field office <= 480px: the header status light is an ink mark, not a
      bright green / amber gradient with a white glint: a flat lamp in two
@@ -2373,11 +2213,9 @@ html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
    (#c41e3a, christmas only) is the solid crimson of the primary buttons,
    with light ink and a light-crimson edge so the control clears 3:1. */
 html[data-theme="christmas"] #install,
-html[data-theme="christmas"] #thread-send,
 html[data-theme="christmas"] .btn:not(.ghost):not(.danger) {
   background: var(--accent-fill); color: var(--fg); border: 1px solid var(--accent);
 }
-html[data-theme="christmas"] .thread-btn,
 html[data-theme="christmas"] .chan-voice,
 html[data-theme="christmas"] .robot-call { border-color: var(--accent); }
 /* #309 r3: no christmas border or switch track is drawn in deep crimson on
@@ -2386,8 +2224,7 @@ html[data-theme="christmas"] .robot-call { border-color: var(--accent); }
    when off and light crimson when on, >= 3:1 on its panel, and the knob
    (--fg off, --accent-ink on) is >= 3:1 on its track. .robot-card and
    .note.reply follow the same rule but no measured view shows them with a
-   border (#robot-list is display:none; the thread pane drops the reply
-   rule). The old .agent box has no element in the page and is left out.
+   border (#robot-list is display:none). The old .agent box has no element in the page and is left out.
    The avatar preview and selected tile rings need no christmas rule: both
    base rings are --accent (#309 r5, r6). */
 html[data-theme="christmas"] #badge.ok,

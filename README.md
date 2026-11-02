@@ -86,7 +86,7 @@ Single binary, set-and-forget self-hosting: `./configure && make && make install
 
 ## AI-assistant-native team chat (robots share channels with humans)
 
-Raise robots from the KIT menu or inventory: name, required system prompt, one required AI provider (Goose, Grok Build, Codex, Cline, Copilot, Ollama, custom, Gemini/xAI/OpenAI/Anthropic/Deepseek APIs), up to 3 plaintext/Markdown context files. `@`-mention a robot to start a thread; channel policy leashes (open/humans/robots/mixed, off/when-mentioned/confirm-first, burst/jobs/cooldown) decide when robots spend tokens, with honest in-thread leash notes. Provider credentials are hive-global (`Configure Providers` desk + `pass`); each robot stores only a provider id.
+Raise robots from the KIT menu or inventory: name, required system prompt, one required AI provider (Goose, Grok Build, Codex, Cline, Copilot, Ollama, custom, Gemini/xAI/OpenAI/Anthropic/Deepseek APIs), up to 3 plaintext/Markdown context files. `@`-mention a robot to give it a turn, and it answers in the channel; channel policy leashes (open/humans/robots/mixed, off/when-mentioned/confirm-first, burst/jobs/cooldown) decide when robots spend tokens, with honest leash notes in the channel. Provider credentials are hive-global (`Configure Providers` desk + `pass`); each robot stores only a provider id.
 
 ## Diablo-style inventory UI with field-office materials
 

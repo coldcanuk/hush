@@ -28,15 +28,39 @@ the top-level `VERSION` file.
     replied to the root and re-mentioned a 1:1 thread's sole robot, is gone; a channel note without a
     mention is a new top-level note that names no robot (pending the Ops LOOK).
   - Milestone/desk naming and 1:1 robot threads are removed from the UI, with no channel replacement yet.
-  - An ask that was already answered still shows live Yes / No stamps after a reload: the stamps are
-    painted for every Yes/No ask, answered or not (this was already true for loop asks before M1).
+  - The relay remembers answered asks in memory only (the last 64 conversations). After a relay restart,
+    or once 64 newer conversations were answered, a repeated owner Yes / No on an old answered ask is
+    again treated as a new note to the conversation's robot. The page still shows that ask as answered.
   - Notes stored before M1 keep their "in this thread" text; stored content is shown as written.
   - `GET` / `POST /api/thread` stay on the relay, ungated and with no UI caller, until the M4 gate and
     delete. `tests/check_launch.sh` pins 0 callers in the page.
-  - Dead thread CSS remains in `demo/index.html` (`#thread-*`, `.thread-btn`, `#milestone-form` rules
-    with no matching element).
   - `hush-c/src/api_channels.c:66` still returns "Invalid message or conversation. Reopen the thread and
-    retry." in a 400 body that the page does not show.
+    retry." in a 400 body that the page does not show, and `hush-c/src/api_status.c:135` returns "thread
+    too large" from `/api/thread`, which the page does not call (backlog).
+
+- M1 answers are single-shot (Ops FAIL on 5fba5350, R1-R4). Before, an answered ask kept live Yes / No
+  stamps, and each further click posted another `Yes` that the relay passed to the conversation's
+  robot as a new mention: "Mention received." plus a new turn and a new approval ask (20 clicks gave
+  10 extra turns). Now:
+  - The relay ignores the owner's Yes or No in a conversation whose ask it already settled and where
+    nothing else waits: no new turn, no new ask (`hush_agent_answered_repeat`, called from
+    `hush_intel_consider`).
+  - The page posts one answer per ask. The first click replaces the stamps with an inert "Yes sent" /
+    "No sent" mark at once, before the relay answers; an answered ask stays inert after a reload.
+    When a conversation holds more than one open ask, only the oldest takes an answer, matching the
+    relay, which settles the oldest held turn first.
+  - A reply carries a "re: …" link to the note it answers: an owner Yes / No names its own ask, any
+    other reply names the note that started its conversation. The link scrolls to that note and
+    flashes it.
+  - The Yes stamp text is `--fg`, at least 4.5:1 in all 8 themes (it was `--accent`: 3.98:1 in dark
+    and 4.14:1 in desert).
+  - The thread pane's dead CSS is gone, and README.md and the intro-once, token-budget and topic-leash
+    system skills say "conversation" instead of "thread".
+  Pinned by `tests/check_ch0_ui.cjs` (20 clicks store exactly 1 Yes and 1 robot turn, counted from the
+  relay's events; 4 direct duplicate POSTs add no turn, ask or "Mention received."; inert stamps on
+  click, after 11 s and after a reload; both re: links; Yes / No / sent / re: ink >= 4.5:1 in 8 themes;
+  Send clear of the quick bar after focusing `#msg` at 390), `tests/test_approve.c` (`check_answer_once`)
+  and `tests/check_launch.sh` (0 dead thread selectors).
 
 - Canvas: the code view is visible again in field-office. The editing textarea had an opaque paper slip
   (`--surface-2`) above the highlight layer, so code painted blank there (Ops #364 follow-up, from #282).

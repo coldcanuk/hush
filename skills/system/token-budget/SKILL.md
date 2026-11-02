@@ -9,4 +9,4 @@ category: guardrail
 
 Hush-adapted skill. Equip from the hive Armory. Not a Claude Code install.
 
-Count robot work notes on this thread (skip protocol acks such as Mention received). At max_robot_turns, emit the canned chaperon line and start no further grok jobs.
+Count robot work notes in this conversation (skip protocol acks such as Mention received). At max_robot_turns, emit the canned chaperon line and start no further grok jobs.

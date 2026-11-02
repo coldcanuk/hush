@@ -775,6 +775,23 @@ stamps to the hive owner. A stamp posts `Yes` or `No` with
 Typing Yes in `#msg` posts a new top-level note and does not answer an
 ask (open: plan r2 M5).
 
+An answer is single-shot. The first click replaces the stamps with an
+inert `.loop-sent` mark ("Yes sent" / "No sent", role status) before the
+relay answers; on a failed post the stamps come back. An ask the owner
+already answered (paired oldest first per conversation from the stored
+notes) shows the mark, also after a reload. When a conversation holds
+more than one open ask, the newer ones show disabled stamps titled
+"Answer the earlier ask in this conversation first." The relay ignores
+the owner's Yes or No in a conversation whose ask it already settled and
+where nothing else waits: no robot turn, no new ask. The Yes stamp text
+is `--fg` on the `--accent` rule, at least 4.5:1 in all 8 themes.
+
+**Reply anchors.** A reply shows a `.re-link` button ("re: " and up to
+48 characters of the note it answers, title "Show the note this
+answers"). An owner Yes / No points at its own ask; any other reply
+points at the note that started its conversation. Clicking it scrolls
+that note into view and outlines it in `--accent` for 1.2 s.
+
 **Robot rows.** A robot row in the roster opens that robot's settings
 and loadout drawer (title "Open <name>'s settings and loadout"); it no
 longer starts a 1:1 thread.
@@ -786,15 +803,15 @@ longer starts a 1:1 thread.
   replied to the root and re-mentioned a 1:1 thread's sole robot, is gone; a channel note without a
   mention is a new top-level note that names no robot (pending the Ops LOOK).
 - Milestone/desk naming and 1:1 robot threads are removed from the UI, with no channel replacement yet.
-- An ask that was already answered still shows live Yes / No stamps after a reload: the stamps are
-  painted for every Yes/No ask, answered or not (this was already true for loop asks before M1).
+- The relay remembers answered asks in memory only (the last 64 conversations). After a relay restart,
+  or once 64 newer conversations were answered, a repeated owner Yes / No on an old answered ask is
+  again treated as a new note to the conversation's robot. The page still shows that ask as answered.
 - Notes stored before M1 keep their "in this thread" text; stored content is shown as written.
 - `GET` / `POST /api/thread` stay on the relay, ungated and with no UI caller, until the M4 gate and
   delete. `tests/check_launch.sh` pins 0 callers in the page.
-- Dead thread CSS remains in `demo/index.html` (`#thread-*`, `.thread-btn`, `#milestone-form` rules
-  with no matching element).
 - `hush-c/src/api_channels.c:66` still returns "Invalid message or conversation. Reopen the thread and
-  retry." in a 400 body that the page does not show.
+  retry." in a 400 body that the page does not show, and `hush-c/src/api_status.c:135` returns "thread
+  too large" from `/api/thread`, which the page does not call (backlog).
 
 A Grok Build robot with `has_home` is invoked via `grok -p`.
 An unbound chat job uses the private agent directory

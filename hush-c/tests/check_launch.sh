@@ -294,6 +294,12 @@ for src in served demo/index.html; do
     fi
 done
 echo "M1 /api/thread callers: 0 in the served page and demo/index.html"
+# M1 FU (Ops 5fba5350): the thread pane's CSS left with its markup. No
+# rule may name a thread-pane id, the .thread-btn / .thread-shell classes
+# or #milestone-form.
+dead_css=$(echo "$html" | grep -nE '#thread-[a-z]|\.thread-(btn|shell)|#milestone-form' || true)
+[ -z "$dead_css" ] || fail "M1: dead thread CSS in the page: $(echo "$dead_css" | head -3)"
+echo "M1 dead thread CSS: 0 selectors"
 echo "$html" | grep -q 'id="relay-drawer"' || fail "HTML missing relay drawer"
 echo "$html" | grep -q 'id="relay-close"' || fail "HTML missing relay close"
 echo "$html" | grep -q 'think-dot' || fail "HTML missing thinking chip"
