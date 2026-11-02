@@ -47,9 +47,10 @@ static const char *const HUSH_SANDBOX_ENV_PREFIXES[] = {
     "LC_", "GROK_", "CODEX_", "COPILOT_", "GOOSE_", "OLLAMA_", "CLINE_",
 };
 
-/* Grok Build signs in with OAuth only (~/.grok/auth.json): an API key or a
- * GROK_* override must never reach a grok child, though other providers
- * keep them (#375 PA1). Matched on the exec'd binary's basename. */
+/* A grok child gets XAI_API_KEY or a GROK_* variable only when its job chose
+ * an API key (HUSH_SANDBOX_CRED_API_KEY). An OAuth job (~/.grok/auth.json,
+ * the default) gets none, so no key reaches it implicitly from the relay env.
+ * Other providers keep them (#375 PA1). Matched on the binary's basename. */
 static const char HUSH_SANDBOX_GROK_BIN[] = "grok";
 static const char *const HUSH_SANDBOX_GROK_DENY_NAMES[] = { "XAI_API_KEY" };
 static const char *const HUSH_SANDBOX_GROK_DENY_PREFIXES[] = { "GROK_" };
@@ -134,11 +135,12 @@ static int hush_sandbox_grok_denied(const char *entry)
     return 0;
 }
 
-int hush_sandbox_env_allowed_for(const char *entry, const char *file)
+int hush_sandbox_env_allowed_for(const char *entry, const char *file,
+                                 hush_sandbox_cred_t cred)
 {
     if (!hush_sandbox_env_allowed(entry))
         return 0;
-    if (file == NULL || !hush_sandbox_is_grok(file))
+    if (file == NULL || !hush_sandbox_is_grok(file) || cred == HUSH_SANDBOX_CRED_API_KEY)
         return 1;
     return !hush_sandbox_grok_denied(entry);
 }
@@ -147,14 +149,14 @@ int hush_sandbox_env_allowed_for(const char *entry, const char *file)
  * it), so it is owned at file scope, not by a function static. */
 static char *g_sandbox_kept[HUSH_SANDBOX_ENV_MAX + 1];
 
-void hush_sandbox_scrub_env_for(const char *file)
+void hush_sandbox_scrub_env_for(const char *file, hush_sandbox_cred_t cred)
 {
     size_t n = 0;
 
     /* In place is safe when environ is already g_sandbox_kept: n never
      * passes the read position. */
     for (char **e = environ; e != NULL && *e != NULL; ++e) {
-        if (n < (size_t)HUSH_SANDBOX_ENV_MAX && hush_sandbox_env_allowed_for(*e, file))
+        if (n < (size_t)HUSH_SANDBOX_ENV_MAX && hush_sandbox_env_allowed_for(*e, file, cred))
             g_sandbox_kept[n++] = *e;
     }
     g_sandbox_kept[n] = NULL;
@@ -163,7 +165,7 @@ void hush_sandbox_scrub_env_for(const char *file)
 
 void hush_sandbox_scrub_env(void)
 {
-    hush_sandbox_scrub_env_for(NULL);
+    hush_sandbox_scrub_env_for(NULL, HUSH_SANDBOX_CRED_OAUTH);
 }
 
 /* 1 when path is under root/ (or equals root). */
@@ -973,7 +975,8 @@ static hush_status_t hush_sandbox_bw_prelude(hush_sandbox_bw_t *bw, const char *
 }
 
 static hush_status_t hush_sandbox_exec_bwrap(const hush_sandbox_policy_t *policy,
-                                             const char *file, char **argv)
+                                             const char *file, char **argv,
+                                             hush_sandbox_cred_t cred)
 {
     hush_sandbox_bw_t bw = {0};
 
@@ -1000,7 +1003,7 @@ static hush_status_t hush_sandbox_exec_bwrap(const hush_sandbox_policy_t *policy
     }
     bw.argv[bw.n] = NULL;
     hush_sandbox_close_inherited();
-    hush_sandbox_scrub_env_for(file);
+    hush_sandbox_scrub_env_for(file, cred);
     execvp("bwrap", bw.argv);
     hush_sandbox_set_why("agent sandbox refused: bwrap exec failed");
     return HUSH_ERR_IO;
@@ -1030,9 +1033,9 @@ hush_status_t hush_sandbox_exec(const hush_sandbox_job_t *job, const char *file,
             hush_sandbox_set_why("agent sandbox refused: Landlock enter failed");
             return HUSH_ERR_DENIED;
         }
-        hush_sandbox_scrub_env_for(file);
+        hush_sandbox_scrub_env_for(file, job->cred);
         execvp(file, argv);
         return HUSH_ERR_IO;
     }
-    return hush_sandbox_exec_bwrap(&policy, file, argv);
+    return hush_sandbox_exec_bwrap(&policy, file, argv, job->cred);
 }

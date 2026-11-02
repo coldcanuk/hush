@@ -381,8 +381,11 @@ static const char *hush_agent_jail_reason(const char *why)
 static void hush_agent_exec_jailed(const hush_agent_job_t *job, const char *file,
                                    char **argv)
 {
+    /* No per-job credential choice exists yet, so every job signs in by
+     * OAuth; the API-key path waits on credential-pool work (#375 PA1). */
     hush_sandbox_job_t jail = {.cwd = job->cwd, .home = job->stub_home,
-                               .relay_port = hush_http_listen_port()};
+                               .relay_port = hush_http_listen_port(),
+                               .cred = HUSH_SANDBOX_CRED_OAUTH};
 
     assert(job != NULL && file != NULL && argv != NULL);
     if (hush_sandbox_exec(&jail, file, argv) == HUSH_ERR_DENIED)
