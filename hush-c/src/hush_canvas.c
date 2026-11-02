@@ -24,11 +24,14 @@
 #include "hush_roster.h"
 #include "hush_http.h"
 #include "hush_sandbox.h"
+#include "hush_cli_gate.h"
 
 enum {
     HUSH_CANVAS_FD_NONE = -1,
     HUSH_CANVAS_TIMEOUT_S = 20,
-    HUSH_CANVAS_ARGV_MAX = 24,
+    /* 21 fixed entries, the Grok permission policy, then NULL. */
+    HUSH_CANVAS_FIXED_SLOTS = 21,
+    HUSH_CANVAS_ARGV_MAX = HUSH_CANVAS_FIXED_SLOTS + HUSH_CLI_GROK_POLICY_SLOTS + 1,
     HUSH_CANVAS_PATH_MAX = 256,
     HUSH_CANVAS_HALF_MAX = 1800,
     HUSH_CANVAS_READ_MAX = 256,
@@ -305,9 +308,34 @@ static hush_status_t hush_canvas_fill_job(hush_canvas_job_t *job,
     return HUSH_OK;
 }
 
+/* Writes the canvas Grok argv: text only, never --always-approve, and the
+ * ungated hush_cli_grok_policy rules (#356). Returns the slot count, NULL
+ * included, or 0 when cap is too small. */
+static size_t hush_canvas_grok_argv(const hush_canvas_job_t *job, char **argv, size_t cap)
+{
+    const char *fixed[HUSH_CANVAS_FIXED_SLOTS] = {
+        HUSH_CANVAS_GROK_BIN, "-p", job->note, "--system-prompt-override", HUSH_CANVAS_PROMPT,
+        "--output-format", "plain", "--no-plan", "--no-subagents", "--disable-web-search",
+        "--max-turns", HUSH_CANVAS_TURNS, "--reasoning-effort", HUSH_CANVAS_EFFORT,
+        "--cwd", job->cwd, "--disallowed-tools", HUSH_CANVAS_DISALLOWED,
+        "--rules", HUSH_CANVAS_RULES, HUSH_CANVAS_NOMEM
+    };
+    size_t n = 0;
+
+    if (cap < (size_t)HUSH_CANVAS_ARGV_MAX)
+        return 0;
+    /* POSIX exec borrows mutable argv; the strings are never written. */
+    for (size_t i = 0; i < (size_t)HUSH_CANVAS_FIXED_SLOTS; i++)
+        argv[n++] = (char *)fixed[i];
+    n += hush_cli_grok_policy(argv + n, cap - n, 0);
+    argv[n++] = NULL;
+    assert(n == (size_t)HUSH_CANVAS_ARGV_MAX);
+    return n;
+}
+
 static void hush_canvas_exec_grok(int write_fd, const hush_canvas_job_t *job)
 {
-    char *argv[HUSH_CANVAS_ARGV_MAX];
+    char *argv[HUSH_CANVAS_ARGV_MAX] = {0};
     int dn;
 
     assert(job != NULL);
@@ -320,31 +348,13 @@ static void hush_canvas_exec_grok(int write_fd, const hush_canvas_job_t *job)
         (void)dup2(dn, STDERR_FILENO);
         close(dn);
     }
-    argv[0] = (char *)HUSH_CANVAS_GROK_BIN;
-    argv[1] = (char *)"-p";
-    argv[2] = (char *)job->note;
-    argv[3] = (char *)"--system-prompt-override";
-    argv[4] = (char *)HUSH_CANVAS_PROMPT;
-    argv[5] = (char *)"--output-format";
-    argv[6] = (char *)"plain";
-    argv[7] = (char *)"--always-approve";
-    argv[8] = (char *)"--no-plan";
-    argv[9] = (char *)"--no-subagents";
-    argv[10] = (char *)"--disable-web-search";
-    argv[11] = (char *)"--max-turns";
-    argv[12] = (char *)HUSH_CANVAS_TURNS;
-    argv[13] = (char *)"--reasoning-effort";
-    argv[14] = (char *)HUSH_CANVAS_EFFORT;
-    argv[15] = (char *)"--cwd";
-    argv[16] = (char *)job->cwd;
-    argv[17] = (char *)"--disallowed-tools";
-    argv[18] = (char *)HUSH_CANVAS_DISALLOWED;
-    argv[19] = (char *)"--rules";
-    argv[20] = (char *)HUSH_CANVAS_RULES;
-    argv[21] = (char *)HUSH_CANVAS_NOMEM;
-    argv[22] = NULL;
     /* The canvas robot is an agent child too: jailed, or it does not run (#336). */
     hush_sandbox_job_t jail = {job->cwd, job->stub_home, hush_http_listen_port()};
+    /* An unready Grok yields no completion rather than an unchecked run (#356). */
+    char why[HUSH_CANVAS_READ_MAX] = {0};
+    if (hush_canvas_grok_argv(job, argv, HUSH_CANVAS_ARGV_MAX) == 0 ||
+        hush_cli_ready(&hush_cli_spec_grok, &jail, why, sizeof(why)) != HUSH_OK)
+        _exit(127);
     (void)hush_sandbox_exec(&jail, HUSH_CANVAS_GROK_BIN, argv);
     _exit(127);
 }

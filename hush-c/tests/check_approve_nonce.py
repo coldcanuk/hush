@@ -68,6 +68,7 @@ print(json.dumps(out))
 def write_grok(bin_dir, count_file):
     grok = bin_dir / "grok"
     grok.write_text("#!/bin/sh\n"
+                    "case \"$1\" in --version) echo \"grok 0.2.50\"; exit 0;; --help) echo \"--permission-mode dontAsk --allow --deny --disallowed-tools\"; exit 0;; esac\n"
                     f'n=$(cat "{count_file}" 2>/dev/null || echo 0)\n'
                     f'echo $((n + 1)) > "{count_file}"\n'
                     'echo "lead turn done."\n')
