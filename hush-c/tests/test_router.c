@@ -112,9 +112,9 @@ static void check_phase3(const char *root)
     expect(graph.nitems == 1, "imported once");
     expect(graph.items[0].phase == HUSH_ROUTER_DONE, "import is done");
     hush_router_init(&graph);
+    /* text outlives the loop: the "full" accept below still reads note.text. */
+    char text[HUSH_ROUTER_TEXT_MAX];
     for (int i = 0; i < HUSH_ROUTER_ITEMS_MAX; ++i) {
-        char text[HUSH_ROUTER_TEXT_MAX];
-
         snprintf(text, sizeof text, "Check item %d", i);
         note = note_of(text, NULL);
         note.now = 2000 + i;
