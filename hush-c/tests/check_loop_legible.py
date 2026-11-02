@@ -36,8 +36,9 @@ TEST_LOOP_FUNCTIONS = 30
 # Functions in tests/test_approve.c today (#279 r2; +check_needed, #336;
 # #312 adds first_at, give_intro, check_intro_waits and check_intro_auto;
 # the #312 pair fix adds new_fixture, pair_lead_ends, check_pair_asks,
-# open_trio and check_resume_waits), held to the same rule.
-TEST_APPROVE_FUNCTIONS = 50
+# open_trio and check_resume_waits; M1 R2 adds answer_inherited and
+# check_answer_once), held to the same rule.
+TEST_APPROVE_FUNCTIONS = 52
 TEST_COUNTS = {
     "tests/test_loop.c": TEST_LOOP_FUNCTIONS,
     "tests/test_approve.c": TEST_APPROVE_FUNCTIONS,
