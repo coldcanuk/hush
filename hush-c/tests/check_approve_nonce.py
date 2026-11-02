@@ -78,9 +78,11 @@ def write_grok(bin_dir, count_file):
 class Hive:
     def __init__(self, directory):
         self.relay = Relay(directory)
-        # Count file lives under bin/: Landlock grants that tree, but not
-        # siblings of the denied $HUSH_HOME / config dirs (#336 part 1).
-        self.count = directory / "bin" / "grok.count"
+        # Jailed agent children write only their job cwd (#375 N2); a chat
+        # turn's cwd is $HUSH_CONFIG_DIR/agent-cwd, so the count lives there.
+        cwd = directory / "config" / "agent-cwd"
+        cwd.mkdir(parents=True, mode=0o700, exist_ok=True)
+        self.count = cwd / "grok.count"
         write_grok(directory / "bin", self.count)
         (directory / "user" / ".grok").mkdir(parents=True)
         (directory / "user" / ".grok" / "auth.json").write_text('{"ok":true}\n')

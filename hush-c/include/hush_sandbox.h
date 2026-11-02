@@ -47,6 +47,9 @@ typedef struct {
     int ndeny;
     char auth_ro[HUSH_SANDBOX_AUTH_MAX][HUSH_SANDBOX_PATH_MAX];
     int nauth;
+    /* The job's own provider auth directory, writable under Landlock so an
+     * in-job OAuth refresh (tmp + rename) works; "" when none (#375 N2). */
+    char auth_rw[HUSH_SANDBOX_PATH_MAX];
     char cwd[HUSH_SANDBOX_PATH_MAX];
     char stub_home[HUSH_SANDBOX_PATH_MAX];
     char real_home[HUSH_SANDBOX_PATH_MAX];
@@ -75,8 +78,22 @@ void hush_sandbox_home_remove(char *home, size_t homesz);
 /* 1 when name=value may reach an agent child. */
 int hush_sandbox_env_allowed(const char *entry);
 
+/* 1 when name=value may reach a child exec'ing file: the shared allowlist,
+ * minus XAI_API_KEY and GROK_* when file is grok, so no key leaks in
+ * implicitly (#375 PA1; the job default is OAuth until the M8 resolver adds
+ * API-key jobs). A NULL file applies the shared allowlist alone. */
+int hush_sandbox_env_allowed_for(const char *entry, const char *file);
+
 /* Replaces environ with its allowlisted entries (pointers, no copies). */
 void hush_sandbox_scrub_env(void);
+
+/* When file is grok, removes XAI_API_KEY and every GROK_* entry from environ
+ * and keeps the rest, for an unjailed grok child such as `grok login --oauth`
+ * (#375 N1). No-op for any other file. */
+void hush_sandbox_drop_grok_env_for(const char *file);
+
+/* Like hush_sandbox_scrub_env, filtered for the binary file about to run. */
+void hush_sandbox_scrub_env_for(const char *file);
 
 /* Landlock ABI of this kernel, or 0 when Landlock is unavailable. */
 int hush_sandbox_abi(void);

@@ -150,16 +150,28 @@ hush_status_t hush_router_accept(hush_router_graph_t *graph,
                                  hush_router_result_t *out,
                                  const hush_router_note_t *note);
 
-/* Advances one pending or running worker. Blocked workers wait.
- * Fails with HUSH_ERR_NOT_FOUND when nothing is queued. */
+/* Advances the first pending or running worker whose step fits the graph.
+ * Blocked workers wait; a worker whose done step has no edge room is
+ * skipped, so it cannot starve the workers behind it. On any failure the
+ * graph is unchanged. Fails with HUSH_ERR_NOT_FOUND when nothing is queued
+ * and HUSH_ERR_FULL when every queued worker waits for room. */
 hush_status_t hush_router_drain(hush_router_graph_t *graph, char *out_line,
                                 size_t linesz, int64_t now);
 
-/* Writes the six router files under root/router. Atomic per file. */
+/* Writes the six router files under root/router as one generation: each is
+ * staged as <name>.tmp and fsynced, then a commit mark lets the set replace
+ * the old one by rename. Holds root/router/lock throughout. A failed save
+ * leaves the old generation, or the new one once its mark exists. */
 hush_status_t hush_router_save(const hush_router_graph_t *graph,
                                const char *root);
 
-/* Loads those files. A missing file is an empty array, not an error. */
+/* Loads those files. A missing file is an empty array, not an error.
+ * Not read-only when root/router exists: it creates root/router/lock, finishes
+ * a save interrupted after its commit mark (renames the staged files, removes
+ * the mark) and removes staged files an unmarked save left. On a root/router
+ * it may not write (e.g. a read-only home) it only reads, under a shared lock
+ * on an existing root/router/lock, and fails with HUSH_ERR_IO when a commit
+ * mark is pending there. Fails with HUSH_ERR_IO on other IO errors. */
 hush_status_t hush_router_load(hush_router_graph_t *graph, const char *root);
 
 /* Copies the bounded subgraph the Router is allowed to see.

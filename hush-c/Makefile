@@ -204,6 +204,7 @@ test: check-deps $(TEST_BINS) hush-relay
 	export HUSH_AUTO_UPDATE=0; \
 	unset HUSH_HOME HUSH_CONFIG_DIR; \
 	for t in $(TEST_BINS); do echo "RUN $$t"; ./$$t || exit 1; done; \
+	CC="$(CC)" sh tests/check_router_san.sh || exit 1; \
 	sh tests/check_mem_platforms.sh || exit 1; \
 	sh tests/check_pwa.sh || exit 1; \
 	sh tests/check_build.sh || exit 1; \

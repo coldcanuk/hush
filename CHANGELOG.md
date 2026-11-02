@@ -184,6 +184,17 @@ the top-level `VERSION` file.
 
 ### Security
 
+- Landlock agent jobs write only their job cwd, their job HOME and its private `TMPDIR` (#375 N2).
+  The rest of the tree, the shared `/tmp`, `/dev/shm` and the auth trees are read-only.
+  `/dev/null`, `/dev/zero`, `/dev/tty` and `/dev/pts/*` stay writable, and `/dev/urandom` stays
+  readable. A grok or codex job may write files in its own auth directory (`~/.grok`, `~/.codex`),
+  so an OAuth refresh by temp file and rename works. It may not create subdirectories there, write
+  to another provider's directory, or reach either one through a symlink. bwrap is unchanged.
+  **Gap:** an `XDG_*_HOME` that points outside HOME is dropped from the job env, so config kept there
+  is not visible to jobs (#375 N2, OPEN).
+- Landlock agent jobs now start in their job cwd, as bwrap's `--chdir` already did. Before this,
+  a Landlock job inherited hushd's working directory (#375 N2).
+
 - hush-turn (#353): packages no longer install `/etc/hush/turnserver.conf` with a placeholder TURN
   credential. Run `sudo /usr/share/hush/hush-turn-setup` (fresh 32-hex secret, 0600) before
   `systemctl enable --now hush-turn`; the unit will not start without a generated secret, and coturn
