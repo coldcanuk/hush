@@ -274,6 +274,26 @@ for gone in 'id="thread-pane"' 'id="thread-' 'id="milestone-form"' 'className = 
     'Write in this thread' 'Follow-ups go to' '@ a robot to direct its next turn'; do
   if echo "$html" | grep -qF "$gone"; then fail "thread UI must be gone (M1): $gone"; fi
 done
+# M1 (CoS 08:12): the page has 0 callers of /api/thread. The relay routes
+# stay ungated until M4 (gate, then delete). Checked on the served page and
+# on demo/index.html: the literal path (fetch, XHR, `${API}/api/thread`),
+# a path built in pieces ("/api/" + "thread", `/api/${"thread"}`), and any
+# string or template piece that is the word thread as a route part.
+thread_api_callers() {
+    grep -nEi \
+        -e 'api/+thread' \
+        -e "api/+[\"'\`][^;]*[\"'\`][^\"'\`]*thread" \
+        -e "api/+\\\$\{[^}]*thread" \
+        -e "[\"'\`]/?threads?([?/=&][^\"'\`]*)?[\"'\`]"
+}
+for src in served demo/index.html; do
+    if [ "$src" = served ]; then hits=$(echo "$html" | thread_api_callers || true)
+    else hits=$(thread_api_callers < "$src" || true); fi
+    if [ -n "$hits" ]; then
+        fail "M1: $src must have 0 callers of /api/thread: $(echo "$hits" | head -3)"
+    fi
+done
+echo "M1 /api/thread callers: 0 in the served page and demo/index.html"
 echo "$html" | grep -q 'id="relay-drawer"' || fail "HTML missing relay drawer"
 echo "$html" | grep -q 'id="relay-close"' || fail "HTML missing relay close"
 echo "$html" | grep -q 'think-dot' || fail "HTML missing thinking chip"

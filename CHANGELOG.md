@@ -21,6 +21,22 @@ the top-level `VERSION` file.
   the live preview on the channel note). Pinned by `tests/check_ch0_ui.cjs` (no thread UI in 9 states x
   8 themes x 1440 and 390, and a stub-runtime robot reply, approved with the channel Yes stamp, visible
   inline with no click) and the updated `tests/check_main_log_provider_failure.mjs`.
+  Known M1 gaps:
+  - Typing Yes or No in the channel composer does not answer an ask. The composer always posts a new
+    top-level note with no `reply_to`, so only the Yes / No stamps on the ask answer it (until M5).
+  - A follow-up without a mention no longer stays in the conversation. The thread composer, which
+    replied to the root and re-mentioned a 1:1 thread's sole robot, is gone; a channel note without a
+    mention is a new top-level note that names no robot (pending the Ops LOOK).
+  - Milestone/desk naming and 1:1 robot threads are removed from the UI, with no channel replacement yet.
+  - An ask that was already answered still shows live Yes / No stamps after a reload: the stamps are
+    painted for every Yes/No ask, answered or not (this was already true for loop asks before M1).
+  - Notes stored before M1 keep their "in this thread" text; stored content is shown as written.
+  - `GET` / `POST /api/thread` stay on the relay, ungated and with no UI caller, until the M4 gate and
+    delete. `tests/check_launch.sh` pins 0 callers in the page.
+  - Dead thread CSS remains in `demo/index.html` (`#thread-*`, `.thread-btn`, `#milestone-form` rules
+    with no matching element).
+  - `hush-c/src/api_channels.c:66` still returns "Invalid message or conversation. Reopen the thread and
+    retry." in a 400 body that the page does not show.
 
 - Canvas: the code view is visible again in field-office. The editing textarea had an opaque paper slip
   (`--surface-2`) above the highlight layer, so code painted blank there (Ops #364 follow-up, from #282).
