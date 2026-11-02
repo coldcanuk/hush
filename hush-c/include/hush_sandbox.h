@@ -75,8 +75,16 @@ void hush_sandbox_home_remove(char *home, size_t homesz);
 /* 1 when name=value may reach an agent child. */
 int hush_sandbox_env_allowed(const char *entry);
 
+/* 1 when name=value may reach a child exec'ing file: the shared allowlist,
+ * minus XAI_API_KEY and GROK_* when file is grok (OAuth only, #375 PA1).
+ * A NULL file applies the shared allowlist alone. */
+int hush_sandbox_env_allowed_for(const char *entry, const char *file);
+
 /* Replaces environ with its allowlisted entries (pointers, no copies). */
 void hush_sandbox_scrub_env(void);
+
+/* Like hush_sandbox_scrub_env, filtered for the binary file about to run. */
+void hush_sandbox_scrub_env_for(const char *file);
 
 /* Landlock ABI of this kernel, or 0 when Landlock is unavailable. */
 int hush_sandbox_abi(void);
