@@ -29,7 +29,9 @@ enum {
     ROUTER_TEST_POLL_NS = 10000000,  /* 10 ms per poll: 200 ms in all */
     ROUTER_TEST_CHILD_FAIL = 3,      /* child exit code when its save fails */
     ROUTER_TEST_REPLY_MAX = 4096,    /* one GET /api/router reply */
-    ROUTER_TEST_LIVE_ENTRIES = 7     /* six router files plus router/lock */
+    ROUTER_TEST_LIVE_ENTRIES = 7,    /* six router files plus router/lock */
+    ROUTER_TEST_RO_DIR_MODE = 0500,  /* a router/ this process may not write */
+    ROUTER_TEST_RO_FILE_MODE = 0400
 };
 
 #define ROUTER_TEST_POLL_DIR "/poll"
@@ -957,6 +959,121 @@ static void check_get_marked(const char *root, const hush_router_graph_t *old,
     expect_at(same_graph(&loaded, next), "GET did not roll forward", home);
 }
 
+/* Makes dir unwritable for this process (on) or writable again (off): the
+ * dir and its lock file, when present. A non-root stand-in for a read-only
+ * home. */
+static void set_readonly(const char *dir, int on)
+{
+    char lock[ROUTER_TEST_PATH_MAX];
+
+    join_path(lock, sizeof lock, dir, ROUTER_TEST_LOCK, "");
+    if (access(lock, F_OK) == 0)
+        expect(chmod(lock, on ? ROUTER_TEST_RO_FILE_MODE : ROUTER_TEST_DIR_MODE) == 0,
+               "ro lock mode");
+    expect(chmod(dir, on ? ROUTER_TEST_RO_DIR_MODE : ROUTER_TEST_DIR_MODE) == 0,
+           "ro dir mode");
+}
+
+/* Seeds old into root/ro-<tag> and writes its router dir into dir. With
+ * keep_lock 0 the seeded router/lock is removed. */
+static void seed_readonly(char *dir, size_t dirsz, char *home, size_t homesz,
+                          const char *root, const char *tag, int keep_lock)
+{
+    char lock[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t old;
+
+    build_blocked(&old);
+    join_path(home, homesz, root, "ro-", tag);
+    expect(mkdir(home, ROUTER_TEST_DIR_MODE) == 0, "ro home");
+    expect(hush_router_save(&old, home) == HUSH_OK, "ro seed");
+    join_path(dir, dirsz, home, "router", "");
+    join_path(lock, sizeof lock, dir, ROUTER_TEST_LOCK, "");
+    if (!keep_lock)
+        expect(unlink(lock) == 0, "ro drop lock");
+}
+
+/* #375 N4: GET /api/router on a router/ this process may not write and that
+ * holds no commit mark answers 200 and writes nothing, with or without an
+ * existing router/lock. */
+static void check_get_readonly(const char *root)
+{
+    for (int keep_lock = 0; keep_lock <= 1; ++keep_lock) {
+        char home[ROUTER_TEST_PATH_MAX];
+        char dir[ROUTER_TEST_PATH_MAX];
+        size_t before = 0;
+
+        seed_readonly(dir, sizeof dir, home, sizeof home, root,
+                      keep_lock ? "lock" : "nolock", keep_lock);
+        before = count_entries(dir);
+        set_readonly(dir, 1);
+        expect_at(get_router(home), "read-only GET failed", home);
+        set_readonly(dir, 0);
+        expect_at(count_entries(dir) == before, "read-only GET wrote", home);
+    }
+}
+
+/* #375 N4: a read-only load never finishes a pending commit; it fails, and
+ * the first writable load still rolls the new generation forward. */
+static void check_readonly_marked(const char *root)
+{
+    char home[ROUTER_TEST_PATH_MAX];
+    char spare[ROUTER_TEST_PATH_MAX];
+    char dir[ROUTER_TEST_PATH_MAX];
+    char next_dir[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t old;
+    hush_router_graph_t next;
+    hush_router_graph_t loaded;
+
+    seed_readonly(dir, sizeof dir, home, sizeof home, root, "mark", 1);
+    build_blocked(&old);
+    build_next(&next, &old, "Write the field notes", HUSH_ROUTER_ROUTE_WORK);
+    join_path(spare, sizeof spare, root, "ro-", "next");
+    expect(mkdir(spare, ROUTER_TEST_DIR_MODE) == 0, "ro next home");
+    expect(hush_router_save(&next, spare) == HUSH_OK, "ro next seed");
+    join_path(next_dir, sizeof next_dir, spare, "router", "");
+    stage_crash(dir, next_dir);
+    set_readonly(dir, 1);
+    expect_at(hush_router_load(&loaded, home) != HUSH_OK,
+              "read-only load hid a pending commit", home);
+    set_readonly(dir, 0);
+    expect(hush_router_load(&loaded, home) == HUSH_OK, "ro writable reload");
+    expect_at(same_graph(&loaded, &next), "pending commit lost after read-only load", home);
+}
+
+/* #375 N4: a read-only load waits while a writer holds router/lock. */
+static void check_readonly_waits(const char *root)
+{
+    char home[ROUTER_TEST_PATH_MAX];
+    char dir[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t loaded;
+    int status = 0;
+
+    seed_readonly(dir, sizeof dir, home, sizeof home, root, "wait", 1);
+    int fd = hold_lock(dir);
+    set_readonly(dir, 1);
+    pid_t child = fork();
+    if (child == 0)
+        _exit(hush_router_load(&loaded, home) == HUSH_OK ? 0 : ROUTER_TEST_CHILD_FAIL);
+    expect(child > 0, "ro fork");
+    expect_at(is_still_waiting(child), "read-only load ignored a writer's lock", home);
+    expect(close(fd) == 0, "ro lock release");
+    expect(waitpid(child, &status, 0) == child, "ro reap");
+    expect(WIFEXITED(status) && WEXITSTATUS(status) == 0, "ro load after release");
+    set_readonly(dir, 0);
+}
+
+/* #375 N4: router loads on an unwritable router/. Root ignores modes. */
+static void check_readonly(const char *root)
+{
+    if (geteuid() == 0) {
+        printf("test_router: read-only checks SKIP (root ignores file modes)\n");
+        return;
+    }
+    check_get_readonly(root);
+    check_readonly_marked(root);
+    check_readonly_waits(root);
+}
+
 /* #375 Gauge H4-2: the GET path's disk writes, with and without a mark. */
 static void check_get_writes(const char *root)
 {
@@ -1036,6 +1153,7 @@ int main(void)
     check_save_lock(root);
     check_copy_bound(root);
     check_get_writes(root);
+    check_readonly(root);
     check_phase4();
     check_context();
     if (g_fail)

@@ -192,11 +192,13 @@ static hush_status_t hush_router_unmark(const char *dir);
 static hush_status_t hush_router_sync_dir(const char *dir);
 /* Opens dir/lock and blocks until this process holds it exclusively. Writes
  * the holding fd to out_fd; the caller releases it with hush_router_unlock.
- * Fails with HUSH_ERR_NOT_FOUND when dir is missing, HUSH_ERR_IO otherwise. */
+ * Fails with HUSH_ERR_NOT_FOUND when dir is missing, HUSH_ERR_DENIED when
+ * this process may not write there (EACCES, EPERM, EROFS), HUSH_ERR_IO
+ * otherwise. */
 static hush_status_t hush_router_lock(int *out_fd, const char *dir);
-/* Adapter over fcntl F_SETLKW, retrying EINTR a bounded number of times.
- * Fails with HUSH_ERR_IO. */
-static hush_status_t hush_router_wait_lock(int fd);
+/* Adapter over fcntl F_SETLKW for a type (F_WRLCK or F_RDLCK) lock, retrying
+ * EINTR a bounded number of times. Fails with HUSH_ERR_IO. */
+static hush_status_t hush_router_wait_lock(int fd, short type);
 /* Releases a lock taken by hush_router_lock by closing its fd. */
 static void hush_router_unlock(int fd);
 /* Recovers, stages, and commits graph into dir. Caller holds router/lock. */
@@ -205,6 +207,18 @@ static hush_status_t hush_router_save_locked(const hush_router_graph_t *graph,
 /* Recovers, then reads every router file in dir. Caller holds router/lock. */
 static hush_status_t hush_router_load_locked(hush_router_graph_t *graph,
                                              const char *dir);
+/* Read-only load of a dir this process may not write (#375 N4): holds a
+ * shared lock on dir/lock when it exists, writes nothing, and fails with
+ * HUSH_ERR_IO when a commit mark is pending, since only a writer can finish
+ * that save. */
+static hush_status_t hush_router_load_shared(hush_router_graph_t *graph,
+                                             const char *dir);
+/* HUSH_OK when dir holds no commit mark, HUSH_ERR_IO when it does or the
+ * check fails. */
+static hush_status_t hush_router_unmarked(const char *dir);
+/* Reads every published router file in dir into graph. Writes nothing. */
+static hush_status_t hush_router_load_published(hush_router_graph_t *graph,
+                                                const char *dir);
 static hush_status_t hush_router_read_file(char *out, size_t outsz,
                                            const char *path);
 static hush_status_t hush_router_append(char *out, size_t outsz, size_t *off,
@@ -365,6 +379,8 @@ hush_status_t hush_router_save(const hush_router_graph_t *graph,
     if (status != HUSH_OK)
         return status;
     status = hush_router_lock(&lock_fd, dir);
+    if (status == HUSH_ERR_DENIED)
+        return HUSH_ERR_IO; /* a save must write */
     if (status != HUSH_OK)
         return status;
     status = hush_router_save_locked(graph, dir);
@@ -386,6 +402,8 @@ hush_status_t hush_router_load(hush_router_graph_t *graph, const char *root)
     status = hush_router_lock(&lock_fd, dir);
     if (status == HUSH_ERR_NOT_FOUND)
         return HUSH_OK; /* no router/ yet: the empty graph is the state */
+    if (status == HUSH_ERR_DENIED)
+        return hush_router_load_shared(graph, dir);
     if (status != HUSH_OK)
         return status;
     status = hush_router_load_locked(graph, dir);
@@ -1207,9 +1225,12 @@ static hush_status_t hush_router_lock(int *out_fd, const char *dir)
     assert(out_fd != NULL && dir != NULL);
     HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, HUSH_ROUTER_LOCK));
     fd = open(path, O_RDWR | O_CREAT | O_NOFOLLOW, HUSH_ROUTER_FILE_MODE);
+    if (fd < 0 && errno == ENOENT)
+        return HUSH_ERR_NOT_FOUND;
     if (fd < 0)
-        return errno == ENOENT ? HUSH_ERR_NOT_FOUND : HUSH_ERR_IO;
-    if (hush_router_wait_lock(fd) != HUSH_OK) {
+        return errno == EACCES || errno == EPERM || errno == EROFS ? HUSH_ERR_DENIED
+                                                                   : HUSH_ERR_IO;
+    if (hush_router_wait_lock(fd, F_WRLCK) != HUSH_OK) {
         (void)close(fd);
         return HUSH_ERR_IO;
     }
@@ -1217,11 +1238,11 @@ static hush_status_t hush_router_lock(int *out_fd, const char *dir)
     return HUSH_OK;
 }
 
-static hush_status_t hush_router_wait_lock(int fd)
+static hush_status_t hush_router_wait_lock(int fd, short type)
 {
-    struct flock lock = {.l_type = F_WRLCK, .l_whence = SEEK_SET};
+    struct flock lock = {.l_type = type, .l_whence = SEEK_SET};
 
-    assert(fd >= 0);
+    assert(fd >= 0 && (type == F_WRLCK || type == F_RDLCK));
     for (int i = 0; i < HUSH_ROUTER_LOCK_TRIES; ++i) {
         if (fcntl(fd, F_SETLKW, &lock) == 0)
             return HUSH_OK;
@@ -1255,6 +1276,49 @@ static hush_status_t hush_router_load_locked(hush_router_graph_t *graph,
 {
     assert(graph != NULL && dir != NULL);
     HUSH_ROUTER_TRY(hush_router_recover(dir));
+    return hush_router_load_published(graph, dir);
+}
+
+static hush_status_t hush_router_load_shared(hush_router_graph_t *graph,
+                                             const char *dir)
+{
+    char path[HUSH_HOME_PATH_MAX];
+    hush_status_t status;
+    int fd;
+
+    assert(graph != NULL && dir != NULL);
+    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, HUSH_ROUTER_LOCK));
+    fd = open(path, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0 && errno != ENOENT)
+        return HUSH_ERR_IO;
+    /* No lock file in an unwritable dir: no writer here could have made one. */
+    if (fd >= 0 && hush_router_wait_lock(fd, F_RDLCK) != HUSH_OK) {
+        (void)close(fd);
+        return HUSH_ERR_IO;
+    }
+    status = hush_router_unmarked(dir);
+    if (status == HUSH_OK)
+        status = hush_router_load_published(graph, dir);
+    if (fd >= 0)
+        hush_router_unlock(fd);
+    return status;
+}
+
+static hush_status_t hush_router_unmarked(const char *dir)
+{
+    char mark[HUSH_HOME_PATH_MAX];
+
+    assert(dir != NULL);
+    HUSH_ROUTER_TRY(hush_router_join_file(mark, sizeof mark, dir, HUSH_ROUTER_COMMIT));
+    if (access(mark, F_OK) != 0 && errno == ENOENT)
+        return HUSH_OK;
+    return HUSH_ERR_IO;
+}
+
+static hush_status_t hush_router_load_published(hush_router_graph_t *graph,
+                                                const char *dir)
+{
+    assert(graph != NULL && dir != NULL);
     HUSH_ROUTER_TRY(hush_router_load_items(graph, dir));
     HUSH_ROUTER_TRY(hush_router_load_workers(graph, dir));
     HUSH_ROUTER_TRY(hush_router_load_rest(graph, dir));

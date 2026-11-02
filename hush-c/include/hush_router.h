@@ -168,8 +168,10 @@ hush_status_t hush_router_save(const hush_router_graph_t *graph,
 /* Loads those files. A missing file is an empty array, not an error.
  * Not read-only when root/router exists: it creates root/router/lock, finishes
  * a save interrupted after its commit mark (renames the staged files, removes
- * the mark) and removes staged files an unmarked save left. Fails with
- * HUSH_ERR_IO if it cannot, e.g. on a read-only home. */
+ * the mark) and removes staged files an unmarked save left. On a root/router
+ * it may not write (e.g. a read-only home) it only reads, under a shared lock
+ * on an existing root/router/lock, and fails with HUSH_ERR_IO when a commit
+ * mark is pending there. Fails with HUSH_ERR_IO on other IO errors. */
 hush_status_t hush_router_load(hush_router_graph_t *graph, const char *root);
 
 /* Copies the bounded subgraph the Router is allowed to see.
