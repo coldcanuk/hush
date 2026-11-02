@@ -14,6 +14,9 @@ enum {
     HUSH_JSON_UTF8_MAX = 4
 };
 
+/* Lowercase hex digits: JSON \u escapes and the relay's event ids. */
+#define HUSH_JSON_HEX "0123456789abcdef"
+
 /* A borrowed JSON value span; len excludes surrounding whitespace. */
 typedef struct {
     const char *start;

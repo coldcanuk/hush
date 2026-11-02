@@ -43,7 +43,7 @@ static hush_agent_team_slot_t g_team[HUSH_AGENT_TEAM_SLOTS];
 static void hush_agent_team_copy(char *dst, size_t dstsz, const char *src);
 
 /* True when text has room for extra. Appends extra on its own line. */
-static void hush_agent_team_append(char *text, size_t textsz, const char *extra);
+static int hush_agent_team_append(char *text, size_t textsz, const char *extra);
 
 /* Points at the interior of one fence. 0 when the fence is absent. */
 static int hush_agent_fence_span(const char *text, const char *open,
@@ -249,7 +249,7 @@ void hush_agent_chief_prepare(hush_agent_job_t *job, const hush_store_t *store,
         hush_agent_team_check(job->launch, &team) == HUSH_OK &&
         hush_agent_team_offer(job->parent_id, &team)) {
         hush_agent_fence_cut(job->out, HUSH_AGENT_TEAM_OPEN);
-        hush_agent_team_append(job->out, sizeof(job->out), HUSH_AGENT_TEAM_ASK);
+        job->team_ask = hush_agent_team_append(job->out, sizeof(job->out), HUSH_AGENT_TEAM_ASK);
     } else if (st == HUSH_ERR_PARSE) {
         hush_agent_fence_cut(job->out, HUSH_AGENT_TEAM_OPEN);
         hush_agent_team_append(job->out, sizeof(job->out), HUSH_AGENT_TEAM_REFUSED);
@@ -356,7 +356,7 @@ static void hush_agent_team_copy(char *dst, size_t dstsz, const char *src)
     dst[n] = '\0';
 }
 
-static void hush_agent_team_append(char *text, size_t textsz, const char *extra)
+static int hush_agent_team_append(char *text, size_t textsz, const char *extra)
 {
     size_t used;
     int n;
@@ -364,10 +364,13 @@ static void hush_agent_team_append(char *text, size_t textsz, const char *extra)
     assert(text != NULL && extra != NULL);
     used = strlen(text);
     if (used + 1 >= textsz)
-        return;
+        return 0;
     n = snprintf(text + used, textsz - used, "%s%s", used > 0 ? "\n" : "", extra);
-    if (n < 0 || (size_t)n >= textsz - used)
+    if (n < 0 || (size_t)n >= textsz - used) {
         text[used] = '\0';
+        return 0;
+    }
+    return 1;
 }
 
 static int hush_agent_fence_span(const char *text, const char *open,

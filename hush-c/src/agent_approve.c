@@ -8,7 +8,6 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <assert.h>
-#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -54,10 +53,6 @@ static void hush_agent_named_ask(char *out, size_t outsz, const hush_event_t *ev
 /* Moves the oldest ask waiting in root (required) to out and frees its
  * slot; writes "" when none waits there. */
 static void hush_agent_ask_take(char *out, size_t outsz, const char *root);
-/* True when content (required) is a Yes/No ask line: approval, loop, team. */
-static int hush_agent_is_yes_no_ask(const char *content);
-/* True when content (required) ends with the team ask, spaces aside. */
-static int hush_agent_is_team_ask(const char *content);
 
 void hush_agent_approval_init(void)
 {
@@ -155,7 +150,7 @@ void hush_agent_ask_note(const hush_event_t *ev)
     char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
     hush_agent_ask_t *slot = NULL;
 
-    if (ev == NULL || !hush_agent_is_yes_no_ask(ev->content))
+    if (!hush_agent_is_relay_ask(ev))
         return;
     hush_agent_event_root(root, sizeof(root), ev);
     if (strcmp(root, ev->id) == 0)
@@ -251,6 +246,29 @@ int hush_agent_owner_asked(const hush_agent_job_in_t *in)
     hush_agent_event_root(root, sizeof(root), in->parent);
     return hush_store_find(in->store, &opening, root) == HUSH_OK &&
            hush_agent_is_human(in->launch, opening.pubkey);
+}
+
+int hush_agent_is_ask_line(const char *line)
+{
+    const size_t head = strlen(HUSH_AGENT_APPROVAL_ASK_HEAD);
+
+    assert(line != NULL);
+    return strncmp(line, HUSH_AGENT_APPROVAL_ASK_HEAD, head) == 0 ||
+           strcmp(line, HUSH_AGENT_LOOP_ASK_LINE) == 0;
+}
+
+int hush_agent_is_relay_ask(const hush_event_t *ev)
+{
+    size_t i = 0;
+
+    if (ev == NULL)
+        return 0;
+    for (i = 0; i < ev->tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; i++) {
+        if (strcmp(ev->tags[i][0], HUSH_AGENT_ASK_TAG_KEY) == 0 &&
+            strcmp(ev->tags[i][1], HUSH_AGENT_ASK_TAG_VALUE) == 0)
+            return 1;
+    }
+    return 0;
 }
 
 static size_t hush_agent_held_guests(void)
@@ -439,26 +457,4 @@ static void hush_agent_ask_take(char *out, size_t outsz, const char *root)
         memset(slot, 0, sizeof(*slot));
         return;
     }
-}
-
-static int hush_agent_is_yes_no_ask(const char *content)
-{
-    const size_t head = strlen(HUSH_AGENT_APPROVAL_ASK_HEAD);
-
-    assert(content != NULL);
-    return strncmp(content, HUSH_AGENT_APPROVAL_ASK_HEAD, head) == 0 ||
-           strcmp(content, HUSH_AGENT_LOOP_ASK_LINE) == 0 ||
-           hush_agent_is_team_ask(content);
-}
-
-static int hush_agent_is_team_ask(const char *content)
-{
-    const size_t ask = strlen(HUSH_AGENT_TEAM_ASK);
-    size_t len = 0;
-
-    assert(content != NULL);
-    len = strnlen(content, (size_t)HUSH_EVENT_MAX_CONTENT);
-    while (len > 0 && isspace((unsigned char)content[len - 1]))
-        len--;
-    return len >= ask && strncmp(content + len - ask, HUSH_AGENT_TEAM_ASK, ask) == 0;
 }

@@ -19,8 +19,11 @@ done
 grep -q 'function isHiveOwner' demo/index.html || fail "loop answers must be owner only"
 grep -q 'className = "loop-stamp loop-yes"' demo/index.html || fail "missing Yes stamp"
 grep -q 'className = "loop-stamp loop-no"' demo/index.html || fail "missing No stamp"
-grep -q 'if (isHiveOwner() && isYesNoAsk(e.content))' demo/index.html \
+grep -q 'if (isHiveOwner() && isYesNoAsk(e))' demo/index.html \
     || fail "Yes/No stamps must be owner only"
+# Gauge M1-F1: only an ask the relay wrote ("ask": true) gets stamps.
+grep -q 'return !!(e && e.ask === true);' demo/index.html \
+    || fail "Yes/No stamps must follow the relay ask flag, not the text"
 
 # Server primitives stay as internal transport (M4+ removes the route).
 grep -q 'hush_thread_format_json' src/hush_thread.c || fail "relay has no thread formatter"

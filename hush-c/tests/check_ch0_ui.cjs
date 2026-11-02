@@ -365,6 +365,91 @@ async function main() {
     if (m) headers['X-Hush-Nonce'] = m[1];
     const r = await fetch(${JSON.stringify(route)}, { method: 'POST', headers, body: JSON.stringify(${JSON.stringify(body)}) });
     return { status: r.status, json: r.ok ? await r.json() : null }; })()`);
+  // CoS 13:14 A (interim until Router M-n): composer routing in a fresh
+  // channel. One robot active: a plain note and an @mention both continue
+  // that robot's latest conversation, with the route shown before Send. A
+  // bare Yes never follows up (it cannot approve the waiting ask). Two
+  // robots active: Send waits for a choice; nothing is guessed.
+  const routePins = async () => {
+    const robot = async (name) => {
+      const have = await cdp.eval(`(robotModels().find((b) => b.name === ${JSON.stringify(name)}) || {}).npub || ''`);
+      if (have) return have;
+      const r = await post({ name, system_prompt: 'Answer in one line.', provider: 'codex', save_pass: false }, '/api/agent');
+      const hit = ((r.json && r.json.agents) || []).find((a) => a.name === name);
+      if (!hit || !hit.npub) fail('A setup: ' + name + ' was not raised');
+      await cdp.waitFor(`robotModels().some((b) => b.name === ${JSON.stringify(name)})`, name + ' in the roster', 10000);
+      return hit.npub;
+    };
+    const aceN = await robot('Ace');
+    const beaN = await robot('Bea');
+    await post({ approval_mode: 'approve_every_action' }, '/api/profile');
+    await cdp.evalAsync(`(async () => { applySession(await api('/api/channel', { name: 'route-room', system_prompt: '' })); return true; })()`);
+    await cdp.waitFor(`[...document.querySelectorAll('.chan')].some((b) => b.textContent.includes('#route-room'))`, 'route-room channel');
+    await cdp.eval(`[...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#route-room')).click()`);
+    await cdp.waitFor(`channel === 'route-room'`, 'route-room open');
+    const mineIn = `(async (word) => { const j = await (await fetch('/api/events')).json();
+      return (j.events || j || []).filter((e) => e.channel === 'route-room' && isMineNote(e) && String(e.content || '').endsWith(word)); })`;
+    // Types text, reads the route line, presses Send, and returns the stored
+    // owner note (or null when nothing was posted within 4 s).
+    const compose = async (text, word) => {
+      // The relay's receipt and ask for a note are built from content, tags
+      // and the second they are made, so two follow-ups in one second would
+      // repost the very same ask id (deduplicated by the store). Wait it out.
+      await sleep(1100);
+      // (typeof guards: CH0_ROUTE_ONLY also runs against a page from before
+      // the routing, to show the regression.)
+      const said = await cdp.eval(`(() => { $('send-error').textContent = ''; $('msg').value = ${JSON.stringify(text)};
+        if (typeof paintRoute === 'function') paintRoute();
+        return { text: $('route-text') ? $('route-text').textContent : '', pick: !!$('route-pick') && !$('route-pick').hidden }; })()`);
+      const before = (await cdp.evalAsync(mineIn + `(${JSON.stringify(word)})`)).length;
+      await cdp.eval(`$('form').requestSubmit()`);
+      let got = null;
+      for (let k = 0; k < 16 && !got; k++) {
+        await sleep(250);
+        const evs = await cdp.evalAsync(mineIn + `(${JSON.stringify(word)})`);
+        if (evs.length > before) got = evs[evs.length - 1];
+      }
+      const err = await cdp.eval(`$('send-error').textContent`);
+      return { said, got, err };
+    };
+    const first = await compose('@Ace first task', 'first task');
+    if (!first.got || first.got.reply_to) fail('A setup: the first @Ace note must open a conversation ' + JSON.stringify(first));
+    const RA = first.got.id;
+    const again = await compose('@Ace again please', 'again please');
+    console.log('A @mention follow-up: ' + JSON.stringify({ said: again.said.text, reply_to: again.got && again.got.reply_to, convo: RA }));
+    if (!again.got || again.got.reply_to !== RA)
+      fail('A an @mention follow-up must continue the robot\'s conversation, not open an empty one: reply_to ' + JSON.stringify(again.got && again.got.reply_to) + ' want ' + RA);
+    const plain = await compose('plain follow-up', 'plain follow-up');
+    if (plain.said.text !== 'to Ace, continuing \u201c@Ace first task\u201d')
+      fail('A the route preview must show before Send: ' + JSON.stringify(plain.said));
+    if (!plain.got || plain.got.reply_to !== RA || !(plain.got.mentions || []).some((m) => m === aceN || m.length === 64))
+      fail('A a plain note with one robot active must continue its conversation: ' + JSON.stringify(plain.got));
+    const bare = await compose('Yes', 'Yes');
+    if (!/^to #route-room as a new note/.test(bare.said.text) || !bare.got || bare.got.reply_to)
+      fail('A a bare Yes must never follow up a conversation: ' + JSON.stringify(bare));
+    await sleep(1500);
+    const held = await cdp.eval(`[...document.querySelectorAll('#stream .note')].filter((n) => n.textContent.includes('Approval needed: Ace')).pop().querySelectorAll('button.loop-stamp').length`);
+    if (held !== 2) fail('A the bare Yes must leave Ace\'s ask waiting with live stamps: ' + held + ' ' + JSON.stringify(await cdp.evalAsync(`(async () => {
+      const j = await (await fetch('/api/events')).json(); return (j.events || j || []).filter((e) => e.channel === 'route-room')
+        .map((e) => [who(e.pubkey), (e.reply_to || '').slice(0, 6), e.id.slice(0, 6), e.ask, String(e.content || '').slice(0, 40)]); })()`)));
+    const beaRoot = await post({ content: 'nostr:' + beaN + ' side task', kind: 1, channel: 'route-room', mention_0: beaN });
+    if (beaRoot.status !== 200) fail('A setup: Bea note ' + JSON.stringify(beaRoot));
+    await cdp.waitFor(`Object.keys(robotConvos()).length === 2`, 'two robots active in route-room', 10000);
+    const two = await compose('plain two', 'plain two');
+    if (two.said.text !== 'Choose who this goes to:' || !two.said.pick || two.got || two.err !== 'Choose who this goes to first.')
+      fail('A with two robots active Send must wait for a choice: ' + JSON.stringify(two));
+    await cdp.eval(`(() => { const p = $('route-pick'); p.value = ${JSON.stringify(aceN)}; p.dispatchEvent(new Event('change')); return true; })()`);
+    const chosen = await compose('plain two', 'plain two');
+    if (!chosen.got || chosen.got.reply_to !== RA) fail('A the chosen robot\'s conversation must take the note: ' + JSON.stringify(chosen));
+    console.log('A PASS interim routing: ' + JSON.stringify({ again: again.got.reply_to === RA, preview: plain.said.text,
+      bare: { said: bare.said.text, reply_to: bare.got.reply_to, aceAskLive: held }, two: { said: two.said.text, err: two.err }, chosen: chosen.got.reply_to === RA }));
+    await cdp.eval(`window.__ch0go ? window.__ch0go('welcome') : [...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#welcome')).click()`);
+  };
+  if (process.env.CH0_ROUTE_ONLY) {
+    await routePins();
+    await stopAll();
+    process.exit(0);
+  }
   const p1 = await post({ content: 'Morning, Major. Status on the supply manifest?', kind: 1, channel: 'welcome' });
   const p2 = await post({ content: 'Manifest attached.\n```txt\nrations 40\nfuel 12\n```', kind: 1, channel: 'welcome' });
   if (p1.status !== 200 || p2.status !== 200 || !p1.json || !p2.json || !p1.json.id || !p2.json.id)
@@ -377,7 +462,14 @@ async function main() {
     if (st.status !== 200) fail('seed reply ' + JSON.stringify(st));
   }
   await cdp.waitFor(`document.querySelector('#stream').textContent.includes('Approval needed: Major') &&
-    document.querySelectorAll('#stream .loop-stamp.loop-yes').length >= 2`, 'flat replies with Yes/No stamps', 15000);
+    document.querySelector('#stream').textContent.includes('Continue this loop?')`, 'flat replies', 15000);
+  // Gauge M1-F1: those two seeds only read like asks (the owner typed them;
+  // the relay did not write them), so they carry no stamps.
+  const look = await cdp.eval(`[...document.querySelectorAll('#stream .note')]
+    .filter((n) => n.textContent.includes('Approval needed: Major') || n.textContent.includes('Continue this loop?'))
+    .map((n) => n.querySelectorAll('.loop-stamp').length)`);
+  if (look.length < 2 || look.some((k) => k !== 0)) fail('F1 a note that only reads like an ask must carry no stamps: ' + JSON.stringify(look));
+  console.log('F1 PASS look-alike asks carry no stamps: ' + JSON.stringify(look));
   // G20 / M1 acceptance: a real robot reply to a channel note is visible in
   // the channel with no click. Raise Ace on the codex stub and mention it.
   // If the hive asks first ("Approval needed: Ace ..."), the owner answers
@@ -497,36 +589,72 @@ async function main() {
       aceTo: link(ace) ? link(ace).dataset.to : '', aceText: link(ace) ? link(ace).textContent : '' }; })()`);
   if (r4.yesTo !== after20.askId || !/^re: Approval needed: Ace/.test(r4.yesText))
     fail('R4 the owner\'s Yes must name its own ask: ' + JSON.stringify(r4));
-  if (r4.aceTo !== ASK || !/^re: @Ace status check/.test(r4.aceText))
-    fail('R4 the robot reply must name the note it answers: ' + JSON.stringify(r4));
+  // CoS 13:14 B: Ace's reply answers the ask whose Yes freed its turn.
+  if (r4.aceTo !== after20.askId || !/^re: Approval needed: Ace/.test(r4.aceText))
+    fail('R4 the robot reply must name the ask its turn answered, not the conversation root: ' + JSON.stringify(r4));
   const r4jump = await cdp.evalAsync(`(async () => { const yes = [...document.querySelectorAll('#stream .note')].find((n) => n.dataset.id === ${JSON.stringify(after20.yesId)});
-    document.querySelector('#stream').scrollTop = 0; yes.querySelector('.re-link').click(); await new Promise((r) => setTimeout(r, 400));
+    document.querySelector('#stream').scrollTop = 0; yes.querySelector('.re-link').click(); await new Promise((r) => setTimeout(r, 100));
+    seen = ''; await tick(); await new Promise((r) => setTimeout(r, 300));
     const c = ${ASKCARD}; const r = c.getBoundingClientRect(); const s = document.querySelector('#stream').getBoundingClientRect();
     return { flashed: c.classList.contains('note-flash'), inView: r.top >= Math.min(s.top, 0) - 1 && r.bottom <= Math.max(s.bottom, innerHeight) + 1 }; })()`);
   if (!r4jump.flashed || !r4jump.inView) fail('R4 the re: link must bring its ask into view: ' + JSON.stringify(r4jump));
   console.log('R4 PASS anchors: ' + JSON.stringify(r4) + ' jump ' + JSON.stringify(r4jump));
+  // Gauge M1-F2: a newer ask B waits in the same conversation; a duplicate
+  // of the answered stamp (POSTed straight to the relay, which drops it)
+  // must not paint B "Yes sent". B keeps live stamps and still holds.
+  const more = await post({ content: 'nostr:' + ace.npub + ' one more check', kind: 1, channel: 'welcome', reply_to: ASK, mention_0: ace.npub });
+  if (more.status !== 200) fail('F2 setup: second mention ' + JSON.stringify(more));
+  let askB = '';
+  for (let k = 0; k < 40 && !askB; k++) {
+    askB = await cdp.evalAsync(`(async () => { const j = await (await fetch('/api/events')).json();
+      const a = (j.events || j || []).filter((e) => e.reply_to === ${JSON.stringify(ASK)} && e.ask === true && e.id !== ${JSON.stringify(after20.askId)});
+      return a.length ? a[a.length - 1].id : ''; })()`);
+    if (!askB) await sleep(250);
+  }
+  if (!askB) fail('F2 setup: no second ask B for Ace');
+  await post({ content: 'Yes', kind: 1, channel: 'welcome', reply_to: ASK, answers: after20.askId });
+  await sleep(2500);
+  const f2 = await cdp.eval(`(() => { const c = [...document.querySelectorAll('#stream .note')].find((n) => n.dataset.id === ${JSON.stringify(askB)});
+    return c ? { live: c.querySelectorAll('button.loop-stamp:not(:disabled)').length, sent: (c.querySelector('.loop-sent') || {}).textContent || '' } : null; })()`);
+  const f2srv = await tally();
+  if (!f2 || f2.live !== 2 || f2.sent) fail('F2 a dropped duplicate must not mark the newer ask answered: ' + JSON.stringify(f2));
+  if (f2srv.turns !== 1) fail('F2 the relay must keep ask B held after the duplicate: turns ' + f2srv.turns);
+  console.log('F2 PASS newer ask stays live after a dropped duplicate: ' + JSON.stringify(f2) + ' turns ' + f2srv.turns);
+  // CoS 13:14 C: a later ask in a conversation waits behind the oldest one
+  // with disabled stamps (loopAnswerBar). The relay never holds two asks in
+  // one conversation here without a guest, so R3 paints that exact state:
+  // a disabled copy of ask B's live stamps on B's own card, read back below,
+  // then removed.
+  const OFF = `(() => { if (document.querySelector('[data-ch0-probe]')) return; const c = [...document.querySelectorAll('#stream .note')].find((n) => n.dataset.id === ${JSON.stringify(askB)});
+    const bar = c.querySelector('.loop-stamps').cloneNode(true); bar.dataset.ch0Probe = '1';
+    bar.querySelectorAll('button').forEach((b) => { b.disabled = true; }); c.appendChild(bar); })();`;
   // R3: stamp and anchor ink >= 4.5:1 on what is painted behind them, in
   // every theme, read back through a canvas so any colour syntax resolves.
   const r3 = [];
   for (const theme of THEMES) {
     await cdp.eval(`applyTheme(${JSON.stringify(theme)})`);
     await sleep(120);
-    const m = await cdp.eval(`(() => { const cv = document.createElement('canvas'); cv.width = cv.height = 1; const cx = cv.getContext('2d', { willReadFrequently: true });
+    const m = await cdp.eval(`(() => { ${OFF} const cv = document.createElement('canvas'); cv.width = cv.height = 1; const cx = cv.getContext('2d', { willReadFrequently: true });
       const rgb = (c) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = '#000'; cx.fillStyle = c; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
       const bgOf = (el) => { for (let x = el; x; x = x.parentElement) { const c = rgb(getComputedStyle(x).backgroundColor); if (c[3] > 0.5) return c; } return rgb(getComputedStyle(document.body).backgroundColor); };
       const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
       const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
       const out = {};
-      for (const [k, sel] of [['yes', '#stream button.loop-yes:not(:disabled)'], ['no', '#stream button.loop-no:not(:disabled)'], ['sent', '#stream .loop-sent'], ['re', '#stream .re-link']]) {
+      const alpha = (el) => { let a = 1; for (let x = el; x; x = x.parentElement) a *= Number(getComputedStyle(x).opacity); return a; };
+      const ink = (el, bg) => { const c = rgb(getComputedStyle(el).color); const a = c[3] * alpha(el); return [0, 1, 2].map((i) => c[i] * a + bg[i] * (1 - a)); };
+      for (const [k, sel] of [['yes', '#stream button.loop-yes:not(:disabled)'], ['no', '#stream button.loop-no:not(:disabled)'],
+        ['yesOff', '#stream button.loop-yes:disabled'], ['noOff', '#stream button.loop-no:disabled'], ['sent', '#stream .loop-sent'], ['re', '#stream .re-link']]) {
         const el = document.querySelector(sel); if (!el) { out[k] = null; continue; }
-        out[k] = Math.round(ratio(rgb(getComputedStyle(el).color), bgOf(el)) * 100) / 100; }
+        const bg = bgOf(el);
+        out[k] = Math.round(ratio(ink(el, bg), bg) * 100) / 100; }
       return out; })()`);
     r3.push(Object.assign({ theme }, m));
   }
-  const r3bad = r3.flatMap((m) => ['yes', 'no', 'sent', 're'].filter((k) => m[k] === null || m[k] < 4.5)
+  await cdp.eval(`(() => { const p = document.querySelector('[data-ch0-probe]'); if (p) p.remove(); return true; })()`);
+  const r3bad = r3.flatMap((m) => ['yes', 'no', 'yesOff', 'noOff', 'sent', 're'].filter((k) => m[k] === null || m[k] < 4.5)
     .map((k) => `${m.theme} ${k} ${m[k] === null ? 'missing' : m[k] + ':1'}`));
   if (r3bad.length) fail('R3 stamp/anchor ink below 4.5:1: ' + r3bad.join(', ') + ' ' + JSON.stringify(r3));
-  console.log('R3 PASS stamp/anchor ink >= 4.5:1 in ' + THEMES.length + ' themes: ' + JSON.stringify(r3));
+  console.log('R3 PASS stamp/anchor ink (disabled later-ask stamps included, CoS 13:14 C) >= 4.5:1 in ' + THEMES.length + ' themes: ' + JSON.stringify(r3));
   // FU2 (Ops 5fba5350): at 390 the page scrolls as a whole. Focusing #msg
   // from the top of a long log must leave Send clear of the fixed quick
   // bar. Blur first: focusing an already-focused field does not scroll.
@@ -551,6 +679,7 @@ async function main() {
   await cdp.eval(`applyTheme('field-office')`);
 
   // An empty channel for the idle state.
+  await routePins();
   await cdp.evalAsync(`(async () => { applySession(await api('/api/channel', { name: 'quiet-room', system_prompt: '' })); return true; })()`);
   await cdp.waitFor(`[...document.querySelectorAll('.chan')].some((b) => b.textContent.includes('#quiet-room'))`, 'quiet-room channel');
 

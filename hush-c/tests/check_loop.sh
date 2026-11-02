@@ -494,6 +494,41 @@ if grep '^S:.*You are Happy\..*tag-a3' "$stubs/grok-p.log" | grep -q 'Whole mess
     fail "B6 a three-robot note must not arm a loop (lead got the loop rule)"
 fi
 
+# Gauge M1-F3: POST /api/event "answers" adds the second e tag only as a
+# JSON string of exactly 64 lowercase hex, and only after a reply_to; any
+# other value (longer, shorter, uppercase, a bare number, no reply_to) adds
+# none and the note still posts. Read back from /api/events "answers", on a
+# root that names no robot so no turn starts.
+f3root=$(curl -sf -X POST "http://127.0.0.1:${port}/api/event" -H 'Content-Type: application/json' \
+    -d '{"content":"F3 answers probe root","kind":1,"channel":"general"}' \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])') || fail "F3 root not stored"
+h63=$(printf '%063d' 0 | tr 0 a)
+h64="${h63}a"
+f3post() {
+    body="{\"content\":\"F3 $1\",\"kind\":1,\"channel\":\"general\""
+    [ "$3" = reply ] && body="$body,\"reply_to\":\"$f3root\""
+    curl -sf -X POST "http://127.0.0.1:${port}/api/event" -H 'Content-Type: application/json' \
+        -d "$body,\"answers\":$2}" | grep -q '"ok":true' || fail "F3 $1 not stored"
+}
+f3post ok "\"$h64\"" reply
+f3post long "\"${h64}ffff\"" reply
+f3post number "$(printf '%064d' 1)" reply
+f3post upper "\"${h63}A\"" reply
+f3post short "\"$h63\"" reply
+f3post bare "\"$h64\"" none
+curl -sf "http://127.0.0.1:${port}/api/events" > "$home/f3.json"
+f3got=$(python3 - "$home/f3.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+evs = d.get("events", d) if isinstance(d, dict) else d
+got = {e["content"][3:]: e.get("answers", "MISSING") for e in evs if e.get("content", "").startswith("F3 ") and e["content"] != "F3 answers probe root"}
+print(" ".join("%s=%s" % (k, (v[:8] + "x" + str(len(v))) if v else "-") for k, v in sorted(got.items())))
+PY
+)
+echo "F3 answers read back: $f3got"
+[ "$f3got" = "bare=- long=- number=- ok=aaaaaaaax64 short=- upper=-" ] \
+    || fail "F3 answers must be exactly 64 lowercase hex as a JSON string after reply_to (got $f3got)"
+
 # L12: robots still never chain: robot_hops stays 0 on the channel.
 curl -sf "http://127.0.0.1:${port}/api/session" \
     | grep -q '"slug":"general"[^}]*"robot_hops":0' \

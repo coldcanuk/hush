@@ -76,6 +76,8 @@ static hush_status_t hush_agent_report_guidance(hush_store_t *store, const hush_
 
 static int hush_agent_intro_seen(const char *hex, const char *root);
 static void hush_agent_intro_remember(const char *hex, const char *root);
+/* Appends tag [key, value] (all required) to ev when a tag slot is free. */
+static void hush_agent_tag_put(hush_event_t *ev, const char *key, const char *value);
 
 void hush_agent_init(void)
 {
@@ -477,38 +479,36 @@ void hush_agent_fill_note(hush_event_t *ev, const hush_agent_note_in_t *in)
     ev->kind = (uint32_t)HUSH_AGENT_KIND_NOTE;
     ev->created_at = (int64_t)time(NULL);
     hush_agent_copy(ev->content, sizeof(ev->content), in->content);
-    ev->tag_count = 1;
-    memcpy(ev->tags[0][0], "h", 2);
-    hush_agent_copy(ev->tags[0][1], sizeof(ev->tags[0][1]), in->channel);
-    if (in->parent_id != NULL && in->parent_id[0] != '\0' &&
-        ev->tag_count < (size_t)HUSH_EVENT_MAX_TAGS) {
-        memcpy(ev->tags[ev->tag_count][0], "e", 2);
-        hush_agent_copy(ev->tags[ev->tag_count][1],
-                        sizeof(ev->tags[ev->tag_count][1]), in->parent_id);
-        ev->tag_count++;
-    }
-    if (in->human_pub != NULL && in->human_pub[0] != '\0' &&
-        ev->tag_count < (size_t)HUSH_EVENT_MAX_TAGS) {
-        memcpy(ev->tags[ev->tag_count][0], "p", 2);
-        hush_agent_copy(ev->tags[ev->tag_count][1],
-                        sizeof(ev->tags[ev->tag_count][1]), in->human_pub);
-        ev->tag_count++;
-    }
+    hush_agent_tag_put(ev, "h", in->channel);
+    if (in->parent_id != NULL && in->parent_id[0] != '\0')
+        hush_agent_tag_put(ev, "e", in->parent_id);
+    if (in->human_pub != NULL && in->human_pub[0] != '\0')
+        hush_agent_tag_put(ev, "p", in->human_pub);
     /* Group seam: extra p-npubs (peer robots addressed by nostr: in reply).
      * These become real p-tags so the peer gets dispatch + acks. */
-    for (int i = 0; i < 4 && in->extra_p[i] != NULL && ev->tag_count < (size_t)HUSH_EVENT_MAX_TAGS; ++i) {
+    for (int i = 0; i < 4 && in->extra_p[i] != NULL; ++i) {
         const char *np = in->extra_p[i];
         if (np[0] == '\0')
             continue;
         /* avoid dups with human */
         if (in->human_pub && strcmp(np, in->human_pub) == 0)
             continue;
-        memcpy(ev->tags[ev->tag_count][0], "p", 2);
-        hush_agent_copy(ev->tags[ev->tag_count][1],
-                        sizeof(ev->tags[ev->tag_count][1]), np);
-        ev->tag_count++;
+        hush_agent_tag_put(ev, "p", np);
     }
+    if (in->ask)
+        hush_agent_tag_put(ev, HUSH_AGENT_ASK_TAG_KEY, HUSH_AGENT_ASK_TAG_VALUE);
     (void)hush_event_compute_id(ev, ev->id);
+}
+
+static void hush_agent_tag_put(hush_event_t *ev, const char *key, const char *value)
+{
+    assert(ev != NULL && key != NULL && value != NULL);
+    if (ev->tag_count >= (size_t)HUSH_EVENT_MAX_TAGS)
+        return;
+    hush_agent_copy(ev->tags[ev->tag_count][0], sizeof(ev->tags[ev->tag_count][0]), key);
+    hush_agent_copy(ev->tags[ev->tag_count][1], sizeof(ev->tags[ev->tag_count][1]), value);
+    ev->tag_count++;
+    assert(ev->tag_count <= (size_t)HUSH_EVENT_MAX_TAGS);
 }
 
 hush_status_t hush_agent_insert_note(hush_store_t *store,

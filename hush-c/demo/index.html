@@ -2115,7 +2115,11 @@ html[data-theme="field-office"] .think-stop:focus-visible {
    in dark and 4.14:1 in desert. */
 .loop-yes { color: var(--fg); }
 .loop-stamp:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
-.loop-stamp:disabled { opacity: 0.7; }
+/* CoS 13:14 C: a later ask's stamps wait their turn. They keep full ink
+   (>= 4.5:1, pinned per theme in check_ch0_ui R3; opacity 1 beats the
+   global button:disabled fade) and say "not yet" with
+   a dotted rule and the cursor; opacity would wash the No word out. */
+.loop-stamp:disabled { opacity: 1; border-style: dotted; cursor: not-allowed; }
 /* M1 R1: an answered ask keeps one inert stamp with the word that was sent. */
 .loop-sent {
   display: inline-flex; align-items: center; border-style: dashed;
@@ -2131,6 +2135,12 @@ html[data-theme="field-office"] .think-stop:focus-visible {
 .re-link:hover { color: var(--fg); text-decoration: underline; }
 .re-link:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
 .note-flash { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* CoS 13:14 A (interim until Router M-n): the route line above the composer. */
+.route-preview {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin: 0 0 4px; color: var(--fg); font-size: 0.78rem;
+}
+.route-preview select { max-width: 100%; font: inherit; color: var(--fg); background: var(--surface); }
 html[data-theme="field-office"] .loop-yes {
   box-shadow: inset 0 0 0 1px var(--surface-2), inset 0 0 0 2px var(--accent);
 }
@@ -2346,6 +2356,11 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         <div id="stream"></div>
       </div>
       <p id="send-error" class="warn send-error" role="status"></p>
+      <!-- CoS 13:14 A, interim until Router M-n: where Send will post. -->
+      <div id="route-preview" class="route-preview" hidden>
+        <span id="route-text"></span>
+        <select id="route-pick" aria-label="Who this note goes to"></select>
+      </div>
       <form class="composer" id="form">
         <div class="mention-box" id="mention-box" hidden></div>
         <div class="composer-box">
@@ -5581,6 +5596,104 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       foSwitchTimer = setTimeout(() => send.classList.remove("fo-flick"), FO_SWITCH_FLICK_MS);
     }
 
+    /* CoS 13:14 A, interim until Router M-n. A composer note follows up a
+       robot's latest conversation in this channel instead of opening an
+       empty one:
+       - a bare Yes or No never follows up anything: it posts as a new note
+         that names no ask, so only an ask's own stamps can answer it;
+       - an @mention of one robot continues that robot's latest conversation;
+       - a plain note with exactly one robot active here continues that
+         robot's conversation; with two or more, the owner picks (no guess).
+       The route line under the log says where Send will post. */
+    let routePick = { channel: "", value: "" };
+
+    /* Relay-written lines (asks, declines, refusals, leash notes): they are
+       not a robot taking part in a conversation. */
+    function isRelayLine(e) {
+      const t = String((e && e.content) || "");
+      return isYesNoAsk(e) || isLeashNote(t) || /^(Turn declined: |Turn not started for |Too many turns )/.test(t);
+    }
+
+    /* npub -> { name, npub, root } for each robot active in an owner
+       conversation in this channel, keeping each robot's latest one. */
+    function robotConvos() {
+      const roots = {};
+      const out = {};
+      const touch = (hit, root) => {
+        if (!hit || hit.kind !== "robot") return;
+        delete out[hit.npub];
+        out[hit.npub] = { name: hit.name, npub: hit.npub, root: root };
+      };
+      channelNotes(visibleNotes(lastEvents)).forEach((e) => {
+        if (!e || !e.id) return;
+        if (!e.reply_to && isMineNote(e)) roots[e.id] = e;
+        const root = e.reply_to || e.id;
+        if (!roots[root] || isRelayLine(e)) return;
+        if (isMineNote(e)) (e.mentions || []).forEach((m) => touch(mentionHit(m), root));
+        else touch(rosterHit(e.pubkey), root);
+      });
+      return out;
+    }
+
+    function convoLabel(c) {
+      const root = lastEvents.find((x) => x.id === c.root);
+      const flat = prettyMentions((root && root.content) || "").replace(/\s+/g, " ").trim();
+      return "to " + c.name + ", continuing \u201c" + (flat.length > 40 ? flat.slice(0, 39) + "\u2026" : flat) + "\u201d";
+    }
+
+    /* { kind: "bare" | "new" | "continue" | "choose", convo, list } */
+    function composerRoute(text, mentions) {
+      if (yesNoWord(text)) return { kind: "bare" };
+      const convos = robotConvos();
+      const named = (mentions || []).map((np) => mentionHit(np)).filter((h) => h && h.kind === "robot");
+      if (named.length > 1) return { kind: "new" };
+      if (named.length === 1)
+        return convos[named[0].npub] ? { kind: "continue", convo: convos[named[0].npub] } : { kind: "new" };
+      const list = Object.values(convos);
+      const picked = routePick.channel === channel ? routePick.value : "";
+      if (picked === "new") return { kind: "new", list };
+      const hit = list.find((c) => c.npub === picked);
+      if (hit) return { kind: "continue", convo: hit, list };
+      if (list.length === 1) return { kind: "continue", convo: list[0], list };
+      return list.length ? { kind: "choose", list } : { kind: "new" };
+    }
+
+    function paintRoute() {
+      const raw = $("msg").value;
+      const assembled = assembleMentionContent(raw, mentionRoster());
+      const route = composerRoute(assembled.content, assembled.mentions);
+      const box = $("route-preview");
+      if (!assembled.content.trim()) { box.hidden = true; return route; }
+      box.hidden = false;
+      const words = {
+        bare: "to #" + channel + " as a new note. A bare Yes or No answers an ask only from its stamps.",
+        new: "to #" + channel + ", new conversation",
+        choose: "Choose who this goes to:",
+        continue: route.convo ? convoLabel(route.convo) : ""
+      };
+      $("route-text").textContent = words[route.kind];
+      paintRoutePick(route);
+      return route;
+    }
+
+    function paintRoutePick(route) {
+      const pick = $("route-pick");
+      const list = route.list || [];
+      pick.hidden = !list.length;
+      const key = list.map((c) => c.npub + c.root).join(",") + "|" + route.kind + "|" + (route.convo ? route.convo.npub : "");
+      if (pick.dataset.key === key) return;
+      pick.dataset.key = key;
+      const opts = [["", "Choose\u2026"]].concat(list.map((c) => [c.npub, convoLabel(c)]), [["new", "New conversation in #" + channel]]);
+      pick.replaceChildren(...opts.map(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; return o; }));
+      pick.value = route.kind === "continue" ? route.convo.npub : (route.kind === "new" ? "new" : "");
+    }
+
+    $("route-pick").addEventListener("change", () => {
+      routePick = { channel: channel, value: $("route-pick").value };
+      paintRoute();
+    });
+    $("msg").addEventListener("input", () => { paintRoute(); });
+
     $("form").addEventListener("submit", async (e) => {
       e.preventDefault();
       if (mentionOpen) return;
@@ -5588,6 +5701,11 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       const text = assembled.content;
       if (!text) return;
       if (sendingMessage) return;
+      const route = paintRoute();
+      if (route.kind === "choose") {
+        $("send-error").textContent = "Choose who this goes to first.";
+        return;
+      }
       sendingMessage = true;
       const draft = $("msg").value;
       $("send").disabled = true;
@@ -5601,6 +5719,10 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       assembled.mentions.forEach((np, i) => {
         body["mention_" + i] = np;
       });
+      if (route.kind === "continue") {
+        body.reply_to = route.convo.root;
+        if (!assembled.mentions.length) body.mention_0 = route.convo.npub;
+      }
       pendingMentions = [];
       try {
         await api("/api/event", body);
@@ -5608,6 +5730,8 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
           $("msg").value = "";
           composerPills = [];
           paintComposerPills();
+          routePick = { channel: "", value: "" };
+          paintRoute();
         }
         await tick();
       } catch (err) {
@@ -6443,25 +6567,25 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       return String(text || "").indexOf("Continue this loop?") === 0;
     }
 
-    /* M1 channels only: the owner answers every chaperon ask that waits
-       for a bare Yes or No (loop, approval, team raise) from the stamps on
-       that ask in the channel log. The stamps post the existing reply_to
-       answer the relay already parses (hush_agent_loop_parse_answer).
-       A team ask stored before M1 still ends with the old wording. */
-    function isYesNoAsk(text) {
-      const t = String(text || "");
-      return isLoopAsk(t) || t.indexOf("Approval needed: ") === 0 ||
-        /Raise this team\? Reply Yes or No(?: in this thread)?\.\s*$/.test(t);
+    /* M1 channels only: the owner answers every ask the relay itself wrote
+       (loop, approval, team raise) from the stamps on that ask in the
+       channel log. The relay marks those asks ("ask": true on /api/events,
+       hush_agent_is_relay_ask); text alone never makes an ask, so a robot
+       reply that reads like one gets no stamps (Gauge M1-F1). The stamps
+       post the reply_to answer the relay parses (hush_agent_loop_parse_answer). */
+    function isYesNoAsk(e) {
+      return !!(e && e.ask === true);
     }
 
     /* M1 R1/R2/R4: which owner Yes/No answered which ask, read from the
        stored notes so it survives every re-render and a reload. It mirrors
-       the relay (hush_agent_approval_answer): per conversation root, each
-       owner Yes/No settles the oldest ask still waiting there. A Yes/No
-       with no ask waiting answers no ask here; the relay drops it only when
-       it names an answered ask (the stamp's "answers" field,
-       hush_agent_answered_repeat), else it reaches the robot. */
-    let askState = { byAsk: {}, byAnswer: {}, oldest: {} };
+       the relay: an owner Yes/No that names an answered ask (its "answers"
+       ask, else its reply_to) is dropped (hush_agent_answered_repeat) and
+       answers nothing here (Gauge M1-F2); any other owner Yes/No settles
+       the oldest ask still waiting in its conversation
+       (hush_agent_approval_answer). A robot's next note in that
+       conversation answers the ask whose Yes released its turn (R4). */
+    let askState = { byAsk: {}, byAnswer: {}, oldest: {}, released: {}, voided: {} };
     /* Asks answered from this window whose Yes/No note is not stored yet,
        ask id -> word. Holds the stamp inert while the post is in flight. */
     const answering = {};
@@ -6472,26 +6596,49 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
     }
 
     function readAskState(notes) {
-      const state = { byAsk: {}, byAnswer: {}, oldest: {} };
+      const state = { byAsk: {}, byAnswer: {}, oldest: {}, released: {}, voided: {} };
       const waiting = {};
+      const freed = {};
       (notes || []).forEach((e) => {
         if (!e || !e.id) return;
         const root = e.reply_to || e.id;
-        if (isYesNoAsk(e.content)) {
-          (waiting[root] = waiting[root] || []).push(e.id);
+        if (isYesNoAsk(e)) {
+          (waiting[root] = waiting[root] || []).push(e);
           return;
         }
+        if (!e.reply_to) return;
+        if (!isMineNote(e)) return releaseAsk(state, freed[root], e);
         const word = yesNoWord(e.content);
-        const queue = e.reply_to && waiting[e.reply_to];
-        if (!word || !isMineNote(e) || !queue || !queue.length) return;
+        const queue = waiting[root] || [];
+        if (word && state.byAsk[e.answers || e.reply_to]) return;
+        /* Any other owner note the answer handlers do not take voids the
+           asks waiting in its conversation (hush_agent_ask_void). */
+        if (!word || !queue.length) {
+          queue.splice(0).forEach((a) => { state.voided[a.id] = true; });
+          return;
+        }
         const ask = queue.shift();
-        state.byAsk[ask] = { word: word, id: e.id };
-        state.byAnswer[e.id] = ask;
+        state.byAsk[ask.id] = { word: word, id: e.id };
+        state.byAnswer[e.id] = ask.id;
+        if (word === "Yes") (freed[root] = freed[root] || []).push(ask);
       });
       Object.keys(waiting).forEach((root) => {
-        if (waiting[root].length) state.oldest[root] = waiting[root][0];
+        if (waiting[root].length) state.oldest[root] = waiting[root][0].id;
       });
       return state;
+    }
+
+    /* M1 R4 (CoS 13:14 B): a robot's note answers the ask whose Yes freed
+       its turn: the oldest freed ask that names the robot, else the oldest
+       that names no one (loop, team). It takes that ask off the queue. */
+    function releaseAsk(state, queue, e) {
+      const hit = rosterHit(e.pubkey);
+      if (!queue || !queue.length || !hit || hit.kind !== "robot") return;
+      const named = (a) => String(a.content || "").indexOf(" " + hit.name + " wants ") >= 0;
+      let at = queue.findIndex(named);
+      if (at < 0) at = queue.findIndex((a) => !/ wants to /.test(String(a.content || "")));
+      if (at < 0) return;
+      state.released[e.id] = queue.splice(at, 1)[0].id;
     }
 
     /* The inert stamp an answered ask keeps: the word that was sent. */
@@ -6510,6 +6657,14 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       const word = (done && done.word) || answering[note.id];
       if (word) {
         bar.appendChild(sentStamp(word));
+        return bar;
+      }
+      /* A newer owner note in the conversation closed this ask: the relay
+         no longer holds what it asked about, so it takes no answer. */
+      if (askState.voided[note.id]) {
+        const shut = sentStamp("");
+        shut.textContent = "Closed by a newer note";
+        bar.appendChild(shut);
         return bar;
       }
       const yes = document.createElement("button");
@@ -6561,10 +6716,12 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
     }
 
     /* M1 R4: a reply in the flat log names what it answers: an owner's
-       Yes/No names its ask, any other reply names its conversation's first
-       note. The link scrolls to that card. */
+       Yes/No names its ask, a robot's note names the ask whose Yes freed
+       its turn (askState.released), any other reply names its
+       conversation's first note. The link scrolls to that card and flashes
+       it; the jump survives the re-renders of the next JUMP_MS (F4). */
     function reLink(e) {
-      const target = askState.byAnswer[e.id] || e.reply_to;
+      const target = askState.byAnswer[e.id] || askState.released[e.id] || e.reply_to;
       const to = target && lastEvents.find((x) => x.id === target);
       if (!to) return null;
       const flat = prettyMentions(to.content || "").replace(/\s+/g, " ").trim();
@@ -6576,14 +6733,34 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       link.title = "Show the note this answers";
       link.dataset.to = to.id;
       link.addEventListener("click", () => {
-        const card = [...document.querySelectorAll("#stream .note")]
-          .find((c) => c.dataset.id === to.id);
-        if (!card) return;
-        card.scrollIntoView({ block: "center" });
-        card.classList.add("note-flash");
-        setTimeout(() => card.classList.remove("note-flash"), 1200);
+        jumpTo = { id: to.id, until: Date.now() + JUMP_MS };
+        clearTimeout(jumpTimer);
+        jumpTimer = setTimeout(() => {
+          jumpTo = null;
+          document.querySelectorAll("#stream .note-flash")
+            .forEach((c) => c.classList.remove("note-flash"));
+        }, JUMP_MS);
+        applyJump();
       });
       return link;
+    }
+
+    /* Gauge M1-F4: the card a re: link jumped to. render() clears and
+       repaints #stream and scrolls to the bottom; while a jump is live it
+       re-applies the flash and the scroll to the fresh card instead. */
+    const JUMP_MS = 1200;
+    let jumpTo = null;
+    let jumpTimer = null;
+
+    /* Flashes and centres the jump card; false when no jump is live. */
+    function applyJump() {
+      if (!jumpTo || Date.now() >= jumpTo.until) return false;
+      const card = [...document.querySelectorAll("#stream .note")]
+        .find((c) => c.dataset.id === jumpTo.id);
+      if (!card) return false;
+      card.classList.add("note-flash");
+      card.scrollIntoView({ block: "center" });
+      return true;
     }
 
     function thinkLabel(jobs) {
@@ -7395,7 +7572,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         bar.appendChild(open);
         n.appendChild(bar);
       }
-      if (isHiveOwner() && isYesNoAsk(e.content))
+      if (isHiveOwner() && isYesNoAsk(e))
         n.appendChild(loopAnswerBar(e));
       if (extra) extra(n, e);
 
@@ -7692,6 +7869,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       const notes = mine.filter((e) => !failureOn[e.id]);
       askState = readAskState(mine);
       Object.keys(answering).forEach((id) => { if (askState.byAsk[id]) delete answering[id]; });
+      paintRoute();
       $("count").textContent = notes.length + (notes.length === 1 ? " note" : " notes");
       const projN = (session.projects || []).length;
       // r4 (Ops F2): one inline item per stat, wrapped, so the drawer fits.
@@ -7753,7 +7931,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
             }
             s.appendChild(n);
           });
-          s.scrollTop = s.scrollHeight;
+          if (!applyJump()) s.scrollTop = s.scrollHeight;
         }
       }
     }

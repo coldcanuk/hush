@@ -182,19 +182,26 @@ static hush_status_t hush_http_send_event(int fd, const hush_event_t *event, int
     char content[HUSH_HTTP_CONTENT_ESC_MAX] = {0};
     char mentions[HUSH_HTTP_MENTIONS_JSON_MAX] = {0};
     char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    char answers[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    char answers_esc[(HUSH_EVENT_ID_HEX_LEN + 1) * HUSH_JSON_U_LEN] = {0};
     char channel[(HUSH_EVENT_MAX_TAG_LEN + 1) * HUSH_JSON_U_LEN] = {0};
     char body[HUSH_HTTP_EVENT_JSON_MAX] = {0};
     (void)hush_json_escape(event->content, content, sizeof(content));
     (void)hush_json_escape(hush_http_event_channel(event),
                           channel, sizeof(channel));
     hush_http_event_reply_to(root, sizeof(root), event);
+    hush_http_event_answers(answers, sizeof(answers), event);
+    (void)hush_json_escape(answers, answers_esc, sizeof(answers_esc));
     HUSH_TRY(hush_http_format_mentions(mentions, sizeof(mentions), event));
+    /* M1 R2: "ask" only on a relay-tagged ask its robot or Major signed. */
+    const int ask = hush_agent_is_relay_ask(event) && hush_http_is_robot_key(event->pubkey);
     int written = snprintf(body, sizeof(body),
         "%s{\"id\":\"%s\",\"pubkey\":\"%s\",\"kind\":%u,"
         "\"created_at\":%lld,\"content\":\"%s\",\"channel\":\"%s\","
-        "\"reply_to\":\"%s\",\"mentions\":[%s]}", first ? "" : ",",
-        event->id, event->pubkey, event->kind, (long long)event->created_at,
-        content, channel, root, mentions);
+        "\"reply_to\":\"%s\",\"answers\":\"%s\",\"ask\":%s,\"mentions\":[%s]}",
+        first ? "" : ",", event->id, event->pubkey, event->kind,
+        (long long)event->created_at, content, channel, root, answers_esc,
+        ask ? "true" : "false", mentions);
     if (written < 0 || (size_t)written >= sizeof(body))
         return HUSH_ERR_FULL;
     return hush_http_write_all(fd, body, (size_t)written);

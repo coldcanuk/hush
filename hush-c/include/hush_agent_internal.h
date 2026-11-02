@@ -173,6 +173,9 @@ typedef struct {
     time_t budget_deadline;
     /* Jailed stub HOME, made before fork and removed by close (#336). */
     char stub_home[HUSH_SANDBOX_PATH_MAX];
+    /* 1 when hush_agent_chief_prepare appended HUSH_AGENT_TEAM_ASK to out:
+     * the reply is posted as a relay ask (M1 R2, Gauge M1-F1). */
+    int team_ask;
 } hush_agent_job_t;
 
 /* Loop state for one thread root (#280). Hush drives every turn; robots
@@ -267,6 +270,9 @@ typedef struct {
     /* Optional additional p-npubs (for group mention seam: robots addressing peers).
      * Null-terminated list or up to 4. Values are npub strings. */
     const char *extra_p[4];
+    /* 1 when the relay itself wrote this Yes/No ask: fill adds the
+     * HUSH_AGENT_ASK_TAG_KEY/VALUE tag (M1 R2, Gauge M1-F1). */
+    int ask;
 } hush_agent_note_in_t;
 
 typedef struct {
@@ -525,9 +531,10 @@ void hush_agent_plan_trigger(char *out, size_t outsz, const char *root);
     HUSH_AGENT_APPROVAL_ASK_HEAD "%s wants to take a turn. Reply Yes or No."
 #define HUSH_AGENT_APPROVAL_ELECT_FMT \
     HUSH_AGENT_APPROVAL_ASK_HEAD "%s wants to run the leader election. Reply Yes or No."
-/* agent_team.c ends a chief's reply with this when a team waits for Yes;
- * agent_approve.c reads it to file the answer under that ask (M1 R2). */
+/* agent_team.c ends a chief's reply with this when a team waits for Yes. */
 #define HUSH_AGENT_TEAM_ASK "Raise this team? Reply Yes or No."
+/* 1 when line (required, relay-built) is an approval or loop Yes/No ask. */
+int hush_agent_is_ask_line(const char *line);
 #define HUSH_AGENT_APPROVAL_NO_HEAD "Turn declined: "
 #define HUSH_AGENT_APPROVAL_NO_FMT HUSH_AGENT_APPROVAL_NO_HEAD "%s stood down."
 #define HUSH_AGENT_APPROVAL_FULL_LINE \
@@ -582,7 +589,8 @@ void hush_agent_follow_resume(hush_store_t *store, const hush_launch_t *launch,
 int hush_agent_follow_peek(const char *root, int *loop_active);
 
 /* agent_dispatch.c: posts one line from the channel chaperon (Payne by
- * default) on ev's root. */
+ * default) on ev's root. line is always relay text; when it is a Yes/No ask
+ * (hush_agent_is_ask_line) the note carries the relay ask tag. */
 void hush_agent_chaperon_say(hush_store_t *store, const hush_launch_t *launch,
                              const hush_event_t *ev, const char *line);
 

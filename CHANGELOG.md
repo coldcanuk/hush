@@ -22,11 +22,10 @@ the top-level `VERSION` file.
   8 themes x 1440 and 390, and a stub-runtime robot reply, approved with the channel Yes stamp, visible
   inline with no click) and the updated `tests/check_main_log_provider_failure.mjs`.
   Known M1 gaps:
-  - Typing Yes or No in the channel composer does not answer an ask. The composer always posts a new
+  - Typing Yes or No in the channel composer does not answer an ask. A bare Yes or No posts a new
     top-level note with no `reply_to`, so only the Yes / No stamps on the ask answer it (until M5).
-  - A follow-up without a mention no longer stays in the conversation. The thread composer, which
-    replied to the root and re-mentioned a 1:1 thread's sole robot, is gone; a channel note without a
-    mention is a new top-level note that names no robot (pending the Ops LOOK).
+  - Follow-up routing in the composer is interim until Router M-n: the page picks the conversation
+    from the loaded channel log (see the M1 Gauge fixes entry below), not a router.
   - Milestone/desk naming and 1:1 robot threads are removed from the UI, with no channel replacement yet.
   - The relay remembers answered asks in memory only (the last 64 ask ids, and up to 64 waiting asks).
     After a relay restart, or once 64 newer asks were answered, a repeated owner Yes / No on an old
@@ -53,16 +52,19 @@ the top-level `VERSION` file.
     Yes to a plain robot question in a conversation with an earlier answered ask still reaches the
     robot.
   - API (additive): `POST /api/event` takes an optional `answers`, the id of the Yes / No ask the note
-    answers. It must be exactly 64 lowercase hex and is read only with `reply_to`; it is stored as a
-    second `e` tag after the root, so routing and `GET /api/events` `reply_to` are unchanged. Any other
-    value is ignored. Documented in UI_SPEC.md (`POST /api/event` row).
+    answers. It must be a JSON string whose decoded value is exactly 64 lowercase hex characters, and
+    it is read only with `reply_to`; it is stored as a second `e` tag after the root, so routing and
+    `GET /api/events` `reply_to` are unchanged. A longer or shorter string, uppercase hex, a JSON
+    number, or `answers` without `reply_to` adds no tag (a longer id is not cut to 64), and the note
+    still posts. `GET /api/events` reports the tag back as `answers` and marks relay-written asks
+    `ask: true`. Documented in UI_SPEC.md (`POST /api/event` and `GET /api/events` rows).
   - The page posts one answer per ask. The first click replaces the stamps with an inert "Yes sent" /
     "No sent" mark at once, before the relay answers; an answered ask stays inert after a reload.
     When a conversation holds more than one open ask, only the oldest takes an answer, matching the
     relay, which settles the oldest held turn first.
-  - A reply carries a "re: …" link to the note it answers: an owner Yes / No names its own ask, any
-    other reply names the note that started its conversation. The link scrolls to that note and
-    flashes it.
+  - A reply carries a "re: …" link to the note it answers: an owner Yes / No names its own ask, a
+    robot's note names the ask whose Yes freed its turn, any other reply names the note that started
+    its conversation. The link scrolls to that note and flashes it.
   - The Yes stamp text is `--fg`, at least 4.5:1 in all 8 themes (it was `--accent`: 3.98:1 in dark
     and 4.14:1 in desert).
   - The thread pane's dead CSS is gone, and README.md and the intro-once, token-budget and topic-leash
@@ -73,6 +75,38 @@ the top-level `VERSION` file.
   Send clear of the quick bar after focusing `#msg` at 390), `tests/test_approve.c` (`check_answer_once`,
   `check_answer_plain`)
   and `tests/check_launch.sh` (0 dead thread selectors).
+
+- M1 Gauge fixes (Gauge FAIL on 9cf27c08, M1-F1..F11) and the CoS 13:14 scope add (A-D):
+  - Only an ask the relay itself wrote is an ask (F1). The relay tags its approval, loop and team asks
+    `["t","hush-ask"]` (`hush_agent_chaperon_say`, `hush_agent_chief_prepare`) and files only tagged
+    notes as waiting asks (`hush_agent_ask_note`). Before, any note whose text read like an ask was
+    filed, so a robot reply such as "Approval needed: one more pun? Reply Yes or No." took the next
+    answer's slot and a repeated stamp reached the robot again. The page shows stamps only on
+    `ask: true` notes.
+  - The page reads answered asks the way the relay settles them (F2): an owner Yes / No that names an
+    answered ask is a dropped repeat and answers nothing, so a duplicate no longer paints a newer
+    waiting ask "Yes sent". An ask a newer owner note voided shows "Closed by a newer note".
+  - `answers` is strict (F3, see the API bullet above).
+  - A "re: …" jump keeps its flash and scroll through a log repaint for its 1.2 s (F4); before, a
+    repaint cleared the card and scrolled to the bottom.
+  - A robot's answer names the ask its turn answered, not the conversation's first note (B).
+  - A disabled stamp on a later ask keeps full ink, at least 4.5:1 in all 8 themes, with a dotted
+    rule; it was faded by `opacity`, down to 2.26:1 in field-office (C).
+  - Composer routing, interim until Router M-n (A, D). A plain note continues the latest conversation
+    of the one robot active in the channel, and an @mention of one robot continues that robot's
+    latest conversation, so it keeps its prior turns; a line above the composer says where Send will
+    post ("to Ace, continuing “…”"). A bare Yes or No never follows up: it posts as a new note that
+    names no ask. With two or more robots active, Send waits for a choice in `#route-pick`; no robot
+    is guessed. Before, every composer note opened a new, empty conversation.
+  - Cleanups: one hex-digit string (`HUSH_JSON_HEX` in `hush_json.h`, F10); one store scan in
+    `tests/test_approve.c` and no mid-file prototype there (F11); `check_loop_legible.py` holds
+    `agent_approve.c` at its real 27 functions (F8) and `test_approve.c` at 62.
+  Pinned by `tests/test_approve.c` (`check_answer_lookalike`, `check_answer_held`,
+  `check_answer_bare`, `check_answer_fifo`, `check_answer_void`, `check_answer_team`, and a second bare
+  Yes in `check_answer_plain`), `tests/check_loop.sh` (F3 `answers` read-back) and
+  `tests/check_ch0_ui.cjs` (F1 look-alikes carry no stamps, F2, a forced repaint during the R4 jump,
+  the R4 robot anchor, disabled stamps in R3, and the A routing pins; `CH0_ROUTE_ONLY=1` runs only
+  the routing pins).
 
 - Canvas: the code view is visible again in field-office. The editing textarea had an opaque paper slip
   (`--surface-2`) above the highlight layer, so code painted blank there (Ops #364 follow-up, from #282).

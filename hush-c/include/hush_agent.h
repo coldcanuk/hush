@@ -53,8 +53,17 @@ void hush_agent_reset_follow(const hush_launch_t *launch,
 int hush_agent_approval_answer(hush_store_t *store, const hush_launch_t *launch,
                                const hush_event_t *ev);
 
-/* M1 R2: remembers ev (borrowed) as a waiting ask when it is a Yes/No ask
- * line the relay posted in a conversation. NULL or any other note: no-op. */
+/* M1 R2: the tag the relay puts on a Yes/No ask it wrote itself (approval,
+ * loop, team). Text alone never makes an ask: a robot reply that reads like
+ * one carries no tag (Gauge M1-F1). */
+#define HUSH_AGENT_ASK_TAG_KEY "t"
+#define HUSH_AGENT_ASK_TAG_VALUE "hush-ask"
+
+/* M1 R2: 1 when ev (borrowed) carries the relay ask tag; NULL: 0. */
+int hush_agent_is_relay_ask(const hush_event_t *ev);
+
+/* M1 R2: remembers ev (borrowed) as a waiting ask when it carries the relay
+ * ask tag and sits in a conversation. NULL or any other note: no-op. */
 void hush_agent_ask_note(const hush_event_t *ev);
 
 /* M1 R2: forgets every ask still waiting in conversation root (borrowed):

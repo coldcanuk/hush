@@ -660,10 +660,10 @@ demo). No Raylib dependency on the main hush-relay.
 | `POST /api/channel` | `{action:"create"\|"delete"\|"group"\|"ungroup"\|"manage", name?, slug?, group?, group_id?, human_0…human_7?, robot_0…robot_7?, kind?, robot_reply?, robot_talk?, burst_ms?, max_jobs?, cooldown_s?}`. Create needs `name`. Delete/group/ungroup/manage need `slug`. Manage may also set the policy leash (§20). |
 | `POST /api/group` | `{name}` creates a parent group with its own UUID. |
 | `GET /api/status` | existing + `thinking` (JSON array of `{name,parent}` for in-flight robot jobs). |
-| `GET /api/events` | notes plus `reply_to` (first `e` tag; empty when the note is not a reply). |
+| `GET /api/events` | notes plus `reply_to` (first `e` tag; empty when the note is not a reply), `answers` (M1 R2: the second `e` tag, the ask a stamp named; empty when there is none) and `ask` (M1 R2: `true` only on a Yes/No ask the relay itself wrote, i.e. the note carries the `["t","hush-ask"]` tag and Major or an enabled roster robot signed it; else `false`). |
 | `GET /api/thread?root=<64-hex>` | (M1: relay route kept, no UI caller) durable thread memory: `{ok,root,brief,name,category,archived,count,truncated,turns[]}`. `name` and `category` are empty when the root has no desk. `archived` is false when the root is active. `turns[]` is `id/pubkey/at/content`, newest 32 oldest-first. Unknown roots return empty. Malformed roots are 400. A desk file that is not a desk is 400. |
 | `POST /api/thread` | (M1: relay route kept, no UI caller) `{root, name?, category?, project?, archived}` while logged in with a vibe. `root` is 64 lowercase hex. `name`, `category`, and `project` are at most 64 bytes, with no ASCII control byte. `project` must be an existing launch project slug, or empty. `archived` is 0, 1, false, or true. A blank name, blank category, blank project, and archived 0 removes the desk file. The transcript and the brief stay. Success returns the same object as GET. |
-| `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id) + optional `answers` (M1 R2: the id of the Yes/No ask a stamp answers, exactly 64 lowercase hex; read only when `reply_to` is set, stored as a second `e` tag after the root, so routing and `GET /api/events` `reply_to` are unchanged; any other value is ignored). Success is `{ok:true,id}`. Content may contain `nostr:npub1…`. Mentions enter `hush_intel` (burst / policy) before `hush_agent`. |
+| `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id) + optional `answers` (M1 R2: the id of the Yes/No ask a stamp answers. It must be a JSON string whose decoded value is exactly 64 lowercase hex characters, and it is read only when `reply_to` is set; it is then stored as a second `e` tag after the root, so routing and `GET /api/events` `reply_to` are unchanged. A longer or shorter string, uppercase hex, a JSON number, or `answers` without `reply_to` adds no tag (never truncated), and the note still posts; `hush_http_add_answers`). Success is `{ok:true,id}`. Content may contain `nostr:npub1…`. Mentions enter `hush_intel` (burst / policy) before `hush_agent`. |
 | `POST /api/canvas` | `{project, path, content}` writes `content` to `path` under that launch project's directory. `project` is a project id. `path` is a relative file (no `..`, no absolute). Missing project, empty content, or a path that escapes the project → `{ok:false,error}`. |
 | `POST /api/fixup` | `{instruction, text}` runs a one-shot `grok -p` and returns `{ok:true,text}` or `{ok:false,error}`. Does **not** insert a hive note. Instruction max 500. Text max `HUSH_EVENT_MAX_CONTENT`. |
 | `POST /api/complete` | `{prefix, suffix}` starts a Fill-in-the-Middle job and returns `{ok:true,token}` immediately. Does **not** wait on Grok. Does **not** insert a hive note. A new start replaces any in-flight job. |
@@ -770,19 +770,34 @@ Thread button or a reply count.
 **Yes/No asks.** A loop ask ("Continue this loop? Reply Yes or No."),
 an approval ask ("Approval needed: … Reply Yes or No.") and a team ask
 ("… Raise this team? Reply Yes or No.") show `.loop-stamps` Yes / No
-stamps to the hive owner. A stamp posts `Yes` or `No` with
+stamps to the hive owner. Only an ask the relay itself wrote counts:
+the relay tags it `["t","hush-ask"]` when it posts it (the chaperon's
+approval and loop asks, and Major's reply when the relay appends the
+team ask) and `GET /api/events` reports it as `ask: true`. A note that
+only reads like an ask (a robot reply, or one the owner typed) has no
+stamps, and the relay never files it as a waiting ask (Gauge M1-F1).
+A stamp posts `Yes` or `No` with
 `reply_to=<the ask's root>`, which is the relay's existing answer path,
 and `answers=<the ask's id>`, which names the ask it answers.
-Typing Yes in `#msg` posts a new top-level note and does not answer an
-ask (open: plan r2 M5).
+Typing a bare Yes or No in `#msg` posts a new top-level note that names
+no ask and answers nothing (see Composer routing; open: plan r2 M5).
 
 An answer is single-shot. The first click replaces the stamps with an
 inert `.loop-sent` mark ("Yes sent" / "No sent", role status) before the
 relay answers; on a failed post the stamps come back. An ask the owner
-already answered (paired oldest first per conversation from the stored
-notes) shows the mark, also after a reload. When a conversation holds
-more than one open ask, the newer ones show disabled stamps titled
-"Answer the earlier ask in this conversation first." The relay files
+already answered shows the mark, also after a reload. The page reads
+that from the stored notes the way the relay settles them: an owner
+Yes / No whose `answers` (else its `reply_to`) is an ask already
+answered is a dropped repeat and answers nothing; any other owner
+Yes / No settles the oldest ask still waiting in its conversation
+(Gauge M1-F2). Any other owner note in the conversation closes the asks
+still waiting there, as the relay voids them (`hush_agent_ask_void`):
+they show an inert "Closed by a newer note" mark and take no answer.
+When a conversation holds more than one open ask, the
+newer ones show disabled stamps titled "Answer the earlier ask in this
+conversation first." A disabled stamp keeps its full ink (at least
+4.5:1 in all 8 themes) and shows a dotted rule and a not-allowed cursor
+(CoS 13:14 C). The relay files
 each settled ask by its id and ignores the owner's Yes or No that names
 an ask it already settled (`answers`, or a `reply_to` that is the ask
 itself): no robot turn, no new ask. A Yes or No that names no settled
@@ -791,24 +806,55 @@ is `--fg` on the `--accent` rule, at least 4.5:1 in all 8 themes.
 
 **Reply anchors.** A reply shows a `.re-link` button ("re: " and up to
 48 characters of the note it answers, title "Show the note this
-answers"). An owner Yes / No points at its own ask; any other reply
-points at the note that started its conversation. Clicking it scrolls
-that note into view and outlines it in `--accent` for 1.2 s.
+answers"). An owner Yes / No points at its own ask. A robot's note
+points at the ask whose Yes freed its turn: the oldest such ask in the
+conversation that names the robot, else the oldest that names no robot
+(loop, team); each freed ask is taken by one robot note (CoS 13:14 B).
+Any other reply points at the note that started its conversation.
+Clicking it scrolls that note into view and outlines it in `--accent`
+for 1.2 s; a log repaint within those 1.2 s keeps the outline and the
+scroll on the repainted card instead of jumping to the bottom (Gauge
+M1-F4).
+
+**Composer routing (interim until Router M-n).** A robot is active in a
+channel when an owner conversation there (a top-level note the owner
+wrote) mentions it in an owner note or holds a note it wrote that is not
+a relay line (an ask, a decline, a refusal, a leash note). Each active
+robot's latest such conversation is the one a follow-up continues.
+`#route-preview` above the composer shows where Send will post, before
+Send, whenever `#msg` holds text:
+- A bare Yes or No never follows up: "to #<channel> as a new note. A
+  bare Yes or No answers an ask only from its stamps." It posts with no
+  `reply_to`, so it cannot settle a waiting ask.
+- An @mention of exactly one robot that has a conversation here continues
+  it (`reply_to` its root), so the robot keeps its prior turns. Two or
+  more mentioned robots, or a robot with no conversation here, start a
+  new conversation.
+- A plain note with exactly one active robot continues that robot's
+  conversation, shown as "to <robot>, continuing “<first 40 characters
+  of the conversation's first note>”", and adds that robot as
+  `mention_0`.
+- With two or more active robots the line reads "Choose who this goes
+  to:" next to `#route-pick` (each robot's conversation, and "New
+  conversation in #<channel>"). Send posts nothing until a choice is made
+  and says "Choose who this goes to first." No robot is guessed.
+- `#route-pick` also lets the owner start a new conversation instead of
+  the one-robot follow-up. The choice holds for the channel until Send.
 
 **Robot rows.** A robot row in the roster opens that robot's settings
 and loadout drawer (title "Open <name>'s settings and loadout"); it no
 longer starts a 1:1 thread.
 
 **Known M1 gaps:**
-- Typing Yes or No in the channel composer does not answer an ask. The composer always posts a new
+- Typing Yes or No in the channel composer does not answer an ask. A bare Yes or No posts a new
   top-level note with no `reply_to`, so only the Yes / No stamps on the ask answer it (until M5).
-- A follow-up without a mention no longer stays in the conversation. The thread composer, which
-  replied to the root and re-mentioned a 1:1 thread's sole robot, is gone; a channel note without a
-  mention is a new top-level note that names no robot (pending the Ops LOOK).
+- Follow-up routing is interim until Router M-n (see Composer routing): it is computed in the page
+  from the loaded channel log, not by a router.
 - Milestone/desk naming and 1:1 robot threads are removed from the UI, with no channel replacement yet.
-- The relay remembers answered asks in memory only (the last 64 conversations). After a relay restart,
-  or once 64 newer conversations were answered, a repeated owner Yes / No on an old answered ask is
-  again treated as a new note to the conversation's robot. The page still shows that ask as answered.
+- The relay remembers answered asks in memory only (the last 64 answered ask ids, and up to 64 waiting
+  asks). After a relay restart, or once 64 newer asks were answered, a repeated owner Yes / No on an old
+  answered ask is again treated as a new note to the conversation's robot. The page still shows that
+  ask as answered.
 - Notes stored before M1 keep their "in this thread" text; stored content is shown as written.
 - `GET` / `POST /api/thread` stay on the relay, ungated and with no UI caller, until the M4 gate and
   delete. `tests/check_launch.sh` pins 0 callers in the page.
