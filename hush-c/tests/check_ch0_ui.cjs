@@ -458,9 +458,13 @@ async function main() {
   if (after20.turns !== 1 || after20.asks !== 1)
     fail(`R2 ${CLICKS} clicks must run exactly 1 robot turn and raise 1 ask; got ${after20.turns} turns, ${after20.asks} asks`);
   // R2 server: duplicate owner answers POSTed straight to the relay (no page
-  // lock involved) must start no turn and raise no ask.
+  // lock involved) must start no turn and raise no ask. Each repeats the
+  // stamp's own body: reply_to the conversation plus "answers" naming the
+  // answered ask (CoS 10:03: the relay drops only a Yes/No that targets an
+  // ask already answered; a bare Yes/No with no ask waiting reaches the robot).
+  if (!after20.askId) fail('R2 setup: no approval ask id to repeat an answer to');
   for (const word of ['Yes', 'yes.', 'Yes', 'No'])
-    await post({ content: word, kind: 1, channel: 'welcome', reply_to: ASK });
+    await post({ content: word, kind: 1, channel: 'welcome', reply_to: ASK, answers: after20.askId });
   await sleep(6000);
   const dup = await tally();
   console.log('R2 server after 4 duplicate POSTs (Yes, yes., Yes, No): ' + JSON.stringify(dup));

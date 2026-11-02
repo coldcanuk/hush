@@ -28,9 +28,13 @@ the top-level `VERSION` file.
     replied to the root and re-mentioned a 1:1 thread's sole robot, is gone; a channel note without a
     mention is a new top-level note that names no robot (pending the Ops LOOK).
   - Milestone/desk naming and 1:1 robot threads are removed from the UI, with no channel replacement yet.
-  - The relay remembers answered asks in memory only (the last 64 conversations). After a relay restart,
-    or once 64 newer conversations were answered, a repeated owner Yes / No on an old answered ask is
-    again treated as a new note to the conversation's robot. The page still shows that ask as answered.
+  - The relay remembers answered asks in memory only (the last 64 ask ids, and up to 64 waiting asks).
+    After a relay restart, or once 64 newer asks were answered, a repeated owner Yes / No on an old
+    answered ask is again treated as a new note to the conversation's robot. The page still shows that
+    ask as answered.
+  - Only a Yes / No that names an answered ask is dropped: the stamp's `answers` field, or a `reply_to`
+    that is the ask itself. A bare owner Yes / No posted straight to `/api/event` with only the
+    conversation's `reply_to` names no ask, so with no ask waiting it reaches the robot (CoS 10:03).
   - Notes stored before M1 keep their "in this thread" text; stored content is shown as written.
   - `GET` / `POST /api/thread` stay on the relay, ungated and with no UI caller, until the M4 gate and
     delete. `tests/check_launch.sh` pins 0 callers in the page.
@@ -42,9 +46,16 @@ the top-level `VERSION` file.
   stamps, and each further click posted another `Yes` that the relay passed to the conversation's
   robot as a new mention: "Mention received." plus a new turn and a new approval ask (20 clicks gave
   10 extra turns). Now:
-  - The relay ignores the owner's Yes or No in a conversation whose ask it already settled and where
-    nothing else waits: no new turn, no new ask (`hush_agent_answered_repeat`, called from
-    `hush_intel_consider`).
+  - The relay ignores the owner's Yes or No that targets an ask it already settled: no new turn, no
+    new ask (`hush_agent_answered_repeat`, called from `hush_intel_consider` before the answer
+    handlers). Answers are filed by ask id, not by conversation (CoS 10:03): the Yes / No stamps send
+    `answers: <ask id>`, which the relay stores as a second `e` tag after the conversation's. An owner
+    Yes to a plain robot question in a conversation with an earlier answered ask still reaches the
+    robot.
+  - API (additive): `POST /api/event` takes an optional `answers`, the id of the Yes / No ask the note
+    answers. It must be exactly 64 lowercase hex and is read only with `reply_to`; it is stored as a
+    second `e` tag after the root, so routing and `GET /api/events` `reply_to` are unchanged. Any other
+    value is ignored. Documented in UI_SPEC.md (`POST /api/event` row).
   - The page posts one answer per ask. The first click replaces the stamps with an inert "Yes sent" /
     "No sent" mark at once, before the relay answers; an answered ask stays inert after a reload.
     When a conversation holds more than one open ask, only the oldest takes an answer, matching the
@@ -59,7 +70,8 @@ the top-level `VERSION` file.
   Pinned by `tests/check_ch0_ui.cjs` (20 clicks store exactly 1 Yes and 1 robot turn, counted from the
   relay's events; 4 direct duplicate POSTs add no turn, ask or "Mention received."; inert stamps on
   click, after 11 s and after a reload; both re: links; Yes / No / sent / re: ink >= 4.5:1 in 8 themes;
-  Send clear of the quick bar after focusing `#msg` at 390), `tests/test_approve.c` (`check_answer_once`)
+  Send clear of the quick bar after focusing `#msg` at 390), `tests/test_approve.c` (`check_answer_once`,
+  `check_answer_plain`)
   and `tests/check_launch.sh` (0 dead thread selectors).
 
 - Canvas: the code view is visible again in field-office. The editing textarea had an opaque paper slip

@@ -6456,9 +6456,11 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
 
     /* M1 R1/R2/R4: which owner Yes/No answered which ask, read from the
        stored notes so it survives every re-render and a reload. It mirrors
-       the relay (hush_agent_approval_answer, hush_agent_answered_repeat):
-       per conversation root, each owner Yes/No settles the oldest ask still
-       waiting there, and a Yes/No with no ask waiting is an ignored repeat. */
+       the relay (hush_agent_approval_answer): per conversation root, each
+       owner Yes/No settles the oldest ask still waiting there. A Yes/No
+       with no ask waiting answers no ask here; the relay drops it only when
+       it names an answered ask (the stamp's "answers" field,
+       hush_agent_answered_repeat), else it reaches the robot. */
     let askState = { byAsk: {}, byAnswer: {}, oldest: {} };
     /* Asks answered from this window whose Yes/No note is not stored yet,
        ask id -> word. Holds the stamp inert while the post is in flight. */
@@ -6546,7 +6548,9 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
           content: word,
           kind: 1,
           channel: (root && root.channel) || note.channel || channel,
-          reply_to: rootId
+          reply_to: rootId,
+          /* M1 R2: names this ask, so a repeat of this stamp is dropped. */
+          answers: note.id
         });
         await tick();
       } catch (err) {

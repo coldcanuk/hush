@@ -406,6 +406,8 @@ static hush_status_t hush_agent_publish_reply(hush_store_t *store, hush_agent_jo
     hush_agent_fill_note(&posted, &note);
     HUSH_TRY(hush_store_insert(store, &posted));
     hush_thread_record(&posted);
+    /* A chief's reply can end with the team ask (M1 R2). */
+    hush_agent_ask_note(&posted);
     hush_agent_brief_update(&posted, job->out);
     if (job->launch == NULL)
         return HUSH_OK;
@@ -1760,6 +1762,7 @@ void hush_agent_reset_follow(const hush_launch_t *launch,
     hush_agent_event_root(root, sizeof(root), event);
     /* #279: any other owner note voids turns still waiting for approval. */
     size_t dropped = hush_agent_approval_void(root);
+    hush_agent_ask_void(root);
     hush_agent_follow_t *slot = hush_agent_follow_find(root);
     if (slot == NULL)
         return;

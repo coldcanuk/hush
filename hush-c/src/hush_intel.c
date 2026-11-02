@@ -168,17 +168,18 @@ void hush_intel_consider(hush_store_t *store, hush_launch_t *launch,
     ch = hush_intel_channel(launch, ev);
     if (ch == NULL)
         return;
+    /* M1 R2: an answered ask is single-shot. A Yes/No that targets an ask
+     * already answered (a repeated stamp click, a duplicate POST) is dropped
+     * before the handlers, so it can neither settle a later ask nor reach
+     * the robot. A Yes/No that targets no answered ask goes on as usual. */
+    if (hush_agent_answered_repeat(launch, ev))
+        return;
     if (hush_agent_approval_answer(store, launch, ev) ||
         hush_agent_team_answer(store, launch, ev) ||
         hush_agent_loop_answer(store, launch, ev)) {
         hush_agent_answered_mark(ev);
         return;
     }
-    /* M1 R2: an answered ask is single-shot. A repeated Yes/No would
-     * otherwise reach the conversation's robot (a reply inherits the root's
-     * robot mention) and start a new turn and a new ask. */
-    if (hush_agent_answered_repeat(launch, ev))
-        return;
     if (hush_intel_is_human(launch, ev->pubkey))
         hush_agent_reset_follow(launch, ev);
     for (i = 0; i < ev->tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; i++) {

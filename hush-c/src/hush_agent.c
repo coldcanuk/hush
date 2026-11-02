@@ -520,8 +520,10 @@ hush_status_t hush_agent_insert_note(hush_store_t *store,
     assert(store != NULL);
     hush_agent_fill_note(&ev, in);
     status = hush_store_insert(store, &ev);
-    if (status == HUSH_OK)
+    if (status == HUSH_OK) {
         hush_thread_record(&ev);
+        hush_agent_ask_note(&ev);
+    }
     return status;
 }
 

@@ -358,13 +358,20 @@ static void answer_in(test_approve_fixture_t *fx, const char *root, const char *
 
 /* Stores the owner's text as a reply to the fixture's root carrying the
  * root's robot p tag, as POST /api/event adds it to a reply that names no one
- * (hush_http_resolve_conversation), and hands it to the consider path. */
-static void answer_inherited(test_approve_fixture_t *fx, const char *text)
+ * (hush_http_resolve_conversation), and hands it to the consider path. A
+ * non-NULL ask adds the second e tag a Yes/No stamp's "answers" field adds
+ * (hush_http_add_answers); NULL is a bare reply to the conversation. */
+static void answer_inherited(test_approve_fixture_t *fx, const char *text, const char *ask)
 {
     size_t at = 0;
 
     fill_note(&fx->ev, fx->launch.human.pubkey_hex, text, fx->root.id);
     at = fx->ev.tag_count;
+    if (ask != NULL) {
+        hush_agent_copy(fx->ev.tags[at][0], sizeof(fx->ev.tags[at][0]), "e");
+        hush_agent_copy(fx->ev.tags[at][1], sizeof(fx->ev.tags[at][1]), ask);
+        at++;
+    }
     hush_agent_copy(fx->ev.tags[at][0], sizeof(fx->ev.tags[at][0]), "p");
     hush_agent_copy(fx->ev.tags[at][1], sizeof(fx->ev.tags[at][1]), fx->happy->id.npub);
     fx->ev.tag_count = at + 1;
@@ -420,45 +427,94 @@ static void check_owner_yes(void)
 static void finish_turn(test_approve_fixture_t *fx, const hush_roster_agent_t *bot, int role,
                         const char *out);
 
-/* M1 R2: an answered ask is single-shot. Twenty more owner Yes notes on
- * the same root (a repeated stamp click, a duplicate POST) start no turn and
+/* Writes the id of the newest stored note whose content equals line to
+ * out, or "" when none does. */
+static void last_line_id(hush_store_t *store, char *out, size_t outsz, const char *line)
+{
+    static hush_event_t evs[TEST_APPROVE_SCAN_MAX];
+    size_t n = hush_store_query(store, NULL, 0, evs, TEST_APPROVE_SCAN_MAX);
+
+    out[0] = '\0';
+    for (size_t i = 0; i < n; i++) {
+        if (strcmp(evs[i].content, line) == 0)
+            hush_agent_copy(out, outsz, evs[i].id);
+    }
+}
+
+/* M1 R2 (CoS 10:03): which Yes/No notes target the answered ask. A stamp
+ * repeat ("answers" e tag) and a reply_to the ask itself do; a bare reply to
+ * the conversation, another person's Yes, or a longer note do not. */
+static void check_repeat_shapes(test_approve_fixture_t *fx, const char *ask)
+{
+    expect(hush_agent_answered_repeat(&fx->launch, &fx->ev),
+           "a second stamp Yes on the answered ask is a repeat");
+    fill_note(&fx->ev, fx->launch.human.pubkey_hex, "Yes", ask);
+    expect(hush_agent_answered_repeat(&fx->launch, &fx->ev),
+           "a Yes whose reply_to is the answered ask is a repeat");
+    fill_note(&fx->ev, fx->launch.human.pubkey_hex, "Yes", fx->root.id);
+    expect(!hush_agent_answered_repeat(&fx->launch, &fx->ev),
+           "a bare Yes to the conversation targets no answered ask");
+    fill_note(&fx->ev, TEST_APPROVE_STRANGER_PUB, "Yes", ask);
+    expect(!hush_agent_answered_repeat(&fx->launch, &fx->ev), "only the owner's Yes is a repeat");
+    fill_note(&fx->ev, fx->launch.human.pubkey_hex, "Yes, and one more pun", ask);
+    expect(!hush_agent_answered_repeat(&fx->launch, &fx->ev), "only a bare Yes or No is a repeat");
+}
+
+/* M1 R2 pin 1: an answered ask is single-shot. Twenty more stamp Yes notes
+ * on the same ask (a repeated click, a duplicate POST) start no turn and
  * raise no new ask; the robot's reply to the first Yes does not change that. */
 static void check_answer_once(void)
 {
     static test_approve_fixture_t fx;
-    size_t asks = 0;
-    size_t ran = 0;
-    size_t heard = 0;
+    char ask[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
 
     open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
     mention_happy(&fx, "tell a pun");
-    fill_note(&fx.ev, fx.launch.human.pubkey_hex, "Yes", fx.root.id);
+    last_line_id(fx.store, ask, sizeof(ask), TEST_APPROVE_ASK_COPY);
+    expect(ask[0] != '\0', "the turn waits on one ask");
+    fill_note(&fx.ev, fx.launch.human.pubkey_hex, "Yes", ask);
     expect(!hush_agent_answered_repeat(&fx.launch, &fx.ev), "an unanswered ask has no repeat");
-    answer_inherited(&fx, "Yes");
+    answer_inherited(&fx, "Yes", ask);
     expect(turn_ran(fx.store), "the first Yes runs the turn");
     finish_turn(&fx, fx.happy, HUSH_AGENT_LOOP_ROLE_NONE, "A pun.");
-    expect(hush_agent_answered_repeat(&fx.launch, &fx.ev),
-           "after the first answer a second owner Yes is a repeat");
-    fill_note(&fx.ev, TEST_APPROVE_STRANGER_PUB, "Yes", fx.root.id);
-    expect(!hush_agent_answered_repeat(&fx.launch, &fx.ev), "only the owner's Yes is a repeat");
-    fill_note(&fx.ev, fx.launch.human.pubkey_hex, "Yes, and one more pun", fx.root.id);
-    expect(!hush_agent_answered_repeat(&fx.launch, &fx.ev), "only a bare Yes or No is a repeat");
-    asks = count_head(fx.store, HUSH_AGENT_APPROVAL_ASK_HEAD);
-    ran = count_head(fx.store, TEST_APPROVE_RAN_HEAD);
-    heard = count_line(fx.store, TEST_APPROVE_HEARD_LINE);
+    check_repeat_shapes(&fx, ask);
+    const size_t asks = count_head(fx.store, HUSH_AGENT_APPROVAL_ASK_HEAD);
+    const size_t ran = count_head(fx.store, TEST_APPROVE_RAN_HEAD);
+    const size_t heard = count_line(fx.store, TEST_APPROVE_HEARD_LINE);
     for (int i = 0; i < TEST_APPROVE_REPEATS; i++)
-        answer_inherited(&fx, i % 2 ? "yes." : "Yes");
+        answer_inherited(&fx, i % 2 ? "yes." : "Yes", ask);
+    answer_inherited(&fx, "No", ask);
     expect(count_head(fx.store, HUSH_AGENT_APPROVAL_ASK_HEAD) == asks,
-           "a repeated Yes raises no new ask");
-    expect(count_head(fx.store, TEST_APPROVE_RAN_HEAD) == ran,
-           "a repeated Yes runs no new turn");
+           "a repeated Yes or late No raises no new ask");
+    expect(count_head(fx.store, TEST_APPROVE_RAN_HEAD) == ran, "a repeated Yes runs no new turn");
     expect(count_line(fx.store, TEST_APPROVE_HEARD_LINE) == heard,
            "a repeated Yes does not reach the robot");
-    answer_inherited(&fx, "No");
     expect(count_head(fx.store, HUSH_AGENT_APPROVAL_NO_HEAD) == 0,
            "a late No on an answered ask declines nothing");
-    expect(count_head(fx.store, HUSH_AGENT_APPROVAL_ASK_HEAD) == asks,
-           "a late No raises no new ask");
+    close_hive(&fx);
+}
+
+/* M1 R2 pin 2 (CoS 10:03): after an answered ask the robot asks a plain
+ * question. The owner's bare Yes to it targets no answered ask, so it is
+ * delivered: the robot hears it and its next turn waits on a new ask. */
+static void check_answer_plain(void)
+{
+    static test_approve_fixture_t fx;
+    char ask[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+
+    open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+    mention_happy(&fx, "plan a picnic");
+    last_line_id(fx.store, ask, sizeof(ask), TEST_APPROVE_ASK_COPY);
+    answer_inherited(&fx, "Yes", ask);
+    expect(turn_ran(fx.store), "the stamp Yes runs the turn");
+    finish_turn(&fx, fx.happy, HUSH_AGENT_LOOP_ROLE_NONE, "Shall I book the park?");
+    const size_t asks = count_line(fx.store, TEST_APPROVE_ASK_COPY);
+    const size_t heard = count_line(fx.store, TEST_APPROVE_HEARD_LINE);
+    answer_inherited(&fx, "Yes", NULL);
+    expect(count_line(fx.store, TEST_APPROVE_HEARD_LINE) == heard + 1,
+           "pin 2: the owner's Yes to a plain robot question reaches the robot");
+    expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == asks + 1,
+           "pin 2: the robot's next turn waits on a new ask");
     close_hive(&fx);
 }
 
@@ -1104,6 +1160,7 @@ int main(void)
     check_owner_only();
     check_owner_yes();
     check_answer_once();
+    check_answer_plain();
     check_auto();
     check_void();
     check_one_each();

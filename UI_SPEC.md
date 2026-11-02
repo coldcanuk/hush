@@ -663,7 +663,7 @@ demo). No Raylib dependency on the main hush-relay.
 | `GET /api/events` | notes plus `reply_to` (first `e` tag; empty when the note is not a reply). |
 | `GET /api/thread?root=<64-hex>` | (M1: relay route kept, no UI caller) durable thread memory: `{ok,root,brief,name,category,archived,count,truncated,turns[]}`. `name` and `category` are empty when the root has no desk. `archived` is false when the root is active. `turns[]` is `id/pubkey/at/content`, newest 32 oldest-first. Unknown roots return empty. Malformed roots are 400. A desk file that is not a desk is 400. |
 | `POST /api/thread` | (M1: relay route kept, no UI caller) `{root, name?, category?, project?, archived}` while logged in with a vibe. `root` is 64 lowercase hex. `name`, `category`, and `project` are at most 64 bytes, with no ASCII control byte. `project` must be an existing launch project slug, or empty. `archived` is 0, 1, false, or true. A blank name, blank category, blank project, and archived 0 removes the desk file. The transcript and the brief stay. Success returns the same object as GET. |
-| `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id). Success is `{ok:true,id}`. Content may contain `nostr:npub1…`. Mentions enter `hush_intel` (burst / policy) before `hush_agent`. |
+| `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id) + optional `answers` (M1 R2: the id of the Yes/No ask a stamp answers, exactly 64 lowercase hex; read only when `reply_to` is set, stored as a second `e` tag after the root, so routing and `GET /api/events` `reply_to` are unchanged; any other value is ignored). Success is `{ok:true,id}`. Content may contain `nostr:npub1…`. Mentions enter `hush_intel` (burst / policy) before `hush_agent`. |
 | `POST /api/canvas` | `{project, path, content}` writes `content` to `path` under that launch project's directory. `project` is a project id. `path` is a relative file (no `..`, no absolute). Missing project, empty content, or a path that escapes the project → `{ok:false,error}`. |
 | `POST /api/fixup` | `{instruction, text}` runs a one-shot `grok -p` and returns `{ok:true,text}` or `{ok:false,error}`. Does **not** insert a hive note. Instruction max 500. Text max `HUSH_EVENT_MAX_CONTENT`. |
 | `POST /api/complete` | `{prefix, suffix}` starts a Fill-in-the-Middle job and returns `{ok:true,token}` immediately. Does **not** wait on Grok. Does **not** insert a hive note. A new start replaces any in-flight job. |
@@ -771,7 +771,8 @@ Thread button or a reply count.
 an approval ask ("Approval needed: … Reply Yes or No.") and a team ask
 ("… Raise this team? Reply Yes or No.") show `.loop-stamps` Yes / No
 stamps to the hive owner. A stamp posts `Yes` or `No` with
-`reply_to=<the ask's root>`, which is the relay's existing answer path.
+`reply_to=<the ask's root>`, which is the relay's existing answer path,
+and `answers=<the ask's id>`, which names the ask it answers.
 Typing Yes in `#msg` posts a new top-level note and does not answer an
 ask (open: plan r2 M5).
 
@@ -781,9 +782,11 @@ relay answers; on a failed post the stamps come back. An ask the owner
 already answered (paired oldest first per conversation from the stored
 notes) shows the mark, also after a reload. When a conversation holds
 more than one open ask, the newer ones show disabled stamps titled
-"Answer the earlier ask in this conversation first." The relay ignores
-the owner's Yes or No in a conversation whose ask it already settled and
-where nothing else waits: no robot turn, no new ask. The Yes stamp text
+"Answer the earlier ask in this conversation first." The relay files
+each settled ask by its id and ignores the owner's Yes or No that names
+an ask it already settled (`answers`, or a `reply_to` that is the ask
+itself): no robot turn, no new ask. A Yes or No that names no settled
+ask, such as a bare reply to a robot's plain question, reaches the robot. The Yes stamp text
 is `--fg` on the `--accent` rule, at least 4.5:1 in all 8 themes.
 
 **Reply anchors.** A reply shows a `.re-link` button ("re: " and up to

@@ -81,9 +81,12 @@ enum {
     HUSH_AGENT_APPROVAL_GUEST_MAX = 4,
     /* One approval line: the fixed copy plus a robot name. */
     HUSH_AGENT_APPROVAL_LINE_MAX = 256,
-    /* Conversation roots whose Yes/No ask the owner already answered, kept
-     * so a repeated answer is ignored (M1 R2). Oldest is overwritten. */
-    HUSH_AGENT_ANSWERED_MAX = 64
+    /* Ask ids the owner already answered, kept so a repeated answer to
+     * the same ask is ignored (M1 R2). Oldest is overwritten. */
+    HUSH_AGENT_ANSWERED_MAX = 64,
+    /* Yes/No asks the relay posted that wait for an answer (M1 R2), so an
+     * answer can be filed under its ask id. Oldest is overwritten. */
+    HUSH_AGENT_ASKS_MAX = 64
 };
 
 /* Result of one hush_agent_begin_work call. A follow wave keeps
@@ -522,6 +525,9 @@ void hush_agent_plan_trigger(char *out, size_t outsz, const char *root);
     HUSH_AGENT_APPROVAL_ASK_HEAD "%s wants to take a turn. Reply Yes or No."
 #define HUSH_AGENT_APPROVAL_ELECT_FMT \
     HUSH_AGENT_APPROVAL_ASK_HEAD "%s wants to run the leader election. Reply Yes or No."
+/* agent_team.c ends a chief's reply with this when a team waits for Yes;
+ * agent_approve.c reads it to file the answer under that ask (M1 R2). */
+#define HUSH_AGENT_TEAM_ASK "Raise this team? Reply Yes or No."
 #define HUSH_AGENT_APPROVAL_NO_HEAD "Turn declined: "
 #define HUSH_AGENT_APPROVAL_NO_FMT HUSH_AGENT_APPROVAL_NO_HEAD "%s stood down."
 #define HUSH_AGENT_APPROVAL_FULL_LINE \

@@ -88,7 +88,8 @@ export PATH
 printf '%s\n' '{"ok":true}' > "$home/.grok/auth.json"
 
 # Summarizes one thread: robot work notes per role, loop notices, chaperon
-# lines, any stored "LOOP:" text, and job_start chan-events on the root.
+# lines, any stored "LOOP:" text, job_start chan-events on the root, and the
+# id of the newest loop ask ("askid", for a stamp's "answers" field).
 cat > "$home/thread.py" <<'PY'
 import json, sys
 events = json.load(open(sys.argv[1])).get("events") or []
@@ -99,7 +100,7 @@ for e in events:
     if marker in (e.get("content") or "") and not e.get("reply_to"):
         root = e.get("id") or ""
 counts = {"root": root, "lead": 0, "partner": 0, "ask": 0, "limit": 0,
-          "stopped": 0, "chaperon": 0, "loopline": 0, "job_start": 0}
+          "stopped": 0, "chaperon": 0, "loopline": 0, "job_start": 0, "askid": ""}
 for e in events:
     if not root or (e.get("reply_to") or "") != root:
         continue
@@ -111,6 +112,7 @@ for e in events:
     # R1: exact chaperon copy; the r3 wording no longer counts.
     if c == "Continue this loop? Reply Yes or No.":
         counts["ask"] += 1
+        counts["askid"] = e.get("id") or ""
     if c == "Loop limit reached. Mention both robots again to start a new loop.":
         counts["limit"] += 1
     if c == "Loop stopped.":
@@ -202,6 +204,18 @@ reply() {
         -H 'Content-Type: application/json' \
         -d "{\"content\":\"$2\",\"kind\":1,\"channel\":\"general\",\"reply_to\":\"$root\"}" \
         | grep -q '"ok":true' || fail "$1 reply not stored"
+}
+# stamp NAME TEXT: the owner's Yes/No stamp on the scenario's newest loop ask,
+# with the page's exact body: reply_to the root plus "answers" naming the ask
+# (M1 R2, CoS 10:03/10:14).
+stamp() {
+    root=$(field "$1" root)
+    ask=$(field "$1" askid)
+    [ -n "$ask" ] || fail "$1 has no loop ask to stamp"
+    curl -sf -X POST "http://127.0.0.1:${port}/api/event" \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"$2\",\"kind\":1,\"channel\":\"general\",\"reply_to\":\"$root\",\"answers\":\"$ask\"}" \
+        | grep -q '"ok":true' || fail "$1 stamp not stored"
 }
 # release NAME: an owner reply frees the thread's follow slot (the relay keeps
 # at most HUSH_AGENT_FOLLOW_MAX = 8 live threads and frees one only on a human
@@ -437,6 +451,30 @@ expect s15 partner 5 "quiet cap runs the partner past four"
 expect s15 ask 0 "quiet cap does not ask while notes are new"
 expect s15 limit 0 "eleven loop turns stay under the ceiling"
 release s15
+
+# M1 R2 pins 1+2 (CoS 10:03/10:14), observed as real robot turns: the loop
+# ask is answered by its stamp; a repeat of that stamp starts nothing; then
+# the lead asks a plain question and the owner's bare Yes (reply_to the root,
+# no "answers") names no answered ask, so the lead takes a turn.
+start s16 2 "$C LOOP:_stop_done -" "- - -"
+wait_eq s16 ask 1
+settle
+expect s16 lead 1 "R2 setup: the cap asks after one pass"
+printf '%s' 'Shall I tell another riddle? ' > "$plan/lead.prefix"
+stamp s16 "Yes"
+wait_eq s16 lead 2
+settle
+expect s16 partner 1 "R2 setup: the lead's stop ends the loop"
+stamp s16 "yes."
+settle
+expect s16 lead 2 "R2 pin 1: a repeat of an answered stamp starts no turn"
+expect s16 ask 1 "R2 pin 1: a repeat of an answered stamp raises no ask"
+reply s16 "Yes!"
+wait_eq s16 lead 3
+settle
+expect s16 partner 1 "R2 pin 2: the bare Yes goes to the lead only"
+expect s16 ask 1 "R2 pin 2: the bare Yes resumes no loop"
+release s16
 
 # B6: a note that mentions three robots arms no loop.
 rm -f "$plan"/*.n "$plan"/*.prefix "$plan/slow" "$plan/slowlead"
