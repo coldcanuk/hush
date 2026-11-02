@@ -535,7 +535,10 @@ echo "F3 answers read back: $f3got"
 # the relay ask tag AND is signed by Major or a roster robot. A guest's
 # Nostr client can sign and publish a note with ["t","hush-ask"] and the
 # exact ask text over the WebSocket; it must read back "ask": false. The
-# relay's own "Continue this loop?" asks from s1..s16 are the control.
+# forge uses both ask wordings the relay writes: the loop ask and the
+# approval head "Approval needed: " (Gauge M1-F16: a key check skipped for
+# one wording must still fail here). The relay's own "Continue this loop?"
+# asks from s1..s16 are the control.
 forged=$(python3 -B - "$port" "$f3root" <<'PY'
 import json, sys, time, hashlib
 sys.path.insert(0, "tests")
@@ -546,41 +549,50 @@ relay = Relay(); relay.port = port
 key = int(check_ws.GUEST_SECKEY, 16)
 pub = b.pubkey_xonly(key).hex()
 tags = [["h", "general"], ["e", root], ["t", "hush-ask"]]
-content = "Continue this loop? Reply Yes or No."
-at = int(time.time())
-ser = json.dumps([0, pub, at, 1, tags, content], separators=(",", ":"), ensure_ascii=False)
-ev = {"id": hashlib.sha256(ser.encode()).hexdigest(), "pubkey": pub, "created_at": at,
-      "kind": 1, "tags": tags, "content": content}
-ev["sig"] = b.sign(key, bytes.fromhex(ev["id"]))
+texts = ["Continue this loop? Reply Yes or No.",
+         "Approval needed: Mallory wants to take a turn. Reply Yes or No."]
 ws = check_ws.WsClient(relay)
 ws.handshake()
 challenge = check_ws.take_challenge(ws)
 auth = check_ws.sign(check_ws.GUEST_SECKEY, challenge, port)
 ws.send_text('["AUTH",' + json.dumps(auth, separators=(",", ":")) + ']\n')
 ws.read_text()
-ws.send_text('["EVENT",' + json.dumps(ev, separators=(",", ":")) + ']\n')
-ok = ws.read_text()
+out = []
+for content in texts:
+    at = int(time.time())
+    ser = json.dumps([0, pub, at, 1, tags, content], separators=(",", ":"), ensure_ascii=False)
+    ev = {"id": hashlib.sha256(ser.encode()).hexdigest(), "pubkey": pub, "created_at": at,
+          "kind": 1, "tags": tags, "content": content}
+    ev["sig"] = b.sign(key, bytes.fromhex(ev["id"]))
+    ws.send_text('["EVENT",' + json.dumps(ev, separators=(",", ":")) + ']\n')
+    ok = ws.read_text()
+    out += [ev["id"], "true" if ('"OK","' + ev["id"] + '",true') in ok else "false"]
 ws.close()
-print(ev["id"], "true" if ('"OK","' + ev["id"] + '",true') in ok else "false")
+print(" ".join(out))
 PY
-) || fail "ask forge: the guest note was not published"
+) || fail "ask forge: the guest notes were not published"
 curl -sf "http://127.0.0.1:${port}/api/events" > "$home/askforge.json" || fail "ask forge: no /api/events"
 askforge=$(python3 - "$home/askforge.json" $forged <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
 evs = d.get("events", d) if isinstance(d, dict) else d
-fid, ok = sys.argv[2], sys.argv[3]
+loop_id, loop_ok, appr_id, appr_ok = sys.argv[2:6]
 content = "Continue this loop? Reply Yes or No."
-mine = [e for e in evs if e.get("id") == fid]
-relay_asks = [e for e in evs if e.get("content") == content and e.get("id") != fid and e.get("ask") is True]
-print("stored=%d ask=%s relay_asks_true=%d ok=%s" % (len(mine), mine[0].get("ask") if mine else "-",
-      len(relay_asks), ok))
+def read(fid):
+    mine = [e for e in evs if e.get("id") == fid]
+    return len(mine), (mine[0].get("ask") if mine else "-")
+loop_n, loop_ask = read(loop_id)
+appr_n, appr_ask = read(appr_id)
+relay_asks = [e for e in evs if e.get("content") == content and e.get("id") not in (loop_id, appr_id)
+              and e.get("ask") is True]
+print("stored=%d ask=%s approval_stored=%d approval_ask=%s relay_asks_true=%d ok=%s approval_ok=%s"
+      % (loop_n, loop_ask, appr_n, appr_ask, len(relay_asks), loop_ok, appr_ok))
 PY
 ) || fail "ask forge: read-back failed"
 echo "ask forge: $askforge"
 case "$askforge" in
-    "stored=1 ask=False relay_asks_true="*" ok=true") ;;
-    *) fail "a guest-signed note with the relay ask tag must read back ask:false (got $askforge)" ;;
+    "stored=1 ask=False approval_stored=1 approval_ask=False relay_asks_true="*" ok=true approval_ok=true") ;;
+    *) fail "a guest-signed note with the relay ask tag must read back ask:false, in the loop and the approval wording (got $askforge)" ;;
 esac
 case "$askforge" in
     *"relay_asks_true=0 "*) fail "control: the relay's own loop asks must read back ask:true (got $askforge)" ;;
