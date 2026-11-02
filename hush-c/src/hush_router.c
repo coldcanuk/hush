@@ -22,9 +22,11 @@ enum {
     HUSH_ROUTER_ESCAPE_MAX = 1200,
     HUSH_ROUTER_PATH_MAX = 32,
     HUSH_ROUTER_PRIORITY = 1,
-    HUSH_ROUTER_FILE_MODE = 0600,
-    HUSH_ROUTER_NONE = 0xffffffffu
+    HUSH_ROUTER_FILE_MODE = 0600
 };
+
+/* No-index sentinel. UINT32_MAX does not fit an int enumerator (C11 6.7.2.2p2). */
+static const uint32_t HUSH_ROUTER_NONE = UINT32_MAX;
 
 /* hush_json_escape grows one byte to at most six (\u00XX). A buffer of
  * field size times this growth holds any escaped field without truncation. */

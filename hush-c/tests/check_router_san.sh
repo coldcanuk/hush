@@ -10,6 +10,12 @@ flags="-std=c11 -Wall -Wextra -Werror -Wconversion -Wshadow -Iinclude -O1 -g"
 [ -f libhush.a ] || fail "libhush.a is missing; run make first"
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
+# Pin for #375 Gauge F2: router sources stay ISO C11 (no GNU enum widening).
+for src in src/hush_router.c src/api_router.c tests/test_router.c; do
+    # shellcheck disable=SC2086
+    $cc $flags -Wpedantic -pedantic-errors $(pkg-config --cflags libcurl) \
+        -fsyntax-only "$src" || fail "$src is not ISO C11 (-pedantic-errors)"
+done
 printf 'int main(void){return 0;}\n' >"$out/probe.c"
 if ! $cc $san "$out/probe.c" -o "$out/probe" 2>/dev/null; then
     # Only Linux CI is required to carry the sanitizer runtimes.
