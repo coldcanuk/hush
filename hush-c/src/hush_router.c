@@ -22,7 +22,8 @@ enum {
     HUSH_ROUTER_ESCAPE_MAX = 1200,
     HUSH_ROUTER_PATH_MAX = 32,
     HUSH_ROUTER_PRIORITY = 1,
-    HUSH_ROUTER_FILE_MODE = 0600
+    HUSH_ROUTER_FILE_MODE = 0600,
+    HUSH_ROUTER_LOCK_TRIES = 8 /* EINTR retries while waiting for router/lock */
 };
 
 /* No-index sentinel. UINT32_MAX does not fit an int enumerator (C11 6.7.2.2p2). */
@@ -70,6 +71,9 @@ static const char HUSH_ROUTER_EDGES_FILE[] = "edges.json";
 static const char HUSH_ROUTER_STATE_FILE[] = "router_state.json";
 static const char HUSH_ROUTER_STAGED[] = ".tmp";
 static const char HUSH_ROUTER_COMMIT[] = "commit";
+/* POSIX record lock held across every load and save, so two processes on
+ * one $HUSH_HOME never stage the fixed .tmp names at once (#375 FLR-F10). */
+static const char HUSH_ROUTER_LOCK[] = "lock";
 
 static const char *const HUSH_ROUTER_FILES[] = {
     HUSH_ROUTER_ITEMS_FILE, HUSH_ROUTER_WORKERS_FILE, HUSH_ROUTER_DECISIONS_FILE,
@@ -181,6 +185,21 @@ static hush_status_t hush_router_unmark(const char *dir);
 /* Adapter over fsync of a directory, so renames in it survive power loss.
  * Fails with HUSH_ERR_IO. */
 static hush_status_t hush_router_sync_dir(const char *dir);
+/* Opens dir/lock and blocks until this process holds it exclusively. Writes
+ * the holding fd to out_fd; the caller releases it with hush_router_unlock.
+ * Fails with HUSH_ERR_NOT_FOUND when dir is missing, HUSH_ERR_IO otherwise. */
+static hush_status_t hush_router_lock(int *out_fd, const char *dir);
+/* Adapter over fcntl F_SETLKW, retrying EINTR a bounded number of times.
+ * Fails with HUSH_ERR_IO. */
+static hush_status_t hush_router_wait_lock(int fd);
+/* Releases a lock taken by hush_router_lock by closing its fd. */
+static void hush_router_unlock(int fd);
+/* Recovers, stages, and commits graph into dir. Caller holds router/lock. */
+static hush_status_t hush_router_save_locked(const hush_router_graph_t *graph,
+                                             const char *dir);
+/* Recovers, then reads every router file in dir. Caller holds router/lock. */
+static hush_status_t hush_router_load_locked(hush_router_graph_t *graph,
+                                             const char *dir);
 static hush_status_t hush_router_read_file(char *out, size_t outsz,
                                            const char *path);
 static hush_status_t hush_router_append(char *out, size_t outsz, size_t *off,
@@ -330,33 +349,43 @@ hush_status_t hush_router_save(const hush_router_graph_t *graph,
                                const char *root)
 {
     char dir[HUSH_HOME_PATH_MAX];
+    hush_status_t status;
+    int lock_fd = -1;
 
     if (graph == NULL || root == NULL || root[0] == '\0')
         return HUSH_ERR_ARG;
-    HUSH_ROUTER_TRY(hush_router_dir(dir, sizeof dir, root));
-    HUSH_ROUTER_TRY(hush_home_mkdir(dir));
-    /* Finish any marked set first, so staging never overwrites one. */
-    HUSH_ROUTER_TRY(hush_router_recover(dir));
-    HUSH_ROUTER_TRY(hush_router_save_items(graph, dir));
-    HUSH_ROUTER_TRY(hush_router_save_workers(graph, dir));
-    HUSH_ROUTER_TRY(hush_router_save_rest(graph, dir));
-    return hush_router_commit(dir);
+    if (hush_router_dir(dir, sizeof dir, root) != HUSH_OK)
+        return HUSH_ERR_FULL;
+    status = hush_home_mkdir(dir);
+    if (status != HUSH_OK)
+        return status;
+    status = hush_router_lock(&lock_fd, dir);
+    if (status != HUSH_OK)
+        return status;
+    status = hush_router_save_locked(graph, dir);
+    hush_router_unlock(lock_fd);
+    return status;
 }
 
 hush_status_t hush_router_load(hush_router_graph_t *graph, const char *root)
 {
     char dir[HUSH_HOME_PATH_MAX];
+    hush_status_t status;
+    int lock_fd = -1;
 
     if (graph == NULL || root == NULL || root[0] == '\0')
         return HUSH_ERR_ARG;
     hush_router_init(graph);
-    HUSH_ROUTER_TRY(hush_router_dir(dir, sizeof dir, root));
-    HUSH_ROUTER_TRY(hush_router_recover(dir));
-    HUSH_ROUTER_TRY(hush_router_load_items(graph, dir));
-    HUSH_ROUTER_TRY(hush_router_load_workers(graph, dir));
-    HUSH_ROUTER_TRY(hush_router_load_rest(graph, dir));
-    hush_router_bump_id(graph);
-    return HUSH_OK;
+    if (hush_router_dir(dir, sizeof dir, root) != HUSH_OK)
+        return HUSH_ERR_FULL;
+    status = hush_router_lock(&lock_fd, dir);
+    if (status == HUSH_ERR_NOT_FOUND)
+        return HUSH_OK; /* no router/ yet: the empty graph is the state */
+    if (status != HUSH_OK)
+        return status;
+    status = hush_router_load_locked(graph, dir);
+    hush_router_unlock(lock_fd);
+    return status;
 }
 
 hush_status_t hush_router_subgraph(const hush_router_graph_t *graph,
@@ -1144,6 +1173,69 @@ static hush_status_t hush_router_sync_dir(const char *dir)
     }
     if (close(fd) != 0)
         return HUSH_ERR_IO;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_router_lock(int *out_fd, const char *dir)
+{
+    char path[HUSH_HOME_PATH_MAX];
+    int fd;
+
+    assert(out_fd != NULL && dir != NULL);
+    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, HUSH_ROUTER_LOCK));
+    fd = open(path, O_RDWR | O_CREAT | O_NOFOLLOW, HUSH_ROUTER_FILE_MODE);
+    if (fd < 0)
+        return errno == ENOENT ? HUSH_ERR_NOT_FOUND : HUSH_ERR_IO;
+    if (hush_router_wait_lock(fd) != HUSH_OK) {
+        (void)close(fd);
+        return HUSH_ERR_IO;
+    }
+    *out_fd = fd;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_router_wait_lock(int fd)
+{
+    struct flock lock = {.l_type = F_WRLCK, .l_whence = SEEK_SET};
+
+    assert(fd >= 0);
+    for (int i = 0; i < HUSH_ROUTER_LOCK_TRIES; ++i) {
+        if (fcntl(fd, F_SETLKW, &lock) == 0)
+            return HUSH_OK;
+        if (errno != EINTR)
+            return HUSH_ERR_IO;
+    }
+    return HUSH_ERR_IO;
+}
+
+static void hush_router_unlock(int fd)
+{
+    assert(fd >= 0);
+    /* Closing the only fd on router/lock drops this process's record lock. */
+    (void)close(fd);
+}
+
+static hush_status_t hush_router_save_locked(const hush_router_graph_t *graph,
+                                             const char *dir)
+{
+    assert(graph != NULL && dir != NULL);
+    /* Finish any marked set first, so staging never overwrites one. */
+    HUSH_ROUTER_TRY(hush_router_recover(dir));
+    HUSH_ROUTER_TRY(hush_router_save_items(graph, dir));
+    HUSH_ROUTER_TRY(hush_router_save_workers(graph, dir));
+    HUSH_ROUTER_TRY(hush_router_save_rest(graph, dir));
+    return hush_router_commit(dir);
+}
+
+static hush_status_t hush_router_load_locked(hush_router_graph_t *graph,
+                                             const char *dir)
+{
+    assert(graph != NULL && dir != NULL);
+    HUSH_ROUTER_TRY(hush_router_recover(dir));
+    HUSH_ROUTER_TRY(hush_router_load_items(graph, dir));
+    HUSH_ROUTER_TRY(hush_router_load_workers(graph, dir));
+    HUSH_ROUTER_TRY(hush_router_load_rest(graph, dir));
+    hush_router_bump_id(graph);
     return HUSH_OK;
 }
 

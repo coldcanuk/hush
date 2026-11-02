@@ -2,11 +2,14 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <fcntl.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "hush_router.h"
@@ -20,7 +23,10 @@ enum {
     ROUTER_TEST_PATH_MAX = 192,
     ROUTER_TEST_FILE_MAX = 16384,
     ROUTER_TEST_PUBLISHED = 3, /* renames done before the simulated crash */
-    ROUTER_TEST_CONTROL_BYTE = 0x01 /* escapes to six bytes, a u0001 escape */
+    ROUTER_TEST_CONTROL_BYTE = 0x01, /* escapes to six bytes, a u0001 escape */
+    ROUTER_TEST_LOCK_POLLS = 20,     /* polls of the locked-out saver */
+    ROUTER_TEST_POLL_NS = 10000000,  /* 10 ms per poll: 200 ms in all */
+    ROUTER_TEST_CHILD_FAIL = 3       /* child exit code when its save fails */
 };
 
 #define ROUTER_TEST_POLL_DIR "/poll"
@@ -88,6 +94,19 @@ enum {
 
 /* Quote, backslash, newline, a control byte, and two-byte UTF-8 (e-acute). */
 static const char ROUTER_TEST_HOSTILE[] = "\"\\\n\x01\xc3\xa9";
+
+/* Lock file name inside router/ (#375 FLR-F10). */
+static const char ROUTER_TEST_LOCK[] = "lock";
+
+/* One phase per item, so a reload that drops any phase shows (Gauge F6). */
+static const hush_router_phase_t ROUTER_TEST_PHASES[] = {
+    HUSH_ROUTER_RUNNING, HUSH_ROUTER_PENDING, HUSH_ROUTER_BLOCKED,
+    HUSH_ROUTER_DONE, HUSH_ROUTER_FAILED
+};
+
+enum {
+    ROUTER_TEST_NPHASES = sizeof ROUTER_TEST_PHASES / sizeof ROUTER_TEST_PHASES[0]
+};
 
 static int g_fail;
 
@@ -606,6 +625,125 @@ static void check_worker_row_full(const char *root)
     }
 }
 
+/* #375 Gauge F6: a restart reloads every item and worker phase, the
+ * decision, next_id and last_line exactly as saved. */
+static void check_phase_roundtrip(const char *root)
+{
+    char home[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t graph;
+    hush_router_graph_t loaded;
+    hush_router_result_t result;
+    hush_router_note_t note = note_of("60s", NULL);
+
+    build_blocked(&graph);
+    expect(hush_router_accept(&graph, &result, &note) == HUSH_OK, "rt decide");
+    note = note_of("Run the next check", NULL);
+    for (size_t i = 1; i < (size_t)ROUTER_TEST_NPHASES; ++i)
+        expect(hush_router_accept(&graph, &result, &note) == HUSH_OK, "rt open");
+    for (size_t i = 0; i < (size_t)ROUTER_TEST_NPHASES; ++i) {
+        graph.items[i].phase = ROUTER_TEST_PHASES[i];
+        graph.workers[i].phase = ROUTER_TEST_PHASES[i];
+    }
+    join_path(home, sizeof home, root, "phase-", "rt");
+    expect(mkdir(home, ROUTER_TEST_DIR_MODE) == 0, "rt home");
+    expect(hush_router_save(&graph, home) == HUSH_OK, "rt save");
+    expect(hush_router_load(&loaded, home) == HUSH_OK, "rt load");
+    expect_at(same_graph(&loaded, &graph), "restart lost a phase or cursor", home);
+    expect(strcmp(loaded.decisions[0].text, "60s") == 0, "rt decision text");
+    expect(strcmp(loaded.decisions[0].item_id, graph.items[0].id) == 0,
+           "rt decision item");
+}
+
+/* #375 Gauge F10: with two items blocked, a bare "60s" names neither, so the
+ * Router asks which item and changes nothing. */
+static void check_ambiguous(void)
+{
+    hush_router_graph_t graph;
+    hush_router_graph_t before;
+    hush_router_result_t result;
+    hush_router_note_t note = note_of("Run a rate-limit test", NULL);
+    char line[HUSH_ROUTER_LINE_MAX];
+
+    hush_router_init(&graph);
+    expect(hush_router_accept(&graph, &result, &note) == HUSH_OK, "amb first");
+    note = note_of("Run a rate-limit check", NULL);
+    expect(hush_router_accept(&graph, &result, &note) == HUSH_OK, "amb second");
+    for (int64_t now = 1; now <= 4; ++now)
+        expect(hush_router_drain(&graph, line, sizeof line, now) == HUSH_OK, "amb drain");
+    expect(graph.items[0].phase == HUSH_ROUTER_BLOCKED, "amb first blocked");
+    expect(graph.items[1].phase == HUSH_ROUTER_BLOCKED, "amb second blocked");
+    memcpy(&before, &graph, sizeof before);
+    note = note_of("60s", NULL);
+    expect(hush_router_accept(&graph, &result, &note) == HUSH_OK, "amb accept");
+    expect(result.route == HUSH_ROUTER_ROUTE_AMBIGUOUS, "amb route");
+    expect(strcmp(result.line, "Name the work item, for example WI-1.") == 0,
+           "amb asks which");
+    expect(memcmp(&before, &graph, sizeof before) == 0, "amb changes nothing");
+}
+
+/* Takes an exclusive POSIX record lock on dir/lock, as a peer process would.
+ * Returns the fd that holds it, or -1. */
+static int hold_lock(const char *dir)
+{
+    char path[ROUTER_TEST_PATH_MAX];
+    struct flock lock = {.l_type = F_WRLCK, .l_whence = SEEK_SET};
+    int fd = -1;
+
+    join_path(path, sizeof path, dir, ROUTER_TEST_LOCK, "");
+    fd = open(path, O_RDWR | O_CREAT, ROUTER_TEST_DIR_MODE);
+    expect(fd >= 0, "lock open");
+    if (fd >= 0 && fcntl(fd, F_SETLKW, &lock) != 0)
+        expect(0, "lock take");
+    return fd;
+}
+
+/* True when child is still running after the bounded poll window. */
+static int is_still_waiting(pid_t child)
+{
+    struct timespec step = {.tv_sec = 0, .tv_nsec = ROUTER_TEST_POLL_NS};
+    int status = 0;
+
+    for (int i = 0; i < ROUTER_TEST_LOCK_POLLS; ++i) {
+        if (waitpid(child, &status, WNOHANG) == child)
+            return 0;
+        (void)nanosleep(&step, NULL);
+    }
+    return 1;
+}
+
+/* #375 FLR-F10: while another process holds router/lock, a save must wait,
+ * staging nothing, then land whole once the lock is released. */
+static void check_save_lock(const char *root)
+{
+    char home[ROUTER_TEST_PATH_MAX];
+    char dir[ROUTER_TEST_PATH_MAX];
+    char staged[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t old;
+    hush_router_graph_t next;
+    hush_router_graph_t loaded;
+
+    build_blocked(&old);
+    build_next(&next, &old, "Write the field notes", HUSH_ROUTER_ROUTE_WORK);
+    join_path(home, sizeof home, root, "lock-", "save");
+    expect(mkdir(home, ROUTER_TEST_DIR_MODE) == 0, "lock home");
+    expect(hush_router_save(&old, home) == HUSH_OK, "lock seed");
+    join_path(dir, sizeof dir, home, "router", "");
+    int fd = hold_lock(dir);
+    pid_t child = fork();
+    if (child == 0)
+        _exit(hush_router_save(&next, home) == HUSH_OK ? 0 : ROUTER_TEST_CHILD_FAIL);
+    expect(child > 0, "lock fork");
+    expect_at(is_still_waiting(child), "save did not wait for router/lock", home);
+    join_path(staged, sizeof staged, dir, ROUTER_TEST_FILES[0], ROUTER_TEST_STAGED);
+    expect_at(access(staged, F_OK) != 0, "save staged under a peer's lock", home);
+    expect(close(fd) == 0, "lock release");
+    int status = 0;
+    expect(waitpid(child, &status, 0) == child, "lock reap");
+    expect(WIFEXITED(status) && WEXITSTATUS(status) == 0, "locked save landed");
+    expect(hush_router_load(&loaded, home) == HUSH_OK, "lock reload");
+    expect_at(same_graph(&loaded, &next), "locked save lost state", home);
+}
+
 static void check_phase4(void)
 {
     hush_router_skill_t skills[2];
@@ -668,6 +806,9 @@ int main(void)
     check_halfwrite(root);
     check_escape_all(root);
     check_worker_row_full(root);
+    check_phase_roundtrip(root);
+    check_ambiguous();
+    check_save_lock(root);
     check_phase4();
     check_context();
     if (g_fail)
