@@ -10,7 +10,8 @@
 #include "hush_router.h"
 
 enum {
-    ROUTER_TEST_NODES = 32
+    ROUTER_TEST_NODES = 32,
+    ROUTER_TEST_BELONGS_EDGE = 1 /* open_item pushes assigned, then belongs_to */
 };
 
 static int g_fail;
@@ -136,6 +137,34 @@ static void check_phase3(const char *root)
     (void)line;
 }
 
+/* #375 F3: quotes and backslashes in any stored string must not break reload. */
+static void check_escape(const char *root)
+{
+    hush_router_graph_t graph;
+    hush_router_graph_t loaded;
+    hush_router_result_t result;
+    hush_router_note_t note = note_of("Run the build", "a\\b");
+
+    note.channel = "ops\"x";
+    hush_router_init(&graph);
+    expect(hush_router_accept(&graph, &result, &note) == HUSH_OK, "hostile accept");
+    snprintf(graph.items[0].parent_id, sizeof graph.items[0].parent_id, "p\"q");
+    snprintf(graph.workers[0].provider_id, sizeof graph.workers[0].provider_id,
+             "v\\w");
+    expect(hush_router_save(&graph, root) == HUSH_OK, "hostile save");
+    if (hush_router_load(&loaded, root) != HUSH_OK) {
+        expect(0, "hostile load");
+        return;
+    }
+    expect(strcmp(loaded.items[0].channel_id, "ops\"x") == 0, "channel kept");
+    expect(strcmp(loaded.items[0].parent_id, "p\"q") == 0, "parent kept");
+    expect(strcmp(loaded.workers[0].specialist_id, "a\\b") == 0,
+           "specialist kept");
+    expect(strcmp(loaded.workers[0].provider_id, "v\\w") == 0, "provider kept");
+    expect(loaded.nedges == graph.nedges, "hostile edges");
+    expect(strcmp(loaded.edges[ROUTER_TEST_BELONGS_EDGE].to, "ops\"x") == 0, "belongs_to kept");
+}
+
 static void check_phase4(void)
 {
     hush_router_skill_t skills[2];
@@ -192,6 +221,7 @@ int main(void)
     check_phase1();
     check_phase2();
     check_phase3(root);
+    check_escape(root);
     check_phase4();
     check_context();
     if (g_fail)

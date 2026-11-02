@@ -26,6 +26,16 @@ enum {
     HUSH_ROUTER_NONE = 0xffffffffu
 };
 
+/* hush_json_escape grows one byte to at most six (\u00XX). A buffer of
+ * field size times this growth holds any escaped field without truncation. */
+enum {
+    HUSH_ROUTER_ESCAPE_GROWTH = 6,
+    HUSH_ROUTER_ESC_ID = HUSH_ROUTER_ID_MAX * HUSH_ROUTER_ESCAPE_GROWTH,
+    HUSH_ROUTER_ESC_NAME = HUSH_ROUTER_NAME_MAX * HUSH_ROUTER_ESCAPE_GROWTH,
+    HUSH_ROUTER_ESC_CHANNEL = HUSH_ROUTER_CHANNEL_MAX * HUSH_ROUTER_ESCAPE_GROWTH,
+    HUSH_ROUTER_ESC_JOB = HUSH_ROUTER_JOB_MAX * HUSH_ROUTER_ESCAPE_GROWTH
+};
+
 #define HUSH_ROUTER_TRY(expr)                       \
     do {                                            \
         hush_status_t hush_router_try_s_ = (expr);  \
@@ -97,8 +107,18 @@ static hush_status_t hush_router_append(char *out, size_t outsz, size_t *off,
                                         const char *piece);
 static hush_status_t hush_router_save_items(const hush_router_graph_t *graph,
                                             const char *dir);
+/* Formats one workitems.json object with every string field JSON-escaped.
+ * sep ("" or ",") prefixes the object. Fails with HUSH_ERR_FULL on overflow. */
+static hush_status_t hush_router_item_row(char *out, size_t outsz,
+                                          const hush_router_item_t *item,
+                                          const char *sep);
 static hush_status_t hush_router_save_workers(const hush_router_graph_t *graph,
                                               const char *dir);
+/* Formats one workers.json object with every string field JSON-escaped.
+ * sep ("" or ",") prefixes the object. Fails with HUSH_ERR_FULL on overflow. */
+static hush_status_t hush_router_worker_row(char *out, size_t outsz,
+                                            const hush_router_worker_t *worker,
+                                            const char *sep);
 static hush_status_t hush_router_save_rest(const hush_router_graph_t *graph,
                                            const char *dir);
 static hush_status_t hush_router_load_items(hush_router_graph_t *graph,
@@ -123,10 +143,25 @@ static hush_status_t hush_router_join_file(char *out, size_t outsz,
                                            const char *dir, const char *name);
 static hush_status_t hush_router_save_decisions(const hush_router_graph_t *graph,
                                                 const char *dir);
+/* Formats one decisions.json object with every string field JSON-escaped.
+ * sep ("" or ",") prefixes the object. Fails with HUSH_ERR_FULL on overflow. */
+static hush_status_t hush_router_decision_row(char *out, size_t outsz,
+                                              const hush_router_decision_t *decision,
+                                              const char *sep);
 static hush_status_t hush_router_save_artifacts(const hush_router_graph_t *graph,
                                                 const char *dir);
+/* Formats one artifacts.json object with every string field JSON-escaped.
+ * sep ("" or ",") prefixes the object. Fails with HUSH_ERR_FULL on overflow. */
+static hush_status_t hush_router_artifact_row(char *out, size_t outsz,
+                                              const hush_router_artifact_t *artifact,
+                                              const char *sep);
 static hush_status_t hush_router_save_edges(const hush_router_graph_t *graph,
                                             const char *dir);
+/* Formats one edges.json object with both endpoints JSON-escaped.
+ * sep ("" or ",") prefixes the object. Fails with HUSH_ERR_FULL on overflow. */
+static hush_status_t hush_router_edge_row(char *out, size_t outsz,
+                                          const hush_router_edge_t *edge,
+                                          const char *sep);
 static hush_status_t hush_router_save_state(const hush_router_graph_t *graph,
                                             const char *dir);
 static hush_status_t hush_router_take_field(char *out, size_t outsz,
@@ -913,35 +948,52 @@ static hush_status_t hush_router_save_items(const hush_router_graph_t *graph,
 {
     char body[HUSH_ROUTER_FILE_MAX];
     char path[HUSH_HOME_PATH_MAX];
-    char title[HUSH_ROUTER_ESCAPE_MAX];
-    char desc[HUSH_ROUTER_ESCAPE_MAX];
     size_t off = 0;
 
     assert(graph != NULL && dir != NULL);
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "["));
     for (size_t i = 0; i < graph->nitems; ++i) {
-        const hush_router_item_t *item = &graph->items[i];
         char row[2048];
-        int n;
 
-        HUSH_ROUTER_TRY(hush_router_escape(title, sizeof title, item->title));
-        HUSH_ROUTER_TRY(hush_router_escape(desc, sizeof desc, item->description));
-        n = snprintf(row, sizeof row,
-                     "%s{\"id\":\"%s\",\"title\":\"%s\",\"description\":\"%s\","
-                     "\"status\":\"%s\",\"channel_id\":\"%s\",\"created\":%lld,"
-                     "\"updated\":%lld,\"assigned_worker_id\":\"%s\","
-                     "\"priority\":%d,\"parent_id\":\"%s\"}",
-                     i == 0 ? "" : ",", item->id, title, desc,
-                     hush_router_phase_name(item->phase), item->channel_id,
-                     (long long)item->created, (long long)item->updated,
-                     item->worker_id, item->priority, item->parent_id);
-        if (n < 0 || (size_t)n >= sizeof row)
-            return HUSH_ERR_FULL;
+        HUSH_ROUTER_TRY(hush_router_item_row(row, sizeof row, &graph->items[i],
+                                             i == 0 ? "" : ","));
         HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, row));
     }
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "]\n"));
     HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, "workitems.json"));
     return hush_router_write_file(path, body);
+}
+
+static hush_status_t hush_router_item_row(char *out, size_t outsz,
+                                          const hush_router_item_t *item,
+                                          const char *sep)
+{
+    char id[HUSH_ROUTER_ESC_ID];
+    char title[HUSH_ROUTER_ESCAPE_MAX];
+    char desc[HUSH_ROUTER_ESCAPE_MAX];
+    char channel[HUSH_ROUTER_ESC_CHANNEL];
+    char worker[HUSH_ROUTER_ESC_ID];
+    char parent[HUSH_ROUTER_ESC_ID];
+    int n;
+
+    assert(out != NULL && item != NULL && sep != NULL);
+    HUSH_ROUTER_TRY(hush_router_escape(id, sizeof id, item->id));
+    HUSH_ROUTER_TRY(hush_router_escape(title, sizeof title, item->title));
+    HUSH_ROUTER_TRY(hush_router_escape(desc, sizeof desc, item->description));
+    HUSH_ROUTER_TRY(hush_router_escape(channel, sizeof channel, item->channel_id));
+    HUSH_ROUTER_TRY(hush_router_escape(worker, sizeof worker, item->worker_id));
+    HUSH_ROUTER_TRY(hush_router_escape(parent, sizeof parent, item->parent_id));
+    n = snprintf(out, outsz,
+                 "%s{\"id\":\"%s\",\"title\":\"%s\",\"description\":\"%s\","
+                 "\"status\":\"%s\",\"channel_id\":\"%s\",\"created\":%lld,"
+                 "\"updated\":%lld,\"assigned_worker_id\":\"%s\","
+                 "\"priority\":%d,\"parent_id\":\"%s\"}",
+                 sep, id, title, desc, hush_router_phase_name(item->phase), channel,
+                 (long long)item->created, (long long)item->updated, worker,
+                 item->priority, parent);
+    if (n < 0 || (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
 }
 
 static hush_status_t hush_router_save_workers(const hush_router_graph_t *graph,
@@ -954,26 +1006,47 @@ static hush_status_t hush_router_save_workers(const hush_router_graph_t *graph,
     assert(graph != NULL && dir != NULL);
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "["));
     for (size_t i = 0; i < graph->nworkers; ++i) {
-        const hush_router_worker_t *worker = &graph->workers[i];
         char row[1024];
-        int n = snprintf(row, sizeof row,
-                         "%s{\"id\":\"%s\",\"workitem_id\":\"%s\","
-                         "\"specialist_id\":\"%s\",\"status\":\"%s\","
-                         "\"started\":%lld,\"last_heartbeat\":%lld,"
-                         "\"job_dir\":\"%s\",\"provider_id\":\"%s\"}",
-                         i == 0 ? "" : ",", worker->id, worker->item_id,
-                         worker->specialist_id,
-                         hush_router_phase_name(worker->phase),
-                         (long long)worker->started,
-                         (long long)worker->heartbeat, worker->job_dir,
-                         worker->provider_id);
-        if (n < 0 || (size_t)n >= sizeof row)
-            return HUSH_ERR_FULL;
+
+        HUSH_ROUTER_TRY(hush_router_worker_row(row, sizeof row, &graph->workers[i],
+                                               i == 0 ? "" : ","));
         HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, row));
     }
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "]\n"));
     HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, "workers.json"));
     return hush_router_write_file(path, body);
+}
+
+static hush_status_t hush_router_worker_row(char *out, size_t outsz,
+                                            const hush_router_worker_t *worker,
+                                            const char *sep)
+{
+    char id[HUSH_ROUTER_ESC_ID];
+    char item[HUSH_ROUTER_ESC_ID];
+    char specialist[HUSH_ROUTER_ESC_NAME];
+    char job[HUSH_ROUTER_ESC_JOB];
+    char provider[HUSH_ROUTER_ESC_NAME];
+    int n;
+
+    assert(out != NULL && worker != NULL && sep != NULL);
+    HUSH_ROUTER_TRY(hush_router_escape(id, sizeof id, worker->id));
+    HUSH_ROUTER_TRY(hush_router_escape(item, sizeof item, worker->item_id));
+    HUSH_ROUTER_TRY(hush_router_escape(specialist, sizeof specialist,
+                                       worker->specialist_id));
+    HUSH_ROUTER_TRY(hush_router_escape(job, sizeof job, worker->job_dir));
+    HUSH_ROUTER_TRY(hush_router_escape(provider, sizeof provider,
+                                       worker->provider_id));
+    n = snprintf(out, outsz,
+                 "%s{\"id\":\"%s\",\"workitem_id\":\"%s\","
+                 "\"specialist_id\":\"%s\",\"status\":\"%s\","
+                 "\"started\":%lld,\"last_heartbeat\":%lld,"
+                 "\"job_dir\":\"%s\",\"provider_id\":\"%s\"}",
+                 sep, id, item, specialist, hush_router_phase_name(worker->phase),
+                 (long long)worker->started, (long long)worker->heartbeat, job,
+                 provider);
+    if (n < 0 || (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
 }
 
 static hush_status_t hush_router_save_decisions(const hush_router_graph_t *graph,
@@ -986,25 +1059,39 @@ static hush_status_t hush_router_save_decisions(const hush_router_graph_t *graph
     assert(graph != NULL && dir != NULL);
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "["));
     for (size_t i = 0; i < graph->ndecisions; ++i) {
-        const hush_router_decision_t *decision = &graph->decisions[i];
-        char text[HUSH_ROUTER_ESCAPE_MAX];
         char row[1024];
-        int n;
 
-        HUSH_ROUTER_TRY(hush_router_escape(text, sizeof text, decision->text));
-        n = snprintf(row, sizeof row,
-                     "%s{\"id\":\"%s\",\"workitem_id\":\"%s\",\"text\":\"%s\","
-                     "\"created\":%lld}",
-                     i == 0 ? "" : ",", decision->id, decision->item_id, text,
-                     (long long)decision->created);
-        if (n < 0 || (size_t)n >= sizeof row)
-            return HUSH_ERR_FULL;
+        HUSH_ROUTER_TRY(hush_router_decision_row(row, sizeof row,
+                                                 &graph->decisions[i],
+                                                 i == 0 ? "" : ","));
         HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, row));
     }
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "]\n"));
     HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir,
                                           "decisions.json"));
     return hush_router_write_file(path, body);
+}
+
+static hush_status_t hush_router_decision_row(char *out, size_t outsz,
+                                              const hush_router_decision_t *decision,
+                                              const char *sep)
+{
+    char id[HUSH_ROUTER_ESC_ID];
+    char item[HUSH_ROUTER_ESC_ID];
+    char text[HUSH_ROUTER_ESCAPE_MAX];
+    int n;
+
+    assert(out != NULL && decision != NULL && sep != NULL);
+    HUSH_ROUTER_TRY(hush_router_escape(id, sizeof id, decision->id));
+    HUSH_ROUTER_TRY(hush_router_escape(item, sizeof item, decision->item_id));
+    HUSH_ROUTER_TRY(hush_router_escape(text, sizeof text, decision->text));
+    n = snprintf(out, outsz,
+                 "%s{\"id\":\"%s\",\"workitem_id\":\"%s\",\"text\":\"%s\","
+                 "\"created\":%lld}",
+                 sep, id, item, text, (long long)decision->created);
+    if (n < 0 || (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
 }
 
 static hush_status_t hush_router_save_artifacts(const hush_router_graph_t *graph,
@@ -1017,22 +1104,37 @@ static hush_status_t hush_router_save_artifacts(const hush_router_graph_t *graph
     assert(graph != NULL && dir != NULL);
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "["));
     for (size_t i = 0; i < graph->nartifacts; ++i) {
-        const hush_router_artifact_t *artifact = &graph->artifacts[i];
-        char text[HUSH_ROUTER_ESCAPE_MAX];
         char row[1024];
-        int n;
 
-        HUSH_ROUTER_TRY(hush_router_escape(text, sizeof text, artifact->text));
-        n = snprintf(row, sizeof row,
-                     "%s{\"id\":\"%s\",\"worker_id\":\"%s\",\"text\":\"%s\"}",
-                     i == 0 ? "" : ",", artifact->id, artifact->worker_id, text);
-        if (n < 0 || (size_t)n >= sizeof row)
-            return HUSH_ERR_FULL;
+        HUSH_ROUTER_TRY(hush_router_artifact_row(row, sizeof row,
+                                                 &graph->artifacts[i],
+                                                 i == 0 ? "" : ","));
         HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, row));
     }
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "]\n"));
     HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, "artifacts.json"));
     return hush_router_write_file(path, body);
+}
+
+static hush_status_t hush_router_artifact_row(char *out, size_t outsz,
+                                              const hush_router_artifact_t *artifact,
+                                              const char *sep)
+{
+    char id[HUSH_ROUTER_ESC_ID];
+    char worker[HUSH_ROUTER_ESC_ID];
+    char text[HUSH_ROUTER_ESCAPE_MAX];
+    int n;
+
+    assert(out != NULL && artifact != NULL && sep != NULL);
+    HUSH_ROUTER_TRY(hush_router_escape(id, sizeof id, artifact->id));
+    HUSH_ROUTER_TRY(hush_router_escape(worker, sizeof worker, artifact->worker_id));
+    HUSH_ROUTER_TRY(hush_router_escape(text, sizeof text, artifact->text));
+    n = snprintf(out, outsz,
+                 "%s{\"id\":\"%s\",\"worker_id\":\"%s\",\"text\":\"%s\"}",
+                 sep, id, worker, text);
+    if (n < 0 || (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
 }
 
 static hush_status_t hush_router_save_edges(const hush_router_graph_t *graph,
@@ -1045,19 +1147,33 @@ static hush_status_t hush_router_save_edges(const hush_router_graph_t *graph,
     assert(graph != NULL && dir != NULL);
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "["));
     for (size_t i = 0; i < graph->nedges; ++i) {
-        const hush_router_edge_t *edge = &graph->edges[i];
         char row[256];
-        int n = snprintf(row, sizeof row,
-                         "%s{\"from\":\"%s\",\"type\":\"%s\",\"to\":\"%s\"}",
-                         i == 0 ? "" : ",", edge->from,
-                         hush_router_edge_name(edge->kind), edge->to);
-        if (n < 0 || (size_t)n >= sizeof row)
-            return HUSH_ERR_FULL;
+
+        HUSH_ROUTER_TRY(hush_router_edge_row(row, sizeof row, &graph->edges[i],
+                                             i == 0 ? "" : ","));
         HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, row));
     }
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "]\n"));
     HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, "edges.json"));
     return hush_router_write_file(path, body);
+}
+
+static hush_status_t hush_router_edge_row(char *out, size_t outsz,
+                                          const hush_router_edge_t *edge,
+                                          const char *sep)
+{
+    char from[HUSH_ROUTER_ESC_ID];
+    char to[HUSH_ROUTER_ESC_ID];
+    int n;
+
+    assert(out != NULL && edge != NULL && sep != NULL);
+    HUSH_ROUTER_TRY(hush_router_escape(from, sizeof from, edge->from));
+    HUSH_ROUTER_TRY(hush_router_escape(to, sizeof to, edge->to));
+    n = snprintf(out, outsz, "%s{\"from\":\"%s\",\"type\":\"%s\",\"to\":\"%s\"}",
+                 sep, from, hush_router_edge_name(edge->kind), to);
+    if (n < 0 || (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
 }
 
 static hush_status_t hush_router_save_state(const hush_router_graph_t *graph,
