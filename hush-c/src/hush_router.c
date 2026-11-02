@@ -59,6 +59,28 @@ static const char *const HUSH_ROUTER_EDGES[] = {
     "assigned", "depends_on", "blocked_by", "produced", "belongs_to", "needs"
 };
 
+/* One save writes these six files as a set. Each is staged as name plus
+ * HUSH_ROUTER_STAGED; the commit mark makes the staged set authoritative
+ * until every rename lands (#375 Floor F4). */
+static const char HUSH_ROUTER_ITEMS_FILE[] = "workitems.json";
+static const char HUSH_ROUTER_WORKERS_FILE[] = "workers.json";
+static const char HUSH_ROUTER_DECISIONS_FILE[] = "decisions.json";
+static const char HUSH_ROUTER_ARTIFACTS_FILE[] = "artifacts.json";
+static const char HUSH_ROUTER_EDGES_FILE[] = "edges.json";
+static const char HUSH_ROUTER_STATE_FILE[] = "router_state.json";
+static const char HUSH_ROUTER_STAGED[] = ".tmp";
+static const char HUSH_ROUTER_COMMIT[] = "commit";
+
+static const char *const HUSH_ROUTER_FILES[] = {
+    HUSH_ROUTER_ITEMS_FILE, HUSH_ROUTER_WORKERS_FILE, HUSH_ROUTER_DECISIONS_FILE,
+    HUSH_ROUTER_ARTIFACTS_FILE, HUSH_ROUTER_EDGES_FILE, HUSH_ROUTER_STATE_FILE
+};
+
+enum {
+    HUSH_ROUTER_NFILES = sizeof HUSH_ROUTER_FILES / sizeof HUSH_ROUTER_FILES[0],
+    HUSH_ROUTER_STAGED_PATH_MAX = HUSH_HOME_PATH_MAX + sizeof HUSH_ROUTER_STAGED
+};
+
 static const char *const HUSH_ROUTER_WORDS[] = {
     "run", "test", "build", "fix", "check", "deploy", "open", "write", "land"
 };
@@ -134,7 +156,31 @@ static hush_status_t hush_router_phase_line(char *out, size_t outsz,
                                             const char *item_id,
                                             hush_router_phase_t phase);
 static hush_status_t hush_router_dir(char *out, size_t outsz, const char *root);
-static hush_status_t hush_router_write_file(const char *path, const char *text);
+/* Writes text to path plus HUSH_ROUTER_STAGED and fsyncs it; never touches
+ * path itself. Fails with HUSH_ERR_FULL on a long path, HUSH_ERR_IO on IO. */
+static hush_status_t hush_router_stage_file(const char *path, const char *text);
+/* Writes path plus HUSH_ROUTER_STAGED into out. Fails with HUSH_ERR_FULL. */
+static hush_status_t hush_router_staged_path(char *out, size_t outsz,
+                                             const char *path);
+/* Makes the staged set durable, marks it committed, then publishes it.
+ * A crash before the mark keeps the old set. Fails with HUSH_ERR_IO. */
+static hush_status_t hush_router_commit(const char *dir);
+/* Rolls a marked set forward when a commit mark is present, else no-op.
+ * Fails with HUSH_ERR_IO. */
+static hush_status_t hush_router_recover(const char *dir);
+/* Renames every staged file over its live name, then drops the commit mark.
+ * Idempotent, so an interrupted publish can rerun. Fails with HUSH_ERR_IO. */
+static hush_status_t hush_router_publish(const char *dir);
+/* Renames one staged file over its live name. A missing staged file was
+ * already published by an interrupted run. Fails with HUSH_ERR_IO. */
+static hush_status_t hush_router_publish_file(const char *dir, const char *name);
+/* Creates the empty commit mark in dir and fsyncs it. Fails with HUSH_ERR_IO. */
+static hush_status_t hush_router_mark(const char *dir);
+/* Removes the commit mark from dir. Fails with HUSH_ERR_IO. */
+static hush_status_t hush_router_unmark(const char *dir);
+/* Adapter over fsync of a directory, so renames in it survive power loss.
+ * Fails with HUSH_ERR_IO. */
+static hush_status_t hush_router_sync_dir(const char *dir);
 static hush_status_t hush_router_read_file(char *out, size_t outsz,
                                            const char *path);
 static hush_status_t hush_router_append(char *out, size_t outsz, size_t *off,
@@ -289,9 +335,12 @@ hush_status_t hush_router_save(const hush_router_graph_t *graph,
         return HUSH_ERR_ARG;
     HUSH_ROUTER_TRY(hush_router_dir(dir, sizeof dir, root));
     HUSH_ROUTER_TRY(hush_home_mkdir(dir));
+    /* Finish any marked set first, so staging never overwrites one. */
+    HUSH_ROUTER_TRY(hush_router_recover(dir));
     HUSH_ROUTER_TRY(hush_router_save_items(graph, dir));
     HUSH_ROUTER_TRY(hush_router_save_workers(graph, dir));
-    return hush_router_save_rest(graph, dir);
+    HUSH_ROUTER_TRY(hush_router_save_rest(graph, dir));
+    return hush_router_commit(dir);
 }
 
 hush_status_t hush_router_load(hush_router_graph_t *graph, const char *root)
@@ -302,6 +351,7 @@ hush_status_t hush_router_load(hush_router_graph_t *graph, const char *root)
         return HUSH_ERR_ARG;
     hush_router_init(graph);
     HUSH_ROUTER_TRY(hush_router_dir(dir, sizeof dir, root));
+    HUSH_ROUTER_TRY(hush_router_recover(dir));
     HUSH_ROUTER_TRY(hush_router_load_items(graph, dir));
     HUSH_ROUTER_TRY(hush_router_load_workers(graph, dir));
     HUSH_ROUTER_TRY(hush_router_load_rest(graph, dir));
@@ -958,37 +1008,142 @@ static hush_status_t hush_router_dir(char *out, size_t outsz, const char *root)
     return HUSH_OK;
 }
 
-static hush_status_t hush_router_write_file(const char *path, const char *text)
+static hush_status_t hush_router_stage_file(const char *path, const char *text)
 {
-    char tmp[HUSH_HOME_PATH_MAX + 8];
+    char staged[HUSH_ROUTER_STAGED_PATH_MAX];
     size_t len;
     ssize_t written;
-    int n;
     int fd;
 
     assert(path != NULL && text != NULL);
-    n = snprintf(tmp, sizeof tmp, "%s.tmp", path);
-    if (n <= 0 || (size_t)n >= sizeof tmp)
-        return HUSH_ERR_FULL;
+    HUSH_ROUTER_TRY(hush_router_staged_path(staged, sizeof staged, path));
     len = strlen(text);
-    fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW,
+    fd = open(staged, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW,
               HUSH_ROUTER_FILE_MODE);
     if (fd < 0)
         return HUSH_ERR_IO;
     written = write(fd, text, len);
     if (written != (ssize_t)len || fsync(fd) != 0) {
         (void)close(fd);
-        (void)unlink(tmp);
+        (void)unlink(staged);
         return HUSH_ERR_IO;
     }
     if (close(fd) != 0) {
-        (void)unlink(tmp);
+        (void)unlink(staged);
         return HUSH_ERR_IO;
     }
-    if (rename(tmp, path) != 0) {
-        (void)unlink(tmp);
+    return HUSH_OK;
+}
+
+static hush_status_t hush_router_staged_path(char *out, size_t outsz,
+                                             const char *path)
+{
+    int n;
+
+    assert(out != NULL && path != NULL);
+    n = snprintf(out, outsz, "%s%s", path, HUSH_ROUTER_STAGED);
+    if (n <= 0 || (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_router_commit(const char *dir)
+{
+    assert(dir != NULL);
+    /* Staged names must be durable before the mark can vouch for them. */
+    HUSH_ROUTER_TRY(hush_router_sync_dir(dir));
+    HUSH_ROUTER_TRY(hush_router_mark(dir));
+    HUSH_ROUTER_TRY(hush_router_sync_dir(dir));
+    return hush_router_publish(dir);
+}
+
+static hush_status_t hush_router_recover(const char *dir)
+{
+    char mark[HUSH_HOME_PATH_MAX];
+
+    assert(dir != NULL);
+    HUSH_ROUTER_TRY(hush_router_join_file(mark, sizeof mark, dir,
+                                          HUSH_ROUTER_COMMIT));
+    if (access(mark, F_OK) == 0)
+        return hush_router_publish(dir);
+    if (errno == ENOENT)
+        return HUSH_OK;
+    return HUSH_ERR_IO;
+}
+
+static hush_status_t hush_router_publish(const char *dir)
+{
+    assert(dir != NULL);
+    for (size_t i = 0; i < (size_t)HUSH_ROUTER_NFILES; ++i)
+        HUSH_ROUTER_TRY(hush_router_publish_file(dir, HUSH_ROUTER_FILES[i]));
+    /* Every rename must be durable before the mark stops vouching. */
+    HUSH_ROUTER_TRY(hush_router_sync_dir(dir));
+    HUSH_ROUTER_TRY(hush_router_unmark(dir));
+    return hush_router_sync_dir(dir);
+}
+
+static hush_status_t hush_router_publish_file(const char *dir, const char *name)
+{
+    char path[HUSH_HOME_PATH_MAX];
+    char staged[HUSH_ROUTER_STAGED_PATH_MAX];
+
+    assert(dir != NULL && name != NULL);
+    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, name));
+    HUSH_ROUTER_TRY(hush_router_staged_path(staged, sizeof staged, path));
+    if (rename(staged, path) == 0)
+        return HUSH_OK;
+    if (errno == ENOENT)
+        return HUSH_OK;
+    return HUSH_ERR_IO;
+}
+
+static hush_status_t hush_router_mark(const char *dir)
+{
+    char mark[HUSH_HOME_PATH_MAX];
+    int fd;
+
+    assert(dir != NULL);
+    HUSH_ROUTER_TRY(hush_router_join_file(mark, sizeof mark, dir,
+                                          HUSH_ROUTER_COMMIT));
+    fd = open(mark, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW,
+              HUSH_ROUTER_FILE_MODE);
+    if (fd < 0)
+        return HUSH_ERR_IO;
+    if (fsync(fd) != 0) {
+        (void)close(fd);
         return HUSH_ERR_IO;
     }
+    if (close(fd) != 0)
+        return HUSH_ERR_IO;
+    return HUSH_OK;
+}
+
+static hush_status_t hush_router_unmark(const char *dir)
+{
+    char mark[HUSH_HOME_PATH_MAX];
+
+    assert(dir != NULL);
+    HUSH_ROUTER_TRY(hush_router_join_file(mark, sizeof mark, dir,
+                                          HUSH_ROUTER_COMMIT));
+    if (unlink(mark) == 0 || errno == ENOENT)
+        return HUSH_OK;
+    return HUSH_ERR_IO;
+}
+
+static hush_status_t hush_router_sync_dir(const char *dir)
+{
+    int fd;
+
+    assert(dir != NULL);
+    fd = open(dir, O_RDONLY | O_DIRECTORY);
+    if (fd < 0)
+        return HUSH_ERR_IO;
+    if (fsync(fd) != 0) {
+        (void)close(fd);
+        return HUSH_ERR_IO;
+    }
+    if (close(fd) != 0)
+        return HUSH_ERR_IO;
     return HUSH_OK;
 }
 
@@ -1069,8 +1224,8 @@ static hush_status_t hush_router_save_items(const hush_router_graph_t *graph,
         HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, row));
     }
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "]\n"));
-    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, "workitems.json"));
-    return hush_router_write_file(path, body);
+    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, HUSH_ROUTER_ITEMS_FILE));
+    return hush_router_stage_file(path, body);
 }
 
 static hush_status_t hush_router_item_row(char *out, size_t outsz,
@@ -1122,8 +1277,8 @@ static hush_status_t hush_router_save_workers(const hush_router_graph_t *graph,
         HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, row));
     }
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "]\n"));
-    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, "workers.json"));
-    return hush_router_write_file(path, body);
+    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, HUSH_ROUTER_WORKERS_FILE));
+    return hush_router_stage_file(path, body);
 }
 
 static hush_status_t hush_router_worker_row(char *out, size_t outsz,
@@ -1177,8 +1332,8 @@ static hush_status_t hush_router_save_decisions(const hush_router_graph_t *graph
     }
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "]\n"));
     HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir,
-                                          "decisions.json"));
-    return hush_router_write_file(path, body);
+                                          HUSH_ROUTER_DECISIONS_FILE));
+    return hush_router_stage_file(path, body);
 }
 
 static hush_status_t hush_router_decision_row(char *out, size_t outsz,
@@ -1221,8 +1376,8 @@ static hush_status_t hush_router_save_artifacts(const hush_router_graph_t *graph
         HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, row));
     }
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "]\n"));
-    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, "artifacts.json"));
-    return hush_router_write_file(path, body);
+    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, HUSH_ROUTER_ARTIFACTS_FILE));
+    return hush_router_stage_file(path, body);
 }
 
 static hush_status_t hush_router_artifact_row(char *out, size_t outsz,
@@ -1263,8 +1418,8 @@ static hush_status_t hush_router_save_edges(const hush_router_graph_t *graph,
         HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, row));
     }
     HUSH_ROUTER_TRY(hush_router_append(body, sizeof body, &off, "]\n"));
-    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, "edges.json"));
-    return hush_router_write_file(path, body);
+    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, HUSH_ROUTER_EDGES_FILE));
+    return hush_router_stage_file(path, body);
 }
 
 static hush_status_t hush_router_edge_row(char *out, size_t outsz,
@@ -1301,8 +1456,8 @@ static hush_status_t hush_router_save_state(const hush_router_graph_t *graph,
     if (n < 0 || (size_t)n >= sizeof body)
         return HUSH_ERR_FULL;
     HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir,
-                                          "router_state.json"));
-    return hush_router_write_file(path, body);
+                                          HUSH_ROUTER_STATE_FILE));
+    return hush_router_stage_file(path, body);
 }
 
 static hush_status_t hush_router_save_rest(const hush_router_graph_t *graph,
@@ -1358,7 +1513,7 @@ static hush_status_t hush_router_load_items(hush_router_graph_t *graph,
 
     assert(graph != NULL && dir != NULL);
     HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir,
-                                          "workitems.json"));
+                                          HUSH_ROUTER_ITEMS_FILE));
     status = hush_router_read_file(body, sizeof body, path);
     if (status == HUSH_ERR_NOT_FOUND)
         return HUSH_OK;
@@ -1433,7 +1588,7 @@ static hush_status_t hush_router_load_workers(hush_router_graph_t *graph,
     hush_status_t status;
 
     assert(graph != NULL && dir != NULL);
-    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, "workers.json"));
+    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, HUSH_ROUTER_WORKERS_FILE));
     status = hush_router_read_file(body, sizeof body, path);
     if (status == HUSH_ERR_NOT_FOUND)
         return HUSH_OK;
@@ -1503,7 +1658,7 @@ static hush_status_t hush_router_load_decisions(hush_router_graph_t *graph,
 
     assert(graph != NULL && dir != NULL);
     HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir,
-                                          "decisions.json"));
+                                          HUSH_ROUTER_DECISIONS_FILE));
     status = hush_router_read_file(body, sizeof body, path);
     if (status == HUSH_ERR_NOT_FOUND)
         return HUSH_OK;
@@ -1551,7 +1706,7 @@ static hush_status_t hush_router_load_artifacts(hush_router_graph_t *graph,
 
     assert(graph != NULL && dir != NULL);
     HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir,
-                                          "artifacts.json"));
+                                          HUSH_ROUTER_ARTIFACTS_FILE));
     status = hush_router_read_file(body, sizeof body, path);
     if (status == HUSH_ERR_NOT_FOUND)
         return HUSH_OK;
@@ -1594,7 +1749,7 @@ static hush_status_t hush_router_load_edges(hush_router_graph_t *graph,
     hush_status_t status;
 
     assert(graph != NULL && dir != NULL);
-    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, "edges.json"));
+    HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir, HUSH_ROUTER_EDGES_FILE));
     status = hush_router_read_file(body, sizeof body, path);
     if (status == HUSH_ERR_NOT_FOUND)
         return HUSH_OK;
@@ -1640,7 +1795,7 @@ static hush_status_t hush_router_load_state(hush_router_graph_t *graph,
 
     assert(graph != NULL && dir != NULL);
     HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir,
-                                          "router_state.json"));
+                                          HUSH_ROUTER_STATE_FILE));
     status = hush_router_read_file(body, sizeof body, path);
     if (status == HUSH_ERR_NOT_FOUND)
         return HUSH_OK;

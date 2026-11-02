@@ -15,10 +15,27 @@ enum {
     ROUTER_TEST_BELONGS_EDGE = 1, /* open_item pushes assigned, then belongs_to */
     ROUTER_TEST_POLLS = 3,
     ROUTER_TEST_ROOT_MAX = 64,
-    ROUTER_TEST_DIR_MODE = 0700
+    ROUTER_TEST_DIR_MODE = 0700,
+    ROUTER_TEST_PATH_MAX = 192,
+    ROUTER_TEST_FILE_MAX = 16384,
+    ROUTER_TEST_PUBLISHED = 3 /* renames done before the simulated crash */
 };
 
 #define ROUTER_TEST_POLL_DIR "/poll"
+
+/* Every file one save writes, in save order (#375 Floor F4). */
+static const char *const ROUTER_TEST_FILES[] = {
+    "workitems.json", "workers.json", "decisions.json",
+    "artifacts.json", "edges.json", "router_state.json"
+};
+
+enum {
+    ROUTER_TEST_NFILES = sizeof ROUTER_TEST_FILES / sizeof ROUTER_TEST_FILES[0]
+};
+
+/* Save protocol names, pinned by the half-write checks below. */
+static const char ROUTER_TEST_COMMIT[] = "commit";
+static const char ROUTER_TEST_STAGED[] = ".tmp";
 
 static int g_fail;
 
@@ -248,6 +265,191 @@ static void check_poll_full(const char *root)
     expect(loaded.nedges == (size_t)HUSH_ROUTER_EDGES_MAX, "poll edges kept");
 }
 
+/* Writes dir/name, plus suffix when non-empty, into out. */
+static void join_path(char *out, size_t outsz, const char *dir, const char *name,
+                      const char *suffix)
+{
+    int n = snprintf(out, outsz, "%s/%s%s", dir, name, suffix);
+
+    expect(n > 0 && (size_t)n < outsz, "half path fits");
+}
+
+/* True when two graphs hold one generation: counts, cursor, phases. */
+static int same_graph(const hush_router_graph_t *a, const hush_router_graph_t *b)
+{
+    if (a->nitems != b->nitems || a->nworkers != b->nworkers)
+        return 0;
+    if (a->ndecisions != b->ndecisions || a->nedges != b->nedges)
+        return 0;
+    if (a->next_id != b->next_id || strcmp(a->last_line, b->last_line) != 0)
+        return 0;
+    for (size_t i = 0; i < a->nitems; ++i) {
+        if (a->items[i].phase != b->items[i].phase)
+            return 0;
+    }
+    for (size_t i = 0; i < a->nworkers; ++i) {
+        if (a->workers[i].phase != b->workers[i].phase)
+            return 0;
+    }
+    return 1;
+}
+
+/* Reports which home broke when a generation check fails. */
+static void expect_at(int cond, const char *msg, const char *home)
+{
+    expect(cond, msg);
+    if (!cond)
+        fprintf(stderr, "     at %s\n", home);
+}
+
+/* Old generation shared by both half-write cases: WI-1 blocked. */
+static void build_blocked(hush_router_graph_t *graph)
+{
+    hush_router_result_t result;
+    hush_router_note_t note = note_of("Run a rate-limit test", NULL);
+    char line[HUSH_ROUTER_LINE_MAX];
+
+    hush_router_init(graph);
+    expect(hush_router_accept(graph, &result, &note) == HUSH_OK, "half first");
+    expect(hush_router_drain(graph, line, sizeof line, 1) == HUSH_OK, "half run");
+    expect(hush_router_drain(graph, line, sizeof line, 2) == HUSH_OK, "half block");
+}
+
+/* Copies old, then applies one note that must take the given route. */
+static void build_next(hush_router_graph_t *next, const hush_router_graph_t *old,
+                       const char *text, hush_router_route_t route)
+{
+    hush_router_result_t result;
+    hush_router_note_t note = note_of(text, NULL);
+
+    memcpy(next, old, sizeof *next);
+    expect(hush_router_accept(next, &result, &note) == HUSH_OK, "half accept");
+    expect(result.route == route, "half route");
+}
+
+/* Fault injection: a directory squats on file k's staging name, so the save
+ * of next fails at file k. Reload must show old whole; a retry lands next. */
+static void check_fault_at(const char *home, const hush_router_graph_t *old,
+                           const hush_router_graph_t *next, size_t k)
+{
+    char dir[ROUTER_TEST_PATH_MAX];
+    char block[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t loaded;
+
+    expect(mkdir(home, ROUTER_TEST_DIR_MODE) == 0, "half home");
+    expect(hush_router_save(old, home) == HUSH_OK, "half seed");
+    join_path(dir, sizeof dir, home, "router", "");
+    join_path(block, sizeof block, dir, ROUTER_TEST_FILES[k], ROUTER_TEST_STAGED);
+    expect(mkdir(block, ROUTER_TEST_DIR_MODE) == 0, "half squat");
+    expect(hush_router_save(next, home) != HUSH_OK, "half save fails");
+    expect(rmdir(block) == 0, "half unsquat");
+    expect(hush_router_load(&loaded, home) == HUSH_OK, "half reload");
+    expect_at(same_graph(&loaded, old), "half write left mixed state", home);
+    expect(hush_router_save(next, home) == HUSH_OK, "half resave");
+    expect(hush_router_load(&loaded, home) == HUSH_OK, "half new reload");
+    expect_at(same_graph(&loaded, next), "half retry lost new state", home);
+}
+
+/* Runs the fault at every file of one save, each in a fresh home. */
+static void check_fault_each(const char *root, const char *op,
+                             const hush_router_graph_t *old,
+                             const hush_router_graph_t *next)
+{
+    for (size_t k = 0; k < (size_t)ROUTER_TEST_NFILES; ++k) {
+        char home[ROUTER_TEST_PATH_MAX];
+        int n = snprintf(home, sizeof home, "%s/half-%s-%u", root, op,
+                         (unsigned)k);
+
+        expect(n > 0 && (size_t)n < sizeof home, "half home fits");
+        check_fault_at(home, old, next, k);
+    }
+}
+
+/* Copies one whole file. Fails the test on any short read or write. */
+static void copy_file(const char *to, const char *from)
+{
+    char body[ROUTER_TEST_FILE_MAX];
+    FILE *in = fopen(from, "rb");
+    size_t n = 0;
+
+    expect(in != NULL, "half copy open");
+    if (in == NULL)
+        return;
+    n = fread(body, 1, sizeof body, in);
+    (void)fclose(in);
+    FILE *out = fopen(to, "wb");
+    expect(out != NULL, "half copy create");
+    if (out == NULL)
+        return;
+    expect(fwrite(body, 1, n, out) == n, "half copy write");
+    expect(fclose(out) == 0, "half copy close");
+}
+
+/* Lays out a crash after the commit mark: every file of next staged, the
+ * mark present, only the first ROUTER_TEST_PUBLISHED renames done. */
+static void stage_crash(const char *dir, const char *next_dir)
+{
+    char from[ROUTER_TEST_PATH_MAX];
+    char to[ROUTER_TEST_PATH_MAX];
+    char mark[ROUTER_TEST_PATH_MAX];
+
+    for (size_t i = 0; i < (size_t)ROUTER_TEST_NFILES; ++i) {
+        join_path(from, sizeof from, next_dir, ROUTER_TEST_FILES[i], "");
+        join_path(to, sizeof to, dir, ROUTER_TEST_FILES[i], ROUTER_TEST_STAGED);
+        copy_file(to, from);
+    }
+    join_path(mark, sizeof mark, dir, ROUTER_TEST_COMMIT, "");
+    FILE *fp = fopen(mark, "wb");
+    expect(fp != NULL && fclose(fp) == 0, "half commit mark");
+    for (size_t i = 0; i < (size_t)ROUTER_TEST_PUBLISHED; ++i) {
+        join_path(from, sizeof from, dir, ROUTER_TEST_FILES[i], ROUTER_TEST_STAGED);
+        join_path(to, sizeof to, dir, ROUTER_TEST_FILES[i], "");
+        expect(rename(from, to) == 0, "half partial publish");
+    }
+}
+
+/* Crash mid-publish: reload must roll next forward whole and drop the mark. */
+static void check_publish_crash(const char *root, const char *op,
+                                const hush_router_graph_t *old,
+                                const hush_router_graph_t *next)
+{
+    char home[ROUTER_TEST_PATH_MAX];
+    char spare[ROUTER_TEST_PATH_MAX];
+    char dir[ROUTER_TEST_PATH_MAX];
+    char next_dir[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t loaded;
+
+    join_path(home, sizeof home, root, "half-pub-", op);
+    join_path(spare, sizeof spare, root, "half-next-", op);
+    expect(mkdir(home, ROUTER_TEST_DIR_MODE) == 0, "pub home");
+    expect(mkdir(spare, ROUTER_TEST_DIR_MODE) == 0, "pub spare");
+    expect(hush_router_save(old, home) == HUSH_OK, "pub seed");
+    expect(hush_router_save(next, spare) == HUSH_OK, "pub next");
+    join_path(dir, sizeof dir, home, "router", "");
+    join_path(next_dir, sizeof next_dir, spare, "router", "");
+    stage_crash(dir, next_dir);
+    expect(hush_router_load(&loaded, home) == HUSH_OK, "pub reload");
+    expect_at(same_graph(&loaded, next), "publish crash left mixed state", home);
+    join_path(spare, sizeof spare, dir, ROUTER_TEST_COMMIT, "");
+    expect_at(access(spare, F_OK) != 0, "commit mark survived recovery", home);
+}
+
+/* #375 Floor F4: open_item and apply_decision persist as one generation. */
+static void check_halfwrite(const char *root)
+{
+    hush_router_graph_t old;
+    hush_router_graph_t opened;
+    hush_router_graph_t decided;
+
+    build_blocked(&old);
+    build_next(&opened, &old, "Write the field notes", HUSH_ROUTER_ROUTE_WORK);
+    build_next(&decided, &old, "60s", HUSH_ROUTER_ROUTE_DECISION);
+    check_fault_each(root, "open", &old, &opened);
+    check_fault_each(root, "decide", &old, &decided);
+    check_publish_crash(root, "open", &old, &opened);
+    check_publish_crash(root, "decide", &old, &decided);
+}
+
 static void check_phase4(void)
 {
     hush_router_skill_t skills[2];
@@ -307,6 +509,7 @@ int main(void)
     check_escape(root);
     check_edges_full();
     check_poll_full(root);
+    check_halfwrite(root);
     check_phase4();
     check_context();
     if (g_fail)
