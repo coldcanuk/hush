@@ -460,10 +460,19 @@ if (/\breply\b/.test(String(normalNote.className || "")))
   fail("M1: a reply note must not carry a reply class");
 if (flat.some((n) => n !== cards.failed && (n.textContent || "").indexOf(FAIL) >= 0))
   fail("failure reply painted as its own note as well as on the asking card");
-const order = flat.map((n) => (n.textContent || "").indexOf("what time is it") >= 0 ? "ask" :
-  (n.textContent || "").indexOf(ON_DECK) >= 0 ? "deck" :
-  (n.textContent || "").indexOf("hello") >= 0 ? "hello" :
-  (n.textContent || "").indexOf(NORMAL) >= 0 ? "normal" : "?");
+/* M1 R4: a reply carries a "re: …" link quoting the note it answers; the
+   order reads each card's own text, without that quote. */
+const ownText = (el) => String(el.className || "").split(/\s+/).indexOf("re-link") >= 0 ? "" :
+  (el.children && el.children.length ? el.children.map(ownText).join("") : (el.textContent || ""));
+const order = flat.map((n) => ownText(n).indexOf("what time is it") >= 0 ? "ask" :
+  ownText(n).indexOf(ON_DECK) >= 0 ? "deck" :
+  ownText(n).indexOf("hello") >= 0 ? "hello" :
+  ownText(n).indexOf(NORMAL) >= 0 ? "normal" : "?");
+const reText = (el) => String(el.className || "").split(/\s+/).indexOf("re-link") >= 0 ? el.textContent :
+  (el.children || []).map(reText).join("");
+const anchors = flat.map(reText);
+if (anchors.join("|") !== "|re: @Major what time is it||re: hello")
+  fail("M1 R4: each reply must name the note it answers: " + JSON.stringify(anchors));
 if (order.join(",") !== "ask,deck,hello,normal")
   fail("M1: channel log is not flat in event order: " + order.join(","));
 

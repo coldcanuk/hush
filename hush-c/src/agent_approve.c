@@ -18,6 +18,9 @@ static hush_agent_held_t g_held[HUSH_AGENT_APPROVAL_MAX];
 static unsigned long g_held_seq;
 /* The turn being answered, copied out so its slot is free while it runs. */
 static hush_agent_held_t g_taken;
+/* M1 R2: conversation roots whose ask the owner answered (a ring). */
+static char g_answered[HUSH_AGENT_ANSWERED_MAX][HUSH_EVENT_ID_HEX_LEN + 1];
+static size_t g_answered_next;
 
 static hush_agent_held_t *hush_agent_held_free(void);
 static size_t hush_agent_held_guests(void);
@@ -31,12 +34,15 @@ static void hush_agent_approval_run(hush_store_t *store, const hush_launch_t *la
 static void hush_agent_approval_guest(const hush_agent_job_in_t *in);
 static void hush_agent_approval_decline(hush_store_t *store, const hush_launch_t *launch);
 static void hush_agent_approval_next(hush_store_t *store, const hush_launch_t *launch);
+static int hush_agent_answered_has(const char *root);
 
 void hush_agent_approval_init(void)
 {
     memset(g_held, 0, sizeof(g_held));
     memset(&g_taken, 0, sizeof(g_taken));
     g_held_seq = 0;
+    memset(g_answered, 0, sizeof(g_answered));
+    g_answered_next = 0;
 }
 
 int hush_agent_approval_needed(const hush_agent_job_in_t *in)
@@ -117,6 +123,45 @@ int hush_agent_approval_answer(hush_store_t *store, const hush_launch_t *launch,
     else
         hush_agent_approval_decline(store, launch);
     return 1;
+}
+
+void hush_agent_answered_mark(const hush_event_t *ev)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+
+    if (ev == NULL)
+        return;
+    hush_agent_event_root(root, sizeof(root), ev);
+    if (root[0] == '\0' || hush_agent_answered_has(root))
+        return;
+    hush_agent_copy(g_answered[g_answered_next], sizeof(g_answered[g_answered_next]), root);
+    g_answered_next = (g_answered_next + 1) % (size_t)HUSH_AGENT_ANSWERED_MAX;
+    assert(hush_agent_answered_has(root));
+}
+
+int hush_agent_answered_repeat(const hush_launch_t *launch, const hush_event_t *ev)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+
+    if (launch == NULL || ev == NULL || !hush_agent_is_human(launch, ev->pubkey))
+        return 0;
+    if (hush_agent_loop_parse_answer(ev->content) == HUSH_AGENT_LOOP_ANSWER_NONE)
+        return 0;
+    hush_agent_event_root(root, sizeof(root), ev);
+    return root[0] != '\0' && hush_agent_answered_has(root);
+}
+
+/* True when root is in the answered ring. */
+static int hush_agent_answered_has(const char *root)
+{
+    size_t i = 0;
+
+    assert(root != NULL);
+    for (i = 0; i < (size_t)HUSH_AGENT_ANSWERED_MAX; i++) {
+        if (strcmp(g_answered[i], root) == 0)
+            return 1;
+    }
+    return 0;
 }
 
 int hush_agent_is_approval_line(const char *content)

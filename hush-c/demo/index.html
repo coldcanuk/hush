@@ -2263,8 +2263,28 @@ html[data-theme="field-office"] .think-stop:focus-visible {
   text-transform: uppercase; letter-spacing: 0.16em; transform: rotate(-1.2deg);
 }
 .loop-no { border-color: var(--muted); color: var(--muted); }
+/* M1 R3: approval and team asks now carry these stamps in the main log, so
+   the Yes word is --fg ink (the body text colour, >= 4.5:1 on a card in
+   every theme) inside the --accent stamp rule; --accent text fell to 3.98:1
+   in dark and 4.14:1 in desert. */
+.loop-yes { color: var(--fg); }
 .loop-stamp:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
 .loop-stamp:disabled { opacity: 0.7; }
+/* M1 R1: an answered ask keeps one inert stamp with the word that was sent. */
+.loop-sent {
+  display: inline-flex; align-items: center; border-style: dashed;
+  border-color: var(--muted); color: var(--fg); transform: none;
+}
+/* M1 R4: the "re: …" anchor on a reply card, and the flash on its target. */
+.re-link {
+  display: block; max-width: 100%; margin: 2px 0 4px; padding: 0;
+  border: 0; background: transparent; color: var(--muted); font: inherit;
+  font-size: 0.78rem; text-align: left; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.re-link:hover { color: var(--fg); text-decoration: underline; }
+.re-link:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+.note-flash { outline: 2px solid var(--accent); outline-offset: 2px; }
 html[data-theme="field-office"] .loop-yes {
   box-shadow: inset 0 0 0 1px var(--surface-2), inset 0 0 0 2px var(--accent);
 }
@@ -6597,29 +6617,93 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         /Raise this team\? Reply Yes or No(?: in this thread)?\.\s*$/.test(t);
     }
 
+    /* M1 R1/R2/R4: which owner Yes/No answered which ask, read from the
+       stored notes so it survives every re-render and a reload. It mirrors
+       the relay (hush_agent_approval_answer, hush_agent_answered_repeat):
+       per conversation root, each owner Yes/No settles the oldest ask still
+       waiting there, and a Yes/No with no ask waiting is an ignored repeat. */
+    let askState = { byAsk: {}, byAnswer: {}, oldest: {} };
+    /* Asks answered from this window whose Yes/No note is not stored yet,
+       ask id -> word. Holds the stamp inert while the post is in flight. */
+    const answering = {};
+
+    function yesNoWord(text) {
+      const m = /^\s*(yes|no)\s*[.!]?\s*$/i.exec(String(text || ""));
+      return m ? (m[1].toLowerCase() === "yes" ? "Yes" : "No") : "";
+    }
+
+    function readAskState(notes) {
+      const state = { byAsk: {}, byAnswer: {}, oldest: {} };
+      const waiting = {};
+      (notes || []).forEach((e) => {
+        if (!e || !e.id) return;
+        const root = e.reply_to || e.id;
+        if (isYesNoAsk(e.content)) {
+          (waiting[root] = waiting[root] || []).push(e.id);
+          return;
+        }
+        const word = yesNoWord(e.content);
+        const queue = e.reply_to && waiting[e.reply_to];
+        if (!word || !isMineNote(e) || !queue || !queue.length) return;
+        const ask = queue.shift();
+        state.byAsk[ask] = { word: word, id: e.id };
+        state.byAnswer[e.id] = ask;
+      });
+      Object.keys(waiting).forEach((root) => {
+        if (waiting[root].length) state.oldest[root] = waiting[root][0];
+      });
+      return state;
+    }
+
+    /* The inert stamp an answered ask keeps: the word that was sent. */
+    function sentStamp(word) {
+      const sent = document.createElement("span");
+      sent.className = "loop-stamp loop-sent";
+      sent.setAttribute("role", "status");
+      sent.textContent = word + " sent";
+      return sent;
+    }
+
     function loopAnswerBar(note) {
       const bar = document.createElement("div");
+      bar.className = "loop-stamps";
+      const done = askState.byAsk[note.id];
+      const word = (done && done.word) || answering[note.id];
+      if (word) {
+        bar.appendChild(sentStamp(word));
+        return bar;
+      }
       const yes = document.createElement("button");
       const no = document.createElement("button");
-      bar.className = "loop-stamps";
       yes.type = "button";
       no.type = "button";
       yes.className = "loop-stamp loop-yes";
       no.className = "loop-stamp loop-no";
       yes.textContent = "Yes";
       no.textContent = "No";
-      yes.addEventListener("click", () => postLoopAnswer(note, "Yes", yes, no));
-      no.addEventListener("click", () => postLoopAnswer(note, "No", yes, no));
+      /* The relay settles the oldest waiting ask in a conversation, so only
+         that ask takes an answer; a later one waits its turn. */
+      const root = note.reply_to || note.id;
+      if (askState.oldest[root] && askState.oldest[root] !== note.id) {
+        yes.disabled = true;
+        no.disabled = true;
+        bar.title = "Answer the earlier ask in this conversation first.";
+      }
+      yes.addEventListener("click", () => postLoopAnswer(note, "Yes", bar));
+      no.addEventListener("click", () => postLoopAnswer(note, "No", bar));
       bar.appendChild(yes);
       bar.appendChild(no);
       return bar;
     }
 
-    async function postLoopAnswer(note, word, yes, no) {
+    /* Single-shot: the first click marks the ask answered before the post,
+       so a second click (or a re-render) finds no live stamp. */
+    async function postLoopAnswer(note, word, bar) {
+      if (answering[note.id] || askState.byAsk[note.id]) return;
+      answering[note.id] = word;
+      bar.replaceChildren(sentStamp(word));
       const rootId = note.reply_to || note.id;
       const root = lastEvents.find((ev) => ev.id === rootId) || note;
-      yes.disabled = true;
-      no.disabled = true;
       try {
         await api("/api/event", {
           content: word,
@@ -6627,16 +6711,38 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
           channel: (root && root.channel) || note.channel || channel,
           reply_to: rootId
         });
-        /* M1: the same stamps answer approval and team asks, which are
-           not loops, so only a loop ask says "Continuing…" / "Loop stopped.". */
-        (word === "Yes" ? yes : no).textContent = isLoopAsk(note.content)
-          ? (word === "Yes" ? "Continuing…" : "Loop stopped.")
-          : word + " sent";
         await tick();
       } catch (err) {
-        yes.disabled = false;
-        no.disabled = false;
+        delete answering[note.id];
+        seen = "";
+        await tick();
       }
+    }
+
+    /* M1 R4: a reply in the flat log names what it answers: an owner's
+       Yes/No names its ask, any other reply names its conversation's first
+       note. The link scrolls to that card. */
+    function reLink(e) {
+      const target = askState.byAnswer[e.id] || e.reply_to;
+      const to = target && lastEvents.find((x) => x.id === target);
+      if (!to) return null;
+      const flat = prettyMentions(to.content || "").replace(/\s+/g, " ").trim();
+      if (!flat) return null;
+      const link = document.createElement("button");
+      link.type = "button";
+      link.className = "re-link";
+      link.textContent = "re: " + (flat.length > 48 ? flat.slice(0, 47) + "…" : flat);
+      link.title = "Show the note this answers";
+      link.dataset.to = to.id;
+      link.addEventListener("click", () => {
+        const card = [...document.querySelectorAll("#stream .note")]
+          .find((c) => c.dataset.id === to.id);
+        if (!card) return;
+        card.scrollIntoView({ block: "center" });
+        card.classList.add("note-flash");
+        setTimeout(() => card.classList.remove("note-flash"), 1200);
+      });
+      return link;
     }
 
     function thinkLabel(jobs) {
@@ -7401,6 +7507,11 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       meta.className = "meta";
       meta.textContent = who(e.pubkey) + " · " + ago(e.created_at);
       n.appendChild(meta);
+      n.dataset.id = e.id || "";
+      if (e.reply_to) {
+        const re = reLink(e);
+        if (re) n.appendChild(re);
+      }
       const chunks = splitFences(e.content || "");
       const files = [];
       chunks.forEach((part) => {
@@ -7738,6 +7849,8 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
           failureOn[e.id] = 1;
       });
       const notes = mine.filter((e) => !failureOn[e.id]);
+      askState = readAskState(mine);
+      Object.keys(answering).forEach((id) => { if (askState.byAsk[id]) delete answering[id]; });
       $("count").textContent = notes.length + (notes.length === 1 ? " note" : " notes");
       const projN = (session.projects || []).length;
       // r4 (Ops F2): one inline item per stat, wrapped, so the drawer fits.
@@ -7767,7 +7880,8 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       paintRosterPane(status);
       const thinkKey = ((status.thinking || []).map((t) => t.parent + ":" + t.name).join(","));
       const ackKey = notes.map((e) => ackStampFor(e, thinkingFor(e.id, status))).join("");
-      const key = notes.map((e) => e.id).join(",") + "|" + thinkKey + "|" + ackKey;
+      const key = notes.map((e) => e.id).join(",") + "|" + thinkKey + "|" + ackKey +
+        "|" + Object.keys(answering).join(",");
       if (key !== seen) {
         seen = key;
         const s = $("stream");

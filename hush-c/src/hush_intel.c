@@ -168,11 +168,16 @@ void hush_intel_consider(hush_store_t *store, hush_launch_t *launch,
     ch = hush_intel_channel(launch, ev);
     if (ch == NULL)
         return;
-    if (hush_agent_approval_answer(store, launch, ev))
+    if (hush_agent_approval_answer(store, launch, ev) ||
+        hush_agent_team_answer(store, launch, ev) ||
+        hush_agent_loop_answer(store, launch, ev)) {
+        hush_agent_answered_mark(ev);
         return;
-    if (hush_agent_team_answer(store, launch, ev))
-        return;
-    if (hush_agent_loop_answer(store, launch, ev))
+    }
+    /* M1 R2: an answered ask is single-shot. A repeated Yes/No would
+     * otherwise reach the conversation's robot (a reply inherits the root's
+     * robot mention) and start a new turn and a new ask. */
+    if (hush_agent_answered_repeat(launch, ev))
         return;
     if (hush_intel_is_human(launch, ev->pubkey))
         hush_agent_reset_follow(launch, ev);

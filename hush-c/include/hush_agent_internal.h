@@ -80,7 +80,10 @@ enum {
      * owner, so other people can never fill the table (#279 r2). */
     HUSH_AGENT_APPROVAL_GUEST_MAX = 4,
     /* One approval line: the fixed copy plus a robot name. */
-    HUSH_AGENT_APPROVAL_LINE_MAX = 256
+    HUSH_AGENT_APPROVAL_LINE_MAX = 256,
+    /* Conversation roots whose Yes/No ask the owner already answered, kept
+     * so a repeated answer is ignored (M1 R2). Oldest is overwritten. */
+    HUSH_AGENT_ANSWERED_MAX = 64
 };
 
 /* Result of one hush_agent_begin_work call. A follow wave keeps

@@ -40,6 +40,8 @@ const VIEWS = [{ vp: '1440', w: 1440, h: 900 }, { vp: '390', w: 390, h: 844 }];
 const SHOT_THEMES = ['field-office', 'dark'];
 
 const STUB_REPLY = 'Stub runtime reply from Ace.';
+// M1 R2: Ops clicked an answered Yes 20 times and got 10 extra robot turns.
+const CLICKS = 20;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const liveProcs = [];
 const tempDirs = [];
@@ -401,7 +403,13 @@ async function main() {
       const card = [...document.querySelectorAll('#stream .note')].find((n) => n.textContent.includes('Approval needed: Ace'));
       const yes = card && card.querySelector('.loop-stamp.loop-yes');
       if (!yes || yes.disabled) return '';
-      yes.click(); return 'asked'; })()`);
+      // M1 R2: 20 clicks in one burst, re-querying the card each time the
+      // way an impatient owner would; the page must post exactly one Yes.
+      for (let c = 0; c < ${CLICKS}; c++) { const live = card.querySelector('.loop-stamp.loop-yes') || yes; live.click(); }
+      // M1 R1: the stamp goes inert at once, before any re-render.
+      window.__ch0r1 = { liveAfterClicks: card.querySelectorAll('button.loop-stamp').length,
+        sentAfterClicks: (card.querySelector('.loop-sent') || {}).textContent || '' };
+      return 'asked'; })()`);
     if (!gate) await sleep(500);
   }
   if (gate !== 'asked') fail('G20 Ace must wait for the owner (approve_every_action); got ' + JSON.stringify(gate));
@@ -429,6 +437,114 @@ async function main() {
     fail('G20 no robot reply became visible inline in #welcome as its own card with no click (30s) ' + JSON.stringify(dbg));
   }
   console.log('G20 PASS robot reply visible inline with no click: ' + JSON.stringify(Object.assign({ approval: gate === 'asked' ? 'answered by the channel Yes stamp' : 'none asked' }, inline)));
+
+  // ---- M1 R1-R4 (Ops FAIL 5fba5350, CoS 08:25) ----
+  const ASK = ask.json.id;
+  const ME = await cdp.eval(`session.pubkey || ''`);
+  const tally = async () => cdp.evalAsync(`(async () => { const j = await (await fetch('/api/events')).json();
+    const evs = (j.events || j || []).filter((e) => e.reply_to === ${JSON.stringify(ASK)});
+    const has = (e, t) => String(e.content || '').includes(t);
+    return { yes: evs.filter((e) => e.pubkey === ${JSON.stringify(ME)} && /^\\s*(yes|no)\\s*[.!]?\\s*$/i.test(e.content || '')).length,
+      turns: evs.filter((e) => e.pubkey !== ${JSON.stringify(ME)} && has(e, ${JSON.stringify(STUB_REPLY)})).length,
+      asks: evs.filter((e) => String(e.content || '').startsWith('Approval needed: Ace')).length,
+      heard: evs.filter((e) => e.content === 'Mention received.').length,
+      askId: (evs.find((e) => String(e.content || '').startsWith('Approval needed: Ace')) || {}).id || '',
+      yesId: (evs.find((e) => e.pubkey === ${JSON.stringify(ME)} && /^\\s*yes/i.test(e.content || '')) || {}).id || '' }; })()`);
+  const r1now = await cdp.eval(`window.__ch0r1`);
+  await sleep(5000);
+  const after20 = await tally();
+  console.log('R2 after ' + CLICKS + ' clicks (server events on the ask root): ' + JSON.stringify(after20) + ' page: ' + JSON.stringify(r1now));
+  if (after20.yes !== 1) fail(`R2 ${CLICKS} clicks must post exactly 1 Yes; the relay stored ${after20.yes}`);
+  if (after20.turns !== 1 || after20.asks !== 1)
+    fail(`R2 ${CLICKS} clicks must run exactly 1 robot turn and raise 1 ask; got ${after20.turns} turns, ${after20.asks} asks`);
+  // R2 server: duplicate owner answers POSTed straight to the relay (no page
+  // lock involved) must start no turn and raise no ask.
+  for (const word of ['Yes', 'yes.', 'Yes', 'No'])
+    await post({ content: word, kind: 1, channel: 'welcome', reply_to: ASK });
+  await sleep(6000);
+  const dup = await tally();
+  console.log('R2 server after 4 duplicate POSTs (Yes, yes., Yes, No): ' + JSON.stringify(dup));
+  if (dup.turns !== 1 || dup.asks !== 1 || dup.heard !== after20.heard)
+    fail(`R2 the relay must ignore a repeated answer: turns ${dup.turns}, asks ${dup.asks}, receipts ${after20.heard}->${dup.heard}`);
+  // R1: the answered ask is inert at once (no live button, "Yes sent"), still
+  // inert after 5 s of re-renders, and after a reload.
+  if (r1now.liveAfterClicks !== 0 || !/Yes sent/i.test(r1now.sentAfterClicks))
+    fail('R1 the answered ask must go inert on the click: ' + JSON.stringify(r1now));
+  const ASKCARD = `[...document.querySelectorAll('#stream .note')].find((n) => n.dataset.id === ${JSON.stringify(after20.askId)})`;
+  const inert = async (when) => {
+    const st = await cdp.eval(`(() => { const c = ${ASKCARD}; if (!c) return null;
+      return { live: c.querySelectorAll('button.loop-stamp').length, sent: (c.querySelector('.loop-sent') || {}).textContent || '' }; })()`);
+    if (!st || st.live !== 0 || !/Yes sent/i.test(st.sent)) fail(`R1 answered ask not inert ${when}: ` + JSON.stringify(st));
+    return st;
+  };
+  const r1late = await inert('after 11 s');
+  await cdp.send('Page.reload', {});
+  await cdp.waitFor(`!!document.querySelector('#hive.show')`, 'hive after reload');
+  await cdp.eval(`[...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#welcome')).click()`);
+  await cdp.waitFor(`!!(${ASKCARD})`, 'ask card after reload');
+  const r1reload = await inert('after a reload');
+  console.log('R1 PASS answered ask inert: on click ' + JSON.stringify(r1now) + ', after 11 s ' + JSON.stringify(r1late) + ', after reload ' + JSON.stringify(r1reload));
+  // R4: the owner's Yes names its own ask; Ace's reply names the note it answers.
+  const r4 = await cdp.eval(`(() => { const card = (id) => [...document.querySelectorAll('#stream .note')].find((n) => n.dataset.id === id);
+    const yes = card(${JSON.stringify(after20.yesId)});
+    const ace = [...document.querySelectorAll('#stream .note')].find((n) => n.textContent.includes(${JSON.stringify(STUB_REPLY)}));
+    const link = (c) => c && c.querySelector('.re-link');
+    return { yesTo: link(yes) ? link(yes).dataset.to : '', yesText: link(yes) ? link(yes).textContent : '',
+      aceTo: link(ace) ? link(ace).dataset.to : '', aceText: link(ace) ? link(ace).textContent : '' }; })()`);
+  if (r4.yesTo !== after20.askId || !/^re: Approval needed: Ace/.test(r4.yesText))
+    fail('R4 the owner\'s Yes must name its own ask: ' + JSON.stringify(r4));
+  if (r4.aceTo !== ASK || !/^re: @Ace status check/.test(r4.aceText))
+    fail('R4 the robot reply must name the note it answers: ' + JSON.stringify(r4));
+  const r4jump = await cdp.evalAsync(`(async () => { const yes = [...document.querySelectorAll('#stream .note')].find((n) => n.dataset.id === ${JSON.stringify(after20.yesId)});
+    document.querySelector('#stream').scrollTop = 0; yes.querySelector('.re-link').click(); await new Promise((r) => setTimeout(r, 400));
+    const c = ${ASKCARD}; const r = c.getBoundingClientRect(); const s = document.querySelector('#stream').getBoundingClientRect();
+    return { flashed: c.classList.contains('note-flash'), inView: r.top >= Math.min(s.top, 0) - 1 && r.bottom <= Math.max(s.bottom, innerHeight) + 1 }; })()`);
+  if (!r4jump.flashed || !r4jump.inView) fail('R4 the re: link must bring its ask into view: ' + JSON.stringify(r4jump));
+  console.log('R4 PASS anchors: ' + JSON.stringify(r4) + ' jump ' + JSON.stringify(r4jump));
+  // R3: stamp and anchor ink >= 4.5:1 on what is painted behind them, in
+  // every theme, read back through a canvas so any colour syntax resolves.
+  const r3 = [];
+  for (const theme of THEMES) {
+    await cdp.eval(`applyTheme(${JSON.stringify(theme)})`);
+    await sleep(120);
+    const m = await cdp.eval(`(() => { const cv = document.createElement('canvas'); cv.width = cv.height = 1; const cx = cv.getContext('2d', { willReadFrequently: true });
+      const rgb = (c) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = '#000'; cx.fillStyle = c; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
+      const bgOf = (el) => { for (let x = el; x; x = x.parentElement) { const c = rgb(getComputedStyle(x).backgroundColor); if (c[3] > 0.5) return c; } return rgb(getComputedStyle(document.body).backgroundColor); };
+      const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+      const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+      const out = {};
+      for (const [k, sel] of [['yes', '#stream button.loop-yes:not(:disabled)'], ['no', '#stream button.loop-no:not(:disabled)'], ['sent', '#stream .loop-sent'], ['re', '#stream .re-link']]) {
+        const el = document.querySelector(sel); if (!el) { out[k] = null; continue; }
+        out[k] = Math.round(ratio(rgb(getComputedStyle(el).color), bgOf(el)) * 100) / 100; }
+      return out; })()`);
+    r3.push(Object.assign({ theme }, m));
+  }
+  const r3bad = r3.flatMap((m) => ['yes', 'no', 'sent', 're'].filter((k) => m[k] === null || m[k] < 4.5)
+    .map((k) => `${m.theme} ${k} ${m[k] === null ? 'missing' : m[k] + ':1'}`));
+  if (r3bad.length) fail('R3 stamp/anchor ink below 4.5:1: ' + r3bad.join(', ') + ' ' + JSON.stringify(r3));
+  console.log('R3 PASS stamp/anchor ink >= 4.5:1 in ' + THEMES.length + ' themes: ' + JSON.stringify(r3));
+  // FU2 (Ops 5fba5350): at 390 the page scrolls as a whole. Focusing #msg
+  // from the top of a long log must leave Send clear of the fixed quick
+  // bar. Blur first: focusing an already-focused field does not scroll.
+  await view(VIEWS[1]);
+  const fu2 = [];
+  for (const theme of THEMES) {
+    await cdp.eval(`applyTheme(${JSON.stringify(theme)})`);
+    await sleep(120);
+    await cdp.eval(`(() => { document.activeElement && document.activeElement.blur(); window.scrollTo(0, 0); document.getElementById('msg').focus(); return true; })()`);
+    await sleep(200);
+    fu2.push(Object.assign({ theme }, await cdp.eval(`(() => { const s = document.getElementById('send'); const r = s.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, Math.min(r.top + r.height / 2, innerHeight - 1));
+      return { send: [Math.round(r.top), Math.round(r.bottom)], hit: top ? (top.id || top.className || top.tagName) : null, onSend: !!(top && (top === s || s.contains(top))),
+        scrollY: Math.round(scrollY), docH: document.documentElement.scrollHeight, vh: innerHeight }; })()`)));
+  }
+  await cdp.eval(`document.activeElement && document.activeElement.blur(), window.scrollTo(0, 0)`);
+  await view(VIEWS[0]);
+  if (fu2.some((m) => m.docH < m.vh + 300)) fail('FU2 precondition: the log must be long enough to scroll at 390: ' + JSON.stringify(fu2));
+  const fu2bad = fu2.filter((m) => !m.onSend).map((m) => `${m.theme} hit ${m.hit}`);
+  if (fu2bad.length) fail('FU2 Send under the quick bar after focusing #msg at 390: ' + fu2bad.join(', ') + ' ' + JSON.stringify(fu2));
+  console.log('FU2 PASS Send clear of the quick bar after focusing #msg at 390 in ' + THEMES.length + ' themes: ' + JSON.stringify(fu2));
+  await cdp.eval(`applyTheme('field-office')`);
 
   // An empty channel for the idle state.
   await cdp.evalAsync(`(async () => { applySession(await api('/api/channel', { name: 'quiet-room', system_prompt: '' })); return true; })()`);
@@ -474,7 +590,7 @@ async function main() {
     }],
     ['decision', async () => {
       await toWelcome();
-      await cdp.eval(`(() => { const y = [...document.querySelectorAll('#stream .loop-stamp.loop-yes')].pop(); y.scrollIntoView({ block: 'center' }); y.click(); return true; })()`);
+      await cdp.eval(`(() => { const y = [...document.querySelectorAll('#stream button.loop-stamp.loop-yes:not(:disabled)')].pop(); if (!y) return false; y.scrollIntoView({ block: 'center' }); y.click(); return true; })()`);
       await sleep(150);
     }],
     ['error', async () => {

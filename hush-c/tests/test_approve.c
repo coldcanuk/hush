@@ -67,6 +67,10 @@ enum {
 #define TEST_APPROVE_SYS_PATH "/usr/bin:/bin"
 /* note_no_runtime's opening for Happy. */
 #define TEST_APPROVE_RAN_HEAD "No selected provider is ready for Happy."
+/* M1 R2: repeated owner answers on one answered ask (Ops saw 20). */
+#define TEST_APPROVE_REPEATS 20
+/* The relay's receipt when a note reaches a robot (hush_intel_handle_robot). */
+#define TEST_APPROVE_HEARD_LINE "Mention received."
 #define TEST_APPROVE_RAN_SCOUT "No selected provider is ready for Scout."
 #define TEST_APPROVE_ASK_SCOUT \
     "Approval needed: Scout wants to take a turn. Reply Yes or No."
@@ -352,6 +356,22 @@ static void answer_in(test_approve_fixture_t *fx, const char *root, const char *
     hush_intel_consider(fx->store, &fx->launch, &fx->ev);
 }
 
+/* Stores the owner's text as a reply to the fixture's root carrying the
+ * root's robot p tag, as POST /api/event adds it to a reply that names no one
+ * (hush_http_resolve_conversation), and hands it to the consider path. */
+static void answer_inherited(test_approve_fixture_t *fx, const char *text)
+{
+    size_t at = 0;
+
+    fill_note(&fx->ev, fx->launch.human.pubkey_hex, text, fx->root.id);
+    at = fx->ev.tag_count;
+    hush_agent_copy(fx->ev.tags[at][0], sizeof(fx->ev.tags[at][0]), "p");
+    hush_agent_copy(fx->ev.tags[at][1], sizeof(fx->ev.tags[at][1]), fx->happy->id.npub);
+    fx->ev.tag_count = at + 1;
+    expect(hush_store_insert(fx->store, &fx->ev) == HUSH_OK, "inherited answer insert");
+    hush_intel_consider(fx->store, &fx->launch, &fx->ev);
+}
+
 /* Stores a thread reply from pub in the fixture's thread. */
 static void answer(test_approve_fixture_t *fx, const char *pub, const char *text)
 {
@@ -393,6 +413,48 @@ static void check_owner_yes(void)
     expect(turn_ran(fx.store), "the owner's Yes runs the turn");
     expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == 1, "an approved turn asks once");
     expect(count_head(fx.store, HUSH_AGENT_APPROVAL_NO_HEAD) == 0, "Yes declines nothing");
+    close_hive(&fx);
+}
+
+/* M1 R2: an answered ask is single-shot. Twenty more owner Yes notes on
+ * the same root (a repeated stamp click, a duplicate POST) start no turn and
+ * raise no new ask; the robot's reply to the first Yes does not change that. */
+static void check_answer_once(void)
+{
+    static test_approve_fixture_t fx;
+    size_t asks = 0;
+    size_t ran = 0;
+    size_t heard = 0;
+
+    open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+    mention_happy(&fx, "tell a pun");
+    fill_note(&fx.ev, fx.launch.human.pubkey_hex, "Yes", fx.root.id);
+    expect(!hush_agent_answered_repeat(&fx.launch, &fx.ev), "an unanswered ask has no repeat");
+    answer_inherited(&fx, "Yes");
+    expect(turn_ran(fx.store), "the first Yes runs the turn");
+    finish_turn(&fx, fx.happy, HUSH_AGENT_LOOP_ROLE_NONE, "A pun.");
+    expect(hush_agent_answered_repeat(&fx.launch, &fx.ev),
+           "after the first answer a second owner Yes is a repeat");
+    fill_note(&fx.ev, TEST_APPROVE_STRANGER_PUB, "Yes", fx.root.id);
+    expect(!hush_agent_answered_repeat(&fx.launch, &fx.ev), "only the owner's Yes is a repeat");
+    fill_note(&fx.ev, fx.launch.human.pubkey_hex, "Yes, and one more pun", fx.root.id);
+    expect(!hush_agent_answered_repeat(&fx.launch, &fx.ev), "only a bare Yes or No is a repeat");
+    asks = count_head(fx.store, HUSH_AGENT_APPROVAL_ASK_HEAD);
+    ran = count_head(fx.store, TEST_APPROVE_RAN_HEAD);
+    heard = count_line(fx.store, TEST_APPROVE_HEARD_LINE);
+    for (int i = 0; i < TEST_APPROVE_REPEATS; i++)
+        answer_inherited(&fx, i % 2 ? "yes." : "Yes");
+    expect(count_head(fx.store, HUSH_AGENT_APPROVAL_ASK_HEAD) == asks,
+           "a repeated Yes raises no new ask");
+    expect(count_head(fx.store, TEST_APPROVE_RAN_HEAD) == ran,
+           "a repeated Yes runs no new turn");
+    expect(count_line(fx.store, TEST_APPROVE_HEARD_LINE) == heard,
+           "a repeated Yes does not reach the robot");
+    answer_inherited(&fx, "No");
+    expect(count_head(fx.store, HUSH_AGENT_APPROVAL_NO_HEAD) == 0,
+           "a late No on an answered ask declines nothing");
+    expect(count_head(fx.store, HUSH_AGENT_APPROVAL_ASK_HEAD) == asks,
+           "a late No raises no new ask");
     close_hive(&fx);
 }
 
@@ -1037,6 +1099,7 @@ int main(void)
     check_not_turns();
     check_owner_only();
     check_owner_yes();
+    check_answer_once();
     check_auto();
     check_void();
     check_one_each();

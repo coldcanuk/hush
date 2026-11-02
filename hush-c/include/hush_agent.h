@@ -53,6 +53,16 @@ void hush_agent_reset_follow(const hush_launch_t *launch,
 int hush_agent_approval_answer(hush_store_t *store, const hush_launch_t *launch,
                                const hush_event_t *ev);
 
+/* M1 R2: records that the owner's Yes/No ev settled an ask in its
+ * conversation, so later Yes/No notes there are repeats. */
+void hush_agent_answered_mark(const hush_event_t *ev);
+
+/* M1 R2: 1 when ev is the hive owner's Yes or No in a conversation whose
+ * ask was already answered and nothing else waits there (a repeated stamp
+ * click or a duplicate POST). The caller drops ev: no robot turn, no new
+ * ask. 0 for anything else. Answers are remembered in memory only. */
+int hush_agent_answered_repeat(const hush_launch_t *launch, const hush_event_t *ev);
+
 /* Handles a human "Yes"/"No" reply to a waiting "Continue this loop?"
  * prompt in ev's thread. Returns 1 when ev was consumed as the answer;
  * 0 leaves ev to the normal path (which ends any loop in that thread). */
