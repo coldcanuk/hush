@@ -28,6 +28,7 @@
 #include "hush_presence.h"
 #include "hush_provider.h"
 #include "hush_relay.h"
+#include "hush_router.h"
 #include "hush_skill.h"
 #include "hush_skillui.h"
 #include "hush_thread.h"
@@ -378,6 +379,8 @@ hush_status_t hush_http_serve(int fd, const char *req, size_t len,
         return hush_http_serve_provider_get(fd);
     if (strcmp(path, "/api/complete") == 0 && memcmp(req, "GET", 3) == 0)
         return hush_http_serve_complete_get(fd, req);
+    if (strcmp(path, "/api/router") == 0 && memcmp(req, "GET", 3) == 0)
+        return hush_api_router_get(fd);
     if (memcmp(req, "POST", 4) == 0)
         return hush_http_serve_api_post(fd, path, req, len, store, out_posted);
     hush_http_reply(fd, "404 Not Found", "text/plain", "not found\n", 10);
@@ -1245,6 +1248,8 @@ static hush_status_t hush_http_serve_api_post(int fd, const char *path,
         return hush_http_serve_provider_scan(fd, hush_http_body(req, len));
     if (strcmp(path, "/api/provider/login") == 0)
         return hush_http_serve_provider_login(fd, hush_http_body(req, len));
+    if (strcmp(path, "/api/router") == 0)
+        return hush_api_router_post(fd, req, len);
     hush_http_reply(fd, "404 Not Found", "text/plain", "not found\n", 10);
     return HUSH_ERR_NOT_FOUND;
 }
