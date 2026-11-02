@@ -5,14 +5,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "hush_router.h"
 
 enum {
     ROUTER_TEST_NODES = 32,
-    ROUTER_TEST_BELONGS_EDGE = 1 /* open_item pushes assigned, then belongs_to */
+    ROUTER_TEST_BELONGS_EDGE = 1, /* open_item pushes assigned, then belongs_to */
+    ROUTER_TEST_POLLS = 3,
+    ROUTER_TEST_ROOT_MAX = 64,
+    ROUTER_TEST_DIR_MODE = 0700
 };
+
+#define ROUTER_TEST_POLL_DIR "/poll"
 
 static int g_fail;
 
@@ -165,6 +171,83 @@ static void check_escape(const char *root)
     expect(strcmp(loaded.edges[ROUTER_TEST_BELONGS_EDGE].to, "ops\"x") == 0, "belongs_to kept");
 }
 
+/* Pads edges so the next push lands the last slot. */
+static void fill_edges(hush_router_graph_t *graph, size_t upto)
+{
+    while (graph->nedges < upto && graph->nedges < (size_t)HUSH_ROUTER_EDGES_MAX) {
+        hush_router_edge_t *edge = &graph->edges[graph->nedges];
+        memset(edge, 0, sizeof(*edge));
+        snprintf(edge->from, sizeof edge->from, "pad");
+        snprintf(edge->to, sizeof edge->to, "pad");
+        graph->nedges++;
+    }
+}
+
+/* Floor F2 setup: item 1 blocked then decided, item 2 queued behind it,
+ * and the decision's needs edge takes the last of the 48 edge slots. */
+static void build_edges_full(hush_router_graph_t *graph)
+{
+    hush_router_result_t result;
+    hush_router_note_t note = note_of("Run a rate-limit test", NULL);
+    char line[HUSH_ROUTER_LINE_MAX];
+
+    hush_router_init(graph);
+    expect(hush_router_accept(graph, &result, &note) == HUSH_OK, "full first");
+    expect(hush_router_drain(graph, line, sizeof line, 1) == HUSH_OK, "full run");
+    expect(hush_router_drain(graph, line, sizeof line, 2) == HUSH_OK, "full block");
+    note = note_of("Write the field notes", NULL);
+    expect(hush_router_accept(graph, &result, &note) == HUSH_OK, "full second");
+    fill_edges(graph, (size_t)HUSH_ROUTER_EDGES_MAX - 1);
+    note = note_of("60s", NULL);
+    expect(hush_router_accept(graph, &result, &note) == HUSH_OK, "full decide");
+    expect(graph->nedges == (size_t)HUSH_ROUTER_EDGES_MAX, "edges at 48");
+}
+
+/* #375 Floor F2: a full edge table must not split an item from its worker,
+ * and the stalled head must not stop the worker queued behind it. */
+static void check_edges_full(void)
+{
+    hush_router_graph_t graph;
+    hush_router_graph_t before;
+    char line[HUSH_ROUTER_LINE_MAX];
+    size_t nartifacts;
+
+    build_edges_full(&graph);
+    nartifacts = graph.nartifacts;
+    expect(hush_router_drain(&graph, line, sizeof line, 3) == HUSH_OK,
+           "full drain advances peer");
+    expect(graph.workers[0].phase == graph.items[0].phase, "no split phase");
+    expect(graph.items[0].phase == HUSH_ROUTER_RUNNING, "head waits running");
+    expect(graph.nartifacts == nartifacts, "no orphan artifact");
+    expect(graph.items[1].phase == HUSH_ROUTER_RUNNING, "peer progressed");
+    expect(graph.workers[1].phase == HUSH_ROUTER_RUNNING, "peer worker runs");
+    memcpy(&before, &graph, sizeof before);
+    expect(hush_router_drain(&graph, line, sizeof line, 4) == HUSH_ERR_FULL,
+           "all stalled is full");
+    expect(memcmp(&before, &graph, sizeof before) == 0, "full drain mutates nothing");
+}
+
+/* #375 Floor F2 via poll: reload from disk each turn must still advance
+ * the peer and save it, not retry the stalled head forever. */
+static void check_poll_full(const char *root)
+{
+    hush_router_graph_t graph;
+    hush_router_graph_t loaded;
+    char home[ROUTER_TEST_ROOT_MAX];
+
+    snprintf(home, sizeof home, "%s%s", root, ROUTER_TEST_POLL_DIR);
+    expect(mkdir(home, ROUTER_TEST_DIR_MODE) == 0, "poll home");
+    build_edges_full(&graph);
+    expect(hush_router_save(&graph, home) == HUSH_OK, "poll seed");
+    expect(setenv("HUSH_HOME", home, 1) == 0, "poll env");
+    for (int i = 0; i < ROUTER_TEST_POLLS; ++i)
+        hush_router_poll();
+    expect(hush_router_load(&loaded, home) == HUSH_OK, "poll reload");
+    expect(loaded.workers[0].phase == loaded.items[0].phase, "poll no split");
+    expect(loaded.items[1].phase == HUSH_ROUTER_RUNNING, "poll peer saved");
+    expect(loaded.nedges == (size_t)HUSH_ROUTER_EDGES_MAX, "poll edges kept");
+}
+
 static void check_phase4(void)
 {
     hush_router_skill_t skills[2];
@@ -222,6 +305,8 @@ int main(void)
     check_phase2();
     check_phase3(root);
     check_escape(root);
+    check_edges_full();
+    check_poll_full(root);
     check_phase4();
     check_context();
     if (g_fail)

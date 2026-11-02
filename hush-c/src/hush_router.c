@@ -95,10 +95,42 @@ static const char *hush_router_edge_name(hush_router_edge_kind_t kind);
 static hush_status_t hush_router_edge_parse(hush_router_edge_kind_t *out,
                                             const char *name);
 static int hush_router_needs_block(const hush_router_item_t *item);
-static hush_status_t hush_router_finish_done(hush_router_graph_t *graph,
-                                             hush_router_worker_t *worker,
-                                             int64_t now);
+/* Index of the item the worker serves. A worker with no matching item
+ * maps to items[0], the drain default since the Router landed. Pure. */
+static size_t hush_router_item_index(const hush_router_graph_t *graph,
+                                     const hush_router_worker_t *worker);
+/* Phase a live worker enters on its next drain step: pending runs, an
+ * undecided rate-limit item blocks, anything else is done. Pure. */
+static hush_router_phase_t hush_router_next_phase(const hush_router_graph_t *graph,
+                                                  const hush_router_worker_t *worker,
+                                                  const hush_router_item_t *item);
+/* Writes "a<item_id>" into out. Fails with HUSH_ERR_FULL when it does not fit. */
+static hush_status_t hush_router_artifact_id(char *out, size_t outsz,
+                                             const char *item_id);
+/* True when every row the worker's next step appends fits the graph. The
+ * done step appends an artifact and its produced edge as one pair, or
+ * neither when the artifact table is already full. Pure. */
+static int hush_router_has_room(const hush_router_graph_t *graph,
+                                const hush_router_worker_t *worker);
+/* Appends the worker's "done" artifact and its produced edge as one pair.
+ * Appends neither when the artifact table is full. Fails with HUSH_ERR_FULL
+ * before any write when the id or the edge does not fit. */
+static hush_status_t hush_router_record_artifact(hush_router_graph_t *graph,
+                                                 const hush_router_worker_t *worker);
+/* Index of the first live (pending or running) worker whose next step has
+ * room. Skipping a stalled worker keeps it from starving the ones behind
+ * it. Returns HUSH_ROUTER_NONE when no live worker can step. */
 static uint32_t hush_router_queued(const hush_router_graph_t *graph);
+/* True for the phases drain still advances: pending and running. Pure. */
+static int hush_router_is_live(hush_router_phase_t phase);
+/* Status when no worker can step: HUSH_ERR_NOT_FOUND when nothing is live,
+ * HUSH_ERR_FULL when every live worker waits for graph room. */
+static hush_status_t hush_router_idle_status(const hush_router_graph_t *graph);
+/* Writes the status line for an item entering phase. Fails with
+ * HUSH_ERR_FULL when the line does not fit. */
+static hush_status_t hush_router_phase_line(char *out, size_t outsz,
+                                            const char *item_id,
+                                            hush_router_phase_t phase);
 static hush_status_t hush_router_dir(char *out, size_t outsz, const char *root);
 static hush_status_t hush_router_write_file(const char *path, const char *text);
 static hush_status_t hush_router_read_file(char *out, size_t outsz,
@@ -220,40 +252,28 @@ hush_status_t hush_router_drain(hush_router_graph_t *graph, char *out_line,
     uint32_t index;
     hush_router_worker_t *worker;
     hush_router_item_t *item;
-    int n;
+    hush_router_phase_t next;
 
     if (graph == NULL || out_line == NULL || linesz == 0)
         return HUSH_ERR_ARG;
     out_line[0] = '\0';
     index = hush_router_queued(graph);
     if (index == HUSH_ROUTER_NONE)
-        return HUSH_ERR_NOT_FOUND;
+        return hush_router_idle_status(graph);
     worker = &graph->workers[index];
-    item = &graph->items[0];
-    for (size_t i = 0; i < graph->nitems; ++i) {
-        if (strcmp(graph->items[i].id, worker->item_id) == 0)
-            item = &graph->items[i];
-    }
+    item = &graph->items[hush_router_item_index(graph, worker)];
+    next = hush_router_next_phase(graph, worker, item);
+    HUSH_ROUTER_TRY(hush_router_phase_line(out_line, linesz, item->id, next));
+    /* Every fallible step runs before the phase writes, so worker and item
+     * change phase together or not at all (#375 Floor F2). */
+    if (next == HUSH_ROUTER_DONE)
+        HUSH_ROUTER_TRY(hush_router_record_artifact(graph, worker));
+    if (next == HUSH_ROUTER_RUNNING)
+        worker->started = now;
+    worker->phase = next;
+    item->phase = next;
     worker->heartbeat = now;
     item->updated = now;
-    if (worker->phase == HUSH_ROUTER_PENDING) {
-        worker->phase = HUSH_ROUTER_RUNNING;
-        worker->started = now;
-        item->phase = HUSH_ROUTER_RUNNING;
-        n = snprintf(out_line, linesz, "[WI-%s] Working...", item->id);
-    } else if (hush_router_needs_block(item) &&
-               !hush_router_has_decision(graph, item->id)) {
-        worker->phase = HUSH_ROUTER_BLOCKED;
-        item->phase = HUSH_ROUTER_BLOCKED;
-        n = snprintf(out_line, linesz,
-                     "[WI-%s] Blocked - reply with 60s or 300s.", item->id);
-    } else {
-        HUSH_ROUTER_TRY(hush_router_finish_done(graph, worker, now));
-        item->phase = HUSH_ROUTER_DONE;
-        n = snprintf(out_line, linesz, "[WI-%s] Done.", item->id);
-    }
-    if (n < 0 || (size_t)n >= linesz)
-        return HUSH_ERR_FULL;
     hush_router_copy(graph->last_line, sizeof graph->last_line, out_line);
     return HUSH_OK;
 }
@@ -800,44 +820,131 @@ static int hush_router_needs_block(const hush_router_item_t *item)
     return hush_router_contains(folded, "rate limit");
 }
 
-static hush_status_t hush_router_finish_done(hush_router_graph_t *graph,
-                                             hush_router_worker_t *worker,
-                                             int64_t now)
+static size_t hush_router_item_index(const hush_router_graph_t *graph,
+                                     const hush_router_worker_t *worker)
 {
-    hush_router_artifact_t *artifact;
+    assert(graph != NULL && worker != NULL);
+    for (size_t i = 0; i < graph->nitems; ++i) {
+        if (strcmp(graph->items[i].id, worker->item_id) == 0)
+            return i;
+    }
+    return 0;
+}
+
+static hush_router_phase_t hush_router_next_phase(const hush_router_graph_t *graph,
+                                                  const hush_router_worker_t *worker,
+                                                  const hush_router_item_t *item)
+{
+    assert(graph != NULL && worker != NULL && item != NULL);
+    if (worker->phase == HUSH_ROUTER_PENDING)
+        return HUSH_ROUTER_RUNNING;
+    if (hush_router_needs_block(item) && !hush_router_has_decision(graph, item->id))
+        return HUSH_ROUTER_BLOCKED;
+    return HUSH_ROUTER_DONE;
+}
+
+static hush_status_t hush_router_artifact_id(char *out, size_t outsz,
+                                             const char *item_id)
+{
     int n;
 
+    assert(out != NULL && item_id != NULL);
+    n = snprintf(out, outsz, "a%s", item_id);
+    if (n < 0 || (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
+}
+
+static int hush_router_has_room(const hush_router_graph_t *graph,
+                                const hush_router_worker_t *worker)
+{
+    char id[HUSH_ROUTER_ID_MAX];
+    const hush_router_item_t *item;
+
     assert(graph != NULL && worker != NULL);
-    (void)now;
-    worker->phase = HUSH_ROUTER_DONE;
+    item = &graph->items[hush_router_item_index(graph, worker)];
+    if (hush_router_next_phase(graph, worker, item) != HUSH_ROUTER_DONE)
+        return 1;
+    if (graph->nartifacts >= (size_t)HUSH_ROUTER_ARTIFACTS_MAX)
+        return 1;
+    if (graph->nedges >= (size_t)HUSH_ROUTER_EDGES_MAX)
+        return 0;
+    return hush_router_artifact_id(id, sizeof id, worker->item_id) == HUSH_OK;
+}
+
+static hush_status_t hush_router_record_artifact(hush_router_graph_t *graph,
+                                                 const hush_router_worker_t *worker)
+{
+    char id[HUSH_ROUTER_ID_MAX];
+    hush_router_artifact_t *artifact;
+
+    assert(graph != NULL && worker != NULL);
+    assert(hush_router_has_room(graph, worker));
     if (graph->nartifacts >= (size_t)HUSH_ROUTER_ARTIFACTS_MAX)
         return HUSH_OK;
+    HUSH_ROUTER_TRY(hush_router_artifact_id(id, sizeof id, worker->item_id));
+    /* The edge is the only fallible write, so it goes first. */
+    HUSH_ROUTER_TRY(hush_router_push_edge(graph, worker->id,
+                                          HUSH_ROUTER_EDGE_PRODUCED, id));
     artifact = &graph->artifacts[graph->nartifacts];
     memset(artifact, 0, sizeof(*artifact));
-    {
-        char item_id[HUSH_ROUTER_ID_MAX];
-
-        hush_router_copy(item_id, sizeof item_id, worker->item_id);
-        n = snprintf(artifact->id, sizeof artifact->id, "a%s", item_id);
-    }
-    if (n < 0 || (size_t)n >= sizeof artifact->id)
-        return HUSH_ERR_FULL;
+    hush_router_copy(artifact->id, sizeof artifact->id, id);
     hush_router_copy(artifact->worker_id, sizeof artifact->worker_id, worker->id);
     hush_router_copy(artifact->text, sizeof artifact->text, "done");
     graph->nartifacts++;
-    return hush_router_push_edge(graph, worker->id, HUSH_ROUTER_EDGE_PRODUCED,
-                                 artifact->id);
+    return HUSH_OK;
 }
 
 static uint32_t hush_router_queued(const hush_router_graph_t *graph)
 {
     assert(graph != NULL);
     for (size_t i = 0; i < graph->nworkers; ++i) {
-        hush_router_phase_t phase = graph->workers[i].phase;
-        if (phase == HUSH_ROUTER_PENDING || phase == HUSH_ROUTER_RUNNING)
+        if (!hush_router_is_live(graph->workers[i].phase))
+            continue;
+        if (hush_router_has_room(graph, &graph->workers[i]))
             return (uint32_t)i;
     }
     return HUSH_ROUTER_NONE;
+}
+
+static int hush_router_is_live(hush_router_phase_t phase)
+{
+    return phase == HUSH_ROUTER_PENDING || phase == HUSH_ROUTER_RUNNING;
+}
+
+static hush_status_t hush_router_idle_status(const hush_router_graph_t *graph)
+{
+    assert(graph != NULL);
+    assert(hush_router_queued(graph) == HUSH_ROUTER_NONE);
+    for (size_t i = 0; i < graph->nworkers; ++i) {
+        if (hush_router_is_live(graph->workers[i].phase))
+            return HUSH_ERR_FULL;
+    }
+    return HUSH_ERR_NOT_FOUND;
+}
+
+static hush_status_t hush_router_phase_line(char *out, size_t outsz,
+                                            const char *item_id,
+                                            hush_router_phase_t phase)
+{
+    int n;
+
+    assert(out != NULL && item_id != NULL);
+    switch (phase) {
+    case HUSH_ROUTER_RUNNING:
+        n = snprintf(out, outsz, "[WI-%s] Working...", item_id);
+        break;
+    case HUSH_ROUTER_BLOCKED:
+        n = snprintf(out, outsz, "[WI-%s] Blocked - reply with 60s or 300s.",
+                     item_id);
+        break;
+    default:
+        n = snprintf(out, outsz, "[WI-%s] Done.", item_id);
+        break;
+    }
+    if (n < 0 || (size_t)n >= outsz)
+        return HUSH_ERR_FULL;
+    return HUSH_OK;
 }
 
 static hush_status_t hush_router_dir(char *out, size_t outsz, const char *root)

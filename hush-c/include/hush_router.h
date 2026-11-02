@@ -150,8 +150,11 @@ hush_status_t hush_router_accept(hush_router_graph_t *graph,
                                  hush_router_result_t *out,
                                  const hush_router_note_t *note);
 
-/* Advances one pending or running worker. Blocked workers wait.
- * Fails with HUSH_ERR_NOT_FOUND when nothing is queued. */
+/* Advances the first pending or running worker whose step fits the graph.
+ * Blocked workers wait; a worker whose done step has no edge room is
+ * skipped, so it cannot starve the workers behind it. On any failure the
+ * graph is unchanged. Fails with HUSH_ERR_NOT_FOUND when nothing is queued
+ * and HUSH_ERR_FULL when every queued worker waits for room. */
 hush_status_t hush_router_drain(hush_router_graph_t *graph, char *out_line,
                                 size_t linesz, int64_t now);
 
