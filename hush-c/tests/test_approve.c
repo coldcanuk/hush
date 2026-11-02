@@ -416,6 +416,10 @@ static void check_owner_yes(void)
     close_hive(&fx);
 }
 
+/* Defined below with the other turn helpers. */
+static void finish_turn(test_approve_fixture_t *fx, const hush_roster_agent_t *bot, int role,
+                        const char *out);
+
 /* M1 R2: an answered ask is single-shot. Twenty more owner Yes notes on
  * the same root (a repeated stamp click, a duplicate POST) start no turn and
  * raise no new ask; the robot's reply to the first Yes does not change that. */
