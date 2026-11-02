@@ -1,9 +1,11 @@
 /* tests/test_router.c: Router graph, silent workers, restart, skill tiers. */
 
-#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700 /* nftw, for the scratch cleanup */
 
 #include <dirent.h>
 #include <fcntl.h>
+#include <ftw.h>
+#include <signal.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,7 +33,11 @@ enum {
     ROUTER_TEST_REPLY_MAX = 4096,    /* one GET /api/router reply */
     ROUTER_TEST_LIVE_ENTRIES = 7,    /* six router files plus router/lock */
     ROUTER_TEST_RO_DIR_MODE = 0500,  /* a router/ this process may not write */
-    ROUTER_TEST_RO_FILE_MODE = 0400
+    ROUTER_TEST_RO_FILE_MODE = 0400,
+    ROUTER_TEST_PROBE_SAVES = 200,     /* saves the child runs under the probe */
+    ROUTER_TEST_PROBE_TRIES = 2000000, /* probe iteration cap */
+    ROUTER_TEST_PROBE_SECS = 30,       /* probe wall-clock cap */
+    ROUTER_TEST_FTW_FDS = 16
 };
 
 #define ROUTER_TEST_POLL_DIR "/poll"
@@ -851,6 +857,126 @@ static void check_save_lock(const char *root)
     expect_at(same_graph(&loaded, &next), "locked save lost state", home);
 }
 
+/* #375 Gauge H6-1, load twin of check_save_lock: while another process holds
+ * router/lock, a load must wait, then succeed once the lock is released. */
+static void check_load_lock(const char *root)
+{
+    char home[ROUTER_TEST_PATH_MAX];
+    char dir[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t old;
+    int status = 0;
+
+    build_blocked(&old);
+    join_path(home, sizeof home, root, "lock-", "load");
+    expect(mkdir(home, ROUTER_TEST_DIR_MODE) == 0, "load lock home");
+    expect(hush_router_save(&old, home) == HUSH_OK, "load lock seed");
+    join_path(dir, sizeof dir, home, "router", "");
+    int fd = hold_lock(dir);
+    pid_t child = fork();
+    if (child == 0) {
+        hush_router_graph_t loaded;
+        int ok = hush_router_load(&loaded, home) == HUSH_OK && same_graph(&loaded, &old);
+        _exit(ok ? 0 : ROUTER_TEST_CHILD_FAIL);
+    }
+    expect(child > 0, "load lock fork");
+    expect_at(is_still_waiting(child), "load did not wait for router/lock", home);
+    expect(close(fd) == 0, "load lock release");
+    expect(waitpid(child, &status, 0) == child, "load lock reap");
+    expect(WIFEXITED(status) && WEXITSTATUS(status) == 0, "locked load landed");
+}
+
+/* One probe tally per lock type: how often it got the lock, and how often
+ * it then saw a save in flight (a staged file or the commit mark). */
+typedef struct {
+    long taken;
+    long torn;
+} router_probe_t;
+
+/* Tries a non-blocking lock of type on fd. When it is granted, records
+ * whether router dir shows a save in flight, then releases it. */
+static void probe_once(int fd, short type, const char *dir, router_probe_t *tally)
+{
+    struct flock lock = {.l_type = type, .l_whence = SEEK_SET};
+    struct flock unlock = {.l_type = F_UNLCK, .l_whence = SEEK_SET};
+    char mark[ROUTER_TEST_PATH_MAX];
+
+    if (fcntl(fd, F_SETLK, &lock) != 0)
+        return;
+    join_path(mark, sizeof mark, dir, ROUTER_TEST_COMMIT, "");
+    tally->taken++;
+    if (!no_staged(dir) || access(mark, F_OK) == 0)
+        tally->torn++;
+    expect(fcntl(fd, F_SETLK, &unlock) == 0, "probe unlock");
+}
+
+/* Probes fd with a write then a read lock until child exits, the iteration
+ * cap or the clock cap; kills and reaps child if it is still running.
+ * Returns child's wait status. */
+static int probe_saver(pid_t child, int fd, const char *dir, router_probe_t tally[2])
+{
+    struct timespec start;
+    struct timespec now;
+    int status = 0;
+
+    expect(clock_gettime(CLOCK_MONOTONIC, &start) == 0, "probe clock");
+    for (long i = 0; i < ROUTER_TEST_PROBE_TRIES; ++i) {
+        if (waitpid(child, &status, WNOHANG) == child)
+            return status;
+        probe_once(fd, F_WRLCK, dir, &tally[0]);
+        probe_once(fd, F_RDLCK, dir, &tally[1]);
+        expect(clock_gettime(CLOCK_MONOTONIC, &now) == 0, "probe clock");
+        if (now.tv_sec - start.tv_sec > ROUTER_TEST_PROBE_SECS)
+            break;
+    }
+    expect(0, "probe: saver did not finish within its caps");
+    (void)kill(child, SIGKILL);
+    expect(waitpid(child, &status, 0) == child, "probe reap");
+    return status;
+}
+
+/* #375 Gauge H6-1: never two writers on the staged files. A child saves in
+ * a loop; whenever this process gets router/lock (write or shared), no save
+ * may be in flight. L5 (save after unlock) shows up under the write probe,
+ * L3 (shared lock for saves) under the read probe. */
+static void check_lock_exclusive(const char *root)
+{
+    char home[ROUTER_TEST_PATH_MAX];
+    char dir[ROUTER_TEST_PATH_MAX];
+    char path[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t old;
+    hush_router_graph_t next;
+    router_probe_t tally[2] = {{0, 0}, {0, 0}};
+
+    build_blocked(&old);
+    build_next(&next, &old, "Write the field notes", HUSH_ROUTER_ROUTE_WORK);
+    join_path(home, sizeof home, root, "lock-", "probe");
+    expect(mkdir(home, ROUTER_TEST_DIR_MODE) == 0, "probe home");
+    expect(hush_router_save(&old, home) == HUSH_OK, "probe seed");
+    join_path(dir, sizeof dir, home, "router", "");
+    join_path(path, sizeof path, dir, ROUTER_TEST_LOCK, "");
+    int fd = open(path, O_RDWR);
+    expect(fd >= 0, "probe lock open");
+    pid_t child = fork();
+    if (child == 0) {
+        for (int i = 0; i < ROUTER_TEST_PROBE_SAVES; ++i) {
+            if (hush_router_save(i % 2 == 0 ? &next : &old, home) != HUSH_OK)
+                _exit(ROUTER_TEST_CHILD_FAIL);
+        }
+        _exit(0);
+    }
+    expect(child > 0 && fd >= 0, "probe fork");
+    int status = child > 0 && fd >= 0 ? probe_saver(child, fd, dir, tally) : 0;
+    expect(WIFEXITED(status) && WEXITSTATUS(status) == 0, "probe saves landed");
+    expect(tally[0].taken > 0 && tally[1].taken > 0, "probe never got the lock");
+    expect_at(tally[0].torn == 0, "write lock granted during a save", home);
+    expect_at(tally[1].torn == 0, "shared lock granted during a save", home);
+    if (getenv("ROUTER_TEST_SHOW") != NULL)
+        printf("probe: write %ld/%ld torn, read %ld/%ld torn\n", tally[0].torn,
+               tally[0].taken, tally[1].torn, tally[1].taken);
+    if (fd >= 0)
+        (void)close(fd);
+}
+
 /* Serves GET /api/router for home in a child (HUSH_HOME is per process).
  * Returns 1 when the child's handler succeeded and the reply is a 200. */
 static int get_router(const char *home)
@@ -874,6 +1000,21 @@ static int get_router(const char *home)
     (void)close(fds[0]);
     return WIFEXITED(status) && WEXITSTATUS(status) == 0 && n > 0 &&
            strncmp(reply, ROUTER_TEST_HTTP_OK, strlen(ROUTER_TEST_HTTP_OK)) == 0;
+}
+
+/* #375 Gauge H6-2: a fresh home with no router/ loads as the empty graph,
+ * and GET /api/router answers 200. */
+static void check_fresh_home(const char *root)
+{
+    char home[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t loaded;
+
+    join_path(home, sizeof home, root, "fresh-", "home");
+    expect(mkdir(home, ROUTER_TEST_DIR_MODE) == 0, "fresh home");
+    expect(hush_router_load(&loaded, home) == HUSH_OK, "fresh load");
+    expect(loaded.nitems == 0 && loaded.nworkers == 0 && loaded.nedges == 0 &&
+           loaded.ndecisions == 0, "fresh graph not empty");
+    expect_at(get_router(home), "fresh GET not 200", home);
 }
 
 /* Counts the entries of dir, except . and .. */
@@ -1131,6 +1272,34 @@ static void check_context(void)
     expect(graph.nitems == 0, "question opens nothing");
 }
 
+/* nftw step: opens up each directory (check_readonly leaves some read-only)
+ * so the depth-first pass below can empty it. */
+static int open_up(const char *path, const struct stat *st, int type, struct FTW *ftw)
+{
+    (void)st;
+    (void)ftw;
+    if (type == FTW_D)
+        (void)chmod(path, ROUTER_TEST_DIR_MODE);
+    return 0;
+}
+
+/* nftw step: removes one entry, children before their directory. */
+static int remove_one(const char *path, const struct stat *st, int type, struct FTW *ftw)
+{
+    (void)st;
+    (void)type;
+    (void)ftw;
+    return remove(path) == 0 ? 0 : -1;
+}
+
+/* Removes the scratch root this run made; returns 1 when it is gone. */
+static int remove_root(const char *root)
+{
+    if (nftw(root, open_up, ROUTER_TEST_FTW_FDS, FTW_PHYS) != 0)
+        return 0;
+    return nftw(root, remove_one, ROUTER_TEST_FTW_FDS, FTW_PHYS | FTW_DEPTH) == 0;
+}
+
 int main(void)
 {
     char root[] = "/tmp/hush-router-XXXXXX";
@@ -1151,11 +1320,17 @@ int main(void)
     check_phase_roundtrip(root);
     check_ambiguous();
     check_save_lock(root);
+    check_load_lock(root);
+    check_lock_exclusive(root);
+    check_fresh_home(root);
     check_copy_bound(root);
     check_get_writes(root);
     check_readonly(root);
     check_phase4();
     check_context();
+    if (g_fail)
+        return 1; /* keep root for a look at what failed */
+    expect_at(remove_root(root), "scratch root not removed", root);
     if (g_fail)
         return 1;
     printf("test_router ok\n");
