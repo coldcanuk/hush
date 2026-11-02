@@ -305,6 +305,8 @@ the top-level `VERSION` file.
 
 ### Fixed
 
+- #320: outside field-office the "Official Dispatch Log" eyebrow and the dial's "VOLUME" caption are hidden, like the 1943 edition line and HQ stamps; field-office still shows both. Pinned by `tests/check_palette.cjs` K6 (8 themes at 1440).
+
 - Phone walkthrough: the expanded inventory menu no longer opens behind the drawer, and Edit plus double-click open a robot; a right-click selects that robot and enables Edit (the button stays disabled until a robot is selected); at phone width the dispatch log keeps a minimum height and the page scrolls when the roster is tall; quick-bar labels fit at 375px.
 
 - Worker failures are no longer silent: a dying worker writes a

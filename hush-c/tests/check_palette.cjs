@@ -81,8 +81,9 @@
 //      two states differ; >= 3:1 vs the header.
 //   K5 robot picture cells (real paintAgentPicPicker) have a theme-token
 //      background, not the native button grey, in 8 themes.
-//   K6 the 1943 masthead edition, HQ header stamp and dispatch-log HQ stamp
-//      show in field-office and are hidden in the other 7 themes at 1440.
+//   K6 the 1943 masthead edition, HQ header stamp, dispatch-log HQ stamp,
+//      dispatch-log eyebrow and VOLUME dial caption show in field-office and
+//      are hidden in the other 7 themes at 1440 (#320).
 //   K7 mentions (real renderPreservingMentions in a #stream note): a known
 //      robot and an npub not in the roster both render as a pill (no leading
 //      blank); the unknown one reads "@unknown" (UI_SPEC: an unresolved
@@ -1373,7 +1374,7 @@ async function main() {
   {
     await view(1440, 900); await cdp.eval(KIT);
     const k6 = await cdp.eval(`(() => { const h = document.documentElement; const was = h.getAttribute('data-theme'); const out = [];
-      const sels = ['.fo-edition', '.fo-hq > span', '.fo-log-stamp'];
+      const sels = ['.fo-edition', '.fo-hq > span', '.fo-log-stamp', '.fo-log-eyebrow', '#fo-dial-caption'];
       for (const t of ${JSON.stringify(THEMES)}) { h.setAttribute('data-theme', t);
         for (const sel of sels) { const el = document.querySelector(sel); const r = el ? el.getBoundingClientRect() : null;
           out.push({ theme: t, sel, shown: !!r && r.width > 0 && r.height > 0 && getComputedStyle(el).visibility === 'visible' }); } }
@@ -1382,7 +1383,9 @@ async function main() {
       report.push({ surface: 'K6', w: 1440, k6: r });
       if (r.theme === 'field-office' ? !r.shown : r.shown) failures.push(`K6 ${r.sel} ${r.shown ? 'shows' : 'hidden'} in ${r.theme}`);
     }
-    console.log(`palette K6@1440: ${k6.filter((r) => r.theme === 'field-office' && r.shown).length} field-office chrome items shown in field-office, ${k6.filter((r) => r.theme !== 'field-office' && r.shown).length} shown in the other 7 themes`);
+    const k6Themes = new Set(k6.map((r) => r.theme)).size;
+    if (k6Themes !== THEMES.length || k6.length !== THEMES.length * 5) failures.push(`K6 measured ${k6.length} items over ${k6Themes} themes, want 5 x ${THEMES.length}`);
+    console.log(`palette K6@1440: ${k6Themes} themes, ${k6.filter((r) => r.theme === 'field-office' && r.shown).length} field-office chrome items shown in field-office, ${k6.filter((r) => r.theme !== 'field-office' && r.shown).length} shown in the other ${k6Themes - 1} themes`);
   }
   await cdp.eval(`(() => { for (const d of document.querySelectorAll('.drawer.show')) d.classList.remove('show'); })()`);
   await cdp.eval(`document.getElementById('manage-chan').classList.add('show')`);
