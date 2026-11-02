@@ -446,14 +446,14 @@ async function main() {
     if (!plain.got || plain.got.reply_to !== RA || !(plain.got.mentions || []).some((m) => m === aceN || m.length === 64))
       fail('A a plain note with one robot active must continue its conversation: ' + JSON.stringify(plain.got));
     const CLOSED = 'Closed by a newer note';
-    const voidShut = async (when) => {
+    const voidShut = async (when, id = VOID) => {
       let st = null;
       for (let k = 0; k < 32 && !(st && st.sent === CLOSED); k++) {
-        st = await askCard(VOID);
+        st = await askCard(id);
         if (!(st && st.sent === CLOSED)) await sleep(250);
       }
       if (!st || st.sent !== CLOSED || st.stamps !== 0)
-        fail('F15 an ask voided by a newer owner note must show "' + CLOSED + '" and no Yes/No stamps ' + when + ': ' + JSON.stringify(st));
+        fail('F15 an ask voided by a newer owner note must show "' + CLOSED + '" and no Yes/No stamps ' + when + ': ' + JSON.stringify(Object.assign({ ask: id.slice(0, 8) }, st)));
       return st;
     };
     const voidNow = await voidShut('after the plain note');
@@ -474,12 +474,61 @@ async function main() {
     await cdp.eval(`(() => { const p = $('route-pick'); p.value = ${JSON.stringify(aceN)}; p.dispatchEvent(new Event('change')); return true; })()`);
     const chosen = await compose('plain two', 'plain two');
     if (!chosen.got || chosen.got.reply_to !== RA) fail('A the chosen robot\'s conversation must take the note: ' + JSON.stringify(chosen));
+    // Gauge M1-F19: the void is per conversation and takes every ask waiting
+    // there (UI_SPEC "closes the asks still waiting there"; the relay voids
+    // by root, hush_agent_ask_void). One owner note in Ace's conversation
+    // that names Ace and Bea makes the relay hold two turns there, so two
+    // asks wait in it (Ace's live, Bea's behind it). Bea's own conversation
+    // (beaRoot) keeps its own waiting ask. A plain note to Ace's
+    // conversation must close both of its asks and leave Bea's alone.
+    const asksOn = (root) => cdp.evalAsync(`(async () => { const j = await (await fetch('/api/events')).json();
+      return (j.events || j || []).filter((e) => e.channel === 'route-room' && e.reply_to === ${JSON.stringify(root)} && e.ask === true)
+        .map((e) => ({ id: e.id, text: String(e.content || '') })); })()`);
+    const priorRA = (await asksOn(RA)).map((a) => a.id);
+    await sleep(1100);
+    const pair = await post({ content: 'nostr:' + aceN + ' nostr:' + beaN + ' pair check', kind: 1, channel: 'route-room',
+      reply_to: RA, mention_0: aceN, mention_1: beaN });
+    if (pair.status !== 200) fail('F19 setup: the two-robot note in Ace\'s conversation ' + JSON.stringify(pair));
+    let two2 = null;
+    let beaAsk = '';
+    let beaLive = null;
+    for (let k = 0; k < 40; k++) {
+      const fresh = (await asksOn(RA)).filter((a) => !priorRA.includes(a.id));
+      const ace2 = fresh.filter((a) => a.text.startsWith('Approval needed: Ace')).pop();
+      const bea2 = fresh.filter((a) => a.text.startsWith('Approval needed: Bea')).pop();
+      two2 = ace2 && bea2 ? [ace2.id, bea2.id] : null;
+      const cards = two2 ? [await askCard(two2[0]), await askCard(two2[1])] : [];
+      beaAsk = ((await asksOn(beaRoot.json.id)).pop() || {}).id || '';
+      beaLive = beaAsk ? await askCard(beaAsk) : null;
+      if (two2 && cards.every((c) => c && c.stamps === 2 && !c.sent) && cards[0].live + cards[1].live === 2
+        && beaLive && beaLive.live === 2 && !beaLive.sent) { two2.cards = cards; break; }
+      two2 = null;
+      await sleep(250);
+    }
+    if (!two2 || !beaAsk)
+      fail('F19 setup: two asks must wait in Ace\'s conversation (one live, one behind it) and one live in Bea\'s: ' +
+        JSON.stringify({ fresh: (await asksOn(RA)).filter((a) => !priorRA.includes(a.id)).map((a) => a.text.slice(0, 24)), beaAsk, beaLive }));
+    const beforeF19 = { ace: two2.cards, bea: beaLive };
+    await cdp.eval(`(() => { const p = $('route-pick'); p.value = ${JSON.stringify(aceN)}; p.dispatchEvent(new Event('change')); return true; })()`);
+    const closer = await compose('plain close-out', 'plain close-out');
+    if (!closer.got || closer.got.reply_to !== RA) fail('F19 the plain note must go to Ace\'s conversation: ' + JSON.stringify(closer));
+    const beaKept = async (when) => {
+      const st = await askCard(beaAsk);
+      if (!st || st.stamps !== 2 || st.live !== 2 || st.sent)
+        fail('F19 a plain note in Ace\'s conversation must leave the ask waiting in Bea\'s conversation live ' + when + ': ' + JSON.stringify(st));
+      return st;
+    };
+    const f19 = async (when) => ({ ace: [await voidShut(when, two2[0]), await voidShut(when, two2[1])], bea: await beaKept(when) });
+    const f19now = await f19('after the plain note');
     await cdp.send('Page.reload', {});
     await cdp.waitFor(`!!document.querySelector('#hive.show')`, 'hive after reload');
     await cdp.eval(`[...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#route-room')).click()`);
     await cdp.waitFor(`channel === 'route-room'`, 'route-room open after reload');
     const voidReload = await voidShut('after a reload');
+    const f19reload = await f19('after a reload');
     console.log('F15 PASS voided ask closed: ' + JSON.stringify({ ask: VOID.slice(0, 8), before: voidLive, after: voidNow, reload: voidReload }));
+    console.log('F19 PASS a plain note closes every ask in its conversation and no other: ' + JSON.stringify({
+      ace: two2.map((id) => id.slice(0, 8)), bea: beaAsk.slice(0, 8), before: beforeF19, after: f19now, reload: f19reload }));
     console.log('A PASS interim routing: ' + JSON.stringify({ again: again.got.reply_to === RA, preview: plain.said.text,
       bare: { said: bare.said.text, reply_to: bare.got.reply_to, aceAskLive: held }, two: { said: two.said.text, err: two.err }, chosen: chosen.got.reply_to === RA }));
     await cdp.eval(`window.__ch0go ? window.__ch0go('welcome') : [...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#welcome')).click()`);
