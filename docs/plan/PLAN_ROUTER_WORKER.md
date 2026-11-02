@@ -3,10 +3,12 @@
 Branch: `gb/router-worker`
 Base: `main` @ `b5a3383`
 
-Status: **plan only**. This commit does not change `hush-relay`. No Work Item
-files are written. No public thread behavior changes. A browser drill of the
-desk was used to check the human surface; that drill is not this repository
-and is not the binary.
+Status: the graph, the silent worker, and `/api/router` are in `hush-c`.
+`/api/event` is unchanged, so an `@` mention or `nostr:` token still opens the
+old thread. A restart reloads `$HUSH_HOME/router/`. The poll loop drains one
+queued worker per turn and does not start a thread. `agent_prompt.c` still
+injects every equipped skill into a legacy job; `hush_router_select_skills`
+is the Phase 4 split and is what a Worker prompt must call.
 
 ## 0. What is true on `main` today
 
@@ -208,9 +210,9 @@ the same way.
 - Done, overall: the human has one agent, concurrent work is visible without
   thread management, and the skills already equipped still exist.
 
-## 10. Non-goals for the first commit after this plan
+## 10. What this branch actually changes
 
-- No new `.c` behavior hidden inside a docs PR.
-- No second web application inside this tree.
-- No change to `agent_prompt.c` until Phase 4 has its own branch.
-- No Watchdog process.
+- New module `hush_router` plus `GET`/`POST /api/router`.
+- `hush_agent_poll` drains one queued worker when `$HUSH_HOME/router` exists.
+- No change to `agent_prompt.c`. Legacy jobs still receive every equipped skill.
+- No change to `/api/event`. A mention still opens a public thread.

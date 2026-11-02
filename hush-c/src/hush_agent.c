@@ -24,6 +24,7 @@
 #include "hush_provider.h"
 #include "hush_relay.h"
 #include "hush_roster.h"
+#include "hush_router.h"
 #include "hush_seg.h"
 #include "hush_thread.h"
 #include "hush_wake.h"
@@ -180,6 +181,7 @@ void hush_agent_poll(hush_store_t *store)
     int status;
 
     now = time(NULL);
+    hush_router_poll();
     if (store != NULL) {
         hush_presence_expire(store, now);
         hush_wake_expire(store, now);
