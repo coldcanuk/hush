@@ -36,6 +36,7 @@ Under the hood (also on `main`): Nostr NIP-01 chat basics, `poll(2)` single-thre
 ## Roadmap (not on `main` — explicitly future)
 
 - **Relay-enforced skill lifetimes** — ALWAYS-ON / ON-CALL are browser-only labels today; the relay still injects every equipped skill on every job. Real prompt tiers are future work.
+- **Hive-wide Router and silent Workers** — plan only, not built: [`docs/plan/PLAN_ROUTER_WORKER.md`](docs/plan/PLAN_ROUTER_WORKER.md). One Router owns the channel. Workers do not post. Graph under `$HUSH_HOME/router/`. Phases 1–3 stay inside the existing `poll(2)` loop.
 
 ## Quick start (actually ran on the VM)
 
