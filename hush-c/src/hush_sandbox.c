@@ -62,17 +62,18 @@ static const char *const HUSH_SANDBOX_AUTH_REL[] = {
     ".grok", ".codex", ".copilot", ".config/goose", ".goose", ".cline", ".ollama",
 };
 
-/* A provider's token file, relative to the operator HOME, by binary name.
- * Only grok and codex keep an OAuth token in a file (hush_provider.c:557,
- * :562); copilot's lives in the system credential store (:576). */
+/* A provider's auth directory, relative to the operator HOME, by binary
+ * name. Only grok and codex keep an OAuth token in a file there
+ * (hush_provider.c:557, :562); copilot's lives in the system credential
+ * store (:576). */
 typedef struct {
     const char *bin;
     const char *rel;
 } hush_sandbox_token_t;
 
 static const hush_sandbox_token_t HUSH_SANDBOX_TOKENS[] = {
-    {"grok", ".grok/auth.json"},
-    {"codex", ".codex/auth.json"},
+    {"grok", ".grok"},
+    {"codex", ".codex"},
 };
 
 /* Never bound, even if named somehow. */
@@ -581,11 +582,12 @@ hush_sandbox_backend_t hush_sandbox_backend(void)
 /* The tree outside cwd and stub HOME: read and run, never write (#375 N2). */
 static const uint64_t HUSH_SANDBOX_TREE_RIGHTS =
     LANDLOCK_ACCESS_FS_EXECUTE | LANDLOCK_ACCESS_FS_READ_FILE | LANDLOCK_ACCESS_FS_READ_DIR;
-/* The own provider's token file: read and rewrite in place, no create,
- * rename or unlink in its directory. */
-static const uint64_t HUSH_SANDBOX_TOKEN_RIGHTS = LANDLOCK_ACCESS_FS_READ_FILE |
-                                                 LANDLOCK_ACCESS_FS_WRITE_FILE |
-                                                 LANDLOCK_ACCESS_FS_TRUNCATE;
+/* The own provider's auth directory: read, rewrite, and create, rename or
+ * unlink regular files (a tmp + rename token refresh). No subdirectories,
+ * links, devices or cross-directory renames (no REFER). */
+static const uint64_t HUSH_SANDBOX_TOKEN_RIGHTS =
+    LANDLOCK_ACCESS_FS_READ_FILE | LANDLOCK_ACCESS_FS_READ_DIR | LANDLOCK_ACCESS_FS_WRITE_FILE |
+    LANDLOCK_ACCESS_FS_TRUNCATE | LANDLOCK_ACCESS_FS_MAKE_REG | LANDLOCK_ACCESS_FS_REMOVE_FILE;
 /* Read-write device nodes, and every pty under /dev/pts (IOCTL_DEV for
  * termios). No TRUNCATE: Landlock checks it only on regular files, and
  * `> /dev/null` works without it. /dev/urandom and the rest of /dev keep
@@ -800,7 +802,7 @@ static hush_status_t hush_sandbox_grant_auth(const hush_sandbox_rules_t *rules,
         HUSH_TRY(hush_sandbox_grant(rules, policy->auth_ro[i], ro));
     if (policy->auth_rw[0] != '\0')
         HUSH_TRY(hush_sandbox_grant(rules, policy->auth_rw,
-                                    rules->fs_file & HUSH_SANDBOX_TOKEN_RIGHTS));
+                                    rules->fs_all & HUSH_SANDBOX_TOKEN_RIGHTS));
     return HUSH_OK;
 }
 
@@ -1088,14 +1090,14 @@ static hush_status_t hush_sandbox_exec_bwrap(const hush_sandbox_policy_t *policy
     return HUSH_ERR_IO;
 }
 
-/* Sets policy->auth_rw to file's own token file when that is a regular file
+/* Sets policy->auth_rw to file's own auth directory when it exists and is
  * reached through no symlink (its realpath is its own path); else leaves it
- * "". Other providers' files and every auth directory stay read-only. */
+ * "". Other providers' directories stay read-only. A non-directory there
+ * already refuses the jail (its read-only grant takes READ_DIR). */
 static void hush_sandbox_own_token(hush_sandbox_policy_t *policy, const char *file)
 {
     char path[HUSH_SANDBOX_PATH_MAX];
     char real[PATH_MAX];
-    struct stat st;
 
     policy->auth_rw[0] = '\0';
     for (size_t i = 0; i < HUSH_SANDBOX_COUNT(HUSH_SANDBOX_TOKENS); ++i) {
@@ -1103,8 +1105,8 @@ static void hush_sandbox_own_token(hush_sandbox_policy_t *policy, const char *fi
             continue;
         int n = snprintf(path, sizeof path, "%s/%s", policy->real_home,
                          HUSH_SANDBOX_TOKENS[i].rel);
-        if (n <= 0 || (size_t)n >= sizeof path || stat(path, &st) != 0 ||
-            !S_ISREG(st.st_mode) || realpath(path, real) == NULL || strcmp(real, path) != 0)
+        if (n <= 0 || (size_t)n >= sizeof path || realpath(path, real) == NULL ||
+            strcmp(real, path) != 0)
             return;
         memcpy(policy->auth_rw, path, (size_t)n + 1);
         return;

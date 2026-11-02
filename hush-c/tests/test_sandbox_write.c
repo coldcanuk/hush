@@ -2,9 +2,9 @@
  * may write only its cwd, its stub HOME (which holds its private TMPDIR) and
  * the declared device nodes; the rest of the tree, the shared /tmp, the real
  * auth trees and /dev/shm are read-only, and an XDG_*_HOME outside its HOME
- * is dropped. The job's own provider token file (grok or codex auth.json)
- * is writable in place, never through a symlink, and no other provider's is
- * (B2). bwrap's write scope stays what it was. A stub probe script runs
+ * is dropped. The job's own provider auth directory (~/.grok or ~/.codex)
+ * takes a tmp + rename token refresh, never through a symlink, and no other
+ * provider's does (B2). bwrap's write scope stays what it was. A stub probe script runs
  * through the real jail and reports each write. All homes and values are
  * fake; the real HOME is never used. */
 
@@ -50,7 +50,8 @@ static const char WRITE_TEST_PROBE[] =
     "try shm /dev/shm/hush-write-probe\n"
     "try relcwd ./w-rel.txt; echo \"pwd_real=$(pwd -P)\"\n"
     "try grokfile \"$HOME/.grok/auth.json\"; try codexfile \"$HOME/.codex/auth.json\"\n"
-    "try grokinner \"$HOME/.grok/auth.json/inner\"\n"
+    "if mkdir \"$HOME/.grok/sub\" 2>/dev/null; then echo grokmkdir=ok; "
+    "else echo grokmkdir=fail; fi\n"
     "for p in grok codex; do f=\"$HOME/.$p/auth.json\"\n"
     "if err=$( { : > \"$f.tmp\" && mv -f \"$f.tmp\" \"$f\"; } 2>&1 ); then echo \"${p}rename=ok\"; "
     "else echo \"${p}rename=fail:$err\"; fi; done\n"
@@ -218,6 +219,8 @@ static void check_landlock_writes(const char *dump)
     expect(wrote(dump, "relcwd"), "landlock: child not started in its job cwd");
     expect(!wrote(dump, "grokfile") && !wrote(dump, "codexfile"),
            "landlock: a token file writable by a non-provider binary");
+    expect(!wrote(dump, "grokrename") && !wrote(dump, "codexrename"),
+           "landlock: an auth dir writable by a non-provider binary");
 }
 
 /* #375 N2 rulings 2-3 under Landlock: device nodes and XDG homes. */
@@ -352,20 +355,22 @@ static int landlock_as(char *dump, size_t dumpsz, const write_test_ctx_t *ctx,
     return ran;
 }
 
-/* B2: own token writable in place, the other provider's not, and no
- * tmp+rename refresh (that needs directory rights, OBS). */
+/* B2: the own auth dir takes an in-place write and a tmp + rename refresh
+ * but no new subdirectory; the other provider's dir takes neither. */
 static void check_own_tokens(char *dump, size_t dumpsz, const write_test_ctx_t *ctx)
 {
     if (landlock_as(dump, dumpsz, ctx, "grok")) {
         expect(wrote(dump, "grokfile"), "B2: grok's own token not writable");
         expect(!wrote(dump, "codexfile"), "B2: codex token writable by grok");
-        expect(!wrote(dump, "grokrename"), "B2: grok token dir writable (rename)");
+        expect(wrote(dump, "grokrename"), "B2: grok tmp + rename refresh fails");
         expect(!wrote(dump, "codexrename"), "B2: codex token dir writable by grok");
+        expect(!wrote(dump, "grokmkdir"), "B2: grok auth dir takes a subdirectory");
     }
     if (landlock_as(dump, dumpsz, ctx, "codex")) {
         expect(wrote(dump, "codexfile"), "B2: codex's own token not writable");
         expect(!wrote(dump, "grokfile"), "B2: grok token writable by codex");
-        expect(!wrote(dump, "codexrename"), "B2: codex token dir writable (rename)");
+        expect(wrote(dump, "codexrename"), "B2: codex tmp + rename refresh fails");
+        expect(!wrote(dump, "grokrename"), "B2: grok token dir writable by codex");
     }
 }
 
@@ -396,7 +401,7 @@ static int holds(const char *path, const char *text)
 }
 
 /* B2: an own token reached through a symlink (to a file outside HOME, or a
- * symlinked token dir), or one that is not a regular file, stays read-only. */
+ * symlinked auth dir) stays read-only. */
 static void check_token_links(char *dump, size_t dumpsz, const write_test_ctx_t *ctx)
 {
     char target[WRITE_TEST_PATH_MAX * 2];
@@ -411,13 +416,15 @@ static void check_token_links(char *dump, size_t dumpsz, const write_test_ctx_t 
     expect(nftw(path, remove_entry, WRITE_TEST_FTW_FDS, FTW_DEPTH | FTW_PHYS) == 0 &&
            symlink(".grok", path) == 0, "codex dir symlink");
     if (landlock_as(dump, dumpsz, ctx, "codex"))
-        expect(!wrote(dump, "codexfile"), "B2: token through a symlinked dir writable");
-    join(path, sizeof path, home, ".grok/auth.json");
-    expect(unlink(path) == 0 && mkdir(path, WRITE_TEST_DIR_MODE) == 0, "token as dir");
-    join(target, sizeof target, path, "inner");
-    write_text(target, WRITE_TEST_TOKEN, S_IRUSR | S_IWUSR);
-    if (landlock_as(dump, dumpsz, ctx, "grok"))
-        expect(!wrote(dump, "grokinner"), "B2: a token path that is a dir granted");
+        expect(!wrote(dump, "codexfile") && !wrote(dump, "codexrename"),
+               "B2: auth dir through a symlink writable");
+    /* An auth path that is not a directory refuses the jail outright (its
+     * read-only grant takes no dir rights), so it is never made writable. */
+    join(path, sizeof path, home, ".grok");
+    expect(nftw(path, remove_entry, WRITE_TEST_FTW_FDS, FTW_DEPTH | FTW_PHYS) == 0, "rm .grok");
+    write_text(path, WRITE_TEST_TOKEN, S_IRUSR | S_IWUSR);
+    expect(!run_probe(dump, dumpsz, ctx, "landlock", "grok"), "B2: a non-dir auth path jailed");
+    sweep_leaks(ctx);
 }
 
 /* The Landlock legs: write scope, devices, own tokens, token links. */

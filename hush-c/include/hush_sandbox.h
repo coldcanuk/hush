@@ -47,8 +47,8 @@ typedef struct {
     int ndeny;
     char auth_ro[HUSH_SANDBOX_AUTH_MAX][HUSH_SANDBOX_PATH_MAX];
     int nauth;
-    /* The job's own provider token file, writable under Landlock so an
-     * in-job OAuth refresh can rewrite it in place; "" when none (#375 N2). */
+    /* The job's own provider auth directory, writable under Landlock so an
+     * in-job OAuth refresh (tmp + rename) works; "" when none (#375 N2). */
     char auth_rw[HUSH_SANDBOX_PATH_MAX];
     char cwd[HUSH_SANDBOX_PATH_MAX];
     char stub_home[HUSH_SANDBOX_PATH_MAX];
