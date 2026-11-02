@@ -419,11 +419,44 @@ async function main() {
     console.log('A @mention follow-up: ' + JSON.stringify({ said: again.said.text, reply_to: again.got && again.got.reply_to, convo: RA }));
     if (!again.got || again.got.reply_to !== RA)
       fail('A an @mention follow-up must continue the robot\'s conversation, not open an empty one: reply_to ' + JSON.stringify(again.got && again.got.reply_to) + ' want ' + RA);
+    // Gauge M1-F15: a plain owner note in a conversation voids the ask that
+    // waits there (hush_agent_ask_void), so that ask takes no answer. Pin the
+    // ask Ace raised for the follow-up above: live Yes/No before the plain
+    // note, then "Closed by a newer note" and no stamps at all, also after a
+    // reload (checked at the end of these pins).
+    const askCard = (id) => cdp.eval(`(() => { const c = [...document.querySelectorAll('#stream .note')].find((n) => n.dataset.id === ${JSON.stringify(id)});
+      return c ? { stamps: c.querySelectorAll('button.loop-stamp').length, live: c.querySelectorAll('button.loop-stamp:not(:disabled)').length,
+        sent: [...c.querySelectorAll('.loop-sent')].map((s) => s.textContent).join('|') } : null; })()`);
+    const lastAsk = (since) => cdp.evalAsync(`(async () => { const j = await (await fetch('/api/events')).json();
+      const a = (j.events || j || []).filter((e) => e.channel === 'route-room' && e.reply_to === ${JSON.stringify(RA)} && e.ask === true
+        && Number(e.created_at || 0) >= ${Number(since)});
+      return a.length ? a[a.length - 1].id : ''; })()`);
+    let VOID = '';
+    let voidLive = null;
+    for (let k = 0; k < 40 && !(voidLive && voidLive.live === 2); k++) {
+      VOID = await lastAsk(again.got.created_at);
+      voidLive = VOID ? await askCard(VOID) : null;
+      if (!(voidLive && voidLive.live === 2)) await sleep(250);
+    }
+    if (!VOID || !voidLive || voidLive.live !== 2 || voidLive.sent)
+      fail('F15 setup: Ace\'s ask for the follow-up must wait with live Yes/No before the plain note: ' + JSON.stringify({ VOID, voidLive }));
     const plain = await compose('plain follow-up', 'plain follow-up');
     if (plain.said.text !== 'to Ace, continuing \u201c@Ace first task\u201d')
       fail('A the route preview must show before Send: ' + JSON.stringify(plain.said));
     if (!plain.got || plain.got.reply_to !== RA || !(plain.got.mentions || []).some((m) => m === aceN || m.length === 64))
       fail('A a plain note with one robot active must continue its conversation: ' + JSON.stringify(plain.got));
+    const CLOSED = 'Closed by a newer note';
+    const voidShut = async (when) => {
+      let st = null;
+      for (let k = 0; k < 32 && !(st && st.sent === CLOSED); k++) {
+        st = await askCard(VOID);
+        if (!(st && st.sent === CLOSED)) await sleep(250);
+      }
+      if (!st || st.sent !== CLOSED || st.stamps !== 0)
+        fail('F15 an ask voided by a newer owner note must show "' + CLOSED + '" and no Yes/No stamps ' + when + ': ' + JSON.stringify(st));
+      return st;
+    };
+    const voidNow = await voidShut('after the plain note');
     const bare = await compose('Yes', 'Yes');
     if (!/^to #route-room as a new note/.test(bare.said.text) || !bare.got || bare.got.reply_to)
       fail('A a bare Yes must never follow up a conversation: ' + JSON.stringify(bare));
@@ -441,6 +474,12 @@ async function main() {
     await cdp.eval(`(() => { const p = $('route-pick'); p.value = ${JSON.stringify(aceN)}; p.dispatchEvent(new Event('change')); return true; })()`);
     const chosen = await compose('plain two', 'plain two');
     if (!chosen.got || chosen.got.reply_to !== RA) fail('A the chosen robot\'s conversation must take the note: ' + JSON.stringify(chosen));
+    await cdp.send('Page.reload', {});
+    await cdp.waitFor(`!!document.querySelector('#hive.show')`, 'hive after reload');
+    await cdp.eval(`[...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#route-room')).click()`);
+    await cdp.waitFor(`channel === 'route-room'`, 'route-room open after reload');
+    const voidReload = await voidShut('after a reload');
+    console.log('F15 PASS voided ask closed: ' + JSON.stringify({ ask: VOID.slice(0, 8), before: voidLive, after: voidNow, reload: voidReload }));
     console.log('A PASS interim routing: ' + JSON.stringify({ again: again.got.reply_to === RA, preview: plain.said.text,
       bare: { said: bare.said.text, reply_to: bare.got.reply_to, aceAskLive: held }, two: { said: two.said.text, err: two.err }, chosen: chosen.got.reply_to === RA }));
     await cdp.eval(`window.__ch0go ? window.__ch0go('welcome') : [...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#welcome')).click()`);
