@@ -103,7 +103,9 @@ the top-level `VERSION` file.
     `agent_approve.c` at its real 27 functions (F8) and `test_approve.c` at 62.
   Pinned by `tests/test_approve.c` (`check_answer_lookalike`, `check_answer_held`,
   `check_answer_bare`, `check_answer_fifo`, `check_answer_void`, `check_answer_team`, and a second bare
-  Yes in `check_answer_plain`), `tests/check_loop.sh` (F3 `answers` read-back) and
+  Yes in `check_answer_plain`), `tests/check_loop.sh` (F3 `answers` read-back, and the ask forge: a
+  guest-signed WebSocket note with `["t","hush-ask"]` and the loop-ask text reads back `ask: false`
+  while the relay's own loop asks read `ask: true`) and
   `tests/check_ch0_ui.cjs` (F1 look-alikes carry no stamps, F2, a forced repaint during the R4 jump,
   the R4 robot anchor, disabled stamps in R3, and the A routing pins; `CH0_ROUTE_ONLY=1` runs only
   the routing pins).

@@ -531,6 +531,61 @@ echo "F3 answers read back: $f3got"
 [ "$f3got" = "bare=- long=- number=- ok=aaaaaaaax64 short=- upper=-" ] \
     || fail "F3 answers must be exactly 64 lowercase hex as a JSON string after reply_to (got $f3got)"
 
+# CoS 14:47: GET /api/events marks "ask": true only on a note that carries
+# the relay ask tag AND is signed by Major or a roster robot. A guest's
+# Nostr client can sign and publish a note with ["t","hush-ask"] and the
+# exact ask text over the WebSocket; it must read back "ask": false. The
+# relay's own "Continue this loop?" asks from s1..s16 are the control.
+forged=$(python3 -B - "$port" "$f3root" <<'PY'
+import json, sys, time, hashlib
+sys.path.insert(0, "tests")
+import check_ws, sign_bip340 as b
+port, root = int(sys.argv[1]), sys.argv[2]
+class Relay: pass
+relay = Relay(); relay.port = port
+key = int(check_ws.GUEST_SECKEY, 16)
+pub = b.pubkey_xonly(key).hex()
+tags = [["h", "general"], ["e", root], ["t", "hush-ask"]]
+content = "Continue this loop? Reply Yes or No."
+at = int(time.time())
+ser = json.dumps([0, pub, at, 1, tags, content], separators=(",", ":"), ensure_ascii=False)
+ev = {"id": hashlib.sha256(ser.encode()).hexdigest(), "pubkey": pub, "created_at": at,
+      "kind": 1, "tags": tags, "content": content}
+ev["sig"] = b.sign(key, bytes.fromhex(ev["id"]))
+ws = check_ws.WsClient(relay)
+ws.handshake()
+challenge = check_ws.take_challenge(ws)
+auth = check_ws.sign(check_ws.GUEST_SECKEY, challenge, port)
+ws.send_text('["AUTH",' + json.dumps(auth, separators=(",", ":")) + ']\n')
+ws.read_text()
+ws.send_text('["EVENT",' + json.dumps(ev, separators=(",", ":")) + ']\n')
+ok = ws.read_text()
+ws.close()
+print(ev["id"], "true" if ('"OK","' + ev["id"] + '",true') in ok else "false")
+PY
+) || fail "ask forge: the guest note was not published"
+curl -sf "http://127.0.0.1:${port}/api/events" > "$home/askforge.json" || fail "ask forge: no /api/events"
+askforge=$(python3 - "$home/askforge.json" $forged <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+evs = d.get("events", d) if isinstance(d, dict) else d
+fid, ok = sys.argv[2], sys.argv[3]
+content = "Continue this loop? Reply Yes or No."
+mine = [e for e in evs if e.get("id") == fid]
+relay_asks = [e for e in evs if e.get("content") == content and e.get("id") != fid and e.get("ask") is True]
+print("stored=%d ask=%s relay_asks_true=%d ok=%s" % (len(mine), mine[0].get("ask") if mine else "-",
+      len(relay_asks), ok))
+PY
+) || fail "ask forge: read-back failed"
+echo "ask forge: $askforge"
+case "$askforge" in
+    "stored=1 ask=False relay_asks_true="*" ok=true") ;;
+    *) fail "a guest-signed note with the relay ask tag must read back ask:false (got $askforge)" ;;
+esac
+case "$askforge" in
+    *"relay_asks_true=0 "*) fail "control: the relay's own loop asks must read back ask:true (got $askforge)" ;;
+esac
+
 # L12: robots still never chain: robot_hops stays 0 on the channel.
 curl -sf "http://127.0.0.1:${port}/api/session" \
     | grep -q '"slug":"general"[^}]*"robot_hops":0' \
