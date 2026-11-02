@@ -2,6 +2,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,7 +19,8 @@ enum {
     ROUTER_TEST_DIR_MODE = 0700,
     ROUTER_TEST_PATH_MAX = 192,
     ROUTER_TEST_FILE_MAX = 16384,
-    ROUTER_TEST_PUBLISHED = 3 /* renames done before the simulated crash */
+    ROUTER_TEST_PUBLISHED = 3, /* renames done before the simulated crash */
+    ROUTER_TEST_CONTROL_BYTE = 0x01 /* escapes to six bytes, a u0001 escape */
 };
 
 #define ROUTER_TEST_POLL_DIR "/poll"
@@ -36,6 +38,56 @@ enum {
 /* Save protocol names, pinned by the half-write checks below. */
 static const char ROUTER_TEST_COMMIT[] = "commit";
 static const char ROUTER_TEST_STAGED[] = ".tmp";
+
+/* One saved string field: where it lives in a graph and its capacity. */
+typedef struct {
+    const char *name;
+    size_t offset;
+    size_t size;
+} router_test_field_t;
+
+/* Every string field a save_* row writes, one record per array (#375 H1-1). */
+static const router_test_field_t ROUTER_TEST_SAVED[] = {
+    {"item.id", offsetof(hush_router_graph_t, items[0].id), HUSH_ROUTER_ID_MAX},
+    {"item.title", offsetof(hush_router_graph_t, items[0].title), HUSH_ROUTER_TITLE_MAX},
+    {"item.description", offsetof(hush_router_graph_t, items[0].description),
+     HUSH_ROUTER_TEXT_MAX},
+    {"item.channel_id", offsetof(hush_router_graph_t, items[0].channel_id),
+     HUSH_ROUTER_CHANNEL_MAX},
+    {"item.worker_id", offsetof(hush_router_graph_t, items[0].worker_id),
+     HUSH_ROUTER_ID_MAX},
+    {"item.parent_id", offsetof(hush_router_graph_t, items[0].parent_id),
+     HUSH_ROUTER_ID_MAX},
+    {"worker.id", offsetof(hush_router_graph_t, workers[0].id), HUSH_ROUTER_ID_MAX},
+    {"worker.item_id", offsetof(hush_router_graph_t, workers[0].item_id),
+     HUSH_ROUTER_ID_MAX},
+    {"worker.specialist_id", offsetof(hush_router_graph_t, workers[0].specialist_id),
+     HUSH_ROUTER_NAME_MAX},
+    {"worker.job_dir", offsetof(hush_router_graph_t, workers[0].job_dir),
+     HUSH_ROUTER_JOB_MAX},
+    {"worker.provider_id", offsetof(hush_router_graph_t, workers[0].provider_id),
+     HUSH_ROUTER_NAME_MAX},
+    {"decision.id", offsetof(hush_router_graph_t, decisions[0].id), HUSH_ROUTER_ID_MAX},
+    {"decision.item_id", offsetof(hush_router_graph_t, decisions[0].item_id),
+     HUSH_ROUTER_ID_MAX},
+    {"decision.text", offsetof(hush_router_graph_t, decisions[0].text),
+     HUSH_ROUTER_TEXT_MAX},
+    {"artifact.id", offsetof(hush_router_graph_t, artifacts[0].id), HUSH_ROUTER_ID_MAX},
+    {"artifact.worker_id", offsetof(hush_router_graph_t, artifacts[0].worker_id),
+     HUSH_ROUTER_ID_MAX},
+    {"artifact.text", offsetof(hush_router_graph_t, artifacts[0].text),
+     HUSH_ROUTER_TEXT_MAX},
+    {"edge.from", offsetof(hush_router_graph_t, edges[0].from), HUSH_ROUTER_ID_MAX},
+    {"edge.to", offsetof(hush_router_graph_t, edges[0].to), HUSH_ROUTER_ID_MAX},
+    {"state.last_line", offsetof(hush_router_graph_t, last_line), HUSH_ROUTER_LINE_MAX}
+};
+
+enum {
+    ROUTER_TEST_NSAVED = sizeof ROUTER_TEST_SAVED / sizeof ROUTER_TEST_SAVED[0]
+};
+
+/* Quote, backslash, newline, a control byte, and two-byte UTF-8 (e-acute). */
+static const char ROUTER_TEST_HOSTILE[] = "\"\\\n\x01\xc3\xa9";
 
 static int g_fail;
 
@@ -450,6 +502,110 @@ static void check_halfwrite(const char *root)
     check_publish_crash(root, "decide", &old, &decided);
 }
 
+/* Address of one saved field inside graph. */
+static char *field_at(hush_router_graph_t *graph, const router_test_field_t *field)
+{
+    return (char *)graph + field->offset;
+}
+
+/* A graph with one record per array, each record live so every row saves. */
+static void build_hostile(hush_router_graph_t *graph)
+{
+    hush_router_init(graph);
+    graph->nitems = 1;
+    graph->nworkers = 1;
+    graph->ndecisions = 1;
+    graph->nartifacts = 1;
+    graph->nedges = 1;
+    for (size_t i = 0; i < (size_t)ROUTER_TEST_NSAVED; ++i) {
+        const router_test_field_t *field = &ROUTER_TEST_SAVED[i];
+        int n = snprintf(field_at(graph, field), field->size, "%s%c",
+                         ROUTER_TEST_HOSTILE, (char)('A' + (int)i));
+
+        expect(n > 0 && (size_t)n < field->size, "hostile fits field");
+    }
+}
+
+/* Fills one field to capacity with control bytes, NUL kept last. */
+static void fill_control(hush_router_graph_t *graph, size_t index)
+{
+    const router_test_field_t *field = &ROUTER_TEST_SAVED[index];
+    char *buf = field_at(graph, field);
+
+    memset(buf, ROUTER_TEST_CONTROL_BYTE, field->size - 1);
+    buf[field->size - 1] = '\0';
+}
+
+/* Saves graph into a fresh home, reloads, and demands every saved field
+ * come back byte for byte. Names each field that does not. */
+static void check_roundtrip(const char *root, const char *tag,
+                            hush_router_graph_t *graph)
+{
+    char home[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t loaded;
+
+    join_path(home, sizeof home, root, "esc-", tag);
+    expect(mkdir(home, ROUTER_TEST_DIR_MODE) == 0, "esc home");
+    expect_at(hush_router_save(graph, home) == HUSH_OK, "esc save", home);
+    if (hush_router_load(&loaded, home) != HUSH_OK) {
+        expect_at(0, "esc load", home);
+        return;
+    }
+    for (size_t i = 0; i < (size_t)ROUTER_TEST_NSAVED; ++i) {
+        const router_test_field_t *field = &ROUTER_TEST_SAVED[i];
+
+        if (memcmp(field_at(graph, field), field_at(&loaded, field), field->size) != 0)
+            expect_at(0, field->name, home);
+    }
+}
+
+/* #375 Gauge H1-1: every saved string field survives hostile bytes, and a
+ * field at capacity made only of control bytes survives its 6x escape. */
+static void check_escape_all(const char *root)
+{
+    hush_router_graph_t graph;
+
+    build_hostile(&graph);
+    check_roundtrip(root, "all", &graph);
+    build_hostile(&graph);
+    for (size_t i = 0; i < (size_t)ROUTER_TEST_NSAVED; ++i) {
+        if (strcmp(ROUTER_TEST_SAVED[i].name, "worker.job_dir") == 0)
+            fill_control(&graph, i);
+    }
+    check_roundtrip(root, "maxctl", &graph);
+}
+
+/* KNOWN #375 Gauge H1-2 (P3, fix later): with every worker string field at
+ * capacity in control bytes the worker row overflows its fixed buffer and
+ * save returns HUSH_ERR_FULL. Pinned as observed: the save fails whole and
+ * the prior generation reloads intact. Flip to HUSH_OK when rows are sized. */
+static void check_worker_row_full(const char *root)
+{
+    char home[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t prior;
+    hush_router_graph_t graph;
+    hush_router_graph_t loaded;
+
+    build_hostile(&prior);
+    memcpy(&graph, &prior, sizeof graph);
+    for (size_t i = 0; i < (size_t)ROUTER_TEST_NSAVED; ++i) {
+        if (strncmp(ROUTER_TEST_SAVED[i].name, "worker.", strlen("worker.")) == 0)
+            fill_control(&graph, i);
+    }
+    join_path(home, sizeof home, root, "esc-", "rowfull");
+    expect(mkdir(home, ROUTER_TEST_DIR_MODE) == 0, "rowfull home");
+    expect(hush_router_save(&prior, home) == HUSH_OK, "rowfull seed");
+    expect_at(hush_router_save(&graph, home) == HUSH_ERR_FULL,
+              "H1-2 worker row no longer FULL: flip this pin", home);
+    expect(hush_router_load(&loaded, home) == HUSH_OK, "rowfull reload");
+    for (size_t i = 0; i < (size_t)ROUTER_TEST_NSAVED; ++i) {
+        const router_test_field_t *field = &ROUTER_TEST_SAVED[i];
+
+        if (memcmp(field_at(&prior, field), field_at(&loaded, field), field->size) != 0)
+            expect_at(0, field->name, home);
+    }
+}
+
 static void check_phase4(void)
 {
     hush_router_skill_t skills[2];
@@ -510,6 +666,8 @@ int main(void)
     check_edges_full();
     check_poll_full(root);
     check_halfwrite(root);
+    check_escape_all(root);
+    check_worker_row_full(root);
     check_phase4();
     check_context();
     if (g_fail)
