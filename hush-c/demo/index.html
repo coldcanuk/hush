@@ -2370,6 +2370,10 @@ html[data-theme="field-office"] .mention-pill { background: var(--surface-2); co
 html:not([data-theme="field-office"]) .fo-edition,
 html:not([data-theme="field-office"]) .fo-hq > span,
 html:not([data-theme="field-office"]) .fo-log-stamp { display: none; }
+/* #320: the dispatch-log eyebrow and the VOLUME dial caption are
+     field-office dressing too. */
+html:not([data-theme="field-office"]) .fo-log-eyebrow { display: none; }
+html:not([data-theme="field-office"]) #fo-dial-caption { display: none; }
 /* #309 r2: christmas keeps every red in one crimson hue (~350deg).
    --accent (#ff6b7f) is the light crimson for text, rings, radios and
    outlines on the dark greens (and the on switch track); --accent-dim

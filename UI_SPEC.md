@@ -1285,6 +1285,7 @@ Gate: the launch script fails on any served `#fo-scrollbar` /
 `#fo-scroll-track` / `#fo-scroll-dot` / `#fo-scroll-up` /
 `#fo-scroll-down` / `syncFoScrollbar` marker and requires `#fo-dial` /
 `#fo-dial-knob` / `syncFoDial` / `UI-M11`.
+Delta 2026-11-02 (#320 field-office-only eyebrow and dial caption): outside field-office the Official Dispatch Log eyebrow (`.fo-log-eyebrow`) and the dial's VOLUME caption (`#fo-dial-caption`) are `display: none`, like the 1943 edition line and HQ stamps; field-office shows both (pinned by `tests/check_palette.cjs` K6, 8 themes at 1440). No rule changes the dial knob or its SCROLL caption.
 Delta 2026-09-25 (UI-M12a remove-edge-tab pass): the left-edge `#fo-expand`
 Boards tab is deleted — markup, CSS, JS handler, and aria sync are gone,
 so nothing overlaps the chat list at desktop or phone widths. The header
