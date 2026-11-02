@@ -4,6 +4,7 @@
 
 #include <dirent.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <ftw.h>
 #include <signal.h>
 #include <stddef.h>
@@ -37,7 +38,9 @@ enum {
     ROUTER_TEST_PROBE_SAVES = 200,     /* saves the child runs under the probe */
     ROUTER_TEST_PROBE_TRIES = 2000000, /* probe iteration cap */
     ROUTER_TEST_PROBE_SECS = 30,       /* probe wall-clock cap */
-    ROUTER_TEST_FTW_FDS = 16
+    ROUTER_TEST_FTW_FDS = 16,
+    ROUTER_TEST_FIFO_MODE = 0600,      /* the FIFO a mid-read load blocks on */
+    ROUTER_TEST_FEED_MAX = 4096        /* one write into that FIFO */
 };
 
 #define ROUTER_TEST_POLL_DIR "/poll"
@@ -1203,6 +1206,175 @@ static void check_readonly_waits(const char *root)
     set_readonly(dir, 0);
 }
 
+/* Returns 1 once start lies more than the probe clock cap in the past. */
+static int past_probe_secs(const struct timespec *start)
+{
+    struct timespec now;
+
+    expect(clock_gettime(CLOCK_MONOTONIC, &now) == 0, "probe clock");
+    return now.tv_sec - start->tv_sec > ROUTER_TEST_PROBE_SECS;
+}
+
+/* Waits within the probe caps for child to exit; past them, kills that PID
+ * and reaps it. Returns the wait status (a kill shows as WIFSIGNALED). */
+static int reap_within(pid_t child)
+{
+    struct timespec start;
+    int status = 0;
+
+    expect(clock_gettime(CLOCK_MONOTONIC, &start) == 0, "reap clock");
+    for (long i = 0; i < ROUTER_TEST_PROBE_TRIES; ++i) {
+        if (waitpid(child, &status, WNOHANG) == child)
+            return status;
+        if (past_probe_secs(&start))
+            break;
+    }
+    expect(0, "reap: child overran its caps");
+    (void)kill(child, SIGKILL);
+    expect(waitpid(child, &status, 0) == child, "reap after kill");
+    return status;
+}
+
+/* Opens fifo for writing once child has it open for reading. Returns the
+ * fd (non-blocking), or -1 if child exits first or the probe caps run out.
+ * Leaves child unreaped. */
+static int fifo_writer(const char *fifo, pid_t child)
+{
+    struct timespec start;
+    siginfo_t info;
+
+    expect(clock_gettime(CLOCK_MONOTONIC, &start) == 0, "fifo clock");
+    for (long i = 0; i < ROUTER_TEST_PROBE_TRIES && !past_probe_secs(&start); ++i) {
+        int fd = open(fifo, O_WRONLY | O_NONBLOCK);
+        if (fd >= 0 || errno != ENXIO)
+            return fd;
+        memset(&info, 0, sizeof info);
+        if (waitid(P_PID, (id_t)child, &info, WEXITED | WNOHANG | WNOWAIT) == 0 &&
+            info.si_pid == child)
+            return -1;
+    }
+    return -1;
+}
+
+/* Copies file from into the FIFO behind fd, then closes fd so the reader
+ * sees EOF. Returns 1 when every byte went through. */
+static int feed_fifo(int fd, const char *from)
+{
+    char buf[ROUTER_TEST_FEED_MAX];
+    FILE *in = fopen(from, "rb");
+    int ok = in != NULL && fcntl(fd, F_SETFL, 0) == 0;
+    size_t n;
+
+    while (ok && (n = fread(buf, 1, sizeof buf, in)) > 0)
+        ok = write(fd, buf, n) == (ssize_t)n;
+    if (in != NULL)
+        ok = fclose(in) == 0 && ok;
+    return close(fd) == 0 && ok;
+}
+
+/* Tries a non-blocking lock of type on fd. Returns 1 if granted (and drops
+ * it again), 0 if another process's lock refused it, -1 on any other error. */
+static int try_lock(int fd, short type)
+{
+    struct flock lock = {.l_type = type, .l_whence = SEEK_SET};
+    struct flock unlock = {.l_type = F_UNLCK, .l_whence = SEEK_SET};
+
+    if (fcntl(fd, F_SETLK, &lock) == 0)
+        return fcntl(fd, F_SETLK, &unlock) == 0 ? 1 : -1;
+    return errno == EAGAIN || errno == EACCES ? 0 : -1;
+}
+
+/* Runs a load of home in a child that must land on old; returns its PID. */
+static pid_t fork_load(const char *home, const hush_router_graph_t *old)
+{
+    pid_t child = fork();
+    if (child == 0) {
+        hush_router_graph_t loaded;
+        int ok = hush_router_load(&loaded, home) == HUSH_OK && same_graph(&loaded, old);
+        _exit(ok ? 0 : ROUTER_TEST_CHILD_FAIL);
+    }
+    expect(child > 0, "load fork");
+    return child;
+}
+
+/* While the loader blocks mid-read: a read-only load must hold a shared
+ * lock (write refused, read granted); a writable load an exclusive one. */
+static void probe_mid_read(int fd, int readonly, const char *home)
+{
+    if (readonly) {
+        expect_at(try_lock(fd, F_WRLCK) == 0, "write lock granted mid read-only load", home);
+        expect_at(try_lock(fd, F_RDLCK) == 1, "shared lock refused mid read-only load", home);
+        return;
+    }
+    expect_at(try_lock(fd, F_RDLCK) == 0, "shared lock granted mid writable load", home);
+}
+
+/* #375 Gauge HB-2 (readonly 1) and H6-1 for writable loads (readonly 0): a
+ * load holds router/lock for the whole read. workitems.json becomes a FIFO,
+ * so the loader blocks inside the read until this process feeds it. */
+static void check_lock_mid_read(const char *root, int readonly)
+{
+    char home[ROUTER_TEST_PATH_MAX];
+    char dir[ROUTER_TEST_PATH_MAX];
+    char live[ROUTER_TEST_PATH_MAX];
+    char keep[ROUTER_TEST_PATH_MAX];
+    char lock[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t old;
+    void (*pipe_was)(int) = signal(SIGPIPE, SIG_IGN);
+
+    build_blocked(&old);
+    seed_readonly(dir, sizeof dir, home, sizeof home, root, readonly ? "fifo" : "fifo-rw", 1);
+    join_path(live, sizeof live, dir, ROUTER_TEST_FILES[0], "");
+    join_path(keep, sizeof keep, home, ROUTER_TEST_FILES[0], ".keep");
+    join_path(lock, sizeof lock, dir, ROUTER_TEST_LOCK, "");
+    int fd = open(lock, O_RDWR); /* opened before set_readonly drops its write bit */
+    expect(fd >= 0 && rename(live, keep) == 0 && mkfifo(live, ROUTER_TEST_FIFO_MODE) == 0,
+           "fifo swap");
+    if (readonly)
+        set_readonly(dir, 1);
+    pid_t child = fork_load(home, &old);
+    int wfd = child > 0 ? fifo_writer(live, child) : -1;
+    expect_at(wfd >= 0, "loader never opened the FIFO", home);
+    if (wfd >= 0) {
+        probe_mid_read(fd, readonly, home);
+        expect(feed_fifo(wfd, keep), "fifo feed");
+    }
+    int status = child > 0 ? reap_within(child) : 0;
+    expect_at(WIFEXITED(status) && WEXITSTATUS(status) == 0, "mid-read load failed", home);
+    if (readonly)
+        set_readonly(dir, 0);
+    expect(unlink(live) == 0 && rename(keep, live) == 0, "fifo restore");
+    if (fd >= 0)
+        (void)close(fd);
+    (void)signal(SIGPIPE, pipe_was);
+}
+
+/* #375 Gauge HB-1: a save to a router/ this process may not write fails with
+ * HUSH_ERR_IO, never a silent OK, with or without router/lock, and leaves
+ * the old graph in place. */
+static void check_readonly_save(const char *root)
+{
+    hush_router_graph_t old;
+    hush_router_graph_t next;
+
+    build_blocked(&old);
+    build_next(&next, &old, "Write the field notes", HUSH_ROUTER_ROUTE_WORK);
+    for (int keep_lock = 0; keep_lock <= 1; ++keep_lock) {
+        char home[ROUTER_TEST_PATH_MAX];
+        char dir[ROUTER_TEST_PATH_MAX];
+        hush_router_graph_t loaded;
+
+        seed_readonly(dir, sizeof dir, home, sizeof home, root,
+                      keep_lock ? "save-lock" : "save-nolock", keep_lock);
+        set_readonly(dir, 1);
+        expect_at(hush_router_save(&next, home) == HUSH_ERR_IO,
+                  "read-only save did not report HUSH_ERR_IO", home);
+        set_readonly(dir, 0);
+        expect(hush_router_load(&loaded, home) == HUSH_OK, "ro save reload");
+        expect_at(same_graph(&loaded, &old), "read-only save changed the graph", home);
+    }
+}
+
 /* #375 N4: router loads on an unwritable router/. Root ignores modes. */
 static void check_readonly(const char *root)
 {
@@ -1213,6 +1385,8 @@ static void check_readonly(const char *root)
     check_get_readonly(root);
     check_readonly_marked(root);
     check_readonly_waits(root);
+    check_readonly_save(root);
+    check_lock_mid_read(root, 1);
 }
 
 /* #375 Gauge H4-2: the GET path's disk writes, with and without a mark. */
@@ -1308,6 +1482,8 @@ int main(void)
         perror("mkdtemp");
         return 1;
     }
+    printf("test_router: scratch root %s\n", root); /* removed below on success */
+    (void)fflush(stdout);
     check_phase1();
     check_phase2();
     check_phase3(root);
@@ -1321,6 +1497,7 @@ int main(void)
     check_ambiguous();
     check_save_lock(root);
     check_load_lock(root);
+    check_lock_mid_read(root, 0);
     check_lock_exclusive(root);
     check_fresh_home(root);
     check_copy_bound(root);
