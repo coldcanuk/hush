@@ -16,7 +16,7 @@ enum {
     HUSH_DEC_MAX = 24
 };
 
-static const char hush_event_hex[16] = "0123456789abcdef";
+static const char hush_event_hex[] = "0123456789abcdef";
 
 /* Writes lower-hex of digest[0..dlen) plus a NUL into out (2*dlen + 1 bytes). */
 static void hush_event_hex_encode(char *out, const unsigned char *digest,
