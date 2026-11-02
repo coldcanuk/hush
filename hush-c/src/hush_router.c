@@ -169,9 +169,13 @@ static hush_status_t hush_router_staged_path(char *out, size_t outsz,
 /* Makes the staged set durable, marks it committed, then publishes it.
  * A crash before the mark keeps the old set. Fails with HUSH_ERR_IO. */
 static hush_status_t hush_router_commit(const char *dir);
-/* Rolls a marked set forward when a commit mark is present, else no-op.
+/* Rolls a marked set forward when a commit mark is present; without one,
+ * removes the staged files an unmarked save left. Caller holds router/lock.
  * Fails with HUSH_ERR_IO. */
 static hush_status_t hush_router_recover(const char *dir);
+/* Unlinks every staged file in dir; a missing one is fine. Fails with
+ * HUSH_ERR_IO, or HUSH_ERR_FULL on a long path. */
+static hush_status_t hush_router_drop_staged(const char *dir);
 /* Renames every staged file over its live name, then drops the commit mark.
  * Idempotent, so an interrupted publish can rerun. Fails with HUSH_ERR_IO. */
 static hush_status_t hush_router_publish(const char *dir);
@@ -182,8 +186,9 @@ static hush_status_t hush_router_publish_file(const char *dir, const char *name)
 static hush_status_t hush_router_mark(const char *dir);
 /* Removes the commit mark from dir. Fails with HUSH_ERR_IO. */
 static hush_status_t hush_router_unmark(const char *dir);
-/* Adapter over fsync of a directory, so renames in it survive power loss.
- * Fails with HUSH_ERR_IO. */
+/* Adapter over fsync of a directory, so renames in it survive power loss
+ * (power-loss only: a process crash keeps the page cache, so no test pins
+ * it). Fails with HUSH_ERR_IO. */
 static hush_status_t hush_router_sync_dir(const char *dir);
 /* Opens dir/lock and blocks until this process holds it exclusively. Writes
  * the holding fd to out_fd; the caller releases it with hush_router_unlock.
@@ -1079,7 +1084,8 @@ static hush_status_t hush_router_staged_path(char *out, size_t outsz,
 static hush_status_t hush_router_commit(const char *dir)
 {
     assert(dir != NULL);
-    /* Staged names must be durable before the mark can vouch for them. */
+    /* Staged names must be durable before the mark can vouch for them
+     * (power-loss only, not test-pinned). */
     HUSH_ROUTER_TRY(hush_router_sync_dir(dir));
     HUSH_ROUTER_TRY(hush_router_mark(dir));
     HUSH_ROUTER_TRY(hush_router_sync_dir(dir));
@@ -1095,9 +1101,25 @@ static hush_status_t hush_router_recover(const char *dir)
                                           HUSH_ROUTER_COMMIT));
     if (access(mark, F_OK) == 0)
         return hush_router_publish(dir);
-    if (errno == ENOENT)
-        return HUSH_OK;
-    return HUSH_ERR_IO;
+    if (errno != ENOENT)
+        return HUSH_ERR_IO;
+    return hush_router_drop_staged(dir);
+}
+
+static hush_status_t hush_router_drop_staged(const char *dir)
+{
+    char path[HUSH_HOME_PATH_MAX];
+    char staged[HUSH_ROUTER_STAGED_PATH_MAX];
+
+    assert(dir != NULL);
+    for (size_t i = 0; i < (size_t)HUSH_ROUTER_NFILES; ++i) {
+        HUSH_ROUTER_TRY(hush_router_join_file(path, sizeof path, dir,
+                                              HUSH_ROUTER_FILES[i]));
+        HUSH_ROUTER_TRY(hush_router_staged_path(staged, sizeof staged, path));
+        if (unlink(staged) != 0 && errno != ENOENT)
+            return HUSH_ERR_IO;
+    }
+    return HUSH_OK;
 }
 
 static hush_status_t hush_router_publish(const char *dir)
@@ -1105,7 +1127,8 @@ static hush_status_t hush_router_publish(const char *dir)
     assert(dir != NULL);
     for (size_t i = 0; i < (size_t)HUSH_ROUTER_NFILES; ++i)
         HUSH_ROUTER_TRY(hush_router_publish_file(dir, HUSH_ROUTER_FILES[i]));
-    /* Every rename must be durable before the mark stops vouching. */
+    /* Every rename must be durable before the mark stops vouching
+     * (power-loss only, not test-pinned). */
     HUSH_ROUTER_TRY(hush_router_sync_dir(dir));
     HUSH_ROUTER_TRY(hush_router_unmark(dir));
     return hush_router_sync_dir(dir);

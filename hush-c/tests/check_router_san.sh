@@ -23,10 +23,13 @@ if ! $cc $san "$out/probe.c" -o "$out/probe" 2>/dev/null; then
     echo "router sanitizer check: SKIP ($cc has no sanitizer runtime)"
     exit 0
 fi
+# test_router drives GET /api/router (#375 H4-2), which pulls hush_http.o and,
+# through it, the Xlib window helpers when configure found Xlib.
+x11=$(pkg-config --libs x11 2>/dev/null || true)
 # shellcheck disable=SC2086
 $cc $flags $san -fno-omit-frame-pointer tests/test_router.c src/hush_router.c \
     src/hush_json.c src/hush_json_read.c libhush.a -o "$out/test_router" \
-    -lcrypto $(pkg-config --libs libcurl) || fail "sanitized build"
+    -lcrypto $(pkg-config --libs libcurl) $x11 || fail "sanitized build"
 ASAN_OPTIONS=detect_leaks=0:halt_on_error=1:abort_on_error=0 \
     UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
     "$out/test_router" || fail "test_router under ASan/UBSan"

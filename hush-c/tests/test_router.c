@@ -2,6 +2,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <dirent.h>
 #include <fcntl.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -26,7 +27,9 @@ enum {
     ROUTER_TEST_CONTROL_BYTE = 0x01, /* escapes to six bytes, a u0001 escape */
     ROUTER_TEST_LOCK_POLLS = 20,     /* polls of the locked-out saver */
     ROUTER_TEST_POLL_NS = 10000000,  /* 10 ms per poll: 200 ms in all */
-    ROUTER_TEST_CHILD_FAIL = 3       /* child exit code when its save fails */
+    ROUTER_TEST_CHILD_FAIL = 3,      /* child exit code when its save fails */
+    ROUTER_TEST_REPLY_MAX = 4096,    /* one GET /api/router reply */
+    ROUTER_TEST_LIVE_ENTRIES = 7     /* six router files plus router/lock */
 };
 
 #define ROUTER_TEST_POLL_DIR "/poll"
@@ -97,6 +100,9 @@ static const char ROUTER_TEST_HOSTILE[] = "\"\\\n\x01\xc3\xa9";
 
 /* Lock file name inside router/ (#375 FLR-F10). */
 static const char ROUTER_TEST_LOCK[] = "lock";
+/* File inside a squat directory, so the directory is not empty. */
+static const char ROUTER_TEST_SQUAT_FILL[] = "keep";
+static const char ROUTER_TEST_HTTP_OK[] = "HTTP/1.1 200 ";
 
 /* One phase per item, so a reload that drops any phase shows (Gauge F6). */
 static const hush_router_phase_t ROUTER_TEST_PHASES[] = {
@@ -398,6 +404,70 @@ static void build_next(hush_router_graph_t *next, const hush_router_graph_t *old
     expect(result.route == route, "half route");
 }
 
+/* True when no router file has a staged copy left in dir. */
+static int no_staged(const char *dir)
+{
+    char staged[ROUTER_TEST_PATH_MAX];
+
+    for (size_t i = 0; i < (size_t)ROUTER_TEST_NFILES; ++i) {
+        join_path(staged, sizeof staged, dir, ROUTER_TEST_FILES[i],
+                  ROUTER_TEST_STAGED);
+        if (access(staged, F_OK) == 0)
+            return 0;
+    }
+    return 1;
+}
+
+/* Replaces live file name in dir with a non-empty directory, so a rename of
+ * its staged copy onto it fails. */
+static void squat_live(const char *dir, const char *name)
+{
+    char live[ROUTER_TEST_PATH_MAX];
+    char fill[ROUTER_TEST_PATH_MAX];
+
+    join_path(live, sizeof live, dir, name, "");
+    join_path(fill, sizeof fill, live, ROUTER_TEST_SQUAT_FILL, "");
+    expect(unlink(live) == 0, "pubf drop live");
+    expect(mkdir(live, ROUTER_TEST_DIR_MODE) == 0, "pubf squat dir");
+    FILE *fp = fopen(fill, "wb");
+    expect(fp != NULL && fclose(fp) == 0, "pubf squat fill");
+}
+
+/* Undoes squat_live. */
+static void unsquat_live(const char *dir, const char *name)
+{
+    char live[ROUTER_TEST_PATH_MAX];
+    char fill[ROUTER_TEST_PATH_MAX];
+
+    join_path(live, sizeof live, dir, name, "");
+    join_path(fill, sizeof fill, live, ROUTER_TEST_SQUAT_FILL, "");
+    expect(unlink(fill) == 0 && rmdir(live) == 0, "pubf unsquat");
+}
+
+/* #375 Gauge H4-1: rename k fails inside publish. The save must fail and keep
+ * the commit mark; once the squat is gone, a reload lands next whole. */
+static void check_publish_fault_at(const char *home, const hush_router_graph_t *old,
+                                   const hush_router_graph_t *next, size_t k)
+{
+    char dir[ROUTER_TEST_PATH_MAX];
+    char mark[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t loaded;
+
+    expect(mkdir(home, ROUTER_TEST_DIR_MODE) == 0, "pubf home");
+    expect(hush_router_save(old, home) == HUSH_OK, "pubf seed");
+    join_path(dir, sizeof dir, home, "router", "");
+    join_path(mark, sizeof mark, dir, ROUTER_TEST_COMMIT, "");
+    squat_live(dir, ROUTER_TEST_FILES[k]);
+    expect_at(hush_router_save(next, home) != HUSH_OK,
+              "publish rename failure not reported", home);
+    expect_at(access(mark, F_OK) == 0, "commit mark gone before renames", home);
+    unsquat_live(dir, ROUTER_TEST_FILES[k]);
+    expect(hush_router_load(&loaded, home) == HUSH_OK, "pubf reload");
+    expect_at(same_graph(&loaded, next), "publish fault lost new state", home);
+    expect_at(access(mark, F_OK) != 0, "pubf mark survived reload", home);
+    expect_at(no_staged(dir), "pubf staged left", home);
+}
+
 /* Fault injection: a directory squats on file k's staging name, so the save
  * of next fails at file k. Reload must show old whole; a retry lands next. */
 static void check_fault_at(const char *home, const hush_router_graph_t *old,
@@ -416,12 +486,14 @@ static void check_fault_at(const char *home, const hush_router_graph_t *old,
     expect(rmdir(block) == 0, "half unsquat");
     expect(hush_router_load(&loaded, home) == HUSH_OK, "half reload");
     expect_at(same_graph(&loaded, old), "half write left mixed state", home);
+    expect_at(no_staged(dir), "stale staged file survived reload", home);
     expect(hush_router_save(next, home) == HUSH_OK, "half resave");
     expect(hush_router_load(&loaded, home) == HUSH_OK, "half new reload");
     expect_at(same_graph(&loaded, next), "half retry lost new state", home);
 }
 
-/* Runs the fault at every file of one save, each in a fresh home. */
+/* Runs the staging and the publish fault at every file of one save, each in
+ * a fresh home. */
 static void check_fault_each(const char *root, const char *op,
                              const hush_router_graph_t *old,
                              const hush_router_graph_t *next)
@@ -433,27 +505,60 @@ static void check_fault_each(const char *root, const char *op,
 
         expect(n > 0 && (size_t)n < sizeof home, "half home fits");
         check_fault_at(home, old, next, k);
+        n = snprintf(home, sizeof home, "%s/pubf-%s-%u", root, op, (unsigned)k);
+        expect(n > 0 && (size_t)n < sizeof home, "pubf home fits");
+        check_publish_fault_at(home, old, next, k);
     }
 }
 
-/* Copies one whole file. Fails the test on any short read or write. */
-static void copy_file(const char *to, const char *from)
+/* Copies one whole file of at most ROUTER_TEST_FILE_MAX bytes. Returns 1 on
+ * success; 0 on an open, read or write failure or a longer file (#375 H4-4). */
+static int copy_file(const char *to, const char *from)
 {
     char body[ROUTER_TEST_FILE_MAX];
     FILE *in = fopen(from, "rb");
-    size_t n = 0;
 
-    expect(in != NULL, "half copy open");
     if (in == NULL)
-        return;
-    n = fread(body, 1, sizeof body, in);
+        return 0;
+    size_t n = fread(body, 1, sizeof body, in);
+    int whole = n < sizeof body ? feof(in) : fgetc(in) == EOF && feof(in);
+    whole = whole && !ferror(in);
     (void)fclose(in);
+    if (!whole)
+        return 0;
     FILE *out = fopen(to, "wb");
-    expect(out != NULL, "half copy create");
     if (out == NULL)
+        return 0;
+    int wrote = fwrite(body, 1, n, out) == n;
+    return fclose(out) == 0 && wrote;
+}
+
+/* Writes size bytes of filler to path. */
+static void write_filler(const char *path, size_t size)
+{
+    FILE *fp = fopen(path, "wb");
+
+    expect(fp != NULL, "copy filler open");
+    if (fp == NULL)
         return;
-    expect(fwrite(body, 1, n, out) == n, "half copy write");
-    expect(fclose(out) == 0, "half copy close");
+    for (size_t i = 0; i < size; ++i)
+        expect(fputc('x', fp) != EOF, "copy filler write");
+    expect(fclose(fp) == 0, "copy filler close");
+}
+
+/* #375 Gauge H4-4: copy_file copies a file that fills its buffer and refuses
+ * one byte more instead of truncating it. */
+static void check_copy_bound(const char *root)
+{
+    char from[ROUTER_TEST_PATH_MAX];
+    char to[ROUTER_TEST_PATH_MAX];
+
+    join_path(from, sizeof from, root, "copy-", "from");
+    join_path(to, sizeof to, root, "copy-", "to");
+    write_filler(from, (size_t)ROUTER_TEST_FILE_MAX);
+    expect(copy_file(to, from), "copy_file refused a file that fits");
+    write_filler(from, (size_t)ROUTER_TEST_FILE_MAX + 1);
+    expect(!copy_file(to, from), "copy_file truncated a long file silently");
 }
 
 /* Lays out a crash after the commit mark: every file of next staged, the
@@ -467,7 +572,7 @@ static void stage_crash(const char *dir, const char *next_dir)
     for (size_t i = 0; i < (size_t)ROUTER_TEST_NFILES; ++i) {
         join_path(from, sizeof from, next_dir, ROUTER_TEST_FILES[i], "");
         join_path(to, sizeof to, dir, ROUTER_TEST_FILES[i], ROUTER_TEST_STAGED);
-        copy_file(to, from);
+        expect(copy_file(to, from), "half copy");
     }
     join_path(mark, sizeof mark, dir, ROUTER_TEST_COMMIT, "");
     FILE *fp = fopen(mark, "wb");
@@ -744,6 +849,126 @@ static void check_save_lock(const char *root)
     expect_at(same_graph(&loaded, &next), "locked save lost state", home);
 }
 
+/* Serves GET /api/router for home in a child (HUSH_HOME is per process).
+ * Returns 1 when the child's handler succeeded and the reply is a 200. */
+static int get_router(const char *home)
+{
+    char reply[ROUTER_TEST_REPLY_MAX] = {0};
+    int fds[2];
+    int status = 0;
+
+    expect(pipe(fds) == 0, "get pipe");
+    pid_t child = fork();
+    if (child == 0) {
+        (void)close(fds[0]);
+        if (setenv("HUSH_HOME", home, 1) != 0)
+            _exit(ROUTER_TEST_CHILD_FAIL);
+        _exit(hush_api_router_get(fds[1]) == HUSH_OK ? 0 : ROUTER_TEST_CHILD_FAIL);
+    }
+    expect(child > 0, "get fork");
+    (void)close(fds[1]);
+    expect(waitpid(child, &status, 0) == child, "get reap");
+    ssize_t n = read(fds[0], reply, sizeof reply - 1);
+    (void)close(fds[0]);
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0 && n > 0 &&
+           strncmp(reply, ROUTER_TEST_HTTP_OK, strlen(ROUTER_TEST_HTTP_OK)) == 0;
+}
+
+/* Counts the entries of dir, except . and .. */
+static size_t count_entries(const char *dir)
+{
+    size_t n = 0;
+    struct dirent *entry = NULL;
+    DIR *d = opendir(dir);
+
+    expect(d != NULL, "get opendir");
+    while (d != NULL && (entry = readdir(d)) != NULL) {
+        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
+            n++;
+    }
+    if (d != NULL)
+        (void)closedir(d);
+    return n;
+}
+
+/* Records each live router file's inode, so a rename over it shows. */
+static void live_inodes(ino_t *out, const char *dir)
+{
+    char path[ROUTER_TEST_PATH_MAX];
+    struct stat st;
+
+    for (size_t i = 0; i < (size_t)ROUTER_TEST_NFILES; ++i) {
+        join_path(path, sizeof path, dir, ROUTER_TEST_FILES[i], "");
+        expect(stat(path, &st) == 0, "get stat live");
+        out[i] = st.st_ino;
+    }
+}
+
+/* #375 Gauge H4-2: without a commit mark, GET /api/router writes nothing but
+ * router/lock: same six live inodes, one new entry. */
+static void check_get_clean(const char *root, const hush_router_graph_t *old)
+{
+    char home[ROUTER_TEST_PATH_MAX];
+    char dir[ROUTER_TEST_PATH_MAX];
+    char lock[ROUTER_TEST_PATH_MAX];
+    ino_t before[ROUTER_TEST_NFILES];
+    ino_t after[ROUTER_TEST_NFILES];
+
+    join_path(home, sizeof home, root, "get-", "clean");
+    expect(mkdir(home, ROUTER_TEST_DIR_MODE) == 0, "get clean home");
+    expect(hush_router_save(old, home) == HUSH_OK, "get clean seed");
+    join_path(dir, sizeof dir, home, "router", "");
+    join_path(lock, sizeof lock, dir, ROUTER_TEST_LOCK, "");
+    expect(unlink(lock) == 0, "get drop lock");
+    live_inodes(before, dir);
+    expect_at(get_router(home), "clean GET failed", home);
+    live_inodes(after, dir);
+    expect_at(memcmp(before, after, sizeof before) == 0, "clean GET rewrote a file", home);
+    expect_at(access(lock, F_OK) == 0, "clean GET made no router/lock", home);
+    expect_at(count_entries(dir) == (size_t)ROUTER_TEST_LIVE_ENTRIES,
+              "clean GET wrote more than router/lock", home);
+}
+
+/* #375 Gauge H4-2: GET /api/router on a save interrupted after its commit
+ * mark rolls the new generation forward and drops the mark. */
+static void check_get_marked(const char *root, const hush_router_graph_t *old,
+                             const hush_router_graph_t *next)
+{
+    char home[ROUTER_TEST_PATH_MAX];
+    char spare[ROUTER_TEST_PATH_MAX];
+    char dir[ROUTER_TEST_PATH_MAX];
+    char next_dir[ROUTER_TEST_PATH_MAX];
+    hush_router_graph_t loaded;
+
+    join_path(home, sizeof home, root, "get-", "mark");
+    join_path(spare, sizeof spare, root, "get-", "next");
+    expect(mkdir(home, ROUTER_TEST_DIR_MODE) == 0, "get mark home");
+    expect(mkdir(spare, ROUTER_TEST_DIR_MODE) == 0, "get mark spare");
+    expect(hush_router_save(old, home) == HUSH_OK, "get mark seed");
+    expect(hush_router_save(next, spare) == HUSH_OK, "get mark next");
+    join_path(dir, sizeof dir, home, "router", "");
+    join_path(next_dir, sizeof next_dir, spare, "router", "");
+    stage_crash(dir, next_dir);
+    expect_at(get_router(home), "marked GET failed", home);
+    join_path(spare, sizeof spare, dir, ROUTER_TEST_COMMIT, "");
+    expect_at(access(spare, F_OK) != 0, "GET left the commit mark", home);
+    expect_at(no_staged(dir), "GET left staged files", home);
+    expect(hush_router_load(&loaded, home) == HUSH_OK, "get mark reload");
+    expect_at(same_graph(&loaded, next), "GET did not roll forward", home);
+}
+
+/* #375 Gauge H4-2: the GET path's disk writes, with and without a mark. */
+static void check_get_writes(const char *root)
+{
+    hush_router_graph_t old;
+    hush_router_graph_t next;
+
+    build_blocked(&old);
+    build_next(&next, &old, "Write the field notes", HUSH_ROUTER_ROUTE_WORK);
+    check_get_clean(root, &old);
+    check_get_marked(root, &old, &next);
+}
+
 static void check_phase4(void)
 {
     hush_router_skill_t skills[2];
@@ -809,6 +1034,8 @@ int main(void)
     check_phase_roundtrip(root);
     check_ambiguous();
     check_save_lock(root);
+    check_copy_bound(root);
+    check_get_writes(root);
     check_phase4();
     check_context();
     if (g_fail)

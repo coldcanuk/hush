@@ -158,11 +158,18 @@ hush_status_t hush_router_accept(hush_router_graph_t *graph,
 hush_status_t hush_router_drain(hush_router_graph_t *graph, char *out_line,
                                 size_t linesz, int64_t now);
 
-/* Writes the six router files under root/router. Atomic per file. */
+/* Writes the six router files under root/router as one generation: each is
+ * staged as <name>.tmp and fsynced, then a commit mark lets the set replace
+ * the old one by rename. Holds root/router/lock throughout. A failed save
+ * leaves the old generation, or the new one once its mark exists. */
 hush_status_t hush_router_save(const hush_router_graph_t *graph,
                                const char *root);
 
-/* Loads those files. A missing file is an empty array, not an error. */
+/* Loads those files. A missing file is an empty array, not an error.
+ * Not read-only when root/router exists: it creates root/router/lock, finishes
+ * a save interrupted after its commit mark (renames the staged files, removes
+ * the mark) and removes staged files an unmarked save left. Fails with
+ * HUSH_ERR_IO if it cannot, e.g. on a read-only home. */
 hush_status_t hush_router_load(hush_router_graph_t *graph, const char *root);
 
 /* Copies the bounded subgraph the Router is allowed to see.

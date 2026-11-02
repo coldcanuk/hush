@@ -31,6 +31,9 @@ hush_status_t hush_api_router_get(int fd)
 
     if (hush_api_router_root(root, sizeof root) != HUSH_OK)
         return HUSH_ERR_FULL;
+    /* A GET may write to disk: load creates router/lock, rolls forward a save
+     * interrupted after its commit mark and drops unmarked staged files
+     * (hush_router.h). When it cannot, e.g. a read-only home, this is a 500. */
     if (hush_router_load(&graph, root) != HUSH_OK) {
         hush_api_router_fail(fd, HUSH_ERR_IO);
         return HUSH_ERR_IO;
