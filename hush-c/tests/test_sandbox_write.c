@@ -6,7 +6,9 @@
  * takes a tmp + rename token refresh, never through a symlink, and no other
  * provider's does (B2). bwrap's write scope stays what it was. A stub probe script runs
  * through the real jail and reports each write. All homes and values are
- * fake; the real HOME is never used. */
+ * fake; the real HOME is never used. #375 H10 pins: an existing file above
+ * HOME, a symlink or a cross-directory rename into the own auth dir, every
+ * XDG home outside HOME, and a non-provider job sharing a provider prefix. */
 
 #define _XOPEN_SOURCE 700
 
@@ -36,11 +38,29 @@ static const char WRITE_TEST_DATA_REL[] = ".local/share";
 static const char WRITE_TEST_TOKEN[] = "{\"fake\":true}\n";
 /* What an own-token run may not reach: a symlink target outside HOME. */
 static const char WRITE_TEST_TARGET[] = "{\"target\":true}\n";
-/* argv: dump outside tree auth pts. Prints name=ok or name=fail:<error>. */
+/* An existing file in the test root, an ancestor of HOME (H10-1). */
+static const char WRITE_TEST_ANC[] = "{\"ancestor\":true}\n";
+/* Every XDG home the jail filters, XDG_STATE_HOME last: a dropped entry at
+ * the end of environ is where a missing NULL terminator shows (H10-3). */
+static const char *const WRITE_TEST_XDG[] = {
+    "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME",
+};
+
+enum {
+    WRITE_TEST_NXDG = sizeof WRITE_TEST_XDG / sizeof WRITE_TEST_XDG[0]
+};
+
+/* argv: dump outside tree auth pts anc. Prints name=ok or name=fail:<error>.
+ * ok runs a command and prints name=ok or name=fail. rn is rename(2) alone,
+ * so a refused cross-directory rename cannot fall back to copy (H10-2).
+ * env_dups reads the env the jail exec'd with (/proc), which sh dedups. */
 static const char WRITE_TEST_PROBE[] =
     "#!/bin/sh\n"
     "try() { if err=$( { : > \"$2\"; } 2>&1 ); then echo \"$1=ok\"; "
     "else echo \"$1=fail:$err\"; fi; }\n"
+    "ok() { n=$1; shift; if \"$@\" 2>/dev/null; then echo \"$n=ok\"; "
+    "else echo \"$n=fail\"; fi; }\n"
+    "rn() { python3 -c 'import os,sys; os.rename(sys.argv[1], sys.argv[2])' \"$1\" \"$2\"; }\n"
     "{\n"
     "try cwd \"$PWD/w.txt\"; try home \"$HOME/w.txt\"\n"
     "try tmpdir \"${TMPDIR:-/nonexistent}/w.txt\"\n"
@@ -63,6 +83,17 @@ static const char WRITE_TEST_PROBE[] =
     "echo \"XDG_DATA_HOME=${XDG_DATA_HOME:-unset}\"\n"
     "if cat \"$HOME/.grok/auth.json\" > /dev/null 2>&1; then echo auth_read=ok; "
     "else echo auth_read=fail; fi\n"
+    "try ancfile \"$6\"\n"
+    "ok cwdsym ln -s /nonexistent \"$PWD/lnk\"; ok groksym ln -s /nonexistent \"$HOME/.grok/lnk\"\n"
+    "rm -f \"$PWD/lnk\" \"$HOME/.grok/lnk\" 2>/dev/null\n"
+    "echo r > \"$PWD/mv.txt\"; ok cwdrename rn \"$PWD/mv.txt\" \"$PWD/mv2.txt\"\n"
+    "ok intorefer rn \"$PWD/mv2.txt\" \"$HOME/.grok/mv.txt\"\n"
+    "rm -f \"$PWD/mv.txt\" \"$PWD/mv2.txt\" \"$HOME/.grok/mv.txt\" 2>/dev/null\n"
+    "echo \"XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-unset}\"\n"
+    "echo \"XDG_STATE_HOME=${XDG_STATE_HOME:-unset}\"\n"
+    "if [ -r /proc/$$/environ ]; then\n"
+    "echo \"env_dups=$(tr '\\0' '\\n' < /proc/$$/environ | sort | uniq -d | wc -l)\"\n"
+    "else echo env_dups=unread; fi\n"
     "} > \"$1\"\n";
 
 /* Paths one run needs, all under the test root except tree. */
@@ -73,6 +104,8 @@ typedef struct {
     char tree[WRITE_TEST_PATH_MAX * 2];
     char auth[WRITE_TEST_PATH_MAX];
     char pts[WRITE_TEST_PATH_MAX];
+    char anc[WRITE_TEST_PATH_MAX];
+    int xdg_outside; /* 1: every XDG home outside HOME, else data inside */
 } write_test_ctx_t;
 
 static int g_fail;
@@ -137,7 +170,30 @@ static int wrote(const char *dump, const char *name)
     return strcmp(field(dump, name, value, sizeof value), "ok") == 0;
 }
 
-/* Runs the probe as file (probe, grok or codex) jailed under backend; its
+/* Sets the child's XDG homes: XDG_DATA_HOME inside home, or with
+ * ctx->xdg_outside all of WRITE_TEST_XDG under the test root, appended in
+ * order so XDG_STATE_HOME ends environ. Returns 1 on success. */
+static int set_child_xdg(const write_test_ctx_t *ctx, const char *home)
+{
+    char path[WRITE_TEST_PATH_MAX * 2];
+
+    if (!ctx->xdg_outside) {
+        join(path, sizeof path, home, WRITE_TEST_DATA_REL);
+        return setenv("XDG_DATA_HOME", path, 1) == 0;
+    }
+    for (size_t i = 0; i < (size_t)WRITE_TEST_NXDG; ++i) {
+        if (unsetenv(WRITE_TEST_XDG[i]) != 0)
+            return 0;
+    }
+    for (size_t i = 0; i < (size_t)WRITE_TEST_NXDG; ++i) {
+        join(path, sizeof path, ctx->root, WRITE_TEST_XDG[i]);
+        if (setenv(WRITE_TEST_XDG[i], path, 1) != 0)
+            return 0;
+    }
+    return 1;
+}
+
+/* Runs the probe as file (probe, grok, codex or copilot) jailed under backend; its
  * dump lands in out. The child starts in "/", so only the jail can put it in
  * its job cwd. Returns 1 when the jail ran it, 0 when the jail refused. */
 static int run_probe(char *out, size_t outsz, const write_test_ctx_t *ctx,
@@ -145,7 +201,6 @@ static int run_probe(char *out, size_t outsz, const write_test_ctx_t *ctx,
 {
     char home[WRITE_TEST_PATH_MAX];
     char dump[WRITE_TEST_PATH_MAX];
-    char data[WRITE_TEST_PATH_MAX * 2];
     int status = 0;
 
     out[0] = '\0';
@@ -156,9 +211,8 @@ static int run_probe(char *out, size_t outsz, const write_test_ctx_t *ctx,
     if (pid == 0) {
         hush_sandbox_job_t job = {ctx->cwd, home, 0};
         char *argv[] = {(char *)file, dump, (char *)ctx->outside, (char *)ctx->tree,
-                        (char *)ctx->auth, (char *)ctx->pts, NULL};
-        join(data, sizeof data, home, WRITE_TEST_DATA_REL);
-        if (setenv("XDG_DATA_HOME", data, 1) == 0 && chdir("/") == 0)
+                        (char *)ctx->auth, (char *)ctx->pts, (char *)ctx->anc, NULL};
+        if (set_child_xdg(ctx, home) && chdir("/") == 0)
             (void)hush_sandbox_exec(&job, file, argv);
         _exit(WRITE_TEST_EXEC_FAIL);
     }
@@ -221,6 +275,7 @@ static void check_landlock_writes(const char *dump)
            "landlock: a token file writable by a non-provider binary");
     expect(!wrote(dump, "grokrename") && !wrote(dump, "codexrename"),
            "landlock: an auth dir writable by a non-provider binary");
+    expect(!wrote(dump, "ancfile"), "H10-1: a file above HOME writable");
 }
 
 /* #375 N2 rulings 2-3 under Landlock: device nodes and XDG homes. */
@@ -243,6 +298,8 @@ static void check_landlock_devs(const char *dump)
     expect(strstr(field(dump, "XDG_DATA_HOME", value, sizeof value),
                   WRITE_TEST_DATA_REL) != NULL,
            "landlock: XDG_DATA_HOME inside HOME dropped");
+    expect(strcmp(field(dump, "env_dups", value, sizeof value), "0") == 0,
+           "landlock: env holds a duplicate entry");
 }
 
 /* #375 N2 rule 7: bwrap's scope as it was at 230b43ef (ev12/before.log). */
@@ -291,16 +348,18 @@ static void make_token(const char *home, const char *dir)
     write_text(file, WRITE_TEST_TOKEN, S_IRUSR | S_IWUSR);
 }
 
-/* Builds the fake real HOME (fake .grok and .codex tokens), cwd, outside dir
- * and probes (as probe, grok and codex) under a fresh /tmp root. Returns 1
- * on success. */
+/* Builds the fake real HOME (fake .grok and .codex tokens), cwd, outside dir,
+ * the ancestor file and probes (as probe, grok, codex and copilot) under a
+ * fresh /tmp root, with TMPDIR unset. Returns 1 on success. */
 static int make_ctx(write_test_ctx_t *ctx, const char *start)
 {
     char path[WRITE_TEST_PATH_MAX * 2];
 
     snprintf(ctx->root, sizeof ctx->root, "/tmp/hush-sandbox-write-XXXXXX");
-    if (mkdtemp(ctx->root) == NULL)
+    /* The bwrap pin reads TMPDIR as unset, whatever the caller's (H10-6). */
+    if (mkdtemp(ctx->root) == NULL || unsetenv("TMPDIR") != 0)
         return 0;
+    ctx->xdg_outside = 0;
     join(ctx->cwd, sizeof ctx->cwd, ctx->root, "cwd");
     join(ctx->outside, sizeof ctx->outside, ctx->root, "outside");
     join(path, sizeof path, ctx->root, "home");
@@ -317,11 +376,14 @@ static int make_ctx(write_test_ctx_t *ctx, const char *start)
     write_probe(path, "probe");
     write_probe(path, "grok");
     write_probe(path, "codex");
+    write_probe(path, "copilot");
     char search[WRITE_TEST_PATH_MAX * 3];
     snprintf(search, sizeof search, "%s:%s", path, WRITE_TEST_SYS_PATH);
     expect(setenv("PATH", search, 1) == 0, "PATH");
     join(path, sizeof path, ctx->root, "xdg-cache");
     expect(setenv("XDG_CACHE_HOME", path, 1) == 0, "outside XDG");
+    join(ctx->anc, sizeof ctx->anc, ctx->root, "anc.txt");
+    write_text(ctx->anc, WRITE_TEST_ANC, S_IRUSR | S_IWUSR);
     return 1;
 }
 
@@ -355,6 +417,55 @@ static int landlock_as(char *dump, size_t dumpsz, const write_test_ctx_t *ctx,
     return ran;
 }
 
+/* H10-2: the own auth dir takes no symlink and no file renamed in from the
+ * job cwd, while the cwd takes both (so a refusal is the jail's). */
+static void check_token_links_made(const char *dump)
+{
+    expect(wrote(dump, "cwdsym") && wrote(dump, "cwdrename"),
+           "H10-2: control symlink or rename in the job cwd failed");
+    expect(!wrote(dump, "groksym"), "H10-2: grok auth dir takes a symlink");
+    expect(!wrote(dump, "intorefer"), "H10-2: grok auth dir takes a rename from the cwd");
+}
+
+/* H10-4: a job whose binary shares a provider's first letters (copilot,
+ * codex) gets neither provider's auth dir. */
+static void check_other_provider(char *dump, size_t dumpsz, const write_test_ctx_t *ctx)
+{
+    if (!landlock_as(dump, dumpsz, ctx, "copilot"))
+        return;
+    expect(wrote(dump, "cwd"), "H10-4: copilot job cwd not writable");
+    expect(!wrote(dump, "codexfile") && !wrote(dump, "codexrename"),
+           "H10-4: codex auth dir writable by copilot");
+    expect(!wrote(dump, "grokfile") && !wrote(dump, "grokrename"),
+           "H10-4: grok auth dir writable by copilot");
+}
+
+/* Fails the test unless the dump shows name unset. */
+static void expect_unset(const char *dump, const char *name)
+{
+    char value[WRITE_TEST_PATH_MAX];
+    char msg[WRITE_TEST_PATH_MAX];
+
+    snprintf(msg, sizeof msg, "H10-3: %s outside HOME kept", name);
+    expect(strcmp(field(dump, name, value, sizeof value), "unset") == 0, msg);
+}
+
+/* H10-3: every XDG home outside HOME, XDG_STATE_HOME last in environ, is
+ * dropped, and the compacted env (NULL-terminated) repeats no entry. */
+static void check_xdg_outside(char *dump, size_t dumpsz, const write_test_ctx_t *ctx)
+{
+    write_test_ctx_t outside = *ctx;
+    char value[WRITE_TEST_PATH_MAX];
+
+    outside.xdg_outside = 1;
+    if (!landlock_as(dump, dumpsz, &outside, "probe"))
+        return;
+    for (size_t i = 0; i < (size_t)WRITE_TEST_NXDG; ++i)
+        expect_unset(dump, WRITE_TEST_XDG[i]);
+    expect(strcmp(field(dump, "env_dups", value, sizeof value), "0") == 0,
+           "H10-3: env holds a duplicate entry");
+}
+
 /* B2: the own auth dir takes an in-place write and a tmp + rename refresh
  * but no new subdirectory; the other provider's dir takes neither. */
 static void check_own_tokens(char *dump, size_t dumpsz, const write_test_ctx_t *ctx)
@@ -365,6 +476,7 @@ static void check_own_tokens(char *dump, size_t dumpsz, const write_test_ctx_t *
         expect(wrote(dump, "grokrename"), "B2: grok tmp + rename refresh fails");
         expect(!wrote(dump, "codexrename"), "B2: codex token dir writable by grok");
         expect(!wrote(dump, "grokmkdir"), "B2: grok auth dir takes a subdirectory");
+        check_token_links_made(dump);
     }
     if (landlock_as(dump, dumpsz, ctx, "codex")) {
         expect(wrote(dump, "codexfile"), "B2: codex's own token not writable");
@@ -427,7 +539,8 @@ static void check_token_links(char *dump, size_t dumpsz, const write_test_ctx_t 
     sweep_leaks(ctx);
 }
 
-/* The Landlock legs: write scope, devices, own tokens, token links. */
+/* The Landlock legs: write scope, devices, XDG homes, other providers, own
+ * tokens, token links. */
 static void check_landlock(char *dump, size_t dumpsz, const write_test_ctx_t *ctx)
 {
     char real[WRITE_TEST_PATH_MAX];
@@ -438,6 +551,9 @@ static void check_landlock(char *dump, size_t dumpsz, const write_test_ctx_t *ct
         expect(strcmp(field(dump, "pwd_real", real, sizeof real), ctx->cwd) == 0,
                "landlock: child cwd is not its job cwd");
     }
+    expect(holds(ctx->anc, WRITE_TEST_ANC), "H10-1: a file above HOME changed");
+    check_xdg_outside(dump, dumpsz, ctx);
+    check_other_provider(dump, dumpsz, ctx);
     check_own_tokens(dump, dumpsz, ctx);
     check_token_links(dump, dumpsz, ctx);
 }
@@ -460,6 +576,8 @@ int main(void)
     if (run_probe(dump, sizeof dump, &ctx, "bwrap", "probe")) {
         show(dump, "bwrap");
         check_bwrap(dump);
+        /* bwrap's /tmp is a private tmpfs, so ancfile may "write" there. */
+        expect(holds(ctx.anc, WRITE_TEST_ANC), "bwrap: a file above HOME changed");
     }
     else
         printf("sandbox write: bwrap SKIP (UNKNOWN: jail refused; leg not exercised)\n");
