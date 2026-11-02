@@ -41,15 +41,6 @@ typedef enum {
     HUSH_SANDBOX_BACKEND_BWRAP = 2
 } hush_sandbox_backend_t;
 
-/* How a jailed Grok Build child signs in (#375 PA1). OAUTH, the zero value,
- * strips XAI_API_KEY and GROK_* from a grok child, so no key leaks in from
- * the relay env. API_KEY keeps them, for a job explicitly configured to use
- * an API key. Children of other binaries ignore it. */
-typedef enum {
-    HUSH_SANDBOX_CRED_OAUTH = 0,
-    HUSH_SANDBOX_CRED_API_KEY = 1
-} hush_sandbox_cred_t;
-
 /* What one child may not touch. deny[] and cwd are canonical paths. */
 typedef struct {
     char deny[HUSH_SANDBOX_DENY_MAX][HUSH_SANDBOX_PATH_MAX];
@@ -85,17 +76,16 @@ void hush_sandbox_home_remove(char *home, size_t homesz);
 int hush_sandbox_env_allowed(const char *entry);
 
 /* 1 when name=value may reach a child exec'ing file: the shared allowlist,
- * minus XAI_API_KEY and GROK_* when file is grok and cred is not API_KEY
- * (no implicit key, #375 PA1). A NULL file applies the shared allowlist. */
-int hush_sandbox_env_allowed_for(const char *entry, const char *file,
-                                 hush_sandbox_cred_t cred);
+ * minus XAI_API_KEY and GROK_* when file is grok, so no key leaks in
+ * implicitly (#375 PA1; the job default is OAuth until the M8 resolver adds
+ * API-key jobs). A NULL file applies the shared allowlist alone. */
+int hush_sandbox_env_allowed_for(const char *entry, const char *file);
 
 /* Replaces environ with its allowlisted entries (pointers, no copies). */
 void hush_sandbox_scrub_env(void);
 
-/* Like hush_sandbox_scrub_env, filtered for the binary file about to run
- * and how it signs in. */
-void hush_sandbox_scrub_env_for(const char *file, hush_sandbox_cred_t cred);
+/* Like hush_sandbox_scrub_env, filtered for the binary file about to run. */
+void hush_sandbox_scrub_env_for(const char *file);
 
 /* Landlock ABI of this kernel, or 0 when Landlock is unavailable. */
 int hush_sandbox_abi(void);
@@ -120,8 +110,6 @@ typedef struct {
     const char *cwd;
     const char *home;
     uint16_t relay_port;
-    /* Grok sign-in. Leave OAUTH unless the job chose an API key. */
-    hush_sandbox_cred_t cred;
 } hush_sandbox_job_t;
 
 /* Jails this child and execs file. Returns only on failure. */

@@ -1,9 +1,9 @@
 /* tests/test_sandbox_env.c: #375 PA1, no implicit key leak. A jailed grok
- * child of an OAuth job (the default) never sees XAI_API_KEY or any GROK_*
- * variable; one whose job chose an API key keeps them; another provider's
- * child gets its allowlisted keys either way. A stub grok and a stub codex
- * first on PATH dump their env into the job cwd, so no real CLI ever starts.
- * All values are fake. */
+ * child of a default (OAuth) Grok Build job never sees XAI_API_KEY or any
+ * GROK_* variable; another provider child still gets its allowlisted keys.
+ * There is no API-key job to pin until the M8 resolver lands. A stub grok and a stub codex first
+ * on PATH dump their env into the job cwd, so no real CLI ever starts. All
+ * values are fake. */
 
 #define _POSIX_C_SOURCE 200809L
 
@@ -71,8 +71,7 @@ static void put_fake(const char *entry)
 
 /* Runs name jailed in cwd; it dumps its env to cwd/name.env, read into out.
  * Returns 1 when the jail ran the stub, 0 when the jail refused it. */
-static int run_jailed(char *out, size_t outsz, const char *cwd, const char *name,
-                      hush_sandbox_cred_t cred)
+static int run_jailed(char *out, size_t outsz, const char *cwd, const char *name)
 {
     char home[ENV_TEST_PATH_MAX];
     char dump[ENV_TEST_PATH_MAX * 2];
@@ -83,7 +82,7 @@ static int run_jailed(char *out, size_t outsz, const char *cwd, const char *name
     expect(hush_sandbox_home_make(home, sizeof home) == HUSH_OK, "stub home");
     pid_t pid = fork();
     if (pid == 0) {
-        hush_sandbox_job_t job = {cwd, home, ENV_TEST_RELAY_PORT, cred};
+        hush_sandbox_job_t job = {cwd, home, ENV_TEST_RELAY_PORT};
         char *argv[] = {(char *)name, dump, NULL};
 
         if (chdir(cwd) == 0)
@@ -118,32 +117,14 @@ static int has_line(const char *dump, const char *entry)
     return 0;
 }
 
-/* A grok child that chose an API key keeps XAI_API_KEY and GROK_FOO, and a
- * codex child keeps all four fakes, whatever cred its job carries. */
-static void check_keyed(char *dump, size_t dumpsz, const char *root)
-{
-    expect(run_jailed(dump, dumpsz, root, "grok", HUSH_SANDBOX_CRED_API_KEY),
-           "jail refused the API-key grok stub");
-    expect(has_line(dump, ENV_TEST_XAI), "API-key grok job lost XAI_API_KEY");
-    expect(has_line(dump, ENV_TEST_GROK), "API-key grok job lost GROK_FOO");
-    for (int cred = HUSH_SANDBOX_CRED_OAUTH; cred <= HUSH_SANDBOX_CRED_API_KEY; ++cred) {
-        expect(run_jailed(dump, dumpsz, root, "codex", (hush_sandbox_cred_t)cred),
-               "jail refused the codex stub");
-        expect(has_line(dump, ENV_TEST_XAI), "codex child lost XAI_API_KEY");
-        expect(has_line(dump, ENV_TEST_OPENAI), "codex child lost OPENAI_API_KEY");
-        expect(has_line(dump, ENV_TEST_CODEX), "codex child lost CODEX_FOO");
-        expect(has_line(dump, ENV_TEST_GROK), "codex child lost GROK_FOO");
-    }
-}
-
-/* Forces one jail backend, then runs the stubs under it. A refused jail
+/* Forces one jail backend, then runs both stubs under it. A refused jail
  * fails only for the detected backend; a forced bwrap may be absent. */
 static void check_backend(const char *root, const char *backend, int required)
 {
     static char dump[ENV_TEST_DUMP_MAX];
 
     expect(setenv("HUSH_SANDBOX_BACKEND", backend, 1) == 0, "backend env");
-    if (!run_jailed(dump, sizeof dump, root, "grok", HUSH_SANDBOX_CRED_OAUTH)) {
+    if (!run_jailed(dump, sizeof dump, root, "grok")) {
         expect(!required, "detected jail refused the grok stub");
         printf("sandbox env: %s SKIP (jail refused)\n", backend);
         return;
@@ -151,7 +132,11 @@ static void check_backend(const char *root, const char *backend, int required)
     expect(!has_line(dump, ENV_TEST_XAI), "OAuth grok job got XAI_API_KEY");
     expect(!has_line(dump, ENV_TEST_GROK), "OAuth grok job got GROK_FOO");
     expect(has_line(dump, ENV_TEST_OPENAI), "grok child lost the shared allowlist");
-    check_keyed(dump, sizeof dump, root);
+    expect(run_jailed(dump, sizeof dump, root, "codex"), "jail refused the codex stub");
+    expect(has_line(dump, ENV_TEST_XAI), "codex child lost XAI_API_KEY");
+    expect(has_line(dump, ENV_TEST_OPENAI), "codex child lost OPENAI_API_KEY");
+    expect(has_line(dump, ENV_TEST_CODEX), "codex child lost CODEX_FOO");
+    expect(has_line(dump, ENV_TEST_GROK), "codex child lost GROK_FOO");
 }
 
 int main(void)

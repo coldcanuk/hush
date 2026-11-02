@@ -349,8 +349,7 @@ static void hush_canvas_exec_grok(int write_fd, const hush_canvas_job_t *job)
         close(dn);
     }
     /* The canvas robot is an agent child too: jailed, or it does not run (#336). */
-    hush_sandbox_job_t jail = {job->cwd, job->stub_home, hush_http_listen_port(),
-                               HUSH_SANDBOX_CRED_OAUTH};
+    hush_sandbox_job_t jail = {job->cwd, job->stub_home, hush_http_listen_port()};
     /* An unready Grok yields no completion rather than an unchecked run (#356). */
     char why[HUSH_CANVAS_READ_MAX] = {0};
     if (hush_canvas_grok_argv(job, argv, HUSH_CANVAS_ARGV_MAX) == 0 ||
