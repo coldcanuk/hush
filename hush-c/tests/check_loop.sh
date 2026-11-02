@@ -53,6 +53,8 @@ mkdir -p "$bin_dir" "$stubs" "$home/.grok" "$HUSH_CONFIG_DIR" "$HUSH_HOME" "$bin
 # partner.prefix, when present, open every reply (runaway probes).
 cat > "$bin_dir/grok" <<'GROK'
 #!/bin/sh
+# Readiness probes (#356): answer --version and --help, run nothing.
+case "$1" in --version) echo "grok 0.2.50"; exit 0;; --help) echo "--permission-mode dontAsk --allow --deny --disallowed-tools"; exit 0;; esac
 log="@STUBS@/grok-p.log"
 dir="@STUBS@/loop"
 prev=""

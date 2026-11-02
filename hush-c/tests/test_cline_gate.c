@@ -1,8 +1,9 @@
-/* tests/test_cline_gate.c: #311 A3. A Cline turn in a project-bound thread
- * gets "--auto-approve true" (every tool, shell included) only behind a
- * person gate: the hive owner asked for the turn, or the owner answered
- * Yes to it under Approve every action. A guest's mention in the same
- * thread under the default Auto-approve runs with "--auto-approve false".
+/* tests/test_cline_gate.c: #311 A3, #356. Every Cline turn runs with
+ * "--auto-approve false", gated or not: headless Cline then denies any tool
+ * call that needs a person, so no turn gets a native shell (CoS 11:00). A
+ * person-gated project turn (the hive owner asked, or the owner answered Yes
+ * under Approve every action) keeps only the project cwd and 300 s clock; a
+ * guest's mention under the default Auto-approve keeps the 80 s chat clock.
  * Drives the real mention path on a real store and launch; a stub cline
  * first on PATH records its argv, so no real runtime ever starts. */
 
@@ -43,7 +44,8 @@ enum {
 /* A signed-in Cline as the provider scan sees it. */
 #define GATE_CLINE_LOGIN "{\"providers\":{\"anthropic\":{\"apiKey\":\"test\"}}}\n"
 #define GATE_PROJECT "Site"
-#define GATE_APPROVE_ON "--auto-approve\ntrue\n"
+/* Any value but "false" would hand Cline its tools unasked (#356). */
+#define GATE_APPROVE_ANY "--auto-approve\n"
 #define GATE_APPROVE_OFF "--auto-approve\nfalse\n"
 /* --timeout follows the job clock (#310): project 300 s, chat 80 s. */
 #define GATE_TIMEOUT_PROJECT "--timeout\n300\n"
@@ -256,8 +258,8 @@ static int argv_has(gate_fixture_t *fx, const char *want)
     return 0;
 }
 
-/* The owner's own mention in a project thread runs Cline with every tool
- * and the project clock (#310, #311). */
+/* The owner's own mention in a project thread runs Cline on the project
+ * clock (#310, #311) with tool auto-approve still off (#356). */
 static void check_owner_auto(void)
 {
     static gate_fixture_t fx;
@@ -266,8 +268,8 @@ static void check_owner_auto(void)
     open_hive(&fx, HUSH_ROSTER_APPROVAL_AUTO_ID);
     owner = fx.launch.human.pubkey_hex;
     mention_in_project(&fx, owner, owner);
-    expect(argv_has(&fx, GATE_APPROVE_ON GATE_TIMEOUT_PROJECT),
-           "the owner's project turn runs Cline with tools on and the 300 s clock");
+    expect(argv_has(&fx, GATE_APPROVE_OFF GATE_TIMEOUT_PROJECT),
+           "the owner's project turn runs Cline with tools off and the 300 s clock");
     close_hive(&fx);
 }
 
@@ -297,19 +299,19 @@ static void check_guest_thread(void)
 }
 
 /* Under Approve every action the owner's Yes is the person gate, so the
- * guest's approved turn gets the project tools. */
+ * guest's approved turn gets the project clock, still with tools off. */
 static void check_guest_yes(void)
 {
     static gate_fixture_t fx;
 
     open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
     mention_in_project(&fx, fx.launch.human.pubkey_hex, GATE_GUEST_PUB);
-    expect(!argv_has(&fx, GATE_APPROVE_ON), "a held guest turn starts nothing");
+    expect(!argv_has(&fx, GATE_APPROVE_ANY), "a held guest turn starts nothing");
     fill_note(&fx.ev, fx.launch.human.pubkey_hex, "Yes", fx.root.id);
     expect(hush_store_insert(fx.store, &fx.ev) == HUSH_OK, "yes insert");
     hush_intel_consider(fx.store, &fx.launch, &fx.ev);
-    expect(argv_has(&fx, GATE_APPROVE_ON GATE_TIMEOUT_PROJECT),
-           "the owner's Yes opens the project tools for the guest's turn");
+    expect(argv_has(&fx, GATE_APPROVE_OFF GATE_TIMEOUT_PROJECT),
+           "the owner's Yes gives the guest's turn the project clock, tools still off");
     close_hive(&fx);
 }
 

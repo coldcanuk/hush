@@ -23,6 +23,7 @@
 #include "hush_provider.h"
 #include "hush_http.h"
 #include "hush_sandbox.h"
+#include "hush_cli_gate.h"
 
 #define HUSH_AGENT_DEVNULL "/dev/null"
 #define HUSH_AGENT_DISALLOWED \
@@ -51,25 +52,36 @@
 /* File edits only, and only for a person-gated project turn. */
 #define HUSH_AGENT_COPILOT_ALLOW_PROJECT "--allow-tool=write"
 #define HUSH_AGENT_COPILOT_CD "-C"
+/* G5 (#356): no built-in MCP servers (github-mcp-server is a tool route
+ * outside the denied kinds) and no system temp dir access. */
+#define HUSH_AGENT_COPILOT_NO_MCP "--disable-builtin-mcps"
+#define HUSH_AGENT_COPILOT_NO_TMP "--disallow-temp-dir"
 /* Goose runs chat-only on every turn: no tools, no extensions. "approve"
  * asks only for write tools and a per-tool Always Allow overrides it, and
  * "smart_approve" auto-approves low-risk calls, so neither is a gate (#333). */
 #define HUSH_AGENT_GOOSE_MODE_ENV "GOOSE_MODE"
 #define HUSH_AGENT_GOOSE_MODE_CHAT "chat"
-#define HUSH_AGENT_CLINE_APPROVE_ON "true"
+/* Cline never auto-approves tools, gated or not (#356): headless Cline then
+ * denies every tool call that would need a person. */
 #define HUSH_AGENT_CLINE_APPROVE_OFF "false"
 #define HUSH_AGENT_CLINE_BIN "cline"
 
 enum {
-    /* copilot, -p, prompt, --excluded-tools, --deny-tool, NULL */
-    HUSH_AGENT_COPILOT_BASE_SLOTS = 6,
+    /* copilot, -p, prompt, --excluded-tools, --deny-tool,
+     * --disable-builtin-mcps, --disallow-temp-dir, NULL */
+    HUSH_AGENT_COPILOT_BASE_SLOTS = 8,
     /* --allow-tool=write on a person-gated project turn */
     HUSH_AGENT_COPILOT_GRANT_SLOTS = 1,
     /* -C and the job directory */
     HUSH_AGENT_COPILOT_DIR_SLOTS = 2,
     /* Entries in hush_agent_copilot_env_scrub. */
-    HUSH_AGENT_COPILOT_SCRUB_COUNT = 4
+    HUSH_AGENT_COPILOT_SCRUB_COUNT = 4,
+    /* Grok argv: 21 fixed entries, the permission policy, then NULL. */
+    HUSH_AGENT_GROK_FIXED_SLOTS = 21,
+    HUSH_AGENT_GROK_SLOTS = HUSH_AGENT_GROK_FIXED_SLOTS + HUSH_CLI_GROK_POLICY_SLOTS + 1
 };
+
+_Static_assert((int)HUSH_AGENT_GROK_SLOTS <= (int)HUSH_AGENT_ARGV_MAX, "grok argv fits");
 
 /* Environment that would auto-approve Copilot tools or load repo hooks,
  * extensions or workspace MCP servers in -p mode. The child never keeps it. */
@@ -358,6 +370,12 @@ static void hush_agent_exec_child(int write_fd, const hush_agent_job_t *job)
     _exit(HUSH_AGENT_EXEC_FAILURE);
 }
 
+/* The HUSH_JOB_ERR reason when the jail refuses: its own, or the default. */
+static const char *hush_agent_jail_reason(const char *why)
+{
+    return why[0] != '\0' ? why : "agent sandbox unavailable: need Landlock ABI>=4 or bwrap";
+}
+
 /* Every provider CLI execs through here: inside the jail, or not at all
  * (#336 parts 1 and 2). See hush_sandbox.h for what the jail denies. */
 static void hush_agent_exec_jailed(const hush_agent_job_t *job, const char *file,
@@ -367,12 +385,8 @@ static void hush_agent_exec_jailed(const hush_agent_job_t *job, const char *file
                                .relay_port = hush_http_listen_port()};
 
     assert(job != NULL && file != NULL && argv != NULL);
-    if (hush_sandbox_exec(&jail, file, argv) == HUSH_ERR_DENIED) {
-        const char *why = hush_sandbox_why();
-        hush_agent_worker_err(STDOUT_FILENO,
-                              why[0] != '\0' ? why
-                              : "agent sandbox unavailable: need Landlock ABI>=4 or bwrap");
-    }
+    if (hush_sandbox_exec(&jail, file, argv) == HUSH_ERR_DENIED)
+        hush_agent_worker_err(STDOUT_FILENO, hush_agent_jail_reason(hush_sandbox_why()));
     _exit(HUSH_AGENT_EXEC_FAILURE);
 }
 
@@ -433,18 +447,6 @@ int hush_agent_cline_timeout_s(int project_tools)
     return HUSH_AGENT_CLINE_TIMEOUT_S;
 }
 
-/* Headless Cline denies a tool call that still needs a person. project_tools
- * is 1 only for a turn in a project-bound thread that passed a person gate:
- * the hive owner asked for it, or the owner answered Yes to it (#311 A3,
- * hush_agent_apply_project_cwd). Every other job stays "false", so it does
- * not gain a shell. */
-const char *hush_agent_cline_approve(int project_tools)
-{
-    if (project_tools)
-        return HUSH_AGENT_CLINE_APPROVE_ON;
-    return HUSH_AGENT_CLINE_APPROVE_OFF;
-}
-
 void hush_agent_cline_argv(hush_agent_cline_argv_t *out, const hush_agent_job_t *job,
                            char *prompt)
 {
@@ -463,7 +465,7 @@ void hush_agent_cline_argv(hush_agent_cline_argv_t *out, const hush_agent_job_t 
     out->argv[2] = (char *)"--cwd";
     out->argv[3] = (char *)job->cwd;
     out->argv[4] = (char *)"--auto-approve";
-    out->argv[5] = (char *)hush_agent_cline_approve(job->project_tools);
+    out->argv[5] = (char *)HUSH_AGENT_CLINE_APPROVE_OFF;
     out->argv[6] = (char *)"--timeout";
     out->argv[7] = out->timeout;
     out->argv[8] = prompt;
@@ -535,6 +537,8 @@ int hush_agent_fill_copilot_argv(const hush_agent_job_t *job, char **argv,
     argv[n++] = (char *)prompt;
     argv[n++] = (char *)HUSH_AGENT_COPILOT_EXCLUDED;
     argv[n++] = (char *)hush_agent_copilot_deny(job->project_tools);
+    argv[n++] = (char *)HUSH_AGENT_COPILOT_NO_MCP;
+    argv[n++] = (char *)HUSH_AGENT_COPILOT_NO_TMP;
     if (hush_agent_is_gated(job->project_tools))
         argv[n++] = (char *)HUSH_AGENT_COPILOT_ALLOW_PROJECT;
     if (job->cwd[0] != '\0') {
@@ -551,38 +555,62 @@ int hush_agent_set_goose_mode(void)
     return setenv(HUSH_AGENT_GOOSE_MODE_ENV, HUSH_AGENT_GOOSE_MODE_CHAT, 1) == 0;
 }
 
+/* Refuses the turn with spec->why unless spec's CLI passes its readiness
+ * probes inside this job's jail (#356). Returns only when it passed. */
+static void hush_agent_require_ready(const hush_agent_job_t *job, const hush_cli_spec_t *spec)
+{
+    hush_sandbox_job_t jail = {.cwd = job->cwd, .home = job->stub_home,
+                               .relay_port = hush_http_listen_port()};
+
+    char why[HUSH_AGENT_DIAG_MAX] = {0};
+    hush_status_t st = HUSH_ERR_DENIED;
+
+    assert(job != NULL && spec != NULL);
+    st = hush_cli_ready(spec, &jail, why, sizeof(why));
+    if (st == HUSH_OK)
+        return;
+    /* A jail refusal keeps its own reason; anything else is unverified. */
+    hush_agent_worker_err(STDOUT_FILENO, st == HUSH_ERR_IO ? hush_agent_jail_reason(why)
+                                                            : spec->why);
+    _exit(HUSH_AGENT_EXEC_FAILURE);
+}
+
+size_t hush_agent_grok_argv(const hush_agent_job_t *job, char **argv, size_t cap)
+{
+    size_t n = 0;
+
+    assert(job != NULL && argv != NULL);
+    if (cap < (size_t)HUSH_AGENT_GROK_SLOTS)
+        return 0;
+    const char *budget = job->kind == HUSH_AGENT_KIND_FIXUP
+                         ? HUSH_AGENT_FIXUP_TURNS : hush_agent_grok_turn_budget(job->project_tools);
+    /* No --always-approve, ever: the policy below allows by name (#356). */
+    const char *fixed[HUSH_AGENT_GROK_FIXED_SLOTS] = {
+        HUSH_AGENT_GROK_BIN, "-p", job->note, "--system-prompt-override", job->prompt,
+        "--output-format", "plain", "--no-plan", "--no-subagents", "--disable-web-search",
+        "--max-turns", budget, "--reasoning-effort", HUSH_AGENT_GROK_EFFORT,
+        "--cwd", job->cwd, "--disallowed-tools", hush_agent_tool_denylist(job->project_tools),
+        "--rules", job->rules, HUSH_AGENT_GROK_NOMEM
+    };
+    /* POSIX exec borrows mutable argv; the strings are never written. */
+    for (size_t i = 0; i < (size_t)HUSH_AGENT_GROK_FIXED_SLOTS; i++)
+        argv[n++] = (char *)fixed[i];
+    n += hush_cli_grok_policy(argv + n, cap - n, hush_agent_is_gated(job->project_tools));
+    argv[n++] = NULL;
+    assert(n == (size_t)HUSH_AGENT_GROK_SLOTS);
+    return n;
+}
+
 static void hush_agent_exec_grok(const hush_agent_job_t *job)
 {
-    char *argv[HUSH_AGENT_ARGV_MAX];
+    char *argv[HUSH_AGENT_ARGV_MAX] = {0};
 
     assert(job != NULL);
-    argv[0] = (char *)HUSH_AGENT_GROK_BIN;
-    argv[1] = (char *)"-p";
-    argv[2] = (char *)job->note;
-    argv[3] = (char *)"--system-prompt-override";
-    argv[4] = (char *)job->prompt;
-    argv[5] = (char *)"--output-format";
-    argv[6] = (char *)"plain";
-    argv[7] = (char *)"--always-approve";
-    argv[8] = (char *)"--no-plan";
-    argv[9] = (char *)"--no-subagents";
-    argv[10] = (char *)"--disable-web-search";
-    argv[11] = (char *)"--max-turns";
-    argv[12] = (char *)(job->kind == HUSH_AGENT_KIND_FIXUP
-                       ? HUSH_AGENT_FIXUP_TURNS
-                       : hush_agent_grok_turn_budget(job->project_tools));
-    argv[13] = (char *)"--reasoning-effort";
-    argv[14] = (char *)HUSH_AGENT_GROK_EFFORT;
-    argv[15] = (char *)"--cwd";
-    argv[16] = (char *)job->cwd;
-    argv[17] = (char *)"--disallowed-tools";
-    argv[18] = (char *)hush_agent_tool_denylist(job->project_tools);
-    argv[19] = (char *)"--rules";
-    argv[20] = (char *)job->rules;
-    argv[21] = (char *)HUSH_AGENT_GROK_NOMEM;
-    argv[22] = NULL;
+    if (hush_agent_grok_argv(job, argv, HUSH_AGENT_ARGV_MAX) == 0)
+        _exit(HUSH_AGENT_EXEC_FAILURE);
+    hush_agent_require_ready(job, &hush_cli_spec_grok);
     hush_agent_exec_jailed(job, HUSH_AGENT_GROK_BIN, argv);
-    _exit(127);
+    _exit(HUSH_AGENT_EXEC_FAILURE);
 }
 
 static void hush_agent_build_combined(char *out, size_t outsz,
@@ -614,10 +642,10 @@ static size_t hush_agent_copilot_slots(const hush_agent_job_t *job)
 static hush_status_t hush_agent_copilot_scrub_env(void)
 {
     for (size_t i = 0; i < (size_t)HUSH_AGENT_COPILOT_SCRUB_COUNT; ++i) {
-        if (unsetenv(hush_agent_copilot_env_scrub[i]) != 0)
+        if (unsetenv(hush_agent_copilot_env_scrub[i]) != 0 ||
+            getenv(hush_agent_copilot_env_scrub[i]) != NULL)
             return HUSH_ERR_IO;
     }
-    assert(getenv(hush_agent_copilot_env_scrub[0]) == NULL);
     return HUSH_OK;
 }
 
@@ -631,6 +659,7 @@ static void hush_agent_exec_copilot(const hush_agent_job_t *job)
         hush_agent_worker_err(STDOUT_FILENO, "copilot auto-approve env could not be cleared");
         _exit(HUSH_AGENT_EXEC_FAILURE);
     }
+    hush_agent_require_ready(job, &hush_cli_spec_copilot);
     hush_agent_build_combined(combined, sizeof(combined), job);
     if (hush_agent_fill_copilot_argv(job, argv, HUSH_AGENT_ARGV_MAX, combined) == 0)
         _exit(127);

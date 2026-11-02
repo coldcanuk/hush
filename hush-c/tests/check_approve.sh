@@ -67,6 +67,8 @@ mkdir -p "$bin_dir" "$stubs" "$home/.grok" "$HUSH_CONFIG_DIR" "$HUSH_HOME" "$bin
 # prints only its plan line (the leader's name).
 cat > "$bin_dir/grok" <<'GROK'
 #!/bin/sh
+# Readiness probes (#356): answer --version and --help, run nothing.
+case "$1" in --version) echo "grok 0.2.50"; exit 0;; --help) echo "--permission-mode dontAsk --allow --deny --disallowed-tools"; exit 0;; esac
 log="@STUBS@/grok-p.log"
 dir="@STUBS@/loop"
 prev=""
@@ -249,6 +251,17 @@ wait_eq() {
 expect() {
     got=$(field "$1" "$2")
     [ "$got" = "$3" ] || fail "$1: $4 ($2=$got, want $3)"
+}
+# wait_starts WHO N LABEL: polls until WHO's program has started N times.
+# Readiness probes (#356) run in the worker before the prompt starts.
+wait_starts() {
+    i=0
+    while [ "$i" -lt 300 ]; do
+        [ "$(starts "$1")" = "$2" ] && return 0
+        i=$((i + 1))
+        sleep 0.05
+    done
+    fail "$3 ($1 program starts=$(starts "$1"), want $2)"
 }
 expect_starts() {
     got=$(starts "$1")
@@ -521,6 +534,7 @@ wait_eq g8 lead 1
 wait_eq g8 approval 2
 reply g8 "Yes"
 wait_eq g8 job_start 2
+wait_starts partner 1 "G8 Scout's follow turn never started"
 reply_m g8 "nostr:${happy} add a title too" "$happy"
 wait_eq g8 approval 3
 reply g8 "never mind"

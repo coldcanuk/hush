@@ -58,6 +58,47 @@ raise humans + robots that share channels."
   POST response applies the saved profile theme after that. Unifying
   the two is deferred to the UI-M12b colour/material pass.
 - Poll `/api/session`. If `ready` → hive. Else **Begin** → wizard step 1.
+
+### 1a. Pair this window (unpaired window)
+- When `/api/session` answers 401 (this window holds no `hush_session`
+  cookie, #336), the gate shows this card, not the splash: it is not a
+  first run, and Begin could not work.
+- Title "Pair this window". Lines: "Hush is running, but this window is
+  not paired with it yet, so it cannot open your hive." / "**To pair it,
+  quit Hush and start it again from your Hush app or shortcut.** The
+  window Hush opens when it starts is paired. Quitting stops the hive's
+  robots until Hush starts again." / "Started Hush from a terminal? Quit
+  it with `hush-relay --quit <port>`. If you started it with
+  `--no-open`, open the `pair:` link it printed instead. Each link works
+  one time." / "This window checks again by itself and carries on once it is
+  paired." One primary button, **Check again**.
+- While unpaired: poll only `/api/status` + `/api/session`, back off
+  2 s doubling to a 30 s cap. Check again asks at once (2-3 ms in our
+  probe); focus or a visible tab re-checks within a second, on the next
+  1 s tick (230-397 ms in our probe), so repeated focus events never ask
+  more than once a second. `POST /api/window` is tried once. The first
+  200 leaves the card; any other error (429, 5xx) keeps the card and its
+  backoff. Pairing resets the backoff to 2 s. The card goes away
+  without a reload (hive, or the splash on a first run).
+- Card edge 2px `--pair-edge` (default `--faint`; `--muted` in desert and
+  dracula; `--line` in field-office via its own rule), >= 3:1 against page and card fill in
+  all 8 themes. `<code>` never wraps inside a flag; Check again keeps air
+  below it.
+- Profile and Settings can still open over the card (c, 2, Kit). While
+  unpaired each shows "Pair this window first." and disables its actions
+  and fields (theme radios stay: they are local); Profile shows no key, the TURN line says "Pair this window first.". Close stays.
+- While unpaired the Kit menu's hive actions (Invite, Add Channel,
+  Configure Provider, New Robot, New Project, the new-project field) and
+  the Boards drawer's New channel are disabled too, so key 3 opens
+  nothing; the Kit shows "Pair this window first. …". Pairing re-enables
+  them, and Inventory's Raise too. The drawer openers themselves refuse
+  while unpaired (New robot from the quick bar or a roster edit, Configure
+  Providers, Invite, New channel, New project). A disabled switch (opacity
+  0.45), field (0.6), radio or checkbox (0.55) is dimmed in every
+  theme, like a disabled button; a disabled field that is also read-only
+  (Major's standing orders, a locked robot's name and prompt) stays at full
+  opacity.
+  While unpaired, the controls the pairing lock shuts (Settings' host field and robot-turn radios, the Kit's actions) are not dimmed: they keep their text colour and show they are off with a dashed edge (the robot-turn labels too, so they do not look like the live Theme pills), the dimmed radio dot and the not-allowed cursor. Their text reads at least 3.09:1 in every theme (dracula; 5.01 field-office), and that lowest value is the empty fields' own placeholder, the same as when live. Radio labels and Kit buttons read 5.64:1 and up. Profile's name, email and organization fields stay dimmed (opacity 0.6) at >= 3.29:1 (field-office; 4.38 light, 5.53+ elsewhere; their text colour, as they are empty while unpaired).
 - Header always: brand + badge. Actions live on `#tool-rail` (§15).
   Before login the badge reads "listening"; the port is only in its
   tooltip ("Relay listening on port N"), not in the visible text

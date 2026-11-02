@@ -108,6 +108,29 @@ the top-level `VERSION` file.
   the R4 robot anchor, disabled stamps in R3, and the A routing pins; `CH0_ROUTE_ONLY=1` runs only
   the routing pins).
 
+- A window that is not paired with the relay (no `hush_session` cookie, so every `/api` route but
+  `/api/status` answers 401) shows a "Pair this window" card instead of the first-run "Click Begin"
+  splash. The card names the two real ways to pair: the one-time `pair:` link a `--no-open` relay
+  prints, or `hush-relay --quit <port>` and a fresh start (the window the relay opens is paired). While
+  unpaired the page asks only `/api/status` and `/api/session`, backing off from 2 s to a 30 s cap
+  (Check again asks at once; focus or a visible tab re-checks within a second, on the 1 s tick), and tries `POST /api/window` once instead of 20
+  times: 5 responses 401 in the first 30 s, was 110 on main. Once the cookie is there the card gives way to
+  the hive (or the splash on a first run) without a reload. Pinned by `tests/check_pair_ui.cjs` and
+  `tests/check_palette.cjs` P1 (all 8 themes x 1440/390).
+  Ops r2 (#368): the card leads with a plain step ("quit Hush and start it again from your Hush app or
+  shortcut"); terminal commands sit in `<code>` that never breaks inside a flag at 390, and Check again
+  has air below it. Profile and Settings opened over the card say "Pair this window first" and their
+  actions are disabled (no "no identity yet", no "turn api unreachable" on a 401). The card edge is
+  >= 3:1 in all 8 themes (`--pair-edge`). Pinned by `check_pair_ui.cjs` L0/L1 and `check_palette.cjs` P2.
+  Gauge r2 (#368): a non-401 error (429, 5xx) from `/api/session` while unpaired keeps the card and its
+  backoff instead of dropping to the splash and polling at 1 Hz. Pinned by `check_pair_ui.cjs` U2 (30 s
+  cap, focus/visibility re-check, no focus storm), U3 (429 keeps the card), R1 (Check again <= 2 s) and
+  R2 (pairing resets the backoff).
+  Ops follow-ups (#368): while unpaired the Kit's Invite, Add Channel, Configure Provider, New Robot and
+  New Project (and Boards > New channel, so key 3) are disabled with a "Pair this window first" line in
+  the Kit; disabled switches and fields are dimmed in every theme; README's `--no-open` step points at
+  the `pair:` link. Inventory's Raise and the quick bar's New robot slot are shut too (the drawer openers refuse
+  while unpaired). While unpaired, the controls the pairing lock shuts (Settings' host field and robot-turn radios, the Kit's actions) are not dimmed: they keep their text colour and show they are off with a dashed edge (the robot-turn labels too, so they do not look like the live Theme pills), the dimmed radio dot and the not-allowed cursor. Their text reads at least 3.09:1 in every theme (dracula; 5.01 field-office), and that lowest value is the empty fields' own placeholder, the same as when live. Radio labels and Kit buttons read 5.64:1 and up. Profile's name, email and organization fields stay dimmed (opacity 0.6) at >= 3.29:1 (field-office; 4.38 light, 5.53+ elsewhere; their text colour, as they are empty while unpaired). Pinned by `check_pair_ui.cjs` K0/K0e/K1/K2/K2b/L1.
 - Canvas: the code view is visible again in field-office. The editing textarea had an opaque paper slip
   (`--surface-2`) above the highlight layer, so code painted blank there (Ops #364 follow-up, from #282).
   It is now transparent in every theme, with a `--fg` caret and a translucent accent selection. Highlight

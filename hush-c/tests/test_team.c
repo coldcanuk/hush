@@ -96,10 +96,6 @@ static void test_project_clock(void)
            "cline chat stays at 80");
     expect(hush_agent_cline_timeout_s(1) == HUSH_AGENT_PROJECT_TIMEOUT_S,
            "project cline runs on the 300 s clock");
-    expect(strcmp(hush_agent_cline_approve(0), "false") == 0,
-           "cline chat stays reviewed");
-    expect(strcmp(hush_agent_cline_approve(1), "true") == 0,
-           "project cline gets its tools");
 }
 
 static int argv_has(char **argv, const char *word)
@@ -156,8 +152,8 @@ static void test_worker_cwd(void)
 /* #333: only project_tools == 1 is a gate; every other value grants nothing. */
 static void test_copilot_gate_values(void)
 {
-    hush_agent_job_t job;
-    char *argv[HUSH_AGENT_ARGV_MAX];
+    hush_agent_job_t job = {0};
+    char *argv[HUSH_AGENT_ARGV_MAX] = {0};
     int slots = 0;
 
     expect(hush_agent_is_gated(1) == 1, "project_tools 1 is gated");
@@ -173,13 +169,66 @@ static void test_copilot_gate_values(void)
     expect(hush_agent_fill_copilot_argv(&job, argv, HUSH_AGENT_ARGV_MAX, "note") > 0,
            "copilot argv for an unknown gate value");
     expect(argv_has(argv, "--allow-tool=write") == 0, "unknown gate value grants no writes");
+    expect(argv_has(argv, "--disable-builtin-mcps") == 1, "ungated copilot: no built-in MCP (#356)");
+    expect(argv_has(argv, "--disallow-temp-dir") == 1, "ungated copilot: no temp dir (#355 P3-2)");
     job.project_tools = 1;
     slots = hush_agent_fill_copilot_argv(&job, argv, HUSH_AGENT_ARGV_MAX, "note");
     expect(slots > 0, "copilot argv for a gated turn");
     expect(argv_has(argv, "--allow-tool=write") == 1, "gated copilot may write files");
+    expect(argv_has(argv, "--disable-builtin-mcps") == 1, "gated copilot: no built-in MCP (#356)");
+    expect(argv_has(argv, "--disallow-temp-dir") == 1, "gated copilot: no temp dir (#355 P3-2)");
     expect(argv_has(argv, "--allow-all-tools") == 0, "gated copilot never allow-all-tools");
     expect(hush_agent_fill_copilot_argv(&job, argv, (size_t)slots - 1, "note") == 0,
            "copilot argv refuses a short buffer");
+}
+
+/* 1 when argv holds flag immediately followed by value. */
+static int argv_pair(char **argv, const char *flag, const char *value)
+{
+    for (size_t i = 0; argv[i] != NULL && argv[i + 1] != NULL; i++) {
+        if (strcmp(argv[i], flag) == 0 && strcmp(argv[i + 1], value) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+/* Grok's deny rules that hold on every turn, gated or not (#356). */
+static void expect_grok_denies(char **argv, const char *label)
+{
+    expect(argv_has(argv, "--always-approve") == 0, label);
+    expect(argv_pair(argv, "--permission-mode", "dontAsk") == 1, label);
+    expect(argv_pair(argv, "--deny", "Bash") == 1, label);
+    expect(argv_pair(argv, "--deny", "MCPTool") == 1, label);
+    expect(argv_pair(argv, "--deny", "WebFetch") == 1, label);
+    expect(argv_pair(argv, "--deny", "WebSearch") == 1, label);
+    expect(argv_pair(argv, "--allow", "Read") == 1, label);
+    expect(argv_pair(argv, "--allow", "Bash") == 0, label);
+}
+
+/* #356: Grok never always-approves; Edit is allowed only on a gated turn. */
+static void test_grok_argv(void)
+{
+    hush_agent_job_t job = {0};
+    char *argv[HUSH_AGENT_ARGV_MAX] = {0};
+    size_t n = 0;
+
+    snprintf(job.cwd, sizeof(job.cwd), "/tmp/proj");
+    n = hush_agent_grok_argv(&job, argv, HUSH_AGENT_ARGV_MAX);
+    expect(n > 0 && argv[n - 1] == NULL, "ungated grok argv built");
+    expect_grok_denies(argv, "ungated grok: policy");
+    expect(argv_pair(argv, "--deny", "Edit") == 1 && argv_pair(argv, "--allow", "Edit") == 0,
+           "ungated grok denies Edit");
+    expect(argv_pair(argv, "--disallowed-tools", hush_agent_tool_denylist(0)) == 1,
+           "ungated grok keeps the chat denylist");
+    job.project_tools = 2;
+    expect(hush_agent_grok_argv(&job, argv, HUSH_AGENT_ARGV_MAX) == n, "grok argv (value 2)");
+    expect(argv_pair(argv, "--deny", "Edit") == 1, "unknown gate value denies Edit");
+    job.project_tools = 1;
+    expect(hush_agent_grok_argv(&job, argv, HUSH_AGENT_ARGV_MAX) == n, "gated grok argv");
+    expect_grok_denies(argv, "gated grok: policy");
+    expect(argv_pair(argv, "--allow", "Edit") == 1 && argv_pair(argv, "--deny", "Edit") == 0,
+           "gated grok may edit");
+    expect(hush_agent_grok_argv(&job, argv, n - 1) == 0, "grok argv refuses a short buffer");
 }
 
 static void test_denylist(void)
@@ -371,7 +420,8 @@ static void test_cline_argv(void)
     expect(cline.argv[8] == prompt && cline.argv[9] == NULL, "cline argv ends with the prompt");
     job.project_tools = 1;
     hush_agent_cline_argv(&cline, &job, prompt);
-    expect(strcmp(cline.argv[5], "true") == 0, "project cline argv turns tools on");
+    expect(strcmp(cline.argv[4], "--auto-approve") == 0 && strcmp(cline.argv[5], "false") == 0,
+           "gated cline argv still keeps tool auto-approve off (#356)");
     expect(strcmp(cline.argv[7], "300") == 0, "project cline argv carries the 300 s clock");
 }
 
@@ -385,6 +435,7 @@ int main(void)
     test_project_clock();
     test_cline_argv();
     test_copilot_gate_values();
+    test_grok_argv();
     test_worker_cwd();
     test_denylist();
     test_yes_no(home);
