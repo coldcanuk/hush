@@ -62,12 +62,34 @@ static const char *const HUSH_SANDBOX_AUTH_REL[] = {
     ".grok", ".codex", ".copilot", ".config/goose", ".goose", ".cline", ".ollama",
 };
 
+/* A provider's token file, relative to the operator HOME, by binary name.
+ * Only grok and codex keep an OAuth token in a file (hush_provider.c:557,
+ * :562); copilot's lives in the system credential store (:576). */
+typedef struct {
+    const char *bin;
+    const char *rel;
+} hush_sandbox_token_t;
+
+static const hush_sandbox_token_t HUSH_SANDBOX_TOKENS[] = {
+    {"grok", ".grok/auth.json"},
+    {"codex", ".codex/auth.json"},
+};
+
 /* Never bound, even if named somehow. */
 static const char *const HUSH_SANDBOX_AUTH_FORBID[] = {
     ".password-store", ".gnupg", ".ssh",
 };
 
 #define HUSH_SANDBOX_COUNT(a) (sizeof(a) / sizeof((a)[0]))
+
+/* Under Landlock a child writes only its cwd, its stub HOME and the device
+ * nodes below (#375 N2). Its TMPDIR is this directory inside the stub HOME,
+ * never the shared /tmp. */
+static const char HUSH_SANDBOX_JOB_TMP[] = "tmp";
+/* XDG homes a child keeps only when they point inside its stub HOME. */
+static const char *const HUSH_SANDBOX_XDG_HOMES[] = {
+    "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME",
+};
 
 const char *hush_sandbox_why(void)
 {
@@ -110,13 +132,18 @@ int hush_sandbox_env_allowed(const char *entry)
     return 0;
 }
 
+/* The basename of file (a name or a path). */
+static const char *hush_sandbox_base(const char *file)
+{
+    const char *slash = strrchr(file, '/');
+
+    return slash != NULL ? slash + 1 : file;
+}
+
 /* 1 when file (a name or a path) is the Grok Build binary. */
 static int hush_sandbox_is_grok(const char *file)
 {
-    const char *slash = strrchr(file, '/');
-    const char *base = slash != NULL ? slash + 1 : file;
-
-    return strcmp(base, HUSH_SANDBOX_GROK_BIN) == 0;
+    return strcmp(hush_sandbox_base(file), HUSH_SANDBOX_GROK_BIN) == 0;
 }
 
 /* 1 when entry's name is one a grok child must never see. */
@@ -551,6 +578,25 @@ hush_sandbox_backend_t hush_sandbox_backend(void)
 #define HUSH_SANDBOX_RO_RIGHTS \
     (LANDLOCK_ACCESS_FS_READ_FILE | LANDLOCK_ACCESS_FS_READ_DIR)
 
+/* The tree outside cwd and stub HOME: read and run, never write (#375 N2). */
+static const uint64_t HUSH_SANDBOX_TREE_RIGHTS =
+    LANDLOCK_ACCESS_FS_EXECUTE | LANDLOCK_ACCESS_FS_READ_FILE | LANDLOCK_ACCESS_FS_READ_DIR;
+/* The own provider's token file: read and rewrite in place, no create,
+ * rename or unlink in its directory. */
+static const uint64_t HUSH_SANDBOX_TOKEN_RIGHTS = LANDLOCK_ACCESS_FS_READ_FILE |
+                                                 LANDLOCK_ACCESS_FS_WRITE_FILE |
+                                                 LANDLOCK_ACCESS_FS_TRUNCATE;
+/* Read-write device nodes, and every pty under /dev/pts (IOCTL_DEV for
+ * termios). No TRUNCATE: Landlock checks it only on regular files, and
+ * `> /dev/null` works without it. /dev/urandom and the rest of /dev keep
+ * HUSH_SANDBOX_TREE_RIGHTS; /dev/shm is not writable. */
+static const uint64_t HUSH_SANDBOX_DEV_RIGHTS = LANDLOCK_ACCESS_FS_READ_FILE |
+                                                LANDLOCK_ACCESS_FS_WRITE_FILE |
+                                                LANDLOCK_ACCESS_FS_IOCTL_DEV;
+static const char *const HUSH_SANDBOX_DEV_RW[] = {
+    "/dev/null", "/dev/zero", "/dev/tty", "/dev/pts",
+};
+
 typedef struct {
     uint64_t handled_access_fs;
     uint64_t handled_access_net;
@@ -643,8 +689,18 @@ static hush_status_t hush_sandbox_grant_entry(const hush_sandbox_rules_t *rules,
         return HUSH_OK;
     if (S_ISDIR(st.st_mode) && hush_sandbox_holds_denied(policy, path))
         return hush_sandbox_grant_tree(rules, policy, path);
-    return hush_sandbox_grant(rules, path, S_ISDIR(st.st_mode) ? rules->fs_all
-                                                               : rules->fs_file);
+    return hush_sandbox_grant(rules, path, (S_ISDIR(st.st_mode) ? rules->fs_all
+                                                                : rules->fs_file) &
+                                               HUSH_SANDBOX_TREE_RIGHTS);
+}
+
+/* Grants HUSH_SANDBOX_DEV_RIGHTS on each HUSH_SANDBOX_DEV_RW node present. */
+static hush_status_t hush_sandbox_grant_devs(const hush_sandbox_rules_t *rules)
+{
+    for (size_t i = 0; i < HUSH_SANDBOX_COUNT(HUSH_SANDBOX_DEV_RW); ++i)
+        HUSH_TRY(hush_sandbox_grant(rules, HUSH_SANDBOX_DEV_RW[i],
+                                    rules->fs_file & HUSH_SANDBOX_DEV_RIGHTS));
+    return HUSH_OK;
 }
 
 static hush_status_t hush_sandbox_grant_tree(const hush_sandbox_rules_t *rules,
@@ -742,6 +798,9 @@ static hush_status_t hush_sandbox_grant_auth(const hush_sandbox_rules_t *rules,
 
     for (int i = 0; i < policy->nauth; ++i)
         HUSH_TRY(hush_sandbox_grant(rules, policy->auth_ro[i], ro));
+    if (policy->auth_rw[0] != '\0')
+        HUSH_TRY(hush_sandbox_grant(rules, policy->auth_rw,
+                                    rules->fs_file & HUSH_SANDBOX_TOKEN_RIGHTS));
     return HUSH_OK;
 }
 
@@ -760,6 +819,8 @@ static hush_status_t hush_sandbox_landlock(const hush_sandbox_policy_t *policy)
         st = hush_sandbox_grant(&rules, policy->stub_home, rules.fs_all);
     if (st == HUSH_OK)
         st = hush_sandbox_grant_auth(&rules, policy);
+    if (st == HUSH_OK)
+        st = hush_sandbox_grant_devs(&rules);
     if (st == HUSH_OK)
         st = hush_sandbox_grant_cwd(&rules, policy);
     if (st == HUSH_OK && prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0)
@@ -1027,6 +1088,74 @@ static hush_status_t hush_sandbox_exec_bwrap(const hush_sandbox_policy_t *policy
     return HUSH_ERR_IO;
 }
 
+/* Sets policy->auth_rw to file's own token file when that is a regular file
+ * reached through no symlink (its realpath is its own path); else leaves it
+ * "". Other providers' files and every auth directory stay read-only. */
+static void hush_sandbox_own_token(hush_sandbox_policy_t *policy, const char *file)
+{
+    char path[HUSH_SANDBOX_PATH_MAX];
+    char real[PATH_MAX];
+    struct stat st;
+
+    policy->auth_rw[0] = '\0';
+    for (size_t i = 0; i < HUSH_SANDBOX_COUNT(HUSH_SANDBOX_TOKENS); ++i) {
+        if (strcmp(hush_sandbox_base(file), HUSH_SANDBOX_TOKENS[i].bin) != 0)
+            continue;
+        int n = snprintf(path, sizeof path, "%s/%s", policy->real_home,
+                         HUSH_SANDBOX_TOKENS[i].rel);
+        if (n <= 0 || (size_t)n >= sizeof path || stat(path, &st) != 0 ||
+            !S_ISREG(st.st_mode) || realpath(path, real) == NULL || strcmp(real, path) != 0)
+            return;
+        memcpy(policy->auth_rw, path, (size_t)n + 1);
+        return;
+    }
+}
+
+/* Makes the job's private TMPDIR, stub HOME/tmp, and writes its path to out.
+ * Fails with HUSH_ERR_DENIED. */
+static hush_status_t hush_sandbox_job_tmp(const hush_sandbox_policy_t *policy, char *out,
+                                          size_t outsz)
+{
+    int n = snprintf(out, outsz, "%s/%s", policy->stub_home, HUSH_SANDBOX_JOB_TMP);
+
+    if (n <= 0 || (size_t)n >= outsz)
+        return HUSH_ERR_DENIED;
+    if (mkdir(out, 0700) != 0 && errno != EEXIST)
+        return HUSH_ERR_DENIED;
+    return HUSH_OK;
+}
+
+/* 1 when entry is an XDG home that points outside home. */
+static int hush_sandbox_xdg_outside(const char *entry, const char *home)
+{
+    const char *eq = strchr(entry, '=');
+
+    if (eq == NULL)
+        return 0;
+    for (size_t i = 0; i < HUSH_SANDBOX_COUNT(HUSH_SANDBOX_XDG_HOMES); ++i) {
+        const char *name = HUSH_SANDBOX_XDG_HOMES[i];
+        if (strlen(name) == (size_t)(eq - entry) && strncmp(entry, name, strlen(name)) == 0)
+            return !hush_sandbox_under(home, eq + 1);
+    }
+    return 0;
+}
+
+/* The Landlock child's env for file: allowlist, no XDG home outside the stub
+ * HOME, TMPDIR at tmpdir. Fails with HUSH_ERR_DENIED. */
+static hush_status_t hush_sandbox_landlock_env(const char *file, const char *home,
+                                               const char *tmpdir)
+{
+    char **out = environ;
+
+    hush_sandbox_scrub_env_for(file);
+    for (char **e = environ; *e != NULL; ++e) {
+        if (!hush_sandbox_xdg_outside(*e, home))
+            *out++ = *e;
+    }
+    *out = NULL;
+    return setenv("TMPDIR", tmpdir, 1) == 0 ? HUSH_OK : HUSH_ERR_DENIED;
+}
+
 hush_status_t hush_sandbox_exec(const hush_sandbox_job_t *job, const char *file,
                                 char **argv)
 {
@@ -1047,11 +1176,18 @@ hush_status_t hush_sandbox_exec(const hush_sandbox_job_t *job, const char *file,
         return HUSH_ERR_DENIED;
     }
     if (backend == HUSH_SANDBOX_BACKEND_LANDLOCK) {
-        if (hush_sandbox_enter(&policy) != HUSH_OK) {
+        char tmpdir[HUSH_SANDBOX_PATH_MAX];
+
+        hush_sandbox_own_token(&policy, file);
+        /* Like bwrap's --chdir: the child starts in its job cwd, the one tree
+         * it may write besides HOME, not in hushd's cwd (#375 N2). */
+        if ((policy.cwd[0] != '\0' && chdir(policy.cwd) != 0) ||
+            hush_sandbox_job_tmp(&policy, tmpdir, sizeof tmpdir) != HUSH_OK ||
+            hush_sandbox_enter(&policy) != HUSH_OK ||
+            hush_sandbox_landlock_env(file, policy.stub_home, tmpdir) != HUSH_OK) {
             hush_sandbox_set_why("agent sandbox refused: Landlock enter failed");
             return HUSH_ERR_DENIED;
         }
-        hush_sandbox_scrub_env_for(file);
         execvp(file, argv);
         return HUSH_ERR_IO;
     }

@@ -76,7 +76,11 @@ class Relay:
         self.directory = directory
         self.port = free_port()
         self.host = f"127.0.0.1:{self.port}"
-        self.hits = directory / "canary.log"
+        # Jailed agent children write only their job cwd (#375 N2); a chat
+        # turn's cwd is $HUSH_CONFIG_DIR/agent-cwd, so a canary logs there.
+        cwd = directory / "config" / "agent-cwd"
+        cwd.mkdir(parents=True, mode=0o700, exist_ok=True)
+        self.hits = cwd / "canary.log"
         write_canaries(directory / "bin", self.hits)
         self.environment = dict(
             os.environ,

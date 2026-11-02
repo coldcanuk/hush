@@ -18,12 +18,13 @@ curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session
 bin=./hush-relay
 port=$(hush_free_port) || exit 1
 log=$(mktemp)
-# Layout matches Hive/Relay: bin/ and stubs/ are siblings of the denied
-# HOME (user/) and HUSH_HOME (home/), so Landlock grants the stub binary
-# and its log directory (#336 part 1).
+# Layout matches Hive/Relay: bin/ is a sibling of the denied HOME (user/)
+# and HUSH_HOME (home/), so Landlock grants the stub binary (#336 part 1).
 base=$(mktemp -d)
 home="$base/user"
-stubs="$base/stubs"
+# Jailed agent children write only their job cwd (#375 N2). A chat turn's
+# cwd is $HUSH_CONFIG_DIR/agent-cwd, so the stub logs there.
+stubs="$base/config/agent-cwd"
 bin_dir="$base/bin"
 pid=""
 

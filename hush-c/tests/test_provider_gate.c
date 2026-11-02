@@ -37,6 +37,7 @@
 enum {
     /* The mkdtemp root; every derived path fits GATE_PATH_MAX. */
     GATE_DIR_MAX = 256,
+    GATE_CWDS = 2,
     GATE_PATH_MAX = 1024,
     GATE_BODY_MAX = 4096,
     GATE_FTW_FDS = 16,
@@ -97,6 +98,10 @@ enum {
 /* A well-formed pubkey that is neither the owner nor any robot. */
 #define GATE_GUEST_PUB "abababababababababababababababababababababababababababababababab"
 
+/* A jailed child writes only its job cwd (#375 N2): a project turn's is
+ * <dir>/proj, any other turn's is $HUSH_CONFIG_DIR/agent-cwd. */
+static const char *const gate_cwds[GATE_CWDS] = {"proj", "config/agent-cwd"};
+
 static const char *const gate_hostile_env[GATE_HOSTILE_COUNT] = {
     GATE_ENV_ALLOW_ALL, GATE_ENV_EXTENSIONS, GATE_ENV_HOOKS, GATE_ENV_MCP
 };
@@ -139,8 +144,8 @@ typedef struct {
     const char *provider;
     gate_stub_t stub;
     char dir[GATE_DIR_MAX];
-    char capture_file[GATE_DIR_MAX * 2];
-    char probe_file[GATE_DIR_MAX * 2];
+    char capture_file[GATE_CWDS][GATE_DIR_MAX * 2];
+    char probe_file[GATE_CWDS][GATE_DIR_MAX * 2];
 } gate_fixture_t;
 
 static void expect(gate_run_t *run, int cond, const char *msg)
@@ -205,25 +210,32 @@ static const char *stub_help(const gate_fixture_t *fx)
 }
 
 /* A stub named after fx->provider first on PATH. Readiness probes log their
- * argument to probe_file and answer; any other run writes one argv entry per
- * line, a marker line, then its whole env, atomically. */
+ * argument to <bin>.probes and answer; any other run writes one argv entry
+ * per line, a marker line, then its whole env, atomically. Both land in its
+ * cwd, so fx records each name under every job cwd. */
 static void stub_provider(gate_fixture_t *fx, const char *bin_name)
 {
     char path[GATE_PATH_MAX] = {0};
     char body[GATE_BODY_MAX] = {0};
-    const char *cap = fx->capture_file;
+    char cap[GATE_DIR_MAX] = {0};
+    char probes[GATE_DIR_MAX] = {0};
 
     snprintf(path, sizeof(path), "%s-bin", fx->dir);
     expect(fx->run, mkdir(path, S_IRWXU) == 0, "stub bin dir");
-    /* Siblings of HUSH_HOME: agent children are jailed off $HUSH_HOME (#336). */
-    snprintf(fx->capture_file, sizeof(fx->capture_file), "%s-bin/%s.capture", fx->dir, bin_name);
-    snprintf(fx->probe_file, sizeof(fx->probe_file), "%s-bin/%s.probes", fx->dir, bin_name);
+    snprintf(cap, sizeof(cap), "%s.capture", bin_name);
+    snprintf(probes, sizeof(probes), "%s.probes", bin_name);
+    for (size_t i = 0; i < (size_t)GATE_CWDS; i++) {
+        snprintf(fx->capture_file[i], sizeof(fx->capture_file[i]), "%s/%s/%s", fx->dir,
+                 gate_cwds[i], cap);
+        snprintf(fx->probe_file[i], sizeof(fx->probe_file[i]), "%s/%s/%s", fx->dir,
+                 gate_cwds[i], probes);
+    }
     snprintf(body, sizeof(body), "#!/bin/sh\ncase \"$1\" in\n"
              "--version) echo \"$1\" >> '%s'; echo '%s'; exit 0;;\n"
              "--help|help) echo \"$1\" >> '%s'; echo '%s'; exit 0;;\nesac\n"
              "{ printf '%%s\\n' \"$@\"; echo '--ENV--'; env; } > '%s.tmp'\n"
-             "mv '%s.tmp' '%s'\nexit 0\n", fx->probe_file, stub_version(fx),
-             fx->probe_file, stub_help(fx), cap, cap, cap);
+             "mv '%s.tmp' '%s'\nexit 0\n", probes, stub_version(fx),
+             probes, stub_help(fx), cap, cap, cap);
     snprintf(path, sizeof(path), "%s-bin/%s", fx->dir, bin_name);
     write_exec(fx->run, path, body);
     snprintf(path, sizeof(path), "%s-bin:%s", fx->dir, GATE_SYS_PATH);
@@ -444,10 +456,22 @@ static int take_capture(gate_fixture_t *fx)
 {
     struct timespec tick = {0, GATE_WAIT_NS};
 
-    for (int i = 0; i < GATE_WAIT_TRIES; i++) {
-        if (read_capture(fx, fx->capture_file))
+    for (int i = 0; i < GATE_WAIT_TRIES * GATE_CWDS; i++) {
+        if (read_capture(fx, fx->capture_file[i % GATE_CWDS]))
             return 1;
-        nanosleep(&tick, NULL);
+        if (i % GATE_CWDS == GATE_CWDS - 1)
+            nanosleep(&tick, NULL);
+    }
+    return 0;
+}
+
+/* Reads the stub's readiness-probe log from whichever job cwd it ran in;
+ * returns 1 when one was there. */
+static int read_probes(gate_fixture_t *fx)
+{
+    for (size_t i = 0; i < (size_t)GATE_CWDS; i++) {
+        if (read_capture(fx, fx->probe_file[i]))
+            return 1;
     }
     return 0;
 }
@@ -532,7 +556,7 @@ static void check_turn(gate_fixture_t *fx, gate_want_t want, const char *label)
         check_goose(fx, label);
     if (!probed(fx))
         return;
-    expect(fx->run, read_capture(fx, fx->probe_file) && captured(fx, "\n--version\n") &&
+    expect(fx->run, read_probes(fx) && captured(fx, "\n--version\n") &&
            (captured(fx, "\n--help\n") || captured(fx, "\nhelp\n")), "readiness probes ran");
 }
 
@@ -620,7 +644,7 @@ static void check_unready(gate_run_t *run, const char *provider, gate_stub_t stu
     mention(fx, fx->launch.human.pubkey_hex, fx->launch.human.pubkey_hex, GATE_BOUND);
     expect(run, !take_capture(fx), stub == GATE_STUB_OLD ? "old version: no prompt run"
                                                          : "short help: no prompt run");
-    expect(run, read_capture(fx, fx->probe_file) && captured(fx, probe),
+    expect(run, read_probes(fx) && captured(fx, probe),
            "the failing readiness probe ran");
     close_hive(fx);
 }

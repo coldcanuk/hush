@@ -30,6 +30,7 @@
 enum {
     /* The mkdtemp root; every derived path fits GATE_PATH_MAX. */
     GATE_DIR_MAX = 64,
+    GATE_CWDS = 2,
     GATE_PATH_MAX = 512,
     GATE_FTW_FDS = 16,
     GATE_KIND_NOTE = 1,
@@ -63,6 +64,10 @@ static void expect(int cond, const char *msg)
     }
 }
 
+/* A jailed child writes only its job cwd (#375 N2): a project turn's is
+ * <dir>/proj, any other turn's is $HUSH_CONFIG_DIR/agent-cwd. */
+static const char *const gate_cwds[GATE_CWDS] = {"proj", "config/agent-cwd"};
+
 typedef struct {
     hush_launch_t launch;
     hush_store_t *store;
@@ -70,7 +75,7 @@ typedef struct {
     hush_event_t ev;
     const hush_roster_agent_t *pat;
     char dir[GATE_DIR_MAX];
-    char argv_file[GATE_DIR_MAX * 2];
+    char argv_file[GATE_CWDS][GATE_DIR_MAX * 2];
 } gate_fixture_t;
 
 /* Writes path with body and mode 0700. */
@@ -84,18 +89,21 @@ static void write_exec(const char *path, const char *body)
     expect(chmod(path, S_IRWXU) == 0, "stub mode");
 }
 
-/* A stub cline first on PATH that writes one argv entry per line. */
+/* A stub cline first on PATH that writes one argv entry per line into its
+ * cwd. */
 static void stub_cline(gate_fixture_t *fx)
 {
     char path[GATE_PATH_MAX] = {0};
     char body[GATE_PATH_MAX * 2] = {0};
+    static const char argv_name[] = "cline.argv";
 
     snprintf(path, sizeof(path), "%s-bin", fx->dir);
     expect(mkdir(path, S_IRWXU) == 0, "stub bin dir");
-    /* Sibling of HUSH_HOME: agent children are jailed off $HUSH_HOME (#336). */
-    snprintf(fx->argv_file, sizeof(fx->argv_file), "%s-bin/cline.argv", fx->dir);
+    for (size_t i = 0; i < (size_t)GATE_CWDS; i++)
+        snprintf(fx->argv_file[i], sizeof(fx->argv_file[i]), "%s/%s/%s", fx->dir,
+                 gate_cwds[i], argv_name);
     snprintf(body, sizeof(body), "#!/bin/sh\nprintf '%%s\\n' \"$@\" > '%s.tmp'\n"
-             "mv '%s.tmp' '%s'\nexit 0\n", fx->argv_file, fx->argv_file, fx->argv_file);
+             "mv '%s.tmp' '%s'\nexit 0\n", argv_name, argv_name, argv_name);
     snprintf(path, sizeof(path), "%s-bin/cline", fx->dir);
     write_exec(path, body);
     snprintf(path, sizeof(path), "%s-bin:%s", fx->dir, GATE_SYS_PATH);
@@ -172,7 +180,8 @@ static void close_hive(gate_fixture_t *fx)
         (void)nftw(extra, remove_entry, GATE_FTW_FDS, FTW_DEPTH | FTW_PHYS);
         snprintf(extra, sizeof(extra), "%s-bin", fx->dir);
         (void)nftw(extra, remove_entry, GATE_FTW_FDS, FTW_DEPTH | FTW_PHYS);
-        unlink(fx->argv_file);
+        for (size_t i = 0; i < (size_t)GATE_CWDS; i++)
+            unlink(fx->argv_file[i]);
     }
     expect(nftw(fx->dir, remove_entry, GATE_FTW_FDS, FTW_DEPTH | FTW_PHYS) == 0,
            "scratch cleanup");
@@ -242,18 +251,20 @@ static int argv_has(gate_fixture_t *fx, const char *want)
     char buf[HUSH_EVENT_MAX_CONTENT] = {0};
     struct timespec tick = {0, GATE_WAIT_NS};
 
-    for (int i = 0; i < GATE_WAIT_TRIES; i++) {
-        FILE *f = fopen(fx->argv_file, "r");
+    for (int i = 0; i < GATE_WAIT_TRIES * GATE_CWDS; i++) {
+        const char *argv_path = fx->argv_file[i % GATE_CWDS];
+        FILE *f = fopen(argv_path, "r");
 
         if (f != NULL) {
             size_t n = fread(buf, 1, sizeof(buf) - 1, f);
 
             fclose(f);
             buf[n] = '\0';
-            unlink(fx->argv_file);
+            unlink(argv_path);
             return strstr(buf, want) != NULL;
         }
-        nanosleep(&tick, NULL);
+        if (i % GATE_CWDS == GATE_CWDS - 1)
+            nanosleep(&tick, NULL);
     }
     return 0;
 }

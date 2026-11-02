@@ -298,7 +298,10 @@ static void hush_agent_forward_worker_err(int output_fd, const char *capture)
             _exit(HUSH_AGENT_EXEC_FAILURE);
         return;
     }
-    hush_agent_worker_err(output_fd, "worker exited with an error");
+    /* The jail cannot say which write failed (stderr goes to /dev/null), so
+     * name what is read-only rather than guess a cause (#375 N2). */
+    hush_agent_worker_err(output_fd, "worker exited with an error (in the job jail only "
+                                     "its folder, HOME and TMPDIR are writable)");
 }
 
 static void hush_agent_run_worker(int output_fd, const hush_agent_job_t *job)
