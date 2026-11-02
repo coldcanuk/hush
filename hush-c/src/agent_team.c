@@ -16,7 +16,7 @@
 #define HUSH_AGENT_FENCE_END "```"
 #define HUSH_AGENT_TEAM_BAR " | "
 #define HUSH_AGENT_TEAM_ASK \
-    "Raise this team? Reply Yes or No in this thread."
+    "Raise this team? Reply Yes or No."
 #define HUSH_AGENT_TEAM_REFUSED "Team refused."
 #define HUSH_AGENT_TEAM_RAISED "Team raised."
 #define HUSH_AGENT_TEAM_DECLINED "Team declined."

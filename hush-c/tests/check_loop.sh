@@ -109,7 +109,7 @@ for e in events:
     if "partner turn" in c:
         counts["partner"] += 1
     # R1: exact chaperon copy; the r3 wording no longer counts.
-    if c == "Continue this loop? Reply Yes or No in this thread.":
+    if c == "Continue this loop? Reply Yes or No.":
         counts["ask"] += 1
     if c == "Loop limit reached. Mention both robots again to start a new loop.":
         counts["limit"] += 1
@@ -396,7 +396,7 @@ release s11
 # B1 runaway with this PR's own notice lines as reply prefixes.
 start s12 2 "$C $C $C $C" "- - - -"
 printf '%s' 'Loop stopped. ' > "$plan/lead.prefix"
-printf '%s' 'Continue this loop? Reply Yes or No in this thread. ' > "$plan/partner.prefix"
+printf '%s' 'Continue this loop? Reply Yes or No. ' > "$plan/partner.prefix"
 wait_eq s12 ask 1
 settle
 expect s12 lead 1 "B1 notice-prefix replies must still hit the cap"

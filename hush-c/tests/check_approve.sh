@@ -39,7 +39,7 @@ fail() { echo "approve check failed: $1" >&2; exit 1; }
 
 python3 tests/check_loop_legible.py || fail "approval functions break the 40-line / 4-param caps"
 
-ASK_HAPPY="Approval needed: Happy wants to take a turn. Reply Yes or No in this thread."
+ASK_HAPPY="Approval needed: Happy wants to take a turn. Reply Yes or No."
 NO_HAPPY="Turn declined: Happy stood down."
 # The UI control posts the field the server reads, and mirrors what it saves.
 grep -q 'name="approval" value="auto_approve" checked> Auto-approve' demo/index.html \
@@ -128,13 +128,13 @@ for e in events:
         counts["plan"] += 1
     if "builder turn" in c:
         counts["builder"] += 1
-    if c == "Approval needed: Builder wants to take a turn. Reply Yes or No in this thread.":
+    if c == "Approval needed: Builder wants to take a turn. Reply Yes or No.":
         counts["ask_builder"] += 1
     if c.startswith("Approval needed: "):
         counts["approval"] += 1
-    if c == "Approval needed: Happy wants to take a turn. Reply Yes or No in this thread.":
+    if c == "Approval needed: Happy wants to take a turn. Reply Yes or No.":
         counts["ask_happy"] += 1
-    if c == "Approval needed: Happy wants to run the leader election. Reply Yes or No in this thread.":
+    if c == "Approval needed: Happy wants to run the leader election. Reply Yes or No.":
         counts["elect_ask"] += 1
     if "could not start a turn" in c:
         counts["startfail"] += 1
@@ -142,7 +142,7 @@ for e in events:
         counts["declined"] += 1
     if c == "Turn declined: Happy stood down.":
         counts["no_happy"] += 1
-    if c == "Continue this loop? Reply Yes or No in this thread.":
+    if c == "Continue this loop? Reply Yes or No.":
         counts["ask"] += 1
     if c == "Loop stopped.":
         counts["stopped"] += 1

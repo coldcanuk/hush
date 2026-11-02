@@ -472,7 +472,7 @@ void hush_agent_follow_kick(hush_store_t *store, const hush_launch_t *launch,
 
 /* ---- agent_loop.c: pure text helpers for the robot loop (#280) ---- */
 
-#define HUSH_AGENT_LOOP_ASK_LINE "Continue this loop? Reply Yes or No in this thread."
+#define HUSH_AGENT_LOOP_ASK_LINE "Continue this loop? Reply Yes or No."
 #define HUSH_AGENT_LOOP_LIMIT_LINE \
     "Loop limit reached. Mention both robots again to start a new loop."
 #define HUSH_AGENT_LOOP_STOPPED_LINE "Loop stopped."
@@ -516,9 +516,9 @@ void hush_agent_plan_trigger(char *out, size_t outsz, const char *root);
 
 #define HUSH_AGENT_APPROVAL_ASK_HEAD "Approval needed: "
 #define HUSH_AGENT_APPROVAL_ASK_FMT \
-    HUSH_AGENT_APPROVAL_ASK_HEAD "%s wants to take a turn. Reply Yes or No in this thread."
+    HUSH_AGENT_APPROVAL_ASK_HEAD "%s wants to take a turn. Reply Yes or No."
 #define HUSH_AGENT_APPROVAL_ELECT_FMT \
-    HUSH_AGENT_APPROVAL_ASK_HEAD "%s wants to run the leader election. Reply Yes or No in this thread."
+    HUSH_AGENT_APPROVAL_ASK_HEAD "%s wants to run the leader election. Reply Yes or No."
 #define HUSH_AGENT_APPROVAL_NO_HEAD "Turn declined: "
 #define HUSH_AGENT_APPROVAL_NO_FMT HUSH_AGENT_APPROVAL_NO_HEAD "%s stood down."
 #define HUSH_AGENT_APPROVAL_FULL_LINE \

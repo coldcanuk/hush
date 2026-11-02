@@ -1,6 +1,6 @@
 ---
 name: intro-once
-description: One intro per robot per thread.
+description: One intro per robot per conversation.
 role: chaperon
 category: guardrail
 ---

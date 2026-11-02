@@ -45,7 +45,7 @@ enum {
 #define TEST_APPROVE_CHANNEL "general"
 /* The exact copy the owner reads (#279). */
 #define TEST_APPROVE_ASK_COPY \
-    "Approval needed: Happy wants to take a turn. Reply Yes or No in this thread."
+    "Approval needed: Happy wants to take a turn. Reply Yes or No."
 #define TEST_APPROVE_NO_COPY "Turn declined: Happy stood down."
 /* The head every approval ask starts with. */
 #define TEST_APPROVE_ASK_HEAD "Approval needed: "
@@ -69,10 +69,10 @@ enum {
 #define TEST_APPROVE_RAN_HEAD "No selected provider is ready for Happy."
 #define TEST_APPROVE_RAN_SCOUT "No selected provider is ready for Scout."
 #define TEST_APPROVE_ASK_SCOUT \
-    "Approval needed: Scout wants to take a turn. Reply Yes or No in this thread."
+    "Approval needed: Scout wants to take a turn. Reply Yes or No."
 #define TEST_APPROVE_NO_SCOUT "Turn declined: Scout stood down."
 #define TEST_APPROVE_ASK_BUILDER \
-    "Approval needed: Builder wants to take a turn. Reply Yes or No in this thread."
+    "Approval needed: Builder wants to take a turn. Reply Yes or No."
 /* The literal table size and guest share the docs promise (#279 r2). */
 #define TEST_APPROVE_TABLE 8
 #define TEST_APPROVE_GUESTS 4
