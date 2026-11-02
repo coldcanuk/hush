@@ -85,7 +85,7 @@ the top-level `VERSION` file.
     `ask: true` notes.
   - The page reads answered asks the way the relay settles them (F2): an owner Yes / No that names an
     answered ask is a dropped repeat and answers nothing, so a duplicate no longer paints a newer
-    waiting ask "Yes sent". An ask a newer owner note voided shows "Closed by a newer note".
+    waiting ask "Yes sent". An ask a newer owner note in its conversation voided shows "Closed by a newer note"; an ask waiting in another conversation stays open.
   - `answers` is strict (F3, see the API bullet above).
   - A "re: …" jump keeps its flash and scroll through a log repaint for its 1.2 s (F4); before, a
     repaint cleared the card and scrolled to the bottom.

@@ -831,9 +831,9 @@ that from the stored notes the way the relay settles them: an owner
 Yes / No whose `answers` (else its `reply_to`) is an ask already
 answered is a dropped repeat and answers nothing; any other owner
 Yes / No settles the oldest ask still waiting in its conversation
-(Gauge M1-F2). Any other owner note in the conversation closes the asks
-still waiting there, as the relay voids them (`hush_agent_ask_void`):
-they show an inert "Closed by a newer note" mark and take no answer.
+(Gauge M1-F2). Any other owner note in a conversation closes the ask
+waiting there, as the relay voids it by root (`hush_agent_ask_void`): it
+shows an inert "Closed by a newer note" mark and takes no answer, while an ask waiting in another conversation stays open.
 When a conversation holds more than one open ask, the
 newer ones show disabled stamps titled "Answer the earlier ask in this
 conversation first." A disabled stamp keeps its full ink (at least
