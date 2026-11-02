@@ -1518,8 +1518,18 @@ async function main() {
    * /api/status answering "whisper":true (rewritten in the browser via CDP
    * Fetch, after the field-office passes above), then measured in christmas
    * at both widths. */
+  /* Cdp.send answers a CDP error as {}. The page polls /api/status every
+   * second, so a response paused just before Fetch.disable (or cancelled
+   * under us) has no body by the time we ask. Let it through unmodified;
+   * the .chan-voice waitFor below still fails the run if no rewrite lands. */
+  let r3NoBody = 0;
   cdp.onPaused = async (p) => {
     const b = await cdp.send('Fetch.getResponseBody', { requestId: p.requestId });
+    if (typeof b.body !== 'string') {
+      r3NoBody++;
+      await cdp.send('Fetch.continueRequest', { requestId: p.requestId });
+      return;
+    }
     const txt = (b.base64Encoded ? Buffer.from(b.body, 'base64').toString('utf8') : b.body).replace('"whisper":false', '"whisper":true');
     await cdp.send('Fetch.fulfillRequest', { requestId: p.requestId, responseCode: p.responseStatusCode || 200, responseHeaders: p.responseHeaders, body: Buffer.from(txt).toString('base64') });
   };
@@ -1534,6 +1544,7 @@ async function main() {
   }
   await cdp.send('Fetch.disable', {});
   cdp.onPaused = null;
+  console.log(`palette R3 voice: ${r3NoBody} paused /api/status response(s) had no body and went through unmodified`);
   /* .robot-call lives only in #robot-list, which the markup keeps at
    * display:none, so no real view can hover it. Static pin instead: one CSS
    * rule gives .chan-voice:hover and .robot-call:hover the same background,
