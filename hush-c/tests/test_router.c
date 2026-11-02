@@ -38,6 +38,13 @@ enum {
     ROUTER_TEST_PROBE_SAVES = 200,     /* saves the child runs under the probe */
     ROUTER_TEST_PROBE_TRIES = 2000000, /* probe iteration cap */
     ROUTER_TEST_PROBE_SECS = 30,       /* probe wall-clock cap */
+    ROUTER_TEST_NS_PER_SEC = 1000000000,
+    ROUTER_TEST_NS_PER_MS = 1000000,
+    ROUTER_TEST_MS_PER_SEC = 1000,
+    ROUTER_TEST_PROBE_NAP_NS = 50000,  /* lock probe pause per round */
+    /* Lock probe round cap: each round naps, so the clock cap binds first. */
+    ROUTER_TEST_PROBE_ROUNDS =
+        ROUTER_TEST_PROBE_SECS * (ROUTER_TEST_NS_PER_SEC / ROUTER_TEST_PROBE_NAP_NS),
     ROUTER_TEST_FTW_FDS = 16,
     ROUTER_TEST_FIFO_MODE = 0600,      /* the FIFO a mid-read load blocks on */
     ROUTER_TEST_FEED_MAX = 4096        /* one write into that FIFO */
@@ -114,6 +121,9 @@ static const char ROUTER_TEST_LOCK[] = "lock";
 /* File inside a squat directory, so the directory is not empty. */
 static const char ROUTER_TEST_SQUAT_FILL[] = "keep";
 static const char ROUTER_TEST_HTTP_OK[] = "HTTP/1.1 200 ";
+/* Lock probe pause: lets the saver, blocked in F_SETLKW, take router/lock,
+ * and the probe find it free between saves. */
+static const struct timespec ROUTER_TEST_PROBE_NAP = {.tv_nsec = ROUTER_TEST_PROBE_NAP_NS};
 
 /* One phase per item, so a reload that drops any phase shows (Gauge F6). */
 static const hush_router_phase_t ROUTER_TEST_PHASES[] = {
@@ -912,25 +922,55 @@ static void probe_once(int fd, short type, const char *dir, router_probe_t *tall
     expect(fcntl(fd, F_SETLK, &unlock) == 0, "probe unlock");
 }
 
-/* Probes fd with a write then a read lock until child exits, the iteration
- * cap or the clock cap; kills and reaps child if it is still running.
- * Returns child's wait status. */
+/* Returns 1 once start lies more than the probe clock cap in the past. */
+static int past_probe_secs(const struct timespec *start)
+{
+    struct timespec now;
+
+    expect(clock_gettime(CLOCK_MONOTONIC, &now) == 0, "probe clock");
+    return now.tv_sec - start->tv_sec > ROUTER_TEST_PROBE_SECS;
+}
+
+/* Prints the milliseconds since start when ROUTER_TEST_SHOW is set. */
+static void show_probe_ms(const struct timespec *start)
+{
+    struct timespec now;
+
+    expect(clock_gettime(CLOCK_MONOTONIC, &now) == 0, "probe clock");
+    long ms = (now.tv_sec - start->tv_sec) * ROUTER_TEST_MS_PER_SEC +
+              (now.tv_nsec - start->tv_nsec) / ROUTER_TEST_NS_PER_MS;
+    if (getenv("ROUTER_TEST_SHOW") != NULL)
+        printf("probe: saver done in %ld ms\n", ms);
+}
+
+/* One probe round: a write then a read lock try, then a nap. A tight loop
+ * of tries starved the saver past its caps (#375 head11 make test). */
+static void probe_round(int fd, const char *dir, router_probe_t tally[2])
+{
+    probe_once(fd, F_WRLCK, dir, &tally[0]);
+    probe_once(fd, F_RDLCK, dir, &tally[1]);
+    (void)nanosleep(&ROUTER_TEST_PROBE_NAP, NULL);
+}
+
+/* Probes fd in rounds until child exits or the round or clock cap runs
+ * out; kills and reaps child if it is still running. Returns child's wait
+ * status. */
 static int probe_saver(pid_t child, int fd, const char *dir, router_probe_t tally[2])
 {
     struct timespec start;
-    struct timespec now;
     int status = 0;
+    int done = 0;
 
     expect(clock_gettime(CLOCK_MONOTONIC, &start) == 0, "probe clock");
-    for (long i = 0; i < ROUTER_TEST_PROBE_TRIES; ++i) {
-        if (waitpid(child, &status, WNOHANG) == child)
-            return status;
-        probe_once(fd, F_WRLCK, dir, &tally[0]);
-        probe_once(fd, F_RDLCK, dir, &tally[1]);
-        expect(clock_gettime(CLOCK_MONOTONIC, &now) == 0, "probe clock");
-        if (now.tv_sec - start.tv_sec > ROUTER_TEST_PROBE_SECS)
-            break;
+    for (long i = 0; i < ROUTER_TEST_PROBE_ROUNDS && !done && !past_probe_secs(&start);
+         ++i) {
+        done = waitpid(child, &status, WNOHANG) == child;
+        if (!done)
+            probe_round(fd, dir, tally);
     }
+    show_probe_ms(&start);
+    if (done)
+        return status;
     expect(0, "probe: saver did not finish within its caps");
     (void)kill(child, SIGKILL);
     expect(waitpid(child, &status, 0) == child, "probe reap");
@@ -964,6 +1004,7 @@ static void check_lock_exclusive(const char *root)
         for (int i = 0; i < ROUTER_TEST_PROBE_SAVES; ++i) {
             if (hush_router_save(i % 2 == 0 ? &next : &old, home) != HUSH_OK)
                 _exit(ROUTER_TEST_CHILD_FAIL);
+            (void)nanosleep(&ROUTER_TEST_PROBE_NAP, NULL); /* lock free between saves */
         }
         _exit(0);
     }
@@ -1204,15 +1245,6 @@ static void check_readonly_waits(const char *root)
     expect(waitpid(child, &status, 0) == child, "ro reap");
     expect(WIFEXITED(status) && WEXITSTATUS(status) == 0, "ro load after release");
     set_readonly(dir, 0);
-}
-
-/* Returns 1 once start lies more than the probe clock cap in the past. */
-static int past_probe_secs(const struct timespec *start)
-{
-    struct timespec now;
-
-    expect(clock_gettime(CLOCK_MONOTONIC, &now) == 0, "probe clock");
-    return now.tv_sec - start->tv_sec > ROUTER_TEST_PROBE_SECS;
 }
 
 /* Waits within the probe caps for child to exit; past them, kills that PID
