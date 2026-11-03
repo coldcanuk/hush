@@ -56,13 +56,16 @@ static int root_remove_entry(const char *path, const struct stat *st, int flag,
                              struct FTW *ftw);
 
 /* True when path is root or lies below it: root must match whole path
- * components, so "/r" holds "/r" and "/r/k" but not the sibling "/rX/k". */
+ * components, so "/r" holds "/r" and "/r/k" but not the sibling "/rX/k".
+ * A root that ends in '/' already ends a component: "/r/" holds "/r/k". */
 static int root_holds(const char *root, const char *path);
 
 /* Self-test of the two path checks, run before the root is made: returns
  * 0, after a FAIL line, when root_holds or root_is_under_tmpdir accepts a
- * prefix sibling ("/tmp/xprivate" for "/tmp/x"). A real root never sits in
- * such a sibling, so nothing else exercises that boundary. */
+ * prefix sibling ("/tmp/xprivate" for "/tmp/x" or "/tmp/x/"), or when the
+ * pin rejects "/tmp/x/k" under a trailing-slash TMPDIR "/tmp/x/". A real
+ * root never sits in such a sibling, so nothing else exercises that
+ * boundary. */
 static int root_self_check(void);
 
 /* True when tmpdir is NULL, empty or relative (root_make then uses /tmp), or
@@ -621,7 +624,7 @@ static int root_holds(const char *root, const char *path)
     assert(root != NULL && path != NULL);
     n = strlen(root);
     return n > 0 && strncmp(path, root, n) == 0 &&
-           (path[n] == '\0' || path[n] == '/');
+           (path[n] == '\0' || path[n] == '/' || root[n - 1] == '/');
 }
 
 static int root_self_check(void)
@@ -639,6 +642,13 @@ static int root_self_check(void)
         fprintf(stderr, "FAIL root_is_under_tmpdir accepts a prefix sibling\n");
         return 0;
     }
+    /* A TMPDIR may end in '/'; its boundary is that slash. */
+    if (!root_is_under_tmpdir("/tmp/x/", "/tmp/x/k") ||
+        root_is_under_tmpdir("/tmp/x/", "/tmp/xprivate") ||
+        root_is_under_tmpdir("/tmp/x/", "/tmp/xprivate/k")) {
+        fprintf(stderr, "FAIL root_is_under_tmpdir mishandles a TMPDIR ending in '/'\n");
+        return 0;
+    }
     return 1;
 }
 
@@ -646,9 +656,9 @@ static int root_is_under_tmpdir(const char *tmpdir, const char *root)
 {
     assert(root != NULL && root[0] != '\0');
     /* The same absolute test as root_tmpdir, repeated on purpose: the check
-     * must not share the leaf it checks. No trailing-slash strip is needed:
-     * root is "<tmpdir>/<name>", so tmpdir "X/" gives "X//<name>", which
-     * root_holds("X/", ...) already accepts. */
+     * must not share the leaf it checks. No trailing-slash strip: root_holds
+     * treats a tmpdir ending in '/' as ending a component, so "X/" holds both
+     * "X/<name>" and the "X//<name>" root_make builds. */
     if (tmpdir == NULL || tmpdir[0] != '/')
         return 1;
     return root_holds(tmpdir, root);
