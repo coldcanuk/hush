@@ -121,6 +121,12 @@ wait "$pid" 2>/dev/null || true
 pid=""
 start_relay
 restored2=$(curl -sf "http://127.0.0.1:${port}/api/session")
+# Hook for check_restart_cleanup.sh: fail here, once section C's pass store
+# holds real-format nsecs, so the EXIT trap's failure-path cleanup is
+# exercised. Unset in a normal run.
+if [ "${HUSH_TEST_RESTART_FAIL_AT:-}" = C ]; then
+    fail "forced section-C failure (HUSH_TEST_RESTART_FAIL_AT=C)"
+fi
 echo "$restored2" | grep -q '"logged_in":true' || fail "restart with pass should stay logged in"
 echo "$restored2" | grep -q "\"npub\":\"$npub2\"" || fail "restart with pass should keep npub"
 echo "$restored2" | grep -q '"restart_lost_login":false' || fail "restart with pass sets no restart-loss flag"
