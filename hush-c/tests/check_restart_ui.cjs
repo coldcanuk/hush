@@ -78,6 +78,15 @@ const liveProcs = [];
 const ownDirs = [];
 /* stopProc's wait after SIGTERM before its SIGKILL fallback (not pinned by a test). */
 const STOP_WAIT_MS = 5000;
+/* After the SIGKILL fallback, how long stopProc still waits for the group. */
+const KILL_WAIT_MS = 2000;
+/* Poll step while waiting for a process group to empty. */
+const GROUP_POLL_MS = 50;
+/* removeOwnDir: bounded retries (a late Chrome child may still write). */
+const RM_TRIES = 20;
+const RM_WAIT_MS = 100;
+/* Poll step while /json/list has no page target yet. */
+const TARGET_POLL_MS = 100;
 /* Exit codes for the signals that end a run (the pin checks only non-zero). */
 const SIGNAL_EXIT = { SIGINT: 130, SIGTERM: 143 };
 let stopping = null;
@@ -89,15 +98,68 @@ function ownTmp(prefix) {
   ownDirs.push(dir);
   return dir;
 }
-/* Removes one dir this run created; drops it from the registry. */
-function removeOwnDir(dir) {
+/* Removes one dir this run created and drops it from the registry. Retries
+ * a bounded number of times; returns null once the dir is gone, else the
+ * last error text (a real leftover, reported by the caller). */
+async function removeOwnDir(dir) {
   const idx = ownDirs.indexOf(dir);
   if (idx >= 0)
     ownDirs.splice(idx, 1);
-  try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* best effort */ }
+  let last = 'still present';
+  for (let i = 0; i < RM_TRIES; i++) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { last = e.message; }
+    if (!fs.existsSync(dir))
+      return null;
+    await sleep(RM_WAIT_MS);
+  }
+  return last;
 }
-/* Stops one child this run started; resolves once it has exited. */
+/* Signals pid's process group (a detached child leads its own); 0 checks it. */
+function signalGroup(pid, sig) {
+  try { process.kill(-pid, sig); return true; } catch (e) { return false; }
+}
+/* PIDs (not ours) whose command line names dir: a Chrome helper that left
+ * the group. Linux /proc only; elsewhere none. */
+function procsNaming(dir) {
+  let pids = [];
+  try { pids = fs.readdirSync('/proc').filter((d) => /^\d+$/.test(d)); } catch (e) { return []; }
+  return pids.map(Number).filter((pid) => {
+    if (pid === process.pid)
+      return false;
+    try { return fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').includes(dir); } catch (e) { return false; }
+  });
+}
+/* True once p's group is empty and no process names p.hushProfile. */
+function groupGone(p) {
+  return !signalGroup(p.pid, 0) && (!p.hushProfile || procsNaming(p.hushProfile).length === 0);
+}
+/* Waits up to ms for groupGone(p); returns whether it got there. */
+async function waitGroupGone(p, ms) {
+  const t0 = Date.now();
+  while (!groupGone(p)) {
+    if (Date.now() - t0 >= ms)
+      return false;
+    await sleep(GROUP_POLL_MS);
+  }
+  return true;
+}
+/* Stops a detached child and every process in its group (and any helper
+ * naming its profile): SIGTERM, then SIGKILL after STOP_WAIT_MS. */
+async function stopGroup(p) {
+  signalGroup(p.pid, 'SIGTERM');
+  if (await waitGroupGone(p, STOP_WAIT_MS))
+    return;
+  signalGroup(p.pid, 'SIGKILL');
+  for (const pid of p.hushProfile ? procsNaming(p.hushProfile) : [])
+    try { process.kill(pid, 'SIGKILL'); } catch (e) { /* gone */ }
+  if (!(await waitGroupGone(p, KILL_WAIT_MS)))
+    console.error(`restart UI check: Chrome group ${p.pid} still running after SIGKILL`);
+}
+/* Stops one child this run started; resolves once it (and, for a detached
+ * child, its whole process group) has exited. */
 function stopProc(p) {
+  if (p.hushGroup)
+    return stopGroup(p);
   return new Promise((resolve) => {
     if (p.exitCode !== null || p.signalCode !== null) { resolve(); return; }
     const timer = setTimeout(() => { try { p.kill('SIGKILL'); } catch (e) { /* gone */ } },
@@ -107,13 +169,19 @@ function stopProc(p) {
   });
 }
 /* Stops every child first (so none writes into a removed dir), removes
- * every own temp dir, then exits with code. Runs once. */
+ * every own temp dir, then exits with code (1 when a dir would not go).
+ * Runs once. */
 function teardown(code) {
   if (!stopping) {
     stopping = (async () => {
       await Promise.all(liveProcs.splice(0).map(stopProc));
-      for (const d of ownDirs.slice())
-        removeOwnDir(d);
+      for (const d of ownDirs.slice()) {
+        const err = await removeOwnDir(d);
+        if (err) {
+          console.error(`restart UI check failed: could not remove ${d}: ${err}`);
+          code = 1;
+        }
+      }
       process.exit(code);
     })();
   }
@@ -237,12 +305,16 @@ async function launchChromeReady(chrome, track, deadlineMs) {
      * dbus parse errors while starting. Drop it for the Chrome child. */
     const chromeEnv = Object.assign({}, process.env);
     delete chromeEnv.DBUS_SESSION_BUS_ADDRESS;
+    /* detached: Chrome leads its own process group, so teardown can wait
+     * for its helpers too, not only the main process (#375 restart UI). */
     const chromeProc = track(spawn(chrome,
       ['--headless', '--no-sandbox', '--disable-gpu', '--no-first-run',
         '--disable-dev-shm-usage', '--disable-software-rasterizer',
         `--remote-debugging-port=${port}`, `--user-data-dir=${userDir}`,
         'about:blank'],
-      { stdio: ['ignore', 'ignore', 'pipe'], env: chromeEnv }));
+      { stdio: ['ignore', 'ignore', 'pipe'], env: chromeEnv, detached: true }));
+    chromeProc.hushGroup = true;
+    chromeProc.hushProfile = userDir;
     const result = await waitChromeDevtools(chromeProc, port, deadlineMs);
     if (result.ok) {
       return { chromeProc, userDir, port, httpBase: result.httpBase, stderr: result.stderr };
@@ -252,13 +324,37 @@ async function launchChromeReady(chrome, track, deadlineMs) {
     if (idx >= 0)
       liveProcs.splice(idx, 1);
     await stopProc(chromeProc);
-    removeOwnDir(userDir);
+    const rmErr = await removeOwnDir(userDir);
+    if (rmErr)
+      console.error(`restart UI check: could not remove ${userDir}: ${rmErr}`);
     /* Early exit is a hard failure — retrying will not help a missing binary. */
     if (result.detail.startsWith('Chrome exited early'))
       break;
   }
   fail('Chrome printed no DevTools URL: ' +
        (last ? `${last.detail}; ${last.stderr.slice(0, 400)}` : 'no attempt'));
+}
+
+/* Polls /json/list until it lists a page target, within deadlineMs: DevTools
+ * can answer (or print its URL) before Chrome has opened about:blank. */
+async function waitPageTarget(httpBase, deadlineMs) {
+  const t0 = Date.now();
+  let last = 'no answer';
+  for (;;) {
+    try {
+      const res = await fetch(httpBase + '/json/list', { signal: AbortSignal.timeout(1000) });
+      const targets = await res.json();
+      const page = Array.isArray(targets) ? targets.find((t) => t.type === 'page') : null;
+      if (page)
+        return page;
+      last = JSON.stringify(targets).slice(0, 200);
+    } catch (e) {
+      last = 'fetch: ' + e.message;
+    }
+    if (Date.now() - t0 >= deadlineMs)
+      fail(`no page target within ${deadlineMs}ms; last /json/list: ${last}`);
+    await sleep(TARGET_POLL_MS);
+  }
 }
 
 class Cdp {
@@ -298,7 +394,9 @@ class Cdp {
       throw new Error('page eval threw: ' + expr.slice(0, 120));
     return r.result ? r.result.value : null;
   }
-  async waitFor(expr, label, timeout) {
+  /* Polls expr every 250 ms until truthy or timeout (default 25 s). On a
+   * timeout, diag (optional, async) adds the state that explains it. */
+  async waitFor(expr, label, timeout, diag) {
     const t0 = Date.now();
     for (;;) {
       let v = null;
@@ -307,8 +405,10 @@ class Cdp {
       } catch (e) { /* page busy, retry */ }
       if (v)
         return v;
-      if (Date.now() - t0 > (timeout || 25000))
-        fail('timeout waiting for ' + (label || expr));
+      if (Date.now() - t0 > (timeout || 25000)) {
+        const why = diag ? await diag().catch((e) => 'diag failed: ' + e.message) : '';
+        fail('timeout waiting for ' + (label || expr) + (why ? '; ' + why : ''));
+      }
       await sleep(250);
     }
   }
@@ -423,10 +523,7 @@ async function main() {
     await teardown(0);
   }
   const httpBase = launched.httpBase;
-  const targets = await (await fetch(httpBase + '/json/list')).json();
-  const pageTarget = targets.find((t) => t.type === 'page');
-  if (!pageTarget)
-    fail('no page target in ' + JSON.stringify(targets).slice(0, 200));
+  const pageTarget = await waitPageTarget(httpBase, deadlineMs);
   const cdp = new Cdp(pageTarget.webSocketDebuggerUrl);
   await cdp.connect();
   await cdp.send('Page.enable', {});
@@ -1864,7 +1961,18 @@ async function main() {
       i.dispatchEvent(new Event('input')); })()`);
     await sleep(400);
     await cdp.click('#do-import');
-    await cdp.waitFor(`!!document.querySelector('#save-pass')`, 'backup after re-import');
+    /* The import is in memory on the relay (no disk, no KDF), so 25 s is
+     * ample; a miss is a stuck page, and the diag says which: relay
+     * logged_in with the gate on landing means the page dropped a done
+     * import; logged_in false means the import itself failed. */
+    await cdp.waitFor(`!!document.querySelector('#save-pass')`, 'backup after re-import', 0,
+      async () => {
+        const st = await sess(port, R.headers);
+        const gate = await gateText().catch(() => '?');
+        return 'relay session ' + JSON.stringify({ logged_in: st.logged_in,
+          backup_acked: st.backup_acked, identity_imported: st.identity_imported }) +
+          '; gate shows ' + JSON.stringify(String(gate).slice(0, 160));
+      });
     t = await gateText();
     check(t.includes('Your identity key has been imported'),
       'backup after import uses imported title');
