@@ -103,7 +103,7 @@ robots never chain by mentioning each other, and `robot_hops` stays `0`.
    through the usual note scan, so a reply that opens with "I heard:",
    "Holding." or a loop line still uses a turn.
    A cap of 1 or 2 is a short leash. At that cap the chaperon asks
-   "Continue this loop? Reply Yes or No in this thread." A typed "Yes"
+   "Continue this loop? Reply Yes or No." A "Yes" reply (the ask's Yes stamp)
    resumes the stopped turn. "No" posts "Loop stopped." After four Yes
    answers the next cap posts "Loop limit reached. Mention both robots
    again to start a new loop." Only the hive owner can answer. A robot's Yes is ignored.
@@ -148,16 +148,16 @@ robots never chain by mentioning each other, and `robot_hops` stays `0`.
    follow wave, each two-robot loop turn, the leader election pass, the
    leader's plan pass, and an owner reply that goes to the thread's robot.
    The chaperon posts "Approval needed: <Robot> wants to take a turn. Reply
-   Yes or No in this thread."; for the election pass it posts "Approval
-   needed: <Robot> wants to run the leader election. Reply Yes or No in
-   this thread." The plan pass claims its own wake slot (trigger
+   Yes or No."; for the election pass it posts "Approval
+   needed: <Robot> wants to run the leader election. Reply Yes or No." The plan pass claims its own wake slot (trigger
    sha256("hush-plan-pass:" + root)), so approving it runs it even when
    the convener that ran the election is also the elected leader.
    Owner-initiated tools are not robot turns and are not gated: canvas
    fill-in (`POST /api/complete`) and fixup (`POST /api/fixup`), both
    behind the session token.
-3. **Answer.** Only the hive owner answers, by typing Yes or No in the
-   thread (the same parse as the loop prompt). Yes runs that turn exactly
+3. **Answer.** Only the hive owner answers, with Yes or No posted as a
+   reply to the ask's root (the same parse as the loop prompt; in the UI,
+   the ask's Yes / No stamps). Yes runs that turn exactly
    once through the normal path, with the ask, prompt and loop note it was
    held with. No posts "Turn declined: <Robot> stood down." and starts
    nothing; it also stops a live loop in that thread, and robots queued
@@ -176,7 +176,7 @@ robots never chain by mentioning each other, and `robot_hops` stays `0`.
 5. **Loop and cap.** A waiting loop turn does not run, and the loop stays
    paused until the owner answers. Approval lines are not robot turns, so
    the cap counts exactly as before. On a short leash (cap 1 or 2) the
-   loop still asks "Continue this loop? Reply Yes or No in this thread."
+   loop still asks "Continue this loop? Reply Yes or No."
    at the cap. A Yes there resumes the loop. Its next turn then asks for
    approval as usual. On the default cap and the max cap the loop does
    not ask that question while its notes are new. Each of those turns

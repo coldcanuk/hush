@@ -35,7 +35,7 @@ enum {
 /* The base prompt plus the start of the lead's loop rule. */
 #define TEST_LOOP_LEAD_HEAD "Base. Loop: "
 /* R1 (#281 r4): the exact chaperon copy the human reads. */
-#define TEST_LOOP_ASK_COPY "Continue this loop? Reply Yes or No in this thread."
+#define TEST_LOOP_ASK_COPY "Continue this loop? Reply Yes or No."
 #define TEST_LOOP_LIMIT_COPY \
     "Loop limit reached. Mention both robots again to start a new loop."
 #define TEST_LOOP_STOPPED_COPY "Loop stopped."
@@ -126,7 +126,7 @@ static void check_answers(void)
     expect(hush_agent_loop_parse_answer("") == HUSH_AGENT_LOOP_ANSWER_NONE, "empty");
     expect(hush_agent_loop_parse_answer(NULL) == HUSH_AGENT_LOOP_ANSWER_NONE, "NULL");
     expect(strcmp(HUSH_AGENT_LOOP_ASK_LINE, TEST_LOOP_ASK_COPY) == 0,
-           "R1 the prompt says to reply Yes or No in this thread");
+           "R1 the prompt says to reply Yes or No");
     expect(strcmp(HUSH_AGENT_LOOP_LIMIT_LINE, TEST_LOOP_LIMIT_COPY) == 0,
            "R1 the limit line gives the next step");
     expect(strcmp(HUSH_AGENT_LOOP_STOPPED_LINE, TEST_LOOP_STOPPED_COPY) == 0,

@@ -85,6 +85,14 @@ const char *hush_http_event_channel(const hush_event_t *event);
 void hush_http_event_reply_to(char *out, size_t outsz,
                               const hush_event_t *event);
 
+/* M1 R2: writes the ask a Yes/No stamp named (the event's second "e" tag,
+ * see "answers" on POST /api/event) into out, or "" when it has none. */
+void hush_http_event_answers(char *out, size_t outsz, const hush_event_t *event);
+
+/* True when key (required, hex or npub) is Major's or an enabled roster
+ * robot's: an author whose notes the relay itself signs. */
+int hush_http_is_robot_key(const char *key);
+
 /* Copies the JSON string at key into out. 0 when absent or non-string. */
 int hush_http_json_field(const char *body, const char *key, char *out,
                          size_t outsz);

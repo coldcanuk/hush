@@ -45,7 +45,7 @@ const AUTO = 'auto_approve';
 /* U6: the 👍 shows 2 s after a mention; waiting past that proves it stays hidden. */
 const HELD_WAIT_MS = 3000;
 const ACK_WAIT_MS = 6000;
-const ASK_HAPPY = 'Approval needed: Happy wants to take a turn. Reply Yes or No in this thread.';
+const ASK_HAPPY = 'Approval needed: Happy wants to take a turn. Reply Yes or No.';
 const RAN_HAPPY = 'No selected provider is ready for Happy.';
 const DECLINED_HAPPY = 'Turn declined: Happy ';
 const WAITING_COPY = ' · waiting for your OK';
@@ -583,7 +583,7 @@ function turnFixtures(who) {
   const h = who.bots.find((b) => b.name === 'Happy');
   const s = who.bots.find((b) => b.name === 'Scout');
   const chap = 'c'.repeat(64);
-  const askText = (name) => `Approval needed: ${name || 'Happy'} wants to take a turn. Reply Yes or No in this thread.`;
+  const askText = (name) => `Approval needed: ${name || 'Happy'} wants to take a turn. Reply Yes or No.`;
   const ask = (id, at, root, name) => note(id, chap, at, { text: askText(name), root });
   const top = (id, at, root, ms) => note(id, who.me, at, { text: 'nostr:x go', root, ms: ms || [h.npub] });
   const yes = (id, at, root, t) => note(id, who.me, at, { text: t || 'Yes', root });

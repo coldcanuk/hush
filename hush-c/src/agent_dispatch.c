@@ -400,12 +400,15 @@ static hush_status_t hush_agent_publish_reply(hush_store_t *store, hush_agent_jo
     hush_agent_note_in_t note = {0};
     hush_agent_chief_prepare(job, store, hop_root, sizeof(hop_root));
     hush_agent_fill_reply(&note, job);
+    note.ask = job->team_ask;
     if (hop_root[0] != '\0')
         note.parent_id = hop_root;
     hush_event_t posted = {0};
     hush_agent_fill_note(&posted, &note);
     HUSH_TRY(hush_store_insert(store, &posted));
     hush_thread_record(&posted);
+    /* A chief's reply can end with the relay's team ask (M1 R2). */
+    hush_agent_ask_note(&posted);
     hush_agent_brief_update(&posted, job->out);
     if (job->launch == NULL)
         return HUSH_OK;
@@ -1760,6 +1763,7 @@ void hush_agent_reset_follow(const hush_launch_t *launch,
     hush_agent_event_root(root, sizeof(root), event);
     /* #279: any other owner note voids turns still waiting for approval. */
     size_t dropped = hush_agent_approval_void(root);
+    hush_agent_ask_void(root);
     hush_agent_follow_t *slot = hush_agent_follow_find(root);
     if (slot == NULL)
         return;
@@ -1906,6 +1910,7 @@ void hush_agent_chaperon_say(hush_store_t *store, const hush_launch_t *launch,
     in.channel = channel;
     in.parent_id = root;
     in.human_pub = ev->pubkey;
+    in.ask = hush_agent_is_ask_line(line);
     (void)hush_agent_insert_note(store, &in);
 }
 

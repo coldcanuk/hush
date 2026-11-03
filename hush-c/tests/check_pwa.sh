@@ -39,8 +39,9 @@ echo "$html" | grep -q 'a browser should open' || fail "HTML missing OAuth hold 
 echo "$html" | grep -q 'id="provider-key-add"' || fail "HTML missing provider + button"
 echo "$html" | grep -q 'OAUTH_PROVIDERS' || fail "HTML missing OAuth map"
 echo "$html" | grep -q 'id="msg"' || fail "HTML missing composer"
-echo "$html" | grep -q 'rows="6"' || fail "HTML missing 6-line composer"
-echo "$html" | grep -q 'THREAD_PIN_PX' || fail "HTML missing thread pin"
+# M1 channels only: the 6-line thread composer and its pin are gone.
+if echo "$html" | grep -q 'id="thread-msg"'; then fail "thread composer must be gone (M1)"; fi
+if echo "$html" | grep -q 'THREAD_PIN_PX'; then fail "thread pin must be gone (M1)"; fi
 echo "$html" | grep -q 'id="code-canvas-hi"' || fail "HTML missing canvas highlight"
 echo "$html" | grep -q 'id="canvas-k"' || fail "HTML missing canvas Ctrl+K"
 echo "$html" | grep -q 'golang' || fail "HTML missing golang alias"

@@ -53,6 +53,35 @@ void hush_agent_reset_follow(const hush_launch_t *launch,
 int hush_agent_approval_answer(hush_store_t *store, const hush_launch_t *launch,
                                const hush_event_t *ev);
 
+/* M1 R2: the tag the relay puts on a Yes/No ask it wrote itself (approval,
+ * loop, team). Text alone never makes an ask: a robot reply that reads like
+ * one carries no tag (Gauge M1-F1). */
+#define HUSH_AGENT_ASK_TAG_KEY "t"
+#define HUSH_AGENT_ASK_TAG_VALUE "hush-ask"
+
+/* M1 R2: 1 when ev (borrowed) carries the relay ask tag; NULL: 0. */
+int hush_agent_is_relay_ask(const hush_event_t *ev);
+
+/* M1 R2: remembers ev (borrowed) as a waiting ask when it carries the relay
+ * ask tag and sits in a conversation. NULL or any other note: no-op. */
+void hush_agent_ask_note(const hush_event_t *ev);
+
+/* M1 R2: forgets every ask still waiting in conversation root (borrowed):
+ * an owner note there voided the turns and loop they asked about. */
+void hush_agent_ask_void(const char *root);
+
+/* M1 R2: records, by ask id, the ask the owner's Yes/No ev settled: the
+ * oldest ask waiting in ev's conversation, else the ask ev names (its last
+ * "e" tag). An ev that names only its conversation records nothing. */
+void hush_agent_answered_mark(const hush_event_t *ev);
+
+/* M1 R2: 1 when ev is the hive owner's bare Yes or No that targets an ask
+ * already answered: its last "e" tag (reply_to, or the "answers" ask a stamp
+ * adds after it) is a recorded ask id. A repeated stamp click or duplicate
+ * POST; the caller drops ev before any answer handler. 0 for anything else,
+ * so a Yes/No to a plain robot question reaches the robot. Memory only. */
+int hush_agent_answered_repeat(const hush_launch_t *launch, const hush_event_t *ev);
+
 /* Handles a human "Yes"/"No" reply to a waiting "Continue this loop?"
  * prompt in ev's thread. Returns 1 when ev was consumed as the answer;
  * 0 leaves ev to the normal path (which ends any loop in that thread). */

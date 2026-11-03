@@ -286,7 +286,7 @@ The hive ships two labeled buttons on `#tool-rail`, always reachable
   Under the field-office theme, Exit in `#kit-menu` is a red danger
   plate (`#a3352c`, cream text) so it no longer matches Close; the
   behaviour (both open `#hive-leave`) is unchanged (pre-walk F7).
-- Drawer "Close" / `[x]` buttons on Settings / Profile / Raise / Thread /
+- Drawer "Close" / `[x]` buttons on Settings / Profile / Raise /
   Relay-live stay local. They never open `#hive-leave` and never quit.
 - Last `--app` child gone: the relay notices with `kill(pid, 0)` in the
   poll pump (`SIGCHLD` stays ignored). `g_saw_app` latches only after a
@@ -405,7 +405,7 @@ Every robot, including Major, has an Enable/Disable switch
 (greyscale) and do not answer mentions. Raise and Edit also have
 `#agent-intro-enabled` (on by default) and `#agent-intro` (default
 “I am on deck. Standing orders are noted.”). The default on-deck line is not a chat note.
-A different intro posts once per thread when the switch is on. Major posts no in-thread intro.
+A different intro posts once per conversation when the switch is on. Major posts no intro.
 Major’s intro switch and text stay locked. Ranked providers remain.
 Skills live only in Raise / Edit (`#agent-drawer`), never on the hive nav.
 Edit is the inventory: `i` toggles it for the selected or hovered robot
@@ -701,10 +701,10 @@ demo). No Raylib dependency on the main hush-relay.
 | `POST /api/channel` | `{action:"create"\|"delete"\|"group"\|"ungroup"\|"manage", name?, slug?, group?, group_id?, human_0…human_7?, robot_0…robot_7?, kind?, robot_reply?, robot_talk?, burst_ms?, max_jobs?, cooldown_s?}`. Create needs `name`. Delete/group/ungroup/manage need `slug`. Manage may also set the policy leash (§20). |
 | `POST /api/group` | `{name}` creates a parent group with its own UUID. |
 | `GET /api/status` | existing + `thinking` (JSON array of `{name,parent}` for in-flight robot jobs). |
-| `GET /api/events` | notes plus `reply_to` (first `e` tag; empty when the note is not a reply). |
-| `GET /api/thread?root=<64-hex>` | durable thread memory: `{ok,root,brief,name,category,archived,count,truncated,turns[]}`. `name` and `category` are empty when the root has no desk. `archived` is false when the root is active. `turns[]` is `id/pubkey/at/content`, newest 32 oldest-first. Unknown roots return empty. Malformed roots are 400. A desk file that is not a desk is 400. |
-| `POST /api/thread` | `{root, name?, category?, project?, archived}` while logged in with a vibe. `root` is 64 lowercase hex. `name`, `category`, and `project` are at most 64 bytes, with no ASCII control byte. `project` must be an existing launch project slug, or empty. `archived` is 0, 1, false, or true. A blank name, blank category, blank project, and archived 0 removes the desk file. The transcript and the brief stay. Success returns the same object as GET. |
-| `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id). Success is `{ok:true,id}`. Content may contain `nostr:npub1…`. Mentions enter `hush_intel` (burst / policy) before `hush_agent`. |
+| `GET /api/events` | notes plus `reply_to` (first `e` tag; empty when the note is not a reply), `answers` (M1 R2: the second `e` tag, the ask a stamp named; empty when there is none) and `ask` (M1 R2: `true` only on a Yes/No ask the relay itself wrote, i.e. the note carries the `["t","hush-ask"]` tag and Major or an enabled roster robot signed it; else `false`). |
+| `GET /api/thread?root=<64-hex>` | (M1: relay route kept, no UI caller) durable thread memory: `{ok,root,brief,name,category,archived,count,truncated,turns[]}`. `name` and `category` are empty when the root has no desk. `archived` is false when the root is active. `turns[]` is `id/pubkey/at/content`, newest 32 oldest-first. Unknown roots return empty. Malformed roots are 400. A desk file that is not a desk is 400. |
+| `POST /api/thread` | (M1: relay route kept, no UI caller) `{root, name?, category?, project?, archived}` while logged in with a vibe. `root` is 64 lowercase hex. `name`, `category`, and `project` are at most 64 bytes, with no ASCII control byte. `project` must be an existing launch project slug, or empty. `archived` is 0, 1, false, or true. A blank name, blank category, blank project, and archived 0 removes the desk file. The transcript and the brief stay. Success returns the same object as GET. |
+| `POST /api/event` | existing + optional `mention_0`…`mention_7` (npub or hex) stored as `p` tags + optional `reply_to` stored as `e` (the **root** id) + optional `answers` (M1 R2: the id of the Yes/No ask a stamp answers. It must be a JSON string whose decoded value is exactly 64 lowercase hex characters, and it is read only when `reply_to` is set; it is then stored as a second `e` tag after the root, so routing and `GET /api/events` `reply_to` are unchanged. A longer or shorter string, uppercase hex, a JSON number, or `answers` without `reply_to` adds no tag (never truncated), and the note still posts; `hush_http_add_answers`). Success is `{ok:true,id}`. Content may contain `nostr:npub1…`. Mentions enter `hush_intel` (burst / policy) before `hush_agent`. |
 | `POST /api/canvas` | `{project, path, content}` writes `content` to `path` under that launch project's directory. `project` is a project id. `path` is a relative file (no `..`, no absolute). Missing project, empty content, or a path that escapes the project → `{ok:false,error}`. |
 | `POST /api/fixup` | `{instruction, text}` runs a one-shot `grok -p` and returns `{ok:true,text}` or `{ok:false,error}`. Does **not** insert a hive note. Instruction max 500. Text max `HUSH_EVENT_MAX_CONTENT`. |
 | `POST /api/complete` | `{prefix, suffix}` starts a Fill-in-the-Middle job and returns `{ok:true,token}` immediately. Does **not** wait on Grok. Does **not** insert a hive note. A new start replaces any in-flight job. |
@@ -740,13 +740,27 @@ must not light up another radio.
   Close extra windows when it says you are signed in, then reopen
   Configure.”
 
-### 13. @ mentions, thinking, thread pane
+### 13. @ mentions, thinking, channel replies
 
-`#msg` and `#thread-msg` are `<textarea rows="6">` (not a one-line
-`<input>`). They word-wrap. Height is six line-boxes; overflow-y
+Delta 2026-11-02 (M1 thread-UI removal, plan r2 §3 G20 / §7 M1): the
+human UI is **channels only**. There is no thread pane, Thread button,
+thread composer, thread title or count, milestone/desk form, 1:1 robot
+thread, or thread wording in any label, title, aria, placeholder, help
+text or empty state, in any theme or at 390px (CH0_HARD;
+`tests/check_ch0_ui.cjs`). The relay transport is unchanged: replies
+still carry `reply_to` (= the root id), and the relay still matches
+approval, loop and team answers by that root. `GET`/`POST /api/thread`
+and `POST /api/reply` stay on the relay; the page no longer calls
+`/api/thread`. Older sections that name `#thread-pane`, `#thread-msg`,
+`#thread-send`, `#thread-think`, `.thread-btn` or `#milestone-form`
+describe the pre-M1 UI and are retired by this delta.
+
+`#msg` is a `<textarea>` (not a one-line
+`<input>`). It word-wraps. CSS holds its height at six line-boxes; overflow-y
 scrolls after that. `resize: none`. Enter submits. Shift+Enter
 inserts a newline. Mention Enter still applies while `#mention-box`
-/ `#thread-mention` is open.
+is open. Its placeholder is "TYPE NEW MESSAGE HERE — posts to this
+channel"; every send from it is a new top-level note in the channel.
 
 Composer `@` after start-of-input or whitespace opens `#mention-box`.
 Roster: the signed-in human, Payne, raised robots, invited humans.
@@ -762,7 +776,7 @@ spans; they do not globally replace and reorder the source content.
 E.g. "@Happy tell me a joke. @Sgt Major Payne was it funny?" keeps
 the exact sequence and locations so intent ("tell Happy the joke,
 then ask Sgt about it") is not lost. `prettyMentions` or equivalent
-must be order-preserving; `paintNote` / `paintThreadStream` render
+must be order-preserving; `paintNote` renders
 the original text flow with mention markers in place. Mention pills
 resolve `nostr:npub1…` and `@npub1…` with the same prefix match as
 `who()` (`sameKey`), so a truncated key still paints `@Major`. Robot
@@ -779,56 +793,147 @@ on a note stops after its assignment and does not p-tag peers.
    "Mention received." text is **never** a visible chat note (see
    Developer Logging).
 
-A custom robot intro appears at most once per robot per thread root
-when the intro switch is on and the text is not the default on-deck line.
-The default on-deck line is not a chat note. Major posts none.
-Subsequent mentions use only emoji ack + normal reply.
+A custom robot intro appears at most once per robot per conversation
+(root note) when the intro switch is on and the text is not the default
+on-deck line. The default on-deck line is not a chat note. Major posts
+none. Subsequent mentions use only emoji ack + normal reply.
 
-Mentioning a robot starts a thread. The channel `#stream` lists **root**
-notes only (empty `reply_to`), except a reply that opens with
-"No selected provider is ready": that sentence is also painted in plain
-words on the root card (`.log-failure`), so the main log shows the
-failure without opening `#thread-pane` and without scrolling the thread.
-A root with replies or a live job shows
-`.thread-btn` (“Thread · N”). Click opens `#thread-pane`.
+**Channel log (M1, G20).** The channel `#stream` paints **every** note
+of the channel flat, oldest first: top-level notes and replies alike, so
+a robot reply is visible in the channel with no click. `#count` counts
+the painted notes. The one exception is a reply that opens with "No
+selected provider is ready": that sentence is painted once, in plain
+words, on its asking note's card (`.log-failure`), and is not painted
+again as its own note. A robot's `.think` chip, Stop button and live
+`.partial` preview sit on the note it is answering. No note shows a
+Thread button or a reply count.
 
-`#thread-pane` is a floating hive panel (same `--surface` / `--line` /
-`.note` / composer tokens as the channel), not a dimmed 28rem modal.
-Default size `min(42rem, 92vw)` × `min(70vh, 640px)`. `#thread-resize`
-(bottom-right, ≥24px) lets the human drag a new size. Persist
-`{w,h}` in `localStorage.hush-thread`. Clamp to the viewport.
+**Yes/No asks.** A loop ask ("Continue this loop? Reply Yes or No."),
+an approval ask ("Approval needed: … Reply Yes or No.") and a team ask
+("… Raise this team? Reply Yes or No.") show `.loop-stamps` Yes / No
+stamps to the hive owner. Only an ask the relay itself wrote counts:
+the relay tags it `["t","hush-ask"]` when it posts it (the chaperon's
+approval and loop asks, and Major's reply when the relay appends the
+team ask) and `GET /api/events` reports it as `ask: true`. A note that
+only reads like an ask (a robot reply, or one the owner typed) has no
+stamps, and the relay never files it as a waiting ask (Gauge M1-F1).
+A stamp posts `Yes` or `No` with
+`reply_to=<the ask's root>`, which is the relay's existing answer path,
+and `answers=<the ask's id>`, which names the ask it answers.
+Typing a bare Yes or No in `#msg` posts a new top-level note that names
+no ask and answers nothing (see Composer routing; open: plan r2 M5).
 
-The pane supports **1:1** (you + one robot) and **1:n** (you + every
-robot that was mentioned on the root or that authored a descendant).
-Title: `Thread · Happy` or `Thread · Happy, Payne`. Subline is
-`1:1 with Happy` or `1:n · you + Happy, Payne` — not a Payne voice
-line and not a chat bubble. Stream: the root plus descendants from
-any of those participants. Notes in `#thread-stream` are sided
-bubbles (`.note.mine` for the signed-in human, other notes left).
-`who()` matches event hex pubkeys to roster `pubkey` / `npub`.
-`paintThreadStream` rebuilds the stream only when the note/think key
-changes. It pins `scrollTop` to the bottom only when the pane just
-opened or the human is already within `THREAD_PIN_PX` (48) of the
-bottom. A 1 s `tick()` must not yank a scrolled-up thread back down.
-A Grok follow-up receives the last few thread turns so it does not
-repeat a prior joke.
+An answer is single-shot. The first click replaces the stamps with an
+inert `.loop-sent` mark ("Yes sent" / "No sent", role status) before the
+relay answers; on a failed post the stamps come back. An ask the owner
+already answered shows the mark, also after a reload. The page reads
+that from the stored notes the way the relay settles them: an owner
+Yes / No whose `answers` (else its `reply_to`) is an ask already
+answered is a dropped repeat and answers nothing; any other owner
+Yes / No settles the oldest ask still waiting in its conversation
+(Gauge M1-F2). Any other owner note in a conversation closes every ask
+waiting in that conversation, as the relay voids them by root
+(`hush_agent_ask_void`): each shows an inert "Closed by a newer note" mark
+and takes no answer, while asks waiting in other conversations stay open.
+When a conversation holds more than one open ask, the
+newer ones show disabled stamps titled "Answer the earlier ask in this
+conversation first." A disabled stamp keeps its full ink (at least
+4.5:1 in all 8 themes) and shows a dotted rule and a not-allowed cursor
+(CoS 13:14 C). The relay files
+each settled ask by its id and ignores the owner's Yes or No that names
+an ask it already settled (`answers`, or a `reply_to` that is the ask
+itself): no robot turn, no new ask. A Yes or No that names no settled
+ask, such as a bare reply to a robot's plain question, reaches the robot. The Yes stamp text
+is `--fg` on the `--accent` rule, at least 4.5:1 in all 8 themes.
 
-Composer inside the pane reuses the hive `.composer-box`:
-`#thread-pills` + `#thread-msg` leftover + `#thread-mention` `@`
-box (full hive roster, so a 1:1 thread can become 1:n). Submit posts
-`reply_to=<root id>` and `mention_0…N` for **new** pills typed in
-this send. **1:1 inherit:** when this send has no robot pill and
-`threadMembers` is exactly one robot, attach that sole member as
-`mention_0` (and prefix `nostr:<npub>` so the bubble reads `@Happy`).
-Do not re-mention every robot already in a 1:n member set.
-Do not mention the human. After a send that attached a mention, paint
-an optimistic `#thread-think` chip until live `status.thinking` or a
-new robot reply arrives. `#thread-close`
-[x] and Escape return to the channel. The same Thread button reopens
-the same root.
+**Reply anchors.** A reply shows a `.re-link` button ("re: " and up to
+48 characters of the note it answers, title "Show the note this
+answers"). An owner Yes / No points at its own ask. A robot's note
+points at the ask whose Yes freed its turn: the oldest such ask in the
+conversation that names the robot, else the oldest that names no robot
+(loop, team); each freed ask is taken by one robot note (CoS 13:14 B).
+Any other reply points at the note that started its conversation.
+Clicking it scrolls that note into view and outlines it in `--accent`
+for 1.2 s; a log repaint within those 1.2 s keeps the outline and the
+scroll on the repainted card instead of jumping to the bottom (Gauge
+M1-F4).
 
-While the pane is open the tool rail is forced to its collapsed KIT stamp and
-parked at the brand home (§15). It must not paint inside the pane.
+**Composer routing (interim until Router M-n).** A robot is active in a
+channel when an owner conversation there (a top-level note the owner
+wrote) mentions it in an owner note or holds a note it wrote that is not
+a relay line (an ask, a decline, a refusal, a leash note). Each active
+robot's latest such conversation is the one a follow-up continues.
+`#route-preview` above the composer shows where Send will post, before
+Send, whenever `#msg` holds text:
+- A bare Yes or No never follows up: "to #<channel> as a new note. A
+  bare Yes or No answers an ask only from its stamps." It posts with no
+  `reply_to`, so it cannot settle a waiting ask.
+- An @mention of exactly one robot that has a conversation here continues
+  it (`reply_to` its root), so the robot keeps its prior turns. The line
+  then reads the conversation label (below); no `#route-pick` shows.
+  Two or more mentioned robots, or a robot with no conversation here,
+  start a new conversation: "to #<channel>, new conversation".
+- A plain note with exactly one active robot continues that robot's
+  conversation and adds that robot as `mention_0`. The line shows
+  `#route-pick` with that one conversation selected (its other options
+  are "Choose…" and "New conversation in #<channel>") and no text beside
+  it (Gauge P2-R6-1), except at 480 px or narrower (below).
+- With two or more active robots the line reads "Choose who this goes
+  to:" next to `#route-pick` (each robot's conversation, and "New
+  conversation in #<channel>"). Send posts nothing until a choice is made
+  and says "Choose who this goes to first." No robot is guessed.
+- `#route-pick` also lets the owner start a new conversation instead of
+  the one-robot follow-up. The choice holds for the channel until Send.
+- When `#route-pick` shows, it carries the label and the line adds no
+  text beside it, except "Choose who this goes to:". Each robot's option
+  is the same conversation label as the @mention line. At a viewport 480
+  px or narrower, where the closed chooser cuts a long label, the line's
+  text instead shows the selected option's whole label (the chooser's
+  `title`) on its own line above the chooser, wrapping (no ellipsis), and
+  follows each change of the selection (CoS 01:50, Ops OBS 01:48).
+- The conversation label is "to <robot>, continuing “<quote>”". The quote
+  is the conversation's first note with a leading mention of that same
+  robot dropped ("to <robot>" already names it; a mention of another
+  robot stays) and whitespace collapsed; if nothing is left, the note is
+  quoted as written. Up to 40 characters it is shown whole; longer, it is
+  cut at the last word break within its first 39 characters, trailing
+  punctuation dropped, and ends in "…" (one word longer than that is cut
+  at 39). Characters are Unicode code points: a cut never splits a
+  surrogate pair, but it can split a grapheme cluster (a flag, a ZWJ
+  sequence, a skin-tone modifier, a combining mark); a grapheme-safe cut
+  is a known follow-up.
+  The line's text, each option and `#route-pick` carry the label as
+  their `title`. A label wider than the line ends in an ellipsis
+  (`text-overflow: ellipsis` on `#route-text.route-label`, set only while
+  the text is a label, and on `#route-pick`), never a bare clip (Ops M1
+  FU1 label quality). Every other route sentence wraps in full (Gauge
+  P2-R8-1).
+- With `#msg` empty (first paint, idle, after a send, or after a channel
+  switch) the line is hidden (`.route-preview[hidden]` is `display:
+  none`), its text is cleared, and `#route-pick` is hidden with no
+  options, so it takes no focus. `#route-pick` starts hidden. The line
+  sits in the log's 18 px gutter (Ops M1 F1, FU1).
+
+**Robot rows.** A robot row in the roster opens that robot's settings
+and loadout drawer (title "Open <name>'s settings and loadout"); it no
+longer starts a 1:1 thread.
+
+**Known M1 gaps:**
+- Typing Yes or No in the channel composer does not answer an ask. A bare Yes or No posts a new
+  top-level note with no `reply_to`, so only the Yes / No stamps on the ask answer it (until M5).
+- Follow-up routing is interim until Router M-n (see Composer routing): it is computed in the page
+  from the loaded channel log, not by a router.
+- Milestone/desk naming and 1:1 robot threads are removed from the UI, with no channel replacement yet.
+- The relay remembers answered asks in memory only (the last 64 answered ask ids, and up to 64 waiting
+  asks). After a relay restart, or once 64 newer asks were answered, a repeated owner Yes / No on an old
+  answered ask is again treated as a new note to the conversation's robot. The page still shows that
+  ask as answered.
+- Notes stored before M1 keep their "in this thread" text; stored content is shown as written.
+- `GET` / `POST /api/thread` stay on the relay, ungated and with no UI caller, until the M4 gate and
+  delete. `tests/check_launch.sh` pins 0 callers in the page.
+- `hush-c/src/api_channels.c:66` still returns "Invalid message or conversation. Reopen the thread and
+  retry." in a 400 body that the page does not show, and `hush-c/src/api_status.c:135` returns "thread
+  too large" from `/api/thread`, which the page does not call (backlog).
 
 A Grok Build robot with `has_home` is invoked via `grok -p`.
 An unbound chat job uses the private agent directory
@@ -864,14 +969,12 @@ visible chars) so a second joke after a newline is still visible to
 “Do not repeat a prior joke.” Still one job → one kind-1 note.
 The reply is kind 1, `e` = **root** (the triggering note’s `e` if
 already set, else that note’s id), `p` human. Other mentioned robots
-post a short on-deck note so the thread still appears.
+post a short on-deck note so the conversation still appears.
 
 While a job is busy, `GET /api/status.thinking[]` lists
 `{name,parent}`. The matching hive root shows `.think`: an 8px pulsing
-accent dot and “\<name\> is thinking” (`aria-live="polite"`). Inside
-`#thread-pane` the same chip sits in `#thread-think` above the
-composer — not on the scrolled-away root — and Send is disabled until
-the job leaves the array. A second mention of that robot on the same
+accent dot and “\<name\> is thinking” (`aria-live="polite"`). A
+second mention of that robot on the same
 root while the job is busy does not start another grok child.
 
 Delta 2026-09-23 (WS4 stream/cancel pass): every `.think` chip carries
@@ -880,14 +983,14 @@ one **Stop** button per live job (`Stop <name>` → `POST /api/cancel`
 group, SIGKILLs past the grace period, and posts an honest
 "<name> stopped on request …" note). Each 1 s `tick()` also polls
 `POST /api/reply {root, robot}` for live jobs and paints the newest
-partial into a `.partial` preview under the chip (channel root and
-`#thread-think` alike); the slot fills in place so scroll is never
+partial into a `.partial` preview under the chip on the channel note
+(M1: the only caller); the slot fills in place so scroll is never
 yanked, and it clears when the final note lands. A provider that
 cannot stream simply shows no partial — the chip and the final note
-still work. Send stays disabled while a job is live on the open
-thread; Stop stays enabled.
+still work. Stop stays enabled.
 
-Delta 2026-09-24 (WS5 M2 thread-memory pass): the thread pane restores
+Delta 2026-09-24 (WS5 M2 thread-memory pass; UI retired by the M1
+delta above, route kept): the thread pane restores
 durable context so leave→return continues with real memory. `GET
 /api/thread?root=<64-hex-lower>` returns `{ok,root,brief,count,truncated,
 turns[]}` (`turns` = newest 32 oldest-first with `id/pubkey/at/content`;
@@ -1020,10 +1123,7 @@ immediately to the left of `.brand` (`hush` / vibe name, e.g.
 `LOCAL HIVE`). Double-click `#rail-toggle` collapses (if needed) and
 homes there.
 
-**Thread park.** Opening `#thread-pane` forces collapsed + brand home
-so the rail never sits inside the thread chrome. Closing the pane
-restores the pre-thread `{x,y,collapsed}` unless the human dragged
-during the thread (then keep the new free position).
+**Thread park.** Retired in M1 (there is no thread pane to park for).
 
 Expanded rail, in order:
 
@@ -1727,9 +1827,10 @@ garbled one, or `stop` ends the loop after the current turn. Chaperon
 lines (posted by the channel `chaperon`, Major by default):
 
 - At `max_robot_turns` while a loop is live: "Continue this loop?
-  Reply Yes or No in this thread." **instead of** "That's enough robot
+  Reply Yes or No." **instead of** "That's enough robot
   talk. Standing by for the human." (the cap without a loop is
-  unchanged). It is a plain chat line; there are no Yes/No buttons. A typed thread reply
+  unchanged). The owner sees Yes / No stamps on it in the channel (§13
+  M1); a stamp posts a reply to the loop's root. A reply to that root
   "Yes" (case-insensitive, trailing `.`/`!` allowed) runs up to
   `max_robot_turns` more turns; "No" posts "Loop stopped.".
 - After four Yes answers, the next cap posts "Loop limit reached. Mention
@@ -1789,16 +1890,16 @@ turns need approval.
    follow wave, each two-robot loop turn, the leader election pass, the
    leader's plan pass, and an owner reply that goes to the thread's robot.
    The chaperon posts "Approval needed: <Robot> wants to take a turn. Reply
-   Yes or No in this thread."; for the election pass it posts "Approval
-   needed: <Robot> wants to run the leader election. Reply Yes or No in
-   this thread." The plan pass claims its own wake slot (trigger
+   Yes or No."; for the election pass it posts "Approval
+   needed: <Robot> wants to run the leader election. Reply Yes or No." The plan pass claims its own wake slot (trigger
    sha256("hush-plan-pass:" + root)), so approving it runs it even when
    the convener that ran the election is also the elected leader.
    Owner-initiated tools are not robot turns and are not gated: canvas
    fill-in (`POST /api/complete`) and fixup (`POST /api/fixup`), both
    behind the session token.
-3. **Answer.** Only the hive owner answers, by typing Yes or No in the
-   thread (the same parse as the loop prompt). Yes runs that turn exactly
+3. **Answer.** Only the hive owner answers, with Yes or No posted as a
+   reply to the ask's root (the same parse as the loop prompt); in the
+   UI that is the ask's Yes / No stamps (§13 M1). Yes runs that turn exactly
    once through the normal path, with the ask, prompt and loop note it was
    held with. No posts "Turn declined: <Robot> stood down." and starts
    nothing; it also stops a live loop in that thread, and robots queued
@@ -1817,7 +1918,7 @@ turns need approval.
 5. **Loop and cap.** A waiting loop turn does not run, and the loop stays
    paused until the owner answers. Approval lines are not robot turns, so
    the cap counts exactly as before; at the cap the loop still asks
-   "Continue this loop? Reply Yes or No in this thread.", and a Yes there
+   "Continue this loop? Reply Yes or No.", and a Yes there
    resumes the loop, whose next turn then asks for approval as usual. Each
    owner Yes is an owner note, so like any owner note it restarts the
    channel's robot-turn count; outside a two-robot loop the channel cap
@@ -1841,9 +1942,9 @@ turns need approval.
    Approving a turn lets the robot's runtime use its usual tools for that
    turn (no per-tool approval).
 
-None of the three approval lines counts as a robot turn. The UI change is
-the Settings radio pair only (§6); answers are typed thread replies, with
-no Approve/Deny buttons.
+None of the three approval lines counts as a robot turn. The UI is the
+Settings radio pair (§6) plus, since M1, the Yes / No stamps on each
+ask in the channel; there are no separate Approve/Deny buttons.
 
 ## Visual language
 - Dark default tokens stay. Themes override CSS variables on `html[data-theme]`.

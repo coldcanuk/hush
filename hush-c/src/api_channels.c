@@ -47,8 +47,17 @@ static hush_status_t hush_http_channel_create(const char *body);
 static hush_status_t hush_http_channel_group(const char *body, const char *slug);
 static hush_status_t hush_http_channel_roster(const char *body, const hush_launch_channel_t *channel);
 static hush_status_t hush_http_channel_about(const char *body, const char *slug);
-static int hush_http_is_robot_key(const char *key);
 static void hush_http_add_reply_to(hush_event_t *out, const char *body);
+/* M1 R2: after a reply_to e tag, adds a second "e" tag naming the ask a
+ * Yes/No stamp answers: body "answers" must be a JSON string that decodes to
+ * exactly 64 lowercase hex characters. The first e tag stays the
+ * conversation root, so routing is unchanged. Anything else (no reply_to, a
+ * number, a longer or shorter id, uppercase): no tag, the note still posts. */
+static void hush_http_add_answers(hush_event_t *out, const char *body);
+/* Writes the value of ev's skip-th non-empty "e" tag (0 = first) to out, or
+ * "" when there is none or it does not fit. */
+static void hush_http_event_e(char *out, size_t outsz, const hush_event_t *ev,
+                              size_t skip);
 /* True when note reads as a Yes/No approval answer and the request did not
  * present the paired window's X-Hush-Nonce (#336). */
 
@@ -111,6 +120,7 @@ static hush_status_t hush_http_parse_note(hush_event_t *out, const char *body)
     memcpy(out->tags[0][0], "h", sizeof("h"));
     memcpy(out->tags[0][1], channel, strlen(channel) + 1);
     hush_http_add_reply_to(out, body);
+    hush_http_add_answers(out, body);
     hush_http_add_mentions(out, body);
     return HUSH_OK;
 }
@@ -128,7 +138,7 @@ static void hush_http_note_presence(hush_store_t *store, const hush_event_t *eve
         return;
 }
 
-static int hush_http_is_robot_key(const char *key)
+int hush_http_is_robot_key(const char *key)
 {
     assert(key != NULL);
     if (hush_http_launch() == NULL)
@@ -488,6 +498,28 @@ static void hush_http_add_reply_to(hush_event_t *out, const char *body)
     out->tag_count++;
 }
 
+static void hush_http_add_answers(hush_event_t *out, const char *body)
+{
+    char ask[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    hush_json_value_t value = {0};
+
+    assert(out != NULL && body != NULL && out->tag_count > 0);
+    const size_t last = out->tag_count - 1;
+    if (strcmp(out->tags[last][0], "e") != 0 || out->tag_count >= (size_t)HUSH_EVENT_MAX_TAGS)
+        return;
+    /* decode takes only a JSON string, and returns FULL rather than cut a
+     * longer value down to 64 characters (Gauge M1-F3). */
+    if (hush_json_lookup(&value, body, "/answers") != HUSH_OK ||
+        hush_json_decode(ask, sizeof(ask), &value) != HUSH_OK)
+        return;
+    if (strlen(ask) != (size_t)HUSH_EVENT_ID_HEX_LEN ||
+        strspn(ask, HUSH_JSON_HEX) != (size_t)HUSH_EVENT_ID_HEX_LEN)
+        return;
+    memcpy(out->tags[out->tag_count][0], "e", 2);
+    memcpy(out->tags[out->tag_count][1], ask, sizeof(ask));
+    out->tag_count++;
+}
+
 static void hush_http_add_mentions(hush_event_t *out, const char *body)
 {
     char key[24];
@@ -513,7 +545,19 @@ static void hush_http_add_mentions(hush_event_t *out, const char *body)
 void hush_http_event_reply_to(char *out, size_t outsz,
                                      const hush_event_t *ev)
 {
+    hush_http_event_e(out, outsz, ev, 0);
+}
+
+void hush_http_event_answers(char *out, size_t outsz, const hush_event_t *ev)
+{
+    hush_http_event_e(out, outsz, ev, 1);
+}
+
+static void hush_http_event_e(char *out, size_t outsz, const hush_event_t *ev,
+                              size_t skip)
+{
     size_t i;
+    size_t seen = 0;
 
     assert(out != NULL);
     assert(outsz > 0);
@@ -521,9 +565,9 @@ void hush_http_event_reply_to(char *out, size_t outsz,
     if (ev == NULL)
         return;
     for (i = 0; i < ev->tag_count; i++) {
-        if (strcmp(ev->tags[i][0], "e") != 0)
+        if (strcmp(ev->tags[i][0], "e") != 0 || ev->tags[i][1][0] == '\0')
             continue;
-        if (ev->tags[i][1][0] == '\0')
+        if (seen++ < skip)
             continue;
         if (strlen(ev->tags[i][1]) >= outsz)
             return;
