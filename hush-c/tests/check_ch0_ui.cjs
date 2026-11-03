@@ -643,9 +643,47 @@ async function main() {
         rpLabels.push({ w: v.w, name: r.name, label: st.label, textW: st.textW, room: st.room, ellipsis: st.textOverflow });
       }
     }
+    // RP5 (Gauge P2-R8-1, CoS 01:46): the bare Yes/No sentence is not a
+    // label: at 390 and 1440 it wraps in full (no nowrap, no ellipsis, no
+    // clip). RP6 (Gauge P3): a long label in the @mention #route-text fits
+    // or ends in a computed ellipsis, and carries the whole label as title.
+    const BARE = 'to #label-room as a new note. A bare Yes or No answers an ask only from its stamps.';
+    const rpBare = [], rpNamed = [];
+    const readText = `(() => { const t = $('route-text'), ts = getComputedStyle(t);
+      return { vw: innerWidth, text: t.textContent, title: t.title, label: t.classList.contains('route-label'), sw: t.scrollWidth, cw: t.clientWidth,
+        h: Math.round(t.getBoundingClientRect().height), whiteSpace: ts.whiteSpace, textOverflow: ts.textOverflow, overflowX: ts.overflowX,
+        right: Math.round(t.getBoundingClientRect().right), pickHidden: $('route-pick').hidden }; })()`;
+    for (const v of [VIEWS[1], VIEWS[0]]) {
+      await view(v);
+      await cdp.eval(`(() => { $('msg').value = 'Yes'; $('msg').dispatchEvent(new Event('input')); return true; })()`);
+      await sleep(150);
+      const b = await cdp.eval(readText);
+      const bad = [];
+      if (b.text !== BARE) bad.push('not the bare sentence in full');
+      if (b.label) bad.push('carries route-label');
+      if (b.whiteSpace === 'nowrap' || b.textOverflow === 'ellipsis') bad.push('nowrap or ellipsis on the sentence');
+      if (b.sw > b.cw) bad.push('clipped (scrollWidth > clientWidth)');
+      if (b.right > b.vw - 18 + 1) bad.push('past the gutter');
+      if (bad.length) fail('RP5 bare sentence at ' + v.w + ': ' + bad.join(', ') + ' ' + JSON.stringify(b));
+      rpBare.push(b);
+      if (v.w === 390) {
+        const r = longRobots[0];
+        await cdp.eval(`(() => { $('msg').value = ${JSON.stringify('@' + r.name + ' plain label')}; $('msg').dispatchEvent(new Event('input')); return true; })()`);
+        await sleep(150);
+        const t = await cdp.eval(readText);
+        const nb = [];
+        if (!t.pickHidden || t.text !== r.exact || t.title !== t.text || !t.label) nb.push('not the label, alone, as title, with route-label');
+        if (t.sw > t.cw && !(t.textOverflow === 'ellipsis' && t.whiteSpace === 'nowrap' && t.overflowX !== 'visible')) nb.push('clipped without an ellipsis');
+        if (t.right > t.vw - 18 + 1) nb.push('past the gutter');
+        if (nb.length) fail('RP6 @mention label at 390: ' + nb.join(', ') + ' ' + JSON.stringify(t));
+        rpNamed.push(t);
+      }
+    }
     await cdp.eval(`(() => { $('msg').value = ''; $('msg').dispatchEvent(new Event('input')); routePick = { channel: '', value: '' }; return true; })()`);
     await view(VIEWS[0]);
     console.log('RP2L PASS long-name labels: ' + JSON.stringify(rpLabels));
+    console.log('RP5 PASS bare sentence wraps at 390 and 1440: ' + JSON.stringify(rpBare));
+    console.log('RP6 PASS @mention long label at 390: ' + JSON.stringify(rpNamed));
     console.log('RP PASS route line: ' + JSON.stringify({ empty: rpEmpty, gutter: rpGutter, afterSend: rpAfter, switch: rpSwitch, otherChannel: rpOther }));
     console.log('A PASS interim routing: ' + JSON.stringify({ again: again.got.reply_to === RA, preview: plain.said.text,
       bare: { said: bare.said.text, reply_to: bare.got.reply_to, aceAskLive: held }, two: { said: two.said.text, err: two.err }, chosen: chosen.got.reply_to === RA }));
