@@ -894,11 +894,14 @@ Send, whenever `#msg` holds text:
   quoted as written. Up to 40 characters it is shown whole; longer, it is
   cut at the last word break within its first 39 characters, trailing
   punctuation dropped, and ends in "…" (one word longer than that is cut
-  at 39).
+  at 39). Characters are Unicode code points, so a cut never splits an
+  emoji.
   The line's text, each option and `#route-pick` carry the label as
   their `title`. A label wider than the line ends in an ellipsis
-  (`text-overflow: ellipsis` on `#route-text` and `#route-pick`), never a
-  bare clip (Ops M1 FU1 label quality).
+  (`text-overflow: ellipsis` on `#route-text.route-label`, set only while
+  the text is a label, and on `#route-pick`), never a bare clip (Ops M1
+  FU1 label quality). Every other route sentence wraps in full (Gauge
+  P2-R8-1).
 - With `#msg` empty (first paint, idle, after a send, or after a channel
   switch) the line is hidden (`.route-preview[hidden]` is `display:
   none`), its text is cleared, and `#route-pick` is hidden with no

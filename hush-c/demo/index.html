@@ -2181,8 +2181,10 @@ html[data-theme="field-office"] .think-stop:focus-visible {
 }
 /* Ops M1 FU1 label quality (CoS 01:04 b): a label wider than the line ends
    in an ellipsis instead of a hard clip. The quote is already cut at a word
-   break within 40 characters (convoLabel); this only covers the width. */
-.route-preview #route-text, .route-preview select {
+   break within 40 characters (convoLabel); this only covers the width.
+   Gauge P2-R8-1: only a label gets this (#route-text.route-label, set by
+   paintRoute, and the chooser); the other route sentences wrap. */
+.route-preview #route-text.route-label, .route-preview select {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 100%;
 }
 html[data-theme="field-office"] .loop-yes {
@@ -5726,9 +5728,11 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
        already says it; a mention of another robot stays) and whitespace
        collapsed. Up to 40 characters it is whole; longer, it is cut at the
        last word break within the first 39 characters and ends in "…" (a
-       single word longer than that is cut at 39). For a label still wider
-       than the line, #route-text and the <select> carry text-overflow:
-       ellipsis (CSS .route-preview); the open option list is native and
+       single word longer than that is cut at 39). Characters are code
+       points (Array.from), so a cut never splits an emoji. For a label
+       still wider than the line, #route-text.route-label and the <select>
+       carry text-overflow: ellipsis (CSS .route-preview); the open option
+       list is native and
        draws no ellipsis. #route-text, each option and the <select> carry
        this whole label as their title. */
     function convoLabel(c) {
@@ -5739,10 +5743,11 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         (full.length === own.length || /[\s,.:;!?]/.test(full[own.length]))
         ? full.slice(own.length).replace(/^[\s,.:;!?]+/, "") : full;
       const flat = rest || full;
+      const chars = Array.from(flat);
       let quote = flat;
-      if (flat.length > 40) {
-        let cut = flat.slice(0, 39);
-        if (flat[39] !== " ") {
+      if (chars.length > 40) {
+        let cut = chars.slice(0, 39).join("");
+        if (chars[39] !== " ") {
           const sp = cut.lastIndexOf(" ");
           if (sp > 0) cut = cut.slice(0, sp);
         }
@@ -5779,6 +5784,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         box.hidden = true;
         $("route-text").textContent = "";
         $("route-text").title = "";
+        $("route-text").classList.remove("route-label");
         paintRoutePick({ kind: "idle" });
         return route;
       }
@@ -5794,6 +5800,9 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       const picking = (route.list || []).length > 0;
       $("route-text").textContent = picking && route.kind !== "choose" ? "" : words[route.kind];
       $("route-text").title = $("route-text").textContent;
+      /* Gauge P2-R8-1: nowrap + ellipsis for a conversation label only;
+         the bare Yes/No sentence and the others wrap in full. */
+      $("route-text").classList.toggle("route-label", !picking && route.kind === "continue");
       paintRoutePick(route);
       return route;
     }
