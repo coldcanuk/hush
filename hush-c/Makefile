@@ -183,14 +183,25 @@ check-deps:
 # Harnesses that vary HOME or XDG_RUNTIME_DIR on purpose (check_exit.sh)
 # still do so after this. A harness that needs a fake provider prepends
 # its own bin directory and leaves the sentinel behind it.
+# The whole run gets one private TMPDIR (mktemp under the caller's TMPDIR,
+# or /tmp), removed on exit and, through exit, on HUP, INT and TERM (dash
+# runs no EXIT trap on a signal); HOME and the XDG dirs live inside it.
+# A marker stamped at the start lets the last step, check_no_nsec_leak.sh,
+# fail on any key, vault or token file the run left in /tmp outside that
+# TMPDIR, or in a private test root inside it.
 test: check-deps $(TEST_BINS) hush-relay
 	@set -eu; \
 	umask 022; \
-	ht_home=$$(mktemp -d); \
-	ht_run=$$(mktemp -d); \
-	ht_xdg=$$(mktemp -d); \
-	ht_bin=$$(mktemp -d); \
-	trap 'rm -rf "$$ht_home" "$$ht_run" "$$ht_xdg" "$$ht_bin"' EXIT; \
+	ht_tmp=$$(mktemp -d); \
+	trap 'rm -rf "$$ht_tmp"' EXIT; \
+	trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	export TMPDIR="$$ht_tmp"; \
+	ht_mark="$$ht_tmp/.hush-leak-marker"; \
+	sh tests/check_no_nsec_leak.sh mark "$$ht_mark"; \
+	ht_home=$$(mktemp -d "$$ht_tmp/hush-make-home.XXXXXX"); \
+	ht_run=$$(mktemp -d "$$ht_tmp/hush-make-run.XXXXXX"); \
+	ht_xdg=$$(mktemp -d "$$ht_tmp/hush-make-xdg.XXXXXX"); \
+	ht_bin=$$(mktemp -d "$$ht_tmp/hush-make-bin.XXXXXX"); \
 	printf '%s\n' '#!/bin/sh' 'name=$$(basename "$$0")' \
 	  'echo "hush test refused real $$name" >&2' 'exit 97' > "$$ht_bin/refuse"; \
 	chmod 0755 "$$ht_bin/refuse"; \
@@ -211,6 +222,7 @@ test: check-deps $(TEST_BINS) hush-relay
 	sh tests/check_stamp_mix.sh || exit 1; \
 	sh tests/check_launch.sh || exit 1; \
 	sh tests/check_restart.sh || exit 1; \
+	sh tests/check_restart_cleanup.sh || exit 1; \
 	sh tests/check_restart_ui_deps.sh || exit 1; \
 	sh tests/check_restart_ui_chrome_wait.sh || exit 1; \
 	sh tests/check_restart_ui_tmp.sh || exit 1; \
@@ -259,6 +271,9 @@ test: check-deps $(TEST_BINS) hush-relay
 	sh tests/check_turn_pkg.sh || exit 1; \
 	sh tests/check_voice.sh || exit 1; \
 	sh tests/check_voice_ui.sh || exit 1; \
+	sh tests/check_fake_modes.sh || exit 1; \
+	sh tests/check_no_nsec_leak_selftest.sh || exit 1; \
+	sh tests/check_no_nsec_leak.sh check "$$ht_mark" "$$ht_tmp" || exit 1; \
 	echo "ALL TESTS PASSED"
 
 clean:

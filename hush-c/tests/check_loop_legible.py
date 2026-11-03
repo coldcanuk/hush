@@ -31,8 +31,10 @@ FILES = {
     "tests/test_approve.c": None,
 }
 # Functions in tests/test_loop.c today. The scan must still find all of
-# them, so no test function can drop out of the caps unnoticed.
-TEST_LOOP_FUNCTIONS = 30
+# them, so no test function can drop out of the caps unnoticed. (+7 for the
+# private-root helpers root_make, root_remove, root_remove_entry, root_holds,
+# root_self_check, root_is_under_tmpdir and root_tmpdir.)
+TEST_LOOP_FUNCTIONS = 37
 # Functions in tests/test_approve.c today (#279 r2; +check_needed, #336;
 # #312 adds first_at, give_intro, check_intro_waits and check_intro_auto;
 # the #312 pair fix adds new_fixture, pair_lead_ends, check_pair_asks,
@@ -40,9 +42,12 @@ TEST_LOOP_FUNCTIONS = 30
 # check_answer_once; the CoS 10:03 ask-id guard adds last_line_id,
 # check_repeat_shapes and check_answer_plain; the Gauge M1 fixes add
 # scan_line, check_answer_lookalike, check_answer_held, check_answer_bare,
-# check_answer_fifo, check_answer_void and check_answer_team), held to the
-# same rule.
-TEST_APPROVE_FUNCTIONS = 62
+# check_answer_fifo, check_answer_void and check_answer_team; the
+# private-root helpers root_make, root_remove, root_remove_entry,
+# root_holds, root_self_check, root_is_under_tmpdir and root_tmpdir; and
+# check_answers, which runs the check_answer_* pins for main()'s 40-line
+# cap), held to the same rule.
+TEST_APPROVE_FUNCTIONS = 70
 TEST_COUNTS = {
     "tests/test_loop.c": TEST_LOOP_FUNCTIONS,
     "tests/test_approve.c": TEST_APPROVE_FUNCTIONS,

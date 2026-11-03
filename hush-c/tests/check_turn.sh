@@ -4,12 +4,43 @@ set -eu
 cd "$(dirname "$0")/.."
 . ./tests/hush_free_port.sh
 . ./tests/hush_pair.sh
+# Everything this script makes, empty until made. cleanup removes only
+# these: the relay, its log, and the mktemp config, pass-store and home dirs
+# (the pass store holds the hive's nsecs). The traps go in before the first
+# mktemp, so no exit path skips them. EXIT runs cleanup once; HUP, INT and
+# TERM exit nonzero through it, since dash runs no EXIT trap on a signal.
+pid=""
+log=""
+cfg=""
+test_home=""
+pass_dir=""
+cleanup() {
+    if [ -n "$pid" ]; then
+        kill "$pid" 2>/dev/null || true
+        # Wait it out, or it can still write into the home while rm -rf
+        # walks it ("Directory not empty").
+        wait "$pid" 2>/dev/null || true
+    fi
+    if [ -n "$log" ]; then
+        rm -f "$log"
+    fi
+    for made in "$cfg" "$pass_dir" "$test_home"; do
+        if [ -n "$made" ]; then
+            rm -rf "$made"
+        fi
+    done
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 # Session-token gate plus a hermetic pass store, so the harness never reads the
 # operator's real credentials. curl() adds the hive token to every call.
 test_home="$(mktemp -d)"
 export HUSH_HOME="$test_home/hush"
 export HUSH_PASS_HELPER="$(pwd)/tests/fake-pass.sh"
-export HUSH_FAKE_PASS_DIR="$(mktemp -d)"
+pass_dir="$(mktemp -d)"
+export HUSH_FAKE_PASS_DIR="$pass_dir"
 # The paired window's X-Hush-Nonce rides along: owner Yes/No answers need it (#336).
 curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME:-$HOME/.hush}/session.token" 2>/dev/null || true)" \
     -H "X-Hush-Nonce: $(cat "${HUSH_HOME:-/nonexistent}/ui.nonce" 2>/dev/null || true)" \
@@ -22,8 +53,6 @@ cfg=$(mktemp -d)
 export HUSH_CONFIG_DIR="$cfg"
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
-cleanup() { kill "$pid" 2>/dev/null || true; rm -f "$log"; rm -rf "$cfg"; }
-trap cleanup EXIT
 i=0
 while [ "$i" -lt 50 ]; do
     if curl -sf "http://127.0.0.1:${port}/api/turn" >/dev/null 2>&1; then

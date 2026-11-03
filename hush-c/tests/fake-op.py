@@ -5,16 +5,32 @@ import json
 import os
 import sys
 
+# New dirs and files are owner-only (0700 / 0600), including the
+# intermediate dirs os.makedirs creates; write_secret and the chmods also
+# reset ones that already exist with a wider mode.
+os.umask(0o077)
 root = os.environ.get("HUSH_FAKE_OP_DIR", "/tmp/hush-fake-op")
 os.makedirs(root, mode=0o700, exist_ok=True)
+os.chmod(root, 0o700)
 
 
 def item_path(vault, title):
     safe_v = vault.replace("/", "_")
     safe_t = title.replace("/", "_")
-    folder = os.path.join(root, "items", safe_v)
+    items = os.path.join(root, "items")
+    folder = os.path.join(items, safe_v)
     os.makedirs(folder, mode=0o700, exist_ok=True)
+    os.chmod(items, 0o700)
+    os.chmod(folder, 0o700)
     return os.path.join(folder, safe_t)
+
+
+def write_secret(path, text):
+    """Writes a stored secret as a 0600 file, never through the umask."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
 
 
 def write_meta(name, payload):
@@ -79,8 +95,7 @@ if len(args) >= 2 and args[0] == "item" and args[1] == "create":
             "stdin_has_password": True,
         },
     )
-    with open(item_path(vault, title), "w", encoding="utf-8") as handle:
-        handle.write(secret)
+    write_secret(item_path(vault, title), secret)
     sys.exit(0)
 
 if len(args) >= 2 and args[0] == "item" and args[1] == "delete":

@@ -21,6 +21,11 @@ export HUSH_PASS_HELPER="/nonexistent-hush-pass-helper"
 curl() { command curl -H "X-Hush-Token: $(cat "${HUSH_HOME}/session.token" 2>/dev/null || true)" "$@"; }
 
 pid=""
+# Section C's dirs (its pass store holds real-format nsecs). Empty until made;
+# the EXIT trap removes them on failure as well as on success.
+home2=""
+cfg2=""
+pass2=""
 cleanup() {
     if [ -n "$pid" ]; then
         kill "$pid" 2>/dev/null || true
@@ -28,8 +33,17 @@ cleanup() {
     fi
     rm -f "$log"
     rm -rf "$home" "$cfg"
+    for made in "$home2" "$cfg2" "$pass2"; do
+        if [ -n "$made" ]; then
+            rm -rf "$made"
+        fi
+    done
 }
 trap cleanup EXIT
+# dash runs no EXIT trap on a signal: exit nonzero, through cleanup, instead.
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 fail() { echo "restart check failed: $1" >&2; exit 1; }
 
 start_relay() {
@@ -92,7 +106,8 @@ kill "$pid" 2>/dev/null || true
 wait "$pid" 2>/dev/null || true
 pid=""
 export HUSH_PASS_HELPER="$(pwd)/tests/fake-pass.sh"
-export HUSH_FAKE_PASS_DIR="$(mktemp -d)"
+pass2=$(mktemp -d)
+export HUSH_FAKE_PASS_DIR="$pass2"
 home2=$(mktemp -d)
 cfg2=$(mktemp -d)
 export HUSH_HOME="$home2"
@@ -110,8 +125,13 @@ wait "$pid" 2>/dev/null || true
 pid=""
 start_relay
 restored2=$(curl -sf "http://127.0.0.1:${port}/api/session")
+# Hook for check_restart_cleanup.sh: fail here, once section C's pass store
+# holds real-format nsecs, so the EXIT trap's failure-path cleanup is
+# exercised. Unset in a normal run.
+if [ "${HUSH_TEST_RESTART_FAIL_AT:-}" = C ]; then
+    fail "forced section-C failure (HUSH_TEST_RESTART_FAIL_AT=C)"
+fi
 echo "$restored2" | grep -q '"logged_in":true' || fail "restart with pass should stay logged in"
 echo "$restored2" | grep -q "\"npub\":\"$npub2\"" || fail "restart with pass should keep npub"
 echo "$restored2" | grep -q '"restart_lost_login":false' || fail "restart with pass sets no restart-loss flag"
-rm -rf "$home2" "$cfg2" "$HUSH_FAKE_PASS_DIR"
 echo "restart honesty ok"

@@ -5,8 +5,21 @@ import json
 import os
 import sys
 
+# New dirs and files are owner-only (0700 / 0600), including the
+# intermediate dirs os.makedirs creates; write_secret and the chmods also
+# reset ones that already exist with a wider mode.
+os.umask(0o077)
 root = os.environ.get("HUSH_FAKE_SECRET_DIR", "/tmp/hush-fake-secret")
 os.makedirs(root, mode=0o700, exist_ok=True)
+os.chmod(root, 0o700)
+
+
+def write_secret(path, text):
+    """Writes a stored secret as a 0600 file, never through the umask."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
 
 
 def value_after(argv, name):
@@ -49,8 +62,7 @@ if args[0] == "store":
     with open(os.path.join(root, "last_store.json"), "w", encoding="utf-8") as handle:
         json.dump({"argv": args, "stdin_has_secret": True}, handle)
         handle.write("\n")
-    with open(path, "w", encoding="utf-8") as handle:
-        handle.write(secret)
+    write_secret(path, secret)
     sys.exit(0)
 if args[0] == "clear":
     with open(os.path.join(root, "last_clear.json"), "w", encoding="utf-8") as handle:

@@ -264,8 +264,13 @@ wait_comm "$pid_script" hush-relay-scri || fail "fixture: script decoy comm is n
 # Another uid's hush-relay-named process (copied sleep): never ours to
 # signal. As a non-root caller kill(2) could not signal it anyway, so this
 # only proves the note line; the sudo phase proves the uid filter.
+# foreign_dir is made directly in /tmp, not under $TMPDIR: `make test`
+# runs with TMPDIR set to its private 0700 run dir, which uid nobody cannot
+# enter, so nobody could not exec a copy there. It holds only copied
+# binaries, fake-pass.sh, nobody's own 0700 state dir and nb.log; no key
+# of this uid. cleanup removes it by exact path.
 if [ "$have_sudo" = 1 ]; then
-    foreign_dir=$(mktemp -d)
+    foreign_dir=$(mktemp -d /tmp/hush-stop-relays-foreign.XXXXXX)
     chmod 755 "$foreign_dir"
     cp "$sleep_bin" "$foreign_dir/hush-relay-foreign"
     chmod 755 "$foreign_dir/hush-relay-foreign"
