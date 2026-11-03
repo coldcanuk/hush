@@ -1,9 +1,11 @@
 /* tests/test_save_pass.c: #235 create/update must not OK when pass save fails.
  * Pins missing|fail|path at the roster write, and update honouring save_pass. */
 
-#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700 /* nftw, for the private root cleanup */
 
+#include <assert.h>
 #include <errno.h>
+#include <ftw.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +17,39 @@
 #include "hush_launch.h"
 #include "hush_pass.h"
 #include "hush_roster.h"
+
+enum {
+    /* Longest private root path; every path a test derives from it fits. */
+    ROOT_PATH_MAX = 72,
+    /* Open-fd budget for the nftw cleanup walk. */
+    ROOT_FTW_FDS = 16
+};
+
+/* <TMPDIR or /tmp>/hush-sp-XXXXXX: this run's private root, 0700 from mkdtemp.
+ * Every key, pass store, home and config the test writes lives under it. */
+#define ROOT_NAME "hush-sp-XXXXXX"
+#define ROOT_TMP_DEFAULT "/tmp"
+
+/* The private root and the pid that made it. File scope because an atexit
+ * handler takes no argument. Empty until root_make succeeds and again after
+ * root_remove. */
+static char g_root[ROOT_PATH_MAX];
+static pid_t g_root_pid;
+
+/* Makes g_root under TMPDIR (/tmp when TMPDIR is unset or empty) and
+ * registers root_remove with atexit, so every return from main and every
+ * exit() removes it. Returns 0, after a FAIL line, when the path does not
+ * fit, mkdtemp fails, or atexit refuses. */
+static int root_make(void);
+
+/* atexit handler: removes g_root and everything under it, in the making
+ * process only, so a forked child that exits cannot take the root early. */
+static void root_remove(void);
+
+/* nftw callback: removes one entry under g_root; FTW_DEPTH visits children
+ * first. */
+static int root_remove_entry(const char *path, const struct stat *st, int flag,
+                             struct FTW *ftw);
 
 static int g_fail;
 
@@ -75,10 +110,10 @@ static int raise_hive(hush_launch_t *keys, char *home, size_t homesz)
     hush_store_t *store = NULL;
     int wrote;
 
-    wrote = snprintf(home, homesz, "/tmp/hush-sp-home-%d", (int)getpid());
+    wrote = snprintf(home, homesz, "%s/hush-sp-home-%d", g_root, (int)getpid());
     if (wrote < 0 || (size_t)wrote >= homesz)
         return 0;
-    snprintf(cfg, sizeof(cfg), "/tmp/hush-sp-cfg-%d", (int)getpid());
+    snprintf(cfg, sizeof(cfg), "%s/hush-sp-cfg-%d", g_root, (int)getpid());
     if (!mkdir_ok(home) || !mkdir_ok(cfg))
         return 0;
     if (setenv("HUSH_HOME", home, 1) != 0)
@@ -113,10 +148,12 @@ static void test_path_too_long(void)
     char slug[256];
     char secret[HUSH_IDENTITY_NSEC_MAX];
     hush_identity_t id;
+    char pass_dir[128];
     size_t i;
 
     wipe_helpers();
-    expect(arm_pass("/tmp/hush-sp-path-pass"), "path arm pass");
+    snprintf(pass_dir, sizeof(pass_dir), "%s/hush-sp-path-pass", g_root);
+    expect(arm_pass(pass_dir), "path arm pass");
     expect(hush_identity_generate(&id) == HUSH_OK, "path gen");
     snprintf(secret, sizeof(secret), "%s", id.nsec);
     for (i = 0; i + 1 < sizeof(slug); i++)
@@ -166,7 +203,7 @@ static void test_fail_refuses_create(void)
     size_t before;
 
     wipe_helpers();
-    snprintf(helper_dir, sizeof(helper_dir), "/tmp/hush-sp-fail-%d", (int)getpid());
+    snprintf(helper_dir, sizeof(helper_dir), "%s/hush-sp-fail-%d", g_root, (int)getpid());
     expect(arm_fail_pass(helper_dir), "fail arm");
     if (!raise_hive(&launch, home, sizeof(home))) {
         expect(0, "fail hive");
@@ -202,7 +239,7 @@ static void test_update_honours_save_pass(void)
     size_t i;
 
     wipe_helpers();
-    snprintf(pass_dir, sizeof(pass_dir), "/tmp/hush-sp-upd-%d", (int)getpid());
+    snprintf(pass_dir, sizeof(pass_dir), "%s/hush-sp-upd-%d", g_root, (int)getpid());
     expect(arm_pass(pass_dir), "upd arm");
     if (!raise_hive(&launch, home, sizeof(home))) {
         expect(0, "upd hive");
@@ -257,7 +294,7 @@ static void test_update_refuses_pass_fail(void)
     size_t i;
 
     wipe_helpers();
-    snprintf(helper_dir, sizeof(helper_dir), "/tmp/hush-sp-updfail-%d",
+    snprintf(helper_dir, sizeof(helper_dir), "%s/hush-sp-updfail-%d", g_root,
              (int)getpid());
     expect(arm_fail_pass(helper_dir), "updfail arm");
     if (!raise_hive(&launch, home, sizeof(home))) {
@@ -306,7 +343,7 @@ static void test_context_denied_keeps_pass_st(void)
     size_t before;
 
     wipe_helpers();
-    snprintf(pass_dir, sizeof(pass_dir), "/tmp/hush-sp-b1-%d", (int)getpid());
+    snprintf(pass_dir, sizeof(pass_dir), "%s/hush-sp-b1-%d", g_root, (int)getpid());
     expect(arm_pass(pass_dir), "b1 arm");
     if (!raise_hive(&launch, home, sizeof(home))) {
         expect(0, "b1 hive");
@@ -343,7 +380,7 @@ static void test_robot_success_leaves_pass_saved(void)
     char pass_dir[128];
 
     wipe_helpers();
-    snprintf(pass_dir, sizeof(pass_dir), "/tmp/hush-sp-b3b-%d", (int)getpid());
+    snprintf(pass_dir, sizeof(pass_dir), "%s/hush-sp-b3b-%d", g_root, (int)getpid());
     expect(arm_pass(pass_dir), "b3b arm");
     if (!raise_hive(&launch, home, sizeof(home))) {
         expect(0, "b3b hive");
@@ -373,7 +410,7 @@ static void test_robot_fail_leaves_pass_saved(void)
     char helper_dir[128];
 
     wipe_helpers();
-    snprintf(helper_dir, sizeof(helper_dir), "/tmp/hush-sp-b3c-%d",
+    snprintf(helper_dir, sizeof(helper_dir), "%s/hush-sp-b3c-%d", g_root,
              (int)getpid());
     expect(arm_fail_pass(helper_dir), "b3c arm");
     if (!raise_hive(&launch, home, sizeof(home))) {
@@ -391,6 +428,8 @@ static void test_robot_fail_leaves_pass_saved(void)
 
 int main(void)
 {
+    if (!root_make())
+        return 1;
     test_path_too_long();
     test_missing_refuses_create();
     test_fail_refuses_create();
@@ -403,4 +442,51 @@ int main(void)
         return 1;
     printf("test_save_pass ok\n");
     return 0;
+}
+
+static int root_make(void)
+{
+    const char *tmp = getenv("TMPDIR");
+    int wrote = 0;
+
+    assert(g_root[0] == '\0');
+    if (tmp == NULL || tmp[0] == '\0')
+        tmp = ROOT_TMP_DEFAULT;
+    wrote = snprintf(g_root, sizeof(g_root), "%s/%s", tmp, ROOT_NAME);
+    if (wrote < 0 || (size_t)wrote >= sizeof(g_root) || mkdtemp(g_root) == NULL) {
+        g_root[0] = '\0';
+        fprintf(stderr, "FAIL private root under %s\n", tmp);
+        return 0;
+    }
+    g_root_pid = getpid();
+    /* Deviation (section 7): atexit takes a bare callback; no table fits. */
+    if (atexit(root_remove) != 0) {
+        root_remove();
+        fprintf(stderr, "FAIL atexit for the private root\n");
+        return 0;
+    }
+    return 1;
+}
+
+static void root_remove(void)
+{
+    if (g_root[0] == '\0' || getpid() != g_root_pid)
+        return;
+    /* FTW_PHYS never follows a symlink out of the root; FTW_MOUNT never
+     * walks into another filesystem mounted under it. Deviation (section 7):
+     * nftw takes a bare callback; no table fits. */
+    if (nftw(g_root, root_remove_entry, ROOT_FTW_FDS,
+             FTW_DEPTH | FTW_PHYS | FTW_MOUNT) != 0)
+        fprintf(stderr, "FAIL private root cleanup: %s\n", g_root);
+    g_root[0] = '\0';
+}
+
+static int root_remove_entry(const char *path, const struct stat *st, int flag,
+                             struct FTW *ftw)
+{
+    (void)st;
+    (void)flag;
+    (void)ftw;
+    assert(strncmp(path, g_root, strlen(g_root)) == 0);
+    return remove(path);
 }

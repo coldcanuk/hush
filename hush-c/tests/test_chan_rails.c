@@ -1,8 +1,9 @@
 /* tests/test_chan_rails.c: chaperon-only vs Major dual-role, turn cap. */
 
-#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700 /* nftw, for the private root cleanup */
 
 #include <assert.h>
+#include <ftw.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,6 +38,39 @@ enum {
 #define HUSH_RAILS_NUDGE "That's enough robot talk. Standing by for the human."
 #define HUSH_RAILS_CHAN_YARD "yard"
 
+enum {
+    /* Longest private root path; every path a test derives from it fits. */
+    ROOT_PATH_MAX = 72,
+    /* Open-fd budget for the nftw cleanup walk. */
+    ROOT_FTW_FDS = 16
+};
+
+/* <TMPDIR or /tmp>/hush-rails-XXXXXX: this run's private root, 0700 from mkdtemp.
+ * Every key, pass store, home and config the test writes lives under it. */
+#define ROOT_NAME "hush-rails-XXXXXX"
+#define ROOT_TMP_DEFAULT "/tmp"
+
+/* The private root and the pid that made it. File scope because an atexit
+ * handler takes no argument. Empty until root_make succeeds and again after
+ * root_remove. */
+static char g_root[ROOT_PATH_MAX];
+static pid_t g_root_pid;
+
+/* Makes g_root under TMPDIR (/tmp when TMPDIR is unset or empty) and
+ * registers root_remove with atexit, so every return from main and every
+ * exit() removes it. Returns 0, after a FAIL line, when the path does not
+ * fit, mkdtemp fails, or atexit refuses. */
+static int root_make(void);
+
+/* atexit handler: removes g_root and everything under it, in the making
+ * process only, so a forked child that exits cannot take the root early. */
+static void root_remove(void);
+
+/* nftw callback: removes one entry under g_root; FTW_DEPTH visits children
+ * first. */
+static int root_remove_entry(const char *path, const struct stat *st, int flag,
+                             struct FTW *ftw);
+
 static int g_fail;
 
 static void expect(int cond, const char *msg);
@@ -68,9 +102,12 @@ int main(void)
     hush_store_t *store = NULL;
     char cfg[128];
     char home[128];
+    char pass_dir[128];
 
-    snprintf(cfg, sizeof(cfg), "/tmp/hush-rails-cfg-%d", (int)getpid());
-    snprintf(home, sizeof(home), "/tmp/hush-rails-home-%d", (int)getpid());
+    if (!root_make())
+        return 1;
+    snprintf(cfg, sizeof(cfg), "%s/hush-rails-cfg-%d", g_root, (int)getpid());
+    snprintf(home, sizeof(home), "%s/hush-rails-home-%d", g_root, (int)getpid());
     (void)mkdir(home, 0700);
     if (setenv("HUSH_CONFIG_DIR", cfg, 1) != 0)
         return 1;
@@ -80,7 +117,8 @@ int main(void)
         return 1;
     if (setenv("PATH", "/tmp/hush-empty-path", 1) != 0)
         return 1;
-    if (setenv("HUSH_FAKE_PASS_DIR", "/tmp/hush-rails-pass", 1) != 0)
+    snprintf(pass_dir, sizeof(pass_dir), "%s/hush-rails-pass", g_root);
+    if (setenv("HUSH_FAKE_PASS_DIR", pass_dir, 1) != 0)
         return 1;
     hush_pass_set_helper("tests/fake-pass.sh");
     hush_intel_init();
@@ -341,4 +379,51 @@ static void hush_rails_test_turns(hush_launch_t *launch, hush_store_t *store)
     expect(strstr(json, "\"type\":\"chaperon\"") != NULL, "cevent chaperon type");
     expect(strstr(json, "\"seq\":") != NULL, "cevent seq");
     expect(strstr(json, "\"due\":") != NULL, "cevent due");
+}
+
+static int root_make(void)
+{
+    const char *tmp = getenv("TMPDIR");
+    int wrote = 0;
+
+    assert(g_root[0] == '\0');
+    if (tmp == NULL || tmp[0] == '\0')
+        tmp = ROOT_TMP_DEFAULT;
+    wrote = snprintf(g_root, sizeof(g_root), "%s/%s", tmp, ROOT_NAME);
+    if (wrote < 0 || (size_t)wrote >= sizeof(g_root) || mkdtemp(g_root) == NULL) {
+        g_root[0] = '\0';
+        fprintf(stderr, "FAIL private root under %s\n", tmp);
+        return 0;
+    }
+    g_root_pid = getpid();
+    /* Deviation (section 7): atexit takes a bare callback; no table fits. */
+    if (atexit(root_remove) != 0) {
+        root_remove();
+        fprintf(stderr, "FAIL atexit for the private root\n");
+        return 0;
+    }
+    return 1;
+}
+
+static void root_remove(void)
+{
+    if (g_root[0] == '\0' || getpid() != g_root_pid)
+        return;
+    /* FTW_PHYS never follows a symlink out of the root; FTW_MOUNT never
+     * walks into another filesystem mounted under it. Deviation (section 7):
+     * nftw takes a bare callback; no table fits. */
+    if (nftw(g_root, root_remove_entry, ROOT_FTW_FDS,
+             FTW_DEPTH | FTW_PHYS | FTW_MOUNT) != 0)
+        fprintf(stderr, "FAIL private root cleanup: %s\n", g_root);
+    g_root[0] = '\0';
+}
+
+static int root_remove_entry(const char *path, const struct stat *st, int flag,
+                             struct FTW *ftw)
+{
+    (void)st;
+    (void)flag;
+    (void)ftw;
+    assert(strncmp(path, g_root, strlen(g_root)) == 0);
+    return remove(path);
 }

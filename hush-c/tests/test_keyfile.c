@@ -1,9 +1,10 @@
 /* tests/test_keyfile.c: restart keeps npubs; the vault is not plaintext. */
 
-#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700 /* nftw, for the private root cleanup */
 
 #include <assert.h>
 #include <dirent.h>
+#include <ftw.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +23,39 @@ enum {
     SCAN_READ_MAX = 4096,
     VAULT_READ_MAX = 8192
 };
+
+enum {
+    /* Longest private root path; every path a test derives from it fits. */
+    ROOT_PATH_MAX = 72,
+    /* Open-fd budget for the nftw cleanup walk. */
+    ROOT_FTW_FDS = 16
+};
+
+/* <TMPDIR or /tmp>/hush-keyfile-XXXXXX: this run's private root, 0700 from mkdtemp.
+ * Every key, pass store, home and config the test writes lives under it. */
+#define ROOT_NAME "hush-keyfile-XXXXXX"
+#define ROOT_TMP_DEFAULT "/tmp"
+
+/* The private root and the pid that made it. File scope because an atexit
+ * handler takes no argument. Empty until root_make succeeds and again after
+ * root_remove. */
+static char g_root[ROOT_PATH_MAX];
+static pid_t g_root_pid;
+
+/* Makes g_root under TMPDIR (/tmp when TMPDIR is unset or empty) and
+ * registers root_remove with atexit, so every return from main and every
+ * exit() removes it. Returns 0, after a FAIL line, when the path does not
+ * fit, mkdtemp fails, or atexit refuses. */
+static int root_make(void);
+
+/* atexit handler: removes g_root and everything under it, in the making
+ * process only, so a forked child that exits cannot take the root early. */
+static void root_remove(void);
+
+/* nftw callback: removes one entry under g_root; FTW_DEPTH visits children
+ * first. */
+static int root_remove_entry(const char *path, const struct stat *st, int flag,
+                             struct FTW *ftw);
 
 static int g_fail;
 
@@ -200,12 +234,14 @@ static int read_file(char *out, size_t outsz, const char *path)
 
 static int open_hive(hush_launch_t *launch, hush_store_t **store, hive_dirs_t *dirs)
 {
-    char tmpl_home[] = "/tmp/hush-keyfile-home-XXXXXX";
-    char tmpl_cfg[] = "/tmp/hush-keyfile-cfg-XXXXXX";
+    char tmpl_home[ROOT_PATH_MAX + sizeof("/hush-keyfile-home-XXXXXX")] = {0};
+    char tmpl_cfg[ROOT_PATH_MAX + sizeof("/hush-keyfile-cfg-XXXXXX")] = {0};
     char *made_home = NULL;
     char *made_cfg = NULL;
 
     assert(launch != NULL && store != NULL && dirs != NULL);
+    snprintf(tmpl_home, sizeof(tmpl_home), "%s/hush-keyfile-home-XXXXXX", g_root);
+    snprintf(tmpl_cfg, sizeof(tmpl_cfg), "%s/hush-keyfile-cfg-XXXXXX", g_root);
     made_home = mkdtemp(tmpl_home);
     made_cfg = mkdtemp(tmpl_cfg);
     if (made_home == NULL || made_cfg == NULL)
@@ -368,6 +404,8 @@ static void test_wrong_phrase_keeps_vault(void)
 
 int main(void)
 {
+    if (!root_make())
+        return 1;
     unsetenv(HUSH_KEYFILE_ENV);
     test_restart_same_npubs();
     test_wrong_phrase_keeps_vault();
@@ -376,4 +414,51 @@ int main(void)
         return 1;
     printf("test_keyfile ok\n");
     return 0;
+}
+
+static int root_make(void)
+{
+    const char *tmp = getenv("TMPDIR");
+    int wrote = 0;
+
+    assert(g_root[0] == '\0');
+    if (tmp == NULL || tmp[0] == '\0')
+        tmp = ROOT_TMP_DEFAULT;
+    wrote = snprintf(g_root, sizeof(g_root), "%s/%s", tmp, ROOT_NAME);
+    if (wrote < 0 || (size_t)wrote >= sizeof(g_root) || mkdtemp(g_root) == NULL) {
+        g_root[0] = '\0';
+        fprintf(stderr, "FAIL private root under %s\n", tmp);
+        return 0;
+    }
+    g_root_pid = getpid();
+    /* Deviation (section 7): atexit takes a bare callback; no table fits. */
+    if (atexit(root_remove) != 0) {
+        root_remove();
+        fprintf(stderr, "FAIL atexit for the private root\n");
+        return 0;
+    }
+    return 1;
+}
+
+static void root_remove(void)
+{
+    if (g_root[0] == '\0' || getpid() != g_root_pid)
+        return;
+    /* FTW_PHYS never follows a symlink out of the root; FTW_MOUNT never
+     * walks into another filesystem mounted under it. Deviation (section 7):
+     * nftw takes a bare callback; no table fits. */
+    if (nftw(g_root, root_remove_entry, ROOT_FTW_FDS,
+             FTW_DEPTH | FTW_PHYS | FTW_MOUNT) != 0)
+        fprintf(stderr, "FAIL private root cleanup: %s\n", g_root);
+    g_root[0] = '\0';
+}
+
+static int root_remove_entry(const char *path, const struct stat *st, int flag,
+                             struct FTW *ftw)
+{
+    (void)st;
+    (void)flag;
+    (void)ftw;
+    assert(strncmp(path, g_root, strlen(g_root)) == 0);
+    return remove(path);
 }

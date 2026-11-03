@@ -1,8 +1,9 @@
 /* tests/test_pass.c: hush_pass save/get/has against a stub helper. */
 
-#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700 /* nftw, for the private root cleanup */
 
 #include <assert.h>
+#include <ftw.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,9 +13,45 @@
 #include "hush_pass.h"
 
 enum {
-    TEST_PATH_MAX = 128,
+    /* A scratch base: the private root plus one "/hush-...-<pid>" name. */
+    TEST_BASE_MAX = 112,
+    /* A base plus its longest suffix ("/agents_sgt-major-payne_nsec"). */
+    TEST_PATH_MAX = 144,
     TEST_DIR_MODE = 0700
 };
+
+enum {
+    /* Longest private root path; every path a test derives from it fits. */
+    ROOT_PATH_MAX = 72,
+    /* Open-fd budget for the nftw cleanup walk. */
+    ROOT_FTW_FDS = 16
+};
+
+/* <TMPDIR or /tmp>/hush-pass-XXXXXX: this run's private root, 0700 from mkdtemp.
+ * Every key, pass store, home and config the test writes lives under it. */
+#define ROOT_NAME "hush-pass-XXXXXX"
+#define ROOT_TMP_DEFAULT "/tmp"
+
+/* The private root and the pid that made it. File scope because an atexit
+ * handler takes no argument. Empty until root_make succeeds and again after
+ * root_remove. */
+static char g_root[ROOT_PATH_MAX];
+static pid_t g_root_pid;
+
+/* Makes g_root under TMPDIR (/tmp when TMPDIR is unset or empty) and
+ * registers root_remove with atexit, so every return from main and every
+ * exit() removes it. Returns 0, after a FAIL line, when the path does not
+ * fit, mkdtemp fails, or atexit refuses. */
+static int root_make(void);
+
+/* atexit handler: removes g_root and everything under it, in the making
+ * process only, so a forked child that exits cannot take the root early. */
+static void root_remove(void);
+
+/* nftw callback: removes one entry under g_root; FTW_DEPTH visits children
+ * first. */
+static int root_remove_entry(const char *path, const struct stat *st, int flag,
+                             struct FTW *ftw);
 
 static int g_fail;
 
@@ -33,7 +70,7 @@ static void test_pass_delete_prints(void)
     char script[TEST_PATH_MAX];
     FILE *fp;
 
-    snprintf(script, sizeof(script), "/tmp/hush-pass-rm-%ld.sh", (long)getpid());
+    snprintf(script, sizeof(script), "%s/hush-pass-rm-%ld.sh", g_root, (long)getpid());
     fp = fopen(script, "w");
     expect(fp != NULL, "rm script");
     if (fp == NULL)
@@ -139,7 +176,7 @@ static void test_pass_repo_helper(const char *base)
 }
 
 /* Removes the scratch tree that test_pass_available builds under base
- * (/tmp/hush-avail-<pid>), so repeated runs leave nothing behind. */
+ * (<root>/hush-avail-<pid>), so repeated runs leave nothing behind. */
 static void test_pass_cleanup(const char *base)
 {
     static const char *const files[] = {
@@ -171,10 +208,10 @@ static void test_pass_cleanup(const char *base)
  * A stuck-true or stuck-false hush_pass_available fails here. */
 static void test_pass_available(void)
 {
-    char base[64];
-    char bindir[80];
-    char emptydir[80];
-    char fake[96];
+    char base[TEST_BASE_MAX];
+    char bindir[TEST_PATH_MAX];
+    char emptydir[TEST_PATH_MAX];
+    char fake[TEST_PATH_MAX];
     char *kept = NULL;
     const char *path = getenv("PATH");
 
@@ -182,14 +219,14 @@ static void test_pass_available(void)
     unsetenv(HUSH_PASS_ENV_HELPER);
     if (path != NULL)
         kept = strdup(path);
-    snprintf(base, sizeof(base), "/tmp/hush-avail-%ld", (long)getpid());
+    snprintf(base, sizeof(base), "%s/hush-avail-%ld", g_root, (long)getpid());
     snprintf(bindir, sizeof(bindir), "%s/bin", base);
     snprintf(emptydir, sizeof(emptydir), "%s/empty", base);
     mkdir(base, 0700);
     mkdir(bindir, 0700);
-    snprintf(fake, sizeof(fake), "%s/pass", bindir);
+    snprintf(fake, sizeof(fake), "%s/bin/pass", base);
     test_make_fake(fake);
-    snprintf(fake, sizeof(fake), "%s/hush-pass", bindir);
+    snprintf(fake, sizeof(fake), "%s/bin/hush-pass", base);
     test_make_fake(fake);
     if (chdir(base) != 0)
         expect(0, "chdir tmp");
@@ -207,7 +244,7 @@ static void test_pass_available(void)
 }
 
 
-/* Removes the fake store at dir (/tmp/hush-unit-pass-<pid>). */
+/* Removes the fake store at dir (<root>/hush-unit-pass-<pid>). */
 static void test_pass_store_cleanup(const char *dir)
 {
     static const char *const names[] = {
@@ -228,10 +265,12 @@ static void test_pass_store_cleanup(const char *dir)
 int main(void)
 {
     char secret[HUSH_PASS_SECRET_MAX];
-    char dir[64];
+    char dir[TEST_BASE_MAX];
     const char *helper = "tests/fake-pass.sh";
 
-    if (snprintf(dir, sizeof(dir), "/tmp/hush-unit-pass-%ld", (long)getpid()) < 0)
+    if (!root_make())
+        return 1;
+    if (snprintf(dir, sizeof(dir), "%s/hush-unit-pass-%ld", g_root, (long)getpid()) < 0)
         return 1;
     if (setenv("HUSH_FAKE_PASS_DIR", dir, 1) != 0)
         return 1;
@@ -266,4 +305,51 @@ int main(void)
         return 1;
     printf("test_pass ok\n");
     return 0;
+}
+
+static int root_make(void)
+{
+    const char *tmp = getenv("TMPDIR");
+    int wrote = 0;
+
+    assert(g_root[0] == '\0');
+    if (tmp == NULL || tmp[0] == '\0')
+        tmp = ROOT_TMP_DEFAULT;
+    wrote = snprintf(g_root, sizeof(g_root), "%s/%s", tmp, ROOT_NAME);
+    if (wrote < 0 || (size_t)wrote >= sizeof(g_root) || mkdtemp(g_root) == NULL) {
+        g_root[0] = '\0';
+        fprintf(stderr, "FAIL private root under %s\n", tmp);
+        return 0;
+    }
+    g_root_pid = getpid();
+    /* Deviation (section 7): atexit takes a bare callback; no table fits. */
+    if (atexit(root_remove) != 0) {
+        root_remove();
+        fprintf(stderr, "FAIL atexit for the private root\n");
+        return 0;
+    }
+    return 1;
+}
+
+static void root_remove(void)
+{
+    if (g_root[0] == '\0' || getpid() != g_root_pid)
+        return;
+    /* FTW_PHYS never follows a symlink out of the root; FTW_MOUNT never
+     * walks into another filesystem mounted under it. Deviation (section 7):
+     * nftw takes a bare callback; no table fits. */
+    if (nftw(g_root, root_remove_entry, ROOT_FTW_FDS,
+             FTW_DEPTH | FTW_PHYS | FTW_MOUNT) != 0)
+        fprintf(stderr, "FAIL private root cleanup: %s\n", g_root);
+    g_root[0] = '\0';
+}
+
+static int root_remove_entry(const char *path, const struct stat *st, int flag,
+                             struct FTW *ftw)
+{
+    (void)st;
+    (void)flag;
+    (void)ftw;
+    assert(strncmp(path, g_root, strlen(g_root)) == 0);
+    return remove(path);
 }

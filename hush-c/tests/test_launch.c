@@ -1,7 +1,10 @@
 /* tests/test_launch.c: first-launch identity → vibe → channel → project. */
 
-#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700 /* nftw, for the private root cleanup */
 
+#include <assert.h>
+#include <fcntl.h>
+#include <ftw.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +14,41 @@
 #include "hush_launch.h"
 #include "hush_pass.h"
 #include "hush_store.h"
+
+enum {
+    /* Longest private root path; every path a test derives from it fits. */
+    ROOT_PATH_MAX = 72,
+    /* Open-fd budget for the nftw cleanup walk. */
+    ROOT_FTW_FDS = 16,
+    /* A planted plaintext key is owner-only, never world-readable. */
+    TEST_KEY_FILE_MODE = 0600
+};
+
+/* <TMPDIR or /tmp>/hush-launch-XXXXXX: this run's private root, 0700 from mkdtemp.
+ * Every key, pass store, home and config the test writes lives under it. */
+#define ROOT_NAME "hush-launch-XXXXXX"
+#define ROOT_TMP_DEFAULT "/tmp"
+
+/* The private root and the pid that made it. File scope because an atexit
+ * handler takes no argument. Empty until root_make succeeds and again after
+ * root_remove. */
+static char g_root[ROOT_PATH_MAX];
+static pid_t g_root_pid;
+
+/* Makes g_root under TMPDIR (/tmp when TMPDIR is unset or empty) and
+ * registers root_remove with atexit, so every return from main and every
+ * exit() removes it. Returns 0, after a FAIL line, when the path does not
+ * fit, mkdtemp fails, or atexit refuses. */
+static int root_make(void);
+
+/* atexit handler: removes g_root and everything under it, in the making
+ * process only, so a forked child that exits cannot take the root early. */
+static void root_remove(void);
+
+/* nftw callback: removes one entry under g_root; FTW_DEPTH visits children
+ * first. */
+static int root_remove_entry(const char *path, const struct stat *st, int flag,
+                             struct FTW *ftw);
 
 static int g_fail;
 
@@ -97,13 +135,14 @@ static int plain_key_absent(const char *home, const char *slug)
     return stat(path, &st) != 0;
 }
 
-/* Plants a leftover plain file. This is not a Hush store. */
+/* Plants a leftover plain file, 0600 like a key file. This is not a Hush store. */
 static int plant_nsec_file(const char *home, const char *slug, const char *nsec)
 {
     char agents[256];
     char dir[256];
     char path[256];
     FILE *fp;
+    int fd = -1;
     struct stat st;
 
     if (home == NULL || slug == NULL || nsec == NULL || nsec[0] == '\0')
@@ -115,9 +154,14 @@ static int plant_nsec_file(const char *home, const char *slug, const char *nsec)
         return 0;
     if (mkdir(dir, 0700) != 0 && stat(dir, &st) != 0)
         return 0;
-    fp = fopen(path, "w");
-    if (fp == NULL)
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, TEST_KEY_FILE_MODE);
+    if (fd < 0)
         return 0;
+    fp = fdopen(fd, "w");
+    if (fp == NULL) {
+        close(fd);
+        return 0;
+    }
     if (fprintf(fp, "%s\n", nsec) < 0) {
         fclose(fp);
         return 0;
@@ -143,8 +187,8 @@ static void test_nopass_robot_keys(void)
     const char *slugs[] = {"coach", "auditor", "marshal", "walkbot-one"};
     size_t i;
 
-    snprintf(home, sizeof(home), "/tmp/hush-b1-home-%d", (int)getpid());
-    snprintf(cfg, sizeof(cfg), "/tmp/hush-b1-cfg-%d", (int)getpid());
+    snprintf(home, sizeof(home), "%s/hush-b1-home-%d", g_root, (int)getpid());
+    snprintf(cfg, sizeof(cfg), "%s/hush-b1-cfg-%d", g_root, (int)getpid());
     if (mkdir(home, 0700) != 0 || mkdir(cfg, 0700) != 0) {
         expect(0, "nopass temp dirs");
         return;
@@ -210,9 +254,9 @@ static int vault_case_open(hush_launch_t *keys, hush_store_t **store,
 {
     char cfg[128];
 
-    snprintf(home, homesz, "/tmp/hush-vault-%s-home-%d", tag, (int)getpid());
-    snprintf(cfg, sizeof(cfg), "/tmp/hush-vault-%s-cfg-%d", tag, (int)getpid());
-    snprintf(passdir, passsz, "/tmp/hush-vault-%s-pass-%d", tag, (int)getpid());
+    snprintf(home, homesz, "%s/hush-vault-%s-home-%d", g_root, tag, (int)getpid());
+    snprintf(cfg, sizeof(cfg), "%s/hush-vault-%s-cfg-%d", g_root, tag, (int)getpid());
+    snprintf(passdir, passsz, "%s/hush-vault-%s-pass-%d", g_root, tag, (int)getpid());
     if (mkdir(home, 0700) != 0 || mkdir(cfg, 0700) != 0 ||
         mkdir(passdir, 0700) != 0)
         return 0;
@@ -349,9 +393,9 @@ static void test_generate_keeps_memory(void)
     char cfg[128];
     char passdir[128];
 
-    snprintf(home, sizeof(home), "/tmp/hush-b1-gen-home-%d", (int)getpid());
-    snprintf(cfg, sizeof(cfg), "/tmp/hush-b1-gen-cfg-%d", (int)getpid());
-    snprintf(passdir, sizeof(passdir), "/tmp/hush-b1-gen-pass-%d",
+    snprintf(home, sizeof(home), "%s/hush-b1-gen-home-%d", g_root, (int)getpid());
+    snprintf(cfg, sizeof(cfg), "%s/hush-b1-gen-cfg-%d", g_root, (int)getpid());
+    snprintf(passdir, sizeof(passdir), "%s/hush-b1-gen-pass-%d", g_root,
              (int)getpid());
     if (mkdir(home, 0700) != 0 || mkdir(cfg, 0700) != 0 ||
         mkdir(passdir, 0700) != 0) {
@@ -408,18 +452,25 @@ int main(void)
     const char *gitdir = "/tmp/hush-launch-proj";
     size_t n = 0;
 
+    if (!root_make())
+        return 1;
     unsetenv("HUSH_KEY_PASS");
 
-    if (setenv("HUSH_FAKE_PASS_DIR", "/tmp/hush-launch-pass-store", 1) != 0)
-        return 1;
+    {
+        char pass_store[128];
+
+        snprintf(pass_store, sizeof(pass_store), "%s/hush-launch-pass-store", g_root);
+        if (setenv("HUSH_FAKE_PASS_DIR", pass_store, 1) != 0)
+            return 1;
+    }
     {
         char cfg[128];
 
-        snprintf(cfg, sizeof(cfg), "/tmp/hush-launch-cfg-%d", (int)getpid());
+        snprintf(cfg, sizeof(cfg), "%s/hush-launch-cfg-%d", g_root, (int)getpid());
         if (setenv("HUSH_CONFIG_DIR", cfg, 1) != 0)
             return 1;
     }
-    /* Isolated from tests/test_pass.c, which uses /tmp/hush-unit-pass-<pid>. */
+    /* The store sits in this run's private root, never shared with test_pass. */
     hush_pass_set_helper("tests/fake-pass.sh");
     hush_launch_init(&launch);
     expect(!hush_launch_is_ready(&launch), "cold not ready");
@@ -704,7 +755,7 @@ int main(void)
         snprintf(marker, sizeof(marker), "hush-launch-pwned-%d", (int)getpid());
         (void)unlink(marker);
         snprintf(evil, sizeof(evil),
-                 "/tmp/hush-launch-quote-%d/x'; touch %s; echo '", (int)getpid(),
+                 "%s/hush-launch-quote-%d/x'; touch %s; echo '", g_root, (int)getpid(),
                  marker);
         expect(hush_launch_add_project(&launch, store, "evil", evil, 1) == HUSH_OK,
                "quote path stays literal");
@@ -800,4 +851,51 @@ int main(void)
         return 1;
     printf("test_launch ok\n");
     return 0;
+}
+
+static int root_make(void)
+{
+    const char *tmp = getenv("TMPDIR");
+    int wrote = 0;
+
+    assert(g_root[0] == '\0');
+    if (tmp == NULL || tmp[0] == '\0')
+        tmp = ROOT_TMP_DEFAULT;
+    wrote = snprintf(g_root, sizeof(g_root), "%s/%s", tmp, ROOT_NAME);
+    if (wrote < 0 || (size_t)wrote >= sizeof(g_root) || mkdtemp(g_root) == NULL) {
+        g_root[0] = '\0';
+        fprintf(stderr, "FAIL private root under %s\n", tmp);
+        return 0;
+    }
+    g_root_pid = getpid();
+    /* Deviation (section 7): atexit takes a bare callback; no table fits. */
+    if (atexit(root_remove) != 0) {
+        root_remove();
+        fprintf(stderr, "FAIL atexit for the private root\n");
+        return 0;
+    }
+    return 1;
+}
+
+static void root_remove(void)
+{
+    if (g_root[0] == '\0' || getpid() != g_root_pid)
+        return;
+    /* FTW_PHYS never follows a symlink out of the root; FTW_MOUNT never
+     * walks into another filesystem mounted under it. Deviation (section 7):
+     * nftw takes a bare callback; no table fits. */
+    if (nftw(g_root, root_remove_entry, ROOT_FTW_FDS,
+             FTW_DEPTH | FTW_PHYS | FTW_MOUNT) != 0)
+        fprintf(stderr, "FAIL private root cleanup: %s\n", g_root);
+    g_root[0] = '\0';
+}
+
+static int root_remove_entry(const char *path, const struct stat *st, int flag,
+                             struct FTW *ftw)
+{
+    (void)st;
+    (void)flag;
+    (void)ftw;
+    assert(strncmp(path, g_root, strlen(g_root)) == 0);
+    return remove(path);
 }
