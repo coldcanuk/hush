@@ -5732,7 +5732,9 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
        collapsed. Up to 40 characters it is whole; longer, it is cut at the
        last word break within the first 39 characters and ends in "…" (a
        single word longer than that is cut at 39). Characters are code
-       points (Array.from), so a cut never splits an emoji. For a label
+       points (Array.from): a cut never splits a surrogate pair, but it
+       can split a grapheme cluster (flag, ZWJ sequence, skin-tone
+       modifier, combining mark); grapheme-safe cut is a follow-up. For a label
        still wider than the line, #route-text.route-label and the <select>
        carry text-overflow: ellipsis (CSS .route-preview); the open option
        list is native and

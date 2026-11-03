@@ -898,8 +898,10 @@ Send, whenever `#msg` holds text:
   quoted as written. Up to 40 characters it is shown whole; longer, it is
   cut at the last word break within its first 39 characters, trailing
   punctuation dropped, and ends in "…" (one word longer than that is cut
-  at 39). Characters are Unicode code points, so a cut never splits an
-  emoji.
+  at 39). Characters are Unicode code points: a cut never splits a
+  surrogate pair, but it can split a grapheme cluster (a flag, a ZWJ
+  sequence, a skin-tone modifier, a combining mark); a grapheme-safe cut
+  is a known follow-up.
   The line's text, each option and `#route-pick` carry the label as
   their `title`. A label wider than the line ends in an ellipsis
   (`text-overflow: ellipsis` on `#route-text.route-label`, set only while
