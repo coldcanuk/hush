@@ -511,6 +511,9 @@ async function main() {
     if (!two2 || !beaAsk)
       fail('F19 setup: one ask must wait live in Ace\'s conversation and one in Bea\'s: ' + JSON.stringify({ beaAsk, beaLive }));
     const beforeF19 = { ace: two2.cards, bea: beaLive };
+    // Ops M1 F1: the chooser has options only while the composer holds a
+    // draft (an owner cannot pick from a hidden one), so type, then pick.
+    await cdp.eval(`(() => { $('msg').value = 'plain close-out'; $('msg').dispatchEvent(new Event('input')); return true; })()`);
     await cdp.eval(`(() => { const p = $('route-pick'); p.value = ${JSON.stringify(aceN)}; p.dispatchEvent(new Event('change')); return true; })()`);
     const closer = await compose('plain close-out', 'plain close-out');
     if (!closer.got || closer.got.reply_to !== RA) fail('F19 the plain note must go to Ace\'s conversation: ' + JSON.stringify(closer));
