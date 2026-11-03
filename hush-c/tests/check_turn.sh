@@ -17,6 +17,9 @@ pass_dir=""
 cleanup() {
     if [ -n "$pid" ]; then
         kill "$pid" 2>/dev/null || true
+        # Wait it out, or it can still write into the home while rm -rf
+        # walks it ("Directory not empty").
+        wait "$pid" 2>/dev/null || true
     fi
     if [ -n "$log" ]; then
         rm -f "$log"
