@@ -6,8 +6,9 @@
 // waiting in one conversation, and the relay voids all of them by root
 // (agent_approve.c:104-118, hush_agent_ask_void :165-176). The CH0 leg
 // cannot reach that state through owner notes, so this pin runs the real
-// readAskState from demo/index.html on it. The functions are cut out of
-// the page source, never copied here, so a change in the page is tested.
+// readAskState and answer bar (loopAnswerBar) from demo/index.html on it.
+// The functions are cut out of the page source, never copied here, so a
+// change in the page is tested.
 'use strict';
 const fs = require('fs');
 
@@ -50,4 +51,27 @@ if (!after.voided.A1 || !after.voided.A2 || after.oldest.X)
   fail('a plain owner note in X must close every ask waiting in X (A1 and A2): ' + JSON.stringify(got));
 if (after.voided.B1 || after.oldest.Y !== 'B1')
   fail('a plain owner note in X must leave the ask waiting in Y open: ' + JSON.stringify(got));
-console.log('ask void check passed: ' + JSON.stringify(got));
+// The answer bar: the real sentStamp and loopAnswerBar cut from the page,
+// run against a DOM stub that only records what they build. They read the
+// page globals askState (the readAskState result) and answering (asks
+// posted from this window, none here).
+const stubEl = (tag) => ({ tag, className: '', textContent: '', type: '', title: '', disabled: false, children: [],
+  appendChild(c) { this.children.push(c); return c; }, setAttribute() {}, addEventListener() {} });
+const document = { createElement: stubEl };
+const loopAnswerBar = new Function('document', 'askState', 'answering',
+  grab('sentStamp') + grab('loopAnswerBar') + '\nreturn loopAnswerBar;')(document, after, {});
+const bar = (id) => {
+  const b = loopAnswerBar(notes.find((e) => e.id === id));
+  return { live: b.children.filter((c) => c.tag === 'button' && !c.disabled).map((c) => c.textContent),
+    stamps: b.children.filter((c) => c.tag === 'button').length,
+    sent: b.children.filter((c) => c.tag !== 'button').map((c) => c.textContent).join('|') };
+};
+const bars = { A1: bar('A1'), A2: bar('A2'), B1: bar('B1') };
+const CLOSED = 'Closed by a newer note';
+['A1', 'A2'].forEach((id) => {
+  if (bars[id].sent !== CLOSED || bars[id].stamps !== 0)
+    fail('the bar of ' + id + ' (voided in X) must show "' + CLOSED + '" and no Yes/No stamps: ' + JSON.stringify(bars));
+});
+if (bars.B1.sent || bars.B1.live.join(',') !== 'Yes,No')
+  fail('the bar of B1 (waiting in Y) must show live Yes and No: ' + JSON.stringify(bars));
+console.log('ask void check passed: ' + JSON.stringify(Object.assign(got, { bars })));
