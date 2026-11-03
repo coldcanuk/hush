@@ -443,7 +443,7 @@ async function main() {
     if (!VOID || !voidLive || voidLive.live !== 2 || voidLive.sent)
       fail('F15 setup: Ace\'s ask for the follow-up must wait with live Yes/No before the plain note: ' + JSON.stringify({ VOID, voidLive }));
     const plain = await compose('plain follow-up', 'plain follow-up');
-    if (plain.said.text !== 'to Ace, continuing \u201c@Ace first task\u201d')
+    if (plain.said.text !== 'to Ace, continuing \u201cfirst task\u201d')
       fail('A the route preview must show before Send: ' + JSON.stringify(plain.said));
     if (!plain.got || plain.got.reply_to !== RA || !(plain.got.mentions || []).some((m) => m === aceN || m.length === 64))
       fail('A a plain note with one robot active must continue its conversation: ' + JSON.stringify(plain.got));
@@ -582,6 +582,61 @@ async function main() {
     await cdp.eval(`(() => { $('msg').value = ''; $('msg').dispatchEvent(new Event('input')); return true; })()`);
     const rpOther = await routeState();
     if (!routeIdle(rpOther)) fail('RP3 no route text may carry into another channel: ' + JSON.stringify(rpOther));
+    // RP2L (Ops M1 FU1 label quality, CoS 01:04): long robot names, at 390
+    // and 1440. In their own channel, so route-room keeps Ace and Bea. The
+    // chooser option drops the robot's own leading mention, cuts the quote
+    // at a word break within 40 characters ("…"), carries the whole label as
+    // the option's and the select's title, and a label wider than the select
+    // is never clipped without a computed ellipsis.
+    const LONG48 = 'Quartermaster of the Northern Supply Depot Fleet';
+    const longRobots = [
+      { name: 'Research assistant', rest: 'summarise the quarterly supply manifest for the north depot' },
+      { name: LONG48, rest: 'count the crates in bay seven before the convoy leaves' },
+    ];
+    for (const r of longRobots) r.npub = await robot(r.name);
+    await cdp.evalAsync(`(async () => { applySession(await api('/api/channel', { name: 'label-room', system_prompt: '' })); return true; })()`);
+    await cdp.waitFor(`[...document.querySelectorAll('.chan')].some((b) => b.textContent.includes('#label-room'))`, 'label-room channel');
+    await cdp.eval(`[...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#label-room')).click()`);
+    await cdp.waitFor(`channel === 'label-room'`, 'label-room open');
+    for (const r of longRobots) {
+      const root = await post({ content: 'nostr:' + r.npub + ' ' + r.rest, kind: 1, channel: 'label-room', mention_0: r.npub });
+      if (root.status !== 200) fail('RP2L setup: root note for ' + r.name + ' ' + JSON.stringify(root));
+    }
+    await cdp.waitFor(`Object.keys(robotConvos()).length === 2`, 'two long-name robots active in label-room', 10000);
+    const rpLabels = [];
+    for (const v of [VIEWS[1], VIEWS[0]]) {
+      await view(v);
+      for (const r of longRobots) {
+        await cdp.eval(`(() => { $('msg').value = 'plain label'; $('msg').dispatchEvent(new Event('input'));
+          const p = $('route-pick'); p.value = ${JSON.stringify(r.npub)}; p.dispatchEvent(new Event('change')); return true; })()`);
+        await sleep(150);
+        const st = await cdp.eval(`(() => { const p = $('route-pick'), ps = getComputedStyle(p);
+          const o = p.selectedIndex >= 0 ? p.options[p.selectedIndex] : null;
+          const ctx = document.createElement('canvas').getContext('2d'); ctx.font = ps.font;
+          const label = o ? o.textContent : '';
+          return { vw: innerWidth, label, optTitle: o ? o.title : '', pickTitle: p.title, text: $('route-text').textContent,
+            textW: Math.ceil(ctx.measureText(label).width), room: Math.floor(p.clientWidth - parseFloat(ps.paddingLeft) - parseFloat(ps.paddingRight) - 16),
+            sw: p.scrollWidth, cw: p.clientWidth, textOverflow: ps.textOverflow, overflowX: ps.overflowX, whiteSpace: ps.whiteSpace,
+            pickRight: Math.round(p.getBoundingClientRect().right), hidden: p.hidden }; })()`);
+        const m = String(st.label).match(/^to (.*), continuing \u201c(.*)\u201d$/);
+        const q = m ? m[2] : '';
+        const body = q.endsWith('\u2026') ? q.slice(0, -1) : q;
+        const bad = [];
+        if (st.hidden || !m || m[1] !== r.name) bad.push('label shape');
+        if (q.startsWith('@')) bad.push('own mention kept');
+        if (q.length > 40 || !r.rest.startsWith(body) || (q.endsWith('\u2026') && r.rest[body.length] !== ' ')) bad.push('not a word-break cut within 40');
+        if (st.optTitle !== st.label || st.pickTitle !== st.label) bad.push('title is not the whole label');
+        if (st.text !== '') bad.push('label repeated beside the chooser');
+        if ((st.textW > st.room || st.sw > st.cw) && !(st.textOverflow === 'ellipsis' && st.overflowX === 'hidden' && st.whiteSpace === 'nowrap'))
+          bad.push('clipped without an ellipsis');
+        if (st.pickRight > st.vw - 18 + 1) bad.push('chooser past the gutter');
+        if (bad.length) fail('RP2L ' + r.name + ' at ' + v.w + ': ' + bad.join(', ') + ' ' + JSON.stringify(st));
+        rpLabels.push({ w: v.w, name: r.name, label: st.label, textW: st.textW, room: st.room, ellipsis: st.textOverflow });
+      }
+    }
+    await cdp.eval(`(() => { $('msg').value = ''; $('msg').dispatchEvent(new Event('input')); routePick = { channel: '', value: '' }; return true; })()`);
+    await view(VIEWS[0]);
+    console.log('RP2L PASS long-name labels: ' + JSON.stringify(rpLabels));
     console.log('RP PASS route line: ' + JSON.stringify({ empty: rpEmpty, gutter: rpGutter, afterSend: rpAfter, switch: rpSwitch, otherChannel: rpOther }));
     console.log('A PASS interim routing: ' + JSON.stringify({ again: again.got.reply_to === RA, preview: plain.said.text,
       bare: { said: bare.said.text, reply_to: bare.got.reply_to, aceAskLive: held }, two: { said: two.said.text, err: two.err }, chosen: chosen.got.reply_to === RA }));
