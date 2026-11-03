@@ -590,8 +590,13 @@ async function main() {
     // is never clipped without a computed ellipsis.
     const LONG48 = 'Quartermaster of the Northern Supply Depot Fleet';
     const longRobots = [
-      { name: 'Research assistant', rest: 'summarise the quarterly supply manifest for the north depot' },
-      { name: LONG48, rest: 'count the crates in bay seven before the convoy leaves' },
+      // exact: what convoLabel gives (own mention dropped, cut at the last
+      // word break within the first 39 characters, then "…"); checked at
+      // 1440, where both labels fit, so a shorter cap (23, 24) fails here.
+      { name: 'Research assistant', rest: 'summarise the quarterly supply manifest for the north depot',
+        exact: 'to Research assistant, continuing \u201csummarise the quarterly supply manifest\u2026\u201d' },
+      { name: LONG48, rest: 'count the crates in bay seven before the convoy leaves',
+        exact: 'to ' + LONG48 + ', continuing \u201ccount the crates in bay seven before\u2026\u201d' },
     ];
     for (const r of longRobots) r.npub = await robot(r.name);
     await cdp.evalAsync(`(async () => { applySession(await api('/api/channel', { name: 'label-room', system_prompt: '' })); return true; })()`);
@@ -633,6 +638,7 @@ async function main() {
         if ((st.textW > st.room || st.sw > st.cw) && !(st.textOverflow === 'ellipsis' && (st.overflowX === 'hidden' || st.overflowX === 'clip') && st.whiteSpace === 'nowrap'))
           bad.push('clipped without an ellipsis');
         if (st.pickRight > st.vw - 18 + 1) bad.push('chooser past the gutter');
+        if (v.w === 1440 && st.label !== r.exact) bad.push('label at 1440 is not the convoLabel output ' + JSON.stringify(r.exact));
         if (bad.length) fail('RP2L ' + r.name + ' at ' + v.w + ': ' + bad.join(', ') + ' ' + JSON.stringify(st));
         rpLabels.push({ w: v.w, name: r.name, label: st.label, textW: st.textW, room: st.room, ellipsis: st.textOverflow });
       }
