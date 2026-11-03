@@ -770,6 +770,16 @@ async function main() {
   await routePins();
   await cdp.evalAsync(`(async () => { applySession(await api('/api/channel', { name: 'quiet-room', system_prompt: '' })); return true; })()`);
   await cdp.waitFor(`[...document.querySelectorAll('.chan')].some((b) => b.textContent.includes('#quiet-room'))`, 'quiet-room channel');
+  // Gauge M1-F14: also wait until /api/session lists quiet-room, so a later
+  // tick() repaints the channel list from a session that has it (see the
+  // idle state below for the race this narrows).
+  for (let k = 0; ; k++) {
+    const listed = await cdp.evalAsync(`(async () => { const s = await (await fetch('/api/session')).json();
+      return (s.channels || []).some((c) => c.slug === 'quiet-room'); })()`);
+    if (listed) break;
+    if (k >= 50) fail('timeout waiting for /api/session to list quiet-room');
+    await sleep(200);
+  }
 
   // Page helpers: channel switch, status wrapper, send failure, drawers.
   await cdp.eval(`(() => {
@@ -800,8 +810,16 @@ async function main() {
   };
   const STATES = [
     ['idle', async () => {
-      await cdp.eval(`window.__ch0go('quiet-room')`);
-      await cdp.waitFor(`!!document.querySelector('#stream .empty')`, 'empty channel');
+      // Gauge M1-F14 flake (failed 4 of 6 box runs on both d7b6f836 and
+      // 97d60296). INFERRED cause: a tick() (demo/index.html:9350) whose
+      // /api/session fetch began before quiet-room existed lands after the
+      // click and sets that stale session; the channel list then finds no
+      // quiet-room and snaps `channel` back to the first channel
+      // (index.html:3640-3641), so .empty never paints. Re-select
+      // quiet-room on every poll where it is not the open channel, within
+      // the same waitFor timeout.
+      await cdp.waitFor(`(() => { if (document.querySelector('#stream .empty')) return true;
+        if (channel !== 'quiet-room') window.__ch0go('quiet-room'); return false; })()`, 'empty channel');
     }],
     ['log', toWelcome],
     ['replying', async () => {
