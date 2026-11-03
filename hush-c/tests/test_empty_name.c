@@ -32,7 +32,9 @@ enum {
     /* Longest private root path; every path a test derives from it fits. */
     ROOT_PATH_MAX = 96,
     /* Open-fd budget for the nftw cleanup walk. */
-    ROOT_FTW_FDS = 16
+    ROOT_FTW_FDS = 16,
+    /* Exit status when the root cannot be removed; atexit cannot return one. */
+    ROOT_CLEANUP_FAIL_RC = 1
 };
 
 /* <TMPDIR or /tmp>/hush-empty-name-XXXXXX: this run's private root, 0700 from mkdtemp.
@@ -46,20 +48,27 @@ enum {
 static char g_root[ROOT_PATH_MAX];
 static pid_t g_root_pid;
 
-/* Makes g_root under TMPDIR (/tmp when TMPDIR is unset or empty) and
- * registers root_remove with atexit, so every return from main and every
- * exit() removes it. Returns 0, after a FAIL line, when the path does not
- * fit, mkdtemp fails, or atexit refuses. */
+/* Makes g_root under TMPDIR (/tmp when TMPDIR is unset, empty, or not
+ * absolute); root_remove, registered with atexit, removes it on every return
+ * from main and every exit(). Returns 0, after a FAIL line, when root_holds
+ * fails its own check, the path does not fit, mkdtemp fails, or atexit
+ * refuses. */
 static int root_make(void);
 
 /* atexit handler: removes g_root and everything under it, in the making
- * process only, so a forked child that exits cannot take the root early. */
+ * process only, so a forked child that exits cannot take the root early.
+ * When the walk fails it prints FAIL and ends the process with
+ * ROOT_CLEANUP_FAIL_RC, so a leftover root fails the test. */
 static void root_remove(void);
 
 /* nftw callback: removes one entry under g_root; FTW_DEPTH visits children
  * first. */
 static int root_remove_entry(const char *path, const struct stat *st, int flag,
                              struct FTW *ftw);
+
+/* True when path is root or lies below it: root must match whole path
+ * components, so "/r" holds "/r" and "/r/k" but not the sibling "/rX/k". */
+static int root_holds(const char *root, const char *path);
 
 static int g_fail;
 
@@ -170,7 +179,16 @@ static int root_make(void)
     int wrote = 0;
 
     assert(g_root[0] == '\0');
-    if (tmp == NULL || tmp[0] == '\0')
+    /* nftw never hands root_remove_entry a path outside the root, so this
+     * direct check is the only place the prefix-sibling case is exercised. */
+    if (!root_holds("/r", "/r") || !root_holds("/r", "/r/k") ||
+        root_holds("/r", "/rX/k") || root_holds("/r", "/rX")) {
+        fprintf(stderr, "FAIL root_holds accepts a prefix sibling\n");
+        return 0;
+    }
+    /* A relative TMPDIR would leave g_root relative, and a test that
+     * chdirs would then walk the wrong dir at exit. */
+    if (tmp == NULL || tmp[0] != '/')
         tmp = ROOT_TMP_DEFAULT;
     wrote = snprintf(g_root, sizeof(g_root), "%s/%s", tmp, ROOT_NAME);
     if (wrote < 0 || (size_t)wrote >= sizeof(g_root) || mkdtemp(g_root) == NULL) {
@@ -196,8 +214,12 @@ static void root_remove(void)
      * walks into another filesystem mounted under it. Deviation (section 7):
      * nftw takes a bare callback; no table fits. */
     if (nftw(g_root, root_remove_entry, ROOT_FTW_FDS,
-             FTW_DEPTH | FTW_PHYS | FTW_MOUNT) != 0)
+             FTW_DEPTH | FTW_PHYS | FTW_MOUNT) != 0) {
         fprintf(stderr, "FAIL private root cleanup: %s\n", g_root);
+        (void)fflush(NULL);
+        /* exit() may not run inside an atexit handler; _exit may. */
+        _exit(ROOT_CLEANUP_FAIL_RC);
+    }
     g_root[0] = '\0';
 }
 
@@ -207,6 +229,19 @@ static int root_remove_entry(const char *path, const struct stat *st, int flag,
     (void)st;
     (void)flag;
     (void)ftw;
-    assert(strncmp(path, g_root, strlen(g_root)) == 0);
+    /* Defense in depth only: FTW_PHYS and FTW_MOUNT keep the walk inside
+     * g_root, so this assert cannot fire through nftw. root_make checks
+     * root_holds directly instead. */
+    assert(root_holds(g_root, path));
     return remove(path);
+}
+
+static int root_holds(const char *root, const char *path)
+{
+    size_t n = 0;
+
+    assert(root != NULL && path != NULL);
+    n = strlen(root);
+    return n > 0 && strncmp(path, root, n) == 0 &&
+           (path[n] == '\0' || path[n] == '/');
 }
