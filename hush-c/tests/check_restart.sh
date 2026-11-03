@@ -40,6 +40,10 @@ cleanup() {
     done
 }
 trap cleanup EXIT
+# dash runs no EXIT trap on a signal: exit nonzero, through cleanup, instead.
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 fail() { echo "restart check failed: $1" >&2; exit 1; }
 
 start_relay() {

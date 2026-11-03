@@ -31,6 +31,10 @@ cleanup() {
     done
 }
 trap cleanup EXIT
+# dash runs no EXIT trap on a signal: exit nonzero, through cleanup, instead.
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # A stand-in run TMPDIR under the caller's TMPDIR, and a plant dir that is
 # outside it by construction (directly under /tmp).

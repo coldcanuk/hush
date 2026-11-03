@@ -184,14 +184,17 @@ check-deps:
 # still do so after this. A harness that needs a fake provider prepends
 # its own bin directory and leaves the sentinel behind it.
 # The whole run gets one private TMPDIR (mktemp under the caller's TMPDIR,
-# or /tmp), removed on every exit; HOME and the XDG dirs live inside it.
+# or /tmp), removed on exit and, through exit, on HUP, INT and TERM (dash
+# runs no EXIT trap on a signal); HOME and the XDG dirs live inside it.
 # A marker stamped at the start lets the last step, check_no_nsec_leak.sh,
-# fail on any *nsec* file the run left outside that TMPDIR or inside it.
+# fail on any key, vault or token file the run left in /tmp outside that
+# TMPDIR, or in a private test root inside it.
 test: check-deps $(TEST_BINS) hush-relay
 	@set -eu; \
 	umask 022; \
 	ht_tmp=$$(mktemp -d); \
 	trap 'rm -rf "$$ht_tmp"' EXIT; \
+	trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
 	export TMPDIR="$$ht_tmp"; \
 	ht_mark="$$ht_tmp/.hush-leak-marker"; \
 	sh tests/check_no_nsec_leak.sh mark "$$ht_mark"; \
