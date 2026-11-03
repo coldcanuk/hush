@@ -78,8 +78,8 @@ static pid_t g_root_pid;
 
 /* Makes g_root under root_tmpdir() (/tmp when that is NULL); root_remove,
  * registered with atexit, removes it on every return from main and every
- * exit(). Returns 0, after a FAIL line, when root_holds
- * fails its own check, the path does not fit, mkdtemp fails, atexit
+ * exit(). Returns 0, after a FAIL line, when root_self_check
+ * fails, the path does not fit, mkdtemp fails, atexit
  * refuses, or the root is not under an absolute TMPDIR. */
 static int root_make(void);
 
@@ -98,11 +98,18 @@ static int root_remove_entry(const char *path, const struct stat *st, int flag,
  * components, so "/r" holds "/r" and "/r/k" but not the sibling "/rX/k". */
 static int root_holds(const char *root, const char *path);
 
-/* True when root_tmpdir() is NULL (root_make then uses /tmp), or when
- * g_root lies under it with one trailing slash dropped. A root made anywhere
+/* Self-test of the two path checks, run before the root is made: returns
+ * 0, after a FAIL line, when root_holds or root_is_under_tmpdir accepts a
+ * prefix sibling ("/tmp/xprivate" for "/tmp/x"). A real root never sits in
+ * such a sibling, so nothing else exercises that boundary. */
+static int root_self_check(void);
+
+/* True when tmpdir is NULL, empty or relative (root_make then uses /tmp), or
+ * when root lies under tmpdir by whole path components. A root made anywhere
  * else (a fixed /tmp, say) escapes the run's own cleanup and leak scan.
- * Requires a made root (g_root non-empty). */
-static int root_is_under_tmpdir(void);
+ * root_make passes getenv("TMPDIR") here, never root_tmpdir(), so a fault in
+ * the leaf that placed the root cannot also blind this check. */
+static int root_is_under_tmpdir(const char *tmpdir, const char *root);
 
 /* TMPDIR when it is set and absolute; NULL when it is unset, empty, or
  * relative. Borrowed from the environment, never owned or freed. */
@@ -400,13 +407,8 @@ static int root_make(void)
     int wrote = 0;
 
     assert(g_root[0] == '\0');
-    /* nftw never hands root_remove_entry a path outside the root, so this
-     * direct check is the only place the prefix-sibling case is exercised. */
-    if (!root_holds("/r", "/r") || !root_holds("/r", "/r/k") ||
-        root_holds("/r", "/rX/k") || root_holds("/r", "/rX")) {
-        fprintf(stderr, "FAIL root_holds accepts a prefix sibling\n");
+    if (!root_self_check())
         return 0;
-    }
     /* A relative TMPDIR would leave g_root relative, and a test that
      * chdirs would then walk the wrong dir at exit. */
     if (base_dir == NULL)
@@ -425,7 +427,7 @@ static int root_make(void)
         return 0;
     }
     /* atexit is already set, so the root is still removed on this FAIL. */
-    if (!root_is_under_tmpdir()) {
+    if (!root_is_under_tmpdir(getenv("TMPDIR"), g_root)) {
         fprintf(stderr, "FAIL private root %s is not under TMPDIR\n", g_root);
         return 0;
     }
@@ -472,23 +474,34 @@ static int root_holds(const char *root, const char *path)
            (path[n] == '\0' || path[n] == '/');
 }
 
-static int root_is_under_tmpdir(void)
+static int root_self_check(void)
 {
-    assert(g_root[0] != '\0');
-    const char *env = root_tmpdir();
-    if (env == NULL)
-        return 1;
-
-    size_t n = strlen(env);
-    if (n > 1 && env[n - 1] == '/')
-        n--;
-    /* g_root is shorter than ROOT_PATH_MAX, so no longer TMPDIR can hold it:
-     * "not under TMPDIR" is the true answer here, not a second error. */
-    if (n >= (size_t)ROOT_PATH_MAX)
+    /* nftw never hands root_remove_entry a path outside the root, so this
+     * direct check is the only place the prefix-sibling case is exercised. */
+    if (!root_holds("/r", "/r") || !root_holds("/r", "/r/k") ||
+        root_holds("/r", "/rX/k") || root_holds("/r", "/rX")) {
+        fprintf(stderr, "FAIL root_holds accepts a prefix sibling\n");
         return 0;
-    char base[ROOT_PATH_MAX] = "";
-    memcpy(base, env, n);
-    return root_holds(base, g_root);
+    }
+    if (!root_is_under_tmpdir("/tmp/x", "/tmp/x/hush-k") ||
+        root_is_under_tmpdir("/tmp/x", "/tmp/xprivate") ||
+        root_is_under_tmpdir("/tmp/x", "/tmp/xprivate/hush-k")) {
+        fprintf(stderr, "FAIL root_is_under_tmpdir accepts a prefix sibling\n");
+        return 0;
+    }
+    return 1;
+}
+
+static int root_is_under_tmpdir(const char *tmpdir, const char *root)
+{
+    assert(root != NULL && root[0] != '\0');
+    /* The same absolute test as root_tmpdir, repeated on purpose: the check
+     * must not share the leaf it checks. No trailing-slash strip is needed:
+     * root is "<tmpdir>/<name>", so tmpdir "X/" gives "X//<name>", which
+     * root_holds("X/", ...) already accepts. */
+    if (tmpdir == NULL || tmpdir[0] != '/')
+        return 1;
+    return root_holds(tmpdir, root);
 }
 
 static const char *root_tmpdir(void)
