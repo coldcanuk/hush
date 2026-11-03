@@ -627,7 +627,10 @@ async function main() {
         if (q.length > 40 || !r.rest.startsWith(body) || (q.endsWith('\u2026') && r.rest[body.length] !== ' ')) bad.push('not a word-break cut within 40');
         if (st.optTitle !== st.label || st.pickTitle !== st.label) bad.push('title is not the whole label');
         if (st.text !== '') bad.push('label repeated beside the chooser');
-        if ((st.textW > st.room || st.sw > st.cw) && !(st.textOverflow === 'ellipsis' && st.overflowX === 'hidden' && st.whiteSpace === 'nowrap'))
+        // Chrome computes overflow-x "clip" on a <select> whatever the page
+        // sets (box run at 31c2fc72), and still draws the "…" there; either
+        // value clips, so either passes. The ellipsis itself is what counts.
+        if ((st.textW > st.room || st.sw > st.cw) && !(st.textOverflow === 'ellipsis' && (st.overflowX === 'hidden' || st.overflowX === 'clip') && st.whiteSpace === 'nowrap'))
           bad.push('clipped without an ellipsis');
         if (st.pickRight > st.vw - 18 + 1) bad.push('chooser past the gutter');
         if (bad.length) fail('RP2L ' + r.name + ' at ' + v.w + ': ' + bad.join(', ') + ' ' + JSON.stringify(st));
