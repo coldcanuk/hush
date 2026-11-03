@@ -560,8 +560,8 @@ async function main() {
         textW: Math.ceil(ctx.measureText(label).width), room: Math.floor(p.clientWidth - parseFloat(ps.paddingLeft) - parseFloat(ps.paddingRight) - 16),
         text: $('route-text').textContent, label, hidden: p.hidden }; })()`);
     if (rpGutter.hidden || Math.abs(rpGutter.pickLeft - rpGutter.logLeft) > 1 || rpGutter.pickLeft < 8 || rpGutter.pickRight > rpGutter.lineRight + 1
-        || rpGutter.textW > rpGutter.room || rpGutter.text !== '' || !/^to Ace, continuing /.test(rpGutter.label))
-      fail('RP2 at 390 the route line must keep the log gutter, fit its chooser label and not repeat it: ' + JSON.stringify(rpGutter));
+        || rpGutter.textW > rpGutter.room || rpGutter.text !== rpGutter.label || !/^to Ace, continuing /.test(rpGutter.label))
+      fail('RP2 at 390 the route line must keep the log gutter, fit its chooser label and show it whole above (CoS 01:50 B): ' + JSON.stringify(rpGutter));
     await view(VIEWS[0]);
     // RP3: after a send the line is gone, and no route text carries into
     // another channel.
@@ -622,7 +622,9 @@ async function main() {
           return { vw: innerWidth, label, optTitle: o ? o.title : '', pickTitle: p.title, text: $('route-text').textContent,
             textW: Math.ceil(ctx.measureText(label).width), room: Math.floor(p.clientWidth - parseFloat(ps.paddingLeft) - parseFloat(ps.paddingRight) - 16),
             sw: p.scrollWidth, cw: p.clientWidth, textOverflow: ps.textOverflow, overflowX: ps.overflowX, whiteSpace: ps.whiteSpace,
-            pickRight: Math.round(p.getBoundingClientRect().right), hidden: p.hidden }; })()`);
+            pickRight: Math.round(p.getBoundingClientRect().right), hidden: p.hidden,
+            tsw: $('route-text').scrollWidth, tcw: $('route-text').clientWidth, tws: getComputedStyle($('route-text')).whiteSpace,
+            tto: getComputedStyle($('route-text')).textOverflow, tdisp: getComputedStyle($('route-text')).display }; })()`);
         const m = String(st.label).match(/^to (.*), continuing \u201c(.*)\u201d$/);
         const q = m ? m[2] : '';
         const body = q.endsWith('\u2026') ? q.slice(0, -1) : q;
@@ -631,7 +633,12 @@ async function main() {
         if (q.startsWith('@')) bad.push('own mention kept');
         if (q.length > 40 || !r.rest.startsWith(body) || (q.endsWith('\u2026') && r.rest[body.length] !== ' ')) bad.push('not a word-break cut within 40');
         if (st.optTitle !== st.label || st.pickTitle !== st.label) bad.push('title is not the whole label');
-        if (st.text !== '') bad.push('label repeated beside the chooser');
+        // CoS 01:50 (B): at <=480px the text above the chooser shows the
+        // picked option's whole label, wrapping; wider, it stays empty.
+        if (v.w <= 480) {
+          if (st.text !== st.label || st.tdisp === 'none') bad.push('text is not the picked label');
+          if (st.tws === 'nowrap' || st.tto === 'ellipsis' || st.tsw > st.tcw) bad.push('picked label text does not wrap in full');
+        } else if (st.text !== '') bad.push('label repeated beside the chooser');
         // Chrome computes overflow-x "clip" on a <select> whatever the page
         // sets (box run at 31c2fc72), and still draws the "…" there; either
         // value clips, so either passes. The ellipsis itself is what counts.
@@ -640,7 +647,15 @@ async function main() {
         if (st.pickRight > st.vw - 18 + 1) bad.push('chooser past the gutter');
         if (v.w === 1440 && st.label !== r.exact) bad.push('label at 1440 is not the convoLabel output ' + JSON.stringify(r.exact));
         if (bad.length) fail('RP2L ' + r.name + ' at ' + v.w + ': ' + bad.join(', ') + ' ' + JSON.stringify(st));
-        rpLabels.push({ w: v.w, name: r.name, label: st.label, textW: st.textW, room: st.room, ellipsis: st.textOverflow });
+        rpLabels.push({ w: v.w, name: r.name, label: st.label, textW: st.textW, room: st.room, ellipsis: st.textOverflow, text: st.text });
+      }
+      if (v.w <= 480) {
+        // the text follows a change of the selection alone (no new input)
+        const back = await cdp.eval(`(() => { const p = $('route-pick'); p.value = ${JSON.stringify(longRobots[0].npub)}; p.dispatchEvent(new Event('change'));
+          return { text: $('route-text').textContent, label: p.options[p.selectedIndex].textContent }; })()`);
+        if (back.text !== back.label || back.label !== longRobots[0].exact)
+          fail('RP2L at ' + v.w + ': the text must follow a change of the chooser: ' + JSON.stringify(back));
+        rpLabels.push({ w: v.w, changedBack: back.text });
       }
     }
     // RP5 (Gauge P2-R8-1, CoS 01:46): the bare Yes/No sentence is not a

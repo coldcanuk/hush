@@ -47,7 +47,9 @@ const document = { createElement: () => ({ value: '', textContent: '', title: ''
 const LONG48 = 'Quartermaster of the Northern Supply Depot Fleet'; // 48 characters, the agent-name maxlength
 if (LONG48.length !== 48) fail('fixture: LONG48 must be 48 characters');
 let nextRoute = null;
+let narrow = false; // matchMedia("(max-width: 480px)")
 const env = {
+  matchMedia: (q) => { if (q !== '(max-width: 480px)') fail('unexpected media query ' + q); return { matches: narrow }; },
   $: (id) => els[id],
   document,
   assembleMentionContent: (raw) => ({ content: raw, mentions: [] }),
@@ -84,7 +86,7 @@ const state = () => {
   const p = els['route-pick'];
   const sel = p.options.find((o) => o.value === p.value) || {};
   return { box: els['route-preview'].hidden, text: els['route-text'].textContent, textTitle: els['route-text'].title,
-    label: els['route-text'].classList.contains('route-label'),
+    label: els['route-text'].classList.contains('route-label'), sel: els['route-text'].classList.contains('route-sel'),
     pick: p.hidden, opts: p.options.length, shown: sel.textContent || '', optTitle: sel.title || '', pickTitle: p.title };
 };
 
@@ -155,11 +157,37 @@ if (picked.box || picked.pick || picked.text !== '' || picked.shown !== api.conv
 if (picked.optTitle !== picked.shown || picked.pickTitle !== picked.shown)
   fail('the picked option and the chooser must carry the whole label as title: ' + JSON.stringify(picked));
 
+// 2b. CoS 01:50 (B): at 480px or narrower the text shows the picked
+// option's whole label (the chooser's title), wrapping (route-sel, not
+// route-label), and follows a new pick; "Choose who this goes to:" stays.
+narrow = true;
+api.paintRoute();
+const narrowAce = state();
+if (narrowAce.box || narrowAce.pick || narrowAce.text !== narrowAce.shown || narrowAce.text !== api.convoLabel(ace) || narrowAce.textTitle !== narrowAce.text
+    || !narrowAce.sel || narrowAce.label)
+  fail('at <=480px the text must show the picked option\'s whole label, wrapping: ' + JSON.stringify(narrowAce));
+nextRoute = { kind: 'continue', convo: bea, list: [ace, bea] };
+api.paintRoute();
+const narrowBea = state();
+if (narrowBea.text !== api.convoLabel(bea) || narrowBea.text !== narrowBea.shown || !narrowBea.sel)
+  fail('at <=480px the text must follow a new pick: ' + JSON.stringify(narrowBea));
+nextRoute = { kind: 'new', list: [ace, bea] };
+api.paintRoute();
+const narrowNew = state();
+if (narrowNew.text !== 'New conversation in #route-room' || narrowNew.text !== narrowNew.shown || !narrowNew.sel)
+  fail('at <=480px a "new" pick shows its option text: ' + JSON.stringify(narrowNew));
+nextRoute = { kind: 'choose', list: [ace, bea] };
+api.paintRoute();
+const narrowChoose = state();
+if (narrowChoose.text !== 'Choose who this goes to:' || narrowChoose.sel)
+  fail('at <=480px "Choose who this goes to:" is unchanged: ' + JSON.stringify(narrowChoose));
+narrow = false;
+
 // 3. An @mention route with no chooser: the text is the same label.
 nextRoute = { kind: 'continue', convo: ace };
 api.paintRoute();
 const named = state();
-if (named.box || !named.pick || named.text !== api.convoLabel(ace) || named.text !== picked.shown || named.textTitle !== named.text || !named.label)
+if (named.box || !named.pick || named.text !== api.convoLabel(ace) || named.text !== picked.shown || named.textTitle !== named.text || !named.label || named.sel)
   fail('the @mention route must show the same label as the chooser option, with it as title: ' + JSON.stringify({ named, option: picked.shown }));
 
 // 3b. Gauge P2-R8-1: the bare Yes/No sentence and a new conversation are
@@ -185,7 +213,7 @@ els.msg.value = '';
 nextRoute = { kind: 'new' };
 api.paintRoute();
 const idle = state();
-if (!idle.box || idle.text !== '' || idle.textTitle !== '' || idle.label || !idle.pick || idle.opts !== 0 || idle.pickTitle !== '')
+if (!idle.box || idle.text !== '' || idle.textTitle !== '' || idle.label || idle.sel || !idle.pick || idle.opts !== 0 || idle.pickTitle !== '')
   fail('an empty composer must hide the line, reset its text and title and empty the chooser: ' + JSON.stringify(idle));
 
-console.log('route preview check passed: ' + JSON.stringify({ labels, choose, picked, named, bare, fresh, idle }));
+console.log('route preview check passed: ' + JSON.stringify({ labels, choose, picked, narrowAce, narrowBea, narrowNew, narrowChoose, named, bare, fresh, idle }));
