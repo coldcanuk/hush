@@ -321,14 +321,20 @@ static void test_wipe_before_vibe(void)
     const hush_roster_agent_t *a;
     char home[128];
     char pass_dir[128];
-    char wipe_log[128];
+    char wipe_log[160];
     char slug[HUSH_ROSTER_NAME_MAX];
     char line[256];
     FILE *fp;
+    int wrote = 0;
 
     wipe_helpers();
     snprintf(pass_dir, sizeof(pass_dir), "%s/hush-kc-o1-pass-%d", g_root, (int)getpid());
-    snprintf(wipe_log, sizeof(wipe_log), "%s/hush-kc-o1-wipe-%d.json", g_root, (int)getpid());
+    wrote = snprintf(wipe_log, sizeof(wipe_log), "%s/hush-kc-o1-wipe-%d.json", g_root,
+                     (int)getpid());
+    if (wrote < 0 || (size_t)wrote >= sizeof(wipe_log)) {
+        expect(0, "o1 wipe log path fits");
+        return;
+    }
     unlink(wipe_log);
     expect(arm_pass(pass_dir), "o1 arm pass");
     expect(setenv("HUSH_FAKE_PASS_WIPE_LOG", wipe_log, 1) == 0, "o1 wipe log env");
