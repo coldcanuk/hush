@@ -4,10 +4,12 @@
 # every secret as a 0600 file in 0700 dirs (fake-op's items/ and vault dirs
 # included), both for a fresh store and when the file and dirs already
 # exist with wider modes (0644 / 0755): a fake must never keep the old mode.
-# Modes are read with stat. One more step pins fake-pass.sh's write order: a
-# reader holding an fd to an old 0644 file must not see the new secret, so
-# the secret goes to a new file, never into the old one before its chmod.
-# That read sees only the fixed probe text written here, never a real key.
+# Modes are read with stat. Two more steps pin fake-pass.sh's write order:
+# a reader holding an fd to an old 0644 file must not see the new secret, so
+# the secret goes to a new file, never into the old one; and that new file
+# must already be 0600 before the first secret byte reaches it (the save
+# reads the probe from a FIFO that is held back until the mode is checked).
+# The held-fd read sees only the fixed probe text written here, never a key.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -16,9 +18,28 @@ OP_VAULT=Hush
 OP_TITLE=hush-agents_probe_nsec
 ITEM=agents/probe/nsec
 FLAT_ITEM=agents_probe_nsec
+# Wait for the FIFO-fed save to make its file: 100 polls of 0.1 s, 10 s.
+FIFO_POLLS=100
+FIFO_POLL_SECS=0.1
 
 work=""
+fifo=""
+fifo_open=0
+saver=""
+# Closing the FIFO's write end gives a waiting save EOF; a save that is still
+# running after that is stopped by its recorded PID only.
 cleanup() {
+    if [ "$fifo_open" = 1 ]; then
+        exec 4>&-
+        fifo_open=0
+    fi
+    if [ -n "$saver" ]; then
+        kill "$saver" 2>/dev/null || true
+        wait "$saver" 2>/dev/null || true
+    fi
+    if [ -n "$fifo" ]; then
+        rm -f -- "$fifo"
+    fi
     if [ -n "$work" ]; then
         rm -rf "$work"
     fi
@@ -99,4 +120,31 @@ exec 3<&-
 [ -z "$seen" ] || fail "a reader holding the old 0644 file saw the saved secret"
 want 600 "$held/$FLAT_ITEM"
 
-echo "fake modes ok: pass, op and secret-tool store 0600 files in 0700 dirs, fresh and over 0644/0755; a held fd to the old 0644 pass file sees no secret"
+# The new file's mode before the secret reaches it. The save reads from a
+# FIFO that this script holds open without writing, so it makes the file and
+# then waits for data. The file must be 0600 at that point: writing first
+# and chmod after would leave it at the umask's 0644 while it held the probe.
+fed="$work/fifo-pass"
+fifo="$work/save.fifo"
+mkfifo -m 600 "$fifo"
+HUSH_FAKE_PASS_DIR="$fed" sh tests/fake-pass.sh save "$ITEM" < "$fifo" &
+saver=$!
+exec 4> "$fifo"
+fifo_open=1
+polls=0
+while [ ! -e "$fed/$FLAT_ITEM" ]; do
+    polls=$((polls + 1))
+    [ "$polls" -le "$FIFO_POLLS" ] || fail "fifo: fake-pass save made no file in 10 s"
+    sleep "$FIFO_POLL_SECS"
+done
+want 600 "$fed/$FLAT_ITEM"
+printf '%s' "$SECRET_TEXT" >&4
+exec 4>&-
+fifo_open=0
+wait "$saver" || { saver=""; fail "fifo: fake-pass save failed"; }
+saver=""
+rm -f -- "$fifo"
+fifo=""
+want 600 "$fed/$FLAT_ITEM"
+
+echo "fake modes ok: pass, op and secret-tool store 0600 files in 0700 dirs, fresh and over 0644/0755; a held fd to the old 0644 pass file sees no secret; the new pass file is 0600 before the secret reaches it"

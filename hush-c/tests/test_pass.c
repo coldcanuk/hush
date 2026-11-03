@@ -393,8 +393,8 @@ static int root_remove_entry(const char *path, const struct stat *st, int flag,
     (void)flag;
     (void)ftw;
     /* Defense in depth only: FTW_PHYS and FTW_MOUNT keep the walk inside
-     * g_root, so this assert cannot fire through nftw. root_make checks
-     * root_holds directly instead. */
+     * g_root, so this assert cannot fire through nftw. root_self_check
+     * checks root_holds directly instead. */
     assert(root_holds(g_root, path));
     return remove(path);
 }
@@ -411,8 +411,9 @@ static int root_holds(const char *root, const char *path)
 
 static int root_self_check(void)
 {
-    /* nftw never hands root_remove_entry a path outside the root, so this
-     * direct check is the only place the prefix-sibling case is exercised. */
+    /* nftw never hands root_remove_entry a path outside the root, so the
+     * prefix-sibling case is exercised only here: directly just below, and
+     * through root_is_under_tmpdir in the /tmp/x and /tmp/x/ cases. */
     if (!root_holds("/r", "/r") || !root_holds("/r", "/r/k") ||
         root_holds("/r", "/rX/k") || root_holds("/r", "/rX")) {
         fprintf(stderr, "FAIL root_holds accepts a prefix sibling\n");
