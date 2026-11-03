@@ -92,6 +92,9 @@ class Relay:
             HUSH_AUTO_UPDATE="0",
         )
         self.log_path = directory / "relay.log"
+        # The relay's own cwd; a test whose children write relative paths
+        # points it at a private directory so nothing lands in the tree.
+        self.cwd = ROOT
         self.process = None
 
     def start(self):
@@ -99,7 +102,7 @@ class Relay:
         self.process = subprocess.Popen(
             [os.environ.get("HUSH_TEST_RELAY_BIN", str(ROOT / "hush-relay")),
              "--no-open", str(self.port)],
-            cwd=ROOT, env=self.environment,
+            cwd=self.cwd, env=self.environment,
             stdout=self.log, stderr=subprocess.STDOUT,
         )
         for _ in range(100):

@@ -9,6 +9,10 @@ B2: the relay makes each job's stub HOME ($TMPDIR/hush-job-*) before fork
 and removes it however the job ends (reply, provider error, refusal, kill on
 stop); every case below asserts zero hush-job-* dirs are left in its TMPDIR.
 
+#367: the probe writes the relative path "planted". The relay runs in a
+private cwd, and the child must start in its job cwd, so the file lands
+there; the run fails if it lands in the relay's cwd or the source tree.
+
 Q3: child gets a stub per-job HOME (0700). INTERIM: only allowlisted real-HOME
 provider auth paths are visible (Vault-sourced per-job copy/match/delete is
 TODO); ~/.password-store, ~/.gnupg, ~/.ssh, $HUSH_HOME never are. An unlisted
@@ -41,6 +45,9 @@ ALLOWED_NAMES = {"PATH", "HOME", "LANG", "LANGUAGE", "TERM", "COLORTERM", "NO_CO
                  "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENROUTER_API_KEY",
                  "GH_TOKEN", "GITHUB_TOKEN", "GH_HOST"}
 PROBE = Path(__file__).resolve().parent / "check_sandbox_probe.py"
+# Where a stray relative "planted" would land in the tree: hush-c/ (make
+# test's cwd and the relay's default cwd) and the checkout root.
+TREE_PLANTED = (PROBE.parents[1] / "planted", PROBE.parents[2] / "planted")
 
 
 # Readiness probes (#356): the stub answers --version and --help, runs nothing.
@@ -114,6 +121,33 @@ def wait_reason(hive, before, pred):
     return None
 
 
+def tree_state():
+    """Fingerprint of each tree path a stray "planted" would take."""
+    out = {}
+    for path in TREE_PLANTED:
+        try:
+            st = path.lstat()
+            out[str(path)] = (st.st_ino, st.st_mtime_ns, st.st_size)
+        except FileNotFoundError:
+            out[str(path)] = None
+    return out
+
+
+def tree_clean(before, label):
+    """#367 killing check: the run must not create or touch a tree "planted"."""
+    after = tree_state()
+    for path, was in before.items():
+        assert after[path] == was, f"{label}: probe littered the source tree: {path}"
+
+
+def relay_cwd(hive, temporary):
+    """Private relay cwd: a child left there writes nowhere in the tree."""
+    cwd = Path(temporary) / "relay-cwd"
+    cwd.mkdir(exist_ok=True)
+    hive.relay.cwd = cwd
+    hive.relay_cwd = cwd
+
+
 def job_tmp(hive, temporary):
     """Private TMPDIR so the job HOME count is this case's alone."""
     tmp = Path(temporary) / "jobtmp"
@@ -140,12 +174,14 @@ def open_hive(temporary, **env):
     hive.relay.environment.update(SECRETS)
     hive.relay.environment.update(env)
     job_tmp(hive, temporary)
+    relay_cwd(hive, temporary)
     plant_sensitive(Path(hive.relay.environment["HOME"]))
     hive.relay.start()
     return hive
 
 
 def check_child(backend):
+    tree = tree_state()
     with tempfile.TemporaryDirectory(prefix="hush-sandbox-") as temporary:
         hive = open_hive(temporary, HUSH_SANDBOX_BACKEND=backend)
         try:
@@ -176,6 +212,13 @@ def check_child(backend):
                 for label in ("home", "cfg"):
                     denied("write " + label, r["writes"][label])
             assert r["writes"]["cwd"] == "ok", r["writes"]["cwd"]
+            # #367: the relative write lands in the job cwd, never in the
+            # relay's cwd or the source tree.
+            assert r["cwd"] == os.path.realpath(cwd), \
+                f"child cwd {r['cwd']} is not the job cwd {cwd}"
+            assert (cwd / "planted").read_text() == "x", "planted missing from the job cwd"
+            assert not (hive.relay_cwd / "planted").exists(), "planted in the relay's cwd"
+            tree_clean(tree, backend)
             denied("connect relay", r["connect"]["relay"])
             other = r["connect"]["other"]
             if backend == "landlock":
@@ -194,6 +237,7 @@ def check_child(backend):
             for label in ("ssh", "gnupg", "pass"):
                 denied("sensitive " + label, r["sensitive"][label])
             assert r["sensitive"]["grok_auth"] == "ok", r["sensitive"]
+            print(f"sandbox[{backend}]: planted only in the job cwd; tree clean OK")
             print(f"sandbox[{backend}]: stub HOME 0700; auth allow; "
                   "ssh/gpg/pass denied; /proc+ptrace denied OK")
             wait_no_job_homes(hive, backend + " reply")
@@ -318,6 +362,7 @@ def check_bwrap_unusable():
         hive.relay.environment.update(SECRETS)
         hive.relay.environment["HUSH_SANDBOX_BACKEND"] = "bwrap"
         job_tmp(hive, temporary)
+        relay_cwd(hive, temporary)
         fake = hive.relay.directory / "bin" / "bwrap"
         fake.parent.mkdir(parents=True, exist_ok=True)
         fake.write_text("#!/bin/sh\necho 'bwrap: setting up uid map: Permission denied' >&2\nexit 1\n")
@@ -348,6 +393,7 @@ def check_bwrap_unusable():
 
 
 def main():
+    tree = tree_state()
     check_child("landlock")
     if bwrap_works():
         check_child("bwrap")
@@ -365,6 +411,8 @@ def main():
                        (".ssh", "ssh"), (".gnupg", "gnupg"),
                        (".password-store", "password-store")):
         check_path_refuse(rel, label)
+    tree_clean(tree, "whole run")
+    print("sandbox: no planted in the source tree OK")
     print("sandbox: provider canaries silent OK")
 
 
