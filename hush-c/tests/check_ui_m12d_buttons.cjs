@@ -190,7 +190,6 @@ function report(rows, surface, floor, out) {
       await run('mention-popover', '#mention-box', async () => { await page.locator('#msg').fill(''); await page.locator('#msg').type('@'); }, () => page.locator('#msg').fill(''));
       await run('settings', '#settings', () => click('#settings-btn'), () => hide('#settings'));
       await run('stage', '#stage', () => show('#stage'), () => hide('#stage'));
-      await run('thread-pane', '#thread-pane', () => show('#thread-pane'), () => hide('#thread-pane'));
       await run('code-canvas', '#code-canvas', () => page.evaluate(() => { document.querySelector('#code-canvas').classList.add('show'); const k = document.querySelector('#canvas-k'); k.hidden = false; k.classList.add('show'); }), () => page.evaluate(() => { document.querySelector('#code-canvas').classList.remove('show'); const k = document.querySelector('#canvas-k'); k.classList.remove('show'); }));
       await run('new-chan', '#new-chan-drawer', () => click('#add-chan'), () => hide('#new-chan-drawer'));
       // #stats sits inside the BOARDS drawer (hidden at 375), so phones open the relay drawer directly.

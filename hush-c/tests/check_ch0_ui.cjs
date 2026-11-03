@@ -1,0 +1,1109 @@
+// check_ch0_ui.cjs: Ops CH0_HARD pin for M1 "thread-UI removal"
+// (PLAN_ROUTER_WORKER_V2 r1 §5.2, ops-router-ux-accept CH0_HARD). The human
+// UI is channels only: no thread UI in any state, theme or viewport.
+//
+// Drives headless system Chrome over CDP (Node standard library only) on a
+// fresh relay, walks the real gate, seeds #welcome with notes, flat replies,
+// a loop ask and an approval ask, then for every state below x 8 themes x
+// 1440x900 / 390x844 scans the rendered page:
+//   idle (empty channel), log (notes + replies + Yes/No stamps), replying
+//   (a live thinking job via a wrapped /api/status), decision (a real click on
+//   a Yes stamp), error (a refused /api/event send with the draft kept),
+//   mention (the @ picker open), boards (Individuals list open), settings,
+//   robot (Major's settings and loadout drawer, skills armory).
+// A hit is any of, on a visible element (checkVisibility + a non-empty box):
+//   #thread-pane, .thread-btn, [id^="thread-"], #milestone-form, a class
+//   containing "thread"; or visible text, CSS ::before/::after content,
+//   title / aria-label / aria-description / placeholder / alt / button value
+//   matching /\bthreads?\b/i, "reply in thread" or "Open 1:1"; or
+//   document.title matching. Separately the whole DOM (hidden included) must
+//   hold none of those selectors or strings, and the page script must define
+//   no openThreadPane / startRobotConversation. Any hit fails (exit 1).
+//
+// Env: HUSH_RELAY_BIN (default <repo>/hush-relay), HUSH_CHROME_BIN,
+// HUSH_TEST_WAIT_S (DevTools ready deadline, default 30), CH0_ART (dir:
+// writes probe/CH0.json and shots/<state>-<theme>-<vp>.png for field-office
+// and dark there). Every Chrome profile and relay scratch dir this run makes
+// is recorded and removed on the way out; only processes it spawned are
+// signalled.
+'use strict';
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const net = require('node:net');
+const path = require('node:path');
+
+const RELAY = process.env.HUSH_RELAY_BIN || path.join(__dirname, '..', 'hush-relay');
+const ART = process.env.CH0_ART || '';
+const THEMES = ['field-office', 'dark', 'light', 'color-blind', 'dracula', 'desert', 'monochrome', 'christmas'];
+const VIEWS = [{ vp: '1440', w: 1440, h: 900 }, { vp: '390', w: 390, h: 844 }];
+const SHOT_THEMES = ['field-office', 'dark'];
+
+const STUB_REPLY = 'Stub runtime reply from Ace.';
+// M1 R2: Ops clicked an answered Yes 20 times and got 10 extra robot turns.
+const CLICKS = 20;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const liveProcs = [];
+const tempDirs = [];
+function noteTemp(dir) {
+  tempDirs.push(dir);
+  return dir;
+}
+function rmTemps() {
+  while (tempDirs.length) {
+    const dir = tempDirs.pop();
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { /* best effort */ }
+  }
+}
+/* Stops one child this run spawned (by its own handle, never by name):
+ * SIGTERM, then SIGKILL after 5 s; resolves once it has exited. */
+function stopProc(p) {
+  return new Promise((resolve) => {
+    if (p.exitCode !== null || p.signalCode !== null) { resolve(); return; }
+    const t = setTimeout(() => { try { p.kill('SIGKILL'); } catch (e) { /* gone */ } }, 5000);
+    p.once('exit', () => { clearTimeout(t); resolve(); });
+    try { p.kill('SIGTERM'); } catch (e) { clearTimeout(t); resolve(); }
+  });
+}
+/* Children first (Chrome must stop writing its profile), then every
+ * recorded temp dir; a dir that survives the first pass is removed again. */
+async function stopAll() {
+  await Promise.all(liveProcs.splice(0).map(stopProc));
+  const dirs = tempDirs.slice();
+  rmTemps();
+  for (const d of dirs) if (fs.existsSync(d)) { await sleep(300); fs.rmSync(d, { recursive: true, force: true }); }
+  const left = dirs.filter((d) => fs.existsSync(d));
+  if (left.length) console.error('CH0 UI check: temp dirs left behind: ' + left.join(' '));
+  return left.length === 0;
+}
+class StopRun extends Error {}
+let failing = false;
+/* Reports, tears down (async) and exits 1; throws so the caller stops. */
+function fail(msg) {
+  console.error('CH0 UI check failed: ' + msg);
+  if (!failing) {
+    failing = true;
+    stopAll().finally(() => process.exit(1));
+  }
+  throw new StopRun(msg);
+}
+const onSignal = (name) => () => { try { fail(name); } catch (e) { /* teardown running */ } };
+process.on('SIGINT', onSignal('interrupted'));
+process.on('SIGTERM', onSignal('terminated'));
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.once('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const chosen = srv.address().port;
+      srv.close((err) => (err ? reject(err) : resolve(chosen)));
+    });
+  });
+}
+
+function resolveChrome() {
+  const cands = [];
+  if (process.env.HUSH_CHROME_BIN)
+    cands.push(process.env.HUSH_CHROME_BIN);
+  cands.push('google-chrome', 'chromium', 'chromium-browser');
+  for (const c of cands) {
+    if (c.includes('/') && fs.existsSync(c))
+      return c;
+    for (const d of (process.env.PATH || '').split(':')) {
+      const p = path.join(d, c);
+      try {
+        fs.accessSync(p, fs.constants.X_OK);
+        return p;
+      } catch (e) { /* next */ }
+    }
+  }
+  fail('no Chrome on PATH (need google-chrome or chromium) and HUSH_CHROME_BIN unset');
+}
+
+function waitMs() {
+  const raw = process.env.HUSH_TEST_WAIT_S;
+  const sec = raw === undefined || raw === '' ? 30 : Number(raw);
+  if (!Number.isFinite(sec) || sec <= 0)
+    fail('HUSH_TEST_WAIT_S must be a positive number of seconds');
+  return Math.floor(sec * 1000);
+}
+
+/* Headless Chrome on a free port; waits for /json/list. One relaunch on a
+ * startup race (deadline hit without an early exit). */
+async function launchChrome(chrome) {
+  const deadline = waitMs();
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const port = await freePort();
+    const userDir = noteTemp(fs.mkdtempSync(path.join(os.tmpdir(), 'ch0-chrome-')));
+    const env = Object.assign({}, process.env);
+    delete env.DBUS_SESSION_BUS_ADDRESS;
+    const proc = spawn(chrome,
+      ['--headless', '--no-sandbox', '--disable-gpu', '--no-first-run',
+        '--disable-dev-shm-usage', '--disable-software-rasterizer',
+        `--remote-debugging-port=${port}`, `--user-data-dir=${userDir}`, 'about:blank'],
+      { stdio: ['ignore', 'ignore', 'ignore'], env });
+    liveProcs.push(proc);
+    let exited = false;
+    proc.once('exit', () => { exited = true; });
+    const t0 = Date.now();
+    while (!exited && Date.now() - t0 < deadline) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(400) });
+        if (res.ok) {
+          const targets = await res.json();
+          const page = targets.find((t) => t.type === 'page');
+          if (page)
+            return page.webSocketDebuggerUrl;
+        }
+      } catch (e) { /* not listening yet */ }
+      await sleep(100);
+    }
+    try { proc.kill('SIGTERM'); } catch (e) { /* gone */ }
+    if (exited)
+      break;
+  }
+  fail('Chrome DevTools never answered');
+}
+
+class Cdp {
+  constructor(url) {
+    this.url = url;
+    this.id = 0;
+    this.waiters = new Map();
+  }
+  connect() {
+    return new Promise((resolve, reject) => {
+      this.ws = new WebSocket(this.url);
+      this.ws.onopen = () => resolve();
+      this.ws.onerror = (e) => reject(new Error('CDP connect failed: ' + e.message));
+      this.ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data.toString());
+        if (msg.id && this.waiters.has(msg.id)) {
+          const w = this.waiters.get(msg.id);
+          this.waiters.delete(msg.id);
+          w(msg.result || {});
+        } else if (msg.method === 'Page.javascriptDialogOpening') {
+          this.send('Page.handleJavaScriptDialog', { accept: true }).catch(() => {});
+        } else if (msg.method && this.onEvent) {
+          this.onEvent(msg);
+        }
+      };
+    });
+  }
+  send(method, params) {
+    const id = ++this.id;
+    return new Promise((resolve) => {
+      this.waiters.set(id, resolve);
+      this.ws.send(JSON.stringify({ id, method, params: params || {} }));
+    });
+  }
+  async eval(expr) {
+    return this.evaluate(expr, false);
+  }
+  async evalAsync(expr) {
+    return this.evaluate(expr, true);
+  }
+  async evaluate(expr, awaitPromise) {
+    const r = await this.send('Runtime.evaluate', {
+      expression: expr, returnByValue: true, awaitPromise: !!awaitPromise
+    });
+    if (r.exceptionDetails)
+      throw new Error('page eval threw: ' + expr.slice(0, 120));
+    return r.result ? r.result.value : null;
+  }
+  async waitFor(expr, label, timeout) {
+    const t0 = Date.now();
+    for (;;) {
+      let v = null;
+      try { v = await this.eval(expr); } catch (e) { /* page busy */ }
+      if (v)
+        return v;
+      if (Date.now() - t0 > (timeout || 25000))
+        fail('timeout waiting for ' + (label || expr));
+      await sleep(150);
+    }
+  }
+  async tryWait(expr, timeout) {
+    const t0 = Date.now();
+    for (;;) {
+      try {
+        if (await this.eval(expr))
+          return true;
+      } catch (e) { /* page busy */ }
+      if (Date.now() - t0 > (timeout || 2000))
+        return false;
+      await sleep(100);
+    }
+  }
+}
+
+
+/* Page-side scanner. Returns the hit list for the current paint. */
+const SCAN = `((all) => {
+  const RX = /\\bthreads?\\b|reply in thread|open 1:1/i;
+  const SEL = '#thread-pane, .thread-btn, [id^="thread-"], #milestone-form, [class*="thread"]';
+  const ATTRS = ['title', 'aria-label', 'aria-description', 'aria-roledescription', 'placeholder', 'alt'];
+  const shown = (el) => {
+    if (!el || !el.isConnected) return false;
+    if (el.checkVisibility && !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+  const ok = (el) => all || shown(el);
+  const where = (el) => {
+    const bits = [];
+    for (let e = el; e && e.nodeType === 1 && bits.length < 4; e = e.parentElement)
+      bits.unshift(e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') +
+        (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\\s+/).join('.') : ''));
+    return bits.join(' > ');
+  };
+  const hits = [];
+  for (const el of document.querySelectorAll(SEL))
+    if (ok(el)) hits.push({ kind: 'selector', at: where(el) });
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const p = n.parentElement;
+    if (!p || p.closest('script, style')) continue;
+    if (RX.test(n.textContent) && ok(p)) hits.push({ kind: 'text', at: where(p), text: n.textContent.trim().slice(0, 120) });
+  }
+  for (const el of document.body.querySelectorAll('*')) {
+    if (el.closest('script, style') || !ok(el)) continue;
+    for (const a of ATTRS) {
+      const v = el.getAttribute(a);
+      if (v && RX.test(v)) hits.push({ kind: 'attr', at: where(el), attr: a, text: v.slice(0, 120) });
+    }
+    if ((el.tagName === 'INPUT' && /^(button|submit|reset)$/i.test(el.type)) && RX.test(el.value || ''))
+      hits.push({ kind: 'attr', at: where(el), attr: 'value', text: el.value.slice(0, 120) });
+    if (!all) for (const pe of ['::before', '::after']) {
+      const c = getComputedStyle(el, pe).content;
+      if (c && c !== 'none' && c !== 'normal' && RX.test(c)) hits.push({ kind: 'css-content', at: where(el) + pe, text: c.slice(0, 120) });
+    }
+  }
+  if (RX.test(document.title)) hits.push({ kind: 'title', text: document.title });
+  return hits;
+})`;
+
+async function main() {
+  const chrome = resolveChrome();
+  const cdp = new Cdp(await launchChrome(chrome));
+  await cdp.connect();
+  await cdp.send('Page.enable', {});
+  await cdp.send('Runtime.enable', {});
+  const pageErrors = [];
+  cdp.onEvent = (msg) => {
+    if (msg.method === 'Runtime.exceptionThrown')
+      pageErrors.push(String((msg.params.exceptionDetails.exception || {}).description || msg.params.exceptionDetails.text).slice(0, 300));
+  };
+
+  const home = noteTemp(fs.mkdtempSync(path.join(os.tmpdir(), 'ch0-home-')));
+  const cfg = noteTemp(fs.mkdtempSync(path.join(os.tmpdir(), 'ch0-cfg-')));
+  // G20 pin: a `codex` stub first on the relay's PATH (pattern from
+  // check_approve_ui.cjs U6) so a codex robot runs one turn and replies.
+  // HOME is the throwaway dir; the stub bin lives outside it (agent jail).
+  const hhome = noteTemp(fs.mkdtempSync(path.join(os.tmpdir(), 'ch0-hhome-')));
+  const stubBin = noteTemp(fs.mkdtempSync(path.join(os.tmpdir(), 'ch0-bin-')));
+  fs.writeFileSync(path.join(stubBin, 'codex'), '#!/bin/sh\nprintf "%s\\n" "' + STUB_REPLY + '"\n', { mode: 0o755 });
+  fs.mkdirSync(path.join(hhome, '.codex'), { recursive: true });
+  fs.writeFileSync(path.join(hhome, '.codex', 'auth.json'), '{"ok":true}\n');
+  const port = await freePort();
+  const relay = spawn(RELAY, ['--no-open', String(port)], {
+    env: Object.assign({}, process.env, {
+      HOME: hhome, HUSH_AUTO_UPDATE: '0',
+      PATH: stubBin + path.delimiter + (process.env.PATH || ''),
+      HUSH_HOME: home, HUSH_CONFIG_DIR: cfg, HUSH_PASS_HELPER: '/nonexistent-hush-pass-helper',
+    }),
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  liveProcs.push(relay);
+  let relayOut = '';
+  relay.stdout.on('data', (d) => { relayOut += d; });
+  let up = false;
+  for (let i = 0; i < 200 && !up; i++) {
+    try { up = (await fetch(`http://127.0.0.1:${port}/`)).ok; } catch (e) { /* not up */ }
+    if (!up) await sleep(100);
+  }
+  for (let i = 0; i < 100 && !/\?pair=[0-9a-f]{32}/.test(relayOut); i++) await sleep(50);
+  const pairCode = (relayOut.match(/\?pair=([0-9a-f]{32})/) || [])[1];
+  if (!up || !pairCode)
+    fail(`relay did not come up on ${port} with a pairing link`);
+
+  const view = async (v) => {
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: v.w, height: v.h, deviceScaleFactor: 1, mobile: false });
+    await sleep(120);
+  };
+  const jsClick = async (sel) => {
+    await cdp.waitFor(`!!document.querySelector('${sel}')`, sel);
+    await cdp.eval(`document.querySelector('${sel}').click()`);
+  };
+
+  // Real gate once: create a key, name the hive, meet Major.
+  await view(VIEWS[0]);
+  // #336: the one-time pairing link sets hush_session and the hush_nonce
+  // that owner-stamped notes send as X-Hush-Nonce.
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${port}/?pair=${pairCode}` });
+  await cdp.waitFor(`!!document.querySelector('#gate.show')`, 'gate');
+  await jsClick('#begin');
+  await jsClick('#create-id');
+  await cdp.waitFor(`!!document.querySelector('#save-pass')`, 'backup step');
+  await jsClick('#ack-key');
+  await cdp.waitFor(`!!document.querySelector('#vibe-name')`, 'vibe step');
+  await cdp.eval(`document.querySelector('#vibe-name').value = 'CH0HIVE'`);
+  await jsClick('#do-vibe');
+  await jsClick('#meet-payne');
+  await cdp.waitFor(`!!document.querySelector('#hive.show')`, 'hive');
+
+  const defined = await cdp.eval(`[typeof openThreadPane, typeof startRobotConversation, typeof closeThreadPane]`);
+  const scriptHits = defined.every((t) => t === 'undefined') ? [] : [{ kind: 'script', text: 'thread pane functions defined: ' + defined.join(',') }];
+
+  // Seed #welcome through the owner-stamped /api/event (paired nonce).
+  await cdp.eval(`[...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#welcome')).click()`);
+  await cdp.waitFor(`document.querySelectorAll('#stream .note').length >= 1`, 'welcome note');
+  const post = (body, route = '/api/event') => cdp.evalAsync(`(async () => {
+    const m = document.cookie.match(/(?:^|; )hush_nonce=([0-9a-f]{32})(?:;|$)/);
+    const headers = { 'Content-Type': 'application/json' };
+    if (m) headers['X-Hush-Nonce'] = m[1];
+    const r = await fetch(${JSON.stringify(route)}, { method: 'POST', headers, body: JSON.stringify(${JSON.stringify(body)}) });
+    return { status: r.status, json: r.ok ? await r.json() : null }; })()`);
+  // CoS 13:14 A (interim until Router M-n): composer routing in a fresh
+  // channel. One robot active: a plain note and an @mention both continue
+  // that robot's latest conversation, with the route shown before Send. A
+  // bare Yes never follows up (it cannot approve the waiting ask). Two
+  // robots active: Send waits for a choice; nothing is guessed.
+  const routePins = async () => {
+    const robot = async (name) => {
+      const have = await cdp.eval(`(robotModels().find((b) => b.name === ${JSON.stringify(name)}) || {}).npub || ''`);
+      if (have) return have;
+      const r = await post({ name, system_prompt: 'Answer in one line.', provider: 'codex', save_pass: false }, '/api/agent');
+      const hit = ((r.json && r.json.agents) || []).find((a) => a.name === name);
+      if (!hit || !hit.npub) fail('A setup: ' + name + ' was not raised');
+      await cdp.waitFor(`robotModels().some((b) => b.name === ${JSON.stringify(name)})`, name + ' in the roster', 10000);
+      return hit.npub;
+    };
+    const aceN = await robot('Ace');
+    const beaN = await robot('Bea');
+    await post({ approval_mode: 'approve_every_action' }, '/api/profile');
+    await cdp.evalAsync(`(async () => { applySession(await api('/api/channel', { name: 'route-room', system_prompt: '' })); return true; })()`);
+    await cdp.waitFor(`[...document.querySelectorAll('.chan')].some((b) => b.textContent.includes('#route-room'))`, 'route-room channel');
+    await cdp.eval(`[...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#route-room')).click()`);
+    await cdp.waitFor(`channel === 'route-room'`, 'route-room open');
+    const mineIn = `(async (word) => { const j = await (await fetch('/api/events')).json();
+      return (j.events || j || []).filter((e) => e.channel === 'route-room' && isMineNote(e) && String(e.content || '').endsWith(word)); })`;
+    // Types text, reads the route line, presses Send, and returns the stored
+    // owner note (or null when nothing was posted within 4 s).
+    const compose = async (text, word) => {
+      // The relay's receipt and ask for a note are built from content, tags
+      // and the second they are made, so two follow-ups in one second would
+      // repost the very same ask id (deduplicated by the store). Wait it out.
+      await sleep(1100);
+      // (typeof guards: CH0_ROUTE_ONLY also runs against a page from before
+      // the routing, to show the regression.)
+      const said = await cdp.eval(`(() => { $('send-error').textContent = ''; $('msg').value = ${JSON.stringify(text)};
+        if (typeof paintRoute === 'function') paintRoute();
+        const p = $('route-pick'); const shown = !!p && !p.hidden;
+        const opt = shown && p.selectedIndex > 0 ? p.options[p.selectedIndex].textContent : '';
+        return { text: ($('route-text') ? $('route-text').textContent : '') || opt, pick: shown }; })()`);
+      const before = (await cdp.evalAsync(mineIn + `(${JSON.stringify(word)})`)).length;
+      await cdp.eval(`$('form').requestSubmit()`);
+      let got = null;
+      for (let k = 0; k < 16 && !got; k++) {
+        await sleep(250);
+        const evs = await cdp.evalAsync(mineIn + `(${JSON.stringify(word)})`);
+        if (evs.length > before) got = evs[evs.length - 1];
+      }
+      const err = await cdp.eval(`$('send-error').textContent`);
+      return { said, got, err };
+    };
+    const first = await compose('@Ace first task', 'first task');
+    if (!first.got || first.got.reply_to) fail('A setup: the first @Ace note must open a conversation ' + JSON.stringify(first));
+    const RA = first.got.id;
+    const again = await compose('@Ace again please', 'again please');
+    console.log('A @mention follow-up: ' + JSON.stringify({ said: again.said.text, reply_to: again.got && again.got.reply_to, convo: RA }));
+    if (!again.got || again.got.reply_to !== RA)
+      fail('A an @mention follow-up must continue the robot\'s conversation, not open an empty one: reply_to ' + JSON.stringify(again.got && again.got.reply_to) + ' want ' + RA);
+    // Gauge M1-F15: a plain owner note in a conversation voids the ask that
+    // waits there (hush_agent_ask_void), so that ask takes no answer. Pin the
+    // ask Ace raised for the follow-up above: live Yes/No before the plain
+    // note, then "Closed by a newer note" and no stamps at all, also after a
+    // reload (checked at the end of these pins).
+    const askCard = (id) => cdp.eval(`(() => { const c = [...document.querySelectorAll('#stream .note')].find((n) => n.dataset.id === ${JSON.stringify(id)});
+      return c ? { stamps: c.querySelectorAll('button.loop-stamp').length, live: c.querySelectorAll('button.loop-stamp:not(:disabled)').length,
+        sent: [...c.querySelectorAll('.loop-sent')].map((s) => s.textContent).join('|') } : null; })()`);
+    const lastAsk = (since) => cdp.evalAsync(`(async () => { const j = await (await fetch('/api/events')).json();
+      const a = (j.events || j || []).filter((e) => e.channel === 'route-room' && e.reply_to === ${JSON.stringify(RA)} && e.ask === true
+        && Number(e.created_at || 0) >= ${Number(since)});
+      return a.length ? a[a.length - 1].id : ''; })()`);
+    let VOID = '';
+    let voidLive = null;
+    for (let k = 0; k < 40 && !(voidLive && voidLive.live === 2); k++) {
+      VOID = await lastAsk(again.got.created_at);
+      voidLive = VOID ? await askCard(VOID) : null;
+      if (!(voidLive && voidLive.live === 2)) await sleep(250);
+    }
+    if (!VOID || !voidLive || voidLive.live !== 2 || voidLive.sent)
+      fail('F15 setup: Ace\'s ask for the follow-up must wait with live Yes/No before the plain note: ' + JSON.stringify({ VOID, voidLive }));
+    const plain = await compose('plain follow-up', 'plain follow-up');
+    if (plain.said.text !== 'to Ace, continuing \u201cfirst task\u201d')
+      fail('A the route preview must show before Send: ' + JSON.stringify(plain.said));
+    if (!plain.got || plain.got.reply_to !== RA || !(plain.got.mentions || []).some((m) => m === aceN || m.length === 64))
+      fail('A a plain note with one robot active must continue its conversation: ' + JSON.stringify(plain.got));
+    const CLOSED = 'Closed by a newer note';
+    const voidShut = async (when, id = VOID) => {
+      let st = null;
+      for (let k = 0; k < 32 && !(st && st.sent === CLOSED); k++) {
+        st = await askCard(id);
+        if (!(st && st.sent === CLOSED)) await sleep(250);
+      }
+      if (!st || st.sent !== CLOSED || st.stamps !== 0)
+        fail('F15 an ask voided by a newer owner note must show "' + CLOSED + '" and no Yes/No stamps ' + when + ': ' + JSON.stringify(Object.assign({ ask: id.slice(0, 8) }, st)));
+      return st;
+    };
+    const voidNow = await voidShut('after the plain note');
+    const bare = await compose('Yes', 'Yes');
+    if (!/^to #route-room as a new note/.test(bare.said.text) || !bare.got || bare.got.reply_to)
+      fail('A a bare Yes must never follow up a conversation: ' + JSON.stringify(bare));
+    await sleep(1500);
+    const held = await cdp.eval(`[...document.querySelectorAll('#stream .note')].filter((n) => n.textContent.includes('Approval needed: Ace')).pop().querySelectorAll('button.loop-stamp').length`);
+    if (held !== 2) fail('A the bare Yes must leave Ace\'s ask waiting with live stamps: ' + held + ' ' + JSON.stringify(await cdp.evalAsync(`(async () => {
+      const j = await (await fetch('/api/events')).json(); return (j.events || j || []).filter((e) => e.channel === 'route-room')
+        .map((e) => [who(e.pubkey), (e.reply_to || '').slice(0, 6), e.id.slice(0, 6), e.ask, String(e.content || '').slice(0, 40)]); })()`)));
+    const beaRoot = await post({ content: 'nostr:' + beaN + ' side task', kind: 1, channel: 'route-room', mention_0: beaN });
+    if (beaRoot.status !== 200) fail('A setup: Bea note ' + JSON.stringify(beaRoot));
+    await cdp.waitFor(`Object.keys(robotConvos()).length === 2`, 'two robots active in route-room', 10000);
+    const two = await compose('plain two', 'plain two');
+    if (two.said.text !== 'Choose who this goes to:' || !two.said.pick || two.got || two.err !== 'Choose who this goes to first.')
+      fail('A with two robots active Send must wait for a choice: ' + JSON.stringify(two));
+    await cdp.eval(`(() => { const p = $('route-pick'); p.value = ${JSON.stringify(aceN)}; p.dispatchEvent(new Event('change')); return true; })()`);
+    const chosen = await compose('plain two', 'plain two');
+    if (!chosen.got || chosen.got.reply_to !== RA) fail('A the chosen robot\'s conversation must take the note: ' + JSON.stringify(chosen));
+    // Gauge M1-F19: the void is per conversation. For an owner note the
+    // relay holds one robot turn per conversation at a time (a second robot
+    // named in it waits in the follow queue, agent_dispatch.c:590-599), so
+    // this leg reaches one ask in Ace's conversation (raised for the "plain
+    // two" note above) and one in Bea's own conversation (beaRoot). A plain
+    // note to Ace's conversation must close Ace's ask and leave Bea's alone.
+    // That serial hold is owner-only: a guest note naming two robots or a
+    // parallel team wave can leave two asks waiting in one conversation, so
+    // tests/check_ask_void.cjs pins that every one of them closes.
+    const asksOn = (root) => cdp.evalAsync(`(async () => { const j = await (await fetch('/api/events')).json();
+      return (j.events || j || []).filter((e) => e.channel === 'route-room' && e.reply_to === ${JSON.stringify(root)} && e.ask === true)
+        .map((e) => ({ id: e.id, text: String(e.content || '') })); })()`);
+    let two2 = null;
+    let beaAsk = '';
+    let beaLive = null;
+    for (let k = 0; k < 40; k++) {
+      // The one live Ace ask in RA (whatever order /api/events lists them in).
+      let aceAsk = null;
+      let card = null;
+      for (const a of (await asksOn(RA)).filter((x) => x.text.startsWith('Approval needed: Ace') && x.id !== VOID)) {
+        const c = await askCard(a.id);
+        if (c && c.live === 2) { aceAsk = a; card = c; }
+      }
+      beaAsk = ((await asksOn(beaRoot.json.id)).pop() || {}).id || '';
+      beaLive = beaAsk ? await askCard(beaAsk) : null;
+      if (card && !card.sent && beaLive && beaLive.live === 2 && !beaLive.sent) {
+        two2 = [aceAsk.id];
+        two2.cards = [card];
+        break;
+      }
+      await sleep(250);
+    }
+    if (!two2 || !beaAsk)
+      fail('F19 setup: one ask must wait live in Ace\'s conversation and one in Bea\'s: ' + JSON.stringify({ beaAsk, beaLive }));
+    const beforeF19 = { ace: two2.cards, bea: beaLive };
+    // Ops M1 F1: the chooser has options only while the composer holds a
+    // draft (an owner cannot pick from a hidden one), so type, then pick.
+    await cdp.eval(`(() => { $('msg').value = 'plain close-out'; $('msg').dispatchEvent(new Event('input')); return true; })()`);
+    await cdp.eval(`(() => { const p = $('route-pick'); p.value = ${JSON.stringify(aceN)}; p.dispatchEvent(new Event('change')); return true; })()`);
+    const closer = await compose('plain close-out', 'plain close-out');
+    if (!closer.got || closer.got.reply_to !== RA) fail('F19 the plain note must go to Ace\'s conversation: ' + JSON.stringify(closer));
+    const beaKept = async (when) => {
+      const st = await askCard(beaAsk);
+      if (!st || st.stamps !== 2 || st.live !== 2 || st.sent)
+        fail('F19 a plain note in Ace\'s conversation must leave the ask waiting in Bea\'s conversation live ' + when + ': ' + JSON.stringify(st));
+      return st;
+    };
+    const f19 = async (when) => ({ ace: [await voidShut(when, two2[0])], bea: await beaKept(when) });
+    const f19now = await f19('after the plain note');
+    await cdp.send('Page.reload', {});
+    await cdp.waitFor(`!!document.querySelector('#hive.show')`, 'hive after reload');
+    await cdp.eval(`[...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#route-room')).click()`);
+    await cdp.waitFor(`channel === 'route-room'`, 'route-room open after reload');
+    const voidReload = await voidShut('after a reload');
+    const f19reload = await f19('after a reload');
+    console.log('F15 PASS voided ask closed: ' + JSON.stringify({ ask: VOID.slice(0, 8), before: voidLive, after: voidNow, reload: voidReload }));
+    console.log('F19 PASS a plain note closes the ask in its conversation and no other: ' + JSON.stringify({
+      ace: two2.map((id) => id.slice(0, 8)), bea: beaAsk.slice(0, 8), before: beforeF19, after: f19now, reload: f19reload }));
+    // Ops M1 F1/FU1: the route line above the composer.
+    // RP1: an empty composer shows no line (computed display, not just the
+    // attribute), no text, and no chooser: 0 options and not focusable.
+    const routeState = () => cdp.eval(`(() => { const b = $('route-preview'), p = $('route-pick'), t = $('route-text');
+      p.focus(); const foc = document.activeElement === p; if (foc) p.blur();
+      return { disp: getComputedStyle(b).display, text: t.textContent, pickDisp: getComputedStyle(p).display, opts: p.options.length, foc }; })()`);
+    const routeIdle = (st) => st && st.disp === 'none' && st.text === '' && st.pickDisp === 'none' && st.opts === 0 && !st.foc;
+    await cdp.eval(`(() => { $('msg').value = ''; $('msg').dispatchEvent(new Event('input')); return true; })()`);
+    const rpEmpty = await routeState();
+    if (!routeIdle(rpEmpty)) fail('RP1 an empty composer must show no route line and no focusable chooser: ' + JSON.stringify(rpEmpty));
+    // RP2 (390): with two robots active and Ace picked, the line keeps the
+    // log's left gutter, the chooser stays inside it and shows its whole
+    // label, and the text does not repeat that label.
+    await view(VIEWS[1]);
+    await cdp.eval(`(() => { $('msg').value = 'plain gutter'; $('msg').dispatchEvent(new Event('input'));
+      const p = $('route-pick'); p.value = ${JSON.stringify(aceN)}; p.dispatchEvent(new Event('change')); return true; })()`);
+    await sleep(150);
+    const rpGutter = await cdp.eval(`(() => { const b = $('route-preview'), p = $('route-pick'), s = $('stream');
+      const bs = getComputedStyle(b), ps = getComputedStyle(p), sr = s.getBoundingClientRect(), br = b.getBoundingClientRect(), pr = p.getBoundingClientRect();
+      const ctx = document.createElement('canvas').getContext('2d'); ctx.font = ps.font;
+      const label = p.selectedIndex >= 0 ? p.options[p.selectedIndex].textContent : '';
+      return { vw: innerWidth, logLeft: Math.round(sr.left + parseFloat(getComputedStyle(s).paddingLeft)),
+        pickLeft: Math.round(pr.left), pickRight: Math.round(pr.right), lineRight: Math.round(br.right - parseFloat(bs.paddingRight)),
+        textW: Math.ceil(ctx.measureText(label).width), room: Math.floor(p.clientWidth - parseFloat(ps.paddingLeft) - parseFloat(ps.paddingRight) - 16),
+        text: $('route-text').textContent, label, hidden: p.hidden }; })()`);
+    if (rpGutter.hidden || Math.abs(rpGutter.pickLeft - rpGutter.logLeft) > 1 || rpGutter.pickLeft < 8 || rpGutter.pickRight > rpGutter.lineRight + 1
+        || rpGutter.textW > rpGutter.room || rpGutter.text !== rpGutter.label || !/^to Ace, continuing /.test(rpGutter.label))
+      fail('RP2 at 390 the route line must keep the log gutter, fit its chooser label and show it whole above (CoS 01:50 B): ' + JSON.stringify(rpGutter));
+    await view(VIEWS[0]);
+    // RP3: after a send the line is gone, and no route text carries into
+    // another channel.
+    const rpSend = await compose('plain rp send', 'plain rp send');
+    if (!rpSend.got || rpSend.got.reply_to !== RA) fail('RP3 setup: the picked note must continue Ace\'s conversation: ' + JSON.stringify(rpSend));
+    const rpAfter = await routeState();
+    if (!routeIdle(rpAfter)) fail('RP3 after a send the route line must be gone: ' + JSON.stringify(rpAfter));
+    await cdp.eval(`(() => { routePick = { channel: '', value: '' }; return true; })()`);
+    // A draft kept across a channel switch is routed for the new channel at
+    // once (read in the same task as the click, before any tick repaints).
+    const rpSwitch = await cdp.eval(`(() => { $('msg').value = 'plain rp switch'; $('msg').dispatchEvent(new Event('input'));
+      const before = $('route-text').textContent;
+      [...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#welcome')).click();
+      const p = $('route-pick');
+      return { before, after: $('route-text').textContent, pickDisp: getComputedStyle(p).display, opts: p.options.length, channel }; })()`);
+    if (rpSwitch.before !== 'Choose who this goes to:' || rpSwitch.channel !== 'welcome' || /route-room|Choose/.test(rpSwitch.after))
+      fail('RP3 a draft moved to another channel must be routed for that channel at once: ' + JSON.stringify(rpSwitch));
+    await cdp.eval(`(() => { $('msg').value = ''; $('msg').dispatchEvent(new Event('input')); return true; })()`);
+    const rpOther = await routeState();
+    if (!routeIdle(rpOther)) fail('RP3 no route text may carry into another channel: ' + JSON.stringify(rpOther));
+    // RP2L (Ops M1 FU1 label quality, CoS 01:04): long robot names, at 390
+    // and 1440. In their own channel, so route-room keeps Ace and Bea. The
+    // chooser option drops the robot's own leading mention, cuts the quote
+    // at a word break within 40 characters ("…"), carries the whole label as
+    // the option's and the select's title, and a label wider than the select
+    // is never clipped without a computed ellipsis.
+    const LONG48 = 'Quartermaster of the Northern Supply Depot Fleet';
+    const longRobots = [
+      // exact: what convoLabel gives (own mention dropped, cut at the last
+      // word break within the first 39 characters, then "…"); checked at
+      // 1440, where both labels fit, so a shorter cap (23, 24) fails here.
+      { name: 'Research assistant', rest: 'summarise the quarterly supply manifest for the north depot',
+        exact: 'to Research assistant, continuing \u201csummarise the quarterly supply manifest\u2026\u201d' },
+      { name: LONG48, rest: 'count the crates in bay seven before the convoy leaves',
+        exact: 'to ' + LONG48 + ', continuing \u201ccount the crates in bay seven before\u2026\u201d' },
+    ];
+    for (const r of longRobots) r.npub = await robot(r.name);
+    await cdp.evalAsync(`(async () => { applySession(await api('/api/channel', { name: 'label-room', system_prompt: '' })); return true; })()`);
+    await cdp.waitFor(`[...document.querySelectorAll('.chan')].some((b) => b.textContent.includes('#label-room'))`, 'label-room channel');
+    await cdp.eval(`[...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#label-room')).click()`);
+    await cdp.waitFor(`channel === 'label-room'`, 'label-room open');
+    for (const r of longRobots) {
+      const root = await post({ content: 'nostr:' + r.npub + ' ' + r.rest, kind: 1, channel: 'label-room', mention_0: r.npub });
+      if (root.status !== 200) fail('RP2L setup: root note for ' + r.name + ' ' + JSON.stringify(root));
+    }
+    await cdp.waitFor(`Object.keys(robotConvos()).length === 2`, 'two long-name robots active in label-room', 10000);
+    const rpLabels = [];
+    for (const v of [VIEWS[1], VIEWS[0]]) {
+      await view(v);
+      for (const r of longRobots) {
+        await cdp.eval(`(() => { $('msg').value = 'plain label'; $('msg').dispatchEvent(new Event('input'));
+          const p = $('route-pick'); p.value = ${JSON.stringify(r.npub)}; p.dispatchEvent(new Event('change')); return true; })()`);
+        await sleep(150);
+        const st = await cdp.eval(`(() => { const p = $('route-pick'), ps = getComputedStyle(p);
+          const o = p.selectedIndex >= 0 ? p.options[p.selectedIndex] : null;
+          const ctx = document.createElement('canvas').getContext('2d'); ctx.font = ps.font;
+          const label = o ? o.textContent : '';
+          return { vw: innerWidth, label, optTitle: o ? o.title : '', pickTitle: p.title, text: $('route-text').textContent,
+            textW: Math.ceil(ctx.measureText(label).width), room: Math.floor(p.clientWidth - parseFloat(ps.paddingLeft) - parseFloat(ps.paddingRight) - 16),
+            sw: p.scrollWidth, cw: p.clientWidth, textOverflow: ps.textOverflow, overflowX: ps.overflowX, whiteSpace: ps.whiteSpace,
+            pickRight: Math.round(p.getBoundingClientRect().right), hidden: p.hidden,
+            tsw: $('route-text').scrollWidth, tcw: $('route-text').clientWidth, tws: getComputedStyle($('route-text')).whiteSpace,
+            tto: getComputedStyle($('route-text')).textOverflow, tdisp: getComputedStyle($('route-text')).display }; })()`);
+        const m = String(st.label).match(/^to (.*), continuing \u201c(.*)\u201d$/);
+        const q = m ? m[2] : '';
+        const body = q.endsWith('\u2026') ? q.slice(0, -1) : q;
+        const bad = [];
+        if (st.hidden || !m || m[1] !== r.name) bad.push('label shape');
+        if (q.startsWith('@')) bad.push('own mention kept');
+        if (q.length > 40 || !r.rest.startsWith(body) || (q.endsWith('\u2026') && r.rest[body.length] !== ' ')) bad.push('not a word-break cut within 40');
+        if (st.optTitle !== st.label || st.pickTitle !== st.label) bad.push('title is not the whole label');
+        // CoS 01:50 (B): at <=480px the text above the chooser shows the
+        // picked option's whole label, wrapping; wider, it stays empty.
+        if (v.w <= 480) {
+          if (st.text !== st.label || st.tdisp === 'none') bad.push('text is not the picked label');
+          if (st.tws === 'nowrap' || st.tto === 'ellipsis' || st.tsw > st.tcw) bad.push('picked label text does not wrap in full');
+        } else if (st.text !== '') bad.push('label repeated beside the chooser');
+        // Chrome computes overflow-x "clip" on a <select> whatever the page
+        // sets (box run at 31c2fc72), and still draws the "…" there; either
+        // value clips, so either passes. The ellipsis itself is what counts.
+        if ((st.textW > st.room || st.sw > st.cw) && !(st.textOverflow === 'ellipsis' && (st.overflowX === 'hidden' || st.overflowX === 'clip') && st.whiteSpace === 'nowrap'))
+          bad.push('clipped without an ellipsis');
+        if (st.pickRight > st.vw - 18 + 1) bad.push('chooser past the gutter');
+        if (v.w === 1440 && st.label !== r.exact) bad.push('label at 1440 is not the convoLabel output ' + JSON.stringify(r.exact));
+        if (bad.length) fail('RP2L ' + r.name + ' at ' + v.w + ': ' + bad.join(', ') + ' ' + JSON.stringify(st));
+        rpLabels.push({ w: v.w, name: r.name, label: st.label, textW: st.textW, room: st.room, ellipsis: st.textOverflow, text: st.text });
+      }
+      if (v.w <= 480) {
+        // the text follows a change of the selection alone (no new input)
+        const back = await cdp.eval(`(() => { const p = $('route-pick'); p.value = ${JSON.stringify(longRobots[0].npub)}; p.dispatchEvent(new Event('change'));
+          return { text: $('route-text').textContent, label: p.options[p.selectedIndex].textContent }; })()`);
+        if (back.text !== back.label || back.label !== longRobots[0].exact)
+          fail('RP2L at ' + v.w + ': the text must follow a change of the chooser: ' + JSON.stringify(back));
+        rpLabels.push({ w: v.w, changedBack: back.text });
+      }
+    }
+    // RP5 (Gauge P2-R8-1, CoS 01:46): the bare Yes/No sentence is not a
+    // label: at 390 and 1440 it wraps in full (no nowrap, no ellipsis, no
+    // clip). RP6 (Gauge P3): a long label in the @mention #route-text fits
+    // or ends in a computed ellipsis, and carries the whole label as title.
+    const BARE = 'to #label-room as a new note. A bare Yes or No answers an ask only from its stamps.';
+    const rpBare = [], rpNamed = [];
+    const readText = `(() => { const t = $('route-text'), ts = getComputedStyle(t);
+      return { vw: innerWidth, text: t.textContent, title: t.title, label: t.classList.contains('route-label'), sw: t.scrollWidth, cw: t.clientWidth,
+        h: Math.round(t.getBoundingClientRect().height), whiteSpace: ts.whiteSpace, textOverflow: ts.textOverflow, overflowX: ts.overflowX,
+        right: Math.round(t.getBoundingClientRect().right), pickHidden: $('route-pick').hidden }; })()`;
+    for (const v of [VIEWS[1], VIEWS[0]]) {
+      await view(v);
+      await cdp.eval(`(() => { $('msg').value = 'Yes'; $('msg').dispatchEvent(new Event('input')); return true; })()`);
+      await sleep(150);
+      const b = await cdp.eval(readText);
+      const bad = [];
+      if (b.text !== BARE) bad.push('not the bare sentence in full');
+      if (b.label) bad.push('carries route-label');
+      if (b.whiteSpace === 'nowrap' || b.textOverflow === 'ellipsis') bad.push('nowrap or ellipsis on the sentence');
+      if (b.sw > b.cw) bad.push('clipped (scrollWidth > clientWidth)');
+      if (b.right > b.vw - 18 + 1) bad.push('past the gutter');
+      if (bad.length) fail('RP5 bare sentence at ' + v.w + ': ' + bad.join(', ') + ' ' + JSON.stringify(b));
+      rpBare.push(b);
+      if (v.w === 390) {
+        const r = longRobots[0];
+        await cdp.eval(`(() => { $('msg').value = ${JSON.stringify('@' + r.name + ' plain label')}; $('msg').dispatchEvent(new Event('input')); return true; })()`);
+        await sleep(150);
+        const t = await cdp.eval(readText);
+        const nb = [];
+        if (!t.pickHidden || t.text !== r.exact || t.title !== t.text || !t.label) nb.push('not the label, alone, as title, with route-label');
+        if (t.sw > t.cw && !(t.textOverflow === 'ellipsis' && t.whiteSpace === 'nowrap' && t.overflowX !== 'visible')) nb.push('clipped without an ellipsis');
+        if (t.right > t.vw - 18 + 1) nb.push('past the gutter');
+        if (nb.length) fail('RP6 @mention label at 390: ' + nb.join(', ') + ' ' + JSON.stringify(t));
+        rpNamed.push(t);
+      }
+    }
+    await cdp.eval(`(() => { $('msg').value = ''; $('msg').dispatchEvent(new Event('input')); routePick = { channel: '', value: '' }; return true; })()`);
+    await view(VIEWS[0]);
+    console.log('RP2L PASS long-name labels: ' + JSON.stringify(rpLabels));
+    console.log('RP5 PASS bare sentence wraps at 390 and 1440: ' + JSON.stringify(rpBare));
+    console.log('RP6 PASS @mention long label at 390: ' + JSON.stringify(rpNamed));
+    console.log('RP PASS route line: ' + JSON.stringify({ empty: rpEmpty, gutter: rpGutter, afterSend: rpAfter, switch: rpSwitch, otherChannel: rpOther }));
+    console.log('A PASS interim routing: ' + JSON.stringify({ again: again.got.reply_to === RA, preview: plain.said.text,
+      bare: { said: bare.said.text, reply_to: bare.got.reply_to, aceAskLive: held }, two: { said: two.said.text, err: two.err }, chosen: chosen.got.reply_to === RA }));
+    await cdp.eval(`window.__ch0go ? window.__ch0go('welcome') : [...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#welcome')).click()`);
+  };
+  if (process.env.CH0_ROUTE_ONLY) {
+    await routePins();
+    await stopAll();
+    process.exit(0);
+  }
+  const p1 = await post({ content: 'Morning, Major. Status on the supply manifest?', kind: 1, channel: 'welcome' });
+  const p2 = await post({ content: 'Manifest attached.\n```txt\nrations 40\nfuel 12\n```', kind: 1, channel: 'welcome' });
+  if (p1.status !== 200 || p2.status !== 200 || !p1.json || !p2.json || !p1.json.id || !p2.json.id)
+    fail('seed roots: ' + JSON.stringify([p1, p2]));
+  const r1 = p1.json.id;
+  const r2 = p2.json.id;
+  for (const [root, text] of [[r1, 'Copy that. Reading in now.'], [r1, 'Continue this loop? Reply Yes or No.'],
+    [r2, 'Approval needed: Major wants to take a turn. Reply Yes or No.']]) {
+    const st = await post({ content: text, kind: 1, channel: 'welcome', reply_to: root });
+    if (st.status !== 200) fail('seed reply ' + JSON.stringify(st));
+  }
+  await cdp.waitFor(`document.querySelector('#stream').textContent.includes('Approval needed: Major') &&
+    document.querySelector('#stream').textContent.includes('Continue this loop?')`, 'flat replies', 15000);
+  // Gauge M1-F1: those two seeds only read like asks (the owner typed them;
+  // the relay did not write them), so they carry no stamps.
+  const look = await cdp.eval(`[...document.querySelectorAll('#stream .note')]
+    .filter((n) => n.textContent.includes('Approval needed: Major') || n.textContent.includes('Continue this loop?'))
+    .map((n) => n.querySelectorAll('.loop-stamp').length)`);
+  if (look.length < 2 || look.some((k) => k !== 0)) fail('F1 a note that only reads like an ask must carry no stamps: ' + JSON.stringify(look));
+  console.log('F1 PASS look-alike asks carry no stamps: ' + JSON.stringify(look));
+  // G20 / M1 acceptance: a real robot reply to a channel note is visible in
+  // the channel with no click. Raise Ace on the codex stub and mention it.
+  // If the hive asks first ("Approval needed: Ace ..."), the owner answers
+  // with the channel's own Yes stamp (the thread composer is gone). Then
+  // nothing is clicked while the reply is awaited.
+  const raised = await post({ name: 'Ace', system_prompt: 'Answer in one line.', provider: 'codex', save_pass: false }, '/api/agent');
+  const ace = raised.json && (raised.json.agents || []).find((a) => a.name === 'Ace');
+  if (!ace || !ace.npub) fail('G20 setup: Ace was not raised ' + JSON.stringify(raised).slice(0, 300));
+  // #336 approve-every-action: the turn must wait for the owner's Yes, which
+  // proves the Yes/No ask is answerable from the channel log.
+  const mode = await post({ approval_mode: 'approve_every_action' }, '/api/profile');
+  if (mode.status !== 200) fail('G20 setup: approval_mode ' + JSON.stringify(mode).slice(0, 200));
+  const ask = await post({ content: 'nostr:' + ace.npub + ' status check for G20', kind: 1, channel: 'welcome', mention_0: ace.npub });
+  if (ask.status !== 200 || !ask.json || !ask.json.id) fail('G20 ask ' + JSON.stringify(ask));
+  const ASKID = JSON.stringify(ask.json.id);
+  let gate = '';
+  for (let k = 0; k < 60 && !gate; k++) {
+    gate = await cdp.evalAsync(`(async () => { const j = await (await fetch('/api/events')).json();
+      const evs = (j.events || j || []).filter((e) => e.reply_to === ${ASKID});
+      if (evs.some((e) => String(e.content || '').includes(${JSON.stringify(STUB_REPLY)}))) return 'ran';
+      const a = evs.find((e) => String(e.content || '').startsWith('Approval needed: Ace'));
+      if (!a) return '';
+      const card = [...document.querySelectorAll('#stream .note')].find((n) => n.textContent.includes('Approval needed: Ace'));
+      const yes = card && card.querySelector('.loop-stamp.loop-yes');
+      if (!yes || yes.disabled) return '';
+      // M1 R2: 20 clicks in one burst, re-querying the card each time the
+      // way an impatient owner would; the page must post exactly one Yes.
+      for (let c = 0; c < ${CLICKS}; c++) { const live = card.querySelector('.loop-stamp.loop-yes') || yes; live.click(); }
+      // M1 R1: the stamp goes inert at once, before any re-render.
+      window.__ch0r1 = { liveAfterClicks: card.querySelectorAll('button.loop-stamp').length,
+        sentAfterClicks: (card.querySelector('.loop-sent') || {}).textContent || '' };
+      return 'asked'; })()`);
+    if (!gate) await sleep(500);
+  }
+  if (gate !== 'asked') fail('G20 Ace must wait for the owner (approve_every_action); got ' + JSON.stringify(gate));
+  // Wait for a robot-authored reply event (reply_to set, not the owner, not a
+  // developer-log receipt) and require it to be visible in #stream as its OWN
+  // card with no click. The roots-only log at 657408d9 hid every such reply
+  // behind the thread pane (G20); the FLR-F9 line on the asking card does not
+  // count here because it was already shown at 657408d9.
+  const INLINE = `(async () => { const r = await fetch('/api/events'); const j = await r.json();
+    const evs = (j.events || j || []).filter((e) => e.reply_to === ${ASKID} && !isMineNote(e) && !isDevLogNote(e)
+      && String(e.content || '').includes(${JSON.stringify(STUB_REPLY)}));
+    const shown = (el) => el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && el.getBoundingClientRect().height > 0;
+    const cards = [...document.querySelectorAll('#stream .note')].filter((n) => shown(n) && !n.querySelector('.log-failure'));
+    for (const e of evs) { const c = String(e.content || '').trim().slice(0, 48); if (!c) continue;
+      const by = who(e.pubkey);
+      const el = cards.find((n) => { const m = n.querySelector('.meta'); return m && m.textContent.startsWith(by + ' ') && n.textContent.includes(c); });
+      if (el) return { by, reply: c, reply_to_ask: e.reply_to === ${ASKID}, robotReplies: evs.length }; }
+    return null; })()`;
+  let inline = null;
+  for (let k = 0; k < 60 && !inline; k++) { inline = await cdp.evalAsync(INLINE); if (!inline) await sleep(500); }
+  if (!inline) {
+    const dbg = await cdp.evalAsync(`(async () => { const j = await (await fetch('/api/events')).json();
+      return { evs: (j.events || j || []).filter((e) => e.channel === 'welcome' || !e.channel).slice(-12).map((e) => ({ by: who(e.pubkey), mine: isMineNote(e), rt: e.reply_to ? e.reply_to.slice(0, 8) : '', id: (e.id || '').slice(0, 8), c: String(e.content || '').slice(0, 40) })),
+        cards: [...document.querySelectorAll('#stream .note .meta')].map((m) => m.textContent.slice(0, 30)) }; })()`);
+    fail('G20 no robot reply became visible inline in #welcome as its own card with no click (30s) ' + JSON.stringify(dbg));
+  }
+  console.log('G20 PASS robot reply visible inline with no click: ' + JSON.stringify(Object.assign({ approval: gate === 'asked' ? 'answered by the channel Yes stamp' : 'none asked' }, inline)));
+
+  // ---- M1 R1-R4 (Ops FAIL 5fba5350, CoS 08:25) ----
+  const ASK = ask.json.id;
+  const ME = await cdp.eval(`session.pubkey || ''`);
+  const tally = async () => cdp.evalAsync(`(async () => { const j = await (await fetch('/api/events')).json();
+    const evs = (j.events || j || []).filter((e) => e.reply_to === ${JSON.stringify(ASK)});
+    const has = (e, t) => String(e.content || '').includes(t);
+    return { yes: evs.filter((e) => e.pubkey === ${JSON.stringify(ME)} && /^\\s*(yes|no)\\s*[.!]?\\s*$/i.test(e.content || '')).length,
+      turns: evs.filter((e) => e.pubkey !== ${JSON.stringify(ME)} && has(e, ${JSON.stringify(STUB_REPLY)})).length,
+      asks: evs.filter((e) => String(e.content || '').startsWith('Approval needed: Ace')).length,
+      heard: evs.filter((e) => e.content === 'Mention received.').length,
+      askId: (evs.find((e) => String(e.content || '').startsWith('Approval needed: Ace')) || {}).id || '',
+      yesId: (evs.find((e) => e.pubkey === ${JSON.stringify(ME)} && /^\\s*yes/i.test(e.content || '')) || {}).id || '' }; })()`);
+  const r1now = await cdp.eval(`window.__ch0r1`);
+  await sleep(5000);
+  const after20 = await tally();
+  console.log('R2 after ' + CLICKS + ' clicks (server events on the ask root): ' + JSON.stringify(after20) + ' page: ' + JSON.stringify(r1now));
+  if (after20.yes !== 1) fail(`R2 ${CLICKS} clicks must post exactly 1 Yes; the relay stored ${after20.yes}`);
+  if (after20.turns !== 1 || after20.asks !== 1)
+    fail(`R2 ${CLICKS} clicks must run exactly 1 robot turn and raise 1 ask; got ${after20.turns} turns, ${after20.asks} asks`);
+  // R2 server: duplicate owner answers POSTed straight to the relay (no page
+  // lock involved) must start no turn and raise no ask. Each repeats the
+  // stamp's own body: reply_to the conversation plus "answers" naming the
+  // answered ask (CoS 10:03: the relay drops only a Yes/No that targets an
+  // ask already answered; a bare Yes/No with no ask waiting reaches the robot).
+  if (!after20.askId) fail('R2 setup: no approval ask id to repeat an answer to');
+  for (const word of ['Yes', 'yes.', 'Yes', 'No'])
+    await post({ content: word, kind: 1, channel: 'welcome', reply_to: ASK, answers: after20.askId });
+  await sleep(6000);
+  const dup = await tally();
+  console.log('R2 server after 4 duplicate POSTs (Yes, yes., Yes, No): ' + JSON.stringify(dup));
+  if (dup.turns !== 1 || dup.asks !== 1 || dup.heard !== after20.heard)
+    fail(`R2 the relay must ignore a repeated answer: turns ${dup.turns}, asks ${dup.asks}, receipts ${after20.heard}->${dup.heard}`);
+  // R1: the answered ask is inert at once (no live button, "Yes sent"), still
+  // inert after 5 s of re-renders, and after a reload.
+  if (r1now.liveAfterClicks !== 0 || !/Yes sent/i.test(r1now.sentAfterClicks))
+    fail('R1 the answered ask must go inert on the click: ' + JSON.stringify(r1now));
+  const ASKCARD = `[...document.querySelectorAll('#stream .note')].find((n) => n.dataset.id === ${JSON.stringify(after20.askId)})`;
+  const inert = async (when) => {
+    const st = await cdp.eval(`(() => { const c = ${ASKCARD}; if (!c) return null;
+      return { live: c.querySelectorAll('button.loop-stamp').length, sent: (c.querySelector('.loop-sent') || {}).textContent || '' }; })()`);
+    if (!st || st.live !== 0 || !/Yes sent/i.test(st.sent)) fail(`R1 answered ask not inert ${when}: ` + JSON.stringify(st));
+    return st;
+  };
+  const r1late = await inert('after 11 s');
+  await cdp.send('Page.reload', {});
+  await cdp.waitFor(`!!document.querySelector('#hive.show')`, 'hive after reload');
+  await cdp.eval(`[...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#welcome')).click()`);
+  await cdp.waitFor(`!!(${ASKCARD})`, 'ask card after reload');
+  const r1reload = await inert('after a reload');
+  console.log('R1 PASS answered ask inert: on click ' + JSON.stringify(r1now) + ', after 11 s ' + JSON.stringify(r1late) + ', after reload ' + JSON.stringify(r1reload));
+  // R4: the owner's Yes names its own ask; Ace's reply names the note it answers.
+  const r4 = await cdp.eval(`(() => { const card = (id) => [...document.querySelectorAll('#stream .note')].find((n) => n.dataset.id === id);
+    const yes = card(${JSON.stringify(after20.yesId)});
+    const ace = [...document.querySelectorAll('#stream .note')].find((n) => n.textContent.includes(${JSON.stringify(STUB_REPLY)}));
+    const link = (c) => c && c.querySelector('.re-link');
+    return { yesTo: link(yes) ? link(yes).dataset.to : '', yesText: link(yes) ? link(yes).textContent : '',
+      aceTo: link(ace) ? link(ace).dataset.to : '', aceText: link(ace) ? link(ace).textContent : '' }; })()`);
+  if (r4.yesTo !== after20.askId || !/^re: Approval needed: Ace/.test(r4.yesText))
+    fail('R4 the owner\'s Yes must name its own ask: ' + JSON.stringify(r4));
+  // CoS 13:14 B: Ace's reply answers the ask whose Yes freed its turn.
+  if (r4.aceTo !== after20.askId || !/^re: Approval needed: Ace/.test(r4.aceText))
+    fail('R4 the robot reply must name the ask its turn answered, not the conversation root: ' + JSON.stringify(r4));
+  const r4jump = await cdp.evalAsync(`(async () => { const yes = [...document.querySelectorAll('#stream .note')].find((n) => n.dataset.id === ${JSON.stringify(after20.yesId)});
+    document.querySelector('#stream').scrollTop = 0; yes.querySelector('.re-link').click(); await new Promise((r) => setTimeout(r, 100));
+    seen = ''; await tick(); await new Promise((r) => setTimeout(r, 300));
+    const c = ${ASKCARD}; const r = c.getBoundingClientRect(); const s = document.querySelector('#stream').getBoundingClientRect();
+    return { flashed: c.classList.contains('note-flash'), inView: r.top >= Math.min(s.top, 0) - 1 && r.bottom <= Math.max(s.bottom, innerHeight) + 1 }; })()`);
+  if (!r4jump.flashed || !r4jump.inView) fail('R4 the re: link must bring its ask into view: ' + JSON.stringify(r4jump));
+  console.log('R4 PASS anchors: ' + JSON.stringify(r4) + ' jump ' + JSON.stringify(r4jump));
+  // Gauge M1-F2: a newer ask B waits in the same conversation; a duplicate
+  // of the answered stamp (POSTed straight to the relay, which drops it)
+  // must not paint B "Yes sent". B keeps live stamps and still holds.
+  const more = await post({ content: 'nostr:' + ace.npub + ' one more check', kind: 1, channel: 'welcome', reply_to: ASK, mention_0: ace.npub });
+  if (more.status !== 200) fail('F2 setup: second mention ' + JSON.stringify(more));
+  let askB = '';
+  for (let k = 0; k < 40 && !askB; k++) {
+    askB = await cdp.evalAsync(`(async () => { const j = await (await fetch('/api/events')).json();
+      const a = (j.events || j || []).filter((e) => e.reply_to === ${JSON.stringify(ASK)} && e.ask === true && e.id !== ${JSON.stringify(after20.askId)});
+      return a.length ? a[a.length - 1].id : ''; })()`);
+    if (!askB) await sleep(250);
+  }
+  if (!askB) fail('F2 setup: no second ask B for Ace');
+  await post({ content: 'Yes', kind: 1, channel: 'welcome', reply_to: ASK, answers: after20.askId });
+  await sleep(2500);
+  const f2 = await cdp.eval(`(() => { const c = [...document.querySelectorAll('#stream .note')].find((n) => n.dataset.id === ${JSON.stringify(askB)});
+    return c ? { live: c.querySelectorAll('button.loop-stamp:not(:disabled)').length, sent: (c.querySelector('.loop-sent') || {}).textContent || '' } : null; })()`);
+  const f2srv = await tally();
+  if (!f2 || f2.live !== 2 || f2.sent) fail('F2 a dropped duplicate must not mark the newer ask answered: ' + JSON.stringify(f2));
+  if (f2srv.turns !== 1) fail('F2 the relay must keep ask B held after the duplicate: turns ' + f2srv.turns);
+  console.log('F2 PASS newer ask stays live after a dropped duplicate: ' + JSON.stringify(f2) + ' turns ' + f2srv.turns);
+  // CoS 13:14 C: a later ask in a conversation waits behind the oldest one
+  // with disabled stamps (loopAnswerBar). The relay never holds two asks in
+  // one conversation here without a guest, so R3 paints that exact state:
+  // a disabled copy of ask B's live stamps on B's own card, read back below,
+  // then removed.
+  const OFF = `(() => { if (document.querySelector('[data-ch0-probe]')) return; const c = [...document.querySelectorAll('#stream .note')].find((n) => n.dataset.id === ${JSON.stringify(askB)});
+    const bar = c.querySelector('.loop-stamps').cloneNode(true); bar.dataset.ch0Probe = '1';
+    bar.querySelectorAll('button').forEach((b) => { b.disabled = true; }); c.appendChild(bar); })();`;
+  // R3: stamp and anchor ink >= 4.5:1 on what is painted behind them, in
+  // every theme, read back through a canvas so any colour syntax resolves.
+  const r3 = [];
+  for (const theme of THEMES) {
+    await cdp.eval(`applyTheme(${JSON.stringify(theme)})`);
+    await sleep(120);
+    const m = await cdp.eval(`(() => { ${OFF} const cv = document.createElement('canvas'); cv.width = cv.height = 1; const cx = cv.getContext('2d', { willReadFrequently: true });
+      const rgb = (c) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = '#000'; cx.fillStyle = c; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
+      const bgOf = (el) => { for (let x = el; x; x = x.parentElement) { const c = rgb(getComputedStyle(x).backgroundColor); if (c[3] > 0.5) return c; } return rgb(getComputedStyle(document.body).backgroundColor); };
+      const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+      const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+      const out = {};
+      const alpha = (el) => { let a = 1; for (let x = el; x; x = x.parentElement) a *= Number(getComputedStyle(x).opacity); return a; };
+      const ink = (el, bg) => { const c = rgb(getComputedStyle(el).color); const a = c[3] * alpha(el); return [0, 1, 2].map((i) => c[i] * a + bg[i] * (1 - a)); };
+      for (const [k, sel] of [['yes', '#stream button.loop-yes:not(:disabled)'], ['no', '#stream button.loop-no:not(:disabled)'],
+        ['yesOff', '#stream button.loop-yes:disabled'], ['noOff', '#stream button.loop-no:disabled'], ['sent', '#stream .loop-sent'], ['re', '#stream .re-link']]) {
+        const el = document.querySelector(sel); if (!el) { out[k] = null; continue; }
+        const bg = bgOf(el);
+        out[k] = Math.round(ratio(ink(el, bg), bg) * 100) / 100; }
+      return out; })()`);
+    r3.push(Object.assign({ theme }, m));
+  }
+  await cdp.eval(`(() => { const p = document.querySelector('[data-ch0-probe]'); if (p) p.remove(); return true; })()`);
+  const r3bad = r3.flatMap((m) => ['yes', 'no', 'yesOff', 'noOff', 'sent', 're'].filter((k) => m[k] === null || m[k] < 4.5)
+    .map((k) => `${m.theme} ${k} ${m[k] === null ? 'missing' : m[k] + ':1'}`));
+  if (r3bad.length) fail('R3 stamp/anchor ink below 4.5:1: ' + r3bad.join(', ') + ' ' + JSON.stringify(r3));
+  console.log('R3 PASS stamp/anchor ink (disabled later-ask stamps included, CoS 13:14 C) >= 4.5:1 in ' + THEMES.length + ' themes: ' + JSON.stringify(r3));
+  // FU2 (Ops 5fba5350): at 390 the page scrolls as a whole. Focusing #msg
+  // from the top of a long log must leave Send clear of the fixed quick
+  // bar. Blur first: focusing an already-focused field does not scroll.
+  await view(VIEWS[1]);
+  const fu2 = [];
+  for (const theme of THEMES) {
+    await cdp.eval(`applyTheme(${JSON.stringify(theme)})`);
+    await sleep(120);
+    await cdp.eval(`(() => { document.activeElement && document.activeElement.blur(); window.scrollTo(0, 0); document.getElementById('msg').focus(); return true; })()`);
+    await sleep(200);
+    fu2.push(Object.assign({ theme }, await cdp.eval(`(() => { const s = document.getElementById('send'); const r = s.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, Math.min(r.top + r.height / 2, innerHeight - 1));
+      return { send: [Math.round(r.top), Math.round(r.bottom)], hit: top ? (top.id || top.className || top.tagName) : null, onSend: !!(top && (top === s || s.contains(top))),
+        scrollY: Math.round(scrollY), docH: document.documentElement.scrollHeight, vh: innerHeight }; })()`)));
+  }
+  await cdp.eval(`document.activeElement && document.activeElement.blur(), window.scrollTo(0, 0)`);
+  await view(VIEWS[0]);
+  if (fu2.some((m) => m.docH < m.vh + 300)) fail('FU2 precondition: the log must be long enough to scroll at 390: ' + JSON.stringify(fu2));
+  const fu2bad = fu2.filter((m) => !m.onSend).map((m) => `${m.theme} hit ${m.hit}`);
+  if (fu2bad.length) fail('FU2 Send under the quick bar after focusing #msg at 390: ' + fu2bad.join(', ') + ' ' + JSON.stringify(fu2));
+  console.log('FU2 PASS Send clear of the quick bar after focusing #msg at 390 in ' + THEMES.length + ' themes: ' + JSON.stringify(fu2));
+  await cdp.eval(`applyTheme('field-office')`);
+
+  // An empty channel for the idle state.
+  await routePins();
+  await cdp.evalAsync(`(async () => { applySession(await api('/api/channel', { name: 'quiet-room', system_prompt: '' })); return true; })()`);
+  await cdp.waitFor(`[...document.querySelectorAll('.chan')].some((b) => b.textContent.includes('#quiet-room'))`, 'quiet-room channel');
+
+  // Page helpers: channel switch, status wrapper, send failure, drawers.
+  await cdp.eval(`(() => {
+    window.__ch0 = { thinking: null, failSend: false };
+    const real = window.fetch.bind(window);
+    window.fetch = async (u, o) => {
+      const url = String(u);
+      if (window.__ch0.failSend && url.endsWith('/api/event') && o && o.method === 'POST')
+        return new Response('relay error', { status: 500 });
+      const r = await real(u, o);
+      if (window.__ch0.thinking && url.indexOf('/api/status') >= 0) {
+        const j = await r.clone().json();
+        j.thinking = window.__ch0.thinking;
+        return new Response(JSON.stringify(j), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return r;
+    };
+    window.__ch0go = (name) => { const b = [...document.querySelectorAll('.chan')].find((x) => x.textContent.includes('#' + name)); if (b) b.click(); };
+    return true; })()`);
+  const closeLayers = async () => {
+    await cdp.eval(`(() => { for (const id of ['settings', 'agent-drawer', 'profile', 'relay-drawer']) { const e = document.getElementById(id); if (e) e.classList.remove('show'); }
+      if (typeof closeNavigation === 'function') closeNavigation(); const mb = document.getElementById('mention-box'); if (mb) { mb.hidden = true; mb.classList.remove('show'); }
+      window.__ch0.thinking = null; window.__ch0.failSend = false; return true; })()`);
+  };
+  const toWelcome = async () => {
+    await cdp.eval(`window.__ch0go('welcome')`);
+    await cdp.waitFor(`document.querySelector('#stream').textContent.includes('Approval needed: Major')`, 'welcome log');
+  };
+  const STATES = [
+    ['idle', async () => {
+      // KNOWN RACE (stale-session), Gauge M1-F14; tracked as internal P2
+      // 'stale-session-snap' (owner JNY, after M1). A just-created channel
+      // snaps back to the first channel because an older /api/session poll
+      // overwrites it: a tick() (demo/index.html:9350) whose fetch began
+      // before quiet-room existed sets that stale session, and the channel
+      // list then finds no quiet-room and resets `channel`
+      // (index.html:3640-3641). INFERRED, not yet verified by a
+      // deterministic repro (failed 4 of 6 box runs on d7b6f836 and
+      // 97d60296). Until the product fix lands (it drops this re-assert),
+      // re-select quiet-room inside the wait, log every re-assert, and fail
+      // with the count if the 25 s timeout still expires.
+      await cdp.eval(`window.__ch0go('quiet-room')`);
+      let reasserts = 0;
+      let active = '';
+      const t0 = Date.now();
+      for (;;) {
+        let st = null;
+        try {
+          st = await cdp.eval(`({ empty: !!document.querySelector('#stream .empty'), active: channel })`);
+        } catch (e) { /* page busy */ }
+        if (st && st.empty) break;
+        if (st) active = st.active;
+        if (Date.now() - t0 > 25000)
+          fail('timeout waiting for empty channel (F14 KNOWN RACE stale-session re-asserts=' + reasserts + ', last active=' + active + ')');
+        if (st && st.active !== 'quiet-room') {
+          reasserts++;
+          console.log('F14 KNOWN RACE stale-session re-assert #' + reasserts + ': active=' + st.active);
+          await cdp.eval(`window.__ch0go('quiet-room')`);
+        }
+        await sleep(150);
+      }
+      console.log('F14 idle state: empty channel shown, stale-session re-asserts=' + reasserts);
+      // Ops M1 F1 (C3 idle): with the composer empty the idle channel shows
+      // no route line, text or chooser. Later passes (after the 'error' and
+      // 'mention' states) carry their draft here; that draft must then be
+      // routed for quiet-room, never for the channel it was typed in.
+      const idleRoute = await cdp.eval(`(() => { const b = $('route-preview'), p = $('route-pick');
+        return { draft: $('msg').value, disp: getComputedStyle(b).display, text: $('route-text').textContent, pickDisp: getComputedStyle(p).display, opts: p.options.length }; })()`);
+      const idleOk = !idleRoute ? false : idleRoute.draft.trim() === ''
+        ? idleRoute.disp === 'none' && idleRoute.text === '' && idleRoute.pickDisp === 'none' && idleRoute.opts === 0
+        : idleRoute.disp !== 'none' && /#quiet-room/.test(idleRoute.text) && !/#welcome|#route-room/.test(idleRoute.text);
+      if (!idleOk) fail('RP4 the idle channel must show no route line for an empty composer, and only quiet-room\'s route for a draft: ' + JSON.stringify(idleRoute));
+      console.log('RP4 PASS idle route line: ' + JSON.stringify(idleRoute));
+    }],
+    ['log', toWelcome],
+    ['replying', async () => {
+      await toWelcome();
+      await cdp.eval(`window.__ch0.thinking = [{ name: 'Major', parent: ${JSON.stringify(r1)} }]`);
+      await cdp.waitFor(`!!document.querySelector('#stream .think-stop')`, 'thinking chip', 8000);
+    }],
+    ['decision', async () => {
+      await toWelcome();
+      await cdp.eval(`(() => { const y = [...document.querySelectorAll('#stream button.loop-stamp.loop-yes:not(:disabled)')].pop(); if (!y) return false; y.scrollIntoView({ block: 'center' }); y.click(); return true; })()`);
+      await sleep(150);
+    }],
+    ['error', async () => {
+      await toWelcome();
+      await cdp.eval(`(() => { window.__ch0.failSend = true; document.getElementById('msg').value = 'This send is refused.';
+        document.getElementById('form').requestSubmit(); return true; })()`);
+      await cdp.waitFor(`document.getElementById('send-error').textContent.length > 0`, 'send error');
+    }],
+    ['mention', async () => {
+      await toWelcome();
+      await cdp.eval(`(() => { const m = document.getElementById('msg'); m.focus(); m.value = '@'; m.setSelectionRange(1, 1);
+        m.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+      await sleep(150);
+    }],
+    ['boards', async () => {
+      await toWelcome();
+      await cdp.eval(`(() => { const t = document.getElementById('nav-toggle'); const r = t && t.getBoundingClientRect();
+        if (t && r.width > 0 && t.getAttribute('aria-expanded') !== 'true') t.click(); return true; })()`);
+      await sleep(250);
+    }],
+    ['settings', async () => {
+      await toWelcome();
+      await cdp.eval(`document.getElementById('settings-btn').click()`);
+      await cdp.waitFor(`document.getElementById('settings').classList.contains('show')`, 'settings');
+    }],
+    ['robot', async () => {
+      await toWelcome();
+      await cdp.eval(`(() => { const b = robotModels().find((x) => x.slug === PAYNE_SLUG) || robotModels()[0]; openAgentDrawer(b); return true; })()`);
+      await cdp.waitFor(`document.getElementById('agent-drawer').classList.contains('show')`, 'robot drawer');
+      await sleep(300);
+    }],
+  ];
+
+  const probe = { head: process.env.CH0_HEAD || '', states: STATES.map((s) => s[0]), themes: THEMES, views: VIEWS.map((v) => v.vp), runs: 0, hits: [] };
+  for (const v of VIEWS) {
+    await view(v);
+    for (const theme of THEMES) {
+      await cdp.eval(`applyTheme(${JSON.stringify(theme)})`);
+      for (const [name, setup] of STATES) {
+        await closeLayers();
+        await setup();
+        await cdp.eval(`applyTheme(${JSON.stringify(theme)})`);
+        const hits = await cdp.eval(SCAN + '(false)');
+        probe.runs++;
+        for (const h of hits) probe.hits.push(Object.assign({ state: name, theme, vp: v.vp }, h));
+        if (ART && SHOT_THEMES.includes(theme)) {
+          const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+          fs.mkdirSync(path.join(ART, 'shots'), { recursive: true });
+          fs.writeFileSync(path.join(ART, 'shots', `${name}-${theme}-${v.vp}.png`), Buffer.from(shot.data, 'base64'));
+        }
+      }
+    }
+  }
+  await closeLayers();
+  const domHits = (await cdp.eval(SCAN + '(true)')).map((h) => Object.assign({ state: 'whole-dom' }, h));
+  probe.hits.push(...domHits, ...scriptHits);
+  probe.pageErrors = pageErrors;
+  if (ART) {
+    fs.mkdirSync(path.join(ART, 'probe'), { recursive: true });
+    fs.writeFileSync(path.join(ART, 'probe', 'CH0.json'), JSON.stringify(probe.hits, null, 1) + '\n');
+    fs.writeFileSync(path.join(ART, 'probe', 'CH0-run.json'), JSON.stringify(probe, null, 1) + '\n');
+  }
+  console.log(`CH0 scanned ${probe.runs} state x theme x viewport paints (${STATES.length} states x ${THEMES.length} themes x ${VIEWS.length} viewports) + whole DOM`);
+  if (pageErrors.length)
+    console.log('CH0 page exceptions: ' + JSON.stringify(pageErrors.slice(0, 5)));
+  if (probe.hits.length) {
+    for (const h of probe.hits.slice(0, 20)) console.error('CH0 hit: ' + JSON.stringify(h));
+    fail(`${probe.hits.length} thread UI hits (CH0_HARD wants 0)`);
+  }
+  if (pageErrors.length)
+    fail(`${pageErrors.length} uncaught page exceptions`);
+  if (!(await stopAll())) {
+    console.error('CH0 UI check failed: teardown left temp dirs');
+    process.exit(1);
+  }
+  console.log('CH0 UI check passed: 0 thread UI hits in every state, theme and viewport; no thread pane code; temp dirs removed');
+  process.exit(0);
+}
+
+main().catch((e) => {
+  if (e instanceof StopRun) return;
+  try { fail(e && e.stack ? e.stack : String(e)); } catch (e2) { /* teardown running */ }
+});

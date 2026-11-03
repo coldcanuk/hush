@@ -191,12 +191,6 @@
       border-left: 2px solid var(--accent-dim); padding-left: 8px;
     }
     .partial:empty { display: none; }
-    .thread-btn {
-      margin-top: 8px; min-height: 32px; padding: 4px 10px; border-radius: 12px;
-      border: 1px solid var(--accent-dim); background: transparent; color: var(--accent);
-      font-size: 0.72rem; font-weight: 650;
-    }
-    .thread-btn:hover { background: var(--accent-dim); }
     .drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .drawer-head h2 { margin: 0; }
     .drawer-x {
@@ -204,43 +198,6 @@
       color: var(--muted); font-size: 1.25rem; font-family: var(--display); line-height: 1; border-radius: 12px;
     }
     .drawer-x:hover { background: var(--surface-2); color: var(--fg); }
-    #thread-pane {
-      display: none; position: fixed; z-index: 25;
-      left: 50%; top: 56px; transform: translateX(-50%);
-      width: min(42rem, 92vw); height: min(70vh, 640px);
-      background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
-      box-shadow: 0 16px 40px var(--fo-shade, rgba(0,0,0,0.45));
-      flex-direction: column; min-width: 280px; min-height: 240px; overflow: hidden;
-    }
-    #thread-pane.show { display: flex; }
-    .thread-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-    #thread-pane .drawer-head { padding: 14px 16px 0; flex: 0 0 auto; }
-    #thread-help { margin: 4px 16px 8px; }
-    #thread-stream {
-      flex: 1; overflow: auto; padding: 8px 16px 12px;
-      display: flex; flex-direction: column; gap: 12px; min-height: 0;
-    }
-    #thread-think {
-      flex: 0 0 auto; min-height: 1.4rem; padding: 0 16px 6px;
-    }
-    #thread-form { position: relative; flex: 0 0 auto; }
-    #thread-desk, #milestone-form {
-      display: flex; gap: 6px; align-items: center;
-      padding: 0 16px 8px; flex: 0 0 auto;
-    }
-    #thread-desk input, #milestone-form input {
-      flex: 1; min-width: 0; font: inherit; color: var(--fg);
-      background: var(--bg); border: 1px solid var(--line);
-      border-radius: 4px; padding: 4px 6px;
-    }
-    #thread-desk button, #milestone-form button { flex: 0 0 auto; }
-    #thread-resize {
-      position: absolute; right: 2px; bottom: 2px; width: 24px; height: 24px;
-      cursor: nwse-resize; touch-action: none;
-      background:
-        linear-gradient(135deg, transparent 40%, var(--line) 40%, var(--line) 50%, transparent 50%),
-        linear-gradient(135deg, transparent 65%, var(--muted) 65%, var(--muted) 75%, transparent 75%);
-    }
     main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
     .room {
       padding: 12px 18px; border-bottom: 1px solid var(--line);
@@ -377,25 +334,15 @@
     }
     #canvas-k .row { display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end; }
     #canvas-k .row button { min-height: 32px; padding: 4px 10px; border-radius: 12px; font-size: 0.78rem; }
-    #thread-stream .note {
-      max-width: min(78%, 28rem); border-radius: 16px 16px 16px 6px;
-      background: var(--surface-2);
-    }
-    #thread-stream .note.mine {
-      align-self: flex-end; border-radius: 16px 16px 6px 16px;
-      background: var(--accent-dim); border-color: var(--accent);
-    }
-    #thread-stream .note.reply { margin-left: 0; border-left: 0; padding-left: 12px; }
-    #thread-help { color: var(--muted); font-size: 0.78rem; }
     .composer { display: flex; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--line); background: var(--surface); align-items: flex-end; }
     .composer-box {
       flex: 1; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px;
       background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
       padding: 6px 8px; min-height: 44px;
     }
-    #composer-pills, #thread-pills { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+    #composer-pills { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
     .composer-pill { margin: 0; }
-    #msg, #thread-msg {
+    #msg {
       flex: 1 1 100%; min-width: 8rem; background: transparent; color: var(--fg); border: 0;
       padding: 6px 6px; font: inherit; outline: none;
       resize: none; overflow-y: auto; line-height: 1.4;
@@ -403,14 +350,11 @@
       white-space: pre-wrap; word-break: break-word;
     }
     .composer-box:focus-within { border-color: var(--accent-dim); }
-    /* #241 r7: the thread composer drops its outline above; give it the
-       same keyboard ring as the .panel fields (inside the box padding). */
-    #thread-msg:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
-    #send, #thread-send {
+    #send {
       background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 12px;
       padding: 0 18px; font-weight: 650; min-width: 88px; min-height: 44px;
     }
-    #send:hover, #thread-send:hover { filter: brightness(1.05); }
+    #send:hover { filter: brightness(1.05); }
     .radio-col { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; }
     .radio-col label, #manage-talk { min-height: 44px; display: flex; align-items: center; gap: 10px; }
     .gate {
@@ -864,11 +808,11 @@ body { padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
   border-color: var(--accent-dim);
   box-shadow: 0 0 0 1px var(--accent-dim);
 }
-#send, #thread-send {
+#send {
   border-radius: 8px;
   box-shadow: inset 0 1px 0 var(--fo-sheen, rgb(255 255 255 / 0.12)), inset 0 -2px 0 var(--fo-shade, rgb(0 0 0 / 0.25));
 }
-#send:active, #thread-send:active {
+#send:active {
   box-shadow: inset 0 2px 5px var(--fo-press, rgb(0 0 0 / 0.4));
 }
 .inv-expand-link {
@@ -1235,7 +1179,7 @@ html[data-theme="field-office"] .voice-mic-test { border-color: var(--line); }
    >= 4.5:1 and every border / ring / track >= 3:1 on these surfaces
    (tests/check_palette.sh measures the painted page). */
 html[data-theme="field-office"] {
-  --bg: #c2b185;          /* log and thread pane paper */
+  --bg: #c2b185;          /* log paper */
   --surface: #cdbd92;     /* chrome: header, nav, roster, composer, drawers */
   --surface-2: #d6c79d;   /* slips: notes, cards, inputs */
   --line: #4b4a2c;        /* olive-ink rules, borders, offset shadows */
@@ -1396,7 +1340,7 @@ html[data-theme="field-office"] .note .meta {
   font-size: 0.66rem; letter-spacing: 0.14em; font-weight: 700;
 }
 html[data-theme="field-office"] .room h1 { font-size: 1.05rem; letter-spacing: 0.14em; }
-html[data-theme="field-office"] #msg, html[data-theme="field-office"] #thread-msg { letter-spacing: 0.02em; }
+html[data-theme="field-office"] #msg { letter-spacing: 0.02em; }
 /* Radius kill: every paper surface is sharp or 3px max. Dots stay round. */
 html[data-theme="field-office"] .card,
 html[data-theme="field-office"] .panel,
@@ -1406,7 +1350,6 @@ html[data-theme="field-office"] .mention-box,
 html[data-theme="field-office"] .qb-editor,
 html[data-theme="field-office"] #canvas-k,
 html[data-theme="field-office"] #kit-menu,
-html[data-theme="field-office"] #thread-pane,
 html[data-theme="field-office"] #code-canvas-hi,
 html[data-theme="field-office"] #code-canvas-edit,
 html[data-theme="field-office"] #canvas-file,
@@ -1414,8 +1357,6 @@ html[data-theme="field-office"] #canvas-k-ask,
 html[data-theme="field-office"] #canvas-k .row button,
 html[data-theme="field-office"] .code-block,
 html[data-theme="field-office"] .note-files button,
-html[data-theme="field-office"] #thread-stream .note,
-html[data-theme="field-office"] #thread-stream .note.mine,
 html[data-theme="field-office"] .robot-ack,
 html[data-theme="field-office"] .mention-pill,
 html[data-theme="field-office"] .pill,
@@ -1475,7 +1416,6 @@ html[data-theme="field-office"] .skill-sheet-card,
 html[data-theme="field-office"] .slider {
   border-radius: 3px;
 }
-html[data-theme="field-office"] #thread-stream .note.reply { border-radius: 3px; }
 html[data-theme="field-office"] .slider:before { border-radius: 0; }
 /* Soft-shadow kill: no blur/bloom under field-office; paper depth is
    sharp 2px offsets on slips, plates, and stamps only. */
@@ -1483,7 +1423,6 @@ html[data-theme="field-office"] header,
 html[data-theme="field-office"] #quick-bar,
 html[data-theme="field-office"] .menu,
 html[data-theme="field-office"] .mention-box,
-html[data-theme="field-office"] #thread-pane,
 html[data-theme="field-office"] #code-canvas,
 html[data-theme="field-office"] .qb-editor,
 html[data-theme="field-office"] #canvas-k,
@@ -1494,7 +1433,6 @@ html[data-theme="field-office"] .qb-slot:hover,
 html[data-theme="field-office"] .qb-gear,
 html[data-theme="field-office"] .inv-btn,
 html[data-theme="field-office"] #send,
-html[data-theme="field-office"] #thread-send,
 html[data-theme="field-office"] .composer-box:focus-within,
 html[data-theme="field-office"] .agent-pic-cell.on,
 html[data-theme="field-office"] .avatar-cell.on,
@@ -1513,12 +1451,9 @@ html[data-theme="field-office"] #badge {
   box-shadow: none;
 }
 html[data-theme="field-office"] .note,
-html[data-theme="field-office"] #thread-stream .note,
-html[data-theme="field-office"] #thread-stream .note.mine,
 html[data-theme="field-office"] .panel,
 html[data-theme="field-office"] .card,
 html[data-theme="field-office"] dialog.secret,
-html[data-theme="field-office"] #thread-pane,
 html[data-theme="field-office"] .menu,
 html[data-theme="field-office"] .mention-box,
 html[data-theme="field-office"] .qb-editor,
@@ -1527,33 +1462,23 @@ html[data-theme="field-office"] .code-block {
   box-shadow: 2px 2px 0 var(--line);
 }
 html[data-theme="field-office"] #badge { box-shadow: 2px 2px 0 var(--line); }
-html[data-theme="field-office"] #send:hover, html[data-theme="field-office"] #thread-send:hover { filter: none; }
+html[data-theme="field-office"] #send:hover { filter: none; }
 /* Gradient kill: flat paper under field-office. */
 html[data-theme="field-office"] header,
 html[data-theme="field-office"] #quick-bar,
 html[data-theme="field-office"] .composer { background: var(--surface); }
 html[data-theme="field-office"] #kit-menu { border: 2px solid var(--line); background: var(--surface); }
-html[data-theme="field-office"] #thread-resize { border: 0; background: transparent; }
 /* Carved dossier frames: double rules on the big paper surfaces. */
 html[data-theme="field-office"] .panel,
 html[data-theme="field-office"] .card,
-html[data-theme="field-office"] dialog.secret,
-html[data-theme="field-office"] #thread-pane {
+html[data-theme="field-office"] dialog.secret {
   border: 2px solid var(--line); outline: 1px solid var(--line); outline-offset: 2px;
 }
 html[data-theme="field-office"] .menu,
 html[data-theme="field-office"] .mention-box,
 html[data-theme="field-office"] .qb-editor,
 html[data-theme="field-office"] #canvas-k { border: 2px solid var(--line); }
-/* Thread slips: no sided chat bubbles; every note is a square paper slip. */
-html[data-theme="field-office"] #thread-stream .note,
-html[data-theme="field-office"] #thread-stream .note.mine {
-  max-width: none; background: var(--surface-2); border: 2px solid var(--line);
-  align-self: stretch;
-}
-html[data-theme="field-office"] #thread-stream .note.reply {
-  margin-left: 0; border: 2px solid var(--line); padding-left: 12px;
-}
+/* Reply slips: no sided chat bubbles; a reply is a square paper slip. */
 html[data-theme="field-office"] .note.reply {
   box-shadow: inset 4px 0 0 var(--accent), 2px 2px 0 var(--line);
 }
@@ -1603,9 +1528,7 @@ html[data-theme="field-office"] #code-canvas-edit {
  * background without touching color, which left cream text on tan. */
 html[data-theme="field-office"] .btn,
 html[data-theme="field-office"] .iconbtn.danger { color: var(--fg); }
-html[data-theme="field-office"] .btn,
-html[data-theme="field-office"] .thread-btn,
-html[data-theme="field-office"] #thread-send { text-transform: uppercase; letter-spacing: 0.1em; }
+html[data-theme="field-office"] .btn { text-transform: uppercase; letter-spacing: 0.1em; }
 html[data-theme="field-office"] .btn.ghost { background: var(--surface-2); }
 html[data-theme="field-office"] .btn.danger { border: 2px solid var(--accent); transform: rotate(-1deg); }
 /* Pre-walk (F7): KIT Exit stops the whole hive, so it gets a red danger
@@ -1877,7 +1800,7 @@ html[data-theme="field-office"] .fo-switch-lever::before { box-shadow: inset -2p
    Phone/coarse pointers get a >= --btn-hit-touch hit from a transparent
    ::before (::after on .switch, whose .slider:before is the knob) centred on
    the control; it never draws. Left alone on purpose: #send, #fo-dial,
-   #thread-send (UI-M12c), .leave-actions .btn, #stats, #rail-toggle and
+   .leave-actions .btn, #stats, #rail-toggle and
    #nav-toggle (spec-pinned 44px), spatial tiles (.skill-gem, .inv-item,
    .agent-pic-cell, .avatar-cell), form-row labels, #quick-bar (clip-path),
    hidden legacy #robot-list. No colour, border or background changes. */
@@ -2125,11 +2048,9 @@ button.fo-person { min-height: var(--btn-h-sm); }
   }
 }
 
-/* Office paper + thread corner grip.
-   The resize handle had been a filled square beside Send, so it read as
-   a stray button. It is an ink crop-mark in the pane corner now.
+/* Office paper.
    The sheet uses the field-office tokens: chrome --surface, the big log
-   and thread pane --bg, slips and the composer ribbon --surface-2. Ink is
+   --bg, slips and the composer ribbon --surface-2. Ink is
    --fg, stamp --accent, borders --line (#282). No soft blur. */
 html[data-theme="field-office"] {
   background-color: var(--bg);
@@ -2147,94 +2068,25 @@ html[data-theme="field-office"] #roster-pane {
   background-color: var(--surface);
   color: var(--fg);
 }
-html[data-theme="field-office"] #stream,
-html[data-theme="field-office"] #thread-pane,
-html[data-theme="field-office"] #thread-stream {
+html[data-theme="field-office"] #stream {
   background-color: var(--bg);
   color: var(--fg);
 }
-html[data-theme="field-office"] #thread-stream {
-  background-image: repeating-linear-gradient(transparent 0 27px, color-mix(in srgb, var(--line) 18%, transparent) 27px 28px);
-}
 html[data-theme="field-office"] .note,
-html[data-theme="field-office"] #thread-stream .note,
-html[data-theme="field-office"] #thread-stream .note.mine,
 html[data-theme="field-office"] .composer-box {
   background-color: var(--surface-2);
   color: var(--fg);
 }
-html[data-theme="field-office"] #msg,
-html[data-theme="field-office"] #thread-msg {
+html[data-theme="field-office"] #msg {
   color: var(--fg);
   font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
-}
-html[data-theme="field-office"] #thread-form {
-  padding-right: 28px;
-  padding-bottom: 18px;
-}
-html[data-theme="field-office"] #thread-resize {
-  width: 14px;
-  height: 14px;
-  right: 6px;
-  bottom: 6px;
-  border: 0;
-  box-sizing: border-box;
-  background-color: transparent;
-  background-image: linear-gradient(135deg, transparent 0 42%, var(--line) 42% 52%, transparent 52% 64%, var(--line) 64% 74%, transparent 74%);
-  box-shadow: none;
-}
-html[data-theme="field-office"] #thread-send {
-  background: var(--accent);
-  color: var(--accent-ink);
-  border: 2px solid var(--line);
-  border-radius: 3px;
-  box-shadow: 2px 2px 0 var(--line);
-  font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-}
-/* Dark theme only. Same two controls, dark materials: not manila.
-   Thread Send was the shared accent chip (gray fill, 8px radius).
-   The resize hatch used --muted, which is light gray on this sheet. */
-html[data-theme="dark"] #thread-form {
-  padding-right: 28px;
-  padding-bottom: 18px;
-}
-html[data-theme="dark"] #thread-resize {
-  width: 14px;
-  height: 14px;
-  right: 6px;
-  bottom: 6px;
-  border: 0;
-  box-sizing: border-box;
-  background-color: transparent;
-  background-image: linear-gradient(135deg, transparent 0 42%, #000 42% 52%, transparent 52% 64%, #000 64% 74%, transparent 74%);
-  box-shadow: none;
-}
-html[data-theme="dark"] #thread-send {
-  background: var(--surface);
-  color: var(--fg);
-  border: 2px solid var(--line);
-  border-radius: 3px;
-  box-shadow: 2px 2px 0 #000;
-  font-family: "Special Elite", "Courier Prime", VT323, ui-monospace, monospace;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-}
-html[data-theme="dark"] #thread-send:hover,
-html[data-theme="dark"] #thread-send:active {
-  filter: none;
-  background: var(--surface-2);
-  color: var(--fg);
-  box-shadow: 2px 2px 0 #000;
 }
 /* ===== #282 ink-stamp message actions (field-office) =====
-   Thread, Download / Canvas and Stop are one family: a small rubber stamp
+   Download / Canvas and Stop are one family: a small rubber stamp
    (22px box, double ink rule, telegram caps, slight tilt) in place of the
    33px plate. Hover inks the stamp; keyboard focus keeps the 2px --fg ring.
    At <= 640px or on a coarse pointer each keeps an invisible hit area of
    --btn-hit-touch (44px); the visual box does not grow. */
-html[data-theme="field-office"] .thread-btn,
 html[data-theme="field-office"] .note-files button,
 html[data-theme="field-office"] .think-stop {
   box-sizing: border-box; min-height: 22px; height: 22px; padding: 0 7px; margin-top: 0;
@@ -2244,28 +2096,23 @@ html[data-theme="field-office"] .think-stop {
   font: 700 0.62rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.16em;
   transform: rotate(-1.2deg);
 }
-html[data-theme="field-office"] .thread-btn { margin-top: 6px; }
 html[data-theme="field-office"] .think-stop {
   border-color: var(--warn); color: var(--warn);
   box-shadow: inset 0 0 0 1px var(--surface-2), inset 0 0 0 2px var(--warn);
 }
-html[data-theme="field-office"] .thread-btn:hover,
 html[data-theme="field-office"] .note-files button:hover {
   background: var(--accent); color: var(--accent-ink);
 }
 html[data-theme="field-office"] .think-stop:hover:not(:disabled) {
   background: var(--warn); color: var(--accent-ink);
 }
-html[data-theme="field-office"] .thread-btn:focus-visible,
 html[data-theme="field-office"] .note-files button:focus-visible,
 html[data-theme="field-office"] .think-stop:focus-visible {
   outline: 2px solid var(--fg); outline-offset: 3px;
 }
 @media (max-width: 640px), (pointer: coarse) {
-  html[data-theme="field-office"] .thread-btn,
   html[data-theme="field-office"] .note-files button,
   html[data-theme="field-office"] .think-stop { position: relative; }
-  html[data-theme="field-office"] .thread-btn::before,
   html[data-theme="field-office"] .note-files button::before,
   html[data-theme="field-office"] .think-stop::before {
     content: ""; position: absolute; left: 0; right: 0;
@@ -2273,9 +2120,8 @@ html[data-theme="field-office"] .think-stop:focus-visible {
     bottom: min(0px, calc(50% - var(--btn-hit-touch) / 2));
     background: transparent; pointer-events: auto;
   }
-  /* Stacked stamps (Download / Canvas above Thread) sit a full hit area
+  /* Wrapped Download / Canvas stamps sit a full hit area
      apart, so the 44px targets do not overlap. */
-  html[data-theme="field-office"] .note-files ~ .thread-btn { margin-top: calc(var(--btn-hit-touch) - 22px); }
   html[data-theme="field-office"] .note-files { row-gap: calc(var(--btn-hit-touch) - 22px); }
 }
 /* #284: owner Yes/No under the loop prompt. Yes is the accent stamp.
@@ -2288,8 +2134,62 @@ html[data-theme="field-office"] .think-stop:focus-visible {
   text-transform: uppercase; letter-spacing: 0.16em; transform: rotate(-1.2deg);
 }
 .loop-no { border-color: var(--muted); color: var(--muted); }
+/* M1 R3: approval and team asks now carry these stamps in the main log, so
+   the Yes word is --fg ink (the body text colour, >= 4.5:1 on a card in
+   every theme) inside the --accent stamp rule; --accent text fell to 3.98:1
+   in dark and 4.14:1 in desert. */
+.loop-yes { color: var(--fg); }
 .loop-stamp:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
-.loop-stamp:disabled { opacity: 0.7; }
+/* CoS 13:14 C: a later ask's stamps wait their turn. They keep full ink
+   (>= 4.5:1, pinned per theme in check_ch0_ui R3; opacity 1 beats the
+   global button:disabled fade) and say "not yet" with
+   a dotted rule and the cursor; opacity would wash the No word out. */
+.loop-stamp:disabled { opacity: 1; border-style: dotted; cursor: not-allowed; }
+/* M1 R1: an answered ask keeps one inert stamp with the word that was sent. */
+.loop-sent {
+  display: inline-flex; align-items: center; border-style: dashed;
+  border-color: var(--muted); color: var(--fg); transform: none;
+}
+/* M1 R4: the "re: …" anchor on a reply card, and the flash on its target. */
+.re-link {
+  display: block; max-width: 100%; margin: 2px 0 4px; padding: 0;
+  border: 0; background: transparent; color: var(--muted); font: inherit;
+  font-size: 0.78rem; text-align: left; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.re-link:hover { color: var(--fg); text-decoration: underline; }
+.re-link:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+.note-flash { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* CoS 13:14 A (interim until Router M-n): the route line above the composer. */
+.route-preview {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin: 0 0 4px; padding: 0 18px; box-sizing: border-box; max-width: 100%;
+  color: var(--fg); font-size: 0.78rem;
+}
+/* Ops M1 F1: the flex rule above must not beat the hidden attribute. The
+   line and its chooser take no space and no focus while hidden. Ops M1
+   FU1: 18px is #stream's gutter, so the line lines up with the log. */
+.route-preview[hidden], .route-preview select[hidden] { display: none; }
+/* An empty #route-text (the chooser carries the label) takes no flex gap,
+   so the chooser starts on the gutter itself. */
+.route-preview #route-text:empty { display: none; }
+/* #368 C2: the chooser's edge is --fg (>= 3:1 on every theme's surface;
+   the native #767676 rim was 2.15:1 in field-office). */
+.route-preview select {
+  max-width: 100%; min-width: 0; font: inherit; color: var(--fg); background: var(--surface);
+  border: 1px solid var(--fg); border-radius: 3px;
+}
+/* Ops M1 FU1 label quality (CoS 01:04 b): a label wider than the line ends
+   in an ellipsis instead of a hard clip. The quote is already cut at a word
+   break within 40 characters (convoLabel); this only covers the width.
+   Gauge P2-R8-1: only a label gets this (#route-text.route-label, set by
+   paintRoute, and the chooser); the other route sentences wrap. */
+.route-preview #route-text.route-label, .route-preview select {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 100%;
+}
+/* CoS 01:50 (B): at 480px or narrower the picked option's whole label
+   sits on its own wrapping line above the chooser (paintRoute). */
+.route-preview #route-text.route-sel { flex: 1 1 100%; min-width: 0; }
 html[data-theme="field-office"] .loop-yes {
   box-shadow: inset 0 0 0 1px var(--surface-2), inset 0 0 0 2px var(--accent);
 }
@@ -2347,12 +2247,6 @@ html[data-theme="field-office"] #dev-log-body { border: 2px solid var(--line); b
 html[data-theme="field-office"] .pill { background: var(--surface-2); color: var(--fg); }
 /* 7 Mention pills: same slip (they were --fg on --accent-dim, 3.17:1). */
 html[data-theme="field-office"] .mention-pill { background: var(--surface-2); color: var(--fg); }
-/* 3 Thread-pane milestone fields wrap at phone width so each placeholder
-     shows whole (they were 37-47px wide at 390). */
-@media (max-width: 640px) {
-  #thread-desk { flex-wrap: wrap; }
-  #thread-desk input { flex: 1 1 10rem; }
-}
 /* Ops back-LOOK 900a486d items 4-6.
    4 Field office <= 480px: the header status light is an ink mark, not a
      bright green / amber gradient with a white glint: a flat lamp in two
@@ -2382,11 +2276,9 @@ html:not([data-theme="field-office"]) #fo-dial-caption { display: none; }
    (#c41e3a, christmas only) is the solid crimson of the primary buttons,
    with light ink and a light-crimson edge so the control clears 3:1. */
 html[data-theme="christmas"] #install,
-html[data-theme="christmas"] #thread-send,
 html[data-theme="christmas"] .btn:not(.ghost):not(.danger) {
   background: var(--accent-fill); color: var(--fg); border: 1px solid var(--accent);
 }
-html[data-theme="christmas"] .thread-btn,
 html[data-theme="christmas"] .chan-voice,
 html[data-theme="christmas"] .robot-call { border-color: var(--accent); }
 /* #309 r3: no christmas border or switch track is drawn in deep crimson on
@@ -2395,8 +2287,7 @@ html[data-theme="christmas"] .robot-call { border-color: var(--accent); }
    when off and light crimson when on, >= 3:1 on its panel, and the knob
    (--fg off, --accent-ink on) is >= 3:1 on its track. .robot-card and
    .note.reply follow the same rule but no measured view shows them with a
-   border (#robot-list is display:none; the thread pane drops the reply
-   rule). The old .agent box has no element in the page and is left out.
+   border (#robot-list is display:none). The old .agent box has no element in the page and is left out.
    The avatar preview and selected tile rings need no christmas rule: both
    base rings are --accent (#309 r5, r6). */
 html[data-theme="christmas"] #badge.ok,
@@ -2492,8 +2383,9 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       </div>
       <div id="robot-inventory" aria-label="Robot Inventory Grid"></div>
       <!-- UI-M5 individuals: the live mention roster (humans + robots as
-           already mapped in the demo). Robot rows open the existing 1:1
-           thread path; human rows address the composer. No fake rows. -->
+           already mapped in the demo). M1 channels only: robot rows open
+           the robot's settings and loadout; human rows address the
+           composer. No fake rows. -->
       <div id="fo-individuals" aria-label="Individuals">
         <div class="lbl">Individuals</div>
         <div id="fo-individual-list"></div>
@@ -2518,16 +2410,16 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         <div id="stream"></div>
       </div>
       <p id="send-error" class="warn send-error" role="status"></p>
-      <form id="milestone-form">
-        <input id="milestone-name" maxlength="64" placeholder="New milestone" aria-label="New milestone name">
-        <input id="milestone-category" maxlength="64" placeholder="Category" aria-label="New milestone category">
-        <button class="btn" type="submit">Open</button>
-      </form>
+      <!-- CoS 13:14 A, interim until Router M-n: where Send will post. -->
+      <div id="route-preview" class="route-preview" hidden>
+        <span id="route-text"></span>
+        <select id="route-pick" aria-label="Who this note goes to" hidden></select>
+      </div>
       <form class="composer" id="form">
         <div class="mention-box" id="mention-box" hidden></div>
         <div class="composer-box">
           <div id="composer-pills"></div>
-          <textarea id="msg" rows="3" maxlength="2000" placeholder="TYPE NEW MESSAGE HERE — @ a human or robot"></textarea>
+          <textarea id="msg" rows="3" maxlength="2000" placeholder="TYPE NEW MESSAGE HERE — posts to this channel"></textarea>
         </div>
         <!-- UI-M12c: one right-hand column, the UI-M11 VOLUME dial directly
              above the spring-return Send switch (a real submit button). -->
@@ -2614,7 +2506,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         <label><input type="radio" id="approval-auto" name="approval" value="auto_approve" checked> Auto-approve</label>
         <label><input type="radio" id="approval-every" name="approval" value="approve_every_action"> Approve every action</label>
       </div>
-      <p class="help">Approve every action: before each robot turn, Hush asks in the thread and waits for your Yes or No there.</p>
+      <p class="help">Approve every action: before each robot turn, Hush asks in the channel and waits for your Yes or No on that ask.</p>
 
       <p class="help">Theme</p>
       <div class="vis" id="theme-list">
@@ -2644,34 +2536,6 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         <button class="btn ghost" id="call-leave" type="button">Leave</button>
         <button class="btn ghost" id="call-close" type="button">Close</button>
       </div>
-    </div>
-  </div>
-  <div id="thread-pane" role="dialog" aria-label="Thread">
-    <div class="thread-shell">
-      <div class="drawer-head">
-        <h2 id="thread-title">Thread</h2>
-        <button class="drawer-x" id="thread-close" type="button" aria-label="Close thread">×</button>
-      </div>
-      <p class="help" id="thread-help">1:1 thread</p>
-      <form id="thread-desk">
-        <input id="thread-desk-name" maxlength="64" placeholder="Milestone name" aria-label="Milestone name">
-        <input id="thread-desk-category" maxlength="64" placeholder="Category" aria-label="Milestone category">
-        <input id="thread-desk-project" maxlength="64" placeholder="Project" aria-label="Milestone project">
-        <button class="btn" id="thread-desk-save" type="submit">Save</button>
-        <button class="btn ghost" id="thread-desk-archive" type="button">Archive</button>
-      </form>
-      <div id="thread-stream"></div>
-      <div id="thread-think" aria-live="polite"></div>
-      <form class="composer" id="thread-form">
-        <div class="mention-box" id="thread-mention" hidden></div>
-        <div class="composer-box">
-          <div id="thread-pills"></div>
-          <textarea id="thread-msg" rows="6" maxlength="2000" placeholder="Write in this thread… @ to add someone"></textarea>
-        </div>
-        <button id="thread-send" type="submit">Send</button>
-      </form>
-      <p id="thread-send-error" class="warn send-error" role="status"></p>
-      <div id="thread-resize" title="Resize thread" aria-hidden="true"></div>
     </div>
   </div>
   <div id="code-canvas" role="dialog" aria-label="Code canvas">
@@ -2840,7 +2704,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         </div>
         <label for="agent-intro">Introduction</label>
         <textarea id="agent-intro" maxlength="240" rows="2">I am on deck. Standing orders are noted.</textarea>
-        <p class="help">Posted once per thread when this robot is mentioned. Off by switch. Major’s intro is locked.</p>
+        <p class="help">Posted once per conversation when this robot is mentioned. Off by switch. Major’s intro is locked.</p>
       </div>
       <div id="agent-role-row" hidden>
         <p class="help">Role</p>
@@ -3219,8 +3083,6 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
 
     let channel = "welcome";
     let seen = "";
-    let threadSeen = "";
-    const THREAD_PIN_PX = 48;
     let session = { logged_in: false, ready: false, channels: [] };
     let mentionRosterSeen = null; /* roster key repaintPendingMentions last saw */
     let page = "splash"; // splash detects, shows Payne branding, then advances to gate or hive
@@ -3300,25 +3162,14 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
        so it follows /api/status "tts", not Whisper (STT). */
     let ttsReady = false;
     /* UI-M9: no persistent tool rail state. The header KIT stamp toggles
-       #kit-menu (overlay only); thread park/restore are no-ops. */
-    let threadDrag = null;
+       #kit-menu (overlay only). */
     let lastEvents = [];
     let sendingMessage = false;
-    let sendingThread = false;
     let lastStatus = {};
     let lastPresence = [];
-    let openThread = null;
-    /* WS5 M2 thread memory: durable turns cached per root id. The cache holds
-       relay responses only; the browser remembers just the open root id. */
-    const threadMem = {};
-    const threadDesk = {};
-    const threadDeskWait = {};
-    let resumeTried = false;
-    let threadPills = [];
-    let threadMentionOpen = false;
-    let threadMentionHits = [];
-    let threadMentionIdx = 0;
-    let threadMentionStart = -1;
+    /* M1 channels only: the log is one flat channel list. reply_to stays
+       internal transport (approval, loop and team answers); it never
+       groups, hides or labels a note. */
     let localThink = [];
     let canvasFiles = [];
     let canvasIdx = 0;
@@ -3330,7 +3181,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
     const CANVAS_FIM_MS = 300;
 
     /* M3.1/M4.3 Developer Logging (default off). When false, "Mention received."
-     * and robot intros are filtered from main chat/thread streams and go only
+     * and robot intros are filtered from the channel log and go only
      * to the dev-log drawer (syslog style). Toggle in Settings. */
     let devLogEnabled = false;
     let devLogPosting = false;
@@ -3850,6 +3701,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         $("room").textContent = "#" + channel;
         seen = "";
         paintChannels();
+        paintRoute();
         tick();
       });
       b.addEventListener("contextmenu", (ev) => {
@@ -4428,8 +4280,9 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
 
     /* UI-M5 field office: Individuals = the live mention roster (you +
        robots + invited humans, as already mapped in the demo). Robot rows
-       reuse the existing 1:1 thread path; human rows address the
-       composer. No fake rows; static list, so Escape is untouched. */
+       open the robot's settings and loadout (Ops CH11: never a
+       conversation); human rows address the composer. No fake rows;
+       static list, so Escape is untouched. */
     function paintFieldOfficeIndividuals() {
       const box = $("fo-individual-list");
       if (!box) return;
@@ -4444,11 +4297,11 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
           "<span class=\"fo-person-kind\">" + esc(person.kind || "human") + "</span>" +
           (slug ? "<span class=\"fo-person-slug\">" + esc(slug) + "</span>" : "");
         if (person.kind === "robot") {
-          row.title = "Open 1:1 thread with " + person.name;
+          row.title = "Open " + person.name + "'s settings and loadout";
           row.addEventListener("click", () => {
-            const bot = robotModels().find((b) => b.npub === person.npub) ||
-              { name: person.name, npub: person.npub };
-            startRobotConversation(bot);
+            const bot = robotModels().find((b) => b.npub === person.npub ||
+              sameKey(b.npub, person.npub));
+            if (bot) openAgentDrawer(bot);
           });
         } else {
           row.title = "Address " + person.name + " in the dispatch composer";
@@ -5832,6 +5685,159 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       foSwitchTimer = setTimeout(() => send.classList.remove("fo-flick"), FO_SWITCH_FLICK_MS);
     }
 
+    /* CoS 13:14 A, interim until Router M-n. A composer note follows up a
+       robot's latest conversation in this channel instead of opening an
+       empty one:
+       - a bare Yes or No never follows up anything: it posts as a new note
+         that names no ask, so only an ask's own stamps can answer it;
+       - an @mention of one robot continues that robot's latest conversation;
+       - a plain note with exactly one robot active here continues that
+         robot's conversation; with two or more, the owner picks (no guess).
+       The route line under the log says where Send will post. */
+    let routePick = { channel: "", value: "" };
+
+    /* Relay-written lines (asks, declines, refusals, leash notes): they are
+       not a robot taking part in a conversation. */
+    function isRelayLine(e) {
+      const t = String((e && e.content) || "");
+      return isYesNoAsk(e) || isLeashNote(t) || /^(Turn declined: |Turn not started for |Too many turns )/.test(t);
+    }
+
+    /* npub -> { name, npub, root } for each robot active in an owner
+       conversation in this channel, keeping each robot's latest one. */
+    function robotConvos() {
+      const roots = {};
+      const out = {};
+      const touch = (hit, root) => {
+        if (!hit || hit.kind !== "robot") return;
+        delete out[hit.npub];
+        out[hit.npub] = { name: hit.name, npub: hit.npub, root: root };
+      };
+      channelNotes(visibleNotes(lastEvents)).forEach((e) => {
+        if (!e || !e.id) return;
+        if (!e.reply_to && isMineNote(e)) roots[e.id] = e;
+        const root = e.reply_to || e.id;
+        if (!roots[root] || isRelayLine(e)) return;
+        if (isMineNote(e)) (e.mentions || []).forEach((m) => touch(mentionHit(m), root));
+        else touch(rosterHit(e.pubkey), root);
+      });
+      return out;
+    }
+
+    /* Where a follow-up goes, for both the #route-text line and each
+       #route-pick option (Ops M1 FU1 label quality): "to <robot>,
+       continuing “<quote>”". The quote is the conversation's first note
+       with a leading mention of that same robot dropped ("to <robot>"
+       already says it; a mention of another robot stays) and whitespace
+       collapsed. Up to 40 characters it is whole; longer, it is cut at the
+       last word break within the first 39 characters and ends in "…" (a
+       single word longer than that is cut at 39). Characters are code
+       points (Array.from): a cut never splits a surrogate pair, but it
+       can split a grapheme cluster (flag, ZWJ sequence, skin-tone
+       modifier, combining mark); grapheme-safe cut is a follow-up. For a label
+       still wider than the line, #route-text.route-label and the <select>
+       carry text-overflow: ellipsis (CSS .route-preview); the open option
+       list is native and
+       draws no ellipsis. #route-text, each option and the <select> carry
+       this whole label as their title. */
+    function convoLabel(c) {
+      const root = lastEvents.find((x) => x.id === c.root);
+      const full = prettyMentions((root && root.content) || "").replace(/\s+/g, " ").trim();
+      const own = "@" + String(c.name || "").replace(/\s+/g, " ").trim();
+      const rest = own.length > 1 && full.toLowerCase().startsWith(own.toLowerCase()) &&
+        (full.length === own.length || /[\s,.:;!?]/.test(full[own.length]))
+        ? full.slice(own.length).replace(/^[\s,.:;!?]+/, "") : full;
+      const flat = rest || full;
+      const chars = Array.from(flat);
+      let quote = flat;
+      if (chars.length > 40) {
+        let cut = chars.slice(0, 39).join("");
+        if (chars[39] !== " ") {
+          const sp = cut.lastIndexOf(" ");
+          if (sp > 0) cut = cut.slice(0, sp);
+        }
+        quote = cut.replace(/[\s,.:;!?]+$/, "") + "\u2026";
+      }
+      return "to " + c.name + ", continuing \u201c" + quote + "\u201d";
+    }
+
+    /* { kind: "bare" | "new" | "continue" | "choose", convo, list } */
+    function composerRoute(text, mentions) {
+      if (yesNoWord(text)) return { kind: "bare" };
+      const convos = robotConvos();
+      const named = (mentions || []).map((np) => mentionHit(np)).filter((h) => h && h.kind === "robot");
+      if (named.length > 1) return { kind: "new" };
+      if (named.length === 1)
+        return convos[named[0].npub] ? { kind: "continue", convo: convos[named[0].npub] } : { kind: "new" };
+      const list = Object.values(convos);
+      const picked = routePick.channel === channel ? routePick.value : "";
+      if (picked === "new") return { kind: "new", list };
+      const hit = list.find((c) => c.npub === picked);
+      if (hit) return { kind: "continue", convo: hit, list };
+      if (list.length === 1) return { kind: "continue", convo: list[0], list };
+      return list.length ? { kind: "choose", list } : { kind: "new" };
+    }
+
+    function paintRoute() {
+      const raw = $("msg").value;
+      const assembled = assembleMentionContent(raw, mentionRoster());
+      const route = composerRoute(assembled.content, assembled.mentions);
+      const box = $("route-preview");
+      /* Ops M1 F1: an empty composer shows no route line: no text left from
+         an earlier draft or channel, and no empty chooser to tab into. */
+      if (!assembled.content.trim()) {
+        box.hidden = true;
+        $("route-text").textContent = "";
+        $("route-text").title = "";
+        $("route-text").classList.remove("route-label", "route-sel");
+        paintRoutePick({ kind: "idle" });
+        return route;
+      }
+      box.hidden = false;
+      const words = {
+        bare: "to #" + channel + " as a new note. A bare Yes or No answers an ask only from its stamps.",
+        new: "to #" + channel + ", new conversation",
+        choose: "Choose who this goes to:",
+        continue: route.convo ? convoLabel(route.convo) : ""
+      };
+      /* Ops M1 FU1: when the chooser shows, it carries the label; the text
+         says only what the chooser cannot ("Choose who this goes to:").
+         CoS 01:50 (B): at 480px or narrower, where the closed chooser cuts
+         a long label, the text above it shows the picked option's whole
+         label (the chooser's title, set by paintRoutePick), wrapping. */
+      const picking = (route.list || []).length > 0;
+      paintRoutePick(route);
+      const narrowPick = picking && route.kind !== "choose" && matchMedia("(max-width: 480px)").matches;
+      $("route-text").textContent = narrowPick ? $("route-pick").title : (picking && route.kind !== "choose" ? "" : words[route.kind]);
+      $("route-text").title = $("route-text").textContent;
+      /* Gauge P2-R8-1: nowrap + ellipsis for a conversation label only;
+         the bare Yes/No sentence and the others wrap in full. */
+      $("route-text").classList.toggle("route-label", !picking && route.kind === "continue");
+      $("route-text").classList.toggle("route-sel", narrowPick);
+      return route;
+    }
+
+    function paintRoutePick(route) {
+      const pick = $("route-pick");
+      const list = route.list || [];
+      pick.hidden = !list.length;
+      pick.title = !list.length ? "" : route.kind === "continue" && route.convo ? convoLabel(route.convo) : (route.kind === "new" ? "New conversation in #" + channel : "");
+      const key = list.map((c) => c.npub + c.root).join(",") + "|" + route.kind + "|" + (route.convo ? route.convo.npub : "");
+      if (pick.dataset.key === key) return;
+      pick.dataset.key = key;
+      if (!list.length) { pick.replaceChildren(); return; }
+      const opts = [["", "Choose\u2026"]].concat(list.map((c) => [c.npub, convoLabel(c)]), [["new", "New conversation in #" + channel]]);
+      pick.replaceChildren(...opts.map(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; o.title = t; return o; }));
+      pick.value = route.kind === "continue" ? route.convo.npub : (route.kind === "new" ? "new" : "");
+    }
+
+    $("route-pick").addEventListener("change", () => {
+      routePick = { channel: channel, value: $("route-pick").value };
+      paintRoute();
+    });
+    matchMedia("(max-width: 480px)").addEventListener("change", () => { paintRoute(); });
+    $("msg").addEventListener("input", () => { paintRoute(); });
+
     $("form").addEventListener("submit", async (e) => {
       e.preventDefault();
       if (mentionOpen) return;
@@ -5839,6 +5845,11 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       const text = assembled.content;
       if (!text) return;
       if (sendingMessage) return;
+      const route = paintRoute();
+      if (route.kind === "choose") {
+        $("send-error").textContent = "Choose who this goes to first.";
+        return;
+      }
       sendingMessage = true;
       const draft = $("msg").value;
       $("send").disabled = true;
@@ -5852,6 +5863,10 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       assembled.mentions.forEach((np, i) => {
         body["mention_" + i] = np;
       });
+      if (route.kind === "continue") {
+        body.reply_to = route.convo.root;
+        if (!assembled.mentions.length) body.mention_0 = route.convo.npub;
+      }
       pendingMentions = [];
       try {
         await api("/api/event", body);
@@ -5859,6 +5874,8 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
           $("msg").value = "";
           composerPills = [];
           paintComposerPills();
+          routePick = { channel: "", value: "" };
+          paintRoute();
         }
         await tick();
       } catch (err) {
@@ -5869,131 +5886,6 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       }
     });
 
-    $("thread-close").addEventListener("click", closeThreadPane);
-    document.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape" && $("thread-pane").classList.contains("show")) {
-        if (threadMentionOpen) {
-          hideThreadMentions();
-          return;
-        }
-        closeThreadPane();
-      }
-    });
-    async function saveThreadDesk(archived) {
-      if (!isThreadRoot(openThread)) return;
-      const mem = await api("/api/thread", {
-        root: openThread,
-        name: $("thread-desk-name").value.trim(),
-        category: $("thread-desk-category").value.trim(),
-        project: $("thread-desk-project").value.trim(),
-        archived: archived ? 1 : 0
-      });
-      rememberDesk(openThread, mem);
-      if (archived) {
-        try { localStorage.removeItem("hush-thread-open"); } catch (err) {}
-      }
-      paintThreadStream(openThread, false);
-      render(lastEvents, lastStatus);
-    }
-
-    $("thread-desk").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      $("thread-send-error").textContent = "";
-      try {
-        await saveThreadDesk(deskOf(openThread).archived);
-      } catch (err) {
-        $("thread-send-error").textContent = "Milestone was not saved.";
-      }
-    });
-
-    $("thread-desk-archive").addEventListener("click", async () => {
-      $("thread-send-error").textContent = "";
-      try {
-        await saveThreadDesk(!deskOf(openThread).archived);
-      } catch (err) {
-        $("thread-send-error").textContent = "Milestone was not saved.";
-      }
-    });
-
-    $("milestone-form").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const name = $("milestone-name").value.trim();
-      const category = $("milestone-category").value.trim();
-      if (!name) return;
-      $("send-error").textContent = "";
-      try {
-        const posted = await api("/api/event", { content: name, kind: 1, channel: channel });
-        if (posted && posted.id) {
-          const mem = await api("/api/thread", {
-            root: posted.id, name: name, category: category, archived: 0
-          });
-          rememberDesk(posted.id, mem);
-        }
-        $("milestone-name").value = "";
-        $("milestone-category").value = "";
-        await tick();
-      } catch (err) {
-        $("send-error").textContent = "Milestone was not opened.";
-      }
-    });
-
-    $("thread-form").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      if (!openThread || threadMentionOpen || sendingThread) return;
-      if (thinkingFor(openThread, lastStatus).length) return;
-      let raw = $("thread-msg").value;
-      const extra = threadPills.slice();
-      const root = lastEvents.find((ev) => ev.id === openThread);
-      if (!root) return;
-      const kids = repliesTo(lastEvents, openThread);
-      const sole = threadMembers(root, kids);
-      if (!extra.filter((p) => p.kind !== "human").length &&
-          sole.length === 1 && sole[0] && sole[0].npub &&
-          raw.indexOf("@" + sole[0].name) < 0 &&
-          raw.indexOf("nostr:" + sole[0].npub) < 0)
-        raw = "@" + sole[0].name + " " + raw;
-      extra.forEach((p) => {
-        if (p.name && raw.indexOf("@" + p.name) < 0)
-          raw = raw + " @" + p.name;
-      });
-      const assembled = assembleMentionContent(raw, mentionRoster());
-      const text = assembled.content;
-      if (!text) return;
-      const draft = $("thread-msg").value;
-      const conversation = openThread;
-      sendingThread = true;
-      $("thread-send").disabled = true;
-      $("thread-send-error").textContent = "";
-      const body = {
-        content: text,
-        kind: 1,
-        channel: root.channel,
-        reply_to: openThread
-      };
-      assembled.mentions.forEach((np, i) => {
-        body["mention_" + i] = np;
-      });
-      if (body.mention_0) {
-        const named = extra.find((p) => p.kind !== "human") || extra[0];
-        localThink = [{ name: (named && named.name) || "robot", parent: openThread }];
-        paintThreadThink(localThink);
-      }
-      try {
-        await api("/api/event", body);
-        if (openThread === conversation && $("thread-msg").value === draft) {
-          $("thread-msg").value = "";
-          threadPills = [];
-          paintThreadPills();
-        }
-        await tick();
-      } catch (err) {
-        localThink = [];
-        $("thread-send-error").textContent = "Reply was not sent. Your draft is still here; try again.";
-      } finally {
-        sendingThread = false;
-        paintThreadThink(jobsAfterFailure(thinkingFor(openThread, lastStatus)));
-      }
-    });
     $("stats").addEventListener("click", () => {
       $("relay-drawer").classList.add("show");
       paintRelayDrawer(lastStatus);
@@ -6315,7 +6207,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
     /* UI-M2 quick bar: 4 configurable slots wired to existing actions.
        Keys 1-4 fire the slots. Same focus protection as the `i` shortcut:
        never steal keystrokes from inputs, textareas, selects, or
-       contenteditable (chat/thread composers and drawer fields stay safe).
+       contenteditable (the channel composer and drawer fields stay safe).
        Slot layout persists in localStorage.hush-quickbar. */
     const QUICKBAR_DEFAULTS = ["inventory", "character", "new-channel", "stop"];
     function quickInventory() {
@@ -6823,141 +6715,200 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       return String(text || "").indexOf("Continue this loop?") === 0;
     }
 
+    /* M1 channels only: the owner answers every ask the relay itself wrote
+       (loop, approval, team raise) from the stamps on that ask in the
+       channel log. The relay marks those asks ("ask": true on /api/events,
+       hush_agent_is_relay_ask); text alone never makes an ask, so a robot
+       reply that reads like one gets no stamps (Gauge M1-F1). The stamps
+       post the reply_to answer the relay parses (hush_agent_loop_parse_answer). */
+    function isYesNoAsk(e) {
+      return !!(e && e.ask === true);
+    }
+
+    /* M1 R1/R2/R4: which owner Yes/No answered which ask, read from the
+       stored notes so it survives every re-render and a reload. It mirrors
+       the relay: an owner Yes/No that names an answered ask (its "answers"
+       ask, else its reply_to) is dropped (hush_agent_answered_repeat) and
+       answers nothing here (Gauge M1-F2); any other owner Yes/No settles
+       the oldest ask still waiting in its conversation
+       (hush_agent_approval_answer). A robot's next note in that
+       conversation answers the ask whose Yes released its turn (R4). */
+    let askState = { byAsk: {}, byAnswer: {}, oldest: {}, released: {}, voided: {} };
+    /* Asks answered from this window whose Yes/No note is not stored yet,
+       ask id -> word. Holds the stamp inert while the post is in flight. */
+    const answering = {};
+
+    function yesNoWord(text) {
+      const m = /^\s*(yes|no)\s*[.!]?\s*$/i.exec(String(text || ""));
+      return m ? (m[1].toLowerCase() === "yes" ? "Yes" : "No") : "";
+    }
+
+    function readAskState(notes) {
+      const state = { byAsk: {}, byAnswer: {}, oldest: {}, released: {}, voided: {} };
+      const waiting = {};
+      const freed = {};
+      (notes || []).forEach((e) => {
+        if (!e || !e.id) return;
+        const root = e.reply_to || e.id;
+        if (isYesNoAsk(e)) {
+          (waiting[root] = waiting[root] || []).push(e);
+          return;
+        }
+        if (!e.reply_to) return;
+        if (!isMineNote(e)) return releaseAsk(state, freed[root], e);
+        const word = yesNoWord(e.content);
+        const queue = waiting[root] || [];
+        if (word && state.byAsk[e.answers || e.reply_to]) return;
+        /* Any other owner note the answer handlers do not take voids the
+           asks waiting in its conversation (hush_agent_ask_void). */
+        if (!word || !queue.length) {
+          queue.splice(0).forEach((a) => { state.voided[a.id] = true; });
+          return;
+        }
+        const ask = queue.shift();
+        state.byAsk[ask.id] = { word: word, id: e.id };
+        state.byAnswer[e.id] = ask.id;
+        if (word === "Yes") (freed[root] = freed[root] || []).push(ask);
+      });
+      Object.keys(waiting).forEach((root) => {
+        if (waiting[root].length) state.oldest[root] = waiting[root][0].id;
+      });
+      return state;
+    }
+
+    /* M1 R4 (CoS 13:14 B): a robot's note answers the ask whose Yes freed
+       its turn: the oldest freed ask that names the robot, else the oldest
+       that names no one (loop, team). It takes that ask off the queue. */
+    function releaseAsk(state, queue, e) {
+      const hit = rosterHit(e.pubkey);
+      if (!queue || !queue.length || !hit || hit.kind !== "robot") return;
+      const named = (a) => String(a.content || "").indexOf(" " + hit.name + " wants ") >= 0;
+      let at = queue.findIndex(named);
+      if (at < 0) at = queue.findIndex((a) => !/ wants to /.test(String(a.content || "")));
+      if (at < 0) return;
+      state.released[e.id] = queue.splice(at, 1)[0].id;
+    }
+
+    /* The inert stamp an answered ask keeps: the word that was sent. */
+    function sentStamp(word) {
+      const sent = document.createElement("span");
+      sent.className = "loop-stamp loop-sent";
+      sent.setAttribute("role", "status");
+      sent.textContent = word + " sent";
+      return sent;
+    }
+
     function loopAnswerBar(note) {
       const bar = document.createElement("div");
+      bar.className = "loop-stamps";
+      const done = askState.byAsk[note.id];
+      const word = (done && done.word) || answering[note.id];
+      if (word) {
+        bar.appendChild(sentStamp(word));
+        return bar;
+      }
+      /* A newer owner note in the conversation closed this ask: the relay
+         no longer holds what it asked about, so it takes no answer. */
+      if (askState.voided[note.id]) {
+        const shut = sentStamp("");
+        shut.textContent = "Closed by a newer note";
+        bar.appendChild(shut);
+        return bar;
+      }
       const yes = document.createElement("button");
       const no = document.createElement("button");
-      bar.className = "loop-stamps";
       yes.type = "button";
       no.type = "button";
       yes.className = "loop-stamp loop-yes";
       no.className = "loop-stamp loop-no";
       yes.textContent = "Yes";
       no.textContent = "No";
-      yes.addEventListener("click", () => postLoopAnswer(note, "Yes", yes, no));
-      no.addEventListener("click", () => postLoopAnswer(note, "No", yes, no));
+      /* The relay settles the oldest waiting ask in a conversation, so only
+         that ask takes an answer; a later one waits its turn. */
+      const root = note.reply_to || note.id;
+      if (askState.oldest[root] && askState.oldest[root] !== note.id) {
+        yes.disabled = true;
+        no.disabled = true;
+        bar.title = "Answer the earlier ask in this conversation first.";
+      }
+      yes.addEventListener("click", () => postLoopAnswer(note, "Yes", bar));
+      no.addEventListener("click", () => postLoopAnswer(note, "No", bar));
       bar.appendChild(yes);
       bar.appendChild(no);
       return bar;
     }
 
-    async function postLoopAnswer(note, word, yes, no) {
-      const rootId = note.reply_to || openThread;
+    /* Single-shot: the first click marks the ask answered before the post,
+       so a second click (or a re-render) finds no live stamp. */
+    async function postLoopAnswer(note, word, bar) {
+      if (answering[note.id] || askState.byAsk[note.id]) return;
+      answering[note.id] = word;
+      bar.replaceChildren(sentStamp(word));
+      const rootId = note.reply_to || note.id;
       const root = lastEvents.find((ev) => ev.id === rootId) || note;
-      yes.disabled = true;
-      no.disabled = true;
       try {
         await api("/api/event", {
           content: word,
           kind: 1,
           channel: (root && root.channel) || note.channel || channel,
-          reply_to: rootId
+          reply_to: rootId,
+          /* M1 R2: names this ask, so a repeat of this stamp is dropped. */
+          answers: note.id
         });
-        (word === "Yes" ? yes : no).textContent =
-          word === "Yes" ? "Continuing…" : "Loop stopped.";
         await tick();
       } catch (err) {
-        yes.disabled = false;
-        no.disabled = false;
+        delete answering[note.id];
+        seen = "";
+        await tick();
       }
     }
 
-    function threadMembers(root, kids) {
-      const bots = mentionedRobots(root);
-      kids.forEach((k) => {
-        const named = rosterHit(k.pubkey);
-        if (named && named.kind !== "human" && !bots.some((b) => b.npub === named.npub))
-          bots.push(named);
+    /* M1 R4: a reply in the flat log names what it answers: an owner's
+       Yes/No names its ask, a robot's note names the ask whose Yes freed
+       its turn (askState.released), any other reply names its
+       conversation's first note. The link scrolls to that card and flashes
+       it; the jump survives the re-renders of the next JUMP_MS (F4). */
+    function reLink(e) {
+      const target = askState.byAnswer[e.id] || askState.released[e.id] || e.reply_to;
+      const to = target && lastEvents.find((x) => x.id === target);
+      if (!to) return null;
+      const flat = prettyMentions(to.content || "").replace(/\s+/g, " ").trim();
+      if (!flat) return null;
+      const link = document.createElement("button");
+      link.type = "button";
+      link.className = "re-link";
+      link.textContent = "re: " + (flat.length > 48 ? flat.slice(0, 47) + "…" : flat);
+      link.title = "Show the note this answers";
+      link.dataset.to = to.id;
+      link.addEventListener("click", () => {
+        jumpTo = { id: to.id, until: Date.now() + JUMP_MS };
+        clearTimeout(jumpTimer);
+        jumpTimer = setTimeout(() => {
+          jumpTo = null;
+          document.querySelectorAll("#stream .note-flash")
+            .forEach((c) => c.classList.remove("note-flash"));
+        }, JUMP_MS);
+        applyJump();
       });
-      return bots;
+      return link;
     }
 
-    function hideThreadMentions() {
-      threadMentionOpen = false;
-      threadMentionHits = [];
-      threadMentionIdx = 0;
-      threadMentionStart = -1;
-      const box = $("thread-mention");
-      if (!box) return;
-      box.classList.remove("show");
-      box.hidden = true;
-      box.innerHTML = "";
-    }
+    /* Gauge M1-F4: the card a re: link jumped to. render() clears and
+       repaints #stream and scrolls to the bottom; while a jump is live it
+       re-applies the flash and the scroll to the fresh card instead. */
+    const JUMP_MS = 1200;
+    let jumpTo = null;
+    let jumpTimer = null;
 
-    function paintThreadPills() {
-      const box = $("thread-pills");
-      if (!box) return;
-      box.innerHTML = "";
-      threadPills.forEach((p) => {
-        const pill = document.createElement("span");
-        pill.className = "pill composer-pill";
-        pill.innerHTML = "<em>@" + esc(p.name) + "</em>";
-        const minus = document.createElement("button");
-        minus.type = "button";
-        minus.setAttribute("aria-label", "Remove @" + p.name);
-        minus.textContent = "−";
-        minus.addEventListener("click", () => {
-          dropMentionFromInput($("thread-msg"), p.name);
-          threadPills = threadPills.filter((x) => x.npub !== p.npub);
-          paintThreadPills();
-        });
-        pill.appendChild(minus);
-        box.appendChild(pill);
-      });
-    }
-
-    function paintThreadMentionBox() {
-      const box = $("thread-mention");
-      if (!box) return;
-      box.innerHTML = "";
-      threadMentionHits.forEach((hit, i) => {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = i === threadMentionIdx ? "on" : "";
-        b.textContent = "@" + hit.name + " · " + hit.kind;
-        b.addEventListener("click", () => applyThreadMention(hit));
-        box.appendChild(b);
-      });
-      box.hidden = !threadMentionHits.length;
-      box.classList.toggle("show", threadMentionHits.length > 0);
-      threadMentionOpen = threadMentionHits.length > 0;
-    }
-
-    function applyThreadMention(hit) {
-      const input = $("thread-msg");
-      if (!input || threadMentionStart < 0) return;
-      const before = input.value.slice(0, threadMentionStart);
-      const after = input.value.slice(input.selectionStart);
-      input.value = before + "@" + hit.name + " " + after.replace(/^\s+/, "");
-      if (!threadPills.some((p) => p.npub === hit.npub))
-        threadPills.push({ name: hit.name, npub: hit.npub, kind: hit.kind });
-      paintThreadPills();
-      hideThreadMentions();
-      input.focus();
-    }
-
-    function scanThreadMention() {
-      const input = $("thread-msg");
-      if (!input) return;
-      const pos = input.selectionStart || 0;
-      const text = input.value.slice(0, pos);
-      const at = text.lastIndexOf("@");
-      if (at < 0 || (at > 0 && !/\s/.test(text.charAt(at - 1)))) {
-        hideThreadMentions();
-        return;
-      }
-      const q = text.slice(at + 1).toLowerCase();
-      if (q.indexOf(" ") >= 0 || q.indexOf("\n") >= 0) {
-        hideThreadMentions();
-        return;
-      }
-      threadMentionStart = at;
-      threadMentionHits = mentionRoster().filter((h) =>
-        h.name.toLowerCase().indexOf(q) >= 0 ||
-        h.npub.toLowerCase().indexOf(q) >= 0
-      );
-      threadMentionIdx = 0;
-      paintThreadMentionBox();
+    /* Flashes and centres the jump card; false when no jump is live. */
+    function applyJump() {
+      if (!jumpTo || Date.now() >= jumpTo.until) return false;
+      const card = [...document.querySelectorAll("#stream .note")]
+        .find((c) => c.dataset.id === jumpTo.id);
+      if (!card) return false;
+      card.classList.add("note-flash");
+      card.scrollIntoView({ block: "center" });
+      return true;
     }
 
     function thinkLabel(jobs) {
@@ -6994,10 +6945,10 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       return LEASH_MARKS.some((m) => s.indexOf(m) === 0);
     }
 
-    /* Copy of the relay's missing-runtime note. The reply stays in the
-     * thread; #stream still shows this sentence on the root card.
-     * That card and the thread ask card must not also say that robot
-     * is thinking, reacting, or otherwise in progress. */
+    /* Copy of the relay's missing-runtime note. #stream shows this
+     * sentence once, on the asking note's card (render skips the reply
+     * itself). That card must not also say that robot is thinking,
+     * reacting, or otherwise in progress. */
     function providerFailureSentence(kids) {
       const list = kids || [];
       for (let i = 0; i < list.length; i++) {
@@ -7018,25 +6969,12 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       return rest.slice(0, dot);
     }
 
-    /* Live replies plus saved turns, so a reopened thread still sees
-     * the missing-runtime sentence. */
-    function failureSources(rootId, kids) {
-      const list = (kids || []).slice();
-      const mem = threadMem[rootId];
-      if (mem && Array.isArray(mem.turns)) {
-        mem.turns.forEach((t) => {
-          if (t && t.content) list.push({ content: t.content });
-        });
-      }
-      return list;
-    }
-
     /* True when this root's outcome names that robot in the
      * missing-runtime sentence. Other jobs stay in progress. */
     function providerFailureQuiets(parentId, name) {
       if (!parentId || !name) return false;
       const kids = repliesTo(visibleNotes(lastEvents || []), parentId);
-      const who = providerFailureRobot(providerFailureSentence(failureSources(parentId, kids)));
+      const who = providerFailureRobot(providerFailureSentence(kids));
       return !!who && who === name;
     }
 
@@ -7045,7 +6983,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         job && !providerFailureQuiets(job.parent, job.name || "robot"));
     }
 
-    /* WS4: live streamed answers, keyed by thread + robot. */
+    /* WS4: live streamed answers, keyed by root note + robot. */
     const partials = {};
 
     function partialKey(parent, name) {
@@ -7214,7 +7152,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         stop.type = "button";
         stop.className = "think-stop";
         stop.textContent = "Stop";
-        stop.title = "Stop " + job.name + " on this thread.";
+        stop.title = "Stop " + job.name + " on this message.";
         stop.addEventListener("click", () => stopJob(job.parent, job.name, stop));
         chip.appendChild(stop);
       });
@@ -7230,18 +7168,6 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         if (text) paintPartial(prev, text);
         node.appendChild(prev);
       });
-    }
-
-    function paintThreadThink(jobs) {
-      const box = $("thread-think");
-      const send = $("thread-send");
-      if (!box) return;
-      box.innerHTML = "";
-      if (jobs.length) paintThink(box, jobs);
-      if (send) {
-        send.disabled = sendingThread || jobs.length > 0;
-        send.title = jobs.length ? thinkLabel(jobs) : "";
-      }
     }
 
     function fenceLang(tag) {
@@ -7684,7 +7610,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       const name = bot.name || "robot";
       const pill = document.createElement("span");
       pill.className = "robot-ack waiting";
-      pill.title = name + " waits for your Yes or No in the thread";
+      pill.title = name + " waits for your Yes or No on the ask";
       pill.textContent = name + " · waiting for your OK";
       return pill;
     }
@@ -7741,12 +7667,17 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
     function paintNote(e, extra, quietRobot) {
       const n = document.createElement("div");
       const mine = isMineNote(e);
-      n.className = (e.reply_to ? "note reply" : "note") + (mine ? " mine" : "") +
+      n.className = "note" + (mine ? " mine" : "") +
         (isLeashNote(e.content) ? " leash" : "");
       const meta = document.createElement("div");
       meta.className = "meta";
       meta.textContent = who(e.pubkey) + " · " + ago(e.created_at);
       n.appendChild(meta);
+      n.dataset.id = e.id || "";
+      if (e.reply_to) {
+        const re = reLink(e);
+        if (re) n.appendChild(re);
+      }
       const chunks = splitFences(e.content || "");
       const files = [];
       chunks.forEach((part) => {
@@ -7789,7 +7720,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         bar.appendChild(open);
         n.appendChild(bar);
       }
-      if (isHiveOwner() && isLoopAsk(e.content))
+      if (isHiveOwner() && isYesNoAsk(e))
         n.appendChild(loopAnswerBar(e));
       if (extra) extra(n, e);
 
@@ -7797,253 +7728,6 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       try { paintAcks(n, e, quietRobot); } catch (eAck) { /* never break render on ack */ }
 
       return n;
-    }
-
-    function threadKeyOf(root, kids, jobs) {
-      const ids = [root.id].concat(kids.map((k) => k.id));
-      const think = (jobs || []).map((t) => t.parent + ":" + t.name).join(",");
-      return ids.join(",") + "|" + think + "|" + ackStampFor(root, jobs) +
-        "|" + memStamp(root.id);
-    }
-
-    function threadNearBottom(box) {
-      return box.scrollHeight - box.scrollTop - box.clientHeight < THREAD_PIN_PX;
-    }
-
-    /* WS5 M2 thread memory: durable turns for root, oldest first, excluding
-       ids already live. Relay data only; empty until /api/thread answers. */
-    function memExtraTurns(rootId, liveIds) {
-      const mem = threadMem[rootId];
-      if (!mem || !mem.turns) return [];
-      return mem.turns.filter((t) => t && t.id && liveIds.indexOf(t.id) < 0 &&
-        t.id !== rootId);
-    }
-
-    /* Cache stamp so a landed /api/thread response repaints the pane. */
-    function memStamp(rootId) {
-      const mem = threadMem[rootId];
-      if (!mem || !mem.turns) return "mem:-";
-      return "mem:" + mem.turns.length + ":" + (mem.brief || "").length;
-    }
-
-    /* True when rootId is a 64-char lowercase hex thread root. */
-    function isThreadRoot(id) {
-      return typeof id === "string" && /^[0-9a-f]{64}$/.test(id);
-    }
-
-    /* Keeps the milestone label from one /api/thread object. */
-    function rememberDesk(rootId, mem) {
-      if (!isThreadRoot(rootId) || !mem) return;
-      threadDesk[rootId] = {
-        name: typeof mem.name === "string" ? mem.name : "",
-        category: typeof mem.category === "string" ? mem.category : "",
-        project: typeof mem.project === "string" ? mem.project : "",
-        archived: mem.archived === true
-      };
-    }
-
-    function deskOf(rootId) {
-      return threadDesk[rootId] || { name: "", category: "", project: "", archived: false };
-    }
-
-    /* Loads a desk once. A desk already stored, including a save, wins. */
-    function ensureDesk(rootId) {
-      if (!isThreadRoot(rootId) || threadDesk[rootId] || threadDeskWait[rootId])
-        return;
-      threadDeskWait[rootId] = 1;
-      fetch(API + "/api/thread?root=" + rootId).then((r) => r.json()).then((mem) => {
-        delete threadDeskWait[rootId];
-        if (!mem || mem.root !== rootId || threadDesk[rootId]) return;
-        rememberDesk(rootId, mem);
-      }).catch(() => { delete threadDeskWait[rootId]; });
-    }
-
-    /* Fetches durable memory once per root; repaints the pane on arrival.
-       A failed fetch leaves an empty marker so the 1 s tick never storms. */
-    function fetchThreadMemory(rootId) {
-      if (!isThreadRoot(rootId) || threadMem[rootId]) return;
-      threadMem[rootId] = { turns: null, brief: "", count: 0 };
-      fetch(API + "/api/thread?root=" + rootId).then((r) => r.json()).then((mem) => {
-        if (!mem || mem.root !== rootId || !Array.isArray(mem.turns)) {
-          threadMem[rootId] = { turns: [], brief: "", count: 0 };
-          return;
-        }
-        threadMem[rootId] = {
-          turns: mem.turns,
-          brief: typeof mem.brief === "string" ? mem.brief : "",
-          count: typeof mem.count === "number" ? mem.count : mem.turns.length
-        };
-        rememberDesk(rootId, mem);
-        if (openThread === rootId && $("thread-pane").classList.contains("show"))
-          paintThreadStream(rootId, false);
-      }).catch(() => { threadMem[rootId] = { turns: [], brief: "", count: 0 }; });
-    }
-
-    /* Reopens the remembered thread when the relay confirms saved turns.
-       The stored id is never painted; only relay answers render. */
-    function resumeThread() {
-      let rootId = null;
-      try { rootId = localStorage.getItem("hush-thread-open"); } catch (e) { rootId = null; }
-      if (!isThreadRoot(rootId)) return;
-      fetch(API + "/api/thread?root=" + rootId).then((r) => r.json()).then((mem) => {
-        if (!mem || mem.root !== rootId || !Array.isArray(mem.turns) || !mem.turns.length) {
-          try { localStorage.removeItem("hush-thread-open"); } catch (e) {}
-          return;
-        }
-        if (mem.archived === true) {
-          rememberDesk(rootId, mem);
-          try { localStorage.removeItem("hush-thread-open"); } catch (e2) {}
-          return;
-        }
-        threadMem[rootId] = {
-          turns: mem.turns,
-          brief: typeof mem.brief === "string" ? mem.brief : "",
-          count: typeof mem.count === "number" ? mem.count : mem.turns.length
-        };
-        rememberDesk(rootId, mem);
-        openThreadPane(rootId);
-      }).catch(() => {});
-    }
-
-    function paintThreadStream(rootId, forcePin) {
-      let root = lastEvents.find((e) => e.id === rootId);
-      const mem = threadMem[rootId];
-      const savedOnly = !root && !!(mem && mem.turns && mem.turns.length);
-      if (savedOnly) {
-        const open = mem.turns.filter((t) => t.id === rootId)[0] || mem.turns[0];
-        root = {
-          id: open.id, pubkey: open.pubkey, content: open.content,
-          created_at: open.at || 0, channel: channel, reply_to: ""
-        };
-      }
-      if (!root) {
-        fetchThreadMemory(rootId);
-        return;
-      }
-      if (!mem || !mem.turns) fetchThreadMemory(rootId);
-      /* visibleNotes always drops Mention received. One intro stays in thread. */
-      const filtered = visibleNotes(lastEvents);
-      const kids = savedOnly ? [] : repliesTo(filtered, rootId);
-      const bots = threadMembers(root, kids);
-      const names = bots.map((b) => b.name).filter(Boolean);
-      $("thread-title").textContent = savedOnly ? "Thread · saved" :
-        (names.length ? ("Thread · " + names.join(", ")) : "Thread");
-      const owner = rosterHit(root.pubkey);
-      const lead = mentionedRobots(root)[0];
-      $("thread-help").title = "Agents receive your current message and excerpts from the opening message and six recent replies.";
-      $("thread-help").textContent = savedOnly ?
-        ("Saved thread · " + mem.count + " saved turns on this relay · reopened from relay memory") :
-        ("#" + root.channel + " · Started by " +
-        ((owner && owner.name) || "a teammate") + (lead ? " · Lead: " + lead.name : "") +
-        (names.length === 1 ? " · Follow-ups go to " + names[0] : " · @ a robot to direct its next turn"));
-      const desk = deskOf(rootId);
-      if (desk.name) $("thread-title").textContent = desk.name;
-      if (desk.category)
-        $("thread-help").textContent += " · " + desk.category;
-      const nameBox = $("thread-desk-name");
-      const catBox = $("thread-desk-category");
-      const projBox = $("thread-desk-project");
-      if (nameBox && document.activeElement !== nameBox) nameBox.value = desk.name;
-      if (catBox && document.activeElement !== catBox) catBox.value = desk.category;
-      if (projBox && document.activeElement !== projBox) projBox.value = desk.project || "";
-      $("thread-desk-archive").textContent = desk.archived ? "Restore" : "Archive";
-      const jobs = thinkingFor(root.id, lastStatus);
-      const failure = providerFailureSentence(failureSources(rootId, kids));
-      const quiet = providerFailureRobot(failure);
-      const threadJobs = quiet
-        ? jobs.filter((j) => j && j.name !== quiet)
-        : jobs;
-      const key = threadKeyOf(root, kids, jobs);
-      const box = $("thread-stream");
-      const shown = $("thread-pane").classList.contains("show");
-      if (shown && key === threadSeen) {
-        paintThreadThink(threadJobs);
-        return;
-      }
-      const near = !shown || forcePin || threadNearBottom(box);
-      const keep = box.scrollTop;
-      box.innerHTML = "";
-      if (!isDevLogNote(root)) box.appendChild(paintNote(root, null, quiet));
-      if (mem && mem.turns) {
-        const liveIds = [root.id].concat(kids.map((k) => k.id));
-        const extra = memExtraTurns(rootId, liveIds);
-        if (extra.length) {
-          const head = document.createElement("div");
-          head.className = "help";
-          head.textContent = "Thread memory · Saved on this relay · " +
-            mem.count + " saved turns" +
-            (extra.length < mem.count ? " · showing " + extra.length + " not already live" : "");
-          box.appendChild(head);
-        }
-        extra.forEach((t) => {
-          const ev = {
-            id: t.id, pubkey: t.pubkey, content: t.content,
-            created_at: t.at || 0, channel: root.channel, reply_to: rootId
-          };
-          if (isDevLogNote(ev)) return;
-          box.appendChild(paintNote(ev, (node) => {
-            const meta = node.querySelector(".meta");
-            if (meta) meta.textContent += " · saved";
-          }, quiet));
-        });
-      }
-      kids.forEach((k) => {
-        if (!isDevLogNote(k)) box.appendChild(paintNote(k, null, quiet));
-      });
-      paintThreadThink(threadJobs);
-      threadSeen = key;
-      if (near) box.scrollTop = box.scrollHeight;
-      else box.scrollTop = keep;
-    }
-
-    /* Thread size persistence (localStorage.hush-thread), clamped to the
-       viewport. Restored verbatim after UI-M9 dropped the definitions. */
-    function applyThreadSize() {
-      const pane = $("thread-pane");
-      let saved = {};
-      try { saved = JSON.parse(localStorage.getItem("hush-thread") || "{}"); } catch (e) { saved = {}; }
-      const maxW = Math.max(THREAD_MIN_W, window.innerWidth - 24);
-      const maxH = Math.max(THREAD_MIN_H, window.innerHeight - 72);
-      const w = typeof saved.w === "number" ? saved.w : Math.min(672, maxW);
-      const h = typeof saved.h === "number" ? saved.h : Math.min(640, Math.round(window.innerHeight * 0.7));
-      pane.style.width = Math.max(THREAD_MIN_W, Math.min(maxW, w)) + "px";
-      pane.style.height = Math.max(THREAD_MIN_H, Math.min(maxH, h)) + "px";
-    }
-    function saveThreadSize() {
-      const pane = $("thread-pane");
-      const rect = pane.getBoundingClientRect();
-      localStorage.setItem("hush-thread", JSON.stringify({ w: rect.width, h: rect.height }));
-    }
-
-    function openThreadPane(rootId) {
-      const wasOpen = $("thread-pane").classList.contains("show");
-      openThread = rootId;
-      try { localStorage.setItem("hush-thread-open", rootId); } catch (e) {}
-      paintThreadStream(rootId, !wasOpen);
-      $("thread-pane").classList.add("show");
-      applyThreadSize();
-      if (!wasOpen) {
-        pinThreadNewest();
-        parkRailForThread();
-      }
-    }
-
-    /* Pin once the pane is shown, when its scroll height is real. */
-    function pinThreadNewest() {
-      const box = $("thread-stream");
-      if (!box) return;
-      box.scrollTop = box.scrollHeight;
-    }
-
-    function closeThreadPane() {
-      $("thread-pane").classList.remove("show");
-      openThread = null;
-      try { localStorage.removeItem("hush-thread-open"); } catch (e) {}
-      threadSeen = "";
-      threadPills = [];
-      paintThreadPills();
-      hideThreadMentions();
-      restoreRailAfterThread();
     }
 
     function paintRelayDrawer(status) {
@@ -8321,10 +8005,20 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       });
       const filtered = visibleNotes(lastEvents);
       const mine = channelNotes(filtered);
-      mine.forEach((e) => { if (!e.reply_to) ensureDesk(e.id); });
-      const roots = mine.filter((e) => !e.reply_to && !deskOf(e.id).archived);
-      const archived = mine.filter((e) => !e.reply_to && deskOf(e.id).archived);
-      $("count").textContent = roots.length + (roots.length === 1 ? " note" : " notes");
+      /* M1 channels only: every note in this channel, oldest first, flat.
+         A missing-runtime reply is painted once, on its asking note's card
+         (the .log-failure line below), so it is not painted again here. */
+      const failureOn = {};
+      mine.forEach((e) => {
+        if (!e.reply_to) return;
+        if (providerFailureSentence([e]) && mine.some((r) => r.id === e.reply_to))
+          failureOn[e.id] = 1;
+      });
+      const notes = mine.filter((e) => !failureOn[e.id]);
+      askState = readAskState(mine);
+      Object.keys(answering).forEach((id) => { if (askState.byAsk[id]) delete answering[id]; });
+      paintRoute();
+      $("count").textContent = notes.length + (notes.length === 1 ? " note" : " notes");
       const projN = (session.projects || []).length;
       // r4 (Ops F2): one inline item per stat, wrapped, so the drawer fits.
       // Pre-walk: a status with no version drops the version item (no
@@ -8352,25 +8046,20 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       paintRelayDrawer(status);
       paintRosterPane(status);
       const thinkKey = ((status.thinking || []).map((t) => t.parent + ":" + t.name).join(","));
-      const ackKey = roots.map((e) => ackStampFor(e, thinkingFor(e.id, status))).join("");
-      const deskKey = mine.filter((e) => !e.reply_to).map((e) => {
-        const d = deskOf(e.id);
-        return e.id + ":" + d.name + ":" + (d.archived ? "1" : "0");
-      }).join(",");
-      const key = roots.map((e) => e.id).join(",") + "|" +
-        mine.filter((e) => e.reply_to).map((e) => e.id).join(",") + "|" +
-        thinkKey + "|" + ackKey + "|" + deskKey;
+      const ackKey = notes.map((e) => ackStampFor(e, thinkingFor(e.id, status))).join("");
+      const key = notes.map((e) => e.id).join(",") + "|" + thinkKey + "|" + ackKey +
+        "|" + Object.keys(answering).join(",");
       if (key !== seen) {
         seen = key;
         const s = $("stream");
         s.innerHTML = "";
-        if (!roots.length) {
+        if (!notes.length) {
           const d = document.createElement("div");
           d.className = "empty";
           d.innerHTML = "<strong>The hive is quiet.</strong> At ease. State the mission for #" + channel + ". — Major";
           s.appendChild(d);
         } else {
-          roots.forEach((e) => {
+          notes.forEach((e) => {
             const kids = repliesTo(filtered, e.id);
             const jobs = thinkingFor(e.id, status);
             const failure = providerFailureSentence(kids);
@@ -8378,20 +8067,8 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
             const cardJobs = quiet
               ? jobs.filter((j) => j && j.name !== quiet)
               : jobs;
-            const lastKid = kids.length ? kids[kids.length - 1] : null;
-            const waiting = isHiveOwner() && !!(lastKid && isLoopAsk(lastKid.content));
             const n = paintNote(e, (node) => {
               paintThink(node, cardJobs);
-              if (kids.length || jobs.length) {
-                const btn = document.createElement("button");
-                btn.type = "button";
-                btn.className = "thread-btn";
-                const label = deskOf(e.id).name ||
-                  ("Thread · " + (kids.length || "live"));
-                btn.textContent = waiting ? (label + " · Decision") : label;
-                btn.addEventListener("click", () => openThreadPane(e.id));
-                node.appendChild(btn);
-              }
             }, quiet);
             if (failure) {
               const line = document.createElement("div");
@@ -8402,25 +8079,9 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
             }
             s.appendChild(n);
           });
-          archived.forEach((e) => {
-            const btn = document.createElement("button");
-            btn.type = "button";
-            btn.className = "thread-btn";
-            btn.textContent = "Archived · " + (deskOf(e.id).name || "thread");
-            btn.addEventListener("click", () => openThreadPane(e.id));
-            s.appendChild(btn);
-          });
-          s.scrollTop = s.scrollHeight;
+          if (!applyJump()) s.scrollTop = s.scrollHeight;
         }
       }
-      if (openThread && localThink.length) {
-        const kids = repliesTo(lastEvents, openThread);
-        const last = kids.length ? kids[kids.length - 1] : null;
-        if (last && !isMineNote(last))
-          localThink = localThink.filter((t) => t.parent !== openThread);
-      }
-      if (openThread && $("thread-pane").classList.contains("show"))
-        paintThreadStream(openThread, false);
     }
 
     function who(pk) {
@@ -8711,24 +8372,6 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       const full = $("robot-inventory-full");
       if (full) renderInventory(full, INV_EXPAND_COLS, INV_EXPAND_ROWS, INV_EXPAND_CELL, false);
       syncInvExpandEdit();
-    }
-
-    function startRobotConversation(bot) {
-      closeNavigation();
-      const existing = lastEvents.find((event) => !event.reply_to && event.channel === channel &&
-        event.pubkey === session.pubkey && mentionedRobots(event).length === 1 &&
-        mentionedRobots(event)[0].npub === bot.npub);
-      if (existing) {
-        openThreadPane(existing.id);
-        $("thread-msg").focus();
-        return;
-      }
-      if (!$("msg").value.includes("@" + bot.name))
-        $("msg").value = "@" + bot.name + " " + $("msg").value;
-      if (!composerPills.some((pill) => pill.npub === bot.npub))
-        composerPills.push({name: bot.name, npub: bot.npub});
-      paintComposerPills();
-      $("msg").focus();
     }
 
     function renderInventory(grid, cols, rows, cell, compact) {
@@ -9824,13 +9467,6 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         if (session.ready && ev) {
           render(ev.events || ev || [], st);
           await refreshPartials(st);
-          /* WS5 M2: one attempt per page load to reopen the remembered
-             thread. The id alone proves nothing; resumeThread revalidates
-             against /api/thread and clears stale ids. */
-          if (!resumeTried) {
-            resumeTried = true;
-            resumeThread();
-          }
         } else if (st && st.thinking && !st.thinking.length)
           localThink = [];
       } catch (err) {
@@ -9916,12 +9552,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
     });
 
     /* UI-M9: no persistent tool rail. Header KIT stamp toggles the
-       #kit-menu overlay; thread park/restore are intentional no-ops so the
-       overlay drawer keeps its full real-estate underneath. */
-    const THREAD_MIN_W = 280;
-    const THREAD_MIN_H = 240;
-    function parkRailForThread() { hideKitMenu(); }
-    function restoreRailAfterThread() {}
+       #kit-menu overlay. */
     if ($("rail-toggle")) $("rail-toggle").addEventListener("click", (ev) => {
       ev.stopPropagation();
       toggleKitMenu();
@@ -9940,41 +9571,6 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       if (el) el.addEventListener("click", () => hideKitMenu(), { capture: true });
     });
 
-    $("thread-resize").addEventListener("pointerdown", (ev) => {
-      const pane = $("thread-pane");
-      const rect = pane.getBoundingClientRect();
-      threadDrag = {
-        x: ev.clientX, y: ev.clientY, w: rect.width, h: rect.height,
-        currentX: ev.clientX, currentY: ev.clientY, raf: null
-      };
-      ev.target.setPointerCapture(ev.pointerId);
-      ev.preventDefault();
-    });
-    $("thread-msg").addEventListener("input", scanThreadMention);
-    $("thread-msg").addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" && !ev.shiftKey && !threadMentionOpen) {
-        ev.preventDefault();
-        $("thread-form").requestSubmit();
-        return;
-      }
-      if (!threadMentionOpen) return;
-      if (ev.key === "ArrowDown") {
-        ev.preventDefault();
-        threadMentionIdx = (threadMentionIdx + 1) % threadMentionHits.length;
-        paintThreadMentionBox();
-      } else if (ev.key === "ArrowUp") {
-        ev.preventDefault();
-        threadMentionIdx = (threadMentionIdx - 1 + threadMentionHits.length) % threadMentionHits.length;
-        paintThreadMentionBox();
-      } else if (ev.key === "Enter" || ev.key === "Tab") {
-        if (threadMentionHits[threadMentionIdx]) {
-          ev.preventDefault();
-          applyThreadMention(threadMentionHits[threadMentionIdx]);
-        }
-      } else if (ev.key === "Escape") {
-        hideThreadMentions();
-      }
-    });
     window.addEventListener("pointermove", (ev) => {
       if (skillPending) {
         const dx = ev.clientX - skillPending.x;
@@ -9985,39 +9581,14 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         moveSkillGhost(ev.clientX, ev.clientY);
         markSkillDropTargets();
       }
-      if (!threadDrag) return;
-      threadDrag.currentX = ev.clientX;
-      threadDrag.currentY = ev.clientY;
-      if (threadDrag.raf) return;
-      threadDrag.raf = requestAnimationFrame(() => {
-        if (!threadDrag) return;
-        threadDrag.raf = null;
-        const maxW = Math.max(THREAD_MIN_W, window.innerWidth - 24);
-        const maxH = Math.max(THREAD_MIN_H, window.innerHeight - 72);
-        const w = Math.max(THREAD_MIN_W, Math.min(maxW, threadDrag.w + ((threadDrag.currentX - threadDrag.x) * 2)));
-        const h = Math.max(THREAD_MIN_H, Math.min(maxH, threadDrag.h + (threadDrag.currentY - threadDrag.y)));
-        const pane = $("thread-pane");
-        pane.style.width = w + "px";
-        pane.style.height = h + "px";
-      });
     });
     window.addEventListener("pointerup", (ev) => {
       if (skillHeld) dropSkillHold(ev);
       skillPending = null;
-      if (threadDrag) {
-        if (threadDrag.raf) cancelAnimationFrame(threadDrag.raf);
-        threadDrag = null;
-        saveThreadSize();
-      }
     });
     window.addEventListener("pointercancel", () => {
       skillPending = null;
       cancelSkillHold(true);
-      if (threadDrag && threadDrag.raf) cancelAnimationFrame(threadDrag.raf);
-      threadDrag = null;
-    });
-    window.addEventListener("resize", () => {
-      if ($("thread-pane").classList.contains("show")) applyThreadSize();
     });
 
     /* Inventory header: Seed wizard, layout reset, raise, expand. */

@@ -8,8 +8,9 @@ S2  The token block carries the dossier-khaki values (a revert to the old
     manila tokens, or a token changed without updating this pin, fails).
 S3  The old manila literals appear nowhere in the stylesheet outside
     comments.
-S4  The ink-stamp message actions (.thread-btn, .note-files button,
-    .think-stop) are styled under field-office and use tokens.
+S4  The ink-stamp message actions (.note-files button, .think-stop) are
+    styled under field-office and use tokens (the .thread-btn stamp left
+    with the thread UI in M1).
 S5  No inline style= attribute in the markup carries a literal colour
     (an inline style beats every field-office rule).
 S6  No JavaScript string literal carries a hex / rgb() / hsl() colour,
@@ -233,7 +234,7 @@ def main():
     src = open(HTML, encoding="utf-8").read()
     base, css = style_text(src)
     token_bodies = []
-    stamp = {".thread-btn": False, ".note-files button": False, ".think-stop": False}
+    stamp = {".note-files button": False, ".think-stop": False}
     for sel, body, off in rules(css):
         if 'data-theme="field-office"' not in sel:
             continue

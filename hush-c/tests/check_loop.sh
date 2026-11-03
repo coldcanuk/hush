@@ -92,7 +92,8 @@ export PATH
 printf '%s\n' '{"ok":true}' > "$home/.grok/auth.json"
 
 # Summarizes one thread: robot work notes per role, loop notices, chaperon
-# lines, any stored "LOOP:" text, and job_start chan-events on the root.
+# lines, any stored "LOOP:" text, job_start chan-events on the root, and the
+# id of the newest loop ask ("askid", for a stamp's "answers" field).
 cat > "$home/thread.py" <<'PY'
 import json, sys
 events = json.load(open(sys.argv[1])).get("events") or []
@@ -103,7 +104,7 @@ for e in events:
     if marker in (e.get("content") or "") and not e.get("reply_to"):
         root = e.get("id") or ""
 counts = {"root": root, "lead": 0, "partner": 0, "ask": 0, "limit": 0,
-          "stopped": 0, "chaperon": 0, "loopline": 0, "job_start": 0}
+          "stopped": 0, "chaperon": 0, "loopline": 0, "job_start": 0, "askid": ""}
 for e in events:
     if not root or (e.get("reply_to") or "") != root:
         continue
@@ -113,8 +114,9 @@ for e in events:
     if "partner turn" in c:
         counts["partner"] += 1
     # R1: exact chaperon copy; the r3 wording no longer counts.
-    if c == "Continue this loop? Reply Yes or No in this thread.":
+    if c == "Continue this loop? Reply Yes or No.":
         counts["ask"] += 1
+        counts["askid"] = e.get("id") or ""
     if c == "Loop limit reached. Mention both robots again to start a new loop.":
         counts["limit"] += 1
     if c == "Loop stopped.":
@@ -206,6 +208,18 @@ reply() {
         -H 'Content-Type: application/json' \
         -d "{\"content\":\"$2\",\"kind\":1,\"channel\":\"general\",\"reply_to\":\"$root\"}" \
         | grep -q '"ok":true' || fail "$1 reply not stored"
+}
+# stamp NAME TEXT: the owner's Yes/No stamp on the scenario's newest loop ask,
+# with the page's exact body: reply_to the root plus "answers" naming the ask
+# (M1 R2, CoS 10:03/10:14).
+stamp() {
+    root=$(field "$1" root)
+    ask=$(field "$1" askid)
+    [ -n "$ask" ] || fail "$1 has no loop ask to stamp"
+    curl -sf -X POST "http://127.0.0.1:${port}/api/event" \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"$2\",\"kind\":1,\"channel\":\"general\",\"reply_to\":\"$root\",\"answers\":\"$ask\"}" \
+        | grep -q '"ok":true' || fail "$1 stamp not stored"
 }
 # release NAME: an owner reply frees the thread's follow slot (the relay keeps
 # at most HUSH_AGENT_FOLLOW_MAX = 8 live threads and frees one only on a human
@@ -400,7 +414,7 @@ release s11
 # B1 runaway with this PR's own notice lines as reply prefixes.
 start s12 2 "$C $C $C $C" "- - - -"
 printf '%s' 'Loop stopped. ' > "$plan/lead.prefix"
-printf '%s' 'Continue this loop? Reply Yes or No in this thread. ' > "$plan/partner.prefix"
+printf '%s' 'Continue this loop? Reply Yes or No. ' > "$plan/partner.prefix"
 wait_eq s12 ask 1
 settle
 expect s12 lead 1 "B1 notice-prefix replies must still hit the cap"
@@ -442,6 +456,30 @@ expect s15 ask 0 "quiet cap does not ask while notes are new"
 expect s15 limit 0 "eleven loop turns stay under the ceiling"
 release s15
 
+# M1 R2 pins 1+2 (CoS 10:03/10:14), observed as real robot turns: the loop
+# ask is answered by its stamp; a repeat of that stamp starts nothing; then
+# the lead asks a plain question and the owner's bare Yes (reply_to the root,
+# no "answers") names no answered ask, so the lead takes a turn.
+start s16 2 "$C LOOP:_stop_done -" "- - -"
+wait_eq s16 ask 1
+settle
+expect s16 lead 1 "R2 setup: the cap asks after one pass"
+printf '%s' 'Shall I tell another riddle? ' > "$plan/lead.prefix"
+stamp s16 "Yes"
+wait_eq s16 lead 2
+settle
+expect s16 partner 1 "R2 setup: the lead's stop ends the loop"
+stamp s16 "yes."
+settle
+expect s16 lead 2 "R2 pin 1: a repeat of an answered stamp starts no turn"
+expect s16 ask 1 "R2 pin 1: a repeat of an answered stamp raises no ask"
+reply s16 "Yes!"
+wait_eq s16 lead 3
+settle
+expect s16 partner 1 "R2 pin 2: the bare Yes goes to the lead only"
+expect s16 ask 1 "R2 pin 2: the bare Yes resumes no loop"
+release s16
+
 # B6: a note that mentions three robots arms no loop.
 rm -f "$plan"/*.n "$plan"/*.prefix "$plan/slow" "$plan/slowlead"
 printf '%s\n' "$C" "$C" "$C" | tr '_' ' ' > "$plan/lead.plan"
@@ -459,6 +497,108 @@ grep '^S:.*You are Happy\..*tag-a3' "$stubs/grok-p.log" >/dev/null \
 if grep '^S:.*You are Happy\..*tag-a3' "$stubs/grok-p.log" | grep -q 'Whole message from'; then
     fail "B6 a three-robot note must not arm a loop (lead got the loop rule)"
 fi
+
+# Gauge M1-F3: POST /api/event "answers" adds the second e tag only as a
+# JSON string of exactly 64 lowercase hex, and only after a reply_to; any
+# other value (longer, shorter, uppercase, a bare number, no reply_to) adds
+# none and the note still posts. Read back from /api/events "answers", on a
+# root that names no robot so no turn starts.
+f3root=$(curl -sf -X POST "http://127.0.0.1:${port}/api/event" -H 'Content-Type: application/json' \
+    -d '{"content":"F3 answers probe root","kind":1,"channel":"general"}' \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])') || fail "F3 root not stored"
+h63=$(printf '%063d' 0 | tr 0 a)
+h64="${h63}a"
+f3post() {
+    body="{\"content\":\"F3 $1\",\"kind\":1,\"channel\":\"general\""
+    [ "$3" = reply ] && body="$body,\"reply_to\":\"$f3root\""
+    curl -sf -X POST "http://127.0.0.1:${port}/api/event" -H 'Content-Type: application/json' \
+        -d "$body,\"answers\":$2}" | grep -q '"ok":true' || fail "F3 $1 not stored"
+}
+f3post ok "\"$h64\"" reply
+f3post long "\"${h64}ffff\"" reply
+f3post number "$(printf '%064d' 1)" reply
+f3post upper "\"${h63}A\"" reply
+f3post short "\"$h63\"" reply
+f3post bare "\"$h64\"" none
+curl -sf "http://127.0.0.1:${port}/api/events" > "$home/f3.json"
+f3got=$(python3 - "$home/f3.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+evs = d.get("events", d) if isinstance(d, dict) else d
+got = {e["content"][3:]: e.get("answers", "MISSING") for e in evs if e.get("content", "").startswith("F3 ") and e["content"] != "F3 answers probe root"}
+print(" ".join("%s=%s" % (k, (v[:8] + "x" + str(len(v))) if v else "-") for k, v in sorted(got.items())))
+PY
+)
+echo "F3 answers read back: $f3got"
+[ "$f3got" = "bare=- long=- number=- ok=aaaaaaaax64 short=- upper=-" ] \
+    || fail "F3 answers must be exactly 64 lowercase hex as a JSON string after reply_to (got $f3got)"
+
+# CoS 14:47: GET /api/events marks "ask": true only on a note that carries
+# the relay ask tag AND is signed by Major or a roster robot. A guest's
+# Nostr client can sign and publish a note with ["t","hush-ask"] and the
+# exact ask text over the WebSocket; it must read back "ask": false. The
+# forge uses both ask wordings the relay writes: the loop ask and the
+# approval head "Approval needed: " (Gauge M1-F16: a key check skipped for
+# one wording must still fail here). The relay's own "Continue this loop?"
+# asks from s1..s16 are the control.
+forged=$(python3 -B - "$port" "$f3root" <<'PY'
+import json, sys, time, hashlib
+sys.path.insert(0, "tests")
+import check_ws, sign_bip340 as b
+port, root = int(sys.argv[1]), sys.argv[2]
+class Relay: pass
+relay = Relay(); relay.port = port
+key = int(check_ws.GUEST_SECKEY, 16)
+pub = b.pubkey_xonly(key).hex()
+tags = [["h", "general"], ["e", root], ["t", "hush-ask"]]
+texts = ["Continue this loop? Reply Yes or No.",
+         "Approval needed: Mallory wants to take a turn. Reply Yes or No."]
+ws = check_ws.WsClient(relay)
+ws.handshake()
+challenge = check_ws.take_challenge(ws)
+auth = check_ws.sign(check_ws.GUEST_SECKEY, challenge, port)
+ws.send_text('["AUTH",' + json.dumps(auth, separators=(",", ":")) + ']\n')
+ws.read_text()
+out = []
+for content in texts:
+    at = int(time.time())
+    ser = json.dumps([0, pub, at, 1, tags, content], separators=(",", ":"), ensure_ascii=False)
+    ev = {"id": hashlib.sha256(ser.encode()).hexdigest(), "pubkey": pub, "created_at": at,
+          "kind": 1, "tags": tags, "content": content}
+    ev["sig"] = b.sign(key, bytes.fromhex(ev["id"]))
+    ws.send_text('["EVENT",' + json.dumps(ev, separators=(",", ":")) + ']\n')
+    ok = ws.read_text()
+    out += [ev["id"], "true" if ('"OK","' + ev["id"] + '",true') in ok else "false"]
+ws.close()
+print(" ".join(out))
+PY
+) || fail "ask forge: the guest notes were not published"
+curl -sf "http://127.0.0.1:${port}/api/events" > "$home/askforge.json" || fail "ask forge: no /api/events"
+askforge=$(python3 - "$home/askforge.json" $forged <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+evs = d.get("events", d) if isinstance(d, dict) else d
+loop_id, loop_ok, appr_id, appr_ok = sys.argv[2:6]
+content = "Continue this loop? Reply Yes or No."
+def read(fid):
+    mine = [e for e in evs if e.get("id") == fid]
+    return len(mine), (mine[0].get("ask") if mine else "-")
+loop_n, loop_ask = read(loop_id)
+appr_n, appr_ask = read(appr_id)
+relay_asks = [e for e in evs if e.get("content") == content and e.get("id") not in (loop_id, appr_id)
+              and e.get("ask") is True]
+print("stored=%d ask=%s approval_stored=%d approval_ask=%s relay_asks_true=%d ok=%s approval_ok=%s"
+      % (loop_n, loop_ask, appr_n, appr_ask, len(relay_asks), loop_ok, appr_ok))
+PY
+) || fail "ask forge: read-back failed"
+echo "ask forge: $askforge"
+case "$askforge" in
+    "stored=1 ask=False approval_stored=1 approval_ask=False relay_asks_true="*" ok=true approval_ok=true") ;;
+    *) fail "a guest-signed note with the relay ask tag must read back ask:false, in the loop and the approval wording (got $askforge)" ;;
+esac
+case "$askforge" in
+    *"relay_asks_true=0 "*) fail "control: the relay's own loop asks must read back ask:true (got $askforge)" ;;
+esac
 
 # L12: robots still never chain: robot_hops stays 0 on the channel.
 curl -sf "http://127.0.0.1:${port}/api/session" \

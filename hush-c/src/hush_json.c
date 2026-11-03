@@ -12,8 +12,6 @@ enum {
     HUSH_JSON_NIBBLE_SHIFT = 4
 };
 
-#define HUSH_JSON_HEX "0123456789abcdef"
-
 static int hush_json_is_ctrl(unsigned char ch);
 static size_t hush_json_put_pair(char *out, size_t outsz, size_t off,
                                  char mark);

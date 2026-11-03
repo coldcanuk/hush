@@ -168,13 +168,8 @@ fi
 echo "$html" | grep -q 'function dropMentionFromInput' || fail "HTML missing dropMentionFromInput"
 comp_pills=$(printf '%s' "$html" | awk '/function paintComposerPills/,/function applyMention/')
 echo "$comp_pills" | grep -q 'dropMentionFromInput' || fail "composer minus must strip @Name from textarea"
-thr_pills=$(printf '%s' "$html" | awk '/function paintThreadPills/,/function paintThreadMentionBox/')
-echo "$thr_pills" | grep -q 'dropMentionFromInput' || fail "thread minus must strip @Name from textarea"
 if echo "$html" | grep -q 'composerPills.pop()'; then
     fail "composer Backspace-at-0 must not pop pills"
-fi
-if echo "$html" | grep -q 'threadPills.pop()'; then
-    fail "thread Backspace-at-0 must not pop pills"
 fi
 grep -q 'hush_http_json_has_key' src/api_channels.c || fail "manage about must use hush_http_json_has_key"
 manage=$(sed -n '/^static hush_status_t hush_http_channel_about/,/^}/p' src/api_channels.c)
@@ -268,41 +263,57 @@ echo "$html" | grep -q 'id="qb-4"' || fail "HTML missing spellbar slot 4 (UI-M9 
 echo "$html" | grep -q 'id="qb-config"' || fail "HTML missing spellbar gear (UI-M9 keeps gear)"
 echo "$html" | grep -q 'id="qb-editor"' || fail "HTML missing spellbar picker (UI-M9 keeps gear)"
 echo "$html" | grep -q 'quickbarTyping' || fail "HTML missing spellbar typing guard (UI-M9)"
-echo "$html" | grep -q 'id="thread-resize"' || fail "HTML missing thread resize"
-echo "$html" | grep -q 'id="thread-pills"' || fail "HTML missing thread pills"
-echo "$html" | grep -q 'id="thread-mention"' || fail "HTML missing thread mention"
 if echo "$html" | grep -q 'id="rail-docks"'; then fail "rail docks must be gone"; fi
 if echo "$html" | grep -q 'railAnchor'; then fail "rail docks/anchors must be gone"; fi
-echo "$html" | grep -q 'reply_to' || fail "HTML missing reply_to indent"
-echo "$html" | grep -q 'note reply' || fail "HTML missing reply class"
-echo "$html" | grep -q 'id="thread-pane"' || fail "HTML missing thread pane"
-echo "$html" | grep -q 'note.mine' || fail "HTML missing sided thread bubbles"
-echo "$html" | grep -q 'Follow-ups go to' || fail "HTML missing 1:1 thread help"
-echo "$html" | grep -q '@ a robot to direct its next turn' || fail "HTML missing 1:n thread help"
-if echo "$html" | grep -q 'you · this robot. At ease.'; then
-  fail "thread help must not be a Payne voice line"
-fi
-echo "$html" | grep -q 'thread-btn' || fail "HTML missing thread button"
+# M1 channels only (PLAN_ROUTER_WORKER_V2 r1 §5.2, Ops CH0_HARD): the
+# demo ships no thread UI. reply_to stays internal transport (Yes/No stamps).
+echo "$html" | grep -q 'reply_to: rootId' || fail "Yes/No stamps must answer on reply_to"
+if echo "$html" | grep -q 'note reply'; then fail "notes must not carry a reply class (M1)"; fi
+for gone in 'id="thread-pane"' 'id="thread-' 'id="milestone-form"' 'className = "thread-btn"' \
+    'openThreadPane' 'Thread · ' 'Open 1:1 thread' '/api/thread' 'hush-thread-open' \
+    'Write in this thread' 'Follow-ups go to' '@ a robot to direct its next turn'; do
+  if echo "$html" | grep -qF "$gone"; then fail "thread UI must be gone (M1): $gone"; fi
+done
+# M1 (CoS 08:12): the page has 0 callers of /api/thread. The relay routes
+# stay ungated until M4 (gate, then delete). Checked on the served page and
+# on demo/index.html: the literal path (fetch, XHR, `${API}/api/thread`),
+# a path built in pieces ("/api/" + "thread", `/api/${"thread"}`), and any
+# string or template piece that is the word thread as a route part.
+thread_api_callers() {
+    grep -nEi \
+        -e 'api/+thread' \
+        -e "api/+[\"'\`][^;]*[\"'\`][^\"'\`]*thread" \
+        -e "api/+\\\$\{[^}]*thread" \
+        -e "[\"'\`]/?threads?([?/=&][^\"'\`]*)?[\"'\`]"
+}
+for src in served demo/index.html; do
+    if [ "$src" = served ]; then hits=$(echo "$html" | thread_api_callers || true)
+    else hits=$(thread_api_callers < "$src" || true); fi
+    if [ -n "$hits" ]; then
+        fail "M1: $src must have 0 callers of /api/thread: $(echo "$hits" | head -3)"
+    fi
+done
+echo "M1 /api/thread callers: 0 in the served page and demo/index.html"
+# M1 FU (Ops 5fba5350): the thread pane's CSS left with its markup. No
+# rule may name a thread-pane id, the .thread-btn / .thread-shell classes
+# or #milestone-form.
+dead_css=$(echo "$html" | grep -nE '#thread-[a-z]|\.thread-(btn|shell)|#milestone-form' || true)
+[ -z "$dead_css" ] || fail "M1: dead thread CSS in the page: $(echo "$dead_css" | head -3)"
+echo "M1 dead thread CSS: 0 selectors"
 echo "$html" | grep -q 'id="relay-drawer"' || fail "HTML missing relay drawer"
 echo "$html" | grep -q 'id="relay-close"' || fail "HTML missing relay close"
 echo "$html" | grep -q 'think-dot' || fail "HTML missing thinking chip"
-echo "$html" | grep -q 'id="thread-think"' || fail "HTML missing thread thinking strip"
 echo "$html" | grep -q 'id="code-canvas"' || fail "HTML missing code canvas"
 echo "$html" | grep -q 'code-block' || fail "HTML missing fenced code block"
 echo "$html" | grep -q '/api/canvas' || fail "HTML missing canvas save route"
 echo "$html" | grep -q 'splitFences' || fail "HTML missing fence splitter"
 echo "$html" | grep -q 'canvas-file' || fail "HTML missing canvas file selector"
-echo "$html" | grep -q 'paintThreadThink' || fail "HTML missing thread think painter"
-echo "$html" | grep -q 'send.disabled' || fail "HTML must disable send while thinking"
-if echo "$html" | grep -q 'bots.filter((b) => b.kind !== "human")'; then
-  fail "thread follow-up must not remention every member robot"
-fi
-echo "$html" | grep -q 'extra.filter((p) => p.kind !== "human")' \
-  || fail "thread follow-up must mention only new pills"
-echo "$html" | grep -q 'sole.length === 1' \
-  || fail "1:1 follow-up must inherit the sole member robot"
+# M1: the thread composer's Send (disabled while a job ran on its open thread)
+# is gone with the thread pane; every channel send is a new note, so #send
+# only locks for its own post.
+echo "$html" | grep -q '$("send").disabled = true;' || fail "HTML must lock #send while its post is in flight"
 echo "$html" | grep -q 'localThink' \
-  || fail "HTML missing optimistic thread think"
+  || fail "HTML missing optimistic think"
 echo "$html" | grep -q 'id="install"' || fail "HTML missing install (KIT menu)"
 echo "$html" | grep -q 'Install puts Hush on your app launcher' || fail "HTML missing install copy"
 echo "$html" | grep -q 'id="rail-toggle"' || fail "HTML missing rail KIT stamp"
@@ -870,8 +881,10 @@ if echo "$html" | grep -q 'id="hive-armory"'; then
     fail "hive-armory must not sit on the main nav"
 fi
 echo "$html" | grep -q 'function toggleRobotInventory' || fail "HTML missing i-key inventory toggle"
-echo "$html" | grep -q 'if (!isDevLogNote(k))' \
-    || fail "thread kids must hide Mention received"
+echo "$html" | grep -qF '&& !isDevLogNote(e));' \
+    || fail "channel notes must hide Mention received"
+echo "$html" | grep -qF 'const mine = channelNotes(filtered);' \
+    || fail "channel log must paint only visibleNotes"
 echo "$html" | grep -q 'function attachLoadout' || fail "HTML missing attachLoadout"
 echo "$html" | grep -q 'body.skill_0 = ""' || fail "empty loadout must post skill_0"
 echo "$html" | grep -q 'body.nskills = equippedSkills.length' || fail "save must post nskills"

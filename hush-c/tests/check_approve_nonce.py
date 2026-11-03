@@ -30,7 +30,7 @@ from check_bootstrap import Relay, head_of, sign_in, status_of  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 EVERY = "approve_every_action"
 AUTO = "auto_approve"
-ASK = "Approval needed: Happy wants to take a turn. Reply Yes or No in this thread."
+ASK = "Approval needed: Happy wants to take a turn. Reply Yes or No."
 
 # The attacker: a local process with the token from disk and no X-Hush-Nonce.
 ATTACKER = r'''

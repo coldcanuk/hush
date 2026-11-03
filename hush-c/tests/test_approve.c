@@ -45,7 +45,7 @@ enum {
 #define TEST_APPROVE_CHANNEL "general"
 /* The exact copy the owner reads (#279). */
 #define TEST_APPROVE_ASK_COPY \
-    "Approval needed: Happy wants to take a turn. Reply Yes or No in this thread."
+    "Approval needed: Happy wants to take a turn. Reply Yes or No."
 #define TEST_APPROVE_NO_COPY "Turn declined: Happy stood down."
 /* The head every approval ask starts with. */
 #define TEST_APPROVE_ASK_HEAD "Approval needed: "
@@ -67,12 +67,21 @@ enum {
 #define TEST_APPROVE_SYS_PATH "/usr/bin:/bin"
 /* note_no_runtime's opening for Happy. */
 #define TEST_APPROVE_RAN_HEAD "No selected provider is ready for Happy."
+/* M1 R2: repeated owner answers on one answered ask (Ops saw 20). */
+#define TEST_APPROVE_REPEATS 20
+/* Gauge M1-F1: a robot reply that reads like an approval ask. */
+#define TEST_APPROVE_LOOKALIKE "Approval needed: one more pun? Reply Yes or No."
+/* Major's reply with a team fence, and what the relay posts for it. */
+#define TEST_APPROVE_TEAM_FENCE "Here is the desk.\n```team\nMail | goose | Answer the inbox\n```\n"
+#define TEST_APPROVE_TEAM_REPLY "Here is the desk. \n" HUSH_AGENT_TEAM_ASK
+/* The relay's receipt when a note reaches a robot (hush_intel_handle_robot). */
+#define TEST_APPROVE_HEARD_LINE "Mention received."
 #define TEST_APPROVE_RAN_SCOUT "No selected provider is ready for Scout."
 #define TEST_APPROVE_ASK_SCOUT \
-    "Approval needed: Scout wants to take a turn. Reply Yes or No in this thread."
+    "Approval needed: Scout wants to take a turn. Reply Yes or No."
 #define TEST_APPROVE_NO_SCOUT "Turn declined: Scout stood down."
 #define TEST_APPROVE_ASK_BUILDER \
-    "Approval needed: Builder wants to take a turn. Reply Yes or No in this thread."
+    "Approval needed: Builder wants to take a turn. Reply Yes or No."
 /* The literal table size and guest share the docs promise (#279 r2). */
 #define TEST_APPROVE_TABLE 8
 #define TEST_APPROVE_GUESTS 4
@@ -183,17 +192,30 @@ static size_t count_head(hush_store_t *store, const char *head)
     return hits;
 }
 
-/* Counts stored notes whose content equals line exactly. */
-static size_t count_line(hush_store_t *store, const char *line)
+/* Scans stored notes whose content equals line exactly: writes how many to
+ * *hits and returns the newest (borrowed until the next scan), or NULL. */
+static const hush_event_t *scan_line(hush_store_t *store, const char *line, size_t *hits)
 {
     static hush_event_t evs[TEST_APPROVE_SCAN_MAX];
     size_t n = hush_store_query(store, NULL, 0, evs, TEST_APPROVE_SCAN_MAX);
+    const hush_event_t *newest = NULL;
+
+    *hits = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (strcmp(evs[i].content, line) == 0) {
+            newest = &evs[i];
+            (*hits)++;
+        }
+    }
+    return newest;
+}
+
+/* Counts stored notes whose content equals line exactly. */
+static size_t count_line(hush_store_t *store, const char *line)
+{
     size_t hits = 0;
 
-    for (size_t i = 0; i < n; i++) {
-        if (strcmp(evs[i].content, line) == 0)
-            hits++;
-    }
+    (void)scan_line(store, line, &hits);
     return hits;
 }
 
@@ -414,10 +436,55 @@ static void answer_in(test_approve_fixture_t *fx, const char *root, const char *
     hush_intel_consider(fx->store, &fx->launch, &fx->ev);
 }
 
+/* Stores the owner's text as a reply to the fixture's root carrying the
+ * root's robot p tag, as POST /api/event adds it to a reply that names no one
+ * (hush_http_resolve_conversation), and hands it to the consider path. A
+ * non-NULL ask adds the second e tag a Yes/No stamp's "answers" field adds
+ * (hush_http_add_answers); NULL is a bare reply to the conversation. */
+static void answer_inherited(test_approve_fixture_t *fx, const char *text, const char *ask)
+{
+    size_t at = 0;
+
+    fill_note(&fx->ev, fx->launch.human.pubkey_hex, text, fx->root.id);
+    at = fx->ev.tag_count;
+    if (ask != NULL) {
+        hush_agent_copy(fx->ev.tags[at][0], sizeof(fx->ev.tags[at][0]), "e");
+        hush_agent_copy(fx->ev.tags[at][1], sizeof(fx->ev.tags[at][1]), ask);
+        at++;
+    }
+    hush_agent_copy(fx->ev.tags[at][0], sizeof(fx->ev.tags[at][0]), "p");
+    hush_agent_copy(fx->ev.tags[at][1], sizeof(fx->ev.tags[at][1]), fx->happy->id.npub);
+    fx->ev.tag_count = at + 1;
+    expect(hush_store_insert(fx->store, &fx->ev) == HUSH_OK, "inherited answer insert");
+    hush_intel_consider(fx->store, &fx->launch, &fx->ev);
+}
+
 /* Stores a thread reply from pub in the fixture's thread. */
 static void answer(test_approve_fixture_t *fx, const char *pub, const char *text)
 {
     answer_in(fx, fx->root.id, pub, text);
+}
+
+/* Feeds a finished turn by bot in the fixture's thread back to the agent,
+ * as the relay does when a job exits (no runtime ever starts). */
+static void finish_turn(test_approve_fixture_t *fx, const hush_roster_agent_t *bot, int role,
+                        const char *out)
+{
+    static hush_agent_job_t job;
+
+    memset(&job, 0, sizeof(job));
+    job.fd = -1;
+    job.busy = 1;
+    job.launch = &fx->launch;
+    job.loop_role = role;
+    hush_agent_copy(job.parent_id, sizeof(job.parent_id), fx->root.id);
+    hush_agent_copy(job.trigger_id, sizeof(job.trigger_id), fx->root.id);
+    hush_agent_copy(job.channel, sizeof(job.channel), TEST_APPROVE_CHANNEL);
+    hush_agent_copy(job.human_pub, sizeof(job.human_pub), fx->root.pubkey);
+    hush_agent_copy(job.robot_pub, sizeof(job.robot_pub), bot->id.pubkey_hex);
+    hush_agent_copy(job.robot_name, sizeof(job.robot_name), bot->name);
+    hush_agent_copy(job.out, sizeof(job.out), out);
+    hush_agent_finish_job(fx->store, &job, 1);
 }
 
 /* A robot or another human typing Yes is refused; the owner's No declines
@@ -456,6 +523,276 @@ static void check_owner_yes(void)
     expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == 1, "an approved turn asks once");
     expect(count_head(fx.store, HUSH_AGENT_APPROVAL_NO_HEAD) == 0, "Yes declines nothing");
     close_hive(&fx);
+}
+
+/* Writes the id of the newest stored note whose content equals line to
+ * out, or "" when none does. */
+static void last_line_id(hush_store_t *store, char *out, size_t outsz, const char *line)
+{
+    size_t hits = 0;
+    const hush_event_t *newest = scan_line(store, line, &hits);
+
+    hush_agent_copy(out, outsz, newest != NULL ? newest->id : "");
+}
+
+/* M1 R2 (CoS 10:03): which Yes/No notes target the answered ask. A stamp
+ * repeat ("answers" e tag) and a reply_to the ask itself do; a bare reply to
+ * the conversation, another person's Yes, or a longer note do not. */
+static void check_repeat_shapes(test_approve_fixture_t *fx, const char *ask)
+{
+    expect(hush_agent_answered_repeat(&fx->launch, &fx->ev),
+           "a second stamp Yes on the answered ask is a repeat");
+    fill_note(&fx->ev, fx->launch.human.pubkey_hex, "Yes", ask);
+    expect(hush_agent_answered_repeat(&fx->launch, &fx->ev),
+           "a Yes whose reply_to is the answered ask is a repeat");
+    fill_note(&fx->ev, fx->launch.human.pubkey_hex, "Yes", fx->root.id);
+    expect(!hush_agent_answered_repeat(&fx->launch, &fx->ev),
+           "a bare Yes to the conversation targets no answered ask");
+    fill_note(&fx->ev, TEST_APPROVE_STRANGER_PUB, "Yes", ask);
+    expect(!hush_agent_answered_repeat(&fx->launch, &fx->ev), "only the owner's Yes is a repeat");
+    fill_note(&fx->ev, fx->launch.human.pubkey_hex, "Yes, and one more pun", ask);
+    expect(!hush_agent_answered_repeat(&fx->launch, &fx->ev), "only a bare Yes or No is a repeat");
+}
+
+/* M1 R2 pin 1: an answered ask is single-shot. Twenty more stamp Yes notes
+ * on the same ask (a repeated click, a duplicate POST) start no turn and
+ * raise no new ask; the robot's reply to the first Yes does not change that. */
+static void check_answer_once(void)
+{
+    static test_approve_fixture_t fx;
+    char ask[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+
+    open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+    mention_happy(&fx, "tell a pun");
+    last_line_id(fx.store, ask, sizeof(ask), TEST_APPROVE_ASK_COPY);
+    expect(ask[0] != '\0', "the turn waits on one ask");
+    fill_note(&fx.ev, fx.launch.human.pubkey_hex, "Yes", ask);
+    expect(!hush_agent_answered_repeat(&fx.launch, &fx.ev), "an unanswered ask has no repeat");
+    answer_inherited(&fx, "Yes", ask);
+    expect(turn_ran(fx.store), "the first Yes runs the turn");
+    finish_turn(&fx, fx.happy, HUSH_AGENT_LOOP_ROLE_NONE, "A pun.");
+    check_repeat_shapes(&fx, ask);
+    const size_t asks = count_head(fx.store, HUSH_AGENT_APPROVAL_ASK_HEAD);
+    const size_t ran = count_head(fx.store, TEST_APPROVE_RAN_HEAD);
+    const size_t heard = count_line(fx.store, TEST_APPROVE_HEARD_LINE);
+    for (int i = 0; i < TEST_APPROVE_REPEATS; i++)
+        answer_inherited(&fx, i % 2 ? "yes." : "Yes", ask);
+    answer_inherited(&fx, "No", ask);
+    expect(count_head(fx.store, HUSH_AGENT_APPROVAL_ASK_HEAD) == asks,
+           "a repeated Yes or late No raises no new ask");
+    expect(count_head(fx.store, TEST_APPROVE_RAN_HEAD) == ran, "a repeated Yes runs no new turn");
+    expect(count_line(fx.store, TEST_APPROVE_HEARD_LINE) == heard,
+           "a repeated Yes does not reach the robot");
+    expect(count_head(fx.store, HUSH_AGENT_APPROVAL_NO_HEAD) == 0,
+           "a late No on an answered ask declines nothing");
+    close_hive(&fx);
+}
+
+/* M1 R2 pin 2 (CoS 10:03): after an answered ask the robot asks a plain
+ * question. The owner's bare Yes to it targets no answered ask, so it is
+ * delivered: the robot hears it and its next turn waits on a new ask. */
+static void check_answer_plain(void)
+{
+    static test_approve_fixture_t fx;
+    char ask[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+
+    open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+    mention_happy(&fx, "plan a picnic");
+    last_line_id(fx.store, ask, sizeof(ask), TEST_APPROVE_ASK_COPY);
+    answer_inherited(&fx, "Yes", ask);
+    expect(turn_ran(fx.store), "the stamp Yes runs the turn");
+    finish_turn(&fx, fx.happy, HUSH_AGENT_LOOP_ROLE_NONE, "Shall I book the park?");
+    const size_t asks = count_line(fx.store, TEST_APPROVE_ASK_COPY);
+    const size_t heard = count_line(fx.store, TEST_APPROVE_HEARD_LINE);
+    answer_inherited(&fx, "Yes", NULL);
+    expect(count_line(fx.store, TEST_APPROVE_HEARD_LINE) == heard + 1,
+           "pin 2: the owner's Yes to a plain robot question reaches the robot");
+    expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == asks + 1,
+           "pin 2: the robot's next turn waits on a new ask");
+    const size_t ran = count_head(fx.store, TEST_APPROVE_RAN_HEAD);
+    answer_inherited(&fx, "Yes", NULL);
+    expect(count_head(fx.store, TEST_APPROVE_RAN_HEAD) == ran + 1,
+           "pin 2: a conversation is never filed as answered, so the next bare Yes runs");
+    close_hive(&fx);
+}
+
+/* Gauge M1-F1 (G3): a robot reply that reads like an approval ask is not an
+ * ask. It carries no relay ask tag, is never filed, and a repeat stamp on the
+ * real ask after it is still dropped: no receipt, no new ask. */
+static void check_answer_lookalike(void)
+{
+    static test_approve_fixture_t fx;
+    static hush_event_t guest;
+    char ask1[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    char ask2[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    char content[HUSH_EVENT_MAX_CONTENT] = {0};
+    size_t hits = 0;
+
+    open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+    mention_happy(&fx, "tell a pun");
+    expect(hush_agent_is_relay_ask(scan_line(fx.store, TEST_APPROVE_ASK_COPY, &hits)),
+           "the relay's own approval ask carries the ask tag");
+    last_line_id(fx.store, ask1, sizeof(ask1), TEST_APPROVE_ASK_COPY);
+    answer_inherited(&fx, "Yes", ask1);
+    finish_turn(&fx, fx.happy, HUSH_AGENT_LOOP_ROLE_NONE, TEST_APPROVE_LOOKALIKE);
+    expect(!hush_agent_is_relay_ask(scan_line(fx.store, TEST_APPROVE_LOOKALIKE, &hits)),
+           "a robot reply that reads like an ask carries no ask tag");
+    snprintf(content, sizeof(content), "nostr:%s again", fx.happy->id.npub);
+    fill_note(&guest, TEST_APPROVE_STRANGER_PUB, content, fx.root.id);
+    expect(hush_store_insert(fx.store, &guest) == HUSH_OK, "guest insert");
+    hush_agent_handle_mention(fx.store, &fx.launch, &guest, fx.happy->id.npub);
+    last_line_id(fx.store, ask2, sizeof(ask2), TEST_APPROVE_ASK_COPY);
+    answer_inherited(&fx, "Yes", ask2);
+    const size_t asks = count_head(fx.store, HUSH_AGENT_APPROVAL_ASK_HEAD);
+    answer_inherited(&fx, "Yes", ask2);
+    expect(count_line(fx.store, TEST_APPROVE_HEARD_LINE) == 0,
+           "F1: a repeat stamp after a look-alike ask does not reach the robot");
+    expect(count_head(fx.store, HUSH_AGENT_APPROVAL_ASK_HEAD) == asks,
+           "F1: a repeat stamp after a look-alike ask raises no new ask");
+    close_hive(&fx);
+}
+
+/* Gauge M1-F5 (G4): the guard runs before the answer handlers. A duplicate
+ * No on an answered ask must not decline a guest's newer held turn; the
+ * owner's next bare Yes still runs it. */
+static void check_answer_held(void)
+{
+    static test_approve_fixture_t fx;
+    static hush_event_t guest;
+    char ask[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    char content[HUSH_EVENT_MAX_CONTENT] = {0};
+
+    open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+    mention_happy(&fx, "tell a pun");
+    last_line_id(fx.store, ask, sizeof(ask), TEST_APPROVE_ASK_COPY);
+    answer_inherited(&fx, "Yes", ask);
+    finish_turn(&fx, fx.happy, HUSH_AGENT_LOOP_ROLE_NONE, "A pun.");
+    snprintf(content, sizeof(content), "nostr:%s again", fx.happy->id.npub);
+    fill_note(&guest, TEST_APPROVE_STRANGER_PUB, content, fx.root.id);
+    expect(hush_store_insert(fx.store, &guest) == HUSH_OK, "guest insert");
+    hush_agent_handle_mention(fx.store, &fx.launch, &guest, fx.happy->id.npub);
+    const size_t ran = count_head(fx.store, TEST_APPROVE_RAN_HEAD);
+    answer_inherited(&fx, "No", ask);
+    expect(count_head(fx.store, HUSH_AGENT_APPROVAL_NO_HEAD) == 0,
+           "F5: a duplicate No on an answered ask declines no newer turn");
+    answer_inherited(&fx, "Yes", NULL);
+    expect(count_head(fx.store, TEST_APPROVE_RAN_HEAD) == ran + 1,
+           "F5: the guest's held turn still runs on the owner's next Yes");
+    close_hive(&fx);
+}
+
+/* Gauge M1-F6 (G6): asks are recorded as stored, and an answer files the
+ * oldest waiting ask. A bare Yes settles ask A; a later stamp naming A is a
+ * repeat and is dropped. */
+static void check_answer_bare(void)
+{
+    static test_approve_fixture_t fx;
+    char ask[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+
+    open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+    mention_happy(&fx, "tell a pun");
+    last_line_id(fx.store, ask, sizeof(ask), TEST_APPROVE_ASK_COPY);
+    answer_inherited(&fx, "Yes", NULL);
+    finish_turn(&fx, fx.happy, HUSH_AGENT_LOOP_ROLE_NONE, "A pun.");
+    const size_t heard = count_line(fx.store, TEST_APPROVE_HEARD_LINE);
+    const size_t asks = count_line(fx.store, TEST_APPROVE_ASK_COPY);
+    answer_inherited(&fx, "yes.", ask);
+    expect(count_line(fx.store, TEST_APPROVE_HEARD_LINE) == heard,
+           "F6: a stamp naming an ask a bare Yes settled does not reach the robot");
+    expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == asks,
+           "F6: a stamp naming an ask a bare Yes settled raises no new ask");
+    close_hive(&fx);
+}
+
+/* Gauge M1-F6: two robots wait in one conversation. The owner's stamp on
+ * Happy's ask runs Happy (the oldest) and files Happy's ask, so a repeat of
+ * that stamp leaves Scout waiting. */
+static void check_answer_fifo(void)
+{
+    static test_approve_fixture_t fx;
+    char ask[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+
+    open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+    mention_happy(&fx, "write a line");
+    hush_agent_handle_mention(fx.store, &fx.launch, &fx.root, fx.scout->id.npub);
+    last_line_id(fx.store, ask, sizeof(ask), TEST_APPROVE_ASK_COPY);
+    expect(count_line(fx.store, TEST_APPROVE_ASK_SCOUT) == 1, "Happy then Scout wait");
+    answer_inherited(&fx, "Yes", ask);
+    expect(count_head(fx.store, TEST_APPROVE_RAN_HEAD) == 1, "the stamp runs Happy");
+    answer_inherited(&fx, "Yes", ask);
+    expect(count_head(fx.store, TEST_APPROVE_RAN_SCOUT) == 0,
+           "F6: a repeat of Happy's stamp does not run Scout (the oldest ask was filed)");
+    answer_inherited(&fx, "No", NULL);
+    expect(count_line(fx.store, TEST_APPROVE_NO_SCOUT) == 1,
+           "Scout still waits for its own answer");
+    close_hive(&fx);
+}
+
+/* Gauge M1-F6: an owner note voids the asks waiting in its conversation.
+ * Scout's new ask B there is then the oldest, so the stamp on B files B (not
+ * Happy's voided A) and a repeat of it is dropped: no receipt, no new ask. */
+static void check_answer_void(void)
+{
+    static test_approve_fixture_t fx;
+    char ask[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+
+    open_hive(&fx, HUSH_ROSTER_APPROVAL_EVERY_ID);
+    mention_happy(&fx, "tell a pun");
+    answer_in(&fx, fx.root.id, fx.launch.human.pubkey_hex, "Never mind");
+    hush_agent_handle_mention(fx.store, &fx.launch, &fx.root, fx.scout->id.npub);
+    last_line_id(fx.store, ask, sizeof(ask), TEST_APPROVE_ASK_SCOUT);
+    expect(ask[0] != '\0', "Scout waits on ask B");
+    answer_inherited(&fx, "Yes", ask);
+    expect(count_head(fx.store, TEST_APPROVE_RAN_SCOUT) == 1, "the stamp on B runs Scout");
+    answer_inherited(&fx, "Yes", ask);
+    expect(count_line(fx.store, TEST_APPROVE_HEARD_LINE) == 0,
+           "F6: a repeat stamp on B is dropped, not filed under the voided ask");
+    expect(count_line(fx.store, TEST_APPROVE_ASK_COPY) == 1,
+           "F6: a repeat stamp on B raises no new ask");
+    close_hive(&fx);
+}
+
+/* Gauge M1-F6 / M1-F1: Major's reply that ends with the relay's team ask is
+ * an ask (tagged, recorded). The owner's bare Yes raises the team and files
+ * that ask, so a stamp naming it later does not reach any robot. */
+static void check_answer_team(void)
+{
+    static test_approve_fixture_t fx;
+    static hush_roster_agent_t major;
+    char ask[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    size_t hits = 0;
+
+    open_hive(&fx, HUSH_ROSTER_APPROVAL_AUTO_ID);
+    mention_happy(&fx, "staff the desk");
+    hush_agent_copy(major.name, sizeof(major.name), "Major");
+    hush_agent_copy(major.id.pubkey_hex, sizeof(major.id.pubkey_hex), fx.launch.payne.pubkey_hex);
+    const size_t robots = fx.launch.roster.nagents;
+    finish_turn(&fx, &major, HUSH_AGENT_LOOP_ROLE_NONE, TEST_APPROVE_TEAM_FENCE);
+    const hush_event_t *team = scan_line(fx.store, TEST_APPROVE_TEAM_REPLY, &hits);
+    expect(team != NULL && hush_agent_is_relay_ask(team), "Major's team ask carries the ask tag");
+    hush_agent_copy(ask, sizeof(ask), team != NULL ? team->id : "");
+    answer_inherited(&fx, "Yes", NULL);
+    expect(fx.launch.roster.nagents == robots + 1, "the bare Yes raises the team");
+    const size_t heard = count_line(fx.store, TEST_APPROVE_HEARD_LINE);
+    answer_inherited(&fx, "Yes", ask);
+    expect(count_line(fx.store, TEST_APPROVE_HEARD_LINE) == heard,
+           "F6: a stamp on the answered team ask does not reach the robot");
+    close_hive(&fx);
+}
+
+/* Runs the M1 answer pins above (#380), in the order they were written;
+ * each records its own failures in g_fail. Kept out of main() for the
+ * 40-line cap. */
+static void check_answers(void)
+{
+    check_answer_once();
+    check_answer_plain();
+    check_answer_lookalike();
+    check_answer_held();
+    check_answer_bare();
+    check_answer_fifo();
+    check_answer_void();
+    check_answer_team();
 }
 
 /* Auto-approve (today's behaviour) never asks. */
@@ -595,28 +932,6 @@ static void open_thread(test_approve_fixture_t *fx, hush_event_t *ev, const char
         if (strcmp(ev->tags[i][0], "p") == 0)
             hush_agent_handle_mention(fx->store, &fx->launch, ev, ev->tags[i][1]);
     }
-}
-
-/* Feeds a finished turn by bot in the fixture's thread back to the agent,
- * as the relay does when a job exits (no runtime ever starts). */
-static void finish_turn(test_approve_fixture_t *fx, const hush_roster_agent_t *bot, int role,
-                        const char *out)
-{
-    static hush_agent_job_t job;
-
-    memset(&job, 0, sizeof(job));
-    job.fd = -1;
-    job.busy = 1;
-    job.launch = &fx->launch;
-    job.loop_role = role;
-    hush_agent_copy(job.parent_id, sizeof(job.parent_id), fx->root.id);
-    hush_agent_copy(job.trigger_id, sizeof(job.trigger_id), fx->root.id);
-    hush_agent_copy(job.channel, sizeof(job.channel), TEST_APPROVE_CHANNEL);
-    hush_agent_copy(job.human_pub, sizeof(job.human_pub), fx->root.pubkey);
-    hush_agent_copy(job.robot_pub, sizeof(job.robot_pub), bot->id.pubkey_hex);
-    hush_agent_copy(job.robot_name, sizeof(job.robot_name), bot->name);
-    hush_agent_copy(job.out, sizeof(job.out), out);
-    hush_agent_finish_job(fx->store, &job, 1);
 }
 
 /* P2-3: two different robots wait in one thread; Yes runs the older. */
@@ -1101,6 +1416,7 @@ int main(void)
     check_not_turns();
     check_owner_only();
     check_owner_yes();
+    check_answers();
     check_auto();
     check_void();
     check_one_each();

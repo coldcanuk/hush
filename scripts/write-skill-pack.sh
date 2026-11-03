@@ -30,11 +30,11 @@ EOF
 # --- chaperon-only (20) ---
 write_skill topic-leash chaperon guardrail \
   "Keep robot notes on the channel about; bring wanderers back once." \
-  "Read the channel about. If a robot note is off that topic, post one canned bring-back: quote the last human ask, then stop. A second offense in the same thread gets the canned halt. Do not start a grok job to debate. Absorbs bring-back and on-topic."
+  "Read the channel about. If a robot note is off that topic, post one canned bring-back: quote the last human ask, then stop. A second offense in the same conversation gets the canned halt. Do not start a grok job to debate. Absorbs bring-back and on-topic."
 
 write_skill token-budget chaperon guardrail \
   "Stop robot talk at max_robot_turns." \
-  "Count robot work notes on this thread (skip protocol acks such as Mention received). At max_robot_turns, emit the canned chaperon line and start no further grok jobs."
+  "Count robot work notes in this conversation (skip protocol acks such as Mention received). At max_robot_turns, emit the canned chaperon line and start no further grok jobs."
 
 write_skill hop-cap chaperon guardrail \
   "Refuse unbounded robot-to-robot hops." \
@@ -105,8 +105,8 @@ write_skill chaperon-ack chaperon guardrail \
   "One short standing-by note. Never start a worker grok job. Protocol acks are not work notes."
 
 write_skill intro-once chaperon guardrail \
-  "One intro per robot per thread." \
-  "If this robot already posted an on-deck intro on this thread, do not intro again. Protocol acks such as Mention received do not count as intros. Distinct from topic-leash (topic), not a second bring-back."
+  "One intro per robot per conversation." \
+  "If this robot already posted an on-deck intro in this conversation, do not intro again. Protocol acks such as Mention received do not count as intros. Distinct from topic-leash (topic), not a second bring-back."
 
 # --- worker / any ---
 write_skill canvas-coach worker quality \

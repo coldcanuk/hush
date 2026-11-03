@@ -14,10 +14,23 @@
 #include "hush_agent.h"
 #include "hush_agent_internal.h"
 
+/* M1 R2: one Yes/No ask the relay posted that no answer settled yet. An
+ * empty id marks a free slot; root is set whenever id is. */
+typedef struct {
+    char root[HUSH_EVENT_ID_HEX_LEN + 1];
+    char id[HUSH_EVENT_ID_HEX_LEN + 1];
+} hush_agent_ask_t;
+
 static hush_agent_held_t g_held[HUSH_AGENT_APPROVAL_MAX];
 static unsigned long g_held_seq;
 /* The turn being answered, copied out so its slot is free while it runs. */
 static hush_agent_held_t g_taken;
+/* M1 R2: ids of the asks the owner answered (a ring, oldest overwritten). */
+static char g_answered[HUSH_AGENT_ANSWERED_MAX][HUSH_EVENT_ID_HEX_LEN + 1];
+static size_t g_answered_next;
+/* M1 R2: asks waiting for an answer, in posting order (a ring). */
+static hush_agent_ask_t g_asks[HUSH_AGENT_ASKS_MAX];
+static size_t g_asks_next;
 
 static hush_agent_held_t *hush_agent_held_free(void);
 static size_t hush_agent_held_guests(void);
@@ -31,12 +44,25 @@ static void hush_agent_approval_run(hush_store_t *store, const hush_launch_t *la
 static void hush_agent_approval_guest(const hush_agent_job_in_t *in);
 static void hush_agent_approval_decline(hush_store_t *store, const hush_launch_t *launch);
 static void hush_agent_approval_next(hush_store_t *store, const hush_launch_t *launch);
+/* True when ask (required) is a recorded answered ask id. */
+static int hush_agent_answered_has(const char *ask);
+/* Adds ask (required, non-empty) to the answered ring once. */
+static void hush_agent_answered_put(const char *ask);
+/* Writes ev's last "e" tag value to out, or "" when ev has none. */
+static void hush_agent_named_ask(char *out, size_t outsz, const hush_event_t *ev);
+/* Moves the oldest ask waiting in root (required) to out and frees its
+ * slot; writes "" when none waits there. */
+static void hush_agent_ask_take(char *out, size_t outsz, const char *root);
 
 void hush_agent_approval_init(void)
 {
     memset(g_held, 0, sizeof(g_held));
     memset(&g_taken, 0, sizeof(g_taken));
     g_held_seq = 0;
+    memset(g_answered, 0, sizeof(g_answered));
+    g_answered_next = 0;
+    memset(g_asks, 0, sizeof(g_asks));
+    g_asks_next = 0;
 }
 
 int hush_agent_approval_needed(const hush_agent_job_in_t *in)
@@ -119,6 +145,70 @@ int hush_agent_approval_answer(hush_store_t *store, const hush_launch_t *launch,
     return 1;
 }
 
+void hush_agent_ask_note(const hush_event_t *ev)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    hush_agent_ask_t *slot = NULL;
+
+    if (!hush_agent_is_relay_ask(ev))
+        return;
+    hush_agent_event_root(root, sizeof(root), ev);
+    if (strcmp(root, ev->id) == 0)
+        return;
+    slot = &g_asks[g_asks_next];
+    hush_agent_copy(slot->root, sizeof(slot->root), root);
+    hush_agent_copy(slot->id, sizeof(slot->id), ev->id);
+    g_asks_next = (g_asks_next + 1) % (size_t)HUSH_AGENT_ASKS_MAX;
+    assert(slot->id[0] != '\0');
+}
+
+void hush_agent_ask_void(const char *root)
+{
+    size_t i = 0;
+
+    if (root == NULL || root[0] == '\0')
+        return;
+    for (i = 0; i < (size_t)HUSH_AGENT_ASKS_MAX; i++) {
+        if (strcmp(g_asks[i].root, root) == 0)
+            memset(&g_asks[i], 0, sizeof(g_asks[i]));
+    }
+    assert(g_asks_next < (size_t)HUSH_AGENT_ASKS_MAX);
+}
+
+void hush_agent_answered_mark(const hush_event_t *ev)
+{
+    char root[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+    char ask[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+
+    if (ev == NULL)
+        return;
+    hush_agent_event_root(root, sizeof(root), ev);
+    /* The answer handlers settle the oldest wait in the conversation, so
+     * that is the ask this answer settled, whichever ask the stamp named. */
+    hush_agent_ask_take(ask, sizeof(ask), root);
+    if (ask[0] == '\0')
+        hush_agent_named_ask(ask, sizeof(ask), ev);
+    /* A conversation root is never filed: a later plain Yes there must still
+     * reach the robot (CoS 10:03). */
+    if (ask[0] == '\0' || strcmp(ask, root) == 0)
+        return;
+    hush_agent_answered_put(ask);
+}
+
+int hush_agent_answered_repeat(const hush_launch_t *launch, const hush_event_t *ev)
+{
+    char ask[HUSH_EVENT_ID_HEX_LEN + 1] = {0};
+
+    if (launch == NULL || ev == NULL || !hush_agent_is_human(launch, ev->pubkey))
+        return 0;
+    if (hush_agent_loop_parse_answer(ev->content) == HUSH_AGENT_LOOP_ANSWER_NONE)
+        return 0;
+    /* The "last pending ask" route of the spec never matches here: a waiting
+     * ask is by definition not yet in the answered ring. */
+    hush_agent_named_ask(ask, sizeof(ask), ev);
+    return ask[0] != '\0' && hush_agent_answered_has(ask);
+}
+
 int hush_agent_is_approval_line(const char *content)
 {
     static const char *const heads[] = {
@@ -156,6 +246,29 @@ int hush_agent_owner_asked(const hush_agent_job_in_t *in)
     hush_agent_event_root(root, sizeof(root), in->parent);
     return hush_store_find(in->store, &opening, root) == HUSH_OK &&
            hush_agent_is_human(in->launch, opening.pubkey);
+}
+
+int hush_agent_is_ask_line(const char *line)
+{
+    const size_t head = strlen(HUSH_AGENT_APPROVAL_ASK_HEAD);
+
+    assert(line != NULL);
+    return strncmp(line, HUSH_AGENT_APPROVAL_ASK_HEAD, head) == 0 ||
+           strcmp(line, HUSH_AGENT_LOOP_ASK_LINE) == 0;
+}
+
+int hush_agent_is_relay_ask(const hush_event_t *ev)
+{
+    size_t i = 0;
+
+    if (ev == NULL)
+        return 0;
+    for (i = 0; i < ev->tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; i++) {
+        if (strcmp(ev->tags[i][0], HUSH_AGENT_ASK_TAG_KEY) == 0 &&
+            strcmp(ev->tags[i][1], HUSH_AGENT_ASK_TAG_VALUE) == 0)
+            return 1;
+    }
+    return 0;
 }
 
 static size_t hush_agent_held_guests(void)
@@ -291,4 +404,57 @@ static void hush_agent_approval_next(hush_store_t *store, const hush_launch_t *l
     if (g_taken.in.leader || g_taken.in.elect)
         return;
     hush_agent_follow_resume(store, launch, &g_taken.parent);
+}
+
+/* True when ask is in the answered ring. */
+static int hush_agent_answered_has(const char *ask)
+{
+    size_t i = 0;
+
+    assert(ask != NULL);
+    for (i = 0; i < (size_t)HUSH_AGENT_ANSWERED_MAX; i++) {
+        if (strcmp(g_answered[i], ask) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static void hush_agent_answered_put(const char *ask)
+{
+    assert(ask != NULL && ask[0] != '\0');
+    if (hush_agent_answered_has(ask))
+        return;
+    hush_agent_copy(g_answered[g_answered_next], sizeof(g_answered[g_answered_next]), ask);
+    g_answered_next = (g_answered_next + 1) % (size_t)HUSH_AGENT_ANSWERED_MAX;
+    assert(hush_agent_answered_has(ask));
+}
+
+static void hush_agent_named_ask(char *out, size_t outsz, const hush_event_t *ev)
+{
+    size_t i = 0;
+
+    assert(out != NULL && outsz > 0 && ev != NULL);
+    out[0] = '\0';
+    for (i = 0; i < ev->tag_count && i < (size_t)HUSH_EVENT_MAX_TAGS; i++) {
+        if (strcmp(ev->tags[i][0], "e") == 0 && ev->tags[i][1][0] != '\0')
+            hush_agent_copy(out, outsz, ev->tags[i][1]);
+    }
+}
+
+/* Walks the ring from its oldest slot, so the first match is the oldest. */
+static void hush_agent_ask_take(char *out, size_t outsz, const char *root)
+{
+    size_t i = 0;
+
+    assert(out != NULL && outsz > 0 && root != NULL);
+    out[0] = '\0';
+    for (i = 0; i < (size_t)HUSH_AGENT_ASKS_MAX; i++) {
+        hush_agent_ask_t *slot = &g_asks[(g_asks_next + i) % (size_t)HUSH_AGENT_ASKS_MAX];
+
+        if (slot->id[0] == '\0' || strcmp(slot->root, root) != 0)
+            continue;
+        hush_agent_copy(out, outsz, slot->id);
+        memset(slot, 0, sizeof(*slot));
+        return;
+    }
 }
