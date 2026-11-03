@@ -474,12 +474,15 @@ async function main() {
     await cdp.eval(`(() => { const p = $('route-pick'); p.value = ${JSON.stringify(aceN)}; p.dispatchEvent(new Event('change')); return true; })()`);
     const chosen = await compose('plain two', 'plain two');
     if (!chosen.got || chosen.got.reply_to !== RA) fail('A the chosen robot\'s conversation must take the note: ' + JSON.stringify(chosen));
-    // Gauge M1-F19 (narrowed): the void is per conversation. The relay holds
-    // one robot turn per conversation at a time (a second robot named in
-    // the same note waits in the follow queue, agent_dispatch.c:590-599), so
-    // one ask waits in Ace's conversation (the one raised for the "plain
+    // Gauge M1-F19: the void is per conversation. For an owner note the
+    // relay holds one robot turn per conversation at a time (a second robot
+    // named in it waits in the follow queue, agent_dispatch.c:590-599), so
+    // this leg reaches one ask in Ace's conversation (raised for the "plain
     // two" note above) and one in Bea's own conversation (beaRoot). A plain
     // note to Ace's conversation must close Ace's ask and leave Bea's alone.
+    // That serial hold is owner-only: a guest note naming two robots or a
+    // parallel team wave can leave two asks waiting in one conversation, so
+    // tests/check_ask_void.cjs pins that every one of them closes.
     const asksOn = (root) => cdp.evalAsync(`(async () => { const j = await (await fetch('/api/events')).json();
       return (j.events || j || []).filter((e) => e.channel === 'route-room' && e.reply_to === ${JSON.stringify(root)} && e.ask === true)
         .map((e) => ({ id: e.id, text: String(e.content || '') })); })()`);
