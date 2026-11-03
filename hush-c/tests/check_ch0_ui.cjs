@@ -770,16 +770,6 @@ async function main() {
   await routePins();
   await cdp.evalAsync(`(async () => { applySession(await api('/api/channel', { name: 'quiet-room', system_prompt: '' })); return true; })()`);
   await cdp.waitFor(`[...document.querySelectorAll('.chan')].some((b) => b.textContent.includes('#quiet-room'))`, 'quiet-room channel');
-  // Gauge M1-F14: also wait until /api/session lists quiet-room, so a later
-  // tick() repaints the channel list from a session that has it (see the
-  // idle state below for the race this narrows).
-  for (let k = 0; ; k++) {
-    const listed = await cdp.evalAsync(`(async () => { const s = await (await fetch('/api/session')).json();
-      return (s.channels || []).some((c) => c.slug === 'quiet-room'); })()`);
-    if (listed) break;
-    if (k >= 50) fail('timeout waiting for /api/session to list quiet-room');
-    await sleep(200);
-  }
 
   // Page helpers: channel switch, status wrapper, send failure, drawers.
   await cdp.eval(`(() => {
@@ -810,16 +800,38 @@ async function main() {
   };
   const STATES = [
     ['idle', async () => {
-      // Gauge M1-F14 flake (failed 4 of 6 box runs on both d7b6f836 and
-      // 97d60296). INFERRED cause: a tick() (demo/index.html:9350) whose
-      // /api/session fetch began before quiet-room existed lands after the
-      // click and sets that stale session; the channel list then finds no
-      // quiet-room and snaps `channel` back to the first channel
-      // (index.html:3640-3641), so .empty never paints. Re-select
-      // quiet-room on every poll where it is not the open channel, within
-      // the same waitFor timeout.
-      await cdp.waitFor(`(() => { if (document.querySelector('#stream .empty')) return true;
-        if (channel !== 'quiet-room') window.__ch0go('quiet-room'); return false; })()`, 'empty channel');
+      // KNOWN RACE (stale-session), Gauge M1-F14; tracked as internal P2
+      // 'stale-session-snap' (owner JNY, after M1). A just-created channel
+      // snaps back to the first channel because an older /api/session poll
+      // overwrites it: a tick() (demo/index.html:9350) whose fetch began
+      // before quiet-room existed sets that stale session, and the channel
+      // list then finds no quiet-room and resets `channel`
+      // (index.html:3640-3641). INFERRED, not yet verified by a
+      // deterministic repro (failed 4 of 6 box runs on d7b6f836 and
+      // 97d60296). Until the product fix lands (it drops this re-assert),
+      // re-select quiet-room inside the wait, log every re-assert, and fail
+      // with the count if the 25 s timeout still expires.
+      await cdp.eval(`window.__ch0go('quiet-room')`);
+      let reasserts = 0;
+      let active = '';
+      const t0 = Date.now();
+      for (;;) {
+        let st = null;
+        try {
+          st = await cdp.eval(`({ empty: !!document.querySelector('#stream .empty'), active: channel })`);
+        } catch (e) { /* page busy */ }
+        if (st && st.empty) break;
+        if (st) active = st.active;
+        if (Date.now() - t0 > 25000)
+          fail('timeout waiting for empty channel (F14 KNOWN RACE stale-session re-asserts=' + reasserts + ', last active=' + active + ')');
+        if (st && st.active !== 'quiet-room') {
+          reasserts++;
+          console.log('F14 KNOWN RACE stale-session re-assert #' + reasserts + ': active=' + st.active);
+          await cdp.eval(`window.__ch0go('quiet-room')`);
+        }
+        await sleep(150);
+      }
+      console.log('F14 idle state: empty channel shown, stale-session re-asserts=' + reasserts);
     }],
     ['log', toWelcome],
     ['replying', async () => {
