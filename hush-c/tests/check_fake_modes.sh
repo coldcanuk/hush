@@ -4,11 +4,12 @@
 # every secret as a 0600 file in 0700 dirs (fake-op's items/ and vault dirs
 # included), both for a fresh store and when the file and dirs already
 # exist with wider modes (0644 / 0755): a fake must never keep the old mode.
-# Modes are read with stat. Two more steps pin fake-pass.sh's write order:
+# Modes are read with stat. More steps pin fake-pass.sh's write order:
 # a reader holding an fd to an old 0644 file must not see the new secret, so
-# the secret goes to a new file, never into the old one; and that new file
-# must already be 0600 before the first secret byte reaches it (the save
-# reads the probe from a FIFO that is held back until the mode is checked).
+# the secret goes to a new file, never into the old one; the file must be
+# 0600 while it holds the first secret bytes, fresh and over an old 0644 file
+# (the save reads the probe from a FIFO this script controls); and with chmod
+# a no-op the new file must still be born 0600, from fake-pass's umask 077.
 # The held-fd read sees only the fixed probe text written here, never a key.
 set -eu
 cd "$(dirname "$0")/.."
@@ -120,31 +121,76 @@ exec 3<&-
 [ -z "$seen" ] || fail "a reader holding the old 0644 file saw the saved secret"
 want 600 "$held/$FLAT_ITEM"
 
+# fifo_start <store dir>: starts a fake-pass save that reads the probe from a
+# FIFO this script holds open, so the save makes its file and then waits.
+fifo_start() {
+    fifo="$work/save.fifo"
+    mkfifo -m 600 "$fifo"
+    HUSH_FAKE_PASS_DIR="$1" sh tests/fake-pass.sh save "$ITEM" < "$fifo" &
+    saver=$!
+    exec 4> "$fifo"
+    fifo_open=1
+}
+
+# fifo_finish <store dir> <step>: gives the save EOF, waits for it, removes
+# the FIFO and requires the saved file to be 0600.
+fifo_finish() {
+    exec 4>&-
+    fifo_open=0
+    wait "$saver" || { saver=""; fail "$2: fake-pass save failed"; }
+    saver=""
+    rm -f -- "$fifo"
+    fifo=""
+    want 600 "$1/$FLAT_ITEM"
+}
+
+# poll_until <step> <what> <test args>...: polls `test <args>` until it holds,
+# failing with "<step>: <what> in 10 s" after FIFO_POLLS tries.
+poll_until() {
+    poll_step=$1
+    poll_what=$2
+    shift 2
+    polls=0
+    while ! test "$@"; do
+        polls=$((polls + 1))
+        [ "$polls" -le "$FIFO_POLLS" ] || fail "$poll_step: $poll_what in 10 s"
+        sleep "$FIFO_POLL_SECS"
+    done
+}
+
 # The new file's mode before the secret reaches it. The save reads from a
 # FIFO that this script holds open without writing, so it makes the file and
-# then waits for data. The file must be 0600 at that point: writing first
-# and chmod after would leave it at the umask's 0644 while it held the probe.
+# then waits for data. The file must be 0600 at that point: a save with no
+# umask 077 that writes first and chmods after would leave it at 0644 while
+# it held the probe.
 fed="$work/fifo-pass"
-fifo="$work/save.fifo"
-mkfifo -m 600 "$fifo"
-HUSH_FAKE_PASS_DIR="$fed" sh tests/fake-pass.sh save "$ITEM" < "$fifo" &
-saver=$!
-exec 4> "$fifo"
-fifo_open=1
-polls=0
-while [ ! -e "$fed/$FLAT_ITEM" ]; do
-    polls=$((polls + 1))
-    [ "$polls" -le "$FIFO_POLLS" ] || fail "fifo: fake-pass save made no file in 10 s"
-    sleep "$FIFO_POLL_SECS"
-done
+fifo_start "$fed"
+poll_until fifo "fake-pass save made no file" -e "$fed/$FLAT_ITEM"
 want 600 "$fed/$FLAT_ITEM"
 printf '%s' "$SECRET_TEXT" >&4
-exec 4>&-
-fifo_open=0
-wait "$saver" || { saver=""; fail "fifo: fake-pass save failed"; }
-saver=""
-rm -f -- "$fifo"
-fifo=""
-want 600 "$fed/$FLAT_ITEM"
+fifo_finish "$fed" fifo
 
-echo "fake modes ok: pass, op and secret-tool store 0600 files in 0700 dirs, fresh and over 0644/0755; a held fd to the old 0644 pass file sees no secret; the new pass file is 0600 before the secret reaches it"
+# The same over an old 0644 file. The path exists before the save, so the
+# mode is read while the file holds the probe: the probe is written but the
+# FIFO stays open, so a chmod after the write cannot have run yet. A save
+# that writes into the old file instead of a new one holds the probe at 0644.
+loose_fed="$work/fifo-loose-pass"
+loosen "$loose_fed/$FLAT_ITEM" "$loose_fed"
+fifo_start "$loose_fed"
+printf '%s' "$SECRET_TEXT" >&4
+poll_until fifo-loose "the probe never reached the pass file" -s "$loose_fed/$FLAT_ITEM"
+want 600 "$loose_fed/$FLAT_ITEM"
+fifo_finish "$loose_fed" fifo-loose
+
+# Birth mode: with chmod a no-op on PATH, the new pass file keeps the mode it
+# was made with, so a save that relies on chmod alone (no umask 077) fails.
+nochmod="$work/nochmod"
+mkdir "$nochmod"
+printf '%s\n' '#!/bin/sh' 'exit 0' > "$nochmod/chmod"
+chmod 755 "$nochmod/chmod"
+born="$work/born-pass"
+printf '%s' "$SECRET_TEXT" | PATH="$nochmod:$PATH" HUSH_FAKE_PASS_DIR="$born" sh tests/fake-pass.sh save "$ITEM" ||
+    fail "born: fake-pass save failed"
+want 600 "$born/$FLAT_ITEM"
+
+echo "fake modes ok: pass, op and secret-tool store 0600 files in 0700 dirs, fresh and over 0644/0755; a held fd to the old 0644 pass file sees no secret; the new pass file is 0600 while it first holds the secret, fresh and over an old 0644 file, and is born 0600 with chmod a no-op"
