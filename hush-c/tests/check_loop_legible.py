@@ -31,16 +31,17 @@ FILES = {
     "tests/test_approve.c": None,
 }
 # Functions in tests/test_loop.c today. The scan must still find all of
-# them, so no test function can drop out of the caps unnoticed. (+4 for the
-# private-root helpers root_make, root_remove, root_remove_entry and
-# root_holds.)
-TEST_LOOP_FUNCTIONS = 34
+# them, so no test function can drop out of the caps unnoticed. (+5 for the
+# private-root helpers root_make, root_remove, root_remove_entry, root_holds
+# and root_under_tmpdir.)
+TEST_LOOP_FUNCTIONS = 35
 # Functions in tests/test_approve.c today (#279 r2; +check_needed, #336;
 # #312 adds first_at, give_intro, check_intro_waits and check_intro_auto;
 # the #312 pair fix adds new_fixture, pair_lead_ends, check_pair_asks,
 # open_trio and check_resume_waits; the private-root helpers root_make,
-# root_remove, root_remove_entry and root_holds), held to the same rule.
-TEST_APPROVE_FUNCTIONS = 54
+# root_remove, root_remove_entry, root_holds and root_under_tmpdir), held
+# to the same rule.
+TEST_APPROVE_FUNCTIONS = 55
 TEST_COUNTS = {
     "tests/test_loop.c": TEST_LOOP_FUNCTIONS,
     "tests/test_approve.c": TEST_APPROVE_FUNCTIONS,

@@ -40,8 +40,8 @@ static pid_t g_root_pid;
 /* Makes g_root under TMPDIR (/tmp when TMPDIR is unset, empty, or not
  * absolute); root_remove, registered with atexit, removes it on every return
  * from main and every exit(). Returns 0, after a FAIL line, when root_holds
- * fails its own check, the path does not fit, mkdtemp fails, or atexit
- * refuses. */
+ * fails its own check, the path does not fit, mkdtemp fails, atexit
+ * refuses, or the root is not under an absolute TMPDIR. */
 static int root_make(void);
 
 /* atexit handler: removes g_root and everything under it, in the making
@@ -58,6 +58,12 @@ static int root_remove_entry(const char *path, const struct stat *st, int flag,
 /* True when path is root or lies below it: root must match whole path
  * components, so "/r" holds "/r" and "/r/k" but not the sibling "/rX/k". */
 static int root_holds(const char *root, const char *path);
+
+/* True when TMPDIR is unset, empty, or not absolute (root_make then uses
+ * /tmp), or when g_root lies under TMPDIR with one trailing slash dropped.
+ * A root made anywhere else (a fixed /tmp, say) escapes the run's own
+ * cleanup and leak scan. */
+static int root_under_tmpdir(void);
 
 static int g_fail;
 
@@ -618,6 +624,11 @@ static int root_make(void)
         fprintf(stderr, "FAIL atexit for the private root\n");
         return 0;
     }
+    /* atexit is already set, so the root is still removed on this FAIL. */
+    if (!root_under_tmpdir()) {
+        fprintf(stderr, "FAIL private root %s is not under TMPDIR\n", g_root);
+        return 0;
+    }
     return 1;
 }
 
@@ -659,4 +670,21 @@ static int root_holds(const char *root, const char *path)
     n = strlen(root);
     return n > 0 && strncmp(path, root, n) == 0 &&
            (path[n] == '\0' || path[n] == '/');
+}
+
+static int root_under_tmpdir(void)
+{
+    const char *env = getenv("TMPDIR");
+    char base[ROOT_PATH_MAX] = "";
+    size_t n = 0;
+
+    if (env == NULL || env[0] != '/')
+        return 1;
+    n = strlen(env);
+    if (n > 1 && env[n - 1] == '/')
+        n--;
+    if (n >= sizeof(base))
+        return 0;
+    memcpy(base, env, n);
+    return root_holds(base, g_root);
 }
