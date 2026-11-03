@@ -2179,6 +2179,12 @@ html[data-theme="field-office"] .think-stop:focus-visible {
   max-width: 100%; min-width: 0; font: inherit; color: var(--fg); background: var(--surface);
   border: 1px solid var(--fg); border-radius: 3px;
 }
+/* Ops M1 FU1 label quality (CoS 01:04 b): a label wider than the line ends
+   in an ellipsis instead of a hard clip. The quote is already cut at a word
+   break within 40 characters (convoLabel); this only covers the width. */
+.route-preview #route-text, .route-preview select {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 100%;
+}
 html[data-theme="field-office"] .loop-yes {
   box-shadow: inset 0 0 0 1px var(--surface-2), inset 0 0 0 2px var(--accent);
 }
@@ -5713,10 +5719,36 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       return out;
     }
 
+    /* Where a follow-up goes, for both the #route-text line and each
+       #route-pick option (Ops M1 FU1 label quality): "to <robot>,
+       continuing “<quote>”". The quote is the conversation's first note
+       with a leading mention of that same robot dropped ("to <robot>"
+       already says it; a mention of another robot stays) and whitespace
+       collapsed. Up to 40 characters it is whole; longer, it is cut at the
+       last word break within the first 39 characters and ends in "…" (a
+       single word longer than that is cut at 39). For a label still wider
+       than the line, #route-text and the <select> carry text-overflow:
+       ellipsis (CSS .route-preview); the open option list is native and
+       draws no ellipsis. #route-text, each option and the <select> carry
+       this whole label as their title. */
     function convoLabel(c) {
       const root = lastEvents.find((x) => x.id === c.root);
-      const flat = prettyMentions((root && root.content) || "").replace(/\s+/g, " ").trim();
-      return "to " + c.name + ", continuing \u201c" + (flat.length > 40 ? flat.slice(0, 39) + "\u2026" : flat) + "\u201d";
+      const full = prettyMentions((root && root.content) || "").replace(/\s+/g, " ").trim();
+      const own = "@" + String(c.name || "").replace(/\s+/g, " ").trim();
+      const rest = own.length > 1 && full.toLowerCase().startsWith(own.toLowerCase()) &&
+        (full.length === own.length || /[\s,.:;!?]/.test(full[own.length]))
+        ? full.slice(own.length).replace(/^[\s,.:;!?]+/, "") : full;
+      const flat = rest || full;
+      let quote = flat;
+      if (flat.length > 40) {
+        let cut = flat.slice(0, 39);
+        if (flat[39] !== " ") {
+          const sp = cut.lastIndexOf(" ");
+          if (sp > 0) cut = cut.slice(0, sp);
+        }
+        quote = cut.replace(/[\s,.:;!?]+$/, "") + "\u2026";
+      }
+      return "to " + c.name + ", continuing \u201c" + quote + "\u201d";
     }
 
     /* { kind: "bare" | "new" | "continue" | "choose", convo, list } */
@@ -5746,6 +5778,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       if (!assembled.content.trim()) {
         box.hidden = true;
         $("route-text").textContent = "";
+        $("route-text").title = "";
         paintRoutePick({ kind: "idle" });
         return route;
       }
@@ -5760,28 +5793,22 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
          says only what the chooser cannot ("Choose who this goes to:"). */
       const picking = (route.list || []).length > 0;
       $("route-text").textContent = picking && route.kind !== "choose" ? "" : words[route.kind];
+      $("route-text").title = $("route-text").textContent;
       paintRoutePick(route);
       return route;
-    }
-
-    /* A chooser option: a shorter quote than convoLabel, so a 390 px line
-       holds the picked option without clipping it. */
-    function pickLabel(c) {
-      const root = lastEvents.find((x) => x.id === c.root);
-      const flat = prettyMentions((root && root.content) || "").replace(/\s+/g, " ").trim();
-      return "to " + c.name + ", continuing \u201c" + (flat.length > 24 ? flat.slice(0, 23) + "\u2026" : flat) + "\u201d";
     }
 
     function paintRoutePick(route) {
       const pick = $("route-pick");
       const list = route.list || [];
       pick.hidden = !list.length;
+      pick.title = !list.length ? "" : route.kind === "continue" && route.convo ? convoLabel(route.convo) : (route.kind === "new" ? "New conversation in #" + channel : "");
       const key = list.map((c) => c.npub + c.root).join(",") + "|" + route.kind + "|" + (route.convo ? route.convo.npub : "");
       if (pick.dataset.key === key) return;
       pick.dataset.key = key;
       if (!list.length) { pick.replaceChildren(); return; }
-      const opts = [["", "Choose\u2026"]].concat(list.map((c) => [c.npub, pickLabel(c)]), [["new", "New conversation in #" + channel]]);
-      pick.replaceChildren(...opts.map(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; return o; }));
+      const opts = [["", "Choose\u2026"]].concat(list.map((c) => [c.npub, convoLabel(c)]), [["new", "New conversation in #" + channel]]);
+      pick.replaceChildren(...opts.map(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; o.title = t; return o; }));
       pick.value = route.kind === "continue" ? route.convo.npub : (route.kind === "new" ? "new" : "");
     }
 

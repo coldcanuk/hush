@@ -12,7 +12,10 @@ the top-level `VERSION` file.
   now really hidden (its flex rule used to override `hidden`), so first paint and idle channels no
   longer show an empty chooser, and no "to #welcome …" text stays after a send or carries into another
   channel. The line uses the log's left gutter; when the chooser shows, the label is not repeated
-  beside it, and its options use a shorter quote so the picked one fits at 390 px.
+  beside it. The @mention line and the chooser show one label, "to <robot>, continuing “…”": the
+  robot's own leading @mention is dropped from the quote, a long note is cut at a word break within
+  40 characters with "…", the whole label is the hover title, and a label wider than the line ends
+  in an ellipsis (Ops M1 FU1 label quality).
 - M1 channels only: the channel log now shows every reply in place, oldest first, so a robot's answer
   is visible in the channel with no click (G20). Before, the log listed only top-level notes and
   replies were reachable only through the thread pane. A missing-runtime sentence still shows once, on

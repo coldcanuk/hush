@@ -870,11 +870,9 @@ Send, whenever `#msg` holds text:
   `reply_to`, so it cannot settle a waiting ask.
 - An @mention of exactly one robot that has a conversation here continues
   it (`reply_to` its root), so the robot keeps its prior turns. The line
-  then reads "to <robot>, continuing “<the conversation's first note>”",
-  quoting that note whole up to 40 characters, else its first 39
-  characters and "…"; no `#route-pick` shows. Two or more mentioned
-  robots, or a robot with no conversation here, start a new
-  conversation: "to #<channel>, new conversation".
+  then reads the conversation label (below); no `#route-pick` shows.
+  Two or more mentioned robots, or a robot with no conversation here,
+  start a new conversation: "to #<channel>, new conversation".
 - A plain note with exactly one active robot continues that robot's
   conversation and adds that robot as `mention_0`. The line shows
   `#route-pick` with that one conversation selected (its other options
@@ -888,9 +886,19 @@ Send, whenever `#msg` holds text:
   the one-robot follow-up. The choice holds for the channel until Send.
 - When `#route-pick` shows, it carries the label and the line adds no
   text beside it, except "Choose who this goes to:". Each robot's option
-  reads "to <robot>, continuing “<the conversation's first note>”",
-  quoting that note whole up to 24 characters, else its first 23
-  characters and "…", so the picked option fits a 390 px line.
+  is the same conversation label as the @mention line.
+- The conversation label is "to <robot>, continuing “<quote>”". The quote
+  is the conversation's first note with a leading mention of that same
+  robot dropped ("to <robot>" already names it; a mention of another
+  robot stays) and whitespace collapsed; if nothing is left, the note is
+  quoted as written. Up to 40 characters it is shown whole; longer, it is
+  cut at the last word break within its first 39 characters, trailing
+  punctuation dropped, and ends in "…" (one word longer than that is cut
+  at 39).
+  The line's text, each option and `#route-pick` carry the label as
+  their `title`. A label wider than the line ends in an ellipsis
+  (`text-overflow: ellipsis` on `#route-text` and `#route-pick`), never a
+  bare clip (Ops M1 FU1 label quality).
 - With `#msg` empty (first paint, idle, after a send, or after a channel
   switch) the line is hidden (`.route-preview[hidden]` is `display:
   none`), its text is cleared, and `#route-pick` is hidden with no
