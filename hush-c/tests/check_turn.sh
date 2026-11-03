@@ -22,7 +22,13 @@ cfg=$(mktemp -d)
 export HUSH_CONFIG_DIR="$cfg"
 "$bin" --no-open "$port" >"$log" 2>&1 &
 pid=$!
-cleanup() { kill "$pid" 2>/dev/null || true; rm -f "$log"; rm -rf "$cfg"; }
+# Removes only what this script made: the relay, its log, and the mktemp
+# config, pass-store and home dirs (the pass store holds the hive's nsecs).
+cleanup() {
+    kill "$pid" 2>/dev/null || true
+    rm -f "$log"
+    rm -rf "$cfg" "$HUSH_FAKE_PASS_DIR" "$test_home"
+}
 trap cleanup EXIT
 i=0
 while [ "$i" -lt 50 ]; do
