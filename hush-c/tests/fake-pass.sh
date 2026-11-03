@@ -1,7 +1,8 @@
 #!/bin/sh
 # Test double for hush-pass. Store lives under HUSH_FAKE_PASS_DIR.
 # umask 077 makes a new store dir 0700 and a new secret file 0600; the
-# chmods also reset a dir or file that already existed with a wider mode.
+# dir chmod resets a store dir that already existed with a wider mode, and
+# save removes an old file before it writes, so no write lands before chmod.
 set -eu
 umask 077
 dir="${HUSH_FAKE_PASS_DIR:-/tmp/hush-fake-pass}"
@@ -12,8 +13,12 @@ path="${2:-}"
 file="$dir/$(printf '%s' "$path" | tr '/' '_')"
 case "$cmd" in
     save)
-        cat > "$file"
+        # Remove first, so no secret byte is written into a file that
+        # already had a wider mode; the new file is 0600 before the write.
+        rm -f "$file"
+        : > "$file"
         chmod 600 "$file"
+        cat > "$file"
         ;;
     get)
         [ -f "$file" ] || exit 1
