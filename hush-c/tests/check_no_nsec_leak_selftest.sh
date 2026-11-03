@@ -10,7 +10,9 @@
 # Then, for each of the other secret names (a *vault_* entry, a *providers_*
 # entry, ui.jar and ui.nonce): planted outside the run TMPDIR the guard must
 # FAIL and name it; planted at the top of the run TMPDIR it must pass and
-# list it as INFO. The planted files are empty: no key or token is written.
+# list it as INFO; planted in a C-test-style private root (hush-other-plant)
+# inside it the guard must FAIL and name it. The planted files are empty: no
+# key or token is written.
 # Removes only the two dirs it made itself, on every exit path.
 set -eu
 cd "$(dirname "$0")/.."
@@ -23,11 +25,13 @@ VAULT_PLANT_NAME=keys.vault
 VAULT_ROOT_PLANT_DIR=hush-vault-plant
 # One name per remaining secret pattern: *vault_*, *providers_*, ui.jar, ui.nonce.
 OTHER_PLANT_NAMES="plant_vault_opener plant_providers_key ui.jar ui.nonce"
+OTHER_ROOT_PLANT_DIR=hush-other-plant
 
 fail() { echo "nsec leak self-test failed: $1" >&2; exit 1; }
 
 # Outside the run dir the guard must fail and name the plant; at the top of
-# the run dir it must pass and name it as INFO; with it gone it must pass.
+# the run dir it must pass and name it as INFO; in a private root inside the
+# run dir it must fail and name it; with it gone it must pass.
 check_other_plant() {
     name=$1
     : > "$plant_dir/$name"
@@ -41,6 +45,15 @@ check_other_plant() {
         || { cat "$out" >&2; fail "guard fails with $name at the top of the run dir"; }
     grep -q "$run_dir/$name" "$out" || fail "guard did not list the inside $name plant as INFO"
     rm -f "$run_dir/$name"
+    root_plant="$run_dir/$OTHER_ROOT_PLANT_DIR"
+    mkdir "$root_plant"
+    : > "$root_plant/$name"
+    if sh "$guard" check "$marker" "$run_dir" >"$out" 2>&1; then
+        fail "guard passed with $name left in a private root inside the run dir"
+    fi
+    grep -q "$root_plant/$name" "$out" || fail "guard did not name the private-root $name plant"
+    rm -f "$root_plant/$name"
+    rmdir "$root_plant"
     sh "$guard" check "$marker" "$run_dir" >"$out" 2>&1 \
         || { cat "$out" >&2; fail "guard still fails after the $name plants are gone"; }
 }
@@ -136,4 +149,4 @@ for name in $OTHER_PLANT_NAMES; do
     check_other_plant "$name"
 done
 
-echo "nsec leak self-test ok: guard fails on all ten failing plants (key, token, vault, *vault_*, *providers_*, ui.jar and ui.nonce outside; key inside; token and vault in a private root), lists the four other names as INFO inside, and passes without them"
+echo "nsec leak self-test ok: guard fails on all fourteen failing plants (key, token, vault, *vault_*, *providers_*, ui.jar and ui.nonce outside; key inside; token, vault, *vault_*, *providers_*, ui.jar and ui.nonce in a private root), lists the four other names as INFO at the top of the run dir, and passes without them"
