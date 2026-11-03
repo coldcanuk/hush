@@ -106,9 +106,9 @@ enum {
 static char g_root[ROOT_PATH_MAX];
 static pid_t g_root_pid;
 
-/* Makes g_root under TMPDIR (/tmp when TMPDIR is unset, empty, or not
- * absolute); root_remove, registered with atexit, removes it on every return
- * from main and every exit(). Returns 0, after a FAIL line, when root_holds
+/* Makes g_root under root_tmpdir() (/tmp when that is NULL); root_remove,
+ * registered with atexit, removes it on every return from main and every
+ * exit(). Returns 0, after a FAIL line, when root_holds
  * fails its own check, the path does not fit, mkdtemp fails, atexit
  * refuses, or the root is not under an absolute TMPDIR. */
 static int root_make(void);
@@ -128,11 +128,15 @@ static int root_remove_entry(const char *path, const struct stat *st, int flag,
  * components, so "/r" holds "/r" and "/r/k" but not the sibling "/rX/k". */
 static int root_holds(const char *root, const char *path);
 
-/* True when TMPDIR is unset, empty, or not absolute (root_make then uses
- * /tmp), or when g_root lies under TMPDIR with one trailing slash dropped.
- * A root made anywhere else (a fixed /tmp, say) escapes the run's own
- * cleanup and leak scan. */
-static int root_under_tmpdir(void);
+/* True when root_tmpdir() is NULL (root_make then uses /tmp), or when
+ * g_root lies under it with one trailing slash dropped. A root made anywhere
+ * else (a fixed /tmp, say) escapes the run's own cleanup and leak scan.
+ * Requires a made root (g_root non-empty). */
+static int root_is_under_tmpdir(void);
+
+/* TMPDIR when it is set and absolute; NULL when it is unset, empty, or
+ * relative. Borrowed from the environment, never owned or freed. */
+static const char *root_tmpdir(void);
 
 static int g_fail;
 
@@ -1114,7 +1118,7 @@ int main(void)
 
 static int root_make(void)
 {
-    const char *tmp = getenv("TMPDIR");
+    const char *base_dir = root_tmpdir();
     int wrote = 0;
 
     assert(g_root[0] == '\0');
@@ -1127,12 +1131,12 @@ static int root_make(void)
     }
     /* A relative TMPDIR would leave g_root relative, and a test that
      * chdirs would then walk the wrong dir at exit. */
-    if (tmp == NULL || tmp[0] != '/')
-        tmp = ROOT_TMP_DEFAULT;
-    wrote = snprintf(g_root, sizeof(g_root), "%s/%s", tmp, ROOT_NAME);
+    if (base_dir == NULL)
+        base_dir = ROOT_TMP_DEFAULT;
+    wrote = snprintf(g_root, sizeof(g_root), "%s/%s", base_dir, ROOT_NAME);
     if (wrote < 0 || (size_t)wrote >= sizeof(g_root) || mkdtemp(g_root) == NULL) {
         g_root[0] = '\0';
-        fprintf(stderr, "FAIL private root under %s\n", tmp);
+        fprintf(stderr, "FAIL private root under %s\n", base_dir);
         return 0;
     }
     g_root_pid = getpid();
@@ -1143,7 +1147,7 @@ static int root_make(void)
         return 0;
     }
     /* atexit is already set, so the root is still removed on this FAIL. */
-    if (!root_under_tmpdir()) {
+    if (!root_is_under_tmpdir()) {
         fprintf(stderr, "FAIL private root %s is not under TMPDIR\n", g_root);
         return 0;
     }
@@ -1190,19 +1194,29 @@ static int root_holds(const char *root, const char *path)
            (path[n] == '\0' || path[n] == '/');
 }
 
-static int root_under_tmpdir(void)
+static int root_is_under_tmpdir(void)
 {
-    const char *env = getenv("TMPDIR");
-    char base[ROOT_PATH_MAX] = "";
-    size_t n = 0;
-
-    if (env == NULL || env[0] != '/')
+    assert(g_root[0] != '\0');
+    const char *env = root_tmpdir();
+    if (env == NULL)
         return 1;
-    n = strlen(env);
+
+    size_t n = strlen(env);
     if (n > 1 && env[n - 1] == '/')
         n--;
-    if (n >= sizeof(base))
+    /* g_root is shorter than ROOT_PATH_MAX, so no longer TMPDIR can hold it:
+     * "not under TMPDIR" is the true answer here, not a second error. */
+    if (n >= (size_t)ROOT_PATH_MAX)
         return 0;
+    char base[ROOT_PATH_MAX] = "";
     memcpy(base, env, n);
     return root_holds(base, g_root);
+}
+
+static const char *root_tmpdir(void)
+{
+    const char *env = getenv("TMPDIR");
+    if (env == NULL || env[0] != '/')
+        return NULL;
+    return env;
 }
