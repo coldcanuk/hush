@@ -16,7 +16,7 @@
 
 enum {
     /* Longest private root path; every path a test derives from it fits. */
-    ROOT_PATH_MAX = 72,
+    ROOT_PATH_MAX = 96,
     /* Open-fd budget for the nftw cleanup walk. */
     ROOT_FTW_FDS = 16
 };

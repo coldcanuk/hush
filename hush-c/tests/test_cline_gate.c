@@ -31,7 +31,7 @@
 enum {
     /* The mkdtemp scratch under the private root (ROOT_PATH_MAX plus
      * "/hush-cline-gate-XXXXXX"); every derived path fits GATE_PATH_MAX. */
-    GATE_DIR_MAX = 96,
+    GATE_DIR_MAX = 120,
     GATE_CWDS = 2,
     GATE_PATH_MAX = 512,
     GATE_FTW_FDS = 16,
@@ -58,7 +58,7 @@ enum {
 
 enum {
     /* Longest private root path; every path a test derives from it fits. */
-    ROOT_PATH_MAX = 72,
+    ROOT_PATH_MAX = 96,
     /* Open-fd budget for the nftw cleanup walk. */
     ROOT_FTW_FDS = 16
 };

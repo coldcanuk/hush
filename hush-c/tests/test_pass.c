@@ -14,15 +14,15 @@
 
 enum {
     /* A scratch base: the private root plus one "/hush-...-<pid>" name. */
-    TEST_BASE_MAX = 112,
+    TEST_BASE_MAX = 136,
     /* A base plus its longest suffix ("/agents_sgt-major-payne_nsec"). */
-    TEST_PATH_MAX = 144,
+    TEST_PATH_MAX = 168,
     TEST_DIR_MODE = 0700
 };
 
 enum {
     /* Longest private root path; every path a test derives from it fits. */
-    ROOT_PATH_MAX = 72,
+    ROOT_PATH_MAX = 96,
     /* Open-fd budget for the nftw cleanup walk. */
     ROOT_FTW_FDS = 16
 };
