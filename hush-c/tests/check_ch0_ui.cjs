@@ -886,11 +886,17 @@ async function main() {
         await sleep(150);
       }
       console.log('F14 idle state: empty channel shown, stale-session re-asserts=' + reasserts);
-      // Ops M1 F1 (C3 idle): no route line, text or chooser in the idle channel.
+      // Ops M1 F1 (C3 idle): with the composer empty the idle channel shows
+      // no route line, text or chooser. Later passes (after the 'error' and
+      // 'mention' states) carry their draft here; that draft must then be
+      // routed for quiet-room, never for the channel it was typed in.
       const idleRoute = await cdp.eval(`(() => { const b = $('route-preview'), p = $('route-pick');
-        return { disp: getComputedStyle(b).display, text: $('route-text').textContent, pickDisp: getComputedStyle(p).display, opts: p.options.length }; })()`);
-      if (!idleRoute || idleRoute.disp !== 'none' || idleRoute.text !== '' || idleRoute.pickDisp !== 'none' || idleRoute.opts !== 0)
-        fail('RP4 the idle channel must show no route line or chooser: ' + JSON.stringify(idleRoute));
+        return { draft: $('msg').value, disp: getComputedStyle(b).display, text: $('route-text').textContent, pickDisp: getComputedStyle(p).display, opts: p.options.length }; })()`);
+      const idleOk = !idleRoute ? false : idleRoute.draft.trim() === ''
+        ? idleRoute.disp === 'none' && idleRoute.text === '' && idleRoute.pickDisp === 'none' && idleRoute.opts === 0
+        : idleRoute.disp !== 'none' && /#quiet-room/.test(idleRoute.text) && !/#welcome|#route-room/.test(idleRoute.text);
+      if (!idleOk) fail('RP4 the idle channel must show no route line for an empty composer, and only quiet-room\'s route for a draft: ' + JSON.stringify(idleRoute));
+      console.log('RP4 PASS idle route line: ' + JSON.stringify(idleRoute));
     }],
     ['log', toWelcome],
     ['replying', async () => {
