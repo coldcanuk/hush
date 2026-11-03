@@ -7,9 +7,10 @@
 # Modes are read with stat. More steps pin fake-pass.sh's write order:
 # a reader holding an fd to an old 0644 file must not see the new secret, so
 # the secret goes to a new file, never into the old one; the file must be
-# 0600 while it holds the first secret bytes, fresh and over an old 0644 file
-# (the save reads the probe from a FIFO this script controls); and with chmod
-# a no-op the new file must still be born 0600, from fake-pass's umask 077.
+# 0600 just before the secret's bytes arrive on a fresh store, and while it
+# holds them over an old 0644 file (the save reads the probe from a FIFO
+# this script controls); and with chmod a no-op the new file must still be
+# born 0600, from fake-pass's umask 077.
 # The held-fd read sees only the fixed probe text written here, never a key.
 set -eu
 cd "$(dirname "$0")/.."
@@ -173,7 +174,8 @@ fifo_finish "$fed" fifo
 # The same over an old 0644 file. The path exists before the save, so the
 # mode is read while the file holds the probe: the probe is written but the
 # FIFO stays open, so a chmod after the write cannot have run yet. A save
-# that writes into the old file instead of a new one holds the probe at 0644.
+# that writes into the old 0644 file without first tightening it holds the
+# probe at 0644.
 loose_fed="$work/fifo-loose-pass"
 loosen "$loose_fed/$FLAT_ITEM" "$loose_fed"
 fifo_start "$loose_fed"
@@ -193,4 +195,4 @@ printf '%s' "$SECRET_TEXT" | PATH="$nochmod:$PATH" HUSH_FAKE_PASS_DIR="$born" sh
     fail "born: fake-pass save failed"
 want 600 "$born/$FLAT_ITEM"
 
-echo "fake modes ok: pass, op and secret-tool store 0600 files in 0700 dirs, fresh and over 0644/0755; a held fd to the old 0644 pass file sees no secret; the new pass file is 0600 while it first holds the secret, fresh and over an old 0644 file, and is born 0600 with chmod a no-op"
+echo "fake modes ok: pass, op and secret-tool store 0600 files in 0700 dirs, fresh and over 0644/0755; a held fd to the old 0644 pass file sees no secret; the pass file is 0600 just before the secret's bytes arrive (fresh) and while it holds them (over an old 0644 file), and is born 0600 with chmod a no-op"
