@@ -1,6 +1,8 @@
 #!/bin/sh
 # Test double for hush-pass. Store lives under HUSH_FAKE_PASS_DIR.
+# umask 077: the store dir is 0700 and every stored secret file is 0600.
 set -eu
+umask 077
 dir="${HUSH_FAKE_PASS_DIR:-/tmp/hush-fake-pass}"
 mkdir -p "$dir"
 cmd="${1:-}"

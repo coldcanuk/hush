@@ -17,6 +17,14 @@ def item_path(vault, title):
     return os.path.join(folder, safe_t)
 
 
+def write_secret(path, text):
+    """Writes a stored secret as a 0600 file, never through the umask."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
 def write_meta(name, payload):
     path = os.path.join(root, name)
     with open(path, "w", encoding="utf-8") as handle:
@@ -79,8 +87,7 @@ if len(args) >= 2 and args[0] == "item" and args[1] == "create":
             "stdin_has_password": True,
         },
     )
-    with open(item_path(vault, title), "w", encoding="utf-8") as handle:
-        handle.write(secret)
+    write_secret(item_path(vault, title), secret)
     sys.exit(0)
 
 if len(args) >= 2 and args[0] == "item" and args[1] == "delete":
