@@ -8,6 +8,11 @@ the top-level `VERSION` file.
 
 ### Changed
 
+- M1 route line (Ops M1 F1, FU1): with the composer empty, the "where Send will post" line above it is
+  now really hidden (its flex rule used to override `hidden`), so first paint and idle channels no
+  longer show an empty chooser, and no "to #welcome …" text stays after a send or carries into another
+  channel. The line uses the log's left gutter; when the chooser shows, the label is not repeated
+  beside it, and its options use a shorter quote so the picked one fits at 390 px.
 - M1 channels only: the channel log now shows every reply in place, oldest first, so a robot's answer
   is visible in the channel with no click (G20). Before, the log listed only top-level notes and
   replies were reachable only through the thread pane. A missing-runtime sentence still shows once, on

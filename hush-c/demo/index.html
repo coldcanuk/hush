@@ -2163,12 +2163,17 @@ html[data-theme="field-office"] .think-stop:focus-visible {
 /* CoS 13:14 A (interim until Router M-n): the route line above the composer. */
 .route-preview {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-  margin: 0 0 4px; color: var(--fg); font-size: 0.78rem;
+  margin: 0 0 4px; padding: 0 18px; box-sizing: border-box; max-width: 100%;
+  color: var(--fg); font-size: 0.78rem;
 }
+/* Ops M1 F1: the flex rule above must not beat the hidden attribute. The
+   line and its chooser take no space and no focus while hidden. Ops M1
+   FU1: 18px is #stream's gutter, so the line lines up with the log. */
+.route-preview[hidden], .route-preview select[hidden] { display: none; }
 /* #368 C2: the chooser's edge is --fg (>= 3:1 on every theme's surface;
    the native #767676 rim was 2.15:1 in field-office). */
 .route-preview select {
-  max-width: 100%; font: inherit; color: var(--fg); background: var(--surface);
+  max-width: 100%; min-width: 0; font: inherit; color: var(--fg); background: var(--surface);
   border: 1px solid var(--fg); border-radius: 3px;
 }
 html[data-theme="field-office"] .loop-yes {
@@ -2394,7 +2399,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       <!-- CoS 13:14 A, interim until Router M-n: where Send will post. -->
       <div id="route-preview" class="route-preview" hidden>
         <span id="route-text"></span>
-        <select id="route-pick" aria-label="Who this note goes to"></select>
+        <select id="route-pick" aria-label="Who this note goes to" hidden></select>
       </div>
       <form class="composer" id="form">
         <div class="mention-box" id="mention-box" hidden></div>
@@ -3682,6 +3687,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         $("room").textContent = "#" + channel;
         seen = "";
         paintChannels();
+        paintRoute();
         tick();
       });
       b.addEventListener("contextmenu", (ev) => {
@@ -5732,7 +5738,14 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       const assembled = assembleMentionContent(raw, mentionRoster());
       const route = composerRoute(assembled.content, assembled.mentions);
       const box = $("route-preview");
-      if (!assembled.content.trim()) { box.hidden = true; return route; }
+      /* Ops M1 F1: an empty composer shows no route line: no text left from
+         an earlier draft or channel, and no empty chooser to tab into. */
+      if (!assembled.content.trim()) {
+        box.hidden = true;
+        $("route-text").textContent = "";
+        paintRoutePick({ kind: "idle" });
+        return route;
+      }
       box.hidden = false;
       const words = {
         bare: "to #" + channel + " as a new note. A bare Yes or No answers an ask only from its stamps.",
@@ -5740,9 +5753,20 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         choose: "Choose who this goes to:",
         continue: route.convo ? convoLabel(route.convo) : ""
       };
-      $("route-text").textContent = words[route.kind];
+      /* Ops M1 FU1: when the chooser shows, it carries the label; the text
+         says only what the chooser cannot ("Choose who this goes to:"). */
+      const picking = (route.list || []).length > 0;
+      $("route-text").textContent = picking && route.kind !== "choose" ? "" : words[route.kind];
       paintRoutePick(route);
       return route;
+    }
+
+    /* A chooser option: a shorter quote than convoLabel, so a 390 px line
+       holds the picked option without clipping it. */
+    function pickLabel(c) {
+      const root = lastEvents.find((x) => x.id === c.root);
+      const flat = prettyMentions((root && root.content) || "").replace(/\s+/g, " ").trim();
+      return "to " + c.name + ", continuing \u201c" + (flat.length > 24 ? flat.slice(0, 23) + "\u2026" : flat) + "\u201d";
     }
 
     function paintRoutePick(route) {
@@ -5752,7 +5776,8 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       const key = list.map((c) => c.npub + c.root).join(",") + "|" + route.kind + "|" + (route.convo ? route.convo.npub : "");
       if (pick.dataset.key === key) return;
       pick.dataset.key = key;
-      const opts = [["", "Choose\u2026"]].concat(list.map((c) => [c.npub, convoLabel(c)]), [["new", "New conversation in #" + channel]]);
+      if (!list.length) { pick.replaceChildren(); return; }
+      const opts = [["", "Choose\u2026"]].concat(list.map((c) => [c.npub, pickLabel(c)]), [["new", "New conversation in #" + channel]]);
       pick.replaceChildren(...opts.map(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; return o; }));
       pick.value = route.kind === "continue" ? route.convo.npub : (route.kind === "new" ? "new" : "");
     }

@@ -882,6 +882,15 @@ Send, whenever `#msg` holds text:
   and says "Choose who this goes to first." No robot is guessed.
 - `#route-pick` also lets the owner start a new conversation instead of
   the one-robot follow-up. The choice holds for the channel until Send.
+- When `#route-pick` shows, it carries the label and the line adds no
+  text beside it, except "Choose who this goes to:". Its options quote
+  the first 24 characters of each conversation's first note, so the
+  picked option fits a 390 px line.
+- With `#msg` empty (first paint, idle, after a send, or after a channel
+  switch) the line is hidden (`.route-preview[hidden]` is `display:
+  none`), its text is cleared, and `#route-pick` is hidden with no
+  options, so it takes no focus. `#route-pick` starts hidden. The line
+  sits in the log's 18 px gutter (Ops M1 F1, FU1).
 
 **Robot rows.** A robot row in the roster opens that robot's settings
 and loadout drawer (title "Open <name>'s settings and loadout"); it no

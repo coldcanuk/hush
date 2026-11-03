@@ -400,7 +400,9 @@ async function main() {
       // the routing, to show the regression.)
       const said = await cdp.eval(`(() => { $('send-error').textContent = ''; $('msg').value = ${JSON.stringify(text)};
         if (typeof paintRoute === 'function') paintRoute();
-        return { text: $('route-text') ? $('route-text').textContent : '', pick: !!$('route-pick') && !$('route-pick').hidden }; })()`);
+        const p = $('route-pick'); const shown = !!p && !p.hidden;
+        const opt = shown && p.selectedIndex > 0 ? p.options[p.selectedIndex].textContent : '';
+        return { text: ($('route-text') ? $('route-text').textContent : '') || opt, pick: shown }; })()`);
       const before = (await cdp.evalAsync(mineIn + `(${JSON.stringify(word)})`)).length;
       await cdp.eval(`$('form').requestSubmit()`);
       let got = null;
@@ -529,6 +531,55 @@ async function main() {
     console.log('F15 PASS voided ask closed: ' + JSON.stringify({ ask: VOID.slice(0, 8), before: voidLive, after: voidNow, reload: voidReload }));
     console.log('F19 PASS a plain note closes the ask in its conversation and no other: ' + JSON.stringify({
       ace: two2.map((id) => id.slice(0, 8)), bea: beaAsk.slice(0, 8), before: beforeF19, after: f19now, reload: f19reload }));
+    // Ops M1 F1/FU1: the route line above the composer.
+    // RP1: an empty composer shows no line (computed display, not just the
+    // attribute), no text, and no chooser: 0 options and not focusable.
+    const routeState = () => cdp.eval(`(() => { const b = $('route-preview'), p = $('route-pick'), t = $('route-text');
+      p.focus(); const foc = document.activeElement === p; if (foc) p.blur();
+      return { disp: getComputedStyle(b).display, text: t.textContent, pickDisp: getComputedStyle(p).display, opts: p.options.length, foc }; })()`);
+    const routeIdle = (st) => st && st.disp === 'none' && st.text === '' && st.pickDisp === 'none' && st.opts === 0 && !st.foc;
+    await cdp.eval(`(() => { $('msg').value = ''; $('msg').dispatchEvent(new Event('input')); return true; })()`);
+    const rpEmpty = await routeState();
+    if (!routeIdle(rpEmpty)) fail('RP1 an empty composer must show no route line and no focusable chooser: ' + JSON.stringify(rpEmpty));
+    // RP2 (390): with two robots active and Ace picked, the line keeps the
+    // log's left gutter, the chooser stays inside it and shows its whole
+    // label, and the text does not repeat that label.
+    await view(VIEWS[1]);
+    await cdp.eval(`(() => { $('msg').value = 'plain gutter'; $('msg').dispatchEvent(new Event('input'));
+      const p = $('route-pick'); p.value = ${JSON.stringify(aceN)}; p.dispatchEvent(new Event('change')); return true; })()`);
+    await sleep(150);
+    const rpGutter = await cdp.eval(`(() => { const b = $('route-preview'), p = $('route-pick'), s = $('stream');
+      const bs = getComputedStyle(b), ps = getComputedStyle(p), sr = s.getBoundingClientRect(), br = b.getBoundingClientRect(), pr = p.getBoundingClientRect();
+      const ctx = document.createElement('canvas').getContext('2d'); ctx.font = ps.font;
+      const label = p.selectedIndex >= 0 ? p.options[p.selectedIndex].textContent : '';
+      return { vw: innerWidth, logLeft: Math.round(sr.left + parseFloat(getComputedStyle(s).paddingLeft)),
+        pickLeft: Math.round(pr.left), pickRight: Math.round(pr.right), lineRight: Math.round(br.right - parseFloat(bs.paddingRight)),
+        textW: Math.ceil(ctx.measureText(label).width), room: Math.floor(p.clientWidth - parseFloat(ps.paddingLeft) - parseFloat(ps.paddingRight) - 16),
+        text: $('route-text').textContent, label, hidden: p.hidden }; })()`);
+    if (rpGutter.hidden || Math.abs(rpGutter.pickLeft - rpGutter.logLeft) > 1 || rpGutter.pickLeft < 8 || rpGutter.pickRight > rpGutter.lineRight + 1
+        || rpGutter.textW > rpGutter.room || rpGutter.text !== '' || !/^to Ace, continuing /.test(rpGutter.label))
+      fail('RP2 at 390 the route line must keep the log gutter, fit its chooser label and not repeat it: ' + JSON.stringify(rpGutter));
+    await view(VIEWS[0]);
+    // RP3: after a send the line is gone, and no route text carries into
+    // another channel.
+    const rpSend = await compose('plain rp send', 'plain rp send');
+    if (!rpSend.got || rpSend.got.reply_to !== RA) fail('RP3 setup: the picked note must continue Ace\'s conversation: ' + JSON.stringify(rpSend));
+    const rpAfter = await routeState();
+    if (!routeIdle(rpAfter)) fail('RP3 after a send the route line must be gone: ' + JSON.stringify(rpAfter));
+    await cdp.eval(`(() => { routePick = { channel: '', value: '' }; return true; })()`);
+    // A draft kept across a channel switch is routed for the new channel at
+    // once (read in the same task as the click, before any tick repaints).
+    const rpSwitch = await cdp.eval(`(() => { $('msg').value = 'plain rp switch'; $('msg').dispatchEvent(new Event('input'));
+      const before = $('route-text').textContent;
+      [...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#welcome')).click();
+      const p = $('route-pick');
+      return { before, after: $('route-text').textContent, pickDisp: getComputedStyle(p).display, opts: p.options.length, channel }; })()`);
+    if (rpSwitch.before !== 'Choose who this goes to:' || rpSwitch.channel !== 'welcome' || /route-room|Choose/.test(rpSwitch.after))
+      fail('RP3 a draft moved to another channel must be routed for that channel at once: ' + JSON.stringify(rpSwitch));
+    await cdp.eval(`(() => { $('msg').value = ''; $('msg').dispatchEvent(new Event('input')); return true; })()`);
+    const rpOther = await routeState();
+    if (!routeIdle(rpOther)) fail('RP3 no route text may carry into another channel: ' + JSON.stringify(rpOther));
+    console.log('RP PASS route line: ' + JSON.stringify({ empty: rpEmpty, gutter: rpGutter, afterSend: rpAfter, switch: rpSwitch, otherChannel: rpOther }));
     console.log('A PASS interim routing: ' + JSON.stringify({ again: again.got.reply_to === RA, preview: plain.said.text,
       bare: { said: bare.said.text, reply_to: bare.got.reply_to, aceAskLive: held }, two: { said: two.said.text, err: two.err }, chosen: chosen.got.reply_to === RA }));
     await cdp.eval(`window.__ch0go ? window.__ch0go('welcome') : [...document.querySelectorAll('.chan')].find((b) => b.textContent.includes('#welcome')).click()`);
@@ -832,6 +883,11 @@ async function main() {
         await sleep(150);
       }
       console.log('F14 idle state: empty channel shown, stale-session re-asserts=' + reasserts);
+      // Ops M1 F1 (C3 idle): no route line, text or chooser in the idle channel.
+      const idleRoute = await cdp.eval(`(() => { const b = $('route-preview'), p = $('route-pick');
+        return { disp: getComputedStyle(b).display, text: $('route-text').textContent, pickDisp: getComputedStyle(p).display, opts: p.options.length }; })()`);
+      if (!idleRoute || idleRoute.disp !== 'none' || idleRoute.text !== '' || idleRoute.pickDisp !== 'none' || idleRoute.opts !== 0)
+        fail('RP4 the idle channel must show no route line or chooser: ' + JSON.stringify(idleRoute));
     }],
     ['log', toWelcome],
     ['replying', async () => {
