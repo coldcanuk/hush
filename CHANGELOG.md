@@ -12,7 +12,8 @@ the top-level `VERSION` file.
   now really hidden (its flex rule used to override `hidden`), so first paint and idle channels no
   longer show an empty chooser, and no "to #welcome …" text stays after a send or carries into another
   channel. The line uses the log's left gutter; when the chooser shows, the label is not repeated
-  beside it. The @mention line and the chooser show one label, "to <robot>, continuing “…”": the
+  beside it, except at 480 px or narrower, where the picked label shows in full on its own wrapping
+  line above the chooser. The @mention line and the chooser show one label, "to <robot>, continuing “…”": the
   robot's own leading @mention is dropped from the quote, a long note is cut at a word break within
   40 characters with "…", the whole label is the hover title, and a label wider than the line ends
   in an ellipsis (Ops M1 FU1 label quality).

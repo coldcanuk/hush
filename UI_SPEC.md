@@ -877,7 +877,7 @@ Send, whenever `#msg` holds text:
   conversation and adds that robot as `mention_0`. The line shows
   `#route-pick` with that one conversation selected (its other options
   are "Choose…" and "New conversation in #<channel>") and no text beside
-  it (Gauge P2-R6-1).
+  it (Gauge P2-R6-1), except at 480 px or narrower (below).
 - With two or more active robots the line reads "Choose who this goes
   to:" next to `#route-pick` (each robot's conversation, and "New
   conversation in #<channel>"). Send posts nothing until a choice is made
@@ -886,7 +886,11 @@ Send, whenever `#msg` holds text:
   the one-robot follow-up. The choice holds for the channel until Send.
 - When `#route-pick` shows, it carries the label and the line adds no
   text beside it, except "Choose who this goes to:". Each robot's option
-  is the same conversation label as the @mention line.
+  is the same conversation label as the @mention line. At a viewport 480
+  px or narrower, where the closed chooser cuts a long label, the line's
+  text instead shows the selected option's whole label (the chooser's
+  `title`) on its own line above the chooser, wrapping (no ellipsis), and
+  follows each change of the selection (CoS 01:50, Ops OBS 01:48).
 - The conversation label is "to <robot>, continuing “<quote>”". The quote
   is the conversation's first note with a leading mention of that same
   robot dropped ("to <robot>" already names it; a mention of another

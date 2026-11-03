@@ -2187,6 +2187,9 @@ html[data-theme="field-office"] .think-stop:focus-visible {
 .route-preview #route-text.route-label, .route-preview select {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 100%;
 }
+/* CoS 01:50 (B): at 480px or narrower the picked option's whole label
+   sits on its own wrapping line above the chooser (paintRoute). */
+.route-preview #route-text.route-sel { flex: 1 1 100%; min-width: 0; }
 html[data-theme="field-office"] .loop-yes {
   box-shadow: inset 0 0 0 1px var(--surface-2), inset 0 0 0 2px var(--accent);
 }
@@ -5784,7 +5787,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         box.hidden = true;
         $("route-text").textContent = "";
         $("route-text").title = "";
-        $("route-text").classList.remove("route-label");
+        $("route-text").classList.remove("route-label", "route-sel");
         paintRoutePick({ kind: "idle" });
         return route;
       }
@@ -5796,14 +5799,19 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
         continue: route.convo ? convoLabel(route.convo) : ""
       };
       /* Ops M1 FU1: when the chooser shows, it carries the label; the text
-         says only what the chooser cannot ("Choose who this goes to:"). */
+         says only what the chooser cannot ("Choose who this goes to:").
+         CoS 01:50 (B): at 480px or narrower, where the closed chooser cuts
+         a long label, the text above it shows the picked option's whole
+         label (the chooser's title, set by paintRoutePick), wrapping. */
       const picking = (route.list || []).length > 0;
-      $("route-text").textContent = picking && route.kind !== "choose" ? "" : words[route.kind];
+      paintRoutePick(route);
+      const narrowPick = picking && route.kind !== "choose" && matchMedia("(max-width: 480px)").matches;
+      $("route-text").textContent = narrowPick ? $("route-pick").title : (picking && route.kind !== "choose" ? "" : words[route.kind]);
       $("route-text").title = $("route-text").textContent;
       /* Gauge P2-R8-1: nowrap + ellipsis for a conversation label only;
          the bare Yes/No sentence and the others wrap in full. */
       $("route-text").classList.toggle("route-label", !picking && route.kind === "continue");
-      paintRoutePick(route);
+      $("route-text").classList.toggle("route-sel", narrowPick);
       return route;
     }
 
@@ -5825,6 +5833,7 @@ html[data-theme="christmas"] .skill-facet.on { box-shadow: 0 0 0 2px var(--accen
       routePick = { channel: channel, value: $("route-pick").value };
       paintRoute();
     });
+    matchMedia("(max-width: 480px)").addEventListener("change", () => { paintRoute(); });
     $("msg").addEventListener("input", () => { paintRoute(); });
 
     $("form").addEventListener("submit", async (e) => {
