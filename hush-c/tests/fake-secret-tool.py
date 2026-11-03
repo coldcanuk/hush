@@ -5,8 +5,13 @@ import json
 import os
 import sys
 
+# New dirs and files are owner-only (0700 / 0600), including the
+# intermediate dirs os.makedirs creates; write_secret and the chmods also
+# reset ones that already exist with a wider mode.
+os.umask(0o077)
 root = os.environ.get("HUSH_FAKE_SECRET_DIR", "/tmp/hush-fake-secret")
 os.makedirs(root, mode=0o700, exist_ok=True)
+os.chmod(root, 0o700)
 
 
 def write_secret(path, text):

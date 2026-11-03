@@ -1,16 +1,19 @@
 #!/bin/sh
 # Test double for hush-pass. Store lives under HUSH_FAKE_PASS_DIR.
-# umask 077: the store dir is 0700 and every stored secret file is 0600.
+# umask 077 makes a new store dir 0700 and a new secret file 0600; the
+# chmods also reset a dir or file that already existed with a wider mode.
 set -eu
 umask 077
 dir="${HUSH_FAKE_PASS_DIR:-/tmp/hush-fake-pass}"
 mkdir -p "$dir"
+chmod 700 "$dir"
 cmd="${1:-}"
 path="${2:-}"
 file="$dir/$(printf '%s' "$path" | tr '/' '_')"
 case "$cmd" in
     save)
         cat > "$file"
+        chmod 600 "$file"
         ;;
     get)
         [ -f "$file" ] || exit 1

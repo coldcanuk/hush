@@ -5,15 +5,23 @@ import json
 import os
 import sys
 
+# New dirs and files are owner-only (0700 / 0600), including the
+# intermediate dirs os.makedirs creates; write_secret and the chmods also
+# reset ones that already exist with a wider mode.
+os.umask(0o077)
 root = os.environ.get("HUSH_FAKE_OP_DIR", "/tmp/hush-fake-op")
 os.makedirs(root, mode=0o700, exist_ok=True)
+os.chmod(root, 0o700)
 
 
 def item_path(vault, title):
     safe_v = vault.replace("/", "_")
     safe_t = title.replace("/", "_")
-    folder = os.path.join(root, "items", safe_v)
+    items = os.path.join(root, "items")
+    folder = os.path.join(items, safe_v)
     os.makedirs(folder, mode=0o700, exist_ok=True)
+    os.chmod(items, 0o700)
+    os.chmod(folder, 0o700)
     return os.path.join(folder, safe_t)
 
 

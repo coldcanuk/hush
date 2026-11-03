@@ -264,6 +264,7 @@ test: check-deps $(TEST_BINS) hush-relay
 	sh tests/check_turn_pkg.sh || exit 1; \
 	sh tests/check_voice.sh || exit 1; \
 	sh tests/check_voice_ui.sh || exit 1; \
+	sh tests/check_fake_modes.sh || exit 1; \
 	sh tests/check_no_nsec_leak_selftest.sh || exit 1; \
 	sh tests/check_no_nsec_leak.sh check "$$ht_mark" "$$ht_tmp" || exit 1; \
 	echo "ALL TESTS PASSED"
