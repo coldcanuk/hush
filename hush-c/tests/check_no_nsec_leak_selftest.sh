@@ -4,9 +4,9 @@
 # run TMPDIR, and requires the guard to FAIL and name it; removes the plant
 # and requires the guard to pass. Does the same with an empty session.token
 # (the relay session token name, HUSH_AUTH_FILE) outside the run TMPDIR,
-# with a leak_nsec plant left inside the run TMPDIR, and with a
-# session.token left in a C-test-style private root (hush-auth-plant) inside
-# it. The planted files
+# with an empty keys.vault outside it, with a leak_nsec plant left inside
+# the run TMPDIR, and with a session.token and a keys.vault each left in a
+# C-test-style private root (hush-auth-plant, hush-vault-plant) inside it. The planted files
 # are empty: no key or token is written.
 # Removes only the two dirs it made itself, on every exit path.
 set -eu
@@ -16,6 +16,8 @@ guard=tests/check_no_nsec_leak.sh
 PLANT_NAME=leak_nsec
 TOKEN_PLANT_NAME=session.token
 ROOT_PLANT_DIR=hush-auth-plant
+VAULT_PLANT_NAME=keys.vault
+VAULT_ROOT_PLANT_DIR=hush-vault-plant
 
 fail() { echo "nsec leak self-test failed: $1" >&2; exit 1; }
 
@@ -62,6 +64,15 @@ rm -f "$plant_dir/$TOKEN_PLANT_NAME"
 sh "$guard" check "$marker" "$run_dir" >"$out" 2>&1 \
     || { cat "$out" >&2; fail "guard still fails after the outside token plant is gone"; }
 
+: > "$plant_dir/$VAULT_PLANT_NAME"
+if sh "$guard" check "$marker" "$run_dir" >"$out" 2>&1; then
+    fail "guard passed with $plant_dir/$VAULT_PLANT_NAME planted outside the run dir"
+fi
+grep -q "$plant_dir/$VAULT_PLANT_NAME" "$out" || fail "guard did not name the outside vault plant"
+rm -f "$plant_dir/$VAULT_PLANT_NAME"
+sh "$guard" check "$marker" "$run_dir" >"$out" 2>&1 \
+    || { cat "$out" >&2; fail "guard still fails after the outside vault plant is gone"; }
+
 : > "$run_dir/$PLANT_NAME"
 if sh "$guard" check "$marker" "$run_dir" >"$out" 2>&1; then
     fail "guard passed with $PLANT_NAME left inside the run dir"
@@ -82,4 +93,15 @@ rmdir "$run_dir/$ROOT_PLANT_DIR"
 sh "$guard" check "$marker" "$run_dir" >"$out" 2>&1 \
     || { cat "$out" >&2; fail "guard still fails after the private-root token plant is gone"; }
 
-echo "nsec leak self-test ok: guard fails on all four plants (key outside, token outside, key inside, token in a private root) and passes without them"
+mkdir "$run_dir/$VAULT_ROOT_PLANT_DIR"
+: > "$run_dir/$VAULT_ROOT_PLANT_DIR/$VAULT_PLANT_NAME"
+if sh "$guard" check "$marker" "$run_dir" >"$out" 2>&1; then
+    fail "guard passed with $VAULT_PLANT_NAME left in a private root inside the run dir"
+fi
+grep -q "/$VAULT_ROOT_PLANT_DIR/$VAULT_PLANT_NAME" "$out" || fail "guard did not name the private-root vault plant"
+rm -f "$run_dir/$VAULT_ROOT_PLANT_DIR/$VAULT_PLANT_NAME"
+rmdir "$run_dir/$VAULT_ROOT_PLANT_DIR"
+sh "$guard" check "$marker" "$run_dir" >"$out" 2>&1 \
+    || { cat "$out" >&2; fail "guard still fails after the private-root vault plant is gone"; }
+
+echo "nsec leak self-test ok: guard fails on all six plants (key, token and vault outside; key inside; token and vault in a private root) and passes without them"
