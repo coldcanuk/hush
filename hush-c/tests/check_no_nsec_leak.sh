@@ -7,6 +7,10 @@
 #   keys:   *nsec*        pass/op/secret-tool entries, planted key files
 #           keys.vault*   the encrypted key file (HUSH_KEYFILE_NAME) and its
 #                         .tmp write temp
+#           *vault_*      vault openers and tokens stored by path
+#                         vault/<relay>/<name> (fake-pass flattens / to _)
+#           *providers_*  provider API keys, tokens and passwords stored by
+#                         path providers/<id>/<field>
 #   tokens: session.token* the relay session token (HUSH_AUTH_FILE) and its
 #                         .tmp write temp
 #           ui.jar        the test harness's paired-browser cookie jar
@@ -48,6 +52,8 @@ SCAN_ROOT=/tmp
 MARK_SLACK_S=1
 KEY_GLOB='*nsec*'
 VAULT_GLOB='keys.vault*'
+VAULT_ENTRY_GLOB='*vault_*'
+PROVIDER_ENTRY_GLOB='*providers_*'
 TOKEN_GLOB='session.token*'
 JAR_NAME=ui.jar
 NONCE_NAME=ui.nonce
@@ -78,7 +84,8 @@ leaks_outside() {
     run=$2
     find "$SCAN_ROOT" -xdev -path "$run" -prune -o \
         -user "$(id -u)" -newer "$marker" \
-        \( -name "$KEY_GLOB" -o -name "$VAULT_GLOB" -o -name "$TOKEN_GLOB" \
+        \( -name "$KEY_GLOB" -o -name "$VAULT_GLOB" -o -name "$VAULT_ENTRY_GLOB" \
+        -o -name "$PROVIDER_ENTRY_GLOB" -o -name "$TOKEN_GLOB" \
         -o -name "$JAR_NAME" -o -name "$NONCE_NAME" \) ! -type d -print \
         2>/dev/null || true
 }
@@ -90,7 +97,8 @@ leaks_inside() {
     find "$run" -name "$KEY_GLOB" -print 2>/dev/null || true
     find "$run" -path "$run/$MAKE_DIR_GLOB" -prune -o \
         -path "$run/$ROOT_DIR_GLOB/*" ! -name "$KEY_GLOB" \
-        \( -name "$VAULT_GLOB" -o -name "$TOKEN_GLOB" -o -name "$JAR_NAME" \
+        \( -name "$VAULT_GLOB" -o -name "$VAULT_ENTRY_GLOB" \
+        -o -name "$PROVIDER_ENTRY_GLOB" -o -name "$TOKEN_GLOB" -o -name "$JAR_NAME" \
         -o -name "$NONCE_NAME" \) ! -type d -print 2>/dev/null || true
 }
 
@@ -99,7 +107,8 @@ leaks_inside() {
 tokens_inside() {
     run=$1
     find "$run" \( ! -path "$run/$ROOT_DIR_GLOB/*" -o -path "$run/$MAKE_DIR_GLOB/*" \) \
-        ! -name "$KEY_GLOB" \( -name "$VAULT_GLOB" -o -name "$TOKEN_GLOB" \
+        ! -name "$KEY_GLOB" \( -name "$VAULT_GLOB" -o -name "$VAULT_ENTRY_GLOB" \
+        -o -name "$PROVIDER_ENTRY_GLOB" -o -name "$TOKEN_GLOB" \
         -o -name "$JAR_NAME" -o -name "$NONCE_NAME" \) ! -type d -print \
         2>/dev/null || true
 }
