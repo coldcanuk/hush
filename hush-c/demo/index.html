@@ -2170,6 +2170,9 @@ html[data-theme="field-office"] .think-stop:focus-visible {
    line and its chooser take no space and no focus while hidden. Ops M1
    FU1: 18px is #stream's gutter, so the line lines up with the log. */
 .route-preview[hidden], .route-preview select[hidden] { display: none; }
+/* An empty #route-text (the chooser carries the label) takes no flex gap,
+   so the chooser starts on the gutter itself. */
+.route-preview #route-text:empty { display: none; }
 /* #368 C2: the chooser's edge is --fg (>= 3:1 on every theme's surface;
    the native #767676 rim was 2.15:1 in field-office). */
 .route-preview select {
