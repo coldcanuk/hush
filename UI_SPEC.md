@@ -869,13 +869,17 @@ Send, whenever `#msg` holds text:
   bare Yes or No answers an ask only from its stamps." It posts with no
   `reply_to`, so it cannot settle a waiting ask.
 - An @mention of exactly one robot that has a conversation here continues
-  it (`reply_to` its root), so the robot keeps its prior turns. Two or
-  more mentioned robots, or a robot with no conversation here, start a
-  new conversation.
+  it (`reply_to` its root), so the robot keeps its prior turns. The line
+  then reads "to <robot>, continuing “<the conversation's first note>”",
+  quoting that note whole up to 40 characters, else its first 39
+  characters and "…"; no `#route-pick` shows. Two or more mentioned
+  robots, or a robot with no conversation here, start a new
+  conversation: "to #<channel>, new conversation".
 - A plain note with exactly one active robot continues that robot's
-  conversation, shown as "to <robot>, continuing “<first 40 characters
-  of the conversation's first note>”", and adds that robot as
-  `mention_0`.
+  conversation and adds that robot as `mention_0`. The line shows
+  `#route-pick` with that one conversation selected (its other options
+  are "Choose…" and "New conversation in #<channel>") and no text beside
+  it (Gauge P2-R6-1).
 - With two or more active robots the line reads "Choose who this goes
   to:" next to `#route-pick` (each robot's conversation, and "New
   conversation in #<channel>"). Send posts nothing until a choice is made
@@ -883,9 +887,10 @@ Send, whenever `#msg` holds text:
 - `#route-pick` also lets the owner start a new conversation instead of
   the one-robot follow-up. The choice holds for the channel until Send.
 - When `#route-pick` shows, it carries the label and the line adds no
-  text beside it, except "Choose who this goes to:". Its options quote
-  the first 24 characters of each conversation's first note, so the
-  picked option fits a 390 px line.
+  text beside it, except "Choose who this goes to:". Each robot's option
+  reads "to <robot>, continuing “<the conversation's first note>”",
+  quoting that note whole up to 24 characters, else its first 23
+  characters and "…", so the picked option fits a 390 px line.
 - With `#msg` empty (first paint, idle, after a send, or after a channel
   switch) the line is hidden (`.route-preview[hidden]` is `display:
   none`), its text is cleared, and `#route-pick` is hidden with no
