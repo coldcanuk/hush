@@ -4,7 +4,10 @@
 # every secret as a 0600 file in 0700 dirs (fake-op's items/ and vault dirs
 # included), both for a fresh store and when the file and dirs already
 # exist with wider modes (0644 / 0755): a fake must never keep the old mode.
-# Only modes are read (stat); no stored secret is ever opened.
+# Modes are read with stat. One more step pins fake-pass.sh's write order: a
+# reader holding an fd to an old 0644 file must not see the new secret, so
+# the secret goes to a new file, never into the old one before its chmod.
+# That read sees only the fixed probe text written here, never a real key.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -84,4 +87,16 @@ for state in fresh loose; do
     want 700 "$sec"
     want 600 "$sec/$FLAT_ITEM"
 done
-echo "fake modes ok: pass, op and secret-tool store 0600 files in 0700 dirs, fresh and over 0644/0755"
+# A reader that opened the old 0644 file before the save keeps that inode.
+# fake-pass removes it and writes a new 0600 file, so the held fd reads
+# nothing; writing first and chmod after would show the probe through it.
+held="$work/held-pass"
+loosen "$held/$FLAT_ITEM" "$held"
+exec 3< "$held/$FLAT_ITEM"
+store_pass "$held" || fail "held: fake-pass save failed"
+seen=$(cat <&3)
+exec 3<&-
+[ -z "$seen" ] || fail "a reader holding the old 0644 file saw the saved secret"
+want 600 "$held/$FLAT_ITEM"
+
+echo "fake modes ok: pass, op and secret-tool store 0600 files in 0700 dirs, fresh and over 0644/0755; a held fd to the old 0644 pass file sees no secret"
