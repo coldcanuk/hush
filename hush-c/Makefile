@@ -23,6 +23,8 @@ override LDFLAGS += $(shell pkg-config --libs libcurl)
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 DATADIR ?= $(PREFIX)/share
+# Systemd unit directory, overridable
+SYSTEMD_UNITDIR ?= $(if $(filter /usr,$(PREFIX)),/usr/lib/systemd/system,/lib/systemd/system)
 # Isolated-eval honesty (mirrors the top-level Makefile): a command-line
 # PREFIX re-derives BINDIR/DATADIR unless they were also given on the
 # command line, so a stale ../config.mk cannot scatter files outside PREFIX.
@@ -349,9 +351,9 @@ ifneq ($(ENABLE_STUN_TURN),0)
 	@# #353: ship no live credential. /etc/hush/turnserver.conf is written
 	@# at first enable by hush-turn-setup (or the relay's Daemon mode).
 	@if [ -n "$(DESTDIR)" ] || [ "$$(id -u)" = "0" ]; then \
-		install -d $(DESTDIR)/lib/systemd/system; \
+		install -d $(DESTDIR)$(SYSTEMD_UNITDIR); \
 		install -m 0644 ../contrib/systemd/hush-turn.service \
-			$(DESTDIR)/lib/systemd/system/hush-turn.service; \
+			$(DESTDIR)$(SYSTEMD_UNITDIR)/hush-turn.service; \
 		echo "Installed hush-turn.service (not enabled; no secret yet)."; \
 		echo "  first: sudo $(HUSHSHARE)/hush-turn-setup && sudo systemctl enable --now hush-turn"; \
 		echo "  or use Settings → Daemon mode"; \
@@ -377,7 +379,7 @@ uninstall: check-prefix
 		$(DESTDIR)$(HUSHSHARE)/turnserver.conf.in \
 		$(DESTDIR)$(HUSHSHARE)/hush-turn-setup
 	@if [ -n "$(DESTDIR)" ] || [ "$$(id -u)" = "0" ]; then \
-		rm -f $(DESTDIR)/lib/systemd/system/hush-turn.service; \
+		rm -f $(DESTDIR)$(SYSTEMD_UNITDIR)/hush-turn.service; \
 	fi
 	@for d in $(DESTDIR)$(HUSHSHARE)/skills \
 		$(DESTDIR)$(CODEX_SKILL_SHARE)/references \
