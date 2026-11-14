@@ -43,12 +43,7 @@ ICONDIR ?= $(DATADIR)/icons/hicolor
 ICON_SIZES := 48 128 256
 ENABLE_STUN_TURN ?= 1
 HUSHSHARE ?= $(DATADIR)/hush
-override CFLAGS += -DHUSH_SKILL_PACK_SHARE="$(HUSHSHARE)/skills/system"
-
-CODEX_SKILL_SOURCE := $(abspath ../.agents/skills/write-legible-c)
-CODEX_SKILL_SHARE := $(HUSHSHARE)/codex/skills/write-legible-c
-override CFLAGS += -DHUSH_CODEX_SKILL_SOURCE=\"$(CODEX_SKILL_SOURCE)\"
-override CFLAGS += -DHUSH_CODEX_SKILL_SHARE=\"$(CODEX_SKILL_SHARE)\"
+override CFLAGS += -DHUSH_SKILL_PACK_SHARE=\"$(HUSHSHARE)/skills/system\"
 
 CODEX_SKILL_SOURCE := $(abspath ../.agents/skills/write-legible-c)
 CODEX_SKILL_SHARE := $(HUSHSHARE)/codex/skills/write-legible-c
