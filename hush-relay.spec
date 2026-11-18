@@ -117,7 +117,7 @@ install -D -m 0755 scripts/hush-relay-stop %{buildroot}%{_datadir}/hush/hush-rel
 %{_datadir}/hush/turnserver.conf.in
 %{_datadir}/hush/hush-turn-setup
 %{_datadir}/hush/systemd/hush-turn.service
-/lib/systemd/system/hush-turn.service
+%{_unitdir}/hush-turn.service
 
 %changelog
 * Sun Aug 17 2026 Hush Contributors <coldcanuk@users.noreply.github.com> - 0.0.1-1
