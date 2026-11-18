@@ -23,6 +23,9 @@
 # a live relay, no pidfile owner, and no curl it fails (exit 2) instead of guessing.
 
 set -eu
+if [ -n "${HUSH_PACKAGE_BUILD:-}" ]; then
+    exit 0
+fi
 
 port="${1:-${HUSH_PORT:-10555}}"
 case "$port" in
