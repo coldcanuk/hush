@@ -24,6 +24,8 @@ def mark(table, label, path, mode="r"):
         table[label] = type(e).__name__ + ":" + str(getattr(e, "errno", "?"))
 
 
+# Where the relative "planted" write below lands: the job cwd (#367).
+r["cwd"] = os.getcwd()
 child_home = os.environ.get("HOME", "")
 r["home"]["path"] = child_home
 try:
